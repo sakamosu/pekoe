@@ -1,13 +1,9 @@
 # boba
 
 ```
-         ╻
-╭────────┸───────╮
-│                │    boba
-│ 🬞🬹🬹🬏 🬞🬹🬹🬏 🬞🬹🬹🬏 │    agents in worktrees,
-│ █●●█ █◕◕█ █^^█ │    reviewed hunk by hunk
-│ 🬁🬎🬎🬀 🬁🬎🬎🬀 🬁🬎🬎🬀 │
-╰────────────────╯
+🬞🬹🬹🬹🬏    boba
+█● ●█    agents in worktrees,
+🬁🬎🬎🬎🬀    reviewed hunk by hunk
 ```
 
 Orca の開発体験(複数エージェントの並列運用・worktree 分離・ブラウザ連携・差分レビュー)を、Ghostty の中で完結させるターミナルツール。Claude Code の使い方は変えず、その周辺作業(切り替え・待ち・worktree・ブラウザ・レビュー)だけを引き受ける。
@@ -142,8 +138,8 @@ primary = "#ff87da"
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
 glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を ⬤ に) | ascii
 palette = "dark"            # dark(D ミルキー＋影) | light(E キャラメル)
-splash  = true              # 起動時のカップ
-[mascot.colors]             # hi / bd / sh / eye / tea を上書き
+splash  = true              # 起動時のスプラッシュ
+[mascot.colors]             # hi / bd / sh / eye を上書き
 bd = "#e4c49a"
 [agents.codex]              # Claude Code 以外のエージェント
 command = "codex"
