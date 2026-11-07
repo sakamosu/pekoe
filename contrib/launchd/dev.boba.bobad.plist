@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- bobad をログイン時に起動する。make install-launchd が BOBA_BIN と HOME を埋めて
+     ~/Library/LaunchAgents/dev.boba.bobad.plist に置く。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.boba.bobad</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>BOBA_BIN</string>
+    <string>daemon</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:HOME/.local/bin:HOME/go/bin</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardOutPath</key><string>HOME/.local/share/boba/bobad.log</string>
+  <key>StandardErrorPath</key><string>HOME/.local/share/boba/bobad.log</string>
+</dict>
+</plist>
