@@ -1134,25 +1134,33 @@ type fromP struct {
 	From string `json:"from"`
 }
 
+// hAttentionNext: sessions waiting for the user (oldest wait first), then
+// sessions whose PR changed in a way that wants a look (PRStatus.Attention:
+// CI failed, changes requested, new comment, mergeable; oldest first).
 func (d *Daemon) hAttentionNext(p fromP) (any, error) {
 	list, _ := d.hList(listP{})
-	var waiting []*state.Session
+	var waiting, pr []*state.Session
 	for _, s := range list.([]*state.Session) {
-		if s.State == state.Waiting {
+		switch {
+		case s.State == state.Waiting:
 			waiting = append(waiting, s)
+		case s.PRStatus != nil && len(s.PRStatus.Attention) > 0:
+			pr = append(pr, s)
 		}
 	}
 	sort.Slice(waiting, func(i, j int) bool { return waiting[i].StateSince.Before(waiting[j].StateSince) })
-	if len(waiting) == 0 {
+	sort.Slice(pr, func(i, j int) bool { return pr[i].PRStatus.AttentionAt.Before(pr[j].PRStatus.AttentionAt) })
+	queue := append(waiting, pr...)
+	if len(queue) == 0 {
 		return nil, nil
 	}
-	// cycle: the oldest that is not the one we are on
-	for _, s := range waiting {
+	// cycle: the first that is not the one we are on
+	for _, s := range queue {
 		if s.Slug != p.From {
 			return s, nil
 		}
 	}
-	return waiting[0], nil
+	return queue[0], nil
 }
 
 func (d *Daemon) hReviewNext(p fromP) (any, error) {

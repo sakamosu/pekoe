@@ -43,7 +43,18 @@
   "activity": [0,1,3,5,8,6,4,5,7,9], // 直近の活動量(スパークライン用、古い順)
   "tokens": 42000,
   "dev": true,                     // dev server 起動中
-  "pr": 123,                       // gh#N をレビュー中/land 済みの PR
+  "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
+  "pr_status": {                   // PR の要約(60 秒ごとにポーリング。PR ビューを開いている間は 15 秒)
+    "state": "OPEN",               // OPEN | MERGED | CLOSED
+    "draft": false,
+    "pass": 5, "fail": 1, "pending": 0,   // checks の数
+    "review_decision": "CHANGES_REQUESTED", // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
+    "unresolved": 2,               // 未解決のレビュースレッド
+    "merge_state": "BLOCKED",      // mergeStateStatus: CLEAN | BLOCKED | DIRTY | BEHIND | UNSTABLE …
+    "last_comment": "…", "last_thread": "…",
+    "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
+    "attention_at": "…", "at": "…"
+  },
   "error": "setup failed: pnpm install"
 }
 ```
@@ -70,7 +81,7 @@
 | `session.kill` | `{slug}` | セッション終了(worktree は残す) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
 | `session.event` | `{hook, payload}` | hooks から(`boba event` が呼ぶ) |
-| `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション |
+| `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
 | `worktree.rm` | `{slug}` | teardown → worktree 削除(`~/worktrees` 配下のみ) |
@@ -99,6 +110,9 @@
 | `session.progress` | `{slug}` | 作成中の手順 `{slug, steps}` |
 | `review.surface` | `{slug, width, height}` | 右ペインを nvim(boba.nvim のレビュー面)に入れ替える。claude は裏で動き続ける |
 | `review.pr` | `{repo, number}` | `boba review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
+| `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
+| `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
+| `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"}` | レビュー面 / dev server のウィンドウを閉じる |
 | `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
 | `error.list` | `{slug?, all?}` | `[ErrorReport]`(古い順。既定は未対応 = `new` だけ、`all` で送信済み・無視も) |
@@ -124,6 +138,27 @@
   "test": {...}, "diffstat": {...}
 }
 ```
+
+### PRView オブジェクト
+
+```jsonc
+{
+  "number": 42, "title": "Add CSV export", "url": "https://github.com/me/app/pull/42",
+  "state": "OPEN", "is_draft": false, "mergeable": "MERGEABLE", "merge_state_status": "BLOCKED",
+  "review_decision": "CHANGES_REQUESTED", "base": "main", "head": "feat/csv",
+  "checks": [{"name": "test", "workflow": "CI", "status": "COMPLETED", "conclusion": "FAILURE",
+              "bucket": "fail",            // pass | fail | pending | skip
+              "url": "…", "started_at": "…", "finished_at": "…", "seconds": 192,
+              "run_id": 123, "job_id": 456}], // run_id / job_id は GitHub Actions のときだけ
+  "reviews": [{"author": "bob", "state": "CHANGES_REQUESTED", "body": "…", "at": "…", "url": "…"}],
+  "threads": [{"path": "src/api.ts", "line": 88, "original_line": 88, "resolved": false, "outdated": false,
+               "comments": [{"author": "alice", "body": "…", "at": "…", "url": "…"}]}],
+  "comments": [{"author": "carol", "body": "…", "at": "…", "url": "…"}],
+  "fetched_at": "…"
+}
+```
+
+`session.updated` は `pr_status` が変わったときだけ出る(取得時刻だけの変化では出ない)。gh が無い・未認証のときはポーリングを静かに飛ばす。
 
 ### ErrorReport オブジェクト
 

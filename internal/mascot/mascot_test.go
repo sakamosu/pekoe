@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"boba/internal/state"
 )
@@ -194,6 +196,25 @@ func TestNoSpaceAfterEyes(t *testing.T) {
 	}
 }
 
+// With no color to paint (a pipe, NO_COLOR) the eye gap stays a space:
+// a bare '█' would black out the eyes.
+func TestEyeGapWithoutColor(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+	lipgloss.SetColorProfile(termenv.Ascii)
+	for _, g := range []string{"unicode", "narrow"} {
+		r := New(Options{Shape: "round", Glyphs: g})
+		eyes := r.Eyes(Work)
+		if mid := ansi.Strip(r.Big(eyes)[1]); !strings.Contains(mid, eyes) {
+			t.Errorf("%s: middle row %q, want eyes %q with a space gap", g, mid, eyes)
+		}
+	}
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	if r := New(Options{Shape: "round"}); r.noColor {
+		t.Error("TrueColor profile should paint")
+	}
+}
+
 // FitBanner never returns a row wider than width or more rows than height;
 // with no limit it is Banner itself.
 func TestFitBanner(t *testing.T) {
@@ -217,5 +238,27 @@ func TestFitBanner(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// A pane as tall as tapi keeps the top text rows instead of dropping them all.
+func TestFitBannerShortKeepsText(t *testing.T) {
+	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	r := plain(Options{})
+	eyes := r.Eyes(Work)
+	for _, width := range []int{0, 60} {
+		rows := r.FitBanner(eyes, text, width, 3)
+		if len(rows) != 3 {
+			t.Fatalf("width %d: %d rows, want 3", width, len(rows))
+		}
+		for i, want := range text[:2] {
+			if !strings.Contains(rows[i], want) {
+				t.Errorf("width %d row %d: %q, want %q", width, i, rows[i], want)
+			}
+		}
+	}
+	// a narrow pane still clips the kept rows
+	if rows := r.FitBanner(eyes, text, 18, 3); !strings.Contains(rows[0], "…") {
+		t.Errorf("narrow: %q, want a clipped first row", rows[0])
 	}
 }

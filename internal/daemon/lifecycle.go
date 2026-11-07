@@ -141,6 +141,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	delete(d.sessions, p.Slug)
 	delete(d.out, p.Slug)
 	delete(d.progress, p.Slug)
+	delete(d.prFetched, p.Slug)
 	d.mu.Unlock()
 	d.emit("session.removed", s)
 	return map[string]any{"removed": p.Slug, "worktree_deleted": s.Managed}, nil

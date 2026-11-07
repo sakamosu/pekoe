@@ -51,6 +51,7 @@ const (
 type Theme struct {
 	Mode   Mode
 	colors map[Role]lipgloss.TerminalColor
+	ramp   *ramp // focus-border gradient; nil ⇒ solid primary
 }
 
 // DetectMode: auto → NO_COLOR ⇒ none, COLORTERM=truecolor|24bit ⇒ truecolor, else ansi.
@@ -89,6 +90,18 @@ func Load(cfg *config.Theme) *Theme {
 				h = cfg.Colors[string(r)]
 			}
 			t.colors[r] = lipgloss.Color(h)
+		}
+		// The ramp is primary's derivative: overriding primary alone falls
+		// back to solid primary; primary_end opts back in (= primary ⇒ solid).
+		end := defaultPrimaryEnd
+		if cfg != nil && cfg.Colors[string(Primary)] != "" {
+			end = ""
+		}
+		if cfg != nil && cfg.Colors[PrimaryEndKey] != "" {
+			end = cfg.Colors[PrimaryEndKey]
+		}
+		if from := string(t.colors[Primary].(lipgloss.Color)); end != "" && !strings.EqualFold(from, end) {
+			t.ramp = newRamp(from, end)
 		}
 	case ANSI:
 		lipgloss.SetColorProfile(termenv.ANSI)
@@ -159,6 +172,7 @@ type IconSet struct {
 	Sessions, Worktrees, Changes, Agent, Diff, Browser, Picks, Comments string
 	Vim, Run, Wait, Idle, Creating, Done, Fail, Current, Warning        string
 	Check, Here, Unsent, Sent                                           string
+	PR, Pending, ChangesReq, Merged, Closed                             string // GitHub PR state
 	CapL, CapR, Sep                                                     string
 	Spinner                                                             []string
 }
@@ -180,17 +194,20 @@ func Icons(name string) IconSet {
 	switch name {
 	case "ascii":
 		return IconSet{Name: "ascii", Comments: "#", Run: "*", Wait: "!", Idle: "o", Creating: ".", Done: "v", Fail: "x",
-			Current: "*", Warning: "!", Check: "v", Here: ">", Unsent: "*", Sent: "v", Sep: "|", Spinner: []string{"-", "\\", "|", "/"}}
+			Current: "*", Warning: "!", Check: "v", Here: ">", Unsent: "*", Sent: "v", Sep: "|",
+			Pending: "~", ChangesReq: "!", Merged: "m", Closed: "-", Spinner: []string{"-", "\\", "|", "/"}}
 	case "unicode":
 		return IconSet{Name: "unicode", Sessions: "◆", Worktrees: "⎇", Changes: "≡", Agent: ">", Diff: "±", Browser: "◎", Picks: "⌖",
 			Comments: "✎", Vim: "V", Run: "●", Wait: "●", Idle: "○", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "⚠",
-			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille}
+			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille,
+			PR: "⇄", Pending: "…", ChangesReq: "!", Merged: "↣", Closed: "-"}
 	}
 	return IconSet{Name: "nerd",
 		Sessions: "\U000F06A9", Worktrees: "", Changes: "", Agent: "", Diff: "",
 		Browser: "", Picks: "", Comments: "", Vim: "",
 		Run: "", Wait: "", Idle: "", Creating: "◌", Done: "", Fail: "",
 		Current: "", Warning: "", Check: "✓", Here: "▶", Unsent: "●", Sent: "✓",
+		PR: "\ue726", Pending: "\uf017", ChangesReq: "\uf06a", Merged: "\ue727", Closed: "\uf05e",
 		CapL: "", CapR: "", Sep: "│", Spinner: braille}
 }
 
@@ -200,6 +217,32 @@ func Prefix(icon string) string {
 		return ""
 	}
 	return icon + " "
+}
+
+// ---- PR state (the #42 tag in the session list) ----
+
+// PRLook is the one icon after a session's PR number: merged / closed win,
+// then CI failure, changes requested, CI running, all green. ok is false
+// when there is nothing to show yet (no summary, no checks, no review).
+func PRLook(ic IconSet, st *state.PRStatus) (StateLook, bool) {
+	if st == nil {
+		return StateLook{}, false
+	}
+	switch {
+	case st.State == "MERGED":
+		return StateLook{ic.Merged, Secondary, "merged"}, true
+	case st.State == "CLOSED":
+		return StateLook{ic.Closed, Dim, "closed"}, true
+	case st.Fail > 0:
+		return StateLook{ic.Fail, Err, "ci fail"}, true
+	case st.ReviewDecision == "CHANGES_REQUESTED":
+		return StateLook{ic.ChangesReq, Warn, "changes"}, true
+	case st.Pending > 0:
+		return StateLook{ic.Pending, Dim, "ci run"}, true
+	case st.Pass > 0:
+		return StateLook{ic.Check, Ok, "ci pass"}, true
+	}
+	return StateLook{}, false
 }
 
 // ---- states: symbol + color + word, always together ----
