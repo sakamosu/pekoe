@@ -60,6 +60,7 @@ const (
 )
 
 type model struct {
+	ime    *imeCursor // IME 用に本物のカーソルを置く位置(View が更新)
 	cl     *client.Client
 	cwd    string
 	th     *theme.Theme
@@ -170,6 +171,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		square:     os.Getenv("BOBA_SQUARE") != "",
 		graphics:   graphicsCapable(),
 		sentImages: map[int64]bool{},
+		ime:        &imeCursor{},
 	}
 	m.width, m.height = TermSize()
 	m.newTapi()
@@ -182,7 +184,8 @@ func Run(cl *client.Client, cwd string) error {
 	}
 	m := newModel(cl, cwd)
 	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus()}
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
+		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
 	if kittyEnabled() {
 		opts = append(opts, tea.WithFilter(kittyFilter))
 	}
