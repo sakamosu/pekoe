@@ -100,6 +100,8 @@ type Daemon struct {
 	handlers   map[string]func(json.RawMessage) (any, error)
 	testHook   func(ev string, data any) // observes events in tests
 	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
+	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
+	paneH      int                       // used when a client spawns without knowing it (CLI)
 }
 
 func New() (*Daemon, error) {

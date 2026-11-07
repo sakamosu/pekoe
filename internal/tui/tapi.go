@@ -462,7 +462,9 @@ func (m *model) splashView() string {
 		"",
 		m.th.FG(theme.Dim, alive),
 	}
-	banner := r.Banner(m.eyesFor(m.summary().Mood, false), text)
+	// one blank column on each side: an ambiguous-width glyph that the
+	// font draws two cells wide (Moralerspace JPDOC …) must not reach the edge
+	banner := r.FitBanner(m.eyesFor(m.summary().Mood, false), text, max(m.width-2, 1), m.height)
 	bw := 0
 	for _, l := range banner {
 		bw = max(bw, w(l))
@@ -477,6 +479,11 @@ func (m *model) splashView() string {
 	}
 	for len(lines) < m.height {
 		lines = append(lines, "")
+	}
+	// every line is the full width, so paintBg covers the whole screen
+	// (lipgloss only pads to the widest line)
+	for i := range lines {
+		lines[i] = fit(lines[i], m.width)
 	}
 	return strings.Join(lines[:m.height], "\n")
 }

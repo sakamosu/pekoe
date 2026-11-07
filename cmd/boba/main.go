@@ -36,6 +36,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"boba/internal/client"
 	"boba/internal/config"
 	"boba/internal/daemon"
@@ -134,7 +136,13 @@ func helpTapi() string {
 		Colors: g.Mascot.Colors,
 	})
 	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
-	return strings.Join(r.Banner(r.Eyes(mascot.Work), text), "\n") + "\n"
+	width := 0 // not a terminal: no limit
+	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {
+		// left-aligned, so only the last column is kept free: a glyph the
+		// font draws two cells wide must not run past the right edge
+		width = tw - 1
+	}
+	return strings.Join(r.FitBanner(r.Eyes(mascot.Work), text, width, 0), "\n") + "\n"
 }
 
 func usage() {
@@ -215,9 +223,17 @@ func flags(args []string, bools ...string) (map[string]string, []string) {
 	return f, pos
 }
 
-func termSize() (int, int) {
-	w, h := tui.TermSize()
-	return w, h
+// agentPaneSize is the pty size to ask for when spawning an agent from the
+// CLI: the agent pane of a TUI in this terminal, or 0x0 when stdout is not a
+// terminal (run by an agent or a script). 0 lets the daemon use the running
+// TUI's pane size instead of a guess like 120x40, whose pane width (67) the
+// agent would wrap at.
+func agentPaneSize() (int, int) {
+	w, h, ok := tui.TermSizeOK()
+	if !ok {
+		return 0, 0
+	}
+	return tui.AgentWidth(w), tui.AgentHeight(h)
 }
 
 // ---- commands ----
@@ -332,7 +348,7 @@ func cmdNew(args []string) error {
 	cl := connect()
 	defer cl.Close()
 	cl.Subscribe("session.progress", "session.updated")
-	w, h := termSize()
+	w, h := agentPaneSize()
 	var s state.Session
 	prompt := f["prompt"]
 	if len(pos) > 1 && prompt == "" {
@@ -340,7 +356,7 @@ func cmdNew(args []string) error {
 	}
 	if err := cl.Call("session.new", map[string]any{
 		"repo": cwd(), "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
-		"base": f["base"], "width": tui.AgentWidth(w), "height": tui.AgentHeight(h),
+		"base": f["base"], "width": w, "height": h,
 	}, &s); err != nil {
 		return err
 	}
@@ -422,8 +438,8 @@ func cmdOpen(args []string) error {
 	}
 	cl := connect()
 	defer cl.Close()
-	w, h := termSize()
-	params := map[string]any{"path": dir, "resume": resume, "agent": f["agent"], "width": tui.AgentWidth(w), "height": tui.AgentHeight(h)}
+	w, h := agentPaneSize()
+	params := map[string]any{"path": dir, "resume": resume, "agent": f["agent"], "width": w, "height": h}
 	var raw json.RawMessage
 	if err := cl.Call("session.open", params, &raw); err != nil {
 		return err

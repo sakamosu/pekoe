@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestTapiViewKeepsWidth(t *testing.T) {
 				t.Errorf("%s view %d: %d lines", c.color, vi, len(lines))
 			}
 			for i, l := range lines {
-				if vi < 2 && ansi.StringWidth(l) != m.width {
+				if ansi.StringWidth(l) != m.width {
 					t.Errorf("%s view %d line %d: width %d", c.color, vi, i, ansi.StringWidth(l))
 				}
 			}
@@ -119,5 +120,133 @@ func TestSelectedRowKeepsBackground(t *testing.T) {
 			break
 		}
 		i += len("\x1b[0m") + j
+	}
+}
+
+func splashModel(t *testing.T, color, glyphs string, width, height int) *model {
+	t.Helper()
+	m := tapiModel(t, color, config.Mascot{Glyphs: glyphs})
+	m.width, m.height = width, height
+	m.sessions = []*state.Session{{Slug: "a", Branch: "a", State: state.Running}}
+	m.tapi.splash = true
+	return m
+}
+
+// スプラッシュは全行が画面幅ちょうどで、背景色が行末まで塗られる。
+// 以前は各行が「余白＋絵＋文字」の幅で止まり、paintBg（lipgloss）が
+// 最長行までしか背景を塗らないので、文字の右端で背景が途切れていた。
+// 幅3以上なら左右1桁は空ける（曖昧幅を全角で描くフォントのはみ出し対策）。
+func TestSplashFillsScreen(t *testing.T) {
+	for _, g := range []string{"unicode", "narrow", "ascii"} {
+		for _, color := range []string{"truecolor", "none"} {
+			for _, width := range []int{1, 2, 3, 10, 16, 20, 26, 30, 34, 45, 60, 131, 226} {
+				for _, height := range []int{1, 4, 7, 9, 40} {
+					m := splashModel(t, color, g, width, height)
+					bg := bgSeq(m.th, theme.Bg)
+					lines := strings.Split(m.View(), "\n")
+					if len(lines) != height {
+						t.Fatalf("%s/%s %dx%d: %d lines", g, color, width, height, len(lines))
+					}
+					for i, l := range lines {
+						where := fmt.Sprintf("%s/%s %dx%d line %d", g, color, width, height, i)
+						if got := ansi.StringWidth(l); got != width {
+							t.Fatalf("%s: width %d: %q", where, got, l)
+						}
+						if s := ansi.Strip(l); width >= 3 && (s[0] != ' ' || s[len(s)-1] != ' ') {
+							t.Fatalf("%s: touches the edge: %q", where, s)
+						}
+						if color != "truecolor" {
+							continue
+						}
+						// リセットの直後には必ず背景が塗り直されている（最後のリセットを除く）
+						body := strings.TrimSuffix(l, "\x1b[0m")
+						if !strings.HasPrefix(body, bg) {
+							t.Fatalf("%s: no background: %q", where, l)
+						}
+						for _, part := range strings.Split(body, "\x1b[0m")[1:] {
+							if !strings.HasPrefix(part, bg) {
+								t.Fatalf("%s: background dropped: %q", where, l)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// 幅に応じて「たぴちゃん＋文字」→「文字を…で省略」→「たぴちゃんだけ」→「文字だけ」と縮む。
+func TestSplashSnapshot(t *testing.T) {
+	cases := []struct {
+		glyphs string
+		width  int
+		want   string
+	}{
+		{"unicode", 60, `
+····························································
+····························································
+················🬞🬹🬹🬹🬏····boba·v0.1.0························
+················█●·●█····agents·in·worktrees················
+················🬁🬎🬎🬎🬀·······································
+·························1·session·alive····················
+····························································
+····························································
+····························································`},
+		{"narrow", 60, `
+····························································
+····························································
+················🬞🬹🬹🬹🬏····boba·v0.1.0························
+················█⬤·⬤█····agents·in·worktrees················
+················🬁🬎🬎🬎🬀·······································
+·························1·session·alive····················
+····························································
+····························································
+····························································`},
+		{"ascii", 60, `
+····························································
+····························································
+················.---.····boba·v0.1.0························
+················|o·o|····agents·in·worktrees················
+················'---'·······································
+·························1·session·alive····················
+····························································
+····························································
+····························································`},
+		{"narrow", 24, `
+························
+························
+·🬞🬹🬹🬹🬏····boba·v0.1.0···
+·█⬤·⬤█····agents·in·wo…·
+·🬁🬎🬎🬎🬀··················
+··········1·session·al…·
+························
+························
+························`},
+		{"narrow", 16, `
+················
+················
+················
+·····🬞🬹🬹🬹🬏······
+·····█⬤·⬤█······
+·····🬁🬎🬎🬎🬀······
+················
+················
+················`},
+		{"narrow", 6, `
+······
+······
+·bob…·
+·age…·
+······
+·1·s…·
+······
+······
+······`},
+	}
+	for _, c := range cases {
+		got := strings.ReplaceAll(ansi.Strip(splashModel(t, "none", c.glyphs, c.width, 9).View()), " ", "·")
+		if want := strings.TrimPrefix(c.want, "\n"); got != want {
+			t.Errorf("%s %d:\n%s\nwant:\n%s", c.glyphs, c.width, got, want)
+		}
 	}
 }

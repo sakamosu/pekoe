@@ -560,9 +560,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	if os.Getenv("BOBA_HOME") != "" {
 		env = append(env, "BOBA_HOME="+os.Getenv("BOBA_HOME"))
 	}
-	if w == 0 || h == 0 {
-		w, h = 120, 40
-	}
+	w, h = d.spawnSize(w, h)
 	// Keep the window alive after the agent exits so the user sees why.
 	// the pane stays after exit (remain-on-exit) and reports itself dead, so
 	// the TUI can offer restart instead of typing into nothing
@@ -994,6 +992,23 @@ func (d *Daemon) hScreen(p screenP) (any, error) {
 	return d.Eng.Capture(p.Slug, win(p.Window))
 }
 
+// spawnSize picks the pty size for a new agent window. Callers that don't
+// know the pane (the CLI run from a non-terminal, e.g. by an agent) pass 0;
+// the TUI's last reported pane size is used then, so the agent's first
+// render already wraps at the width it will be shown in.
+func (d *Daemon) spawnSize(w, h int) (int, int) {
+	if w > 0 && h > 0 {
+		return w, h
+	}
+	d.mu.Lock()
+	pw, ph := d.paneW, d.paneH
+	d.mu.Unlock()
+	if pw > 0 && ph > 0 {
+		return pw, ph
+	}
+	return 120, 40
+}
+
 type resizeP struct {
 	Slug   string `json:"slug"`
 	Window string `json:"window"`
@@ -1004,6 +1019,7 @@ type resizeP struct {
 func (d *Daemon) hResize(p resizeP) (any, error) {
 	if p.Slug == "*" { // resize every agent window (TUI layout change)
 		d.mu.Lock()
+		d.paneW, d.paneH = p.Width, p.Height
 		slugs := make([]string, 0, len(d.sessions))
 		for k := range d.sessions {
 			slugs = append(slugs, k)

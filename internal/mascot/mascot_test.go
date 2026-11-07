@@ -193,3 +193,29 @@ func TestNoSpaceAfterEyes(t *testing.T) {
 		}
 	}
 }
+
+// FitBanner never returns a row wider than width or more rows than height;
+// with no limit it is Banner itself.
+func TestFitBanner(t *testing.T) {
+	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	for _, g := range []string{"unicode", "narrow", "ascii"} {
+		r := plain(Options{Glyphs: g})
+		eyes := r.Eyes(Work)
+		if got, want := r.FitBanner(eyes, text, 0, 0), r.Banner(eyes, text); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s: no limit should be Banner", g)
+		}
+		for width := 1; width <= 60; width++ {
+			for _, height := range []int{0, 2, 3, 4, 7} {
+				rows := r.FitBanner(eyes, text, width, height)
+				if height > 0 && len(rows) > height {
+					t.Errorf("%s %dx%d: %d rows", g, width, height, len(rows))
+				}
+				for i, l := range rows {
+					if ansi.StringWidth(l) > width {
+						t.Errorf("%s %dx%d row %d: width %d: %q", g, width, height, i, ansi.StringWidth(l), l)
+					}
+				}
+			}
+		}
+	}
+}
