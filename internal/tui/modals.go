@@ -43,7 +43,11 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 	if destructive {
 		bc = theme.Err
 	}
-	b := func(s string) string { return th.FG(bc, s) }
+	height := len(lines) + 2
+	if len(keys) > 0 {
+		height += 2
+	}
+	b := m.borderPainter(bc, width, height)
 	inner := width - 2
 	cw := inner - 4
 	surf := func(s string) string {
@@ -58,7 +62,8 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 	if m.square {
 		tl, tr, bl, br = "┌", "┐", "└", "┘"
 	}
-	out := []string{b(tl+"─") + t + " " + b(strings.Repeat("─", max(inner-w(t)-2, 0))+tr)}
+	out := []string{b(0, 0, tl+"─") + t + " " + b(3+w(t), 0, strings.Repeat("─", max(inner-w(t)-2, 0))+tr)}
+	side := func(s string) string { y := len(out); return b(0, y, "│") + s + b(width-1, y, "│") }
 	for _, l := range lines {
 		if strings.HasPrefix(l, "\x00sunk") {
 			// the thing that will run, sunk into bg: one full-width row, no colored text
@@ -67,20 +72,20 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 			if th.Mode == theme.Truecolor {
 				s = lipgloss.NewStyle().Background(th.Color(theme.Bg)).Foreground(th.Color(theme.Text)).Render(s)
 			}
-			out = append(out, b("│")+s+b("│"))
+			out = append(out, side(s))
 			continue
 		}
 		if l == "\x00rule" {
-			out = append(out, b("├"+strings.Repeat("─", inner)+"┤"))
+			out = append(out, b(0, len(out), "├"+strings.Repeat("─", inner)+"┤"))
 			continue
 		}
-		out = append(out, b("│")+surf(l)+b("│"))
+		out = append(out, side(surf(l)))
 	}
 	if len(keys) > 0 {
-		out = append(out, b("│")+surf("")+b("│"))
-		out = append(out, b("│")+surf(m.keyHints(keys, cw))+b("│"))
+		out = append(out, side(surf("")))
+		out = append(out, side(surf(m.keyHints(keys, cw))))
 	}
-	out = append(out, b(bl+strings.Repeat("─", inner)+br))
+	out = append(out, b(0, len(out), bl+strings.Repeat("─", inner)+br))
 	return out
 }
 
