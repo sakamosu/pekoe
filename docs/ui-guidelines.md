@@ -225,7 +225,16 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 | fail | nf-fa-times\_circle | F057 | ✗ | x | err |
 | カレント worktree | nf-fa-map\_marker | F041 | \* | \* | secondary |
 | 警告（モーダル） | nf-fa-exclamation\_triangle | F071 | ⚠ | ! | warn / err |
+| PR ビュー / open の PR | nf-dev-git\_pull\_request | E726 | ⇄ | なし | タイトル色（状態行では ok） |
+| PR の CI 実行中・待ち | nf-fa-clock\_o | F017 | … | ~ | dim |
+| PR の CI 全成功 | （check と同じ） | — | ✓ | v | ok |
+| PR の CI 失敗 | （fail と同じ） | — | ✗ | x | err |
+| PR の changes requested | nf-fa-exclamation\_circle | F06A | ! | ! | warn |
+| PR merged | nf-dev-git\_merge | E727 | ↣ | m | secondary |
+| PR closed | nf-fa-ban | F05E | - | - | dim |
 | セグメント区切り | powerline hard / rounded caps | E0B0, E0B2 / E0B6, E0B4 | │ | \| | 塗り色 |
+
+セッション一覧の `#42` タグの後ろには PR の状態アイコンを 1 つだけ置く。優先順は merged → closed → CI 失敗 → changes requested → CI 実行中 → CI 全成功。位置が固定（PR 番号の直後）なので状態語は省くが、6 つの状態は全アイコンセットで別の記号にする（テストで保証）。CI 実行中にスピナーは使わない（動きは run 状態のアイコン位置だけ）。
 
 diff の A / M / D は全モードで文字のまま（git の慣習を崩さない）。truecolor では行頭に ▎ のガターマークを ok / err で添える。
 
