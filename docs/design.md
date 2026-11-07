@@ -68,6 +68,8 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 
 **左ペインの 1 行** — セッション名、状態、待ち時間、diffstat、テスト結果、ポート。例: `● feat/csv  wait 2m  +120 -8  ✓test  :3003`
 
+**衝突予報** — 並行するセッション同士が同じファイルを触っていると、左ペインの行に `⚠2`(相手の数)が出る。重なりだけなら warn、コミット済みの内容が `git merge-tree` で衝突するなら err。触っているファイルは base からの変更(コミット済み + 未コミット)と許可待ちの Edit/Write の対象で、bobad が tickLoop で 10 秒ごとに計算する。許可モーダルには「also changed in <slug>」、Changes パネルには各ファイルの相手、land の確認には衝突する相手とファイルが出る。
+
 **Attention queue** — waiting のセッションを待ち時間順に並べた行列。`]a` で次の待ちへ飛び、答えて `[a` で元の場所に戻る。複数待っていれば順に巡る。
 
 **未読ライン** — セッションから離れた時点の出力オフセットを記録し、戻ったときに「ここから先が新しい」線を引く。
@@ -265,6 +267,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `boba new <branch> [--from gh#N] [--agent codex]` | worktree + セッション作成 |
 | `boba open <worktree>` / `boba adopt` | 既存を開く / 管理下に入れる |
 | `boba ls` | セッション一覧と状態 |
+| `boba conflicts` | 衝突予報。同じファイルを触っている open なセッションのペアと、コミット済みの内容が衝突するか(`git merge-tree`)。`--repo <repo-id>` で絞り込み |
 | `boba send <slug> <text>` | pty に文字を送る |
 | `boba event` | hooks から呼ばれる。stdin の JSON(session\_id, cwd, hook 名)をデーモンに渡す |
 | `boba review [<slug> \| gh#N]` | レビュー面を開く |
@@ -283,7 +286,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `r` | レビュー面(nvim)を開く |
 | `p` | PR ビューを開く(右ペインが PR の状態に切り替わり、左の選択に追従する。Esc で agent に戻る) |
 | `b` | その worktree のポートを Chrome で開く |
-| `l` | land |
+| `l` | land(確認に、他の open なセッションとの衝突予報を出す) |
 | `d` | dev server 起動 / 停止 |
 | `x` | セッション終了(worktree は残す) |
 | `D` | worktree 削除(確認あり) |

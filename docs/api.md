@@ -33,7 +33,7 @@
   "state_since": "2026-11-07T10:00:00Z",
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
-  "pending_tool": {"name": "Bash", "input": "pnpm prisma migrate dev"}, // 許可待ちの対象
+  "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション
   "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none
   "diffstat": {"added": 120, "deleted": 8, "files": 4},
   "prompts": 7,                    // スナップショット数
@@ -55,9 +55,14 @@
     "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
     "attention_at": "…", "at": "…"
   },
-  "error": "setup failed: pnpm install"
+  "error": "setup failed: pnpm install",
+  "overlaps": [                    // 衝突予報(同じリポジトリの open なセッションのうち、同じファイルを触っている相手)
+    {"slug": "feat-x", "files": ["src/api.ts", "README.md"], "conflict": true, "conflict_files": ["src/api.ts"]}
+  ]
 }
 ```
+
+**衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、bobad が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
 
 ### メソッド
 
@@ -88,6 +93,7 @@
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
 | `dev.toggle` | `{slug}` | dev server の起動/停止 |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
+| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`boba conflicts`) |
 | `review.start` | `{slug}` | state を reviewing に |
 | `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |

@@ -136,6 +136,10 @@ func (p *permissionModal) view() []string {
 	lines := []string{"", s.Branch + " wants to run", "", sunk(th.Bold(theme.Text, tool) + "  " + input), ""}
 	if s.PendingTool != nil && s.PendingTool.Touches != "" {
 		lines = append(lines, th.FG(theme.Dim, "  touches  ")+th.FG(theme.Text, s.PendingTool.Touches))
+		if also := s.PendingTool.AlsoIn; len(also) > 0 {
+			// conflict forecast: another open session already changed this file
+			lines = append(lines, "  "+th.FG(theme.Warn, theme.Prefix(m.ic.Warning))+th.FG(theme.Dim, "also changed in ")+th.FG(theme.Text, strings.Join(also, ", ")))
+		}
 	}
 	if s.LastMessage != "" && s.PendingTool == nil {
 		lines = append(lines, th.FG(theme.Dim, "  "+s.LastMessage))
@@ -178,9 +182,12 @@ type confirmModal struct {
 	subject     string // what the question is about (boba asks: "delete worktree fix-ci?")
 	destructive bool
 	yes         func() tea.Cmd
+	notes       []confirmNote // lines above the question (land: conflict forecast)
 }
 
 func (c *confirmModal) about(subject string) *confirmModal { c.subject = subject; return c }
+
+func (c *confirmModal) note(ns []confirmNote) *confirmModal { c.notes = ns; return c }
 
 func newConfirmModal(m *model, title, text, target string, destructive bool, yes func() tea.Cmd) *confirmModal {
 	return &confirmModal{m: m, title: title, text: text, target: target, destructive: destructive, yes: yes}
