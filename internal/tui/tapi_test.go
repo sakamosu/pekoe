@@ -9,6 +9,7 @@ import (
 
 	"boba/internal/config"
 	"boba/internal/state"
+	"boba/internal/theme"
 )
 
 func tapiModel(t *testing.T, color string, mc config.Mascot) *model {
@@ -90,5 +91,33 @@ func TestNotifySeq(t *testing.T) {
 	t.Setenv("TERM_PROGRAM", "Apple_Terminal")
 	if got := notifySeq("boba", "x"); got != "\x1b]9;boba: x\x07" {
 		t.Fatalf("%q", got)
+	}
+}
+
+// 選択行の背景は、中の色付き部分(状態の点)のリセットで途切れず行末まで続く。
+func TestSelectedRowKeepsBackground(t *testing.T) {
+	m := tapiModel(t, "truecolor", config.Mascot{Shape: "round"})
+	now := time.Now()
+	m.sessions = []*state.Session{{Slug: "a", Branch: "fix/a", State: state.Waiting, StateSince: now}}
+	m.sel = 0
+	rows, _ := m.sessionRows(40)
+	out := m.box(44, 4, boxOpt{rows: rows})
+	line := out[1]
+	bg := bgSeq(m.th, theme.Select)
+	if !strings.Contains(line, bg) {
+		t.Fatalf("no select background: %q", line)
+	}
+	// 最後のリセットを除き、\x1b[0m の直後には必ず背景が塗り直されている
+	body := strings.TrimSuffix(line, "\x1b[0m")
+	for i := strings.Index(body, "\x1b[0m"); i >= 0; {
+		rest := body[i+len("\x1b[0m"):]
+		if strings.Contains(rest, "fix/a") && !strings.HasPrefix(rest, bg) {
+			t.Fatalf("background dropped before the name: %q", line)
+		}
+		j := strings.Index(rest, "\x1b[0m")
+		if j < 0 {
+			break
+		}
+		i += len("\x1b[0m") + j
 	}
 }
