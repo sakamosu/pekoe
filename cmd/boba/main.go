@@ -139,7 +139,9 @@ func helpCup() string {
 	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
 	width := 0 // not a terminal: no limit
 	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {
-		width = tw - 1 // keep the last column free, as the splash does
+		// left-aligned, so only the last column is kept free: a glyph the
+		// font draws two cells wide must not run past the right edge
+		width = tw - 1
 	}
 	return strings.Join(r.FitCup(pearls, text, nil, width, 0), "\n") + "\n"
 }
