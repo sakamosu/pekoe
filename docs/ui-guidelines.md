@@ -125,6 +125,7 @@ Nov 7, 2026 · @Yuki Sakamoto
 
 - パネル最下行に dim の集計行を1行置ける（`1 waiting · oldest 3m   1 to review`）。状態アイコンは状態色のまま、文字は dim。本文色は使わない。
 - フッターにキーヒントは置かない（ボトムバーの仕事）。
+- Changes パネルのフッターは衝突予報の集計（`⚠ feat-b conflict   ⚠ feat-c overlap`）。各ファイル行の末尾にも、同じファイルを触っている相手を `⚠ slug` で添える（パスが先に縮む）。
 
 【ペイン内カード】
 
@@ -175,6 +176,7 @@ Nov 7, 2026 · @Yuki Sakamoto
 
 - 中央配置。枠線とタイトルはパネルと同じ言語（通常は primary → primary\_end のグラデーション、破壊的操作の確認は err 単色）。
 - 確認は `y/n` か Enter/Esc。選択肢はボトムバーと同じ `key action` 形式でモーダル内最下行に書く。
+- 判断材料がある確認（land の衝突予報など）は、問いの直上に1件1行で添える（最大3行、超えた分は `+N more`）。行頭は状態アイコン（状態色）、相手の名前は text、説明は dim。
 - 背後を暗くする効果は使わない（端末によって見え方が安定しない）。背後の枠線を border に落とすだけで十分。
 - 実行対象（コマンド、ファイルパス、ブランチ名）は全幅1行で bg 色に沈めて見せる。モーダルの surface に対して1段凹むので、何が実行されるかが読む前に分かる。その行に色文字は置かない。
 - 進行中の処理はステップのリスト（✓ / スピナー / ○）で縦に並べ、時間のかかる段だけゲージを付ける。全体の進捗バーは置かない。
@@ -199,6 +201,8 @@ Nov 7, 2026 · @Yuki Sakamoto
 | 変更 | M | warn | diff の変更ファイル |
 | 削除 | D | err | diff の削除ファイル・- 行 |
 | カレント | \* | secondary | 今いる worktree ・ブランチ |
+| 重なり | ⚠ | warn | 他のセッションも同じファイルを触っている（自動マージ可）。一覧では `⚠2` のように相手の数と並べる |
+| 衝突 | ⚠ | err | コミット済みの内容が他のセッションと衝突する（git merge-tree）。詳細では状態語 conflict / overlap を添える |
 
 ルール：
 
@@ -235,7 +239,7 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 | done | nf-fa-check\_circle | F058 | ✓ | v | secondary |
 | fail | nf-fa-times\_circle | F057 | ✗ | x | err |
 | カレント worktree | nf-fa-map\_marker | F041 | \* | \* | secondary |
-| 警告（モーダル） | nf-fa-exclamation\_triangle | F071 | ⚠ | ! | warn / err |
+| 警告（モーダル）・衝突予報 | nf-fa-exclamation\_triangle | F071 | ⚠ | ! | warn / err |
 | PR ビュー / open の PR | nf-dev-git\_pull\_request | E726 | ⇄ | なし | タイトル色（状態行では ok） |
 | PR の CI 実行中・待ち | nf-fa-clock\_o | F017 | … | ~ | dim |
 | PR の CI 全成功 | （check と同じ） | — | ✓ | v | ok |
@@ -283,8 +287,9 @@ diff の A / M / D は全モードで文字のまま（git の慣習を崩さな
 | スクロールバー | │（トラック）＋ ┃（サム） | メインパネル右端 | border / dim |
 | ガターマーク | ▎ | diff の追加・削除行 | ok / err |
 | 枠線 | ╭ ╮ ╰ ╯ ─ │ | 全パネルとモーダル | primary → primary\_end（フォーカス・モーダル）/ border / err |
+| 紙吹雪 | nerd: nf-fa-star（F005）・nf-fa-star\_o（F006）・✦ ⁺ / unicode: ✦ ✧ ⋆ ⁺ / ascii: * + ' . | PR がマージされたときの tapi のトーストの枠線上だけ（`docs/mascot.md`「PR と CI への反応」） | secondary |
 
-- 動きはスピナーだけ。点滅やマーキーは使わない。フォーカス枠のグラデーションも静止している。`animate = false` でスピナーも静止アイコンになる。
+- 動きはスピナーだけ。点滅やマーキーは使わない。フォーカス枠のグラデーションも静止している。`animate = false` でスピナーも静止アイコンになる。例外は tapi（`docs/mascot.md` のタイミング規則に従う。紙吹雪の瞬きもここ）で、`animate = false` なら tapi も止まり、紙吹雪は出さない。
 - 空のメインパネルには dim の ASCII アートロゴ（6行以内）を置いてよい。アクセントは primary の文字1つまで。
 - スパークラインやゲージは数値とペアで置く（`▂▅▇█ 42%`）。グラフィックだけで数値を読ませない。
 

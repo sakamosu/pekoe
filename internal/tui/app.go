@@ -573,9 +573,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.prFollow())
 		}
 		cmds = append(cmds, m.maybePermission(), m.escalate())
-		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
-			m.tapi.toast = nil
-		}
+		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
 	case spinMsg:
@@ -1212,7 +1210,7 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 				}
 				return infoMsg("landed " + s.Slug)
 			}
-		}).about(s.Branch)
+		}).about(s.Branch).note(m.landNotes(s))
 	case "d":
 		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server toggled · :"+fmt.Sprint(s.Port))
 	case "x":

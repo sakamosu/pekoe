@@ -31,6 +31,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | Attention queue `]a` / `[a` | `attention.next` と TUI の `returnTo`、e2e |
 | 未読ライン | 離れた時点の行位置を記録し、戻ったときに `── new ──` を差し込む |
 | 永続性 | デーモンを再起動してもセッションが残る(tmux が生存)。tmux ごと落ちたら `--resume` で復元(e2e) |
+| 衝突予報(⚠N・also changed in・Changes の相手・land の予報・`boba conflicts`) | `TestConflictForecast`(同じ行 → conflict、違う行 → overlap、別ファイル → なし、未コミットは overlap のみ、許可待ちの Edit に also_in)、`TestSessionListConflictTag` `TestPermissionModalAlsoChanged` `TestChangesShowPeersAndLandForecast`。隔離 e2e で 3 セッションを並べ、TUI(140 列 unicode / 80 列 ascii)と CLI で表示を確認 |
 
 ## worktree フロー
 

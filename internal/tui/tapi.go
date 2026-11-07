@@ -36,6 +36,7 @@ type toast struct {
 	mood  mascot.Mood
 	text  string
 	until time.Time
+	react *mascot.Reaction // a PR reaction (tapi_pr.go); nil for wait / error
 }
 
 type tapiState struct {
@@ -51,6 +52,14 @@ type tapiState struct {
 	toasted    map[string]bool
 	notified   map[string]bool
 	splash     bool
+	// PR reactions (tapi_pr.go)
+	prs         map[string]*mascot.PR // the summary tapi saw last, per session
+	prToasted   map[string]time.Time
+	prQueue     []queuedReaction
+	demoPR      map[string]*mascot.PR // BOBA_TAPI_DEMO=pr
+	demoSession *state.Session
+	demoStep    int
+	demoAt      time.Time
 }
 
 func (m *model) newTapi() *tapiState {
@@ -59,6 +68,9 @@ func (m *model) newTapi() *tapiState {
 		seen:       map[string]time.Time{},
 		toasted:    map[string]bool{},
 		notified:   map[string]bool{},
+		prs:        map[string]*mascot.PR{},
+		prToasted:  map[string]time.Time{},
+		demoPR:     map[string]*mascot.PR{},
 		lastActive: time.Now(),
 		nextBlink:  time.Now().Add(blinkGap()),
 		blinkFrame: -1,
@@ -108,6 +120,9 @@ func (m *model) tapiInit() []tea.Cmd {
 	if m.tapi.splash {
 		cmds = append(cmds, tea.Tick(splashFor, func(time.Time) tea.Msg { return splashDoneMsg{} }))
 	}
+	if demoOn() {
+		cmds = append(cmds, demoTick())
+	}
 	return cmds
 }
 
@@ -124,10 +139,10 @@ func (m *model) tapiUpdate(msg tea.Msg) (tea.Cmd, bool) {
 		if now := time.Now(); now.After(t.nextBlink) {
 			t.blinkFrame, t.nextBlink = t.frame, now.Add(blinkGap())
 		}
-		if t.toast != nil && time.Now().After(t.toast.until) {
-			t.toast = nil
-		}
+		m.tapiExpire()
 		return tapiTick(), true
+	case tapiDemoMsg:
+		return m.demoStep(), true
 	case splashDoneMsg:
 		t.splash = false
 		return nil, true
@@ -169,7 +184,8 @@ func (m *model) markSeen() {
 	}
 	if s := m.current(); s != nil {
 		m.tapi.seen[s.Slug] = time.Now()
-		if m.tapi.toast != nil && m.tapi.toast.slug == s.Slug {
+		// a PR toast stays: the agent pane doesn't show the PR
+		if m.tapi.toast != nil && m.tapi.toast.slug == s.Slug && m.tapi.toast.react == nil {
 			m.tapi.toast = nil
 		}
 	}
@@ -180,6 +196,7 @@ func (m *model) markSeen() {
 func (m *model) tapiOnSession(prev state.State, s *state.Session, curSlug string) {
 	t := m.tapi
 	t.lastActive = time.Now()
+	m.tapiOnPR(s)
 	if s.State == prev || s.Slug == curSlug {
 		return
 	}
@@ -197,6 +214,10 @@ func (m *model) tapiOnSession(prev state.State, s *state.Session, curSlug string
 		return
 	}
 	t.toasted[key] = true
+	if c := t.toast; c != nil && c.react != nil && time.Now().Before(c.until) {
+		// a PR toast steps aside for wait / error and comes back later
+		m.queueReaction(queuedReaction{r: *c.react, at: time.Now(), dur: time.Until(c.until)})
+	}
 	t.toast = &toast{slug: s.Slug, mood: mood, text: mascot.SessionSpeech(s), until: time.Now().Add(toastFor)}
 }
 
@@ -244,7 +265,9 @@ func notifySeq(title, body string) string {
 // ---- frames ----
 
 func (m *model) summary() mascot.Summary {
-	return mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive)
+	sum := mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive)
+	sum.Cloudy = m.cloudy()
+	return sum
 }
 
 func (m *model) blinking() bool { return m.animating() && m.tapi.frame == m.tapi.blinkFrame }
@@ -285,7 +308,11 @@ func (m *model) speech(mood mascot.Mood, s string) string {
 // barTapi is the left end of the status bar: aggregated face + speech.
 func (m *model) barTapi(width int) string {
 	sum := m.summary()
-	face := m.tapi.r.Line(m.eyesFor(sum.Mood, false))
+	eyes := m.eyesFor(sum.Mood, false)
+	if sum.IsCloudy() && !m.blinking() {
+		eyes = m.tapi.r.CloudyEyes()
+	}
+	face := m.tapi.r.Line(eyes)
 	text := sum.Speech()
 	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= mascot.WaitBlinkAfter && m.animating() && m.tapi.frame%4 == 3 {
 		text = strings.Repeat(" ", w(text)) // 3 shown : 1 hidden, 1.6 s
@@ -394,6 +421,9 @@ func (m *model) toastBlock() []string {
 	th := m.th
 	r := m.tapi.r
 	inner := " " + r.Line(m.eyesFor(t.mood, true)) + "  " + r.Paint(t.mood, t.text) + " "
+	if t.react != nil {
+		inner = m.reactionInner(t)
+	}
 	iw := w(inner)
 	if th.Mode == theme.Truecolor {
 		inner = lipgloss.NewStyle().Background(th.Color(theme.Select)).Render(strings.ReplaceAll(inner, "\x1b[0m", "\x1b[0m"+bgSeq(th, theme.Select)))
@@ -403,6 +433,13 @@ func (m *model) toastBlock() []string {
 		tl, tr, bl, br = "┌", "┐", "└", "┘"
 	}
 	b := func(s string) string { return th.FG(theme.Border, s) }
+	if t.react != nil && t.react.Event == mascot.PRMerged && m.g.AnimateOn() {
+		return []string{
+			b(tl) + m.confettiBorder(iw, 0) + b(tr),
+			b("│") + inner + b("│"),
+			b(bl) + m.confettiBorder(iw, 3) + b(br),
+		}
+	}
 	return []string{
 		b(tl + strings.Repeat("─", iw) + tr),
 		b("│") + inner + b("│"),
