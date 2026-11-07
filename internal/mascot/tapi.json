@@ -1,0 +1,29 @@
+{
+  "name": "tapi",
+  "shape": "round",
+  "light": "glint",
+  "palette": {"hi": "#f8ecd9", "bd": "#e4c49a", "sh": "#c7a57c", "eye": "#2b201c", "tea": "#4a2e22"},
+  "sprites": {
+    "pearl3": [
+      [["🬞","bd",null],["🬹","hi",null],["🬹","bd",null],["🬹","bd",null],["🬏","bd",null]],
+      [["█","bd",null],["$0","eye","bd"],["$1","eye","bd"],["$2","eye","bd"],["█","sh",null]],
+      [["🬁","sh",null],["🬎","sh",null],["🬎","sh",null],["🬎","sh",null],["🬀","sh",null]]
+    ],
+    "pearl4": [
+      [["🬞","bd",null],["🬹","hi",null],["🬹","bd",null],["🬏","bd",null]],
+      [["█","bd",null],["$0","eye","bd"],["$1","eye","bd"],["█","sh",null]],
+      [["🬁","sh",null],["🬎","sh",null],["🬎","sh",null],["🬀","sh",null]]
+    ],
+    "pearl1": [
+      [["▐","bd",null],["$0","eye","bd"],["$1","eye","bd"],["$2","eye","bd"],["▌","sh",null]]
+    ]
+  },
+  "states": {
+    "idle":  {"eyes": "• •", "cell": "•", "accent": "i"},
+    "work":  {"eyes": "● ●", "cell": "●", "accent": "w"},
+    "wait":  {"eyes": "◕ ◕", "cell": "◉", "accent": "q"},
+    "done":  {"eyes": "^ ^", "cell": "●", "accent": "d"},
+    "error": {"eyes": "× ×", "cell": "×", "accent": "x"},
+    "sleep": {"eyes": "- -", "cell": "○", "accent": "i"}
+  }
+}
