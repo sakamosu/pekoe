@@ -161,6 +161,8 @@ type IconSet struct {
 	Check, Here, Unsent, Sent                                           string
 	CapL, CapR, Sep                                                     string
 	Spinner                                                             []string
+
+	Issues string // Issues panel / a GitHub issue
 }
 
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -184,14 +186,14 @@ func Icons(name string) IconSet {
 	case "unicode":
 		return IconSet{Name: "unicode", Sessions: "◆", Worktrees: "⎇", Changes: "≡", Agent: ">", Diff: "±", Browser: "◎", Picks: "⌖",
 			Comments: "✎", Vim: "V", Run: "●", Wait: "●", Idle: "○", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "⚠",
-			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille}
+			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille, Issues: "⊙"}
 	}
 	return IconSet{Name: "nerd",
 		Sessions: "\U000F06A9", Worktrees: "", Changes: "", Agent: "", Diff: "",
 		Browser: "", Picks: "", Comments: "", Vim: "",
 		Run: "", Wait: "", Idle: "", Creating: "◌", Done: "", Fail: "",
 		Current: "", Warning: "", Check: "✓", Here: "▶", Unsent: "●", Sent: "✓",
-		CapL: "", CapR: "", Sep: "│", Spinner: braille}
+		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192"}
 }
 
 // Prefix renders an icon followed by one space, or nothing in ascii.

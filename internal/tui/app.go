@@ -54,7 +54,7 @@ type change struct {
 
 const (
 	pSessions = 1
-	pSecond   = 2 // Worktrees | Browser
+	pSecond   = 2 // Worktrees | Browser | Issues
 	pThird    = 3 // Changes | Picks
 	pAgent    = 4
 )
@@ -88,8 +88,8 @@ type model struct {
 	psel      int
 
 	focus     int
-	narrowTab int // < 100 columns: 0 sessions, 1 worktrees, 2 changes
-	sub2      int // 0 worktrees, 1 browser
+	narrowTab int // < 100 columns: index into narrowTabs
+	sub2      int // 0 worktrees, 1 browser, 2 issues (subIssues)
 	sub3      int // 0 changes, 1 picks
 	typing    bool
 	guard     mouseGuard // reassembles mouse reports split across reads
@@ -118,6 +118,7 @@ type model struct {
 	quitting bool
 
 	review *reviewModel // built-in review surface when active
+	iss    issuesState  // [2] Issues and the issue shown in the main panel (issues.go)
 
 	graphics   bool           // outer terminal draws Kitty graphics
 	sentImages map[int64]bool // pick screenshots already transmitted
@@ -430,6 +431,7 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	m.lastSel = cur
 	m.screen = nil
+	m.iss.open = false
 	m.window = engine.WinAgent
 	m.typing = false
 	m.pickInput = nil
@@ -470,6 +472,7 @@ const (
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.markSeen()
+	defer m.issueSync()
 	// every key passes the mouse guard first, whichever screen handles it
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -575,6 +578,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case disconnectedMsg:
 		m.setMsg("lost connection to bobad", true)
 		return m, tea.Quit
+
+	case issuesMsg, issueViewMsg:
+		return m, m.onIssuesMsg(msg)
 
 	case errMsg:
 		if msg.err != nil {
@@ -932,7 +938,10 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.sel = 0
 		return nil
 	}
-	if m.pickInput != nil && m.focus == pAgent {
+	if m.iss.queryOn {
+		return m.issueQueryKey(k)
+	}
+	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() {
 		if cmd, used := m.pickKey(k); used {
 			return cmd
 		}
@@ -1006,8 +1015,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case pSessions:
 		return m.keySessions(key)
 	case pSecond:
-		if m.sub2 == 1 {
+		switch m.sub2 {
+		case 1:
 			return m.keyBrowser(key)
+		case subIssues:
+			return m.keyIssues(key)
 		}
 		return m.keyWorktrees(key)
 	case pThird:
@@ -1021,26 +1033,40 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// narrowTabs are the tabs of the one left panel below 100 columns.
+var narrowTabs = []struct{ focus, sub2 int }{{pSessions, 0}, {pSecond, 0}, {pSecond, subIssues}, {pThird, 0}}
+
+// cycle steps i through n values forwards or backwards.
+func cycle(i, n int, next bool) int {
+	if next {
+		return (i + 1) % n
+	}
+	return (i + n - 1) % n
+}
+
 func (m *model) subtab(next bool) tea.Cmd {
 	if narrow(m.width) && m.focus != pAgent {
-		if next {
-			m.narrowTab = (m.narrowTab + 1) % 3
-		} else {
-			m.narrowTab = (m.narrowTab + 2) % 3
+		m.narrowTab = cycle(m.narrowTab, len(narrowTabs), next)
+		t := narrowTabs[m.narrowTab]
+		m.focus = t.focus
+		m.sub2, m.sub3 = t.sub2, 0
+		if m.sub2 == subIssues {
+			return m.enterIssues()
 		}
-		m.focus = m.narrowTab + 1
-		m.sub2, m.sub3 = 0, 0
 		return nil
 	}
 	switch m.focus {
 	case pSecond:
-		m.sub2 = 1 - m.sub2
-		if m.sub2 == 1 {
+		m.sub2 = cycle(m.sub2, 3, next) // worktrees → browser → issues
+		switch m.sub2 {
+		case 1:
 			return m.loadTabs()
+		case subIssues:
+			return m.enterIssues()
 		}
 		return m.loadWorktrees()
 	case pThird:
-		m.sub3 = 1 - m.sub3
+		m.sub3 = cycle(m.sub3, 2, next)
 		if m.sub3 == 1 {
 			return m.loadPicks()
 		}
@@ -1297,6 +1323,9 @@ func (m *model) keyPicks(key string) tea.Cmd {
 }
 
 func (m *model) keyAgent(key string) tea.Cmd {
+	if m.issueShown() {
+		return m.keyIssueMain(key)
+	}
 	s := m.current()
 	switch key {
 	case "i", "enter", "a":
@@ -1357,6 +1386,11 @@ func (m *model) forward(k tea.KeyMsg) tea.Cmd {
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.modal != nil {
 		return nil
+	}
+	if m.issueShown() {
+		if cmd, ok := m.issueMouse(ev); ok {
+			return cmd
+		}
 	}
 	// map to the agent panel's content area
 	x0, y0 := m.agentOrigin()
