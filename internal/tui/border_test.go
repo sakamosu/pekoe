@@ -36,11 +36,8 @@ func TestFocusedBorderIsPrimaryToBlueRamp(t *testing.T) {
 	for _, sz := range [][2]int{{4, 2}, {5, 3}, {30, 8}, {90, 30}} {
 		wd, ht := sz[0], sz[1]
 		ramp := m.th.FocusRamp(focusRampLen(wd, ht))
-		o := boxOpt{focused: true, rows: []row{{Text: "x"}}}
-		if wd >= 30 {
-			o.title, o.right = m.panelTitle(1, "", "Sessions", "2/4", true), m.th.FG(theme.Dim, "r")
-		}
-		out := m.box(wd, ht, o)
+		title := m.panelTitle(1, "", "Sessions", "2/4", true)
+		out := m.box(wd, ht, boxOpt{title: title, right: m.th.FG(theme.Dim, "r"), focused: true, rows: []row{{Text: "x"}}})
 		if len(out) != ht {
 			t.Fatalf("%dx%d: %d lines", wd, ht, len(out))
 		}
@@ -115,5 +112,34 @@ func TestANSIBorderIsSolidPrimary(t *testing.T) {
 	}
 	if ansi.Strip(out[3]) != "╰"+strings.Repeat("─", 18)+"╯" {
 		t.Errorf("bottom border %q", ansi.Strip(out[3]))
+	}
+}
+
+// Every line of a box is exactly its width, even when the title cannot fit
+// (a 4-wide box used to grow to 5 with a title).
+func TestBoxNeverOverflowsWidth(t *testing.T) {
+	for _, mode := range []string{"truecolor", "ansi", "none"} {
+		m := borderModel(t, mode)
+		title := m.panelTitle(1, "", "Sessions", "2/4", true)
+		for wd := 4; wd <= 12; wd++ {
+			for ht := 2; ht <= 4; ht++ {
+				for _, o := range []boxOpt{
+					{title: title, focused: true},
+					{title: title, right: m.th.FG(theme.Dim, "right"), focused: true},
+					{title: "x"},
+				} {
+					o.rows = []row{{Text: "content"}}
+					out := m.box(wd, ht, o)
+					if len(out) != ht {
+						t.Fatalf("%s %dx%d: %d lines", mode, wd, ht, len(out))
+					}
+					for i, l := range out {
+						if w(l) != wd {
+							t.Errorf("%s %dx%d title %q line %d: width %d %q", mode, wd, ht, ansi.Strip(o.title), i, w(l), ansi.Strip(l))
+						}
+					}
+				}
+			}
+		}
 	}
 }

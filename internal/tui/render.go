@@ -88,7 +88,8 @@ func (m *model) box(width, height int, o boxOpt) []string {
 	// title line embedded in the top border: ╭─[1] Sessions 2/4 ──── right ─╮
 	var top string
 	switch {
-	case o.title == "":
+	case o.title == "" || inner < 3:
+		// ╭─T ╮ needs 5 cells; a narrower box keeps a plain top border
 		top = b(0, 0, tl+strings.Repeat(hz, inner)+tr)
 	default:
 		t := clip(o.title, max(inner-3, 1))
