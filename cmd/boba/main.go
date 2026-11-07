@@ -37,8 +37,10 @@ import (
 	"time"
 
 	"boba/internal/client"
+	"boba/internal/config"
 	"boba/internal/daemon"
 	"boba/internal/hooks"
+	"boba/internal/mascot"
 	"boba/internal/mcp"
 	"boba/internal/paths"
 	"boba/internal/state"
@@ -118,8 +120,27 @@ func main() {
 	die(err)
 }
 
+// helpCup is tapi's cup on top of `boba --help` (a still image).
+func helpCup() string {
+	g, err := config.LoadGlobal()
+	if err != nil {
+		g = &config.Global{}
+	}
+	icons := theme.IconsFromEnv()
+	r := mascot.New(mascot.Options{
+		Shape:  mascot.DetectShape(g.Mascot.Shape),
+		Glyphs: mascot.DetectGlyphs(g.Mascot.Glyphs, icons, nil),
+		Light:  g.Mascot.LightPalette(),
+		Colors: g.Mascot.Colors,
+	})
+	pearls := []string{r.Eyes(mascot.Work), r.Eyes(mascot.Wait), r.Eyes(mascot.Done)}
+	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
+	return strings.Join(r.Cup(pearls, text, nil), "\n") + "\n"
+}
+
 func usage() {
-	fmt.Print(`boba — agents in worktrees, reviewed hunk by hunk
+	fmt.Print(helpCup())
+	fmt.Print(`
 
   boba                         open the TUI
   boba init                    draft ~/.config/boba/repos/<repo-id>.toml

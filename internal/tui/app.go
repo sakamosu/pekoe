@@ -91,7 +91,8 @@ type model struct {
 	sub2      int // 0 worktrees, 1 browser
 	sub3      int // 0 changes, 1 picks
 	typing    bool
-	window    string // agent | review | dev shown in the main panel
+	guard     mouseGuard // reassembles mouse reports split across reads
+	window    string     // agent | review | dev shown in the main panel
 
 	screen     *engine.Screen
 	screenOf   string
@@ -118,6 +119,9 @@ type model struct {
 
 	graphics   bool           // outer terminal draws Kitty graphics
 	sentImages map[int64]bool // pick screenshots already transmitted
+
+	tapi     *tapiState // the mascot (tapi.go)
+	spinning bool       // the 80 ms spinner tick is scheduled
 }
 
 func TermSize() (int, int) {
@@ -170,6 +174,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		ime:        &imeCursor{},
 	}
 	m.width, m.height = TermSize()
+	m.newTapi()
 	return m
 }
 
@@ -178,7 +183,8 @@ func Run(cl *client.Client, cwd string) error {
 		return err
 	}
 	m := newModel(cl, cwd)
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(),
+	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
 		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
 	if kittyEnabled() {
 		opts = append(opts, tea.WithFilter(kittyFilter))
@@ -200,7 +206,9 @@ func pump(cl *client.Client, p *tea.Program) {
 }
 
 func (m *model) Init() tea.Cmd {
+	m.spinning = m.g.AnimateOn()
 	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
+	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
 	}
@@ -426,6 +434,38 @@ const (
 // ---- update ----
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	defer m.markSeen()
+	// every key passes the mouse guard first, whichever screen handles it
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		keys, wait := m.guard.feed(msg)
+		cmd := m.routeKeys(keys)
+		if wait {
+			cmd = tea.Batch(cmd, guardTick(m.guard.gen))
+		}
+		return m, cmd
+	case guardFlushMsg:
+		return m, m.routeKeys(m.guard.flush(int(msg)))
+	}
+	return m.route(msg)
+}
+
+func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, k := range keys {
+		_, c := m.route(k)
+		cmds = append(cmds, c)
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Sequence(cmds...)
+}
+
+func (m *model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.tapiUpdate(msg); ok {
+		return m, cmd
+	}
 	if m.review != nil {
 		switch msg.(type) {
 		case tea.KeyMsg, tea.MouseMsg, reviewMsg, reviewAnswerMsg, errMsg, infoMsg, modalDoneMsg:
@@ -479,10 +519,17 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if time.Since(m.msgAt) > 6*time.Second {
 			m.msg = ""
 		}
-		cmds = append(cmds, m.maybePermission())
+		cmds = append(cmds, m.maybePermission(), m.escalate())
+		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
+			m.tapi.toast = nil
+		}
 		return m, tea.Batch(cmds...)
 
 	case spinMsg:
+		if !m.tapi.focused { // animations stop while the window is unfocused
+			m.spinning = false
+			return m, nil
+		}
 		m.frame++
 		return m, spin(m.g.AnimateOn())
 
@@ -650,6 +697,13 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		if cur != nil {
 			curSlug = cur.Slug
 		}
+		var prev state.State
+		for _, x := range m.sessions {
+			if x.Slug == s.Slug {
+				prev = x.State
+			}
+		}
+		m.tapiOnSession(prev, &s, curSlug)
 		m.upsert(&s)
 		if curSlug != "" {
 			if i, _ := m.find(curSlug); i >= 0 {
@@ -680,6 +734,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 	case "session.removed":
 		var s state.Session
 		json.Unmarshal(ev.Data, &s)
+		m.tapi.lastActive = time.Now()
 		for i, x := range m.sessions {
 			if x.Slug == s.Slug {
 				m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
@@ -1062,14 +1117,14 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 				}
 				return infoMsg("landed " + s.Slug)
 			}
-		})
+		}).about(s.Branch)
 	case "d":
 		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server toggled · :"+fmt.Sprint(s.Port))
 	case "x":
 		if s.State == state.Running || s.State == state.Waiting {
 			m.modal = newConfirmModal(m, "End session", "the agent is running; end it? (worktree is kept)", "", true, func() tea.Cmd {
 				return m.act("session.kill", map[string]any{"slug": s.Slug}, "ended "+s.Slug)
-			})
+			}).about(s.Branch)
 			return nil
 		}
 		return m.act("session.kill", map[string]any{"slug": s.Slug}, "ended "+s.Slug)
@@ -1080,11 +1135,11 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 		}
 		m.modal = newConfirmModal(m, "Delete worktree", what, s.Path, true, func() tea.Cmd {
 			return m.act("worktree.rm", map[string]any{"slug": s.Slug, "force": true}, "deleted "+s.Slug)
-		})
+		}).about(s.Branch)
 	case "u":
 		m.modal = newConfirmModal(m, "Undo prompt", fmt.Sprintf("restore the worktree to snapshot #%d (before the last prompt)", s.Prompts), fmt.Sprintf("refs/boba/%s/prompt-%d", s.Slug, s.Prompts), true, func() tea.Cmd {
 			return m.act("session.undo", map[string]any{"slug": s.Slug}, "undid the last prompt")
-		})
+		}).about(s.Branch)
 	case "R":
 		aw, ah := m.agentSize()
 		return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)

@@ -308,6 +308,29 @@ func joinH(a, b []string, gap int) []string {
 	return out
 }
 
+// placeAt draws block over base with its top-left corner at (x, y).
+func placeAt(base []string, y, x int, block []string) []string {
+	out := append([]string(nil), base...)
+	bw := 0
+	for _, l := range block {
+		bw = max(bw, w(l))
+	}
+	for i, l := range block {
+		yy := y + i
+		if yy < 0 || yy >= len(out) {
+			continue
+		}
+		bl := out[yy]
+		pre := ansi.Truncate(bl, x, "")
+		if pw := w(pre); pw < x {
+			pre += strings.Repeat(" ", x-pw)
+		}
+		post := ansi.TruncateLeft(bl, x+bw, "")
+		out[yy] = pre + "\x1b[0m" + l + "\x1b[0m" + post
+	}
+	return out
+}
+
 // overlay draws a modal block centered over base lines.
 func overlay(base []string, block []string, width int) []string {
 	if len(block) == 0 {

@@ -170,9 +170,12 @@ type confirmModal struct {
 	m           *model
 	title, text string
 	target      string
+	subject     string // what the question is about (boba asks: "delete worktree fix-ci?")
 	destructive bool
 	yes         func() tea.Cmd
 }
+
+func (c *confirmModal) about(subject string) *confirmModal { c.subject = subject; return c }
 
 func newConfirmModal(m *model, title, text, target string, destructive bool, yes func() tea.Cmd) *confirmModal {
 	return &confirmModal{m: m, title: title, text: text, target: target, destructive: destructive, yes: yes}
