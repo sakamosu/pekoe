@@ -51,6 +51,7 @@ const (
 type Theme struct {
 	Mode   Mode
 	colors map[Role]lipgloss.TerminalColor
+	ramp   *ramp // focus-border gradient; nil ⇒ solid primary
 }
 
 // DetectMode: auto → NO_COLOR ⇒ none, COLORTERM=truecolor|24bit ⇒ truecolor, else ansi.
@@ -89,6 +90,18 @@ func Load(cfg *config.Theme) *Theme {
 				h = cfg.Colors[string(r)]
 			}
 			t.colors[r] = lipgloss.Color(h)
+		}
+		// The ramp is primary's derivative: overriding primary alone falls
+		// back to solid primary; primary_end opts back in (= primary ⇒ solid).
+		end := defaultPrimaryEnd
+		if cfg != nil && cfg.Colors[string(Primary)] != "" {
+			end = ""
+		}
+		if cfg != nil && cfg.Colors[PrimaryEndKey] != "" {
+			end = cfg.Colors[PrimaryEndKey]
+		}
+		if from := string(t.colors[Primary].(lipgloss.Color)); end != "" && !strings.EqualFold(from, end) {
+			t.ramp = newRamp(from, end)
 		}
 	case ANSI:
 		lipgloss.SetColorProfile(termenv.ANSI)
