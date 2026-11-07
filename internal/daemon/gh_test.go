@@ -116,3 +116,22 @@ func TestReviewSomeoneElsesPR(t *testing.T) {
 		t.Fatal("someone else's PR must not be landable")
 	}
 }
+
+func TestWatchPRsPicksUpExternalPR(t *testing.T) {
+	d, _, repo := setup(t)
+	fakeGH(t, "OPEN")
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/pr"})
+	for i := 0; i < 100; i++ {
+		if s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); s.State != state.Creating {
+			break
+		}
+		sleep()
+	}
+	if s.PR != 0 {
+		t.Fatalf("PR set before any gh lookup: %d", s.PR)
+	}
+	d.watchPRs()
+	if s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); s.PR != 42 {
+		t.Fatalf("expected PR #42 from gh, got %d", s.PR)
+	}
+}
