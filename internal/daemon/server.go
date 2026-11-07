@@ -104,6 +104,7 @@ type Daemon struct {
 	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
 	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
 	paneH      int                       // used when a client spawns without knowing it (CLI)
+	preview    *previewer                // in-terminal browser preview (preview.go)
 	cf         conflictScan              // conflict forecast (conflicts.go)
 
 	prMu      sync.Mutex           // serializes PR summary updates
@@ -393,5 +394,8 @@ func (d *Daemon) registerHandlers() {
 		"term.caps":             bind(d.hTermCaps),
 		"issues.list":           bind(d.hIssuesList),
 		"issues.view":           bind(d.hIssuesView),
+	}
+	for k, h := range d.previewHandlers() {
+		d.handlers[k] = h
 	}
 }

@@ -60,6 +60,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | パススルー: Kitty keyboard | 実装済み。TUI が Ghostty に disambiguate モード(`CSI > 1 u`)を要求し、届いた CSI u を解釈する。従来形式のないキー(Shift+Enter など)は tmux のキー名で送り、tmux(`extended-keys on`、`csi-u`)がエージェントに CSI u で届ける。経路全体を確認し、本物の Claude Code で Shift+Enter が改行になった。実機の Ghostty でも確認した。エージェントが要求しなければ従来形式のまま(`TestDecodeCSIu`) |
 | パススルー: Kitty graphics | 実装済み。tmux の中のアプリが使う Unicode プレースホルダ方式に対応。画像の命令(tmux の DCS で包まれたものも展開)を `%output` から取り出して Ghostty に流し、プレースホルダの文字は `capture-pane` を通って右ペインに出る。カーソル位置への直接配置はデータ転送だけにする。対応確認の問い合わせ(`a=q`)には、外側が対応端末のときだけ bobad が代わりに OK を返す(`TestSplitCarry` `TestGraphicsCommandsUnwrapsTmuxPassthrough` `TestPassGraphics`)。実機の Ghostty で、tmux 向けに包んだ形の画像がプレースホルダの位置に表示された |
 | ピックのスクリーンショット表示 | 対応端末では、破線のプレースホルダの代わりに Kitty graphics で画像を表示する(ガイドライン「プレースホルダを置き換える形で」)。実機の Ghostty で、Chrome から送ったボタンの切り抜きがカードに表示された |
+| ブラウザプレビュー(preview 窓) | 撮影は CDP over `--remote-debugging-pipe`。偽キャプチャで自動撮り直し・before 保持・dev 停止時のメッセージ・パスとモバイルの記憶を確認(`TestPreviewAutoRetakeOnStop` `TestPreviewDevServerDown` `TestPreviewRemembersPathAndMobile`)。実 Chrome で 1280×800 と 390×844@2x を撮り、モバイル幅でメディアクエリが効くことを確認(`TestChromeCaptureReal`)。TUI はエスケープ列・リサイズ計算・画像の差し替えと削除・破線プレースホルダ(`TestGfxSync` `TestFitCells` `TestPreviewImagesFollowLayoutAndLeaveNothing` `TestPreviewPlaceholderWithoutGraphics`)。実機 Ghostty での表示確認は未了 |
 | 段階 2: libghostty-vt の自前 mux | **対象外**(同上) |
 
 ## ブラウザ拡張

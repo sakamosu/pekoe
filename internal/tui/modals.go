@@ -526,7 +526,7 @@ func (m *model) panelKeysFull() [][3]string {
 	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
 	switch m.focus {
 	case pSessions:
-		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"/", "filter", "/"}}, common...)
+		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"/", "filter", "/"}}, common...)
 	case pSecond:
 		if m.sub2 == subIssues {
 			return issuePanelKeysFull()
@@ -548,6 +548,9 @@ func (m *model) panelKeysFull() [][3]string {
 		return [][3]string{{"j/k", "scroll", "j"}, {"↵", "jump to its session", "\r"}, {"n", "new session from the issue", "n"},
 			{"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"h", "back to Issues", "h"}, {"esc", "back to the agent", "esc"}}
 	}
+	if m.window == winPreview {
+		return m.previewKeysFull()
+	}
 	if m.window == winPR {
 		keys := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},
 			{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
@@ -557,9 +560,9 @@ func (m *model) panelKeysFull() [][3]string {
 		return keys
 	}
 	if m.pendingError() != nil {
-		return append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "agent / dev window", "v"}}, common...)
+		return append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "preview / dev window", "v"}}, common...)
 	}
-	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "agent / dev window", "v"}}, common...)
+	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "preview / dev window", "v"}}, common...)
 }
 
 func (h *helpModal) mode() (string, string) { return "HELP", "" }

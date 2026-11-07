@@ -79,6 +79,12 @@ func PicksDir(repoID string) string {
 	return filepath.Join(DataDir(), repoID, "picks")
 }
 
+// PreviewDir is ~/.local/share/boba/<repo-id>/preview/<slug>: the in-terminal
+// browser preview's screenshots and its remembered path.
+func PreviewDir(repoID, slug string) string {
+	return filepath.Join(DataDir(), repoID, "preview", slug)
+}
+
 // ErrorsDir is ~/.local/share/boba/<repo-id>/errors (errors sent to agents).
 func ErrorsDir(repoID string) string {
 	return filepath.Join(DataDir(), repoID, "errors")

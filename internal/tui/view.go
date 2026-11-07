@@ -471,6 +471,9 @@ func (m *model) viewAgent(width, height int) []string {
 	if m.window == winPR {
 		return m.viewPR(s, width, height)
 	}
+	if m.window == winPreview {
+		return m.viewPreview(width, height, s)
+	}
 	winLabel := "Agent"
 	icon := m.ic.Agent
 	switch m.window {
@@ -901,6 +904,9 @@ func (m *model) modeName() (string, string) {
 		if m.window == winPR {
 			return "PR", m.ic.PR
 		}
+		if m.window == winPreview {
+			return "PREVIEW", m.ic.Browser
+		}
 		return "AGENT", m.ic.Agent
 	}
 	return "SESSIONS", m.ic.Sessions
@@ -947,6 +953,9 @@ func (m *model) hints() [][2]string {
 			}
 			return [][2]string{{"j/k", "move"}, {"↵", "expand"}, {"space", "select"}, {"s", "send"}, {"o", "browse"}, {"?", "help"}}
 		}
+		if m.window == winPreview {
+			return m.previewHints()
+		}
 		if m.pendingPick() != nil {
 			return [][2]string{{"↵", "send"}, {"i", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"?", "help"}}
 		}
@@ -956,7 +965,7 @@ func (m *model) hints() [][2]string {
 		if m.pendingError() != nil { // the card owns s / i / ↵; type with a
 			return [][2]string{{"a", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 		}
-		return [][2]string{{"↵", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
+		return [][2]string{{"↵", "type"}, {"h", "back"}, {"v", "preview"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 	}
 	if m.filterOn {
 		return [][2]string{{"↵", "apply"}, {"esc", "clear"}}
