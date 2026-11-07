@@ -96,6 +96,8 @@ Nov 7, 2026 · @Yuki Sakamoto
 - 左列 40%／右列 60%。左列は3〜5パネル。パネルには 1〜5 の番号を振り、数字キーで直接フォーカスできる。
 - フォーカス中の左パネルは広がり、他はタイトル＋1〜2行に縮む（アコーディオン）。
 - 端末幅が 100 列未満のときは左列をタブ化して1枚にする。メインパネルは消さない。
+- パネル内のサブタブは `[ ]` で巡回する（[2] は Worktrees → Browser → Issues、[3] は Changes ⇄ Picks）。タブ化した左列も同じキーで Sessions → Worktrees → Issues → Changes を巡る。
+- 左パネルの行を「読む」ためのもの（Issues の本文とコメント）はメインパネルに出し、Esc で agent 窓に戻す。メインパネルを別の窓に切り替えている間は、その窓の内容がフォーカスの単位になる。
 
 【フォーカス】
 
@@ -107,6 +109,7 @@ Nov 7, 2026 · @Yuki Sakamoto
 
 - 形式は `[n] 名前 位置 状態` を1行で。例：`[1] Sessions 2/4`、`[3] Changes 3`、`[4] Agent login-ui`。
 - フィルタやソートがかかっているときは末尾に追記する（`[3] Changes 3 filter:ts`）。状態をタイトル以外の場所に散らさない。
+- 取得範囲が切り替わるパネルは、その範囲を状態として末尾に置く（`[2] Issues 12 mine`、`[2] Issues 3 label:bug filter:login`）。
 
 【選択行】
 
@@ -215,6 +218,7 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 | Diff / コード | nf-fa-code | F121 | ± | なし | タイトル色 |
 | Browser パネル / ブラウザ由来 | nf-fa-chrome | F268 | ◎ | なし | タイトル色（カード内は secondary） |
 | Picks パネル / 要素ピック | nf-fa-crosshairs | F05B | ⌖ | なし | タイトル色 |
+| Issues パネル / GitHub issue | nf-fa-dot\_circle\_o | F192 | ⊙ | なし | タイトル色 |
 | Comments パネル / コメント行 | nf-fa-comment\_o | F0E5 | ✎ | # | secondary |
 | vim | nf-dev-vim | E7C5 | V | なし | タイトル色 |
 | run | nf-fa-circle（静止）/ Braille スピナー（動作中） | F111 / 2800–28FF | ● | \* | ok |
