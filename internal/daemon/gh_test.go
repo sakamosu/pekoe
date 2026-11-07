@@ -25,6 +25,14 @@ case "$1 $2" in
       *) echo '{"number":42}' ;;
     esac ;;
   "api --method") cat > ` + filepath.Join(dir, "review.json") + `; echo '{}' ;;
+  "api graphql")
+    if [ -f ` + filepath.Join(dir, "noauth") + ` ]; then echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 4; fi
+    cat ` + filepath.Join(dir, "pr.json") + ` ;;
+  "run view")
+    case "$*" in
+      *--job*) cat ` + filepath.Join(dir, "job.log") + ` ;;
+      *) cat ` + filepath.Join(dir, "run.log") + ` ;;
+    esac ;;
 esac
 `
 	os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755)

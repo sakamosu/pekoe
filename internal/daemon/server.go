@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"boba/internal/config"
@@ -103,6 +104,10 @@ type Daemon struct {
 	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
 	paneH      int                       // used when a client spawns without knowing it (CLI)
 	preview    *previewer                // in-terminal browser preview (preview.go)
+
+	prMu      sync.Mutex           // serializes PR summary updates
+	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
+	prPolling atomic.Bool          // watchPRStatus is running
 }
 
 func New() (*Daemon, error) {
@@ -119,15 +124,16 @@ func New() (*Daemon, error) {
 	}
 	d := &Daemon{
 		DB: db, Global: g,
-		Eng:      engine.NewTmux(os.Getenv("BOBA_TMUX_SOCKET")),
-		sessions: map[string]*state.Session{},
-		conns:    map[*conn]bool{},
-		cancels:  map[string]context.CancelFunc{},
-		asks:     map[string]string{},
-		errors:   map[int][]ConsoleError{},
-		out:      map[string]*outState{},
-		progress: map[string][]Step{},
-		stop:     make(chan struct{}),
+		Eng:       engine.NewTmux(os.Getenv("BOBA_TMUX_SOCKET")),
+		sessions:  map[string]*state.Session{},
+		conns:     map[*conn]bool{},
+		cancels:   map[string]context.CancelFunc{},
+		asks:      map[string]string{},
+		errors:    map[int][]ConsoleError{},
+		out:       map[string]*outState{},
+		progress:  map[string][]Step{},
+		stop:      make(chan struct{}),
+		prFetched: map[string]time.Time{},
 	}
 	d.registerHandlers()
 	return d, nil
@@ -357,6 +363,9 @@ func (d *Daemon) registerHandlers() {
 		"review.flush":          bind(d.hFlush),
 		"review.risks":          bind(func(p slugP) (any, error) { return d.DB.Risks(p.Slug) }),
 		"review.pr":             bind(d.hReviewPR),
+		"pr.view":               bind(d.hPRView),
+		"pr.seen":               bind(d.hPRSeen),
+		"pr.failed_log":         bind(d.hFailedLog),
 		"pick.list":             bind(d.hPickList),
 		"pick.send":             bind(d.hPickSend),
 		"pick.discard":          bind(d.hPickDiscard),

@@ -83,22 +83,23 @@ func (m *model) box(width, height int, o boxOpt) []string {
 	if m.square {
 		tl, tr, bl, br = "┌", "┐", "└", "┘"
 	}
-	b := func(s string) string { return th.FG(bc, s) }
+	b := m.borderPainter(bc, width, height)
 
 	// title line embedded in the top border: ╭─[1] Sessions 2/4 ──── right ─╮
 	var top string
 	switch {
-	case o.title == "":
-		top = b(tl + strings.Repeat(hz, inner) + tr)
+	case o.title == "" || inner < 3:
+		// ╭─T ╮ needs 5 cells; a narrower box keeps a plain top border
+		top = b(0, 0, tl+strings.Repeat(hz, inner)+tr)
 	default:
 		t := clip(o.title, max(inner-3, 1))
 		wt := w(t)
 		if o.right != "" && inner-wt-w(o.right)-5 >= 1 {
 			k := inner - wt - w(o.right) - 5
-			top = b(tl+hz) + t + " " + b(strings.Repeat(hz, k)) + " " + o.right + " " + b(hz+tr)
+			top = b(0, 0, tl+hz) + t + " " + b(3+wt, 0, strings.Repeat(hz, k)) + " " + o.right + " " + b(inner, 0, hz+tr)
 		} else {
 			k := max(inner-wt-2, 0)
-			top = b(tl+hz) + t + " " + b(strings.Repeat(hz, k)+tr)
+			top = b(0, 0, tl+hz) + t + " " + b(3+wt, 0, strings.Repeat(hz, k)+tr)
 		}
 	}
 	out := []string{top}
@@ -148,12 +149,43 @@ func (m *model) box(width, height int, o boxOpt) []string {
 	if hasFooter {
 		lines = append(lines, padS+fit(o.footer, cw)+padS)
 	}
-	for _, l := range lines {
-		out = append(out, b(vt)+l+b(vt))
+	for i, l := range lines {
+		out = append(out, b(0, i+1, vt)+l+b(width-1, i+1, vt))
 	}
-	out = append(out, b(bl+strings.Repeat(hz, inner)+br))
+	out = append(out, b(0, height-1, bl+strings.Repeat(hz, inner)+br))
 	return out
 }
+
+// borderPainter returns b(x, y, s), which paints the border run s whose first
+// cell is at (x, y) of a width×height frame. A primary border follows the
+// focus ramp (primary → blue end) along the TL→BR diagonal; rows count double
+// because a cell is about twice as tall as it is wide. Every other border, and
+// ansi/none or a theme that overrides primary, stays one solid role.
+func (m *model) borderPainter(bc theme.Role, width, height int) func(x, y int, s string) string {
+	th := m.th
+	var ramp []string
+	if bc == theme.Primary {
+		ramp = th.FocusRamp(focusRampLen(width, height))
+	}
+	return func(x, y int, s string) string {
+		if ramp == nil {
+			return th.FG(bc, s)
+		}
+		var sb strings.Builder
+		for i, r := range []rune(s) {
+			if j := x + i + 2*y; j >= 0 && j < len(ramp) {
+				sb.WriteString(ramp[j])
+			}
+			sb.WriteRune(r)
+		}
+		sb.WriteString("\x1b[0m")
+		return sb.String()
+	}
+}
+
+// focusRampLen is the number of ramp steps a width×height border needs:
+// one per diagonal position x+2y, from the top-left to the bottom-right corner.
+func focusRampLen(width, height int) int { return width + 2*(height-1) }
 
 // panelTitle renders "[n] icon Name position state".
 func (m *model) panelTitle(n int, icon, name, extra string, focused bool) string {

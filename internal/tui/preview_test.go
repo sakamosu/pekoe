@@ -146,8 +146,6 @@ func previewModel(t *testing.T, graphics bool) *model {
 	return m
 }
 
-func viewLines(m *model) []string { return strings.Split(m.View(), "\n") }
-
 func plain(lines []string) string { return ansi.Strip(strings.Join(lines, "\n")) }
 
 func TestPreviewPlaceholderWithoutGraphics(t *testing.T) {
@@ -161,7 +159,7 @@ func TestPreviewPlaceholderWithoutGraphics(t *testing.T) {
 		t.Fatalf("watching %q", m.pv.watching)
 	}
 	m.setPreview(shots())
-	out := plain(viewLines(m))
+	out := plain(viewLines(t, m))
 	for _, want := range []string{"[4]", "Preview a :3001/settings", "after 1280×800 · png", "┄┄┄", "┆", "before 1280×800"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
@@ -177,7 +175,7 @@ func TestPreviewPlaceholderWithoutGraphics(t *testing.T) {
 	p := shots()
 	p.Mobile, p.Busy, p.Rev = true, true, 6
 	m.setPreview(p)
-	out = plain(viewLines(m))
+	out = plain(viewLines(t, m))
 	if !strings.Contains(out, ":3001/settings · mobile · capturing") || !strings.Contains(out, "R retake") || !strings.Contains(out, "m desktop") {
 		t.Errorf("title / bar:\n%s", out)
 	}
@@ -195,7 +193,7 @@ func TestPreviewDevServerDownMessage(t *testing.T) {
 	m.openPreview()
 	m.previewSync()
 	m.setPreview(&daemon.Preview{Slug: "a", Port: 3001, Path: "/", Error: "dev server is not running · d to start"})
-	if out := plain(viewLines(m)); !strings.Contains(out, "dev server is not running · d to start") {
+	if out := plain(viewLines(t, m)); !strings.Contains(out, "dev server is not running · d to start") {
 		t.Fatalf("no dev-down message:\n%s", out)
 	}
 }
@@ -213,7 +211,7 @@ func TestPreviewImagesFollowLayoutAndLeaveNothing(t *testing.T) {
 	for _, v := range m.pv.live {
 		id = v
 	}
-	out := strings.Join(viewLines(m), "\n")
+	out := strings.Join(viewLines(t, m), "\n")
 	if !strings.Contains(out, fmt.Sprintf("\x1b[38;2;%d;%d;%dm", (id>>16)&0xff, (id>>8)&0xff, id&0xff)) || !strings.ContainsRune(out, placeholder) {
 		t.Fatal("the image's placeholder cells are not drawn")
 	}
