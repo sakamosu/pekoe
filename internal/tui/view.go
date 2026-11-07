@@ -42,7 +42,12 @@ func (m *model) View() string {
 	if c, ok := m.modal.(*confirmModal); ok && len(body) >= 2 {
 		// boba asks: one line at the bottom of the main pane, puppy first
 		x, _ := m.agentOrigin()
-		body = placeAt(body, len(body)-2, x, []string{m.askLine(c, m.agentContentWidth())})
+		cw := m.agentContentWidth()
+		lines := append(m.noteLines(c, cw), m.askLine(c, cw))
+		if keep := len(body) - 3; len(lines) > keep { // never over the panel's top border
+			lines = lines[len(lines)-max(keep, 1):]
+		}
+		body = placeAt(body, len(body)-1-len(lines), x, lines)
 	} else if m.modal != nil {
 		body = overlay(body, m.modal.view(), m.width)
 	}
@@ -235,10 +240,13 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State == state.Idle || s.State == state.Creating || s.State == state.Landed {
 		nameRole = theme.Dim
 	}
-	// the PR tag never gets truncated away; the branch name gives way first
+	// the PR and conflict tags never get truncated away; the branch name gives way first
 	tag := ""
 	if s.PR > 0 {
 		tag += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", s.PR))
+	}
+	if ct := m.conflictTag(s); ct != "" {
+		tag += " " + ct
 	}
 	if s.Unread > 0 && s.Slug != m.lastSel {
 		tag += " " + th.FG(theme.Secondary, "•")
@@ -385,21 +393,15 @@ func (m *model) thirdPanel(width, h int, f bool) []string {
 		return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
 	}
 	var rows []row
+	peers := filePeers(cur)
 	for i, c := range m.changes {
-		role := theme.Warn
-		switch c.Status {
-		case "A":
-			role = theme.Ok
-		case "D":
-			role = theme.Err
-		}
-		rows = append(rows, row{Text: th.FG(role, c.Status) + " " + c.Path, Sel: f && i == m.csel})
+		rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], width-4), Sel: f && i == m.csel})
 	}
 	if len(rows) == 0 {
 		rows = append(rows, row{Text: th.FG(theme.Dim, "  no changes yet")})
 	}
 	title := m.panelTitle(3, m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes)), curName, f)
-	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
+	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, footer: m.changesFooter(cur), focused: f})
 }
 
 func pickTag(pk *state.Pick) string {
@@ -983,8 +985,9 @@ func (m *model) viewNarrow() []string {
 			rows = append(rows, row{Text: fit(wt.Branch, 20) + th.FG(theme.Dim, fmt.Sprintf(":%d", wt.Port)), Sel: f && i == m.wsel})
 		}
 	case 2:
+		peers := filePeers(m.current())
 		for i, c := range m.changes {
-			rows = append(rows, row{Text: c.Status + " " + c.Path, Sel: f && i == m.csel})
+			rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], m.width-4), Sel: f && i == m.csel})
 		}
 	}
 	if m.narrowTab == 0 && len(rows) > topH-2 {
