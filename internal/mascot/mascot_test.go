@@ -55,9 +55,6 @@ func TestShapes(t *testing.T) {
 	if got := plain(Options{Glyphs: "ascii"}).Line("0 0"); got != "(0 0)" {
 		t.Errorf("ascii line=%q", got)
 	}
-	if got := plain(Options{}).Small("● ●"); got[1] != "█●●█" {
-		t.Errorf("small=%q", got)
-	}
 }
 
 func TestEyesAndCells(t *testing.T) {
@@ -94,23 +91,24 @@ func TestColorOverride(t *testing.T) {
 	}
 }
 
-func TestCupWidths(t *testing.T) {
-	r := plain(Options{})
-	for n := 0; n <= 6; n++ {
-		var ps []string
-		for i := 0; i < n; i++ {
-			ps = append(ps, "● ●")
-		}
-		rows := r.Cup(ps, nil, nil)
-		wd := ansi.StringWidth(rows[1])
-		for i, l := range rows {
-			if ansi.StringWidth(l) != wd {
-				t.Errorf("n=%d row %d width %d != %d: %q", n, i, ansi.StringWidth(l), wd, l)
-			}
-		}
-		if got := strings.Count(rows[4], "●●"); got != min(n, 5) {
-			t.Errorf("n=%d pearls=%d", n, got)
-		}
+// Banner is tapi alone: the 3-line face and its text, nothing around it.
+func TestBanner(t *testing.T) {
+	r := plain(Options{Shape: "round"})
+	got := r.Banner("● ●", []string{"boba", "", "x", "4th"})
+	want := []string{"🬞🬹🬹🬹🬏    boba", "█● ●█", "🬁🬎🬎🬎🬀    x", "         4th"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if got := r.Banner("● ●", nil); strings.Join(got, "\n") != strings.Join(r.Big("● ●"), "\n") {
+		t.Errorf("no text: %q", got)
+	}
+}
+
+// An old config may still set colors.tea (the cup's tea): ignored, no error.
+func TestOldTeaColorIgnored(t *testing.T) {
+	r := New(Options{Colors: map[string]string{"tea": "#000000"}})
+	if r.pal != PaletteDark {
+		t.Fatalf("pal=%+v", r.pal)
 	}
 }
 

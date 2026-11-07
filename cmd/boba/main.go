@@ -120,8 +120,8 @@ func main() {
 	die(err)
 }
 
-// helpCup is tapi's cup on top of `boba --help` (a still image).
-func helpCup() string {
+// helpTapi is tapi on top of `boba --help` (a still image).
+func helpTapi() string {
 	g, err := config.LoadGlobal()
 	if err != nil {
 		g = &config.Global{}
@@ -133,13 +133,12 @@ func helpCup() string {
 		Light:  g.Mascot.LightPalette(),
 		Colors: g.Mascot.Colors,
 	})
-	pearls := []string{r.Eyes(mascot.Work), r.Eyes(mascot.Wait), r.Eyes(mascot.Done)}
 	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
-	return strings.Join(r.Cup(pearls, text, nil), "\n") + "\n"
+	return strings.Join(r.Banner(r.Eyes(mascot.Work), text), "\n") + "\n"
 }
 
 func usage() {
-	fmt.Print(helpCup())
+	fmt.Print(helpTapi())
 	fmt.Print(`
 
   boba                         open the TUI
