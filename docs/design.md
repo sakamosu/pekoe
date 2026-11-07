@@ -195,7 +195,15 @@ boba は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 
 **実装** — TypeScript。WXT か素の MV3。デベロッパーモードで「パッケージ化されていない拡張機能を読み込む」でストア不要。拡張は数百行に抑え、賢さはデーモン側に置いて拡張の更新頻度を下げる。
 
-## Neovim プラグイン
+## ブラウザプレビュー(TUI 内)
+
+UI の変更を確かめるためだけに Chrome へ移らなくて済むように、dev server の画面をメインパネルの preview 窓に出す。拡張のピックが「変更を頼む側」なら、プレビューは「結果を確かめる側」。
+
+- **撮影はデーモン** — bobad が headless Chrome(`/Applications/Google Chrome.app`、`$BOBA_CHROME` で差し替え)で `http://localhost:<port><path>` を撮る。`--remote-debugging-pipe` 上の DevTools プロトコルを直接話す(fd 3/4 の NUL 区切り JSON なので websocket も追加の依存も要らない)。`--screenshot` の一発撮りにしないのは、新しい headless モードの窓幅が最小 500px でモバイル幅が再現できないため。CDP の `Emulation.setDeviceMetricsOverride` なら 390×844・DPR 2・viewport meta 有効の本物のモバイル幅になり、load イベントも待てる。1 枚ごとに使い捨てのプロファイルで起動する(キャッシュが残らず、普段の Chrome とぶつからない)
+- **自動の撮り直し** — preview 窓を開いているセッションで、エージェントが手を止めたとき(running → waiting / idle / done)に撮り直す。ポートで何も待ち受けていなければ撮らずに「dev server is not running · d to start」と出す
+- **before / after** — 撮り直すたびに 1 つ前の画像を before として残す(それより古いものは消す)。最後に撮ったパスとモバイル切替はセッションごとに覚える
+- **表示は TUI** — Kitty graphics の Unicode プレースホルダで、パネルに収まる最大の大きさに縦横比を保って描く。画面サイズの変更・セッション切替・窓を閉じたときは、使わなくなった画像を削除コマンド(`a=d,d=I`)で消してから送り直す。非対応端末では画像の大きさの破線枠に `after 1280×800 · png` と書く
+
 
 Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュー面と日常の小技の両方を担う。boba が起動した nvim も普段の nvim も同じプラグインが同じデーモンに繋がるので、区別はない。
 
@@ -242,6 +250,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | --- | --- | --- |
 | リポジトリごとの設定 | `~/.config/boba/repos/<repo-id>.toml` | repo-id は origin URL の正規化。clone し直しても同じ設定が当たる |
 | 言語別の既定値 | `~/.config/boba/defaults/*.toml` | `boba init` の検出ルール。自分で書き換えられる |
+| プレビューのスクショ | `~/.local/share/boba/<repo-id>/preview/<slug>/` | after と before の 2 枚と、最後のパス・モバイル切替(`preview.json`) |
 | 要素情報(picks)・スクショ | `~/.local/share/boba/<repo-id>/picks/` | pty には絶対パスで `@` 参照を貼る。worktree 内に置きたければ `.git/info/exclude` に `.boba/` を追記(コミット対象外、worktree 間で共有) |
 | プロンプト単位スナップショット | `refs/boba/<slug>/prompt-<n>` | 通常の push では送られず `git log` にも出ない |
 | レビュー地点 | `refs/boba/<slug>/review-<n>` | 同上 |
@@ -282,6 +291,8 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `]r` | 次のレビュー待ち |
 | `r` | レビュー面(nvim)を開く |
 | `b` | その worktree のポートを Chrome で開く |
+| `v` | preview 窓(dev server のスクショを TUI 内に表示)。メインパネルでは agent → preview → dev → agent と巡る |
+| preview 窓で `R` `m` `c` `g` `o` / Esc | 撮り直す / デスクトップ・モバイル切替 / before・after(幅があれば横並び) / パスを入力 / Chrome で開く / agent 窓に戻る |
 | `l` | land |
 | `d` | dev server 起動 / 停止 |
 | `x` | セッション終了(worktree は残す) |

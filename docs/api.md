@@ -102,6 +102,23 @@
 | `window.kill` | `{slug, window: "review"\|"dev"}` | レビュー面 / dev server のウィンドウを閉じる |
 | `browser.send_errors` | `{port, slug?}` | 溜まった console error をセッションに送る |
 | `ext.info` | — | `{port, token}`(`boba ext`) |
+| `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
+| `preview.get` | `{slug}` | `Preview` |
+| `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
+
+### Preview オブジェクト
+
+```jsonc
+{
+  "slug": "feat-x", "port": 3001, "path": "/settings", "mobile": false,
+  "width": 1280, "height": 800,          // 次に撮るビューポート(CSS px)
+  "after":  {"file": "~/.local/share/boba/<repo-id>/preview/feat-x/shot-7.png", "width": 1280, "height": 800, "path": "/settings", "mobile": false, "at": "..."},
+  "before": {"file": ".../shot-6.png", ...},   // 1 つ前。これより古いものは消す
+  "n": 7, "busy": false,
+  "error": "dev server is not running · d to start",
+  "watch": true, "rev": 42
+}
+```
 
 ### Review オブジェクト
 
@@ -133,6 +150,7 @@
 | `review.updated` | `{slug}` |
 | `review.answer` | `{slug, hunk_id, text}` |
 | `pick.received` | `Pick` |
+| `preview.updated` | `Preview`(撮影開始・完了・失敗のたび。`rev` の小さいものは古い) |
 | `browser.updated` | `[tabs]` |
 | `editor.open` | `{path, line, note, slug}` |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
