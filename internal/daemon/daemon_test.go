@@ -350,6 +350,37 @@ func TestReviewAsk(t *testing.T) {
 	}
 }
 
+// Closing the review surface without sending anything leaves reviewing;
+// unsent comments keep the session in review.
+func TestReviewEnd(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	event(t, d, "UserPromptSubmit", "main", map[string]any{"prompt": "edit"})
+	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("1\nX\n3\n"), 0o644)
+	stop(t, d, "main", map[string]any{})
+
+	call[any](t, d, "review.start", map[string]any{"slug": "main"})
+	call[any](t, d, "review.end", map[string]any{"slug": "main"})
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.State != state.Done {
+		t.Fatalf("closing an untouched review must go back to done, got %s", s.State)
+	}
+
+	call[any](t, d, "review.start", map[string]any{"slug": "main"})
+	call[any](t, d, "review.comment", map[string]any{"slug": "main", "path": "a.txt", "line": 2, "text": "why?"})
+	call[any](t, d, "review.end", map[string]any{"slug": "main"})
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.State != state.Reviewing {
+		t.Fatalf("unsent comments must keep the session in review, got %s", s.State)
+	}
+
+	// leaving the nvim surface ends the review the same way
+	rv := call[ReviewView](t, d, "review.files", map[string]any{"slug": "main"})
+	call[any](t, d, "review.comment.delete", map[string]any{"slug": "main", "id": rv.Comments[0].ID})
+	call[any](t, d, "window.kill", map[string]any{"slug": "main", "window": "review"})
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.State != state.Done {
+		t.Fatalf("killing the review window must end the review, got %s", s.State)
+	}
+}
+
 // stop sends a Stop hook and waits for its (asynchronous) handling.
 func stop(t *testing.T, d *Daemon, slug string, payload map[string]any) {
 	t.Helper()

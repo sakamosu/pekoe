@@ -343,6 +343,7 @@ func (d *Daemon) registerHandlers() {
 		"dev.toggle":            bind(d.hDevToggle),
 		"changes":               bind(d.hChanges),
 		"review.start":          bind(d.hReviewStart),
+		"review.end":            bind(d.hReviewEnd),
 		"review.files":          bind(d.hReviewFiles),
 		"review.approve":        bind(func(p hunkP) (any, error) { return d.setHunk(p, "approved") }),
 		"review.unapprove":      bind(func(p hunkP) (any, error) { return d.setHunk(p, "") }),

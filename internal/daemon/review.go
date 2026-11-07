@@ -54,6 +54,29 @@ func (d *Daemon) hReviewStart(p slugP) (any, error) {
 	})
 }
 
+// hReviewEnd is called when a review surface closes. With nothing left to
+// send, the session goes back to done (or approved); unsent comments keep it
+// in reviewing so the pending review stays visible.
+func (d *Daemon) hReviewEnd(p slugP) (any, error) {
+	comments, err := d.DB.Comments(p.Slug, true)
+	if err != nil {
+		return nil, err
+	}
+	if len(comments) > 0 {
+		return d.snapshot(p.Slug)
+	}
+	s, err := d.update(p.Slug, func(s *state.Session) {
+		if s.State == state.Reviewing {
+			s.State = state.Done
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	d.checkAllApproved(p.Slug)
+	return s, nil
+}
+
 type PromptRef struct {
 	N    int    `json:"n"`
 	Text string `json:"text"`

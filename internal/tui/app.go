@@ -472,8 +472,12 @@ func (m *model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyMsg, tea.MouseMsg, reviewMsg, reviewAnswerMsg, errMsg, infoMsg, modalDoneMsg:
 			cmd, done := m.review.update(msg)
 			if done {
+				slug := m.review.slug
 				m.review = nil
-				return m, tea.Batch(cmd, m.loadSessions(), m.fetchScreen())
+				return m, tea.Batch(cmd, func() tea.Msg {
+					_ = m.cl.Call("review.end", map[string]any{"slug": slug}, nil)
+					return nil
+				}, m.loadSessions(), m.fetchScreen())
 			}
 			return m, cmd
 		case evMsg:

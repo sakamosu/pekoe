@@ -150,7 +150,7 @@ async def handle_req(method, params, writer):
         return None
     if method == "test.log":
         return state["log"]
-    if method in ("review.start", "session.send", "session.answer", "session.new"):
+    if method in ("review.start", "review.end", "session.send", "session.answer", "session.new"):
         return None
     raise KeyError("unknown method: %s" % method)
 
