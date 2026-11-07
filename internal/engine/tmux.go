@@ -375,11 +375,16 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 		return nil, fmt.Errorf("no %s window for %s", window, slug)
 	}
 	tg := t.target(slug, window)
-	info, err := t.run("display-message", "-p", "-t", tg,
-		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size}")
+	// カーソル情報と画面の中身は 1 回の呼び出し(";" 区切りのコマンド列)で取る。
+	// 別プロセスで順に取ると、その間に pane が書き換わり(Backspace 長押しなど)
+	// カーソル位置と文字列が食い違って、描いたカーソルが揺れる。
+	all, err := t.run("display-message", "-p", "-t", tg,
+		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size}",
+		";", "capture-pane", "-p", "-e", "-t", tg)
 	if err != nil {
 		return nil, err
 	}
+	info, out, _ := strings.Cut(all, "\n")
 	f := strings.Fields(info)
 	if len(f) < 9 {
 		return nil, fmt.Errorf("tmux: unexpected display output %q", info)
@@ -394,10 +399,6 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 	sc.MouseAny = f[6] == "1"
 	sc.Dead = f[7] == "1"
 	sc.History, _ = strconv.Atoi(f[8])
-	out, err := t.run("capture-pane", "-p", "-e", "-t", tg)
-	if err != nil {
-		return nil, err
-	}
 	sc.Lines = strings.Split(out, "\n")
 	for len(sc.Lines) < sc.Height {
 		sc.Lines = append(sc.Lines, "")
