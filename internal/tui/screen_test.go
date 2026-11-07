@@ -18,6 +18,33 @@ func screenModel(t *testing.T) *model {
 	return m
 }
 
+// A window spawned at a size the pane doesn't have (`boba new` from an agent,
+// no terminal → 67x37) is resized to the pane once it is shown, once.
+func TestFitScreenResizesMismatchedWindow(t *testing.T) {
+	m := screenModel(t)
+	aw, ah := m.agentSize()
+	if aw != 161 || ah != 57 {
+		t.Fatalf("agentSize = %dx%d, want 161x57", aw, ah)
+	}
+	small := &engine.Screen{Width: 67, Height: 37}
+	if m.fitScreen("a", engine.WinAgent, small) == nil {
+		t.Fatal("67x37 window in a 161x57 pane should be resized")
+	}
+	if m.fitScreen("a", engine.WinAgent, small) != nil {
+		t.Fatal("the same mismatch must not be re-requested every frame")
+	}
+	if m.fitScreen("a", engine.WinAgent, &engine.Screen{Width: aw, Height: ah}) != nil {
+		t.Fatal("a window that already fits needs no resize")
+	}
+	if m.fitScreen("a", engine.WinAgent, &engine.Screen{Width: 67, Height: 37, Dead: true}) != nil {
+		t.Fatal("a dead pane is left alone")
+	}
+	m.width = 180 // the terminal changed: the new pane size is asked for again
+	if m.fitScreen("a", engine.WinAgent, small) == nil {
+		t.Fatal("a new pane size should be requested")
+	}
+}
+
 // Claude Code paints full-width backgrounds (header, prompt, headings) with
 // "set bg + erase line"; capture-pane -e returns that as a trailing open SGR.
 // It must not leak past the text into the padding and the right border.
