@@ -559,9 +559,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msg = ""
 		}
 		cmds = append(cmds, m.maybePermission(), m.escalate())
-		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
-			m.tapi.toast = nil
-		}
+		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
 	case spinMsg:
