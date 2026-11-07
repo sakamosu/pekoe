@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"boba/internal/state"
 )
@@ -191,6 +193,25 @@ func TestNoSpaceAfterEyes(t *testing.T) {
 		if p := ansi.Strip(f); strings.Contains(p, " ") {
 			t.Errorf("space in face %q", p)
 		}
+	}
+}
+
+// With no color to paint (a pipe, NO_COLOR) the eye gap stays a space:
+// a bare '█' would black out the eyes.
+func TestEyeGapWithoutColor(t *testing.T) {
+	prev := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+	lipgloss.SetColorProfile(termenv.Ascii)
+	for _, g := range []string{"unicode", "narrow"} {
+		r := New(Options{Shape: "round", Glyphs: g})
+		eyes := r.Eyes(Work)
+		if mid := ansi.Strip(r.Big(eyes)[1]); !strings.Contains(mid, eyes) {
+			t.Errorf("%s: middle row %q, want eyes %q with a space gap", g, mid, eyes)
+		}
+	}
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	if r := New(Options{Shape: "round"}); r.noColor {
+		t.Error("TrueColor profile should paint")
 	}
 }
 

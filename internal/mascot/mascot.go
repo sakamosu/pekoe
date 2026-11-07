@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 //go:embed tapi.json
@@ -152,8 +153,12 @@ type Renderer struct {
 	noColor       bool
 }
 
+// New makes a renderer. It is also colorless when lipgloss won't emit color
+// (a pipe, NO_COLOR): the eye gap is otherwise a block that only reads as
+// face color with a background behind it.
 func New(o Options) *Renderer {
-	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteDark, acc: accentDark, dim: o.Dim, noColor: o.NoColor}
+	noColor := o.NoColor || lipgloss.ColorProfile() == termenv.Ascii
+	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteDark, acc: accentDark, dim: o.Dim, noColor: noColor}
 	if o.Light {
 		r.pal, r.acc = PaletteLight, accentLight
 	}
