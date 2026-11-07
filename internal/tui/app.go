@@ -90,7 +90,8 @@ type model struct {
 	sub2      int // 0 worktrees, 1 browser
 	sub3      int // 0 changes, 1 picks
 	typing    bool
-	window    string // agent | review | dev shown in the main panel
+	guard     mouseGuard // reassembles mouse reports split across reads
+	window    string     // agent | review | dev shown in the main panel
 
 	screen     *engine.Screen
 	screenOf   string
@@ -431,6 +432,34 @@ const (
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.markSeen()
+	// every key passes the mouse guard first, whichever screen handles it
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		keys, wait := m.guard.feed(msg)
+		cmd := m.routeKeys(keys)
+		if wait {
+			cmd = tea.Batch(cmd, guardTick(m.guard.gen))
+		}
+		return m, cmd
+	case guardFlushMsg:
+		return m, m.routeKeys(m.guard.flush(int(msg)))
+	}
+	return m.route(msg)
+}
+
+func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, k := range keys {
+		_, c := m.route(k)
+		cmds = append(cmds, c)
+	}
+	if len(cmds) == 1 {
+		return cmds[0]
+	}
+	return tea.Sequence(cmds...)
+}
+
+func (m *model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.tapiUpdate(msg); ok {
 		return m, cmd
 	}
