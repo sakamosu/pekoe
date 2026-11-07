@@ -550,7 +550,10 @@ func (m *model) screenRows(cw, ch int) []row {
 	}
 	rows := make([]row, 0, len(lines))
 	for _, l := range lines {
-		rows = append(rows, row{Text: clip(l, cw)})
+		// capture-pane -e leaves the last SGR open (an agent's full-width
+		// background is "set bg + erase line", not cells), so the padding,
+		// the border and whatever follows would inherit it: close it here.
+		rows = append(rows, row{Text: clip(l, cw) + "\x1b[0m"})
 	}
 	return rows
 }

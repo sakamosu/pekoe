@@ -19,14 +19,15 @@ import (
 
 // fakeEngine records what would be written to the pty.
 type fakeEngine struct {
-	mu   sync.Mutex
-	sent []string
-	wins map[string]bool
-	out  chan engine.Output
+	mu    sync.Mutex
+	sent  []string
+	wins  map[string]bool
+	sizes map[string][2]int // window -> pty size: spawn, then resizes
+	out   chan engine.Output
 }
 
 func newFake() *fakeEngine {
-	return &fakeEngine{wins: map[string]bool{}, out: make(chan engine.Output, 16)}
+	return &fakeEngine{wins: map[string]bool{}, sizes: map[string][2]int{}, out: make(chan engine.Output, 16)}
 }
 
 func (f *fakeEngine) Start() error { return nil }
@@ -34,6 +35,7 @@ func (f *fakeEngine) Spawn(s engine.Spawn) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wins[s.Slug+"~"+s.Window] = true
+	f.sizes[s.Slug+"~"+s.Window] = [2]int{s.Width, s.Height}
 	f.sent = append(f.sent, "spawn:"+s.Window+":"+s.Command)
 	return nil
 }
@@ -65,7 +67,19 @@ func (f *fakeEngine) SendHex(slug, w string, h []string) error {
 func (f *fakeEngine) Capture(slug, w string) (*engine.Screen, error) {
 	return &engine.Screen{Lines: []string{"x"}, Width: 80, Height: 24}, nil
 }
-func (f *fakeEngine) Resize(string, string, int, int) error { return nil }
+func (f *fakeEngine) Resize(slug, win string, w, h int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.wins[slug+"~"+win] {
+		f.sizes[slug+"~"+win] = [2]int{w, h}
+	}
+	return nil
+}
+func (f *fakeEngine) size(slug, win string) [2]int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sizes[slug+"~"+win]
+}
 func (f *fakeEngine) Kill(slug, w string) error {
 	f.mu.Lock()
 	delete(f.wins, slug+"~"+w)
@@ -430,5 +444,28 @@ func TestNewRefusesRepoWithoutCommits(t *testing.T) {
 	}
 	if ss, _ := d.DB.Sessions(); len(ss) != 0 {
 		t.Fatal("no session must be created")
+	}
+}
+
+// The CLI run by an agent has no terminal and sends 0x0: the agent must then
+// start at the TUI's pane size, not a guess the pane would show it narrower
+// than (or overflowing) its border.
+func TestSpawnSizeFollowsTUIPane(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	if got := fe.size(s.Slug, engine.WinAgent); got != [2]int{120, 40} {
+		t.Fatalf("no TUI yet: spawned %v, want the 120x40 fallback", got)
+	}
+	call[any](t, d, "session.resize", map[string]any{"slug": "*", "width": 161, "height": 57})
+	if got := fe.size(s.Slug, engine.WinAgent); got != [2]int{161, 57} {
+		t.Fatalf("resize *: %v", got)
+	}
+	call[any](t, d, "session.restart", map[string]any{"slug": s.Slug})
+	if got := fe.size(s.Slug, engine.WinAgent); got != [2]int{161, 57} {
+		t.Fatalf("size-less spawn after the TUI reported its pane: %v, want 161x57", got)
+	}
+	call[any](t, d, "session.restart", map[string]any{"slug": s.Slug, "width": 90, "height": 30})
+	if got := fe.size(s.Slug, engine.WinAgent); got != [2]int{90, 30} {
+		t.Fatalf("an explicit size wins: %v", got)
 	}
 }

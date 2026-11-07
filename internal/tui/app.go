@@ -70,6 +70,7 @@ type model struct {
 
 	width, height int
 	frame         int
+	fitReq        string // last pty-resize request fitScreen sent (dedupes)
 
 	sessions []*state.Session
 	sel      int
@@ -126,11 +127,20 @@ type model struct {
 }
 
 func TermSize() (int, int) {
-	w, h, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil {
-		return 120, 40
+	if w, h, ok := TermSizeOK(); ok {
+		return w, h
 	}
-	return w, h
+	return 120, 40
+}
+
+// TermSizeOK reports stdout's terminal size; ok is false when stdout is not a
+// terminal.
+func TermSizeOK() (int, int, bool) {
+	w, h, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 // leftWidth: 40% of the terminal (between 34 and 56 columns).
@@ -306,6 +316,30 @@ func (m *model) resizeAll() tea.Cmd {
 	aw, ah := m.agentSize()
 	return func() tea.Msg {
 		_ = m.cl.Call("session.resize", map[string]any{"slug": "*", "width": aw, "height": ah}, nil)
+		return nil
+	}
+}
+
+// fitScreen resizes the shown window's pty when it doesn't match the pane.
+// resizeAll only runs at start and on terminal resizes, so a window spawned
+// later by someone who didn't know the pane size (`boba new` run by an
+// agent, whose stdout isn't a terminal) would otherwise keep its size: the
+// agent wraps narrower than the pane, or paints past its border.
+func (m *model) fitScreen(slug, window string, sc *engine.Screen) tea.Cmd {
+	aw, ah := m.agentSize()
+	if sc == nil || sc.Dead || sc.Width <= 0 || sc.Height <= 0 || (sc.Width == aw && sc.Height == ah) {
+		return nil
+	}
+	key := fmt.Sprintf("%s\x00%s\x00%dx%d>%dx%d", slug, window, sc.Width, sc.Height, aw, ah)
+	if m.fitReq == key {
+		return nil // already asked; wait for tmux to apply it
+	}
+	m.fitReq = key
+	return func() tea.Msg {
+		if m.cl == nil {
+			return nil
+		}
+		_ = m.cl.Call("session.resize", map[string]any{"slug": slug, "window": window, "width": aw, "height": ah}, nil)
 		return nil
 	}
 }
@@ -607,6 +641,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		m.screen, m.screenOf = msg.sc, msg.slug
+		cmd = tea.Batch(cmd, m.fitScreen(msg.slug, msg.window, msg.sc))
 		if msg.window == engine.WinReview && msg.sc.Dead {
 			// nvim exited (:BobaSend → :qa): back to the agent screen
 			slug := s.Slug
