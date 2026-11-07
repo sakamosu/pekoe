@@ -34,3 +34,16 @@ func TestWithCursorMarksPosition(t *testing.T) {
 		t.Fatalf("got x=%d ok=%v, want 2", x, ok)
 	}
 }
+
+// 全角文字の上のカーソルは、その文字を丸ごと反転し、行の幅を変えない。
+func TestWithCursorWideChar(t *testing.T) {
+	line := "❯ １２３４５６"
+	got := withCursor(line, 10)
+	want := "❯ １２３４" + cursorMark + "\x1b[7m５\x1b[27m６"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if w(got) != w(line) {
+		t.Fatalf("width changed: %d -> %d", w(line), w(got))
+	}
+}
