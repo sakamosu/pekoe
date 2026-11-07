@@ -473,6 +473,12 @@ func (m *model) viewAgent(width, height int) []string {
 		}
 		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Idle, caption, ""), focused: f})
 	}
+	return m.box(width, height, boxOpt{title: title, right: right, rows: m.agentRows(cw, ch), focused: f, bottom: true})
+}
+
+// agentRows is the body of the agent panel as drawn: the pty screen with the
+// pick card at the bottom. Rows are bottom-aligned in a ch-tall body.
+func (m *model) agentRows(cw, ch int) []row {
 	rows := m.screenRows(cw, ch)
 	// a card from outside (Chrome pick) sits inside the pane, at the bottom
 	if card := m.pickCard(cw); len(card) > 0 {
@@ -482,10 +488,7 @@ func (m *model) viewAgent(width, height int) []string {
 		}
 		rows = append(rows, card...)
 	}
-	if a, ok := m.answers[s.Slug]; ok && a != "" && m.window == engine.WinAgent {
-		_ = a // answers are shown in the review surface
-	}
-	return m.box(width, height, boxOpt{title: title, right: right, rows: rows, focused: f, bottom: true})
+	return rows
 }
 
 // screenRows renders the captured pty screen with the cursor (when typing)
