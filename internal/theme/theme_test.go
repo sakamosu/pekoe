@@ -1,6 +1,7 @@
 package theme
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -86,5 +87,35 @@ func TestPRLookDistinct(t *testing.T) {
 		if _, ok := PRLook(ic, &state.PRStatus{State: "OPEN"}); ok {
 			t.Errorf("%s: nothing to show for a PR without checks or reviews", set)
 		}
+	}
+}
+
+// auto colors only when stdout is a terminal: `boba issues | cat` must not
+// leak escape codes, while an explicit mode still wins.
+func TestAutoModeFollowsStdoutTerminal(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	os.Unsetenv("NO_COLOR")
+	t.Setenv("BOBA_COLOR", "")
+	t.Setenv("COLORTERM", "truecolor")
+	prev := StdoutIsTerminal
+	t.Cleanup(func() { StdoutIsTerminal = prev })
+
+	StdoutIsTerminal = func() bool { return false }
+	if m := DetectMode("auto"); m != None {
+		t.Fatalf("pipe: mode = %s, want none", m)
+	}
+	if s := Load(nil).FG(Dim, "3c"); strings.Contains(s, "\x1b") {
+		t.Fatalf("pipe: escape code in %q", s)
+	}
+	if m := DetectMode("truecolor"); m != Truecolor {
+		t.Fatalf("pipe: explicit mode ignored, got %s", m)
+	}
+
+	StdoutIsTerminal = func() bool { return true }
+	if m := DetectMode("auto"); m != Truecolor {
+		t.Fatalf("terminal: mode = %s, want truecolor", m)
+	}
+	if s := Load(nil).FG(Dim, "3c"); !strings.Contains(s, "\x1b[") {
+		t.Fatalf("terminal: no color in %q", s)
 	}
 }

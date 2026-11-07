@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"golang.org/x/term"
 
 	"boba/internal/config"
 	"boba/internal/state"
@@ -54,13 +55,21 @@ type Theme struct {
 	ramp   *ramp // focus-border gradient; nil ⇒ solid primary
 }
 
-// DetectMode: auto → NO_COLOR ⇒ none, COLORTERM=truecolor|24bit ⇒ truecolor, else ansi.
+// StdoutIsTerminal decides whether auto mode may color. A variable so tests
+// can pretend either way.
+var StdoutIsTerminal = func() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+
+// DetectMode: auto → NO_COLOR or stdout not a terminal (pipe, redirect) ⇒
+// none, COLORTERM=truecolor|24bit ⇒ truecolor, else ansi. An explicit mode wins.
 func DetectMode(m string) Mode {
 	switch m {
 	case "truecolor", "ansi", "none":
 		return Mode(m)
 	}
 	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return None
+	}
+	if !StdoutIsTerminal() {
 		return None
 	}
 	ct := strings.ToLower(os.Getenv("COLORTERM"))
