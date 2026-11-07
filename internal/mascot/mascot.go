@@ -136,7 +136,7 @@ var (
 // Options come from [mascot] in config.toml plus terminal detection.
 type Options struct {
 	Shape   string            // round | block (resolve "auto" with DetectShape first)
-	Glyphs  string            // unicode | ascii
+	Glyphs  string            // unicode | narrow | ascii
 	Light   bool              // light theme: palette E and light accents
 	Colors  map[string]string // overrides: hi bd sh eye tea
 	Dim     lipgloss.TerminalColor
@@ -176,7 +176,7 @@ func New(o Options) *Renderer {
 	if r.shape != "block" {
 		r.shape = "round"
 	}
-	if r.glyphs != "ascii" {
+	if r.glyphs != "ascii" && r.glyphs != "narrow" {
 		r.glyphs = "unicode"
 	}
 	if r.dim == nil {
@@ -247,12 +247,24 @@ func (r *Renderer) Straw(s string) string { return r.paint(s, "straw", "") }
 var asciiEyes = map[Mood]string{Idle: "o o", Work: "o o", Wait: "0 0", Done: "^ ^", Error: "x x", Sleep: "- -"}
 var asciiCell = map[Mood]string{Idle: ".", Work: "*", Wait: "?", Done: "*", Error: "x", Sleep: "."}
 
+// narrowGlyph swaps ● (East Asian Ambiguous) for ⬤ (Neutral) in narrow
+// mode. Fonts like Moralerspace JPDOC draw ambiguous glyphs two cells wide
+// while the terminal gives them one, so ● spills into the next cell; a CPR
+// can't see that, hence an explicit setting. ⬤ isn't the default because
+// Menlo / SF Mono lack it and the STIX fallback is about two cells wide.
+func (r *Renderer) narrowGlyph(s string) string {
+	if r.glyphs == "narrow" {
+		return strings.ReplaceAll(s, "●", "⬤")
+	}
+	return s
+}
+
 // Eyes returns the three eye cells for a mood ("● ●").
 func (r *Renderer) Eyes(m Mood) string {
 	if r.ASCII() {
 		return asciiEyes[m]
 	}
-	return spec.States[m].Eyes
+	return r.narrowGlyph(spec.States[m].Eyes)
 }
 
 // Blink is the closed-eye frame.
@@ -271,7 +283,7 @@ func (r *Renderer) CellGlyph(m Mood) string {
 	if r.ASCII() {
 		return asciiCell[m]
 	}
-	return spec.States[m].Cell
+	return r.narrowGlyph(spec.States[m].Cell)
 }
 
 // Cell renders the colored 1-cell dot (session list, statuslines).

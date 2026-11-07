@@ -68,6 +68,10 @@ func TestEyesAndCells(t *testing.T) {
 			t.Errorf("%s: eyes=%q cell=%q", m, r.Eyes(m), r.CellGlyph(m))
 		}
 	}
+	n := plain(Options{Glyphs: "narrow"})
+	if n.Eyes(Work) != "⬤ ⬤" || n.CellGlyph(Done) != "⬤" || n.Eyes(Error) != "⨯ ⨯" || n.ASCII() {
+		t.Errorf("narrow: work=%q done=%q error=%q", n.Eyes(Work), n.CellGlyph(Done), n.Eyes(Error))
+	}
 	a := plain(Options{Glyphs: "ascii"})
 	for _, m := range Moods {
 		for _, s := range []string{a.Eyes(m), a.CellGlyph(m)} {

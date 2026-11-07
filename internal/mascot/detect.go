@@ -42,7 +42,7 @@ func SextantTerminal() bool {
 // wide, measured with a cursor position report.
 func DetectGlyphs(cfg, icons string, tty *os.File) string {
 	switch cfg {
-	case "unicode", "ascii":
+	case "unicode", "narrow", "ascii":
 		return cfg
 	}
 	if icons == "ascii" {

@@ -160,6 +160,7 @@ wait と work の往復が日常のループで、done と error は「ユーザ
 | 六分ブロックの内蔵描画 | `TERM_PROGRAM=ghostty` / kitty / WezTerm / foot なら有効。それ以外は設定 `mascot.shape` に従う | `block`（四分ブロックの長方形） |
 | `● ◉ ◕ ⨯ ◦` の幅 | 起動時に `●` を出力して CPR（`ESC[6n`）でカーソル位置を測る。2桁進んだら曖昧幅＝広い環境 | 目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット |
 | tmux 越し | 上と同じ測定で決まる。tmux は六分ブロックを素通しするが、`◕` の幅は tmux 側の設定に依存 | 同上 |
+| 曖昧幅を全角で作ったフォント（Moralerspace JPDOC など） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す）。error と sleep は既定で中立幅の `⨯` `◦` を使うので崩れない。`●` だけが残る | 設定 `mascot.glyphs = "narrow"` で `●` を `⬤`（U+2B24、中立幅）に替える。`⬤` は Menlo / SF Mono / Apple Symbols に無く、フォールバック先の STIX では約2セル幅になるので既定にはしない |
 | 256色端末 | truecolor 非対応なら最近傍の 256 色に落とす | パレットの近似色 |
 
 検証手順（Ghostty 実機）：
@@ -171,7 +172,7 @@ wait と work の往復が日常のループで、done と error は「ユーザ
 
 ## 実装メモ
 
-コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ）。設定は `config.toml` の `[mascot]`（`shape` / `glyphs` / `palette` / `splash` / `[mascot.colors]`）。
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ）。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / narrow / ascii） / `palette` / `splash` / `[mascot.colors]`）。
 
 bobad のセッション状態との対応：
 
