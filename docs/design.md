@@ -68,6 +68,8 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 
 **左ペインの 1 行** — セッション名、状態、待ち時間、diffstat、テスト結果、ポート。例: `● feat/csv  wait 2m  +120 -8  ✓test  :3003`
 
+**衝突予報** — 並行するセッション同士が同じファイルを触っていると、左ペインの行に `⚠2`(相手の数)が出る。重なりだけなら warn、コミット済みの内容が `git merge-tree` で衝突するなら err。触っているファイルは base からの変更(コミット済み + 未コミット)と許可待ちの Edit/Write の対象で、bobad が tickLoop で 10 秒ごとに計算する。許可モーダルには「also changed in <slug>」、Changes パネルには各ファイルの相手、land の確認には衝突する相手とファイルが出る。
+
 **Attention queue** — waiting のセッションを待ち時間順に並べた行列。`]a` で次の待ちへ飛び、答えて `[a` で元の場所に戻る。複数待っていれば順に巡る。
 
 **未読ライン** — セッションから離れた時点の出力オフセットを記録し、戻ったときに「ここから先が新しい」線を引く。
@@ -193,6 +195,13 @@ boba は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 - セキュリティ: localhost の HTTP には任意の Web ページからも POST が届きうる。デーモンはインストール時に生成したトークンを要求し、Origin が `chrome-extension://` であることも確認する
 - console / network の取得: content script からは見えない。まずはページ側に小さなスクリプトを注入して `window.onerror` と `console.error` を拾う。`chrome.debugger` 権限で CDP を使う道もあるが「デバッグ中」の黄色バーが出るので後回し
 
+**エラーの拾い上げ** — dev server の窓(`d` で起動する tmux の dev 窓)の出力と、拡張が送る console error から、bobad がエラーを見つけて「このエラーを送る?」とカードで提案する。気づいてコピペする手間をなくすのが目的で、送るのは人が `s` を押したときだけ。
+
+- 検出は `internal/errcatch` の表(`Rules`)で、1 形式 1 行。ANSI を除いてから、エラーの始まりの行・続きの行(スタックやコードフレーム)・終わりの行を正規表現で判定する。複数行は次の無関係な行か、出力が 0.5 秒止まった時点で 1 件に確定する
+- 同じエラーはメッセージ(数字・アドレス・`?t=` を除く)と先頭フレーム(行番号を除く)の指紋でまとめて回数を数える。先頭フレームは worktree 内の最初のフレーム(node_modules やランタイムは飛ばす)
+- 送った・無視したものは同じ指紋が再発するまで出さない
+- 送るときは出力と、先頭フレームの前後 5 行の抜粋を `~/.local/share/boba/<repo-id>/errors/` の md に書き、pty には `@` 参照の 1 行だけ貼る(ピックと同じ)
+
 **逆方向(エージェントがブラウザを操作)** は自作しない。Chrome DevTools MCP や Playwright MCP を各セッションに繋ぐ。
 
 **実装** — TypeScript。WXT か素の MV3。デベロッパーモードで「パッケージ化されていない拡張機能を読み込む」でストア不要。拡張は数百行に抑え、賢さはデーモン側に置いて拡張の更新頻度を下げる。
@@ -244,6 +253,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | --- | --- | --- |
 | リポジトリごとの設定 | `~/.config/boba/repos/<repo-id>.toml` | repo-id は origin URL の正規化。clone し直しても同じ設定が当たる |
 | 言語別の既定値 | `~/.config/boba/defaults/*.toml` | `boba init` の検出ルール。自分で書き換えられる |
+| 送ったエラー | `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` | `boba rm` で消える |
 | 要素情報(picks)・スクショ | `~/.local/share/boba/<repo-id>/picks/` | pty には絶対パスで `@` 参照を貼る。worktree 内に置きたければ `.git/info/exclude` に `.boba/` を追記(コミット対象外、worktree 間で共有) |
 | プロンプト単位スナップショット | `refs/boba/<slug>/prompt-<n>` | 通常の push では送られず `git log` にも出ない |
 | レビュー地点 | `refs/boba/<slug>/review-<n>` | 同上 |
@@ -268,6 +278,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `boba open <worktree>` / `boba adopt` | 既存を開く / 管理下に入れる |
 | `boba ls` | セッション一覧と状態 |
 | `boba issues [--all \| --label L] [--refresh]` / `boba issues <N>` | GitHub の open issue(既定は自分担当)と、すでにあるセッション / issue の本文とコメント |
+| `boba conflicts` | 衝突予報。同じファイルを触っている open なセッションのペアと、コミット済みの内容が衝突するか(`git merge-tree`)。`--repo <repo-id>` で絞り込み |
 | `boba send <slug> <text>` | pty に文字を送る |
 | `boba event` | hooks から呼ばれる。stdin の JSON(session\_id, cwd, hook 名)をデーモンに渡す |
 | `boba review [<slug> \| gh#N]` | レビュー面を開く |
@@ -286,7 +297,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `r` | レビュー面(nvim)を開く |
 | `p` | PR ビューを開く(右ペインが PR の状態に切り替わり、左の選択に追従する。Esc で agent に戻る) |
 | `b` | その worktree のポートを Chrome で開く |
-| `l` | land |
+| `l` | land(確認に、他の open なセッションとの衝突予報を出す) |
 | `d` | dev server 起動 / 停止 |
 | `x` | セッション終了(worktree は残す) |
 | `D` | worktree 削除(確認あり) |

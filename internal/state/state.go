@@ -35,9 +35,20 @@ type Test struct {
 }
 
 type Tool struct {
-	Name    string `json:"name"`
-	Input   string `json:"input"`
-	Touches string `json:"touches,omitempty"` // file the tool will change (Edit/Write)
+	Name    string   `json:"name"`
+	Input   string   `json:"input"`
+	Touches string   `json:"touches,omitempty"` // file the tool will change (Edit/Write)
+	AlsoIn  []string `json:"also_in,omitempty"` // other open sessions that already changed Touches
+}
+
+// Overlap is a conflict forecast against another open session of the same
+// repository: both touch Files. Conflict means their committed contents do
+// not merge (git merge-tree); uncommitted work only counts as overlap.
+type Overlap struct {
+	Slug          string   `json:"slug"`
+	Files         []string `json:"files"`
+	Conflict      bool     `json:"conflict,omitempty"`
+	ConflictFiles []string `json:"conflict_files,omitempty"`
 }
 
 type Stat struct {
@@ -120,6 +131,7 @@ type Session struct {
 	Stopped         bool      `json:"stopped,omitempty"`    // ended with x; do not auto-resume
 	SeenLines       int       `json:"seen_lines,omitempty"` // absolute line offset when the user left
 	Env             []string  `json:"env,omitempty"`
+	Overlaps        []Overlap `json:"overlaps,omitempty"` // conflict forecast (daemon/conflicts.go)
 }
 
 type DB struct {

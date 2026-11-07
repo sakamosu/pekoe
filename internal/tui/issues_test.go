@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"boba/internal/daemon"
+	"boba/internal/errcatch"
 	"boba/internal/state"
 	"boba/internal/theme"
 )
@@ -317,5 +318,21 @@ func TestIssueOverPRView(t *testing.T) {
 	m.openPR()
 	if m.iss.open {
 		t.Fatal("opening the PR view closes the issue")
+	}
+}
+
+// A pending error card (s / i / ↵) must not take keys while an issue is read.
+func TestIssueKeysBeatErrorCard(t *testing.T) {
+	m := issueModel(t, "none", 160)
+	m.sel = 0 // fix-login-safari, which works on #12
+	m.errs = []errcatch.Report{{Slug: "fix-login-safari", Status: errcatch.StatusNew, First: time.Now()}}
+	if m.pendingError() == nil {
+		t.Fatal("test setup: expected a pending error card")
+	}
+	m.focus, m.sub2 = pAgent, subIssues
+	m.iss.open = true
+	m.onKey(key("enter"))
+	if m.iss.open || m.focus != pSessions {
+		t.Fatalf("↵ should jump to the issue's session, got open=%v focus=%d", m.iss.open, m.focus)
 	}
 }

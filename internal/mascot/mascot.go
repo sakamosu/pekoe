@@ -79,6 +79,8 @@ type Spec struct {
 	Palette map[string]string `json:"palette"`
 	Sprites map[string]Sprite `json:"sprites"`
 	States  map[Mood]StateDef `json:"states"`
+	// Reactions: faces and lines for PR / CI changes (pr.go)
+	Reactions map[PREvent]ReactionDef `json:"reactions"`
 }
 
 var spec = func() *Spec {

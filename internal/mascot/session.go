@@ -65,6 +65,9 @@ type Summary struct {
 	Total int
 	// Since: oldest StateSince among the sessions in Mood (wait escalation)
 	Since time.Time
+	// Cloudy: open PRs with a failing check ("fix-ci #42"). Only shown
+	// while the face is idle, as hollow eyes and a short tail on the speech.
+	Cloudy []string
 }
 
 // Aggregate picks the most urgent mood across all sessions, regardless of
@@ -130,8 +133,17 @@ func (s Summary) Speech() string {
 	if s.Total == 0 {
 		return "no sessions"
 	}
-	return "idle"
+	switch len(s.Cloudy) {
+	case 0:
+		return "idle"
+	case 1:
+		return "idle · " + s.Cloudy[0] + " ci red"
+	}
+	return fmt.Sprintf("idle · %d prs ci red", len(s.Cloudy))
 }
+
+// IsCloudy: the idle face clouds over while some open PR is red.
+func (s Summary) IsCloudy() bool { return s.Mood == Idle && len(s.Cloudy) > 0 }
 
 // SessionSpeech is the toast line for one session.
 func SessionSpeech(s *state.Session) string {

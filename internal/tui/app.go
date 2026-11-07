@@ -20,6 +20,7 @@ import (
 	"boba/internal/config"
 	"boba/internal/daemon"
 	"boba/internal/engine"
+	"boba/internal/errcatch"
 	"boba/internal/state"
 	"boba/internal/theme"
 )
@@ -85,7 +86,8 @@ type model struct {
 	tabs      []daemon.Tab
 	tsel      int
 	picks     []*state.Pick
-	psel      int
+	psel      int               // over picks, then errs (Picks panel)
+	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
 	focus     int
 	narrowTab int // < 100 columns: index into narrowTabs
@@ -221,7 +223,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
@@ -574,9 +576,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.prFollow())
 		}
 		cmds = append(cmds, m.maybePermission(), m.escalate())
-		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
-			m.tapi.toast = nil
-		}
+		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
 	case spinMsg:
@@ -642,6 +642,16 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.picks = msg
 		m.ensurePickInput()
 		return m, m.sendPickImages()
+
+	case errsMsg:
+		m.errs = msg
+		return m, nil
+
+	case errDetailMsg:
+		if em, ok := m.modal.(*errModal); ok && em.r.ID == msg.id {
+			em.excerpt = msg.excerpt
+		}
+		return m, nil
 
 	case screenMsg:
 		m.fetching = false
@@ -840,6 +850,8 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 			m.setMsg(fmt.Sprintf("pick #%04d from Chrome", pk.ID), false)
 		}
 		return tea.Batch(cmds...)
+	case "error.updated":
+		return m.onErrorEvent(ev.Data)
 	case "browser.updated":
 		var ts []daemon.Tab
 		if json.Unmarshal(ev.Data, &ts) == nil {
@@ -965,6 +977,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	}
 	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() {
 		if cmd, used := m.pickKey(k); used {
+			return cmd
+		}
+	}
+	if m.focus == pAgent && m.bracket == "" && !m.issueShown() {
+		if cmd, used := m.errorKey(k.String()); used {
 			return cmd
 		}
 	}
@@ -1219,7 +1236,7 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 				}
 				return infoMsg("landed " + s.Slug)
 			}
-		}).about(s.Branch)
+		}).about(s.Branch).note(m.landNotes(s))
 	case "d":
 		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server toggled · :"+fmt.Sprint(s.Port))
 	case "x":
@@ -1328,12 +1345,22 @@ func (m *model) keyBrowser(key string) tea.Cmd {
 }
 
 func (m *model) keyPicks(key string) tea.Cmd {
+	if r := m.selectedError(); r != nil {
+		switch key {
+		case "enter":
+			return tea.Batch(m.selectSlug(r.Slug), m.openErrorDetail(*r))
+		case "s":
+			return m.sendError(*r)
+		case "i", "d", "x":
+			return m.ignoreError(*r)
+		}
+	}
 	pk := m.selectedPick()
 	switch key {
 	case "j", "down":
-		m.move(&m.psel, len(m.picks), 1)
+		m.move(&m.psel, m.thirdCount(), 1)
 	case "k", "up":
-		m.move(&m.psel, len(m.picks), -1)
+		m.move(&m.psel, m.thirdCount(), -1)
 	case "enter":
 		if pk != nil && !pk.Sent {
 			m.focus = pAgent

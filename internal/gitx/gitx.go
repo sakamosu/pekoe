@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -520,4 +521,71 @@ func AddExclude(dir, pattern string) error {
 	}
 	_, err = fh.WriteString(pattern + "\n")
 	return err
+}
+
+// ---- conflict forecast ----
+
+func splitZ(b []byte) []string {
+	var out []string
+	for _, p := range strings.Split(string(b), "\x00") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ChangedFiles lists every path that differs from base in the worktree dir:
+// committed, staged, unstaged and untracked (ignored files excluded).
+func ChangedFiles(dir, base string) ([]string, error) {
+	tracked, err := RunRaw(context.Background(), dir, nil, nil, "diff", "--name-only", "--no-renames", "-z", base)
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := RunRaw(context.Background(), dir, nil, nil, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, err
+	}
+	return append(splitZ(tracked), splitZ(untracked)...), nil
+}
+
+// DiffNames lists the paths that differ between two commits.
+func DiffNames(dir, from, to string) ([]string, error) {
+	out, err := RunRaw(context.Background(), dir, nil, nil, "diff", "--name-only", "--no-renames", "-z", from, to)
+	if err != nil {
+		return nil, err
+	}
+	return splitZ(out), nil
+}
+
+// MergeTree tries to merge commits a and b without touching any worktree,
+// index or ref (git merge-tree --write-tree, git >= 2.38). clean reports
+// whether the merge applies automatically; conflicts lists the paths that
+// would conflict.
+func MergeTree(dir, a, b string) (clean bool, conflicts []string, err error) {
+	out, err := RunRaw(context.Background(), dir, nil, nil, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", a, b)
+	if err == nil {
+		return true, nil, nil
+	}
+	var ge *Error
+	var ee *exec.ExitError
+	if !errors.As(err, &ge) || !errors.As(ge.Err, &ee) || ee.ExitCode() != 1 {
+		return false, nil, err
+	}
+	// exit 1: <tree>NUL then the conflicted paths, each NUL-terminated, then
+	// an empty entry before the (suppressed) messages
+	seen := map[string]bool{}
+	for i, p := range strings.Split(string(out), "\x00") {
+		if i == 0 {
+			continue
+		}
+		if p == "" {
+			break
+		}
+		if !seen[p] {
+			seen[p] = true
+			conflicts = append(conflicts, p)
+		}
+	}
+	return false, conflicts, nil
 }
