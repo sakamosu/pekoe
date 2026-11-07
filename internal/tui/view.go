@@ -279,6 +279,9 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 }
 
 func (m *model) secondCount() int {
+	if m.sub2 == subIssues {
+		return m.issueCount()
+	}
 	if m.sub2 == 1 {
 		return len(m.tabs) + 1
 	}
@@ -296,6 +299,9 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 	th := m.th
 	cw := width - 4
 	cur := m.current()
+	if m.sub2 == subIssues {
+		return m.issuesPanel(width, h, f)
+	}
 	if m.sub2 == 1 {
 		var rows []row
 		errs, errPort := 0, 0
@@ -453,6 +459,9 @@ func (m *model) agentOrigin() (int, int) {
 }
 
 func (m *model) viewAgent(width, height int) []string {
+	if m.issueShown() {
+		return m.viewIssue(width, height)
+	}
 	th := m.th
 	s := m.current()
 	f := m.focus == pAgent
@@ -873,6 +882,9 @@ func (m *model) modeName() (string, string) {
 	}
 	switch m.focus {
 	case pSecond:
+		if m.sub2 == subIssues {
+			return "ISSUES", m.ic.Issues
+		}
 		if m.sub2 == 1 {
 			return "BROWSER", m.ic.Browser
 		}
@@ -883,6 +895,9 @@ func (m *model) modeName() (string, string) {
 		}
 		return "CHANGES", m.ic.Changes
 	case pAgent:
+		if m.issueShown() {
+			return "ISSUE", m.ic.Issues
+		}
 		if m.window == winPR {
 			return "PR", m.ic.PR
 		}
@@ -907,6 +922,9 @@ func (m *model) hints() [][2]string {
 	}
 	switch m.focus {
 	case pSecond:
+		if m.sub2 == subIssues {
+			return m.issuePanelHints()
+		}
 		if m.sub2 == 1 {
 			return [][2]string{{"j/k", "move"}, {"↵", "select"}, {"E", "send errors"}, {"?", "help"}}
 		}
@@ -920,6 +938,9 @@ func (m *model) hints() [][2]string {
 		}
 		return [][2]string{{"j/k", "move"}, {"↵", "review"}, {"r", "review"}, {"?", "help"}}
 	case pAgent:
+		if m.issueShown() {
+			return m.issueMainHints()
+		}
 		if m.window == winPR {
 			if s := m.current(); s != nil && s.PRReview {
 				return [][2]string{{"j/k", "move"}, {"↵", "expand"}, {"o", "browse"}, {"R", "refresh"}, {"?", "help"}}
@@ -993,6 +1014,8 @@ func (m *model) narrowTopH() int {
 	case 1:
 		n = len(m.worktrees)
 	case 2:
+		n = m.issueCount()
+	case 3:
 		n = len(m.changes)
 	}
 	return clampi(n, 1, 6) + 2
@@ -1004,7 +1027,7 @@ func (m *model) viewNarrow() []string {
 	f := m.focus != pAgent && !m.typing
 	tabs := []struct {
 		icon, name string
-	}{{m.ic.Sessions, fmt.Sprintf("Sessions %d/%d", min(m.sel+1, len(m.visible())), len(m.visible()))}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
+	}{{m.ic.Sessions, fmt.Sprintf("Sessions %d/%d", min(m.sel+1, len(m.visible())), len(m.visible()))}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Issues, fmt.Sprintf("Issues %d %s", len(m.visibleIssues()), m.issueFilterName())}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
 	var parts []string
 	for i, t := range tabs {
 		label := theme.Prefix(t.icon) + t.name
@@ -1029,13 +1052,18 @@ func (m *model) viewNarrow() []string {
 			rows = append(rows, row{Text: fit(wt.Branch, 20) + th.FG(theme.Dim, fmt.Sprintf(":%d", wt.Port)), Sel: f && i == m.wsel})
 		}
 	case 2:
+		rows = m.issueRows(m.width-4, f)
+	case 3:
 		peers := filePeers(m.current())
 		for i, c := range m.changes {
 			rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], m.width-4), Sel: f && i == m.csel})
 		}
 	}
-	if m.narrowTab == 0 && len(rows) > topH-2 {
-		start := clampi(m.sel-(topH-3), 0, len(rows)-(topH-2))
+	if sel := m.sel; (m.narrowTab == 0 || m.narrowTab == 2) && len(rows) > topH-2 {
+		if m.narrowTab == 2 {
+			sel = m.iss.sel
+		}
+		start := clampi(sel-(topH-3), 0, len(rows)-(topH-2))
 		rows = rows[start:]
 	}
 	top := m.box(m.width, topH, boxOpt{title: title, right: th.Bold(theme.Secondary, "[ ]") + th.FG(theme.Dim, " tab"), rows: rows, focused: f})

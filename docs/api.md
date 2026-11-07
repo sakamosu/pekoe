@@ -44,6 +44,7 @@
   "tokens": 42000,
   "dev": true,                     // dev server 起動中
   "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
+  "issue": 12,                     // --from gh#N で作ったときの issue 番号
   "pr_status": {                   // PR の要約(60 秒ごとにポーリング。PR ビューを開いている間は 15 秒)
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
@@ -126,6 +127,8 @@
 | `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`boba ext`) |
+| `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
+| `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 
 ### Review オブジェクト
 
@@ -144,6 +147,27 @@
   "test": {...}, "diffstat": {...}
 }
 ```
+
+### IssueList / IssueDetail
+
+```jsonc
+// issues.list
+{
+  "repo_id": "github.com_me_app", "filter": "mine", "label": "",
+  "fetched_at": "...", "cached": true,
+  "unavailable": "no GitHub remote",   // gh が使えないときの 1 行(gh not installed / gh not authenticated · gh auth login / no GitHub remote)。issues は空
+  "issues": [
+    {"number": 12, "title": "Login fails on Safari", "labels": ["bug"], "assignees": ["me"],
+     "updated_at": "...", "comments": 2, "url": "https://github.com/me/app/issues/12",
+     "session": {"slug": "fix-login-fails-on-safari", "branch": "fix/login-fails-on-safari", "state": "running"}}
+  ]
+}
+// issues.view: Issue の項目 + 本文とコメント
+{"number": 12, "title": "...", "body": "...", "state": "OPEN", "author": "alice", "created_at": "...",
+ "thread": [{"author": "bob", "body": "...", "created_at": "..."}], "session": null, ...}
+```
+
+`session` はその issue を扱っている生きたセッション。`--from gh#N` で作ったとき記録した `Session.issue` を優先し、なければブランチ名に番号があるもの(`fix/123-login`、`feat/issue-123`、`gh-123`)。キャッシュから返すときも突き合わせは毎回やり直す。
 
 ### PRView オブジェクト
 

@@ -113,6 +113,8 @@ type Daemon struct {
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
 	devFlushAt time.Time
+
+	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
 }
 
 func New() (*Daemon, error) {
@@ -389,5 +391,7 @@ func (d *Daemon) registerHandlers() {
 		"review.surface":        bind(d.hReviewSurface),
 		"window.kill":           bind(d.hWindowKill),
 		"term.caps":             bind(d.hTermCaps),
+		"issues.list":           bind(d.hIssuesList),
+		"issues.view":           bind(d.hIssuesView),
 	}
 }

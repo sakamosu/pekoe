@@ -650,6 +650,7 @@ func (m *model) openPR() tea.Cmd {
 		return nil
 	}
 	m.window = winPR
+	m.iss.open = false // the PR replaces an issue shown in the main panel
 	m.focus = pAgent
 	m.typing = false
 	m.screen = nil

@@ -528,6 +528,9 @@ func (m *model) panelKeysFull() [][3]string {
 	case pSessions:
 		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"/", "filter", "/"}}, common...)
 	case pSecond:
+		if m.sub2 == subIssues {
+			return issuePanelKeysFull()
+		}
 		if m.sub2 == 1 {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "select the tab's session", "\r"}, {"E", "send console errors", "E"}}
 		}
@@ -540,6 +543,10 @@ func (m *model) panelKeysFull() [][3]string {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
+	}
+	if m.issueShown() {
+		return [][3]string{{"j/k", "scroll", "j"}, {"↵", "jump to its session", "\r"}, {"n", "new session from the issue", "n"},
+			{"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"h", "back to Issues", "h"}, {"esc", "back to the agent", "esc"}}
 	}
 	if m.window == winPR {
 		keys := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},

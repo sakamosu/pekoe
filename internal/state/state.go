@@ -124,6 +124,7 @@ type Session struct {
 	PRStatus        *PRStatus `json:"pr_status,omitempty"` // small summary of the PR, polled from GitHub
 	Managed         bool      `json:"managed"`             // worktree created by boba (under ~/worktrees)
 	Base            string    `json:"base"`
+	Issue           int       `json:"issue,omitempty"` // GitHub issue the session was started from (--from gh#N)
 	Error           string    `json:"error,omitempty"`
 	Landing         bool      `json:"landing,omitempty"`
 	LastMessage     string    `json:"last_message,omitempty"`

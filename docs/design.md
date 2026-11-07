@@ -90,6 +90,8 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 | `boba land` | rebase → test → `gh pr create`。マージ検出後に teardown を走らせて worktree を削除 |
 | `boba rm <slug>` | teardown → worktree 削除。`~/worktrees` 配下以外は消さない |
 
+**Issue インボックス** — 左パネル [2] のサブタブ Issues に `gh issue list` の結果(既定は自分担当の open)を出し、選んだ issue の本文とコメントをメインパネルで読む。`n` で `fix/`(bug ラベル)か `feat/` + タイトルの kebab-case を提案して `boba new --from gh#N` と同じ流れでセッションを作る。セッションは issue 番号を覚えるので(ブランチ名に番号があればそれでも)、行にそのセッションの状態が出て Enter で飛べる。issue → 実装 → PR → CI → マージを boba の中で一周するための入口。gh が無い・未認証・GitHub リモートが無いときは 1 行の案内だけを出す。
+
 **設定ファイル** `~/.config/boba/repos/<repo-id>.toml`(repo-id は origin URL の正規化、なければパス)
 
 ```toml
@@ -275,6 +277,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `boba new <branch> [--from gh#N] [--agent codex]` | worktree + セッション作成 |
 | `boba open <worktree>` / `boba adopt` | 既存を開く / 管理下に入れる |
 | `boba ls` | セッション一覧と状態 |
+| `boba issues [--all \| --label L] [--refresh]` / `boba issues <N>` | GitHub の open issue(既定は自分担当)と、すでにあるセッション / issue の本文とコメント |
 | `boba conflicts` | 衝突予報。同じファイルを触っている open なセッションのペアと、コミット済みの内容が衝突するか(`git merge-tree`)。`--repo <repo-id>` で絞り込み |
 | `boba send <slug> <text>` | pty に文字を送る |
 | `boba event` | hooks から呼ばれる。stdin の JSON(session\_id, cwd, hook 名)をデーモンに渡す |
@@ -299,6 +302,10 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `x` | セッション終了(worktree は残す) |
 | `D` | worktree 削除(確認あり) |
 | `/` | セッションの絞り込み |
+| `[` `]` | パネル内のサブタブ切替([2] Worktrees → Browser → Issues、[3] Changes ⇄ Picks) |
+| Issues: `j` `k` | issue 選択(本文とコメントをメインパネルに。Esc で agent 窓へ) |
+| Issues: Enter / `n` | その issue のセッションへ飛ぶ / issue からセッション作成(ブランチ名を提案するモーダル) |
+| Issues: `f` `/` `o` `R` | 自分担当 → 全 open → ラベル指定 / 絞り込み / ブラウザで開く / 再取得 |
 | `?` | ヘルプ |
 | prefix + `h` `l` | 左ペインと右ペインのフォーカス移動(右ペインにフォーカス中はキーがすべて claude に渡る) |
 
