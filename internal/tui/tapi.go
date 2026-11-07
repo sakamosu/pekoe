@@ -465,7 +465,9 @@ func (m *model) splashView() string {
 		"",
 		m.th.FG(theme.Dim, alive),
 	}
-	cup := r.Cup(pearls, text, func(s string) string { return m.th.FG(theme.Border, s) })
+	// one blank column on each side: an ambiguous-width glyph that the
+	// font draws two cells wide (Moralerspace JPDOC …) must not reach the edge
+	cup := r.FitCup(pearls, text, func(s string) string { return m.th.FG(theme.Border, s) }, max(m.width-2, 1), m.height)
 	cw := 0
 	for _, l := range cup {
 		cw = max(cw, w(l))
@@ -480,6 +482,11 @@ func (m *model) splashView() string {
 	}
 	for len(lines) < m.height {
 		lines = append(lines, "")
+	}
+	// every line is the full width, so paintBg covers the whole screen
+	// (lipgloss only pads to the widest line)
+	for i := range lines {
+		lines[i] = fit(lines[i], m.width)
 	}
 	return strings.Join(lines[:m.height], "\n")
 }
