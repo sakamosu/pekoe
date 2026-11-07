@@ -62,7 +62,7 @@ func TestShapes(t *testing.T) {
 
 func TestEyesAndCells(t *testing.T) {
 	r := plain(Options{})
-	want := map[Mood][2]string{Error: {"× ×", "×"}, Wait: {"◕ ◕", "◉"}, Work: {"● ●", "●"}, Done: {"^ ^", "●"}, Idle: {"• •", "•"}, Sleep: {"- -", "○"}}
+	want := map[Mood][2]string{Error: {"⨯ ⨯", "⨯"}, Wait: {"◕ ◕", "◉"}, Work: {"● ●", "●"}, Done: {"^ ^", "●"}, Idle: {"• •", "•"}, Sleep: {"- -", "◦"}}
 	for m, w := range want {
 		if r.Eyes(m) != w[0] || r.CellGlyph(m) != w[1] {
 			t.Errorf("%s: eyes=%q cell=%q", m, r.Eyes(m), r.CellGlyph(m))
@@ -184,7 +184,7 @@ func TestDetectShape(t *testing.T) {
 func TestNoSpaceAfterEyes(t *testing.T) {
 	r := New(Options{Shape: "round"})
 	r.noColor = false
-	faces := append([]string{r.Line("● ●"), r.Line("◕ ◕")}, r.Big("× ×")...)
+	faces := append([]string{r.Line("● ●"), r.Line("◕ ◕")}, r.Big("⨯ ⨯")...)
 	for _, f := range faces {
 		if p := ansi.Strip(f); strings.Contains(p, " ") {
 			t.Errorf("space in face %q", p)

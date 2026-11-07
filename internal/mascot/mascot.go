@@ -278,7 +278,7 @@ func (r *Renderer) CellGlyph(m Mood) string {
 func (r *Renderer) Cell(m Mood) string { return r.Paint(m, r.CellGlyph(m)) }
 
 // Gap is the blank cell to put right after a dot. Ghostty draws a symbol
-// (● ◉ × ○) up to two cells wide when a space follows it; the braille
+// (● ◉ ⨯ ◦) up to two cells wide when a space follows it; the braille
 // blank looks empty but is not whitespace, so the dot keeps one cell.
 func (r *Renderer) Gap() string {
 	if r.ASCII() {
@@ -350,7 +350,7 @@ func (r *Renderer) draw(name, eyes, bg string) []string {
 				cbg = bg
 			}
 			fg := c.FG
-			// Ghostty draws a symbol (● ◕ ×) up to two cells wide when a
+			// Ghostty draws a symbol (● ◕ ⨯) up to two cells wide when a
 			// space follows it, so the gap between the eyes is a solid
 			// block in the face color instead of a space.
 			if g == " " && cbg != "" && !r.noColor && !r.ASCII() {

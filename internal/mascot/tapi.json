@@ -23,7 +23,7 @@
     "work":  {"eyes": "● ●", "cell": "●", "accent": "w"},
     "wait":  {"eyes": "◕ ◕", "cell": "◉", "accent": "q"},
     "done":  {"eyes": "^ ^", "cell": "●", "accent": "d"},
-    "error": {"eyes": "× ×", "cell": "×", "accent": "x"},
-    "sleep": {"eyes": "- -", "cell": "○", "accent": "i"}
+    "error": {"eyes": "⨯ ⨯", "cell": "⨯", "accent": "x"},
+    "sleep": {"eyes": "- -", "cell": "◦", "accent": "i"}
   }
 }
