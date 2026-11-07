@@ -102,6 +102,7 @@ type Daemon struct {
 	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
 	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
 	paneH      int                       // used when a client spawns without knowing it (CLI)
+	preview    *previewer                // in-terminal browser preview (preview.go)
 }
 
 func New() (*Daemon, error) {
@@ -367,5 +368,8 @@ func (d *Daemon) registerHandlers() {
 		"review.surface":        bind(d.hReviewSurface),
 		"window.kill":           bind(d.hWindowKill),
 		"term.caps":             bind(d.hTermCaps),
+	}
+	for k, h := range d.previewHandlers() {
+		d.handlers[k] = h
 	}
 }

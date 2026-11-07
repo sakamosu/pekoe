@@ -79,6 +79,12 @@ func PicksDir(repoID string) string {
 	return filepath.Join(DataDir(), repoID, "picks")
 }
 
+// PreviewDir is ~/.local/share/boba/<repo-id>/preview/<slug>: the in-terminal
+// browser preview's screenshots and its remembered path.
+func PreviewDir(repoID, slug string) string {
+	return filepath.Join(DataDir(), repoID, "preview", slug)
+}
+
 // Worktree is ~/worktrees/<repo>/<slug>.
 func Worktree(repo, slug string) string {
 	return filepath.Join(WorktreesRoot(), repo, slug)

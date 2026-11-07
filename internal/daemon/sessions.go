@@ -81,6 +81,7 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 		case state.Done:
 			d.emit("session.done", &c)
 		}
+		d.previewOnState(&c, prev)
 	}
 	return &c, nil
 }
