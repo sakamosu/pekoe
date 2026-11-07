@@ -179,3 +179,25 @@ func TestDetectShape(t *testing.T) {
 		t.Fatal("ghostty → round, config wins")
 	}
 }
+
+// Ghostty widens a symbol followed by a space, so no eye may touch one.
+func TestNoSpaceAfterEyes(t *testing.T) {
+	r := New(Options{Shape: "round"})
+	r.noColor = false
+	faces := append([]string{r.Line("● ●"), r.Line("◕ ◕")}, r.Big("× ×")...)
+	for _, f := range faces {
+		if p := ansi.Strip(f); strings.Contains(p, " ") {
+			t.Errorf("space in face %q", p)
+		}
+	}
+}
+
+func TestGapIsOneCellNotSpace(t *testing.T) {
+	g := plain(Options{}).Gap()
+	if ansi.StringWidth(g) != 1 || strings.TrimSpace(g) == "" {
+		t.Errorf("gap=%q", g)
+	}
+	if plain(Options{Glyphs: "ascii"}).Gap() != " " {
+		t.Error("ascii gap should be a space")
+	}
+}
