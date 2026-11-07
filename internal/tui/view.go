@@ -240,6 +240,13 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.PR > 0 {
 		tag += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", s.PR))
 	}
+	if n := m.sessionErrors(s.Slug); n > 0 {
+		e := "err"
+		if n > 1 {
+			e = fmt.Sprintf("%d err", n)
+		}
+		tag += " " + th.FG(theme.Err, e)
+	}
 	if s.Unread > 0 && s.Slug != m.lastSel {
 		tag += " " + th.FG(theme.Secondary, "•")
 	}
@@ -268,7 +275,7 @@ func (m *model) secondCount() int {
 
 func (m *model) thirdCount() int {
 	if m.sub3 == 1 {
-		return len(m.picks)
+		return len(m.picks) + len(m.errs)
 	}
 	return max(len(m.changes), 1)
 }
@@ -378,10 +385,21 @@ func (m *model) thirdPanel(width, h int, f bool) []string {
 			tag := pickTag(pk)
 			rows = append(rows, row{Text: mark + fmt.Sprintf(" #%04d ", pk.ID) + th.FG(theme.Dim, fit(tag, max(width-24, 8))) + " " + th.FG(theme.Dim, when), Sel: f && i == m.psel})
 		}
+		curSlug := ""
+		if cur != nil {
+			curSlug = cur.Slug
+		}
+		for i, r := range m.errs { // errors waiting for their card
+			rows = append(rows, row{Text: m.errorRow(r, width-4, curSlug), Sel: f && len(m.picks)+i == m.psel})
+		}
 		if len(rows) == 0 {
 			rows = append(rows, row{Text: th.FG(theme.Dim, "  no picks · ⌘⇧E in Chrome")})
 		}
-		title := m.panelTitle(3, m.ic.Picks, fmt.Sprintf("Picks %d", len(m.picks)), "· "+curName, f)
+		extra := "· " + curName
+		if len(m.errs) > 0 {
+			extra = fmt.Sprintf("· %d errors ", len(m.errs)) + extra
+		}
+		title := m.panelTitle(3, m.ic.Picks, fmt.Sprintf("Picks %d", len(m.picks)), extra, f)
 		return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
 	}
 	var rows []row
@@ -488,7 +506,11 @@ func (m *model) viewAgent(width, height int) []string {
 func (m *model) agentRows(cw, ch int) []row {
 	rows := m.screenRows(cw, ch)
 	// a card from outside (Chrome pick) sits inside the pane, at the bottom
-	if card := m.pickCard(cw); len(card) > 0 {
+	card := m.pickCard(cw)
+	if len(card) == 0 {
+		card = m.errorCard(cw) // one card at a time: a pick first
+	}
+	if len(card) > 0 {
 		keep := max(ch-len(card), 0)
 		if len(rows) > keep {
 			rows = rows[len(rows)-keep:]
@@ -879,6 +901,9 @@ func (m *model) hints() [][2]string {
 		return [][2]string{{"j/k", "move"}, {"↵", "open"}, {"n", "new"}, {"D", "del"}, {"?", "help"}}
 	case pThird:
 		if m.sub3 == 1 {
+			if m.selectedError() != nil {
+				return [][2]string{{"j/k", "move"}, {"↵", "detail"}, {"s", "send"}, {"i", "ignore"}, {"?", "help"}}
+			}
 			return [][2]string{{"j/k", "move"}, {"↵", "edit"}, {"s", "send"}, {"n", "new"}, {"d", "del"}, {"?", "help"}}
 		}
 		return [][2]string{{"j/k", "move"}, {"↵", "review"}, {"r", "review"}, {"?", "help"}}
@@ -888,6 +913,9 @@ func (m *model) hints() [][2]string {
 		}
 		if m.screen != nil && m.screen.Dead {
 			return [][2]string{{"↵", "restart"}, {"h", "back"}, {"r", "review"}, {"?", "help"}}
+		}
+		if m.pendingError() != nil { // the card owns s / i / ↵; type with a
+			return [][2]string{{"a", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 		}
 		return [][2]string{{"↵", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 	}
