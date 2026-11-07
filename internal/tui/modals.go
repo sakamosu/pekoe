@@ -514,7 +514,7 @@ func (m *model) panelKeysFull() [][3]string {
 	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
 	switch m.focus {
 	case pSessions:
-		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"/", "filter", "/"}}, common...)
+		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"/", "filter", "/"}}, common...)
 	case pSecond:
 		if m.sub2 == 1 {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "select the tab's session", "\r"}, {"E", "send console errors", "E"}}
@@ -526,7 +526,10 @@ func (m *model) panelKeysFull() [][3]string {
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
 	}
-	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "agent / dev window", "v"}}, common...)
+	if m.window == winPreview {
+		return m.previewKeysFull()
+	}
+	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "preview / dev window", "v"}}, common...)
 }
 
 func (h *helpModal) mode() (string, string) { return "HELP", "" }

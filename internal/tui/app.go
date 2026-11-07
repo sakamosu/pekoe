@@ -92,9 +92,10 @@ type model struct {
 	sub2      int // 0 worktrees, 1 browser
 	sub3      int // 0 changes, 1 picks
 	typing    bool
-	guard     mouseGuard // reassembles mouse reports split across reads
-	linkDown  string     // URL under the last left press in the agent panel
-	window    string     // agent | review | dev shown in the main panel
+	guard     mouseGuard    // reassembles mouse reports split across reads
+	linkDown  string        // URL under the last left press in the agent panel
+	window    string        // agent | review | dev | preview shown in the main panel
+	pv        *previewState // the preview window (preview.go)
 
 	screen     *engine.Screen
 	screenOf   string
@@ -175,6 +176,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		ic:         theme.Icons(theme.IconsFromEnv()),
 		focus:      pSessions,
 		window:     engine.WinAgent,
+		pv:         newPreviewState(),
 		unreadAt:   map[string]int{},
 		dismissed:  map[string]time.Time{},
 		progress:   map[string][]daemon.Step{},
@@ -203,6 +205,12 @@ func Run(cl *client.Client, cwd string) error {
 	p := tea.NewProgram(m, opts...)
 	go pump(cl, p)
 	_, err := p.Run()
+	if seq := m.pv.deleteAll(); seq != "" {
+		os.Stdout.WriteString(seq) // leave no preview image behind in the terminal
+	}
+	if m.pv.watching != "" {
+		_ = cl.Call("preview.watch", map[string]any{"slug": m.pv.watching, "on": false}, nil)
+	}
 	if kittyEnabled() {
 		os.Stdout.WriteString(kittyPop)
 	}
@@ -296,7 +304,7 @@ func (m *model) loadPicks() tea.Cmd {
 
 func (m *model) fetchScreen() tea.Cmd {
 	s := m.current()
-	if s == nil || s.State == state.Creating {
+	if s == nil || s.State == state.Creating || m.window == winPreview {
 		return nil
 	}
 	if m.fetching {
@@ -430,7 +438,9 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	m.lastSel = cur
 	m.screen = nil
-	m.window = engine.WinAgent
+	if m.window != winPreview || s == nil { // the preview follows the selection
+		m.window = engine.WinAgent
+	}
 	m.typing = false
 	m.pickInput = nil
 	cmds = append(cmds, m.fetchScreen(), m.loadChanges(cur))
@@ -470,19 +480,21 @@ const (
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.markSeen()
+	var cmd tea.Cmd
 	// every key passes the mouse guard first, whichever screen handles it
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		keys, wait := m.guard.feed(msg)
-		cmd := m.routeKeys(keys)
+		cmd = m.routeKeys(keys)
 		if wait {
 			cmd = tea.Batch(cmd, guardTick(m.guard.gen))
 		}
-		return m, cmd
 	case guardFlushMsg:
-		return m, m.routeKeys(m.guard.flush(int(msg)))
+		cmd = m.routeKeys(m.guard.flush(int(msg)))
+	default:
+		_, cmd = m.route(msg)
 	}
-	return m.route(msg)
+	return m, tea.Batch(cmd, m.previewSync())
 }
 
 func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
@@ -544,6 +556,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.pv.cellW, m.pv.cellH = cellPixels()
 		if m.review != nil {
 			m.review.width, m.review.height = msg.Width, msg.Height
 		}
@@ -668,6 +681,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modalDoneMsg:
 		m.modal = nil
 		return m, msg.cmd
+
+	case previewMsg:
+		return m, m.onPreviewMsg(msg)
 
 	case reviewOpenMsg:
 		rm := newReviewModel(m.cl, msg.slug, m.th, m.ic, m.width, m.height, m.square)
@@ -832,6 +848,8 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		}
 		json.Unmarshal(ev.Data, &a)
 		m.answers[a.Slug] = a.Text
+	case "preview.updated":
+		m.onPreviewEvent(ev)
 	case "term.passthrough":
 		var p struct {
 			Seq string `json:"seq"`
@@ -1016,6 +1034,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		}
 		return m.keyChanges(key)
 	case pAgent:
+		if m.window == winPreview {
+			return m.keyPreview(key)
+		}
 		return m.keyAgent(key)
 	}
 	return nil
@@ -1115,6 +1136,9 @@ func (m *model) keySessions(key string) tea.Cmd {
 		}
 		m.typing = true
 		delete(m.unreadAt, s.Slug)
+		if m.window == winPreview { // typing goes to the agent
+			return m.closePreview()
+		}
 		if m.screen != nil && m.screen.Dead {
 			aw, ah := m.agentSize()
 			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
@@ -1124,6 +1148,8 @@ func (m *model) keySessions(key string) tea.Cmd {
 		m.filterOn = true
 		m.filter = ""
 		return nil
+	case "v":
+		return m.openPreview()
 	}
 	return m.sessionAction(key, s)
 }
@@ -1316,16 +1342,16 @@ func (m *model) keyAgent(key string) tea.Cmd {
 	case "r", "n":
 		cmd, _ := m.common(key)
 		return cmd
-	case "v": // cycle agent / dev window
-		if s != nil && s.Dev {
-			if m.window == engine.WinDev {
-				m.window = engine.WinAgent
-			} else {
-				m.window = engine.WinDev
-			}
+	case "v": // cycle agent → preview → dev → agent
+		if s == nil {
+			return nil
+		}
+		if m.window == engine.WinDev {
+			m.window = engine.WinAgent
 			m.screen = nil
 			return m.fetchScreen()
 		}
+		return m.openPreview()
 	}
 	return m.sessionAction(key, s)
 }
@@ -1363,6 +1389,12 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	aw, ah := m.agentSize()
 	x, y := ev.X-x0, ev.Y-y0
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
+	if inAgent && m.window == winPreview {
+		if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
+			m.focus = pAgent
+		}
+		return nil // nothing to forward: no pty behind the preview
+	}
 	// a click on a link opens it, like ⌘-click in a bare terminal (mouse
 	// reports carry no ⌘, so any left click on a link counts); the click is
 	// not forwarded to the agent
