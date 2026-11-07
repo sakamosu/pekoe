@@ -92,6 +92,7 @@ type model struct {
 	sub3      int // 0 changes, 1 picks
 	typing    bool
 	guard     mouseGuard // reassembles mouse reports split across reads
+	linkDown  string     // URL under the last left press in the agent panel
 	window    string     // agent | review | dev shown in the main panel
 
 	screen     *engine.Screen
@@ -1323,6 +1324,32 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	aw, ah := m.agentSize()
 	x, y := ev.X-x0, ev.Y-y0
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
+	// a click on a link opens it, like ⌘-click in a bare terminal (mouse
+	// reports carry no ⌘, so any left click on a link counts); the click is
+	// not forwarded to the agent
+	if inAgent && ev.Button == tea.MouseButtonLeft {
+		switch ev.Action {
+		case tea.MouseActionPress:
+			m.linkDown = m.agentLinkAt(x, y)
+			if m.linkDown != "" {
+				m.focus = pAgent
+				return nil
+			}
+		case tea.MouseActionRelease:
+			if u := m.linkDown; u != "" {
+				m.linkDown = ""
+				if m.agentLinkAt(x, y) != u {
+					return nil
+				}
+				return func() tea.Msg {
+					if err := openURL(u); err != nil {
+						return errMsg{err}
+					}
+					return infoMsg("opened " + u)
+				}
+			}
+		}
+	}
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if inAgent {
 			m.focus = pAgent

@@ -491,6 +491,24 @@ func (m *model) agentRows(cw, ch int) []row {
 	return rows
 }
 
+// agentLinkAt returns the URL drawn at (x, y) of the agent panel body.
+func (m *model) agentLinkAt(x, y int) string {
+	s := m.current()
+	if m.screen == nil || s == nil || s.State == state.Creating || (s.State == state.Failed && m.screen.Dead) {
+		return ""
+	}
+	cw, ch := m.agentSize()
+	rows := m.agentRows(cw, ch)
+	if len(rows) > ch {
+		rows = rows[len(rows)-ch:]
+	}
+	i := y - (ch - len(rows))
+	if i < 0 || i >= len(rows) {
+		return ""
+	}
+	return linkAt(rows[i].Text, x)
+}
+
 // screenRows renders the captured pty screen with the cursor (when typing)
 // and the unread line where the user left.
 func (m *model) screenRows(cw, ch int) []row {

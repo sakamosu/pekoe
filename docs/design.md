@@ -153,7 +153,7 @@ boba は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 **入れ子の税** — Ghostty → boba → claude の二段になるため、boba が通さない機能は死ぬ。少なくとも次は「中から来たら外にそのまま流す」パススルーを実装する。
 
 - OSC 52(クリップボード書き込み)
-- OSC 8(クリック可能リンク)
+- OSC 8(クリック可能リンク。boba がマウスを握るため Ghostty はクリックを見られない。エージェント欄のリンクと素の URL は boba がクリック位置から解決して `open` で開く)
 - Kitty graphics(画像表示)
 - マウスイベント(右ペインの座標に変換して転送)
 - Kitty keyboard protocol(修飾キーの正確な伝達)
