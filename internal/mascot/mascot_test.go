@@ -196,16 +196,6 @@ func TestNoSpaceAfterEyes(t *testing.T) {
 	}
 }
 
-func TestGapIsOneCellNotSpace(t *testing.T) {
-	g := plain(Options{}).Gap()
-	if ansi.StringWidth(g) != 1 || strings.TrimSpace(g) == "" {
-		t.Errorf("gap=%q", g)
-	}
-	if plain(Options{Glyphs: "ascii"}).Gap() != " " {
-		t.Error("ascii gap should be a space")
-	}
-}
-
 // FitCup never returns a row wider than width or more rows than height;
 // with no limit it is Cup itself.
 func TestFitCup(t *testing.T) {

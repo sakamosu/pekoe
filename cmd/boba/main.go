@@ -224,9 +224,17 @@ func flags(args []string, bools ...string) (map[string]string, []string) {
 	return f, pos
 }
 
-func termSize() (int, int) {
-	w, h := tui.TermSize()
-	return w, h
+// agentPaneSize is the pty size to ask for when spawning an agent from the
+// CLI: the agent pane of a TUI in this terminal, or 0x0 when stdout is not a
+// terminal (run by an agent or a script). 0 lets the daemon use the running
+// TUI's pane size instead of a guess like 120x40, whose pane width (67) the
+// agent would wrap at.
+func agentPaneSize() (int, int) {
+	w, h, ok := tui.TermSizeOK()
+	if !ok {
+		return 0, 0
+	}
+	return tui.AgentWidth(w), tui.AgentHeight(h)
 }
 
 // ---- commands ----
@@ -341,7 +349,7 @@ func cmdNew(args []string) error {
 	cl := connect()
 	defer cl.Close()
 	cl.Subscribe("session.progress", "session.updated")
-	w, h := termSize()
+	w, h := agentPaneSize()
 	var s state.Session
 	prompt := f["prompt"]
 	if len(pos) > 1 && prompt == "" {
@@ -349,7 +357,7 @@ func cmdNew(args []string) error {
 	}
 	if err := cl.Call("session.new", map[string]any{
 		"repo": cwd(), "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
-		"base": f["base"], "width": tui.AgentWidth(w), "height": tui.AgentHeight(h),
+		"base": f["base"], "width": w, "height": h,
 	}, &s); err != nil {
 		return err
 	}
@@ -431,8 +439,8 @@ func cmdOpen(args []string) error {
 	}
 	cl := connect()
 	defer cl.Close()
-	w, h := termSize()
-	params := map[string]any{"path": dir, "resume": resume, "agent": f["agent"], "width": tui.AgentWidth(w), "height": tui.AgentHeight(h)}
+	w, h := agentPaneSize()
+	params := map[string]any{"path": dir, "resume": resume, "agent": f["agent"], "width": w, "height": h}
 	var raw json.RawMessage
 	if err := cl.Call("session.open", params, &raw); err != nil {
 		return err

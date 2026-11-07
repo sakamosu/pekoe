@@ -207,11 +207,8 @@ func truncRunes(s string, n int) string {
 func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	th := m.th
 	lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
-	icon, mood := m.rowCell(s) // tapi's 1-cell dot, no face
+	icon := th.FG(lk.Role, fit(lk.Icon, 1))
 	word := th.FG(lk.Role, fit(lk.Word, 8))
-	if mood != mascot.Idle {
-		word = m.tapi.r.Paint(mood, fit(lk.Word, 8))
-	}
 	stateW := 8
 	ageW := 4
 	diff := ""
@@ -255,7 +252,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State != state.Idle {
 		age = theme.Ago(now.Sub(s.StateSince))
 	}
-	line := icon + m.tapi.r.Gap() + fit(name, nameW) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
+	line := icon + " " + fit(name, nameW) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
 	if diffW > 0 {
 		line += " " + fit(diff, diffW) + " " + test
 	}
@@ -553,7 +550,10 @@ func (m *model) screenRows(cw, ch int) []row {
 	}
 	rows := make([]row, 0, len(lines))
 	for _, l := range lines {
-		rows = append(rows, row{Text: clip(l, cw)})
+		// capture-pane -e leaves the last SGR open (an agent's full-width
+		// background is "set bg + erase line", not cells), so the padding,
+		// the border and whatever follows would inherit it: close it here.
+		rows = append(rows, row{Text: clip(l, cw) + "\x1b[0m"})
 	}
 	return rows
 }
