@@ -277,6 +277,16 @@ func (r *Renderer) CellGlyph(m Mood) string {
 // Cell renders the colored 1-cell dot (session list, statuslines).
 func (r *Renderer) Cell(m Mood) string { return r.Paint(m, r.CellGlyph(m)) }
 
+// Gap is the blank cell to put right after a dot. Ghostty draws a symbol
+// (● ◉ × ○) up to two cells wide when a space follows it; the braille
+// blank looks empty but is not whitespace, so the dot keeps one cell.
+func (r *Renderer) Gap() string {
+	if r.ASCII() {
+		return " "
+	}
+	return "\u2800"
+}
+
 // outline maps a round sprite to the block or ascii shape by position.
 func (r *Renderer) outline(sp Sprite) Sprite {
 	if r.shape == "round" && !r.ASCII() {

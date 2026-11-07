@@ -245,7 +245,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State != state.Idle {
 		age = theme.Ago(now.Sub(s.StateSince))
 	}
-	line := icon + " " + th.FG(nameRole, fit(name, nameW)) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
+	line := icon + m.tapi.r.Gap() + th.FG(nameRole, fit(name, nameW)) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
 	if diffW > 0 {
 		line += " " + fit(diff, diffW) + " " + test
 	}
