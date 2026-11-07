@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 
 	"boba/internal/engine"
 	"boba/internal/mascot"
@@ -533,11 +534,13 @@ func withCursor(line string, x int) string {
 		return line + strings.Repeat(" ", x-plainW) + cursorMark + "\x1b[7m \x1b[27m"
 	}
 	pre := ansi.Truncate(line, x, "")
-	ch := ansi.Strip(ansi.Truncate(ansi.TruncateLeft(line, x, ""), 1, ""))
-	if ch == "" {
-		ch = " "
+	// カーソル下の文字は 1 グラフェム丸ごと取る。幅 1 で切ると全角文字が入らず、
+	// 空白が 1 セル挿入されて後ろの文字がずれる。
+	ch, _, cw, _ := uniseg.FirstGraphemeClusterInString(ansi.Strip(ansi.TruncateLeft(line, x, "")), -1)
+	if ch == "" || cw == 0 {
+		ch, cw = " ", 1
 	}
-	post := ansi.TruncateLeft(line, x+ansi.StringWidth(ch), "")
+	post := ansi.TruncateLeft(line, x+cw, "")
 	return pre + cursorMark + "\x1b[7m" + ch + "\x1b[27m" + post
 }
 
