@@ -59,6 +59,23 @@ type Theme struct {
 	ANSI   map[string]int    `toml:"ansi"`
 }
 
+// Mascot is [mascot]: tapi, the pearl (docs/mascot.md).
+type Mascot struct {
+	Shape   string            `toml:"shape"`   // auto | round | block
+	Glyphs  string            `toml:"glyphs"`  // auto | unicode | ascii
+	Palette string            `toml:"palette"` // dark (D) | light (E)
+	Colors  map[string]string `toml:"colors"`  // hi bd sh eye tea
+	Splash  *bool             `toml:"splash"`
+}
+
+func (m Mascot) SplashOn() bool { return m.Splash == nil || *m.Splash }
+
+// LightPalette: palette = "light" | "E".
+func (m Mascot) LightPalette() bool {
+	p := strings.ToLower(m.Palette)
+	return p == "light" || p == "e"
+}
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
@@ -68,6 +85,7 @@ type Global struct {
 		Map    map[string]string `toml:"map"`
 	} `toml:"keys"`
 	Theme  Theme            `toml:"theme"`
+	Mascot Mascot           `toml:"mascot"`
 	Agents map[string]Agent `toml:"agents"`
 	Notify struct {
 		Ntfy string `toml:"ntfy"` // e.g. https://ntfy.sh/my-topic

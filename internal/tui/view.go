@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"boba/internal/engine"
+	"boba/internal/mascot"
 	"boba/internal/state"
 	"boba/internal/theme"
 )
@@ -18,6 +19,9 @@ import (
 func (m *model) View() string {
 	if m.width == 0 {
 		return ""
+	}
+	if m.tapi.splash {
+		return m.paintBg(m.splashView())
 	}
 	if m.review != nil {
 		return m.review.view()
@@ -30,19 +34,36 @@ func (m *model) View() string {
 		right := m.viewAgent(m.width-leftWidth(m.width)-1, m.height-1)
 		body = joinH(left, right, 1)
 	}
-	if m.modal != nil {
+	if c, ok := m.modal.(*confirmModal); ok && len(body) >= 2 {
+		// boba asks: one line at the bottom of the main pane, puppy first
+		x, _ := m.agentOrigin()
+		body = placeAt(body, len(body)-2, x, []string{m.askLine(c, m.agentContentWidth())})
+	} else if m.modal != nil {
 		body = overlay(body, m.modal.view(), m.width)
+	}
+	if tb := m.toastBlock(); len(tb) > 0 && len(body) > len(tb)+1 {
+		body = placeAt(body, len(body)-len(tb)-2, max(m.width-w(tb[0])-3, 0), tb)
 	}
 	body = append(body, m.viewBar())
 	for i := range body {
 		body[i] = fit(body[i], m.width)
 	}
-	out := strings.Join(body, "\n")
+	return m.paintBg(strings.Join(body, "\n"))
+}
+
+// paintBg: explicit background so the cold low-chroma bg holds in every terminal theme.
+func (m *model) paintBg(out string) string {
 	if m.th.Mode == theme.Truecolor {
-		// explicit background so the cold low-chroma bg holds in every terminal theme
 		out = lipgloss.NewStyle().Background(m.th.Color(theme.Bg)).Render(strings.ReplaceAll(out, "\x1b[0m", "\x1b[0m"+bgSeq(m.th, theme.Bg)))
 	}
 	return out
+}
+
+func (m *model) agentContentWidth() int {
+	if narrow(m.width) {
+		return m.width - 4
+	}
+	return m.width - leftWidth(m.width) - 1 - 4
 }
 
 // ---- left column ----
@@ -180,7 +201,11 @@ func truncRunes(s string, n int) string {
 func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	th := m.th
 	lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
-	icon := th.FG(lk.Role, fit(lk.Icon, 1))
+	icon, mood := m.rowCell(s) // tapi's 1-cell dot, no face
+	word := th.FG(lk.Role, fit(lk.Word, 8))
+	if mood != mascot.Idle {
+		word = m.tapi.r.Paint(mood, fit(lk.Word, 8))
+	}
 	stateW := 8
 	ageW := 4
 	diff := ""
@@ -215,7 +240,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State != state.Idle {
 		age = theme.Ago(now.Sub(s.StateSince))
 	}
-	line := icon + " " + th.FG(nameRole, fit(name, nameW)) + " " + th.FG(lk.Role, fit(lk.Word, stateW)) + " " + th.FG(theme.Dim, fit(age, ageW))
+	line := icon + " " + th.FG(nameRole, fit(name, nameW)) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
 	if diffW > 0 {
 		line += " " + fit(diff, diffW) + " " + test
 	}
@@ -396,7 +421,7 @@ func (m *model) viewAgent(width, height int) []string {
 	s := m.current()
 	f := m.focus == pAgent
 	if s == nil {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.logoRows(width-4, height-2, "n new session · boba new <branch>"), focused: f})
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRows(width-4, height-2, m.emptyMood(), "no session selected", "n new session · boba new <branch>"), focused: f})
 	}
 	winLabel := "Agent"
 	icon := m.ic.Agent
@@ -427,10 +452,10 @@ func (m *model) viewAgent(width, height int) []string {
 	cw := width - 4
 	ch := height - 2
 	if s.State == state.Creating {
-		return m.box(width, height, boxOpt{title: title, rows: m.logoRows(cw, ch, "waiting for worktree…"), focused: f})
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Work, "creating worktree "+s.Branch, creatingSub(m.progress[s.Slug])), focused: f})
 	}
 	if s.State == state.Failed && (m.screen == nil || m.screen.Dead) {
-		rows := m.logoRows(cw, ch-4, "setup failed")
+		rows := m.bigRows(cw, ch-4, mascot.Error, "setup failed", "")
 		for _, l := range strings.Split(s.Error, "\n") {
 			rows = append(rows, row{Text: th.FG(theme.Err, l)})
 		}
@@ -441,7 +466,7 @@ func (m *model) viewAgent(width, height int) []string {
 		if s.State == state.Landed {
 			caption = "landed · worktree removed"
 		}
-		return m.box(width, height, boxOpt{title: title, rows: m.logoRows(cw, ch, caption), focused: f})
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Idle, caption, ""), focused: f})
 	}
 	rows := m.screenRows(cw, ch)
 	// a card from outside (Chrome pick) sits inside the pane, at the bottom
@@ -837,7 +862,7 @@ func (m *model) hints() [][2]string {
 func (m *model) viewBar() string {
 	th := m.th
 	name, icon := m.modeName()
-	segs := []string{m.pill(theme.Prefix(icon)+name, theme.Primary, theme.Bg, true)}
+	segs := []string{m.barTapi(m.width), m.pill(theme.Prefix(icon)+name, theme.Primary, theme.Bg, true)}
 	if s := m.current(); s != nil {
 		port := ""
 		if s.Port > 0 {
@@ -845,29 +870,10 @@ func (m *model) viewBar() string {
 		}
 		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+s.Branch+port, theme.Select, theme.Text, false))
 	}
-	run, wait, done := 0, 0, 0
-	for _, s := range m.sessions {
-		switch s.State {
-		case state.Running:
-			run++
-		case state.Waiting:
-			wait++
-		case state.Done:
-			done++
-		}
-	}
+	// session counts are tapi's speech now (barTapi); picks stay here
 	var counts []string
 	if pk := m.pendingPick(); pk != nil {
 		counts = append(counts, th.FG(theme.Secondary, theme.Prefix(m.ic.Picks))+fmt.Sprintf("pick #%04d", pk.ID))
-	}
-	if run > 0 {
-		counts = append(counts, th.FG(theme.Ok, theme.Look(m.ic, state.Running, m.frame, m.g.AnimateOn()).Icon)+fmt.Sprintf(" %d run", run))
-	}
-	if wait > 0 {
-		counts = append(counts, th.FG(theme.Warn, m.ic.Wait)+fmt.Sprintf(" %d wait", wait))
-	}
-	if done > 0 {
-		counts = append(counts, th.FG(theme.Secondary, m.ic.Done)+fmt.Sprintf(" %d done", done))
 	}
 	if len(counts) > 0 {
 		segs = append(segs, m.pill(th.FG(theme.Dim, strings.Join(counts, "  ")), theme.Surface, theme.Dim, false))
