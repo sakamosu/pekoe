@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 //go:embed tapi.json
@@ -152,8 +153,12 @@ type Renderer struct {
 	noColor       bool
 }
 
+// New makes a renderer. It is also colorless when lipgloss won't emit color
+// (a pipe, NO_COLOR): the eye gap is otherwise a block that only reads as
+// face color with a background behind it.
 func New(o Options) *Renderer {
-	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteDark, acc: accentDark, dim: o.Dim, noColor: o.NoColor}
+	noColor := o.NoColor || lipgloss.ColorProfile() == termenv.Ascii
+	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteDark, acc: accentDark, dim: o.Dim, noColor: noColor}
 	if o.Light {
 		r.pal, r.acc = PaletteLight, accentLight
 	}
@@ -376,7 +381,8 @@ func (r *Renderer) Banner(eyes string, text []string) []string {
 const minTextRoom = 8
 
 // FitBanner is Banner made to fit width × height cells (0 = no limit). When
-// the text column doesn't fit it is clipped with "…", then dropped; when
+// the text column doesn't fit it loses its bottom rows (down to height) and
+// is clipped with "…", then dropped; when
 // even tapi alone doesn't fit, only the clipped text is left. Every row is
 // at most width cells, so nothing runs past the pane edge.
 func (r *Renderer) FitBanner(eyes string, text []string, width, height int) []string {
@@ -395,6 +401,14 @@ func (r *Renderer) FitBanner(eyes string, text []string, width, height int) []st
 	}
 	bare := r.Banner(eyes, nil)
 	if fits(bare) {
+		// tapi fits, so height (if any) is at least its rows: keep the
+		// top text rows rather than losing all of them
+		if height > 0 && len(text) > height {
+			text = text[:height]
+			if rows := r.Banner(eyes, text); fits(rows) {
+				return rows
+			}
+		}
 		// Banner puts the text 4 cells right of tapi
 		if room := width - widest(bare) - 4; room >= minTextRoom {
 			if rows := r.Banner(eyes, clipAll(text, room)); fits(rows) {
