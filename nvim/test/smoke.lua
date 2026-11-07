@@ -113,6 +113,18 @@ local ok, err = xpcall(function()
   end
   check(signs == 3, "gutter signs on +/- lines (" .. signs .. ")")
 
+  -- winbar のキーヒント(幅が足りなくても h / l は残る)
+  local function winbar(win, width)
+    return vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, maxwidth = width, use_winbar = true }).str
+  end
+  local dw = winbar(R.diff_win, 200)
+  check(find(dw, "h files") and find(dw, "src/api.ts") and find(dw, "S send"), "diff winbar shows h hint: " .. dw)
+  dw = winbar(R.diff_win, 50)
+  check(vim.startswith(dw, " h files") and find(dw, "S send"), "narrow diff winbar keeps h and tail hints: " .. dw)
+  local lw = winbar(R.list_win, 40)
+  check(find(lw, "l diff"), "list winbar shows l hint: " .. lw)
+  check(find(winbar(R.list_win, 20), "l diff"), "narrow list winbar keeps l hint")
+
   review.toggle_approved()
   check(find(buf_text(R.diff_buf), "@@ -120,2 +121,3 @@  ✓ approved"), "A shows approved hunk")
   review.toggle_approved()
