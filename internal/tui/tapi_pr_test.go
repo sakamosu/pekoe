@@ -13,9 +13,9 @@ import (
 	"boba/internal/theme"
 )
 
-// prModel pins what the user's config could change (icons, animate), so
+// tapiPRModel pins what the user's config could change (icons, animate), so
 // the tests don't depend on ~/.config/boba.
-func prModel(t *testing.T, color string, mc config.Mascot) *model {
+func tapiPRModel(t *testing.T, color string, mc config.Mascot) *model {
 	t.Helper()
 	m := tapiModel(t, color, mc)
 	m.g.Animate = nil
@@ -33,7 +33,7 @@ func feedPR(m *model, s *state.Session, p mascot.PR) {
 func openPR(p mascot.PR) mascot.PR { p.Number, p.State = 42, "OPEN"; return p }
 
 func TestPRReactionOnlyOnChange(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	s := &state.Session{Slug: "fix-ci", Branch: "fix-ci", State: state.Idle, StateSince: time.Now()}
 	feedPR(m, s, openPR(mascot.PR{Pending: 2}))
 	if m.tapi.toast != nil {
@@ -84,7 +84,7 @@ func TestPRReactionOnlyOnChange(t *testing.T) {
 // wait / error come first: a PR toast never covers one, steps aside for
 // one and comes back once it is gone.
 func TestPRReactionYieldsToWaitAndError(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	pr := &state.Session{Slug: "a", Branch: "a", State: state.Idle, StateSince: time.Now()}
 	w8 := &state.Session{Slug: "b", Branch: "b", State: state.Waiting, StateSince: time.Now()}
 	feedPR(m, pr, openPR(mascot.PR{Pending: 1}))
@@ -120,7 +120,7 @@ func TestPRReactionYieldsToWaitAndError(t *testing.T) {
 }
 
 func TestPRReactionPriority(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	a := &state.Session{Slug: "a", Branch: "a", State: state.Idle}
 	b := &state.Session{Slug: "b", Branch: "b", State: state.Idle}
 	feedPR(m, a, openPR(mascot.PR{Pending: 1}))
@@ -146,7 +146,7 @@ func TestPRReactionPriority(t *testing.T) {
 // The agent pane doesn't show the PR, so looking at the session doesn't
 // dismiss its PR toast (it does dismiss wait / error).
 func TestPRToastSurvivesMarkSeen(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	s := &state.Session{Slug: "a", Branch: "a", State: state.Idle, StateSince: time.Now()}
 	m.sessions = []*state.Session{s}
 	m.sel = 0
@@ -178,7 +178,7 @@ func TestPRToastRendering(t *testing.T) {
 		{"unicode/ansi", "ansi", "unicode", config.Mascot{Shape: "block"}},
 		{"ascii", "none", "ascii", config.Mascot{Glyphs: "ascii"}},
 	} {
-		m := prModel(t, c.color, c.mc)
+		m := tapiPRModel(t, c.color, c.mc)
 		m.ic = theme.Icons(c.icons)
 		m.buildTapi(nil)
 		for _, e := range mascot.PREvents {
@@ -232,7 +232,7 @@ func TestPRToastRendering(t *testing.T) {
 
 // The toast keeps the whole view at the terminal's size.
 func TestPRToastViewKeepsWidth(t *testing.T) {
-	m := prModel(t, "truecolor", config.Mascot{Shape: "round"})
+	m := tapiPRModel(t, "truecolor", config.Mascot{Shape: "round"})
 	m.sessions = []*state.Session{{Slug: "a", Branch: "a", State: state.Idle, StateSince: time.Now()}}
 	reactionToast(m, mascot.PRMerged)
 	lines := strings.Split(m.View(), "\n")
@@ -251,7 +251,7 @@ func TestPRToastViewKeepsWidth(t *testing.T) {
 
 // An open PR with a red CI clouds the idle face a little; nothing else.
 func TestCloudyIdleBar(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	s := &state.Session{Slug: "a", Branch: "fix-ci", State: state.Idle, StateSince: time.Now()}
 	m.sessions = []*state.Session{s}
 	clear := ansi.Strip(m.barTapi(100))
@@ -272,7 +272,7 @@ func TestCloudyIdleBar(t *testing.T) {
 // The demo shows each face once, in this order, with the baseline and the
 // repeated summary silent.
 func TestDemoScript(t *testing.T) {
-	m := prModel(t, "none", config.Mascot{})
+	m := tapiPRModel(t, "none", config.Mascot{})
 	var got []string
 	for i := 0; i < len(demoScript(time.Now())); i++ {
 		m.tapi.toast, m.tapi.prQueue = nil, nil
@@ -308,3 +308,4 @@ func TestConfettiGlyphs(t *testing.T) {
 		}
 	}
 }
+
