@@ -165,7 +165,8 @@ func (d *Daemon) flushOutputEvents() {
 }
 
 // tickLoop: activity decay, fallback state detection for agents without
-// hooks (final fallback: [y/n] on the virtual screen), merge watching.
+// hooks (final fallback: [y/n] on the virtual screen), merge watching,
+// conflict forecast.
 func (d *Daemon) tickLoop() {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -196,6 +197,9 @@ func (d *Daemon) tickLoop() {
 		}
 		if n%60 == 5 {
 			go d.watchPRs()
+		}
+		if n%10 == 3 {
+			d.kickConflicts() // conflict forecast: git every ~10 s
 		}
 	}
 }

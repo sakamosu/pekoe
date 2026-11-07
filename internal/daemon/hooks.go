@@ -161,7 +161,8 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		sum := toolSummary(hp.ToolName, hp.ToolInput)
 		d.update(slug, func(s *state.Session) {
 			s.LastTool = strings.TrimSpace(hp.ToolName + " " + sum)
-			s.PendingTool = &state.Tool{Name: hp.ToolName, Input: sum, Touches: touches(hp.ToolName, hp.ToolInput, s.Path)}
+			t := touches(hp.ToolName, hp.ToolInput, s.Path)
+			s.PendingTool = &state.Tool{Name: hp.ToolName, Input: sum, Touches: t, AlsoIn: d.alsoChangedLocked(s, t)}
 			if hp.ToolName == "AskUserQuestion" {
 				s.State, s.WaitKind = state.Waiting, "question"
 			} else if s.State == state.Waiting || s.State == state.Idle || s.State == state.Done {
@@ -177,6 +178,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		})
 		if strings.HasPrefix(hp.ToolName, "Edit") || strings.HasPrefix(hp.ToolName, "Write") || hp.ToolName == "MultiEdit" || hp.ToolName == "NotebookEdit" {
 			go d.refreshDiffstat(slug)
+			d.kickConflicts()
 		}
 		go d.readTokens(slug, hp.TranscriptPath)
 	case "Notification":
