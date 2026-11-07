@@ -1,0 +1,523 @@
+// Package gitx wraps the git CLI (no libgit2). Everything boba stores in git
+// lives under refs/boba/, which is never pushed and never shows in git log.
+package gitx
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha1"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+type Error struct {
+	Args   []string
+	Stderr string
+	Err    error
+}
+
+func (e *Error) Error() string {
+	msg := strings.TrimSpace(e.Stderr)
+	if msg == "" {
+		msg = e.Err.Error()
+	}
+	return fmt.Sprintf("git %s: %s", strings.Join(e.Args, " "), msg)
+}
+
+// Run executes git in dir and returns trimmed stdout.
+func Run(dir string, args ...string) (string, error) {
+	return RunEnv(dir, nil, args...)
+}
+
+func RunEnv(dir string, env []string, args ...string) (string, error) {
+	out, err := RunRaw(context.Background(), dir, env, nil, args...)
+	return strings.TrimRight(string(out), "\n"), err
+}
+
+func RunRaw(ctx context.Context, dir string, env []string, stdin []byte, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	cmd.Env = append(cmd.Env, env...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return out, &Error{Args: args, Stderr: stderr.String(), Err: err}
+	}
+	return out, nil
+}
+
+// Toplevel returns the worktree root containing dir.
+func Toplevel(dir string) (string, error) { return Run(dir, "rev-parse", "--show-toplevel") }
+
+// CommonDir returns the shared .git directory (same for all worktrees).
+func CommonDir(dir string) (string, error) {
+	d, err := Run(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	return d, nil
+}
+
+// MainWorktree returns the primary worktree path of the repository.
+func MainWorktree(dir string) (string, error) {
+	wts, err := Worktrees(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(wts) == 0 {
+		return Toplevel(dir)
+	}
+	return wts[0].Path, nil
+}
+
+func Origin(dir string) string {
+	u, _ := Run(dir, "remote", "get-url", "origin")
+	return u
+}
+
+var scpLike = regexp.MustCompile(`^(?:[\w.-]+@)?([\w.-]+):(.+)$`)
+
+// NormalizeURL turns git@github.com:me/app.git and https://github.com/me/app
+// into github.com/me/app.
+func NormalizeURL(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return ""
+	}
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
+		if at := strings.LastIndex(strings.SplitN(u, "/", 2)[0], "@"); at >= 0 {
+			u = u[at+1:]
+		}
+		// drop port
+		host, rest, _ := strings.Cut(u, "/")
+		if h, _, ok := strings.Cut(host, ":"); ok {
+			host = h
+		}
+		u = host + "/" + rest
+	} else if m := scpLike.FindStringSubmatch(u); m != nil {
+		u = m[1] + "/" + m[2]
+	}
+	u = strings.TrimSuffix(strings.TrimSuffix(u, "/"), ".git")
+	return strings.ToLower(u)
+}
+
+// RepoID is the normalized origin URL with / replaced by _, or the main
+// worktree path when there is no origin.
+func RepoID(dir string) (string, error) {
+	if n := NormalizeURL(Origin(dir)); n != "" {
+		return strings.ReplaceAll(n, "/", "_"), nil
+	}
+	p, err := MainWorktree(dir)
+	if err != nil {
+		return "", err
+	}
+	p = strings.TrimPrefix(filepath.Clean(p), "/")
+	return "path_" + strings.ReplaceAll(p, "/", "_"), nil
+}
+
+// RepoName is the short name used under ~/worktrees/<repo>.
+func RepoName(dir string) string {
+	if n := NormalizeURL(Origin(dir)); n != "" {
+		return filepath.Base(n)
+	}
+	p, err := MainWorktree(dir)
+	if err != nil {
+		return "repo"
+	}
+	return filepath.Base(p)
+}
+
+type WorktreeInfo struct {
+	Path   string `json:"path"`
+	Head   string `json:"head"`
+	Branch string `json:"branch"`
+	Bare   bool   `json:"bare"`
+}
+
+func Worktrees(dir string) ([]WorktreeInfo, error) {
+	out, err := Run(dir, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	var res []WorktreeInfo
+	var cur *WorktreeInfo
+	for _, ln := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(ln, "worktree "):
+			res = append(res, WorktreeInfo{Path: strings.TrimPrefix(ln, "worktree ")})
+			cur = &res[len(res)-1]
+		case cur == nil:
+		case strings.HasPrefix(ln, "HEAD "):
+			cur.Head = strings.TrimPrefix(ln, "HEAD ")
+		case strings.HasPrefix(ln, "branch "):
+			cur.Branch = strings.TrimPrefix(strings.TrimPrefix(ln, "branch "), "refs/heads/")
+		case ln == "bare":
+			cur.Bare = true
+		}
+	}
+	return res, nil
+}
+
+func BranchExists(dir, branch string) bool {
+	_, err := Run(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	return err == nil
+}
+
+// DefaultBase guesses the base branch: origin/HEAD, then main, then master.
+func DefaultBase(dir string) string {
+	if r, err := Run(dir, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil && r != "" {
+		return strings.TrimPrefix(r, "origin/")
+	}
+	for _, b := range []string{"main", "master", "trunk", "develop"} {
+		if BranchExists(dir, b) {
+			return b
+		}
+	}
+	h, _ := Run(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	return h
+}
+
+// AddWorktree creates path on branch (creating the branch from base if needed).
+func AddWorktree(repoDir, path, branch, base string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if BranchExists(repoDir, branch) {
+		_, err := Run(repoDir, "worktree", "add", path, branch)
+		return err
+	}
+	args := []string{"worktree", "add", "-b", branch, path}
+	if base != "" {
+		args = append(args, base)
+	}
+	_, err := Run(repoDir, args...)
+	return err
+}
+
+func RemoveWorktree(repoDir, path string, force bool) error {
+	args := []string{"worktree", "remove", path}
+	if force {
+		args = []string{"worktree", "remove", "--force", path}
+	}
+	_, err := Run(repoDir, args...)
+	if err == nil {
+		_, _ = Run(repoDir, "worktree", "prune")
+	}
+	return err
+}
+
+// IgnoredFiles lists ignored files that exist (git ls-files --others --ignored).
+func IgnoredFiles(dir string) ([]string, error) {
+	out, err := Run(dir, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// ---- snapshots under refs/boba/<slug>/ ----
+
+// SnapshotTree writes the full working tree (tracked + untracked, minus
+// ignored) to a tree object without touching the real index.
+func SnapshotTree(dir string) (string, error) {
+	gitDir, err := Run(dir, "rev-parse", "--path-format=absolute", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(gitDir, "boba-index-*")
+	if err != nil {
+		return "", err
+	}
+	tmp.Close()
+	defer os.Remove(tmp.Name())
+	env := []string{"GIT_INDEX_FILE=" + tmp.Name()}
+	if HasHead(dir) {
+		if _, err := RunEnv(dir, env, "read-tree", "HEAD"); err != nil {
+			return "", err
+		}
+	} else {
+		os.Remove(tmp.Name())
+	}
+	if _, err := RunEnv(dir, env, "add", "-A", "--", "."); err != nil {
+		return "", err
+	}
+	return RunEnv(dir, env, "write-tree")
+}
+
+func HasHead(dir string) bool {
+	_, err := Run(dir, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err == nil
+}
+
+// SnapshotCommit records the working tree as a commit (parent HEAD) and
+// returns its sha. It does not move any branch.
+func SnapshotCommit(dir, message string) (string, error) {
+	tree, err := SnapshotTree(dir)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"commit-tree", tree, "-m", message}
+	if HasHead(dir) {
+		args = []string{"commit-tree", tree, "-p", "HEAD", "-m", message}
+	}
+	env := []string{
+		"GIT_AUTHOR_NAME=boba", "GIT_AUTHOR_EMAIL=boba@localhost",
+		"GIT_COMMITTER_NAME=boba", "GIT_COMMITTER_EMAIL=boba@localhost",
+	}
+	return RunEnv(dir, env, args...)
+}
+
+func UpdateRef(dir, ref, sha string) error {
+	_, err := Run(dir, "update-ref", ref, sha)
+	return err
+}
+
+func DeleteRefs(dir, prefix string) {
+	out, err := Run(dir, "for-each-ref", "--format=%(refname)", prefix)
+	if err != nil || out == "" {
+		return
+	}
+	for _, r := range strings.Split(out, "\n") {
+		_, _ = Run(dir, "update-ref", "-d", r)
+	}
+}
+
+func RevParse(dir, rev string) (string, error) {
+	return Run(dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+}
+
+func MergeBase(dir, a, b string) (string, error) { return Run(dir, "merge-base", a, b) }
+
+// RestoreSnapshot makes the working tree match commit (undo a prompt).
+// Files that exist now but not in the snapshot are deleted.
+func RestoreSnapshot(dir, commit string) error {
+	cur, err := SnapshotTree(dir)
+	if err != nil {
+		return err
+	}
+	out, err := Run(dir, "diff", "--name-status", "--no-renames", commit, cur)
+	if err != nil {
+		return err
+	}
+	for _, ln := range strings.Split(out, "\n") {
+		st, p, ok := strings.Cut(ln, "\t")
+		if !ok {
+			continue
+		}
+		if st == "A" { // added after the snapshot
+			_ = os.Remove(filepath.Join(dir, p))
+		}
+	}
+	_, err = Run(dir, "restore", "--source="+commit, "--worktree", "--", ":/")
+	return err
+}
+
+// ---- diffs ----
+
+type Line struct {
+	Kind string `json:"kind"` // " ", "+", "-"
+	Old  int    `json:"old"`
+	New  int    `json:"new"`
+	Text string `json:"text"`
+}
+
+type Hunk struct {
+	ID       string `json:"id"`
+	Header   string `json:"header"`
+	OldStart int    `json:"old_start"`
+	OldLines int    `json:"old_lines"`
+	NewStart int    `json:"new_start"`
+	NewLines int    `json:"new_lines"`
+	Lines    []Line `json:"lines"`
+}
+
+type FileDiff struct {
+	Path    string `json:"path"`
+	OldPath string `json:"old_path,omitempty"`
+	Status  string `json:"status"` // A M D R
+	Binary  bool   `json:"binary,omitempty"`
+	Hunks   []Hunk `json:"hunks"`
+	Added   int    `json:"added"`
+	Deleted int    `json:"deleted"`
+}
+
+var hunkRe = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`)
+
+// Diff returns the parsed diff between two tree-ish objects.
+func Diff(dir, from, to string, paths ...string) ([]FileDiff, error) {
+	args := []string{"diff", "--no-color", "--no-ext-diff", "-U3", "--find-renames", from, to}
+	if len(paths) > 0 {
+		args = append(append(args, "--"), paths...)
+	}
+	out, err := RunRaw(context.Background(), dir, nil, nil, args...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDiff(string(out)), nil
+}
+
+func atoi(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func ParseDiff(s string) []FileDiff {
+	var files []FileDiff
+	var f *FileDiff
+	var h *Hunk
+	oldN, newN := 0, 0
+	finishHunk := func() {
+		if f != nil && h != nil {
+			h.ID = HunkID(f.Path, *h)
+			f.Hunks = append(f.Hunks, *h)
+		}
+		h = nil
+	}
+	for _, ln := range strings.Split(s, "\n") {
+		switch {
+		case strings.HasPrefix(ln, "diff --git "):
+			finishHunk()
+			files = append(files, FileDiff{Status: "M"})
+			f = &files[len(files)-1]
+			// diff --git a/x b/y
+			rest := strings.TrimPrefix(ln, "diff --git ")
+			if i := strings.Index(rest, " b/"); i >= 0 {
+				f.OldPath = strings.TrimPrefix(rest[:i], "a/")
+				f.Path = rest[i+3:]
+			}
+		case f == nil:
+		case h == nil && strings.HasPrefix(ln, "new file mode"):
+			f.Status = "A"
+		case h == nil && strings.HasPrefix(ln, "deleted file mode"):
+			f.Status = "D"
+		case h == nil && strings.HasPrefix(ln, "rename from "):
+			f.Status = "R"
+			f.OldPath = strings.TrimPrefix(ln, "rename from ")
+		case h == nil && strings.HasPrefix(ln, "rename to "):
+			f.Path = strings.TrimPrefix(ln, "rename to ")
+		case h == nil && strings.HasPrefix(ln, "Binary files"):
+			f.Binary = true
+		case h == nil && strings.HasPrefix(ln, "--- "):
+		case h == nil && strings.HasPrefix(ln, "+++ "):
+			if p := strings.TrimPrefix(ln, "+++ "); p != "/dev/null" {
+				f.Path = strings.TrimPrefix(p, "b/")
+			}
+		case strings.HasPrefix(ln, "@@"):
+			finishHunk()
+			m := hunkRe.FindStringSubmatch(ln)
+			if m == nil {
+				continue
+			}
+			h = &Hunk{Header: ln, OldStart: atoi(m[1], 0), OldLines: atoi(m[2], 1), NewStart: atoi(m[3], 0), NewLines: atoi(m[4], 1)}
+			oldN, newN = h.OldStart, h.NewStart
+		case h != nil && strings.HasPrefix(ln, "+"):
+			h.Lines = append(h.Lines, Line{Kind: "+", New: newN, Text: ln[1:]})
+			newN++
+			f.Added++
+		case h != nil && strings.HasPrefix(ln, "-"):
+			h.Lines = append(h.Lines, Line{Kind: "-", Old: oldN, Text: ln[1:]})
+			oldN++
+			f.Deleted++
+		case h != nil && strings.HasPrefix(ln, " "):
+			h.Lines = append(h.Lines, Line{Kind: " ", Old: oldN, New: newN, Text: ln[1:]})
+			oldN++
+			newN++
+		case h != nil && strings.HasPrefix(ln, `\`):
+			// "\ No newline at end of file"
+		}
+	}
+	finishHunk()
+	if f != nil && f.Path == "" {
+		f.Path = f.OldPath
+	}
+	return files
+}
+
+// HunkID identifies a hunk by file path + its changed content, so the id
+// survives line-number shifts (design: パス + 変更後内容のハッシュ).
+func HunkID(path string, h Hunk) string {
+	s := sha1.New()
+	s.Write([]byte(path))
+	s.Write([]byte{0})
+	for _, l := range h.Lines {
+		if l.Kind == " " {
+			continue
+		}
+		s.Write([]byte(l.Kind))
+		s.Write([]byte(l.Text))
+		s.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(s.Sum(nil))[:16]
+}
+
+type Stat struct {
+	Added   int `json:"added"`
+	Deleted int `json:"deleted"`
+	Files   int `json:"files"`
+}
+
+func DiffStat(files []FileDiff) Stat {
+	var st Stat
+	for _, f := range files {
+		st.Added += f.Added
+		st.Deleted += f.Deleted
+		st.Files++
+	}
+	return st
+}
+
+// ShowFile returns the content of path at rev ("" if missing).
+func ShowFile(dir, rev, path string) string {
+	out, err := RunRaw(context.Background(), dir, nil, nil, "show", rev+":"+path)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// AddExclude appends a pattern to .git/info/exclude (local only, never committed).
+func AddExclude(dir, pattern string) error {
+	common, err := CommonDir(dir)
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(common, "info", "exclude")
+	b, _ := os.ReadFile(p)
+	for _, ln := range strings.Split(string(b), "\n") {
+		if strings.TrimSpace(ln) == pattern {
+			return nil
+		}
+	}
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	fh, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+	if len(b) > 0 && !bytes.HasSuffix(b, []byte("\n")) {
+		fh.WriteString("\n")
+	}
+	_, err = fh.WriteString(pattern + "\n")
+	return err
+}
