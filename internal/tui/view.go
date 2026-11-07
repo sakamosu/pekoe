@@ -17,10 +17,13 @@ import (
 
 func (m *model) View() string {
 	if m.width == 0 {
+		m.ime.set(0, 0, false)
 		return ""
 	}
 	if m.review != nil {
-		return m.review.view()
+		out := strings.Split(m.review.view(), "\n")
+		m.ime.set(extractCursor(out))
+		return strings.Join(out, "\n")
 	}
 	var body []string
 	if narrow(m.width) {
@@ -37,6 +40,7 @@ func (m *model) View() string {
 	for i := range body {
 		body[i] = fit(body[i], m.width)
 	}
+	m.ime.set(extractCursor(body))
 	out := strings.Join(body, "\n")
 	if m.th.Mode == theme.Truecolor {
 		// explicit background so the cold low-chroma bg holds in every terminal theme
@@ -117,7 +121,7 @@ func (m *model) sessionsTitle(f bool) string {
 	if m.filter != "" || m.filterOn {
 		extra = "filter:" + m.filter
 		if m.filterOn {
-			extra += "▏"
+			extra += cursorMark + "▏"
 		}
 	}
 	return m.panelTitle(1, m.ic.Sessions, "Sessions "+pos, extra, f)
@@ -500,7 +504,7 @@ func (m *model) screenRows(cw, ch int) []row {
 func withCursor(line string, x int) string {
 	plainW := ansi.StringWidth(line)
 	if x >= plainW {
-		return line + strings.Repeat(" ", x-plainW) + "\x1b[7m \x1b[27m"
+		return line + strings.Repeat(" ", x-plainW) + cursorMark + "\x1b[7m \x1b[27m"
 	}
 	pre := ansi.Truncate(line, x, "")
 	ch := ansi.Strip(ansi.Truncate(ansi.TruncateLeft(line, x, ""), 1, ""))
@@ -508,7 +512,7 @@ func withCursor(line string, x int) string {
 		ch = " "
 	}
 	post := ansi.TruncateLeft(line, x+ansi.StringWidth(ch), "")
-	return pre + "\x1b[7m" + ch + "\x1b[27m" + post
+	return pre + cursorMark + "\x1b[7m" + ch + "\x1b[27m" + post
 }
 
 // ---- pick card ----
@@ -561,7 +565,7 @@ func (in *input) render(th *theme.Theme, focused bool) string {
 	}
 	pre := string(in.text[:in.pos])
 	post := string(in.text[in.pos:])
-	return pre + th.FG(theme.Primary, "▏") + post
+	return pre + cursorMark + th.FG(theme.Primary, "▏") + post
 }
 
 func (m *model) selectedPick() *state.Pick {

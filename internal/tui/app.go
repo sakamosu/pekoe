@@ -60,6 +60,7 @@ const (
 )
 
 type model struct {
+	ime    *imeCursor // IME 用に本物のカーソルを置く位置(View が更新)
 	cl     *client.Client
 	cwd    string
 	th     *theme.Theme
@@ -166,6 +167,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		square:     os.Getenv("BOBA_SQUARE") != "",
 		graphics:   graphicsCapable(),
 		sentImages: map[int64]bool{},
+		ime:        &imeCursor{},
 	}
 	m.width, m.height = TermSize()
 	return m
@@ -176,7 +178,8 @@ func Run(cl *client.Client, cwd string) error {
 		return err
 	}
 	m := newModel(cl, cwd)
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(),
+		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
 	if kittyEnabled() {
 		opts = append(opts, tea.WithFilter(kittyFilter))
 	}

@@ -277,7 +277,7 @@ func (n *newModal) view() []string {
 			if len(in.text) == 0 && n.field != i {
 				v = th.FG(theme.Dim, placeholders[i])
 			} else if len(in.text) == 0 {
-				v = th.FG(theme.Primary, "▏") + th.FG(theme.Dim, placeholders[i])
+				v = cursorMark + th.FG(theme.Primary, "▏") + th.FG(theme.Dim, placeholders[i])
 			}
 			lines = append(lines, col("", labels[i], v))
 		}
