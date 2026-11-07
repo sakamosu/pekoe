@@ -100,7 +100,11 @@
 | `review.surface` | `{slug, width, height}` | 右ペインを nvim(boba.nvim のレビュー面)に入れ替える。claude は裏で動き続ける |
 | `review.pr` | `{repo, number}` | `boba review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
 | `window.kill` | `{slug, window: "review"\|"dev"}` | レビュー面 / dev server のウィンドウを閉じる |
-| `browser.send_errors` | `{port, slug?}` | 溜まった console error をセッションに送る |
+| `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
+| `error.list` | `{slug?, all?}` | `[ErrorReport]`(古い順。既定は未対応 = `new` だけ、`all` で送信済み・無視も) |
+| `error.get` | `{id}` | `ErrorReport` + `excerpt`(先頭フレームが worktree 内なら前後 5 行の抜粋) |
+| `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
+| `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`boba ext`) |
 
 ### Review オブジェクト
@@ -121,6 +125,29 @@
 }
 ```
 
+### ErrorReport オブジェクト
+
+dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の Traceback)とブラウザの console error から bobad が拾ったエラー。メッセージと先頭フレームを正規化した指紋でまとめ、同じものは `count` が増える。
+
+```jsonc
+{
+  "id": 3, "slug": "feat-x",
+  "source": "dev",                 // dev | browser
+  "port": 3001, "url": "http://localhost:3001/list",  // browser のときだけ
+  "kind": "next",                  // 検出したルール: node | ts | next | vite | go | python | browser
+  "message": "TypeError: Cannot read properties of undefined (reading 'id')",
+  "file": "src/api.ts", "line": 12, "col": 7,  // 先頭フレーム(worktree 内なら相対パス)
+  "in_tree": true,                 // file が worktree 内のプロジェクトのファイル
+  "text": " ⨯ TypeError: …\n    at handler (…)",   // 出力そのまま(ANSI 除去済み、最新の 1 回分)
+  "count": 3, "first": "…", "last": "…",
+  "status": "new",                 // new | sent | ignored
+  "fingerprint": "26c249cb96b4"
+}
+```
+
+- 送った・無視したものは同じ指紋が再発するまで `error.list` に出ない。送信・無視の直後 3 秒以内の繰り返し(HMR の同じ出力)は再発に数えない
+- ブラウザの console error のうち、スタックもスクリプト位置もないもの(`console.error("Warning: …")` など)はカードにしない。Browser パネルの件数と `browser.send_errors` には含まれる
+
 ### イベント
 
 | event | data |
@@ -134,6 +161,7 @@
 | `review.answer` | `{slug, hunk_id, text}` |
 | `pick.received` | `Pick` |
 | `browser.updated` | `[tabs]` |
+| `error.updated` | `{report: ErrorReport, fresh}`(`fresh` は新規か、送信・無視後の再発。回数の更新や送信・無視では false) |
 | `editor.open` | `{path, line, note, slug}` |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 
@@ -148,7 +176,7 @@
 | path | body | 処理 |
 | --- | --- | --- |
 | `POST /pick` | `Pick` 入力(下記) | 保存して URL のポートからセッションを解決。指示つきで解決できれば即 pty へ。できなければ TUI に「どのセッションに送る?」 |
-| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる |
+| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる。ポートの持ち主のセッションがあれば、スタックかスクリプト位置のあるものはエラーカード(`error.*`)にもなる |
 | `POST /tabs` | `{tabs: [{url, title}]}` | 開いている localhost タブの一覧 |
 | `GET /health` | — | `{ok: true}`(token 必須) |
 

@@ -72,6 +72,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | localhost 以外はセッションを選ばせる | e2e(未解決のピックはカードとセッションピッカーへ) |
 | トークン必須 + Origin 確認 | `TestHTTPGuardAndPick`、e2e |
 | console error | 実機で 1 件届いた |
+| エラーの拾い上げ(dev 窓・ブラウザ → カード) | 検出器のテーブルテスト(Node / tsc / Next.js / Vite / Go / Python、ANSI 付き、チャンク分割、静かになったら確定)、指紋のまとめ・ignore・再発(`internal/errcatch`)、`TestDevErrorsBecomeCards` `TestBrowserErrorsShareTheCardFlow`、カードの描画(`TestErrorCardRenders` ほか)。隔離 e2e で TUI を起動し、dev 窓に出した Next.js 形式のエラー 3 回が `×3` の 1 枚にまとまる → `↵` で抜粋つきの詳細 → `s` でエージェントに `@…/errors/main-0001.md` の 1 行が届く → 次のエラー(Python)に繰り上がる → `i` で消える → dev を再起動すると両方がカードに戻る、ブラウザの POST がカードになり Browser パネルの `E` で送信済みになる、までを確認 |
 
 ## Neovim
 
