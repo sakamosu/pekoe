@@ -62,7 +62,7 @@ type Theme struct {
 // Mascot is [mascot]: tapi, the pearl (docs/mascot.md).
 type Mascot struct {
 	Shape   string            `toml:"shape"`   // auto | round | block
-	Glyphs  string            `toml:"glyphs"`  // auto | unicode | ascii
+	Glyphs  string            `toml:"glyphs"`  // auto | unicode | narrow | ascii
 	Palette string            `toml:"palette"` // dark (D) | light (E)
 	Colors  map[string]string `toml:"colors"`  // hi bd sh eye tea
 	Splash  *bool             `toml:"splash"`

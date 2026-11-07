@@ -38,11 +38,11 @@ func SextantTerminal() bool {
 }
 
 // DetectGlyphs resolves mascot.glyphs: "auto" → ascii when the icon set is
-// ascii or the terminal draws ambiguous-width glyphs (● ◉ ◕ ×) two cells
+// ascii or the terminal draws ambiguous-width glyphs (● ◉ ◕) two cells
 // wide, measured with a cursor position report.
 func DetectGlyphs(cfg, icons string, tty *os.File) string {
 	switch cfg {
-	case "unicode", "ascii":
+	case "unicode", "narrow", "ascii":
 		return cfg
 	}
 	if icons == "ascii" {
