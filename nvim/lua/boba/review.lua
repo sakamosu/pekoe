@@ -92,8 +92,9 @@ local function render_list()
     if type(d.test) == "table" and d.test.status and d.test.status ~= "none" then
       test = d.test.status == "pass" and " %#BobaOk#✓test" or (d.test.status == "fail" and " %#BobaErr#✗test" or " %#BobaDim#…test")
     end
+    -- 幅が足りないときは slug から先に切り、右端のキーヒントを残す(%<)
     vim.wo[R.list_win].winbar = string.format(
-      "%%#BobaTitle# ± %s %%#BobaDim#%s  %s/%s✓%s",
+      "%%#BobaTitle# ± %%<%s %%#BobaDim#%s  %s/%s✓%s%%=%%#BobaKey#l %%#BobaDim#diff ",
       R.slug,
       (d.base_label or ""):gsub("%%", "%%%%"),
       tostring(d.approved or 0),
@@ -237,8 +238,10 @@ local function render_diff(restore)
     local hint = function(k, w)
       return k and string.format("%%#BobaKey#%s %%#BobaDim#%s ", k, w) or ""
     end
+    -- h は先頭に固定し、幅が足りないときはパスから先に切る(%<)
     vim.wo[R.diff_win].winbar = string.format(
-      "%%#BobaTitle# %s %%=%s%s%s%s%s%s%s",
+      " %s%%#BobaTitle#%%<%s %%=%s%s%s%s%s%s%s",
+      hint("h", "files"),
       file and file.path:gsub("%%", "%%%%") or "",
       hint(km.next_hunk, "next"),
       hint(km.approve, "approve"),
