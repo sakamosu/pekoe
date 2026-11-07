@@ -175,6 +175,8 @@ type IconSet struct {
 	PR, Pending, ChangesReq, Merged, Closed                             string // GitHub PR state
 	CapL, CapR, Sep                                                     string
 	Spinner                                                             []string
+
+	Issues string // Issues panel / a GitHub issue
 }
 
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -200,7 +202,7 @@ func Icons(name string) IconSet {
 		return IconSet{Name: "unicode", Sessions: "◆", Worktrees: "⎇", Changes: "≡", Agent: ">", Diff: "±", Browser: "◎", Picks: "⌖",
 			Comments: "✎", Vim: "V", Run: "●", Wait: "●", Idle: "○", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "⚠",
 			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille,
-			PR: "⇄", Pending: "…", ChangesReq: "!", Merged: "↣", Closed: "-"}
+			PR: "⇄", Pending: "…", ChangesReq: "!", Merged: "↣", Closed: "-", Issues: "⊙"}
 	}
 	return IconSet{Name: "nerd",
 		Sessions: "\U000F06A9", Worktrees: "", Changes: "", Agent: "", Diff: "",
@@ -208,7 +210,7 @@ func Icons(name string) IconSet {
 		Run: "", Wait: "", Idle: "", Creating: "◌", Done: "", Fail: "",
 		Current: "", Warning: "", Check: "✓", Here: "▶", Unsent: "●", Sent: "✓",
 		PR: "\ue726", Pending: "\uf017", ChangesReq: "\uf06a", Merged: "\ue727", Closed: "\uf05e",
-		CapL: "", CapR: "", Sep: "│", Spinner: braille}
+		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192"}
 }
 
 // Prefix renders an icon followed by one space, or nothing in ascii.

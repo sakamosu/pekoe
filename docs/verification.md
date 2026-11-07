@@ -31,13 +31,15 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | Attention queue `]a` / `[a` | `attention.next` と TUI の `returnTo`、e2e |
 | 未読ライン | 離れた時点の行位置を記録し、戻ったときに `── new ──` を差し込む |
 | 永続性 | デーモンを再起動してもセッションが残る(tmux が生存)。tmux ごと落ちたら `--resume` で復元(e2e) |
+| 衝突予報(⚠N・also changed in・Changes の相手・land の予報・`boba conflicts`) | `TestConflictForecast`(同じ行 → conflict、違う行 → overlap、別ファイル → なし、未コミットは overlap のみ、許可待ちの Edit に also_in)、`TestSessionListConflictTag` `TestPermissionModalAlsoChanged` `TestChangesShowPeersAndLandForecast`。隔離 e2e で 3 セッションを並べ、TUI(140 列 unicode / 80 列 ascii)と CLI で表示を確認 |
 
 ## worktree フロー
 
 | 項目 | 確認 |
 | --- | --- |
 | `boba new` の 5 歩(worktree → copy/clone → setup → port → 起動) | e2e、TUI の New モーダル(モック 04) |
-| `--from gh#N`(issue 本文を初期プロンプトに) | `issuePrompt`(gh issue view) |
+| `--from gh#N`(issue 本文を初期プロンプトに) | `issuePrompt`(gh issue view)。作ったセッションに `issue` 番号を記録(`TestIssuesMatchSessions`) |
+| Issue インボックス(`issues.list` / `issues.view`、[2] Issues、`boba issues`) | 偽 gh でパース・フィルタ・キャッシュ・セッションとの突き合わせ・gh が使えないとき(`TestIssuesList*` `TestIssuesView` `TestIssuesUnavailable` `TestIssuesMatchSessions`)、ブランチ名の提案(`TestSuggestBranch`)、サブタブ巡回と描画(`TestSubtabCyclesThreeWays` `TestNarrowTabsIncludeIssues` `TestIssuesPanelRender` `TestIssueKeys`)。隔離したデーモンと本物の gh で、公開リポジトリの issue 一覧・本文表示・`n` からのセッション作成・Enter でのジャンプ・90 列のタブ化・GitHub リモートの無いリポジトリでの 1 行表示を確認 |
 | `boba open`(過去のセッションを resume するか選ぶ)/ `boba adopt` | `TestSessionLifecycleAndReview`(open)。adopt は候補の列挙と確認つきの取り込みとして実装 |
 | `boba land`(rebase → test → `gh pr create` → マージ検出 → teardown) | `TestLandWithPRAndMergeTeardown`(偽 gh + bare origin)、ローカル fast-forward は e2e |
 | `boba rm` は `~/worktrees` 配下しか消さない | `TestUnderWorktrees`、`TestSessionLifecycleAndReview`(外部リポジトリが残る) |
@@ -73,6 +75,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | localhost 以外はセッションを選ばせる | e2e(未解決のピックはカードとセッションピッカーへ) |
 | トークン必須 + Origin 確認 | `TestHTTPGuardAndPick`、e2e |
 | console error | 実機で 1 件届いた |
+| エラーの拾い上げ(dev 窓・ブラウザ → カード) | 検出器のテーブルテスト(Node / tsc / Next.js / Vite / Go / Python、ANSI 付き、チャンク分割、静かになったら確定)、指紋のまとめ・ignore・再発(`internal/errcatch`)、`TestDevErrorsBecomeCards` `TestBrowserErrorsShareTheCardFlow`、カードの描画(`TestErrorCardRenders` ほか)。隔離 e2e で TUI を起動し、dev 窓に出した Next.js 形式のエラー 3 回が `×3` の 1 枚にまとまる → `↵` で抜粋つきの詳細 → `s` でエージェントに `@…/errors/main-0001.md` の 1 行が届く → 次のエラー(Python)に繰り上がる → `i` で消える → dev を再起動すると両方がカードに戻る、ブラウザの POST がカードになり Browser パネルの `E` で送信済みになる、までを確認 |
 
 ## Neovim
 

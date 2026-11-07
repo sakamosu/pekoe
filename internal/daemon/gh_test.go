@@ -9,6 +9,15 @@ import (
 	"boba/internal/state"
 )
 
+// issues as `gh issue list --json number,title,labels,assignees,updatedAt,comments,url` prints them
+const (
+	ghIssue12 = `{"number":12,"title":"Login fails on Safari","labels":[{"name":"bug","color":"d73a4a"},{"name":"ui","color":"fff"}],"assignees":[{"login":"me"}],"updatedAt":"2026-11-07T10:00:00Z","comments":[{"author":{"login":"a"},"body":"x"},{"author":{"login":"b"},"body":"y"}],"url":"https://github.com/me/app/issues/12"}`
+	ghIssue7  = `{"number":7,"title":"CSV export","labels":[],"assignees":[],"updatedAt":"2026-11-01T10:00:00Z","comments":[],"url":"https://github.com/me/app/issues/7"}`
+	ghIssue3  = `{"number":3,"title":"Dark mode","labels":[{"name":"enhancement"}],"assignees":[],"updatedAt":"2026-10-01T10:00:00Z","comments":{"totalCount":5},"url":"https://github.com/me/app/issues/3"}`
+
+	ghIssue12View = `{"number":12,"title":"Login fails on Safari","body":"## Steps\n- open /login\n- press submit","state":"OPEN","author":{"login":"alice"},"labels":[{"name":"bug"}],"assignees":[{"login":"me"}],"comments":[{"author":{"login":"bob"},"body":"same here","createdAt":"2026-11-07T11:00:00Z"}],"url":"https://github.com/me/app/issues/12","createdAt":"2026-11-06T10:00:00Z","updatedAt":"2026-11-07T11:00:00Z"}`
+)
+
 // fakeGH puts a `gh` on PATH that answers like GitHub and logs its calls.
 func fakeGH(t *testing.T, prState string) string {
 	t.Helper()
@@ -25,6 +34,16 @@ case "$1 $2" in
       *) echo '{"number":42}' ;;
     esac ;;
   "api --method") cat > ` + filepath.Join(dir, "review.json") + `; echo '{}' ;;
+  "issue list"|"issue view")
+    if [ -f ` + filepath.Join(dir, "auth-fail") + ` ]; then
+      echo 'To get started with GitHub CLI, please run:  gh auth login' >&2; exit 4
+    fi
+    case "$*" in
+      *"issue view"*) cat ` + filepath.Join(dir, "issue-view.json") + ` ;;
+      *@me*) echo '[` + ghIssue12 + `]' ;;
+      *"--label bug"*) echo '[` + ghIssue12 + `]' ;;
+      *) echo '[` + ghIssue12 + `,` + ghIssue7 + `,` + ghIssue3 + `]' ;;
+    esac ;;
   "api graphql")
     if [ -f ` + filepath.Join(dir, "noauth") + ` ]; then echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit 4; fi
     cat ` + filepath.Join(dir, "pr.json") + ` ;;
@@ -36,6 +55,7 @@ case "$1 $2" in
 esac
 `
 	os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755)
+	os.WriteFile(filepath.Join(dir, "issue-view.json"), []byte(ghIssue12View), 0o644)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return dir
 }

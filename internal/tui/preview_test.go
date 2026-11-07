@@ -282,3 +282,39 @@ func TestPreviewNeedsPort(t *testing.T) {
 		t.Fatal("a session without a port has nothing to preview")
 	}
 }
+
+// The issue view (Issues tab) is drawn over whatever window the main panel
+// shows: over the preview, its images go and its keys are the issue view's.
+func TestPreviewYieldsToIssueView(t *testing.T) {
+	m := previewModel(t, true)
+	m.openPreview()
+	m.previewSync()
+	m.setPreview(shots())
+	m.previewSync()
+	if len(m.pv.live) != 1 {
+		t.Fatalf("live: %v", m.pv.live)
+	}
+	m.iss.list = &daemon.IssueList{Filter: "mine", FetchedAt: time.Now(), Issues: []daemon.Issue{{Number: 7, Title: "fix the header"}}}
+	m.iss.sel, m.iss.open = 0, true
+	if !m.issueShown() {
+		t.Fatal("issue view not shown")
+	}
+	m.previewSync()
+	if len(m.pv.live) != 0 {
+		t.Fatal("preview images left under the issue view")
+	}
+	if strings.Contains(plain(viewLines(t, m)), "Preview a") {
+		t.Fatal("the preview is drawn over the issue view")
+	}
+	// c belongs to the issue view now, not to the preview
+	m.onKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	if m.pv.compare {
+		t.Fatal("a preview key went through the issue view")
+	}
+	// closing the issue view brings the preview (and its image) back
+	m.iss.open = false
+	m.previewSync()
+	if len(m.pv.live) != 1 || !strings.Contains(plain(viewLines(t, m)), "Preview a") {
+		t.Fatal("the preview did not come back")
+	}
+}

@@ -20,6 +20,7 @@ import (
 	"boba/internal/config"
 	"boba/internal/daemon"
 	"boba/internal/engine"
+	"boba/internal/errcatch"
 	"boba/internal/state"
 	"boba/internal/theme"
 )
@@ -54,7 +55,7 @@ type change struct {
 
 const (
 	pSessions = 1
-	pSecond   = 2 // Worktrees | Browser
+	pSecond   = 2 // Worktrees | Browser | Issues
 	pThird    = 3 // Changes | Picks
 	pAgent    = 4
 )
@@ -85,11 +86,12 @@ type model struct {
 	tabs      []daemon.Tab
 	tsel      int
 	picks     []*state.Pick
-	psel      int
+	psel      int               // over picks, then errs (Picks panel)
+	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
 	focus     int
-	narrowTab int // < 100 columns: 0 sessions, 1 worktrees, 2 changes
-	sub2      int // 0 worktrees, 1 browser
+	narrowTab int // < 100 columns: index into narrowTabs
+	sub2      int // 0 worktrees, 1 browser, 2 issues (subIssues)
 	sub3      int // 0 changes, 1 picks
 	typing    bool
 	guard     mouseGuard    // reassembles mouse reports split across reads
@@ -120,6 +122,7 @@ type model struct {
 	quitting bool
 
 	review *reviewModel // built-in review surface when active
+	iss    issuesState  // [2] Issues and the issue shown in the main panel (issues.go)
 
 	graphics   bool           // outer terminal draws Kitty graphics
 	sentImages map[int64]bool // pick screenshots already transmitted
@@ -228,7 +231,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
@@ -440,6 +443,7 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	m.lastSel = cur
 	m.screen = nil
+	m.iss.open = false
 	m.typing = false
 	m.pickInput = nil
 	switch {
@@ -487,6 +491,7 @@ const (
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.markSeen()
+	defer m.issueSync()
 	var cmd tea.Cmd
 	// every key passes the mouse guard first, whichever screen handles it
 	switch msg := msg.(type) {
@@ -585,9 +590,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.prFollow())
 		}
 		cmds = append(cmds, m.maybePermission(), m.escalate())
-		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
-			m.tapi.toast = nil
-		}
+		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
 	case spinMsg:
@@ -601,6 +604,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case disconnectedMsg:
 		m.setMsg("lost connection to bobad", true)
 		return m, tea.Quit
+
+	case issuesMsg, issueViewMsg:
+		return m, m.onIssuesMsg(msg)
 
 	case errMsg:
 		if msg.err != nil {
@@ -650,6 +656,16 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.picks = msg
 		m.ensurePickInput()
 		return m, m.sendPickImages()
+
+	case errsMsg:
+		m.errs = msg
+		return m, nil
+
+	case errDetailMsg:
+		if em, ok := m.modal.(*errModal); ok && em.r.ID == msg.id {
+			em.excerpt = msg.excerpt
+		}
+		return m, nil
 
 	case screenMsg:
 		m.fetching = false
@@ -851,6 +867,8 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 			m.setMsg(fmt.Sprintf("pick #%04d from Chrome", pk.ID), false)
 		}
 		return tea.Batch(cmds...)
+	case "error.updated":
+		return m.onErrorEvent(ev.Data)
 	case "browser.updated":
 		var ts []daemon.Tab
 		if json.Unmarshal(ev.Data, &ts) == nil {
@@ -973,8 +991,16 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.sel = 0
 		return nil
 	}
-	if m.pickInput != nil && m.focus == pAgent {
+	if m.iss.queryOn {
+		return m.issueQueryKey(k)
+	}
+	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() {
 		if cmd, used := m.pickKey(k); used {
+			return cmd
+		}
+	}
+	if m.focus == pAgent && m.bracket == "" && !m.issueShown() {
+		if cmd, used := m.errorKey(k.String()); used {
 			return cmd
 		}
 	}
@@ -1047,8 +1073,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case pSessions:
 		return m.keySessions(key)
 	case pSecond:
-		if m.sub2 == 1 {
+		switch m.sub2 {
+		case 1:
 			return m.keyBrowser(key)
+		case subIssues:
+			return m.keyIssues(key)
 		}
 		return m.keyWorktrees(key)
 	case pThird:
@@ -1057,10 +1086,10 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		}
 		return m.keyChanges(key)
 	case pAgent:
-		if m.window == winPR {
+		if m.window == winPR && !m.issueShown() {
 			return m.keyPR(key)
 		}
-		if m.window == winPreview {
+		if m.window == winPreview && !m.issueShown() {
 			return m.keyPreview(key)
 		}
 		return m.keyAgent(key)
@@ -1068,26 +1097,40 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// narrowTabs are the tabs of the one left panel below 100 columns.
+var narrowTabs = []struct{ focus, sub2 int }{{pSessions, 0}, {pSecond, 0}, {pSecond, subIssues}, {pThird, 0}}
+
+// cycle steps i through n values forwards or backwards.
+func cycle(i, n int, next bool) int {
+	if next {
+		return (i + 1) % n
+	}
+	return (i + n - 1) % n
+}
+
 func (m *model) subtab(next bool) tea.Cmd {
 	if narrow(m.width) && m.focus != pAgent {
-		if next {
-			m.narrowTab = (m.narrowTab + 1) % 3
-		} else {
-			m.narrowTab = (m.narrowTab + 2) % 3
+		m.narrowTab = cycle(m.narrowTab, len(narrowTabs), next)
+		t := narrowTabs[m.narrowTab]
+		m.focus = t.focus
+		m.sub2, m.sub3 = t.sub2, 0
+		if m.sub2 == subIssues {
+			return m.enterIssues()
 		}
-		m.focus = m.narrowTab + 1
-		m.sub2, m.sub3 = 0, 0
 		return nil
 	}
 	switch m.focus {
 	case pSecond:
-		m.sub2 = 1 - m.sub2
-		if m.sub2 == 1 {
+		m.sub2 = cycle(m.sub2, 3, next) // worktrees → browser → issues
+		switch m.sub2 {
+		case 1:
 			return m.loadTabs()
+		case subIssues:
+			return m.enterIssues()
 		}
 		return m.loadWorktrees()
 	case pThird:
-		m.sub3 = 1 - m.sub3
+		m.sub3 = cycle(m.sub3, 2, next)
 		if m.sub3 == 1 {
 			return m.loadPicks()
 		}
@@ -1220,7 +1263,7 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 				}
 				return infoMsg("landed " + s.Slug)
 			}
-		}).about(s.Branch)
+		}).about(s.Branch).note(m.landNotes(s))
 	case "d":
 		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server toggled · :"+fmt.Sprint(s.Port))
 	case "x":
@@ -1329,12 +1372,22 @@ func (m *model) keyBrowser(key string) tea.Cmd {
 }
 
 func (m *model) keyPicks(key string) tea.Cmd {
+	if r := m.selectedError(); r != nil {
+		switch key {
+		case "enter":
+			return tea.Batch(m.selectSlug(r.Slug), m.openErrorDetail(*r))
+		case "s":
+			return m.sendError(*r)
+		case "i", "d", "x":
+			return m.ignoreError(*r)
+		}
+	}
 	pk := m.selectedPick()
 	switch key {
 	case "j", "down":
-		m.move(&m.psel, len(m.picks), 1)
+		m.move(&m.psel, m.thirdCount(), 1)
 	case "k", "up":
-		m.move(&m.psel, len(m.picks), -1)
+		m.move(&m.psel, m.thirdCount(), -1)
 	case "enter":
 		if pk != nil && !pk.Sent {
 			m.focus = pAgent
@@ -1360,6 +1413,9 @@ func (m *model) keyPicks(key string) tea.Cmd {
 }
 
 func (m *model) keyAgent(key string) tea.Cmd {
+	if m.issueShown() {
+		return m.keyIssueMain(key)
+	}
 	s := m.current()
 	switch key {
 	case "i", "enter", "a":
@@ -1420,6 +1476,11 @@ func (m *model) forward(k tea.KeyMsg) tea.Cmd {
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.modal != nil {
 		return nil
+	}
+	if m.issueShown() {
+		if cmd, ok := m.issueMouse(ev); ok {
+			return cmd
+		}
 	}
 	// map to the agent panel's content area
 	x0, y0 := m.agentOrigin()

@@ -212,7 +212,7 @@ func (m *model) previewSync() tea.Cmd {
 	}
 	if m.graphics {
 		var keys []gfxKey
-		if want != "" && m.review == nil {
+		if want != "" && m.review == nil && !m.issueShown() { // the issue view covers the preview
 			cw, ch := m.previewBody()
 			for _, sl := range previewLayout(pv.view, pv.compare, cw, ch, pv.cellW, pv.cellH) {
 				keys = append(keys, sl.key())

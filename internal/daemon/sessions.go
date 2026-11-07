@@ -273,7 +273,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Slug: slug, Branch: p.Branch, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir,
 		Path: paths.Worktree(repo.Name, slug), Agent: agent, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
-		Test: state.Test{Status: "none"},
+		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
 	}
 	d.add(s)
 	steps := []Step{

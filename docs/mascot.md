@@ -105,6 +105,59 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 
 wait と work の往復が日常のループで、done と error は「ユーザーが見た」を契機に idle へ戻る。
 
+## PR と CI への反応
+
+セッションの PR（bobad が 60 秒ごとに取る要約、`Session.pr_status`）が変わったとき、tapi が1回だけトーストで反応する。遊びの要素だが、どのセッションの何番の PR で何が起きたかを1行で言うので、状態の通知も兼ねる。
+
+反応は「前に見た要約」と「今の要約」の差から作る（`mascot.PRDiff`）。同じ状態がポーリングで何度届いても反応しない。最初に見た要約（起動直後、PR が新しく付いたとき）は基準にするだけで反応しない。
+
+| 優先 | イベント | 条件（前 → 今） | 目 | ascii | 色 | 表示 | 気持ち |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | merged | MERGED になった | `✦ ✦` ＋紙吹雪 | `* *` | 緑 | 4 秒 | お祝い。PR ごとに一回きり |
+| 2 | ci\_failed | 失敗 check が 0 → 1 件以上 | `╥ ╥` | `T T` | 赤 | 5 秒 | しょんぼり（error の `⨯ ⨯` とは別の顔） |
+| 3 | changes\_requested | reviewDecision が CHANGES\_REQUESTED になった | `> <` | `> <` | 黄 | 5 秒 | ちょっと緊張 |
+| 4 | new\_comment | 未解決スレッドが増えた、または未解決スレッドに新しいコメント | `◒ ◒` | `o.o` | 黄 | 5 秒 | 気にする（下を見て読んでいる） |
+| 5 | approved | reviewDecision が APPROVED になった | `◠ ◠` | `^.^` | 緑 | 4 秒 | 照れる・うれしい |
+| 6 | ci\_passed | check が全部成功の状態になった | `^ ^` | `^ ^` | 緑 | 4 秒 | 喜ぶ |
+| 7 | ci\_running | 実行中が 0 → 1 件以上（失敗なし） | `◔ ◔` ↔ `◓ ◓` | `. .` ↔ `o o` | dim | 3 秒 | そわそわ見守る（800ms で目線が動く） |
+
+CLOSED は何もしない。MERGED と同時に CI が通っても merged だけを言う。
+
+セリフ（`tapi.json` の `reactions`。イベントごとに3つ。どれを言うかは反応の中身から決まるので、同じ反応は何度描き直しても同じ文）：
+
+| イベント | セリフ |
+| --- | --- |
+| merged | `fix-ci #42 マージされた` / `fix-ci #42 入った、おめでとう` / `fix-ci #42 おつかれさま、マージ` |
+| ci\_failed | `fix-ci #42 の CI 落ちちゃった` / `fix-ci #42 の check が 2 件こけた` / `fix-ci #42 の CI だめだった` |
+| changes\_requested | `fix-ci #42 に修正依頼きた` / `fix-ci #42 直してほしいって` / `fix-ci #42 changes requested` |
+| new\_comment | `fix-ci #42 にコメントきてる` / `fix-ci #42 未解決が 3 件` / `fix-ci #42 誰かが何か言ってる` |
+| approved | `fix-ci #42 approve もらえた` / `fix-ci #42 承認された、うれしい` / `fix-ci #42 レビュー通った` |
+| ci\_passed | `fix-ci #42 の CI 通った` / `fix-ci #42 全部 green` / `fix-ci #42 の check ぜんぶ通過` |
+| ci\_running | `fix-ci #42 の CI 見守り中` / `fix-ci #42 の check 走ってる` / `fix-ci #42 の CI どうかな` |
+
+文頭は必ず `<ブランチ名> #<PR 番号>`。日本語の短い話し言葉で、感嘆符は付けない（バーの台詞と同じ規則）。プレースホルダは `{name} {pr} {pass} {fail} {pending} {unresolved}`。
+
+優先順位と頻度：
+
+- PR のトーストは wait / error のトーストより下。wait / error が出ている間は上書きせず待ち行列に入る。PR のトーストが出ている最中に wait / error が来たら場所を譲り、PR のほうは待ち行列に戻る
+- 1回のポーリングで複数変わったら、上の表の優先が一番高いものだけを言う。PR のトースト同士では、優先が同じか高いものが今のトーストを置き換え、低いものは待つ
+- 待ち行列はセッションごとに1つ（優先の高いほう）、全体で最大3つ。30 秒待っても出られなかったものは捨てる（古い知らせを遅れて言わない）
+- 同じ PR の同じ状態に対する同じ反応は 90 秒以内に繰り返さない（ポーリング間で要約が揺れたとき用。CI の再実行で通り直すのは別の反応として言う）
+- 任意キーで消える。表示中のセッションの PR でも出す（エージェントのペインには PR が映っていないので）。主ペインに出ても消えない
+- 喜び・お祝いの顔（merged / approved / ci\_passed）は 4 秒でトーストごと消え、通常の顔に戻る
+
+アニメーション：
+
+- 紙吹雪は merged のトーストの上下の枠線に散らす。置字グラフィック（`docs/ui-guidelines.md`）の紙吹雪で、nerd は nf-fa-star / nf-fa-star\_o と `✦ ⁺`、unicode は `✦ ✧ ⋆ ⁺`、ascii は `* + ' .`。色は secondary（PR の merged アイコンと同じ役割色）。フォーカス中は 400ms ごとに瞬き、非フォーカスでは止まる
+- ci\_running の目線は 800ms ごとに2コマを往復する
+- `animate = false` のときは紙吹雪を出さず、目も1コマ目で止める（静止の顔とセリフだけ）
+
+待機中の顔：集約が idle のとき、開いている PR に失敗 check があると目が少し曇り（`• •` → `◦ ◦`）、台詞に1行足す（`▐◦ ◦▌ idle · fix-ci #42 ci red`、複数なら `idle · 2 prs ci red`）。wait / work / done / error / sleep の顔は変えない。ascii では目は変えず台詞だけ。
+
+確かめ方：`BOBA_TAPI_DEMO=pr boba` で起動すると、選択中のセッション（なければ架空の `feat/demo`）に台本どおりの偽の PR 要約を 6 秒ごとに流す。基準 → ci\_passed → approved → new\_comment → changes\_requested → ci\_running → ci\_failed（バーが曇る）→ 同じ要約（何も出ない）→ ci\_running → approved と ci\_passed の同時（approved だけ）→ merged（紙吹雪）。デーモンには何も送らない。
+
+PR の要約の受け口：TUI は `Session.pr_status` を `mascot.PR`（同じ名前のフィールドの写し＋`Session.pr` の番号）に移して比べる（`internal/tui/tapi_pr.go` の `sessionPR`）。デモの実行中はデモの要約が優先する。
+
 ## 実装仕様
 
 スプライトは「セル = \[グリフ, 前景の役割, 背景の役割\]」の2次元配列で持ち、役割をテーマのパレットで解決してから SGR（truecolor）に落とす。背景 `null` はターミナルの背景をそのまま使う。目のセルは `$0 $1 $2` を状態の目グリフで置換する。
@@ -164,7 +217,7 @@ wait と work の往復が日常のループで、done と error は「ユーザ
 
 ## 実装メモ
 
-コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ）。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / narrow / ascii） / `palette` / `splash` / `[mascot.colors]`）。
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / narrow / ascii） / `palette` / `splash` / `[mascot.colors]`）。
 
 bobad のセッション状態との対応：
 

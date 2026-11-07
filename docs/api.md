@@ -33,7 +33,7 @@
   "state_since": "2026-11-07T10:00:00Z",
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
-  "pending_tool": {"name": "Bash", "input": "pnpm prisma migrate dev"}, // 許可待ちの対象
+  "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション
   "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none
   "diffstat": {"added": 120, "deleted": 8, "files": 4},
   "prompts": 7,                    // スナップショット数
@@ -44,6 +44,7 @@
   "tokens": 42000,
   "dev": true,                     // dev server 起動中
   "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
+  "issue": 12,                     // --from gh#N で作ったときの issue 番号
   "pr_status": {                   // PR の要約(60 秒ごとにポーリング。PR ビューを開いている間は 15 秒)
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
@@ -55,9 +56,14 @@
     "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
     "attention_at": "…", "at": "…"
   },
-  "error": "setup failed: pnpm install"
+  "error": "setup failed: pnpm install",
+  "overlaps": [                    // 衝突予報(同じリポジトリの open なセッションのうち、同じファイルを触っている相手)
+    {"slug": "feat-x", "files": ["src/api.ts", "README.md"], "conflict": true, "conflict_files": ["src/api.ts"]}
+  ]
 }
 ```
+
+**衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、bobad が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
 
 ### メソッド
 
@@ -88,6 +94,7 @@
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
 | `dev.toggle` | `{slug}` | dev server の起動/停止 |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
+| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`boba conflicts`) |
 | `review.start` | `{slug}` | state を reviewing に |
 | `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |
@@ -114,8 +121,14 @@
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"}` | レビュー面 / dev server のウィンドウを閉じる |
-| `browser.send_errors` | `{port, slug?}` | 溜まった console error をセッションに送る |
+| `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
+| `error.list` | `{slug?, all?}` | `[ErrorReport]`(古い順。既定は未対応 = `new` だけ、`all` で送信済み・無視も) |
+| `error.get` | `{id}` | `ErrorReport` + `excerpt`(先頭フレームが worktree 内なら前後 5 行の抜粋) |
+| `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
+| `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`boba ext`) |
+| `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
+| `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
@@ -152,6 +165,27 @@
 }
 ```
 
+### IssueList / IssueDetail
+
+```jsonc
+// issues.list
+{
+  "repo_id": "github.com_me_app", "filter": "mine", "label": "",
+  "fetched_at": "...", "cached": true,
+  "unavailable": "no GitHub remote",   // gh が使えないときの 1 行(gh not installed / gh not authenticated · gh auth login / no GitHub remote)。issues は空
+  "issues": [
+    {"number": 12, "title": "Login fails on Safari", "labels": ["bug"], "assignees": ["me"],
+     "updated_at": "...", "comments": 2, "url": "https://github.com/me/app/issues/12",
+     "session": {"slug": "fix-login-fails-on-safari", "branch": "fix/login-fails-on-safari", "state": "running"}}
+  ]
+}
+// issues.view: Issue の項目 + 本文とコメント
+{"number": 12, "title": "...", "body": "...", "state": "OPEN", "author": "alice", "created_at": "...",
+ "thread": [{"author": "bob", "body": "...", "created_at": "..."}], "session": null, ...}
+```
+
+`session` はその issue を扱っている生きたセッション。`--from gh#N` で作ったとき記録した `Session.issue` を優先し、なければブランチ名に番号があるもの(`fix/123-login`、`feat/issue-123`、`gh-123`)。キャッシュから返すときも突き合わせは毎回やり直す。
+
 ### PRView オブジェクト
 
 ```jsonc
@@ -173,6 +207,29 @@
 
 `session.updated` は `pr_status` が変わったときだけ出る(取得時刻だけの変化では出ない)。gh が無い・未認証のときはポーリングを静かに飛ばす。
 
+### ErrorReport オブジェクト
+
+dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の Traceback)とブラウザの console error から bobad が拾ったエラー。メッセージと先頭フレームを正規化した指紋でまとめ、同じものは `count` が増える。
+
+```jsonc
+{
+  "id": 3, "slug": "feat-x",
+  "source": "dev",                 // dev | browser
+  "port": 3001, "url": "http://localhost:3001/list",  // browser のときだけ
+  "kind": "next",                  // 検出したルール: node | ts | next | vite | go | python | browser
+  "message": "TypeError: Cannot read properties of undefined (reading 'id')",
+  "file": "src/api.ts", "line": 12, "col": 7,  // 先頭フレーム(worktree 内なら相対パス)
+  "in_tree": true,                 // file が worktree 内のプロジェクトのファイル
+  "text": " ⨯ TypeError: …\n    at handler (…)",   // 出力そのまま(ANSI 除去済み、最新の 1 回分)
+  "count": 3, "first": "…", "last": "…",
+  "status": "new",                 // new | sent | ignored
+  "fingerprint": "26c249cb96b4"
+}
+```
+
+- 送った・無視したものは同じ指紋が再発するまで `error.list` に出ない。送信・無視の直後 3 秒以内の繰り返し(HMR の同じ出力)は再発に数えない
+- ブラウザの console error のうち、スタックもスクリプト位置もないもの(`console.error("Warning: …")` など)はカードにしない。Browser パネルの件数と `browser.send_errors` には含まれる
+
 ### イベント
 
 | event | data |
@@ -187,6 +244,7 @@
 | `pick.received` | `Pick` |
 | `preview.updated` | `Preview`(撮影開始・完了・失敗のたび。`rev` の小さいものは古い) |
 | `browser.updated` | `[tabs]` |
+| `error.updated` | `{report: ErrorReport, fresh}`(`fresh` は新規か、送信・無視後の再発。回数の更新や送信・無視では false) |
 | `editor.open` | `{path, line, note, slug}` |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 
@@ -201,7 +259,7 @@
 | path | body | 処理 |
 | --- | --- | --- |
 | `POST /pick` | `Pick` 入力(下記) | 保存して URL のポートからセッションを解決。指示つきで解決できれば即 pty へ。できなければ TUI に「どのセッションに送る?」 |
-| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる |
+| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる。ポートの持ち主のセッションがあれば、スタックかスクリプト位置のあるものはエラーカード(`error.*`)にもなる |
 | `POST /tabs` | `{tabs: [{url, title}]}` | 開いている localhost タブの一覧 |
 | `GET /health` | — | `{ok: true}`(token 必須) |
 

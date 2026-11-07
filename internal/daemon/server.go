@@ -21,6 +21,7 @@ import (
 
 	"boba/internal/config"
 	"boba/internal/engine"
+	"boba/internal/errcatch"
 	"boba/internal/paths"
 	"boba/internal/state"
 )
@@ -104,10 +105,17 @@ type Daemon struct {
 	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
 	paneH      int                       // used when a client spawns without knowing it (CLI)
 	preview    *previewer                // in-terminal browser preview (preview.go)
+	cf         conflictScan              // conflict forecast (conflicts.go)
 
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling atomic.Bool          // watchPRStatus is running
+
+	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
+	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
+	devFlushAt time.Time
+
+	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
 }
 
 func New() (*Daemon, error) {
@@ -134,6 +142,8 @@ func New() (*Daemon, error) {
 		progress:  map[string][]Step{},
 		stop:      make(chan struct{}),
 		prFetched: map[string]time.Time{},
+		catch:     errcatch.NewStore(),
+		devScan:   map[string]*errcatch.Scanner{},
 	}
 	d.registerHandlers()
 	return d, nil
@@ -351,6 +361,7 @@ func (d *Daemon) registerHandlers() {
 		"land":                  bind(d.hLand),
 		"dev.toggle":            bind(d.hDevToggle),
 		"changes":               bind(d.hChanges),
+		"conflicts.list":        bind(d.hConflicts),
 		"review.start":          bind(d.hReviewStart),
 		"review.end":            bind(d.hReviewEnd),
 		"review.files":          bind(d.hReviewFiles),
@@ -371,12 +382,18 @@ func (d *Daemon) registerHandlers() {
 		"pick.discard":          bind(d.hPickDiscard),
 		"browser.tabs":          func(json.RawMessage) (any, error) { return d.browserTabs(), nil },
 		"browser.send_errors":   bind(d.hSendErrors),
+		"error.list":            bind(d.hErrorList),
+		"error.get":             bind(d.hErrorGet),
+		"error.send":            bind(d.hErrorSend),
+		"error.ignore":          bind(d.hErrorIgnore),
 		"editor.open":           bind(d.hEditorOpen),
 		"init.detect":           bind(d.hInitDetect),
 		"init.write":            bind(d.hInitWrite),
 		"review.surface":        bind(d.hReviewSurface),
 		"window.kill":           bind(d.hWindowKill),
 		"term.caps":             bind(d.hTermCaps),
+		"issues.list":           bind(d.hIssuesList),
+		"issues.view":           bind(d.hIssuesView),
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h

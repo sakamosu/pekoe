@@ -23,6 +23,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -84,6 +85,10 @@ func main() {
 		err = cmdAdopt(args)
 	case "ls", "list":
 		err = cmdLs()
+	case "issues":
+		err = cmdIssues(args)
+	case "conflicts":
+		err = cmdConflicts(args)
 	case "send":
 		err = cmdSend(args)
 	case "event":
@@ -155,6 +160,9 @@ func usage() {
   boba open <worktree> [--resume|--new]
   boba adopt [--yes]           take over agents started by hand
   boba ls [--json]
+  boba issues [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
+  boba issues <N> [--json]     an issue's body and comments
+  boba conflicts [--repo ID] [--json]  sessions touching the same files (conflict forecast)
   boba send <slug> <text>
   boba review [<slug> | gh#N]
   boba land <slug>             rebase → test → gh pr create (teardown after merge)
@@ -550,6 +558,125 @@ func cmdLs() error {
 	sort.SliceStable(ss, func(i, j int) bool { return ss[i].CreatedAt.Before(ss[j].CreatedAt) })
 	for _, s := range ss {
 		fmt.Println(theme.SessionLine(th, ic, s, time.Now(), 0))
+	}
+	return nil
+}
+
+func cmdIssues(args []string) error {
+	f, pos := flags(args, "all", "mine", "refresh")
+	cl := connect()
+	defer cl.Close()
+	ic := theme.Icons(theme.IconsFromEnv())
+	th := theme.Load(nil)
+	if len(pos) > 0 {
+		n, err := strconv.Atoi(strings.TrimPrefix(pos[0], "#"))
+		if err != nil {
+			return fmt.Errorf("usage: boba issues [<N>] [--all|--label L] [--refresh]")
+		}
+		var det daemon.IssueDetail
+		if err := cl.Call("issues.view", map[string]any{"repo": cwd(), "number": n, "refresh": f["refresh"] == "true"}, &det); err != nil {
+			return err
+		}
+		if jsonOut {
+			printJSON(det)
+			return nil
+		}
+		fmt.Printf("#%d %s\n", det.Number, det.Title)
+		meta := []string{strings.ToLower(det.State), "@" + det.Author}
+		if len(det.Labels) > 0 {
+			meta = append(meta, strings.Join(det.Labels, ", "))
+		}
+		if det.Session != nil {
+			meta = append(meta, "session "+det.Session.Slug)
+		}
+		fmt.Println(th.FG(theme.Dim, strings.Join(meta, " · ")+" · "+det.URL))
+		fmt.Println()
+		fmt.Println(strings.TrimSpace(det.Body))
+		for _, c := range det.Thread {
+			fmt.Println()
+			fmt.Println(th.FG(theme.Dim, fmt.Sprintf("── @%s · %s ago", c.Author, theme.Ago(time.Since(c.CreatedAt)))))
+			fmt.Println(strings.TrimSpace(c.Body))
+		}
+		return nil
+	}
+	filter := "mine"
+	switch {
+	case f["label"] != "" && f["label"] != "true":
+		filter = "label"
+	case f["all"] == "true":
+		filter = "open"
+	}
+	var l daemon.IssueList
+	if err := cl.Call("issues.list", map[string]any{"repo": cwd(), "filter": filter, "label": f["label"], "refresh": f["refresh"] == "true"}, &l); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(l)
+		return nil
+	}
+	if l.Unavailable != "" {
+		return errors.New(l.Unavailable)
+	}
+	if len(l.Issues) == 0 {
+		fmt.Println("no open issues" + map[string]string{"mine": " assigned to you · --all for every open issue", "label": " labeled " + l.Label}[l.Filter])
+		return nil
+	}
+	for _, is := range l.Issues {
+		parts := []string{" ", fmt.Sprintf("#%-5d", is.Number), is.Title}
+		if is.Session != nil {
+			lk := theme.Look(ic, is.Session.State, 0, false)
+			parts[0] = th.FG(lk.Role, lk.Icon)
+		}
+		if len(is.Labels) > 0 {
+			parts = append(parts, th.FG(theme.Dim, strings.Join(is.Labels, ",")))
+		}
+		if is.Comments > 0 {
+			parts = append(parts, th.FG(theme.Dim, fmt.Sprintf("%dc", is.Comments)))
+		}
+		parts = append(parts, th.FG(theme.Dim, theme.Ago(time.Since(is.UpdatedAt))))
+		if is.Session != nil {
+			parts = append(parts, th.FG(theme.Dim, "→ "+is.Session.Slug))
+		}
+		fmt.Println(strings.Join(parts, "  "))
+	}
+	return nil
+}
+
+// cmdConflicts prints the conflict forecast: pairs of open sessions of the
+// same repository that touch the same files, and whether their committed
+// contents would conflict (git merge-tree) or merge automatically.
+func cmdConflicts(args []string) error {
+	f, _ := flags(args)
+	cl := connect()
+	defer cl.Close()
+	var ps []daemon.ConflictPair
+	if err := cl.Call("conflicts.list", map[string]any{"repo_id": f["repo"]}, &ps); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(ps)
+		return nil
+	}
+	if len(ps) == 0 {
+		fmt.Println("no overlapping sessions")
+		return nil
+	}
+	ic := theme.Icons(theme.IconsFromEnv())
+	th := theme.Load(nil)
+	repos := map[string]bool{}
+	for _, p := range ps {
+		repos[p.RepoID] = true
+	}
+	for _, p := range ps {
+		role, word, files := theme.Warn, "overlap ", strings.Join(p.Files, ", ")+th.FG(theme.Dim, "  (auto-merges)")
+		if p.Status == "conflict" {
+			role, word, files = theme.Err, "conflict", strings.Join(p.ConflictFiles, ", ")
+		}
+		repo := ""
+		if len(repos) > 1 {
+			repo = th.FG(theme.Dim, p.RepoID) + "  "
+		}
+		fmt.Printf("%s %s  %s%s %s %s  %s\n", th.FG(role, ic.Warning), th.FG(role, word), repo, p.A, th.FG(theme.Dim, "↔"), p.B, files)
 	}
 	return nil
 }

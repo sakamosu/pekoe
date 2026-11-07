@@ -85,6 +85,11 @@ func PreviewDir(repoID, slug string) string {
 	return filepath.Join(DataDir(), repoID, "preview", slug)
 }
 
+// ErrorsDir is ~/.local/share/boba/<repo-id>/errors (errors sent to agents).
+func ErrorsDir(repoID string) string {
+	return filepath.Join(DataDir(), repoID, "errors")
+}
+
 // Worktree is ~/worktrees/<repo>/<slug>.
 func Worktree(repo, slug string) string {
 	return filepath.Join(WorktreesRoot(), repo, slug)

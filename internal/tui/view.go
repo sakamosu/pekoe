@@ -42,7 +42,12 @@ func (m *model) View() string {
 	if c, ok := m.modal.(*confirmModal); ok && len(body) >= 2 {
 		// boba asks: one line at the bottom of the main pane, puppy first
 		x, _ := m.agentOrigin()
-		body = placeAt(body, len(body)-2, x, []string{m.askLine(c, m.agentContentWidth())})
+		cw := m.agentContentWidth()
+		lines := append(m.noteLines(c, cw), m.askLine(c, cw))
+		if keep := len(body) - 3; len(lines) > keep { // never over the panel's top border
+			lines = lines[len(lines)-max(keep, 1):]
+		}
+		body = placeAt(body, len(body)-1-len(lines), x, lines)
 	} else if m.modal != nil {
 		body = overlay(body, m.modal.view(), m.width)
 	}
@@ -235,13 +240,23 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State == state.Idle || s.State == state.Creating || s.State == state.Landed {
 		nameRole = theme.Dim
 	}
-	// the PR tag never gets truncated away; the branch name gives way first
+	// the PR and conflict tags never get truncated away; the branch name gives way first
 	tag := ""
 	if s.PR > 0 {
 		tag += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", s.PR))
 		if lk, ok := theme.PRLook(m.ic, s.PRStatus); ok && lk.Icon != "" {
 			tag += " " + th.FG(lk.Role, lk.Icon)
 		}
+	}
+	if ct := m.conflictTag(s); ct != "" {
+		tag += " " + ct
+	}
+	if n := m.sessionErrors(s.Slug); n > 0 {
+		e := "err"
+		if n > 1 {
+			e = fmt.Sprintf("%d err", n)
+		}
+		tag += " " + th.FG(theme.Err, e)
 	}
 	prAttention := s.PRStatus != nil && len(s.PRStatus.Attention) > 0
 	if (s.Unread > 0 && s.Slug != m.lastSel) || prAttention {
@@ -264,6 +279,9 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 }
 
 func (m *model) secondCount() int {
+	if m.sub2 == subIssues {
+		return m.issueCount()
+	}
 	if m.sub2 == 1 {
 		return len(m.tabs) + 1
 	}
@@ -272,7 +290,7 @@ func (m *model) secondCount() int {
 
 func (m *model) thirdCount() int {
 	if m.sub3 == 1 {
-		return len(m.picks)
+		return len(m.picks) + len(m.errs)
 	}
 	return max(len(m.changes), 1)
 }
@@ -281,6 +299,9 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 	th := m.th
 	cw := width - 4
 	cur := m.current()
+	if m.sub2 == subIssues {
+		return m.issuesPanel(width, h, f)
+	}
 	if m.sub2 == 1 {
 		var rows []row
 		errs, errPort := 0, 0
@@ -382,28 +403,33 @@ func (m *model) thirdPanel(width, h int, f bool) []string {
 			tag := pickTag(pk)
 			rows = append(rows, row{Text: mark + fmt.Sprintf(" #%04d ", pk.ID) + th.FG(theme.Dim, fit(tag, max(width-24, 8))) + " " + th.FG(theme.Dim, when), Sel: f && i == m.psel})
 		}
+		curSlug := ""
+		if cur != nil {
+			curSlug = cur.Slug
+		}
+		for i, r := range m.errs { // errors waiting for their card
+			rows = append(rows, row{Text: m.errorRow(r, width-4, curSlug), Sel: f && len(m.picks)+i == m.psel})
+		}
 		if len(rows) == 0 {
 			rows = append(rows, row{Text: th.FG(theme.Dim, "  no picks · ⌘⇧E in Chrome")})
 		}
-		title := m.panelTitle(3, m.ic.Picks, fmt.Sprintf("Picks %d", len(m.picks)), "· "+curName, f)
+		extra := "· " + curName
+		if len(m.errs) > 0 {
+			extra = fmt.Sprintf("· %d errors ", len(m.errs)) + extra
+		}
+		title := m.panelTitle(3, m.ic.Picks, fmt.Sprintf("Picks %d", len(m.picks)), extra, f)
 		return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
 	}
 	var rows []row
+	peers := filePeers(cur)
 	for i, c := range m.changes {
-		role := theme.Warn
-		switch c.Status {
-		case "A":
-			role = theme.Ok
-		case "D":
-			role = theme.Err
-		}
-		rows = append(rows, row{Text: th.FG(role, c.Status) + " " + c.Path, Sel: f && i == m.csel})
+		rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], width-4), Sel: f && i == m.csel})
 	}
 	if len(rows) == 0 {
 		rows = append(rows, row{Text: th.FG(theme.Dim, "  no changes yet")})
 	}
 	title := m.panelTitle(3, m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes)), curName, f)
-	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
+	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, footer: m.changesFooter(cur), focused: f})
 }
 
 func pickTag(pk *state.Pick) string {
@@ -433,6 +459,9 @@ func (m *model) agentOrigin() (int, int) {
 }
 
 func (m *model) viewAgent(width, height int) []string {
+	if m.issueShown() {
+		return m.viewIssue(width, height)
+	}
 	th := m.th
 	s := m.current()
 	f := m.focus == pAgent
@@ -498,7 +527,11 @@ func (m *model) viewAgent(width, height int) []string {
 func (m *model) agentRows(cw, ch int) []row {
 	rows := m.screenRows(cw, ch)
 	// a card from outside (Chrome pick) sits inside the pane, at the bottom
-	if card := m.pickCard(cw); len(card) > 0 {
+	card := m.pickCard(cw)
+	if len(card) == 0 {
+		card = m.errorCard(cw) // one card at a time: a pick first
+	}
+	if len(card) > 0 {
 		keep := max(ch-len(card), 0)
 		if len(rows) > keep {
 			rows = rows[len(rows)-keep:]
@@ -852,6 +885,9 @@ func (m *model) modeName() (string, string) {
 	}
 	switch m.focus {
 	case pSecond:
+		if m.sub2 == subIssues {
+			return "ISSUES", m.ic.Issues
+		}
 		if m.sub2 == 1 {
 			return "BROWSER", m.ic.Browser
 		}
@@ -862,6 +898,9 @@ func (m *model) modeName() (string, string) {
 		}
 		return "CHANGES", m.ic.Changes
 	case pAgent:
+		if m.issueShown() {
+			return "ISSUE", m.ic.Issues
+		}
 		if m.window == winPR {
 			return "PR", m.ic.PR
 		}
@@ -889,16 +928,25 @@ func (m *model) hints() [][2]string {
 	}
 	switch m.focus {
 	case pSecond:
+		if m.sub2 == subIssues {
+			return m.issuePanelHints()
+		}
 		if m.sub2 == 1 {
 			return [][2]string{{"j/k", "move"}, {"↵", "select"}, {"E", "send errors"}, {"?", "help"}}
 		}
 		return [][2]string{{"j/k", "move"}, {"↵", "open"}, {"n", "new"}, {"D", "del"}, {"?", "help"}}
 	case pThird:
 		if m.sub3 == 1 {
+			if m.selectedError() != nil {
+				return [][2]string{{"j/k", "move"}, {"↵", "detail"}, {"s", "send"}, {"i", "ignore"}, {"?", "help"}}
+			}
 			return [][2]string{{"j/k", "move"}, {"↵", "edit"}, {"s", "send"}, {"n", "new"}, {"d", "del"}, {"?", "help"}}
 		}
 		return [][2]string{{"j/k", "move"}, {"↵", "review"}, {"r", "review"}, {"?", "help"}}
 	case pAgent:
+		if m.issueShown() {
+			return m.issueMainHints()
+		}
 		if m.window == winPR {
 			if s := m.current(); s != nil && s.PRReview {
 				return [][2]string{{"j/k", "move"}, {"↵", "expand"}, {"o", "browse"}, {"R", "refresh"}, {"?", "help"}}
@@ -913,6 +961,9 @@ func (m *model) hints() [][2]string {
 		}
 		if m.screen != nil && m.screen.Dead {
 			return [][2]string{{"↵", "restart"}, {"h", "back"}, {"r", "review"}, {"?", "help"}}
+		}
+		if m.pendingError() != nil { // the card owns s / i / ↵; type with a
+			return [][2]string{{"a", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 		}
 		return [][2]string{{"↵", "type"}, {"h", "back"}, {"v", "preview"}, {"r", "review"}, {"d", "dev"}, {"?", "help"}}
 	}
@@ -972,6 +1023,8 @@ func (m *model) narrowTopH() int {
 	case 1:
 		n = len(m.worktrees)
 	case 2:
+		n = m.issueCount()
+	case 3:
 		n = len(m.changes)
 	}
 	return clampi(n, 1, 6) + 2
@@ -983,7 +1036,7 @@ func (m *model) viewNarrow() []string {
 	f := m.focus != pAgent && !m.typing
 	tabs := []struct {
 		icon, name string
-	}{{m.ic.Sessions, fmt.Sprintf("Sessions %d/%d", min(m.sel+1, len(m.visible())), len(m.visible()))}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
+	}{{m.ic.Sessions, fmt.Sprintf("Sessions %d/%d", min(m.sel+1, len(m.visible())), len(m.visible()))}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Issues, fmt.Sprintf("Issues %d %s", len(m.visibleIssues()), m.issueFilterName())}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
 	var parts []string
 	for i, t := range tabs {
 		label := theme.Prefix(t.icon) + t.name
@@ -1008,12 +1061,18 @@ func (m *model) viewNarrow() []string {
 			rows = append(rows, row{Text: fit(wt.Branch, 20) + th.FG(theme.Dim, fmt.Sprintf(":%d", wt.Port)), Sel: f && i == m.wsel})
 		}
 	case 2:
+		rows = m.issueRows(m.width-4, f)
+	case 3:
+		peers := filePeers(m.current())
 		for i, c := range m.changes {
-			rows = append(rows, row{Text: c.Status + " " + c.Path, Sel: f && i == m.csel})
+			rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], m.width-4), Sel: f && i == m.csel})
 		}
 	}
-	if m.narrowTab == 0 && len(rows) > topH-2 {
-		start := clampi(m.sel-(topH-3), 0, len(rows)-(topH-2))
+	if sel := m.sel; (m.narrowTab == 0 || m.narrowTab == 2) && len(rows) > topH-2 {
+		if m.narrowTab == 2 {
+			sel = m.iss.sel
+		}
+		start := clampi(sel-(topH-3), 0, len(rows)-(topH-2))
 		rows = rows[start:]
 	}
 	top := m.box(m.width, topH, boxOpt{title: title, right: th.Bold(theme.Secondary, "[ ]") + th.FG(theme.Dim, " tab"), rows: rows, focused: f})

@@ -93,6 +93,7 @@ func (d *Daemon) outputLoop() {
 			d.onOutput(o)
 		case <-flush.C:
 			d.flushOutputEvents()
+			d.flushDev(time.Now())
 		}
 	}
 }
@@ -119,6 +120,9 @@ func (d *Daemon) onOutput(o engine.Output) {
 	hooks := agent.Hooks
 	d.mu.Unlock()
 
+	if o.Window == engine.WinDev {
+		d.feedDev(o.Slug, o.Data, now)
+	}
 	if bytes.Contains(data, []byte("\x1b_G")) || bytes.Contains(data, []byte("\x1bPtmux;")) {
 		d.passGraphics(o.Slug, o.Window, data)
 	}
@@ -165,7 +169,8 @@ func (d *Daemon) flushOutputEvents() {
 }
 
 // tickLoop: activity decay, fallback state detection for agents without
-// hooks (final fallback: [y/n] on the virtual screen), PR and merge watching.
+// hooks (final fallback: [y/n] on the virtual screen), PR and merge watching,
+// conflict forecast.
 func (d *Daemon) tickLoop() {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
@@ -199,6 +204,9 @@ func (d *Daemon) tickLoop() {
 		}
 		if n%15 == 10 {
 			go d.watchPRStatus() // each open PR at most once a minute
+		}
+		if n%10 == 3 {
+			d.kickConflicts() // conflict forecast: git every ~10 s
 		}
 	}
 }
