@@ -502,7 +502,7 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {":", "command"}, {"q", "quit"}} {
 		g := g
 		h.items = append(h.items, helpItem{key: g[0], action: g[1], global: true})
 	}
@@ -511,7 +511,7 @@ func newHelpModal(m *model) *helpModal {
 
 // panelKeysFull lists every key of the focused panel: key, action, key to send.
 func (m *model) panelKeysFull() [][3]string {
-	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
+	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
 	switch m.focus {
 	case pSessions:
 		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"/", "filter", "/"}}, common...)
@@ -525,6 +525,14 @@ func (m *model) panelKeysFull() [][3]string {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
+	}
+	if m.window == winPR {
+		keys := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},
+			{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
+		if s := m.current(); s != nil && s.PRReview {
+			keys = append(keys[:2], keys[4:]...) // someone else's PR: nothing goes to an agent
+		}
+		return keys
 	}
 	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "agent / dev window", "v"}}, common...)
 }
