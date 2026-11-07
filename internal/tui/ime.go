@@ -61,18 +61,31 @@ func (c *imeCursor) get() (int, int, bool) {
 // カーソルを入力位置へ移す(カーソル自体は Bubble Tea が隠したまま)。
 // *os.File を埋め込むのは、Bubble Tea が term.File(Fd)として TTY 判定・
 // サイズ取得を続けられるようにするため。
+//
+// フレームとカーソル移動は 1 回の write にまとめ、同期出力(DEC 2026)で囲む。
+// 分けて書くと、端末がその間で描画したときにカーソル(= IME の preedit)が
+// 一瞬左下へ飛び、書き換え途中の行も見えてチカチカする。2026 を知らない
+// 端末はこのモード指定を無視する。
 type imeWriter struct {
 	*os.File
 	cur *imeCursor
 }
 
+const (
+	syncBegin = "\x1b[?2026h"
+	syncEnd   = "\x1b[?2026l"
+)
+
 func (w imeWriter) Write(p []byte) (int, error) {
-	n, err := w.File.Write(p)
-	if err != nil {
-		return n, err
-	}
+	buf := make([]byte, 0, len(p)+len(syncBegin)+len(syncEnd)+16)
+	buf = append(buf, syncBegin...)
+	buf = append(buf, p...)
 	if x, y, ok := w.cur.get(); ok {
-		_, _ = fmt.Fprintf(w.File, "\x1b[%d;%dH", y+1, x+1)
+		buf = fmt.Appendf(buf, "\x1b[%d;%dH", y+1, x+1)
 	}
-	return n, nil
+	buf = append(buf, syncEnd...)
+	if _, err := w.File.Write(buf); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
