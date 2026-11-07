@@ -92,13 +92,48 @@ func (t *Tmux) Start() error {
 		// agent as CSI u when it asked for extended keys; legacy otherwise
 		{"set-option", "-s", "extended-keys", "on"},
 		{"set-option", "-s", "extended-keys-format", "csi-u"},
-		{"set-option", "-sa", "terminal-features", ",xterm-256color:RGB:hyperlinks"},
 	} {
 		_, _ = t.run(o...)
 	}
+	t.ensureTerminalFeature("xterm-256color:RGB:hyperlinks")
 	t.started = true
 	t.refreshPanesLocked()
 	return t.startControl()
+}
+
+// ensureTerminalFeature keeps exactly one entry of f in the server-wide
+// terminal-features array. The server outlives bobad, so a plain append
+// (-sa) on every start piles up copies.
+func (t *Tmux) ensureTerminalFeature(f string) {
+	out, err := t.run("show-options", "-s", "terminal-features")
+	if err != nil {
+		return
+	}
+	idx := terminalFeatureIndexes(out, f)
+	if len(idx) == 0 {
+		_, _ = t.run("set-option", "-sa", "terminal-features", ","+f)
+		return
+	}
+	for _, i := range idx[1:] {
+		_, _ = t.run("set-option", "-su", fmt.Sprintf("terminal-features[%d]", i))
+	}
+}
+
+// terminalFeatureIndexes returns the array indexes holding f in
+// `show-options -s terminal-features` output ("terminal-features[3] value").
+func terminalFeatureIndexes(out, f string) []int {
+	var idx []int
+	for _, l := range strings.Split(out, "\n") {
+		name, val, ok := strings.Cut(strings.TrimSpace(l), " ")
+		if !ok || strings.Trim(val, `"`) != f {
+			continue
+		}
+		_, n, ok := strings.Cut(strings.TrimSuffix(name, "]"), "[")
+		if i, err := strconv.Atoi(n); ok && err == nil {
+			idx = append(idx, i)
+		}
+	}
+	return idx
 }
 
 func (t *Tmux) startControl() error {
