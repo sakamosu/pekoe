@@ -301,12 +301,6 @@ func (m *model) barTapi(width int) string {
 	return face + " " + m.speech(sum.Mood, text)
 }
 
-// rowCell is the session list's 1-cell dot.
-func (m *model) rowCell(s *state.Session) (string, mascot.Mood) {
-	mood := mascot.RowMood(s, m.tapi.seen[s.Slug])
-	return m.tapi.r.Cell(mood), mood
-}
-
 // bigRows centers the 3-line face with a caption: only for an empty main
 // pane (no session, worktree being created, setup failed, session ended).
 func (m *model) bigRows(width, height int, mood mascot.Mood, caption, sub string) []row {
