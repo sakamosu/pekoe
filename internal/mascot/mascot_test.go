@@ -55,9 +55,6 @@ func TestShapes(t *testing.T) {
 	if got := plain(Options{Glyphs: "ascii"}).Line("0 0"); got != "(0 0)" {
 		t.Errorf("ascii line=%q", got)
 	}
-	if got := plain(Options{}).Small("● ●"); got[1] != "█●●█" {
-		t.Errorf("small=%q", got)
-	}
 }
 
 func TestEyesAndCells(t *testing.T) {
@@ -94,23 +91,24 @@ func TestColorOverride(t *testing.T) {
 	}
 }
 
-func TestCupWidths(t *testing.T) {
-	r := plain(Options{})
-	for n := 0; n <= 6; n++ {
-		var ps []string
-		for i := 0; i < n; i++ {
-			ps = append(ps, "● ●")
-		}
-		rows := r.Cup(ps, nil, nil)
-		wd := ansi.StringWidth(rows[1])
-		for i, l := range rows {
-			if ansi.StringWidth(l) != wd {
-				t.Errorf("n=%d row %d width %d != %d: %q", n, i, ansi.StringWidth(l), wd, l)
-			}
-		}
-		if got := strings.Count(rows[4], "●●"); got != min(n, 5) {
-			t.Errorf("n=%d pearls=%d", n, got)
-		}
+// Banner is tapi alone: the 3-line face and its text, nothing around it.
+func TestBanner(t *testing.T) {
+	r := plain(Options{Shape: "round"})
+	got := r.Banner("● ●", []string{"boba", "", "x", "4th"})
+	want := []string{"🬞🬹🬹🬹🬏    boba", "█● ●█", "🬁🬎🬎🬎🬀    x", "         4th"}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if got := r.Banner("● ●", nil); strings.Join(got, "\n") != strings.Join(r.Big("● ●"), "\n") {
+		t.Errorf("no text: %q", got)
+	}
+}
+
+// An old config may still set colors.tea (the cup's tea): ignored, no error.
+func TestOldTeaColorIgnored(t *testing.T) {
+	r := New(Options{Colors: map[string]string{"tea": "#000000"}})
+	if r.pal != PaletteDark {
+		t.Fatalf("pal=%+v", r.pal)
 	}
 }
 
@@ -196,30 +194,25 @@ func TestNoSpaceAfterEyes(t *testing.T) {
 	}
 }
 
-// FitCup never returns a row wider than width or more rows than height;
-// with no limit it is Cup itself.
-func TestFitCup(t *testing.T) {
+// FitBanner never returns a row wider than width or more rows than height;
+// with no limit it is Banner itself.
+func TestFitBanner(t *testing.T) {
 	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
 	for _, g := range []string{"unicode", "narrow", "ascii"} {
 		r := plain(Options{Glyphs: g})
-		for n := 0; n <= 6; n++ {
-			ps := make([]string, n)
-			for i := range ps {
-				ps[i] = r.Eyes(Work)
-			}
-			if got, want := r.FitCup(ps, text, nil, 0, 0), r.Cup(ps, text, nil); strings.Join(got, "\n") != strings.Join(want, "\n") {
-				t.Errorf("%s n=%d: no limit should be Cup", g, n)
-			}
-			for width := 1; width <= 60; width++ {
-				for _, height := range []int{0, 2, 7} {
-					rows := r.FitCup(ps, text, nil, width, height)
-					if height > 0 && len(rows) > height {
-						t.Errorf("%s n=%d %dx%d: %d rows", g, n, width, height, len(rows))
-					}
-					for i, l := range rows {
-						if ansi.StringWidth(l) > width {
-							t.Errorf("%s n=%d %dx%d row %d: width %d: %q", g, n, width, height, i, ansi.StringWidth(l), l)
-						}
+		eyes := r.Eyes(Work)
+		if got, want := r.FitBanner(eyes, text, 0, 0), r.Banner(eyes, text); strings.Join(got, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%s: no limit should be Banner", g)
+		}
+		for width := 1; width <= 60; width++ {
+			for _, height := range []int{0, 2, 3, 4, 7} {
+				rows := r.FitBanner(eyes, text, width, height)
+				if height > 0 && len(rows) > height {
+					t.Errorf("%s %dx%d: %d rows", g, width, height, len(rows))
+				}
+				for i, l := range rows {
+					if ansi.StringWidth(l) > width {
+						t.Errorf("%s %dx%d row %d: width %d: %q", g, width, height, i, ansi.StringWidth(l), l)
 					}
 				}
 			}

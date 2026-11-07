@@ -122,8 +122,8 @@ func main() {
 	die(err)
 }
 
-// helpCup is tapi's cup on top of `boba --help` (a still image).
-func helpCup() string {
+// helpTapi is tapi on top of `boba --help` (a still image).
+func helpTapi() string {
 	g, err := config.LoadGlobal()
 	if err != nil {
 		g = &config.Global{}
@@ -135,7 +135,6 @@ func helpCup() string {
 		Light:  g.Mascot.LightPalette(),
 		Colors: g.Mascot.Colors,
 	})
-	pearls := []string{r.Eyes(mascot.Work), r.Eyes(mascot.Wait), r.Eyes(mascot.Done)}
 	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
 	width := 0 // not a terminal: no limit
 	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {
@@ -143,11 +142,11 @@ func helpCup() string {
 		// font draws two cells wide must not run past the right edge
 		width = tw - 1
 	}
-	return strings.Join(r.FitCup(pearls, text, nil, width, 0), "\n") + "\n"
+	return strings.Join(r.FitBanner(r.Eyes(mascot.Work), text, width, 0), "\n") + "\n"
 }
 
 func usage() {
-	fmt.Print(helpCup())
+	fmt.Print(helpTapi())
 	fmt.Print(`
 
   boba                         open the TUI

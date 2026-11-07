@@ -440,17 +440,14 @@ func (m *model) askLine(c *confirmModal, width int) string {
 	return line
 }
 
-// splashView: the cup with one pearl per live session (max 5).
+// splashView: tapi wearing the aggregated face, next to the live count.
 func (m *model) splashView() string {
 	r := m.tapi.r
-	var pearls []string
 	live := 0
 	for _, s := range m.sessions {
-		if s.State == state.Landed || s.Stopped {
-			continue
+		if s.State != state.Landed && !s.Stopped {
+			live++
 		}
-		live++
-		pearls = append(pearls, r.Eyes(mascot.RowMood(s, m.tapi.seen[s.Slug])))
 	}
 	alive := "no sessions yet"
 	switch {
@@ -467,17 +464,17 @@ func (m *model) splashView() string {
 	}
 	// one blank column on each side: an ambiguous-width glyph that the
 	// font draws two cells wide (Moralerspace JPDOC …) must not reach the edge
-	cup := r.FitCup(pearls, text, func(s string) string { return m.th.FG(theme.Border, s) }, max(m.width-2, 1), m.height)
-	cw := 0
-	for _, l := range cup {
-		cw = max(cw, w(l))
+	banner := r.FitBanner(m.eyesFor(m.summary().Mood, false), text, max(m.width-2, 1), m.height)
+	bw := 0
+	for _, l := range banner {
+		bw = max(bw, w(l))
 	}
 	lines := make([]string, 0, m.height)
-	for i := 0; i < (m.height-len(cup))/2; i++ {
+	for i := 0; i < (m.height-len(banner))/2; i++ {
 		lines = append(lines, "")
 	}
-	pad := strings.Repeat(" ", max((m.width-cw)/2, 0))
-	for _, l := range cup {
+	pad := strings.Repeat(" ", max((m.width-bw)/2, 0))
+	for _, l := range banner {
 		lines = append(lines, pad+l)
 	}
 	for len(lines) < m.height {

@@ -64,7 +64,7 @@ type Mascot struct {
 	Shape   string            `toml:"shape"`   // auto | round | block
 	Glyphs  string            `toml:"glyphs"`  // auto | unicode | narrow | ascii
 	Palette string            `toml:"palette"` // dark (D) | light (E)
-	Colors  map[string]string `toml:"colors"`  // hi bd sh eye tea
+	Colors  map[string]string `toml:"colors"`  // hi bd sh eye
 	Splash  *bool             `toml:"splash"`
 }
 
