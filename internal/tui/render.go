@@ -123,12 +123,13 @@ func (m *model) box(width, height int, o boxOpt) []string {
 		content := padS + fit(r.Text, cw) + padS
 		if r.Sel {
 			if th.Mode == theme.Truecolor {
-				return lipgloss.NewStyle().Background(th.Color(theme.Select)).Render(content)
+				// 中の色付き部分(状態の点など)が \x1b[0m で背景まで消すので、リセットのたびに塗り直す
+				return lipgloss.NewStyle().Background(th.Color(theme.Select)).Render(strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+bgSeq(th, theme.Select)))
 			}
 			return lipgloss.NewStyle().Reverse(true).Render(ansi.Strip(content))
 		}
 		if o.bgSunk && th.Mode == theme.Truecolor {
-			return lipgloss.NewStyle().Background(th.Color(theme.Bg)).Render(content)
+			return lipgloss.NewStyle().Background(th.Color(theme.Bg)).Render(strings.ReplaceAll(content, "\x1b[0m", "\x1b[0m"+bgSeq(th, theme.Bg)))
 		}
 		return content
 	}
