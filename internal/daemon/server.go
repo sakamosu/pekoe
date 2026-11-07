@@ -102,6 +102,8 @@ type Daemon struct {
 	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
 	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
 	paneH      int                       // used when a client spawns without knowing it (CLI)
+
+	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
 }
 
 func New() (*Daemon, error) {
@@ -367,5 +369,7 @@ func (d *Daemon) registerHandlers() {
 		"review.surface":        bind(d.hReviewSurface),
 		"window.kill":           bind(d.hWindowKill),
 		"term.caps":             bind(d.hTermCaps),
+		"issues.list":           bind(d.hIssuesList),
+		"issues.view":           bind(d.hIssuesView),
 	}
 }

@@ -74,6 +74,7 @@ type Session struct {
 	PRReview        bool      `json:"pr_review,omitempty"` // reviewing someone else's PR
 	Managed         bool      `json:"managed"`             // worktree created by boba (under ~/worktrees)
 	Base            string    `json:"base"`
+	Issue           int       `json:"issue,omitempty"` // GitHub issue the session was started from (--from gh#N)
 	Error           string    `json:"error,omitempty"`
 	Landing         bool      `json:"landing,omitempty"`
 	LastMessage     string    `json:"last_message,omitempty"`
