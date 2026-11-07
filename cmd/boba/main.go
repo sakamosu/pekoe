@@ -84,6 +84,8 @@ func main() {
 		err = cmdAdopt(args)
 	case "ls", "list":
 		err = cmdLs()
+	case "conflicts":
+		err = cmdConflicts(args)
 	case "send":
 		err = cmdSend(args)
 	case "event":
@@ -155,6 +157,7 @@ func usage() {
   boba open <worktree> [--resume|--new]
   boba adopt [--yes]           take over agents started by hand
   boba ls [--json]
+  boba conflicts [--repo ID] [--json]  sessions touching the same files (conflict forecast)
   boba send <slug> <text>
   boba review [<slug> | gh#N]
   boba land <slug>             rebase → test → gh pr create (teardown after merge)
@@ -550,6 +553,45 @@ func cmdLs() error {
 	sort.SliceStable(ss, func(i, j int) bool { return ss[i].CreatedAt.Before(ss[j].CreatedAt) })
 	for _, s := range ss {
 		fmt.Println(theme.SessionLine(th, ic, s, time.Now(), 0))
+	}
+	return nil
+}
+
+// cmdConflicts prints the conflict forecast: pairs of open sessions of the
+// same repository that touch the same files, and whether their committed
+// contents would conflict (git merge-tree) or merge automatically.
+func cmdConflicts(args []string) error {
+	f, _ := flags(args)
+	cl := connect()
+	defer cl.Close()
+	var ps []daemon.ConflictPair
+	if err := cl.Call("conflicts.list", map[string]any{"repo_id": f["repo"]}, &ps); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(ps)
+		return nil
+	}
+	if len(ps) == 0 {
+		fmt.Println("no overlapping sessions")
+		return nil
+	}
+	ic := theme.Icons(theme.IconsFromEnv())
+	th := theme.Load(nil)
+	repos := map[string]bool{}
+	for _, p := range ps {
+		repos[p.RepoID] = true
+	}
+	for _, p := range ps {
+		role, word, files := theme.Warn, "overlap ", strings.Join(p.Files, ", ")+th.FG(theme.Dim, "  (auto-merges)")
+		if p.Status == "conflict" {
+			role, word, files = theme.Err, "conflict", strings.Join(p.ConflictFiles, ", ")
+		}
+		repo := ""
+		if len(repos) > 1 {
+			repo = th.FG(theme.Dim, p.RepoID) + "  "
+		}
+		fmt.Printf("%s %s  %s%s %s %s  %s\n", th.FG(role, ic.Warning), th.FG(role, word), repo, p.A, th.FG(theme.Dim, "↔"), p.B, files)
 	}
 	return nil
 }
