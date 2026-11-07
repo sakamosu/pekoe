@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"boba/internal/errcatch"
 	"boba/internal/paths"
 	"boba/internal/state"
 )
@@ -433,6 +434,7 @@ func (d *Daemon) httpConsole(w http.ResponseWriter, r *http.Request) {
 		}
 		d.mu.Unlock()
 		d.emit("browser.updated", d.browserTabs())
+		d.catchConsole(port, in.URL, in.Errors)
 	}
 	writeJSON(w, map[string]any{"ok": true})
 }
@@ -480,12 +482,15 @@ type portP struct {
 	Slug string `json:"slug"`
 }
 
+// hSendErrors sends every console error of a port at once (Browser panel E).
+// Like a single error card, the list goes to a file and the agent gets one
+// @ line; the cards of those errors are marked sent.
 func (d *Daemon) hSendErrors(p portP) (any, error) {
 	d.mu.Lock()
 	errs := append([]ConsoleError(nil), d.errors[p.Port]...)
 	d.mu.Unlock()
 	if len(errs) == 0 {
-		return nil, errors.New("no console errors")
+		return nil, errNoConsole
 	}
 	slug := p.Slug
 	if slug == "" {
@@ -495,24 +500,40 @@ func (d *Daemon) hSendErrors(p portP) (any, error) {
 		}
 		slug = s
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "ブラウザ (:%d) で console error が %d 件出ています。原因を調べて直してください。\n", p.Port, len(errs))
-	for _, e := range errs {
-		loc := e.Source
-		if e.Line > 0 {
-			loc = fmt.Sprintf("%s:%d", e.Source, e.Line)
-		}
-		fmt.Fprintf(&b, "\n- %s %s", e.Message, loc)
-		if e.Stack != "" {
-			fmt.Fprintf(&b, "\n  %s", strings.ReplaceAll(truncate(e.Stack, 600), "\n", "\n  "))
-		}
+	s, err := d.snapshot(slug)
+	if err != nil {
+		return nil, err
 	}
-	if _, err := d.hSend(sendP{Slug: slug, Text: b.String(), Submit: true}); err != nil {
+	instr := fmt.Sprintf("ブラウザ (:%d) で console error が %d 件出ています。原因を調べて直してください。", p.Port, len(errs))
+	body := func(n int) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "# Console errors #%04d (browser :%d)\n\n%d errors\n", n, p.Port, len(errs))
+		for _, e := range errs {
+			loc := e.Source
+			if e.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", e.Source, e.Line)
+			}
+			fmt.Fprintf(&b, "\n- %s %s", e.Message, loc)
+			if e.URL != "" {
+				fmt.Fprintf(&b, "\n  page: %s", e.URL)
+			}
+			if e.Stack != "" {
+				fmt.Fprintf(&b, "\n  ```text\n  %s\n  ```", strings.ReplaceAll(truncate(e.Stack, 1200), "\n", "\n  "))
+			}
+		}
+		return b.String() + "\n"
+	}
+	if _, err := d.sendAttachment(slug, s.RepoID, body, instr); err != nil {
 		return nil, err
 	}
 	d.mu.Lock()
 	delete(d.errors, p.Port)
 	d.mu.Unlock()
 	d.emit("browser.updated", d.browserTabs())
+	for _, r := range d.catch.MarkWhere(func(r *errcatch.Report) bool {
+		return r.Slug == slug && r.Source == errcatch.SourceBrowser && r.Port == p.Port
+	}, errcatch.StatusSent, time.Now()) {
+		d.emit("error.updated", errorEvent{Report: r})
+	}
 	return map[string]any{"sent": len(errs), "slug": slug}, nil
 }

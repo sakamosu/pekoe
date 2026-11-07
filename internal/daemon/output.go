@@ -93,6 +93,7 @@ func (d *Daemon) outputLoop() {
 			d.onOutput(o)
 		case <-flush.C:
 			d.flushOutputEvents()
+			d.flushDev(time.Now())
 		}
 	}
 }
@@ -119,6 +120,9 @@ func (d *Daemon) onOutput(o engine.Output) {
 	hooks := agent.Hooks
 	d.mu.Unlock()
 
+	if o.Window == engine.WinDev {
+		d.feedDev(o.Slug, o.Data, now)
+	}
 	if bytes.Contains(data, []byte("\x1b_G")) || bytes.Contains(data, []byte("\x1bPtmux;")) {
 		d.passGraphics(o.Slug, o.Window, data)
 	}

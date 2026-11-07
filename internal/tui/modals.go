@@ -533,6 +533,9 @@ func (m *model) panelKeysFull() [][3]string {
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "open session in worktree", "\r"}, {"n", "new", "n"}, {"D", "delete", "D"}}
 	case pThird:
+		if m.sub3 == 1 && m.selectedError() != nil {
+			return [][3]string{{"j/k", "move", "j"}, {"↵", "error detail", "\r"}, {"s", "send error", "s"}, {"i", "ignore error", "i"}}
+		}
 		if m.sub3 == 1 {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
 		}
@@ -545,6 +548,9 @@ func (m *model) panelKeysFull() [][3]string {
 			keys = append(keys[:2], keys[4:]...) // someone else's PR: nothing goes to an agent
 		}
 		return keys
+	}
+	if m.pendingError() != nil {
+		return append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "agent / dev window", "v"}}, common...)
 	}
 	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "agent / dev window", "v"}}, common...)
 }

@@ -135,6 +135,8 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			}
 		}
 	}
+	d.catch.Forget(p.Slug)
+	removeAttachments(s.RepoID, p.Slug)
 	d.mu.Lock()
 	delete(d.sessions, p.Slug)
 	delete(d.out, p.Slug)
