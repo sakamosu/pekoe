@@ -169,6 +169,29 @@ wait と work の往復が日常のループで、done と error は「ユーザ
 3. 同じものを tmux 内でも貼り、幅と色が変わらないか見る
 4. 問題がなければ「JSON をコピー」の内容をそのまま `boba` のスプライト定義にする
 
+## 実装メモ
+
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ）。設定は `config.toml` の `[mascot]`（`shape` / `glyphs` / `palette` / `splash` / `[mascot.colors]`）。
+
+bobad のセッション状態との対応：
+
+| bobad | tapi |
+| --- | --- |
+| failed | error（集約では表示したら idle） |
+| waiting | wait |
+| running / creating | work |
+| done | done（集約では表示したら、または 10 秒で idle。一覧の緑の点は表示するまで） |
+| idle / reviewing / approved / landed | idle（landed は集約から外す） |
+
+実装で決めたこと：
+
+- 「表示した」＝主ペインに出ていて、かつ Ghostty がフォーカスを持っている
+- ASCII セットでは輪郭も ASCII にする（1行 `(o o)`、3行 `.---.` `|o o|` `'---'`）。`▐ ▌ █` も曖昧幅なので目だけ替えても崩れるため
+- boba asks は既存の確認ダイアログ（land / end session / delete worktree / undo / quit）を置き換え、主ペイン最下行の1行プロンプトにした
+- トーストは枠付き3行（モックに合わせた）。`?` は3行表示だけで出す
+- 一覧の状態語（run / wait …）も点と同じアクセント色にした
+- 80ms のスピナーもフォーカス喪失で止める
+
 ## 画面モックと未決事項
 
 画面モックは [boba mascot lab](https://claude.ai/artifact/CKrFE5DMJnSLYr7zsUfX7c) の Screens に6場面ある。左ペイン（セッション一覧）＋主ペイン＋最下行のステータスバーの lazygit 風レイアウトで、テーマ・配色・形を切り替えて見られる。
