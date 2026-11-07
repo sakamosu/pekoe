@@ -238,15 +238,24 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	if s.State == state.Idle || s.State == state.Creating || s.State == state.Landed {
 		nameRole = theme.Dim
 	}
-	name := s.Branch
-	if s.Unread > 0 && s.Slug != m.lastSel {
-		name += " " + th.FG(theme.Secondary, "•")
+	// the PR tag never gets truncated away; the branch name gives way first
+	tag := ""
+	if s.PR > 0 {
+		tag += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", s.PR))
 	}
+	if s.Unread > 0 && s.Slug != m.lastSel {
+		tag += " " + th.FG(theme.Secondary, "•")
+	}
+	branch := s.Branch
+	if tw := w(tag); tw < nameW && w(branch)+tw > nameW {
+		branch = fit(branch, nameW-tw)
+	}
+	name := th.FG(nameRole, branch) + tag
 	age := ""
 	if s.State != state.Idle {
 		age = theme.Ago(now.Sub(s.StateSince))
 	}
-	line := icon + m.tapi.r.Gap() + th.FG(nameRole, fit(name, nameW)) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
+	line := icon + m.tapi.r.Gap() + fit(name, nameW) + " " + word + " " + th.FG(theme.Dim, fit(age, ageW))
 	if diffW > 0 {
 		line += " " + fit(diff, diffW) + " " + test
 	}

@@ -194,6 +194,9 @@ func (d *Daemon) tickLoop() {
 		if n%120 == 0 {
 			go d.watchMerges()
 		}
+		if n%60 == 5 {
+			go d.watchPRs()
+		}
 	}
 }
 

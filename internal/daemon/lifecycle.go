@@ -294,6 +294,29 @@ func (d *Daemon) finishLanding(slug string) error {
 	return nil
 }
 
+// watchPRs fills in the PR number of sessions whose branch got a PR outside
+// boba (e.g. the agent ran `gh pr create`), so the list can show it.
+func (d *Daemon) watchPRs() {
+	d.mu.Lock()
+	var check []state.Session
+	for _, s := range d.sessions {
+		if s.PR == 0 && !s.PRReview && s.State != state.Landed &&
+			s.Branch != "" && s.Branch != s.Base && s.Path != "" {
+			check = append(check, *s)
+		}
+	}
+	d.mu.Unlock()
+	for _, s := range check {
+		if pr := prForBranch(s.Path, s.Branch); pr > 0 {
+			d.update(s.Slug, func(x *state.Session) {
+				if x.PR == 0 {
+					x.PR = pr
+				}
+			})
+		}
+	}
+}
+
 // watchMerges detects merged PRs of landing sessions and tears them down.
 func (d *Daemon) watchMerges() {
 	d.mu.Lock()
