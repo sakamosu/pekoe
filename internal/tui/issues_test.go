@@ -296,3 +296,26 @@ func TestIssueTextIsSanitized(t *testing.T) {
 		t.Fatalf("escape sequences must be stripped: %q", got)
 	}
 }
+
+// An issue opened over the PR view takes the main panel and its keys;
+// opening the PR view (p) puts the PR back.
+func TestIssueOverPRView(t *testing.T) {
+	m := issueModel(t, "none", 160)
+	m.sel = 1
+	m.window = winPR
+	m.focus, m.sub2 = pSecond, subIssues
+	m.onKey(key("j"))
+	m.focus = pAgent
+	if !m.issueShown() || !strings.Contains(checkSize(t, m, "issue over pr"), "Issue #7") {
+		t.Fatal("the issue should be shown over the PR view")
+	}
+	m.onKey(key("esc"))
+	if m.iss.open || m.window != winPR {
+		t.Fatalf("esc closes the issue and leaves the PR view: open=%v window=%s", m.iss.open, m.window)
+	}
+	m.iss.open = true
+	m.openPR()
+	if m.iss.open {
+		t.Fatal("opening the PR view closes the issue")
+	}
+}

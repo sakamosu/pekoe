@@ -801,5 +801,3 @@ func sanitize(s string) string {
 		return r
 	}, s)
 }
-
-func firstLine(s string) string { return strings.SplitN(s, "\n", 2)[0] }
