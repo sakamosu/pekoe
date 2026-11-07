@@ -29,19 +29,16 @@ const (
 	demoEvery   = 6 * time.Second
 )
 
-// sessionPR adapts a session's PR summary for tapi.
-//
-// This branch has no Session.PRStatus yet (feat/pr-view adds it), so only
-// the demo feeds tapi. After merging feat/pr-view, add below the demo:
-//
-//	if p := s.PRStatus; p != nil {
-//		return &mascot.PR{Number: s.PR, State: p.State, Pass: p.Pass, Fail: p.Fail,
-//			Pending: p.Pending, ReviewDecision: p.ReviewDecision,
-//			Unresolved: p.Unresolved, LastThread: p.LastThread}
-//	}
+// sessionPR adapts a session's PR summary (Session.PRStatus, polled by the
+// daemon) for tapi. The demo's fake summary wins while it runs.
 func (m *model) sessionPR(s *state.Session) *mascot.PR {
 	if p, ok := m.tapi.demoPR[s.Slug]; ok {
 		return p
+	}
+	if p := s.PRStatus; p != nil {
+		return &mascot.PR{Number: s.PR, State: p.State, Pass: p.Pass, Fail: p.Fail,
+			Pending: p.Pending, ReviewDecision: p.ReviewDecision,
+			Unresolved: p.Unresolved, LastThread: p.LastThread}
 	}
 	return nil
 }

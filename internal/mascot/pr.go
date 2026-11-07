@@ -15,7 +15,8 @@ import (
 
 // PR is the part of a session's PR summary tapi reacts to. The fields
 // mirror state.PRStatus (the daemon's poll, plus Session.PR for Number) so
-// the TUI's adapter is a plain copy.
+// the TUI's adapter is a plain copy and this package stays free of the
+// fields tapi doesn't look at.
 type PR struct {
 	Number         int
 	State          string // OPEN | MERGED | CLOSED

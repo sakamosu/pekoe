@@ -309,3 +309,24 @@ func TestConfettiGlyphs(t *testing.T) {
 	}
 }
 
+// The daemon's Session.PRStatus drives tapi through session.updated.
+func TestPRReactionFromSessionPRStatus(t *testing.T) {
+	m := tapiPRModel(t, "none", config.Mascot{})
+	s := &state.Session{Slug: "fix-ci", Branch: "fix-ci", State: state.Idle, PR: 42,
+		PRStatus: &state.PRStatus{State: "OPEN", Pending: 2}}
+	m.tapiOnSession(s.State, s, "")
+	if m.tapi.toast != nil {
+		t.Fatal("baseline")
+	}
+	s2 := *s
+	s2.PRStatus = &state.PRStatus{State: "OPEN", Pass: 1, Fail: 1, Attention: []string{"ci_failed"}}
+	m.tapiOnSession(s2.State, &s2, "")
+	tt := m.tapi.toast
+	if tt == nil || tt.react.Event != mascot.PRCIFailed || !strings.HasPrefix(tt.text, "fix-ci #42 ") {
+		t.Fatalf("toast=%+v", tt)
+	}
+	m.sessions = []*state.Session{&s2}
+	if got := m.cloudy(); len(got) != 1 || got[0] != "fix-ci #42" {
+		t.Fatalf("cloudy=%v", got)
+	}
+}

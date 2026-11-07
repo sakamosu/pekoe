@@ -156,7 +156,7 @@ CLOSED は何もしない。MERGED と同時に CI が通っても merged だけ
 
 確かめ方：`BOBA_TAPI_DEMO=pr boba` で起動すると、選択中のセッション（なければ架空の `feat/demo`）に台本どおりの偽の PR 要約を 6 秒ごとに流す。基準 → ci\_passed → approved → new\_comment → changes\_requested → ci\_running → ci\_failed（バーが曇る）→ 同じ要約（何も出ない）→ ci\_running → approved と ci\_passed の同時（approved だけ）→ merged（紙吹雪）。デーモンには何も送らない。
 
-PR の要約の受け口：TUI は `Session.pr_status` を `mascot.PR`（同じ名前のフィールドの写し＋`Session.pr` の番号）に移して比べる（`internal/tui/tapi_pr.go` の `sessionPR`）。`pr_status` を足す feat/pr-view が入るまでは、受け口はデモの要約しか返さない。
+PR の要約の受け口：TUI は `Session.pr_status` を `mascot.PR`（同じ名前のフィールドの写し＋`Session.pr` の番号）に移して比べる（`internal/tui/tapi_pr.go` の `sessionPR`）。デモの実行中はデモの要約が優先する。
 
 ## 実装仕様
 
