@@ -1,0 +1,36 @@
+#!/bin/sh
+# 偽デーモンを立ててヘッドレス nvim でスモークテストを走らせる。
+set -eu
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(dirname "$HERE")
+TMPD=${BOBA_TEST_TMP:-${TMPDIR:-/tmp}}
+SOCK="$TMPD/boba-test-$$.sock"
+
+# 構文チェック
+for f in "$ROOT"/plugin/*.lua "$ROOT"/lua/boba/*.lua "$ROOT"/test/*.lua; do
+  luac -p "$f"
+done
+echo "syntax ok"
+
+PID=
+trap 'kill $PID 2>/dev/null || true; rm -f "$SOCK"' EXIT
+start_daemon() {
+  python3 "$HERE/fake_daemon.py" "$SOCK" &
+  PID=$!
+  i=0
+  while [ ! -S "$SOCK" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
+}
+
+echo "== smoke"
+start_daemon
+BOBA_SOCK="$SOCK" nvim --headless -u NONE -i NONE -n \
+  --cmd "set rtp+=$ROOT" \
+  -c "luafile $HERE/smoke.lua"
+kill $PID; wait $PID 2>/dev/null || true; rm -f "$SOCK"
+
+echo "== auto review (BOBA_REVIEW=1, daemon starts 1s later)"
+(sleep 1; exec python3 "$HERE/fake_daemon.py" "$SOCK") &
+PID=$!
+BOBA_SOCK="$SOCK" BOBA_REVIEW=1 BOBA_SESSION=feat-x nvim --headless -u NONE -i NONE -n \
+  --cmd "set rtp+=$ROOT" --cmd "runtime plugin/boba.lua" \
+  -c "luafile $HERE/auto_review.lua"
