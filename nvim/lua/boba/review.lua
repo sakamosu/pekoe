@@ -615,6 +615,8 @@ function M.close()
   end
   local r = R
   R = nil
+  -- 未送信コメントが無ければ reviewing を抜ける
+  client.request("review.end", { slug = r.slug }, function() end)
   if #vim.api.nvim_list_tabpages() > 1 and r.tab and vim.api.nvim_tabpage_is_valid(r.tab) then
     vim.api.nvim_set_current_tabpage(r.tab)
     pcall(vim.cmd, "tabclose")
@@ -778,6 +780,15 @@ function M.open(slug, cb)
 end
 
 function M.setup_events()
+  -- レビューを開いたまま nvim を終了した場合も reviewing を抜ける
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = vim.api.nvim_create_augroup("BobaReviewLeave", { clear = true }),
+    callback = function()
+      if R and R.slug then
+        client.request_sync("review.end", { slug = R.slug }, 500)
+      end
+    end,
+  })
   client.on("review.updated", function(d)
     if R and type(d) == "table" and d.slug == R.slug then
       refresh_debounced()

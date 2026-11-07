@@ -107,6 +107,7 @@ func RunReview(cl *client.Client, slug string) error {
 	p := tea.NewProgram(&standaloneReview{rm}, tea.WithAltScreen())
 	go pump(cl, p)
 	_, err := p.Run()
+	_ = cl.Call("review.end", map[string]any{"slug": slug}, nil)
 	return err
 }
 

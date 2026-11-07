@@ -78,6 +78,7 @@
 | `dev.toggle` | `{slug}` | dev server の起動/停止 |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
 | `review.start` | `{slug}` | state を reviewing に |
+| `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |
 | `review.approve` | `{slug, hunk_id}` | |
 | `review.unapprove` | `{slug, hunk_id}` | |

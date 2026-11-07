@@ -448,8 +448,8 @@ func (d *Daemon) hWindowKill(p windowP) (any, error) {
 	}
 	_ = d.Eng.Kill(p.Slug, p.Window)
 	if p.Window == engine.WinReview {
-		// leaving the review surface: stay in reviewing unless review ended it
-		d.update(p.Slug, func(s *state.Session) {})
+		// leaving the review surface: back to done unless comments are pending
+		_, _ = d.hReviewEnd(slugP{Slug: p.Slug})
 	}
 	if p.Window == engine.WinDev {
 		d.update(p.Slug, func(s *state.Session) { s.Dev = false })
