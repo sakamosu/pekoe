@@ -43,7 +43,11 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 	if destructive {
 		bc = theme.Err
 	}
-	b := func(s string) string { return th.FG(bc, s) }
+	height := len(lines) + 2
+	if len(keys) > 0 {
+		height += 2
+	}
+	b := m.borderPainter(bc, width, height)
 	inner := width - 2
 	cw := inner - 4
 	surf := func(s string) string {
@@ -58,7 +62,8 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 	if m.square {
 		tl, tr, bl, br = "┌", "┐", "└", "┘"
 	}
-	out := []string{b(tl+"─") + t + " " + b(strings.Repeat("─", max(inner-w(t)-2, 0))+tr)}
+	out := []string{b(0, 0, tl+"─") + t + " " + b(3+w(t), 0, strings.Repeat("─", max(inner-w(t)-2, 0))+tr)}
+	side := func(s string) string { y := len(out); return b(0, y, "│") + s + b(width-1, y, "│") }
 	for _, l := range lines {
 		if strings.HasPrefix(l, "\x00sunk") {
 			// the thing that will run, sunk into bg: one full-width row, no colored text
@@ -67,20 +72,20 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 			if th.Mode == theme.Truecolor {
 				s = lipgloss.NewStyle().Background(th.Color(theme.Bg)).Foreground(th.Color(theme.Text)).Render(s)
 			}
-			out = append(out, b("│")+s+b("│"))
+			out = append(out, side(s))
 			continue
 		}
 		if l == "\x00rule" {
-			out = append(out, b("├"+strings.Repeat("─", inner)+"┤"))
+			out = append(out, b(0, len(out), "├"+strings.Repeat("─", inner)+"┤"))
 			continue
 		}
-		out = append(out, b("│")+surf(l)+b("│"))
+		out = append(out, side(surf(l)))
 	}
 	if len(keys) > 0 {
-		out = append(out, b("│")+surf("")+b("│"))
-		out = append(out, b("│")+surf(m.keyHints(keys, cw))+b("│"))
+		out = append(out, side(surf("")))
+		out = append(out, side(surf(m.keyHints(keys, cw))))
 	}
-	out = append(out, b(bl+strings.Repeat("─", inner)+br))
+	out = append(out, b(0, len(out), bl+strings.Repeat("─", inner)+br))
 	return out
 }
 
@@ -509,7 +514,7 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {":", "command"}, {"q", "quit"}} {
 		g := g
 		h.items = append(h.items, helpItem{key: g[0], action: g[1], global: true})
 	}
@@ -518,7 +523,7 @@ func newHelpModal(m *model) *helpModal {
 
 // panelKeysFull lists every key of the focused panel: key, action, key to send.
 func (m *model) panelKeysFull() [][3]string {
-	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
+	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
 	switch m.focus {
 	case pSessions:
 		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"/", "filter", "/"}}, common...)
@@ -532,6 +537,14 @@ func (m *model) panelKeysFull() [][3]string {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
+	}
+	if m.window == winPR {
+		keys := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},
+			{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
+		if s := m.current(); s != nil && s.PRReview {
+			keys = append(keys[:2], keys[4:]...) // someone else's PR: nothing goes to an agent
+		}
+		return keys
 	}
 	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "agent / dev window", "v"}}, common...)
 }
