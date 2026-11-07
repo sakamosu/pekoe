@@ -94,7 +94,8 @@ type model struct {
 	typing    bool
 	guard     mouseGuard // reassembles mouse reports split across reads
 	linkDown  string     // URL under the last left press in the agent panel
-	window    string     // agent | review | dev shown in the main panel
+	window    string     // agent | review | dev | pr shown in the main panel
+	pr        *prState   // the PR view's data (pr.go)
 
 	screen     *engine.Screen
 	screenOf   string
@@ -175,6 +176,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		ic:         theme.Icons(theme.IconsFromEnv()),
 		focus:      pSessions,
 		window:     engine.WinAgent,
+		pr:         newPRState(),
 		unreadAt:   map[string]int{},
 		dismissed:  map[string]time.Time{},
 		progress:   map[string][]daemon.Step{},
@@ -296,7 +298,7 @@ func (m *model) loadPicks() tea.Cmd {
 
 func (m *model) fetchScreen() tea.Cmd {
 	s := m.current()
-	if s == nil || s.State == state.Creating {
+	if s == nil || s.State == state.Creating || m.window == winPR {
 		return nil
 	}
 	if m.fetching {
@@ -430,9 +432,13 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	m.lastSel = cur
 	m.screen = nil
-	m.window = engine.WinAgent
 	m.typing = false
 	m.pickInput = nil
+	if m.window == winPR && s != nil {
+		cmds = append(cmds, m.prFollow()) // the PR view follows the selection
+	} else {
+		m.window = engine.WinAgent
+	}
 	cmds = append(cmds, m.fetchScreen(), m.loadChanges(cur))
 	return tea.Batch(cmds...)
 }
@@ -532,6 +538,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = pSessions
 		m.typing = false
 		cmd := m.selectSlug(msg.slug)
+		if msg.pr { // in the queue for its PR: show the PR
+			return m, tea.Batch(cmd, m.openPR())
+		}
 		return m, tea.Batch(cmd, m.maybePermission())
 	case reviewSurfaceMsg:
 		if s := m.current(); s != nil && s.Slug == msg.slug {
@@ -557,6 +566,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if time.Since(m.msgAt) > 6*time.Second {
 			m.msg = ""
+		}
+		if m.window == winPR && m.current() != nil && time.Since(m.pr.at) >= prRefresh {
+			cmds = append(cmds, m.prFollow())
 		}
 		cmds = append(cmds, m.maybePermission(), m.escalate())
 		if t := m.tapi.toast; t != nil && time.Now().After(t.until) {
@@ -668,6 +680,16 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modalDoneMsg:
 		m.modal = nil
 		return m, msg.cmd
+
+	case prMsg:
+		return m, m.onPRMsg(msg)
+
+	case prLogMsg:
+		m.onPRLogMsg(msg)
+		return m, nil
+
+	case prSendMsg:
+		return m, m.onPRSendMsg(msg)
 
 	case reviewOpenMsg:
 		rm := newReviewModel(m.cl, msg.slug, m.th, m.ic, m.width, m.height, m.square)
@@ -1016,6 +1038,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		}
 		return m.keyChanges(key)
 	case pAgent:
+		if m.window == winPR {
+			return m.keyPR(key)
+		}
 		return m.keyAgent(key)
 	}
 	return nil
@@ -1113,6 +1138,11 @@ func (m *model) keySessions(key string) tea.Cmd {
 			m.modal = newProgressModal(m, s.Slug)
 			return nil
 		}
+		if m.window == winPR {
+			m.typing = true
+			delete(m.unreadAt, s.Slug)
+			return m.closePR()
+		}
 		m.typing = true
 		delete(m.unreadAt, s.Slug)
 		if m.screen != nil && m.screen.Dead {
@@ -1124,6 +1154,10 @@ func (m *model) keySessions(key string) tea.Cmd {
 		m.filterOn = true
 		m.filter = ""
 		return nil
+	case "esc":
+		if m.window == winPR {
+			return m.closePR()
+		}
 	}
 	return m.sessionAction(key, s)
 }
@@ -1134,6 +1168,8 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 		return nil
 	}
 	switch key {
+	case "p":
+		return m.openPR()
 	case "b":
 		if s.Port == 0 {
 			return nil
@@ -1363,6 +1399,17 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	aw, ah := m.agentSize()
 	x, y := ev.X-x0, ev.Y-y0
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
+	if inAgent && m.window == winPR {
+		switch {
+		case ev.Button == tea.MouseButtonWheelDown:
+			m.move(&m.pr.sel, len(prItems(m.pr.view)), 1)
+		case ev.Button == tea.MouseButtonWheelUp:
+			m.move(&m.pr.sel, len(prItems(m.pr.view)), -1)
+		case ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft:
+			m.focus = pAgent
+		}
+		return nil
+	}
 	// a click on a link opens it, like ⌘-click in a bare terminal (mouse
 	// reports carry no ⌘, so any left click on a link counts); the click is
 	// not forwarded to the agent
@@ -1441,11 +1488,15 @@ func (m *model) nextWaiting() tea.Cmd {
 		if s == nil {
 			return infoMsg("nothing is waiting")
 		}
-		return jumpMsg{slug: s.Slug, from: from}
+		pr := s.State != state.Waiting && s.PRStatus != nil && len(s.PRStatus.Attention) > 0
+		return jumpMsg{slug: s.Slug, from: from, pr: pr}
 	}
 }
 
-type jumpMsg struct{ slug, from string }
+type jumpMsg struct {
+	slug, from string
+	pr         bool // queued for its PR (CI failed, changes requested, …)
+}
 
 func (m *model) backFromWaiting() tea.Cmd {
 	if len(m.returnTo) == 0 {

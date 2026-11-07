@@ -46,6 +46,44 @@ type Stat struct {
 	Files   int `json:"files"`
 }
 
+// PRStatus is the summary of a session's GitHub PR that the daemon polls
+// (pr.view has the full picture). Attention lists what changed since the
+// user last opened the PR view: ci_failed | changes_requested |
+// new_comment | mergeable.
+type PRStatus struct {
+	State          string    `json:"state"` // OPEN | MERGED | CLOSED
+	Draft          bool      `json:"draft,omitempty"`
+	Pass           int       `json:"pass"`
+	Fail           int       `json:"fail"`
+	Pending        int       `json:"pending"`
+	ReviewDecision string    `json:"review_decision,omitempty"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
+	Unresolved     int       `json:"unresolved"`                // unresolved review threads
+	MergeState     string    `json:"merge_state,omitempty"`     // mergeStateStatus: CLEAN | BLOCKED | DIRTY | …
+	LastComment    time.Time `json:"last_comment,omitempty"`    // newest comment / review / thread comment
+	LastThread     time.Time `json:"last_thread,omitempty"`     // newest comment on an unresolved thread
+	Attention      []string  `json:"attention,omitempty"`
+	AttentionAt    time.Time `json:"attention_at,omitempty"`
+	At             time.Time `json:"at"` // fetched
+}
+
+// Same reports whether two summaries show the same thing (fetch time aside).
+func (p *PRStatus) Same(q *PRStatus) bool {
+	if p == nil || q == nil {
+		return p == q
+	}
+	if len(p.Attention) != len(q.Attention) {
+		return false
+	}
+	for i := range p.Attention {
+		if p.Attention[i] != q.Attention[i] {
+			return false
+		}
+	}
+	return p.State == q.State && p.Draft == q.Draft && p.Pass == q.Pass && p.Fail == q.Fail &&
+		p.Pending == q.Pending && p.ReviewDecision == q.ReviewDecision && p.Unresolved == q.Unresolved &&
+		p.MergeState == q.MergeState && p.LastComment.Equal(q.LastComment) && p.LastThread.Equal(q.LastThread)
+}
+
 type Session struct {
 	Slug            string    `json:"slug"`
 	Branch          string    `json:"branch"`
@@ -72,6 +110,7 @@ type Session struct {
 	Dev             bool      `json:"dev"`
 	PR              int       `json:"pr,omitempty"`
 	PRReview        bool      `json:"pr_review,omitempty"` // reviewing someone else's PR
+	PRStatus        *PRStatus `json:"pr_status,omitempty"` // small summary of the PR, polled from GitHub
 	Managed         bool      `json:"managed"`             // worktree created by boba (under ~/worktrees)
 	Base            string    `json:"base"`
 	Error           string    `json:"error,omitempty"`

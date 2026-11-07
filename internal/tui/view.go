@@ -239,8 +239,12 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	tag := ""
 	if s.PR > 0 {
 		tag += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", s.PR))
+		if lk, ok := theme.PRLook(m.ic, s.PRStatus); ok && lk.Icon != "" {
+			tag += " " + th.FG(lk.Role, lk.Icon)
+		}
 	}
-	if s.Unread > 0 && s.Slug != m.lastSel {
+	prAttention := s.PRStatus != nil && len(s.PRStatus.Attention) > 0
+	if (s.Unread > 0 && s.Slug != m.lastSel) || prAttention {
 		tag += " " + th.FG(theme.Secondary, "•")
 	}
 	branch := s.Branch
@@ -435,6 +439,9 @@ func (m *model) viewAgent(width, height int) []string {
 	if s == nil {
 		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRows(width-4, height-2, m.emptyMood(), "no session selected", "n new session · boba new <branch>"), focused: f})
 	}
+	if m.window == winPR {
+		return m.viewPR(s, width, height)
+	}
 	winLabel := "Agent"
 	icon := m.ic.Agent
 	switch m.window {
@@ -501,7 +508,7 @@ func (m *model) agentRows(cw, ch int) []row {
 // agentLinkAt returns the URL drawn at (x, y) of the agent panel body.
 func (m *model) agentLinkAt(x, y int) string {
 	s := m.current()
-	if m.screen == nil || s == nil || s.State == state.Creating || (s.State == state.Failed && m.screen.Dead) {
+	if m.window == winPR || m.screen == nil || s == nil || s.State == state.Creating || (s.State == state.Failed && m.screen.Dead) {
 		return ""
 	}
 	cw, ch := m.agentSize()
@@ -852,6 +859,9 @@ func (m *model) modeName() (string, string) {
 		}
 		return "CHANGES", m.ic.Changes
 	case pAgent:
+		if m.window == winPR {
+			return "PR", m.ic.PR
+		}
 		return "AGENT", m.ic.Agent
 	}
 	return "SESSIONS", m.ic.Sessions
@@ -883,6 +893,12 @@ func (m *model) hints() [][2]string {
 		}
 		return [][2]string{{"j/k", "move"}, {"↵", "review"}, {"r", "review"}, {"?", "help"}}
 	case pAgent:
+		if m.window == winPR {
+			if s := m.current(); s != nil && s.PRReview {
+				return [][2]string{{"j/k", "move"}, {"↵", "expand"}, {"o", "browse"}, {"R", "refresh"}, {"?", "help"}}
+			}
+			return [][2]string{{"j/k", "move"}, {"↵", "expand"}, {"space", "select"}, {"s", "send"}, {"o", "browse"}, {"?", "help"}}
+		}
 		if m.pendingPick() != nil {
 			return [][2]string{{"↵", "send"}, {"i", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"?", "help"}}
 		}

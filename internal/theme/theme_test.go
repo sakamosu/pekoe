@@ -61,3 +61,30 @@ func TestAccentPaletteOnlyFromRoles(t *testing.T) {
 		t.Fatalf("token table has %d roles, guidelines define 11", len(defaultHex))
 	}
 }
+
+// Every PR state has its own icon in every icon set (the #42 tag is read by
+// its icon and color only; distinct icons keep it readable without color).
+func TestPRLookDistinct(t *testing.T) {
+	cases := []state.PRStatus{
+		{State: "MERGED"}, {State: "CLOSED"}, {State: "OPEN", Fail: 1}, {State: "OPEN", ReviewDecision: "CHANGES_REQUESTED"},
+		{State: "OPEN", Pending: 1}, {State: "OPEN", Pass: 1},
+	}
+	for _, set := range []string{"nerd", "unicode", "ascii"} {
+		ic := Icons(set)
+		seen := map[string]string{}
+		for _, st := range cases {
+			st := st
+			lk, ok := PRLook(ic, &st)
+			if !ok || lk.Icon == "" || lk.Word == "" {
+				t.Errorf("%s %+v: empty look", set, st)
+			}
+			if w, dup := seen[lk.Icon]; dup {
+				t.Errorf("%s: %q used for %s and %s", set, lk.Icon, w, lk.Word)
+			}
+			seen[lk.Icon] = lk.Word
+		}
+		if _, ok := PRLook(ic, &state.PRStatus{State: "OPEN"}); ok {
+			t.Errorf("%s: nothing to show for a PR without checks or reviews", set)
+		}
+	}
+}
