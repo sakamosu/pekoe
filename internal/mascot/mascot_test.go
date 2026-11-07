@@ -240,3 +240,25 @@ func TestFitBanner(t *testing.T) {
 		}
 	}
 }
+
+// A pane as tall as tapi keeps the top text rows instead of dropping them all.
+func TestFitBannerShortKeepsText(t *testing.T) {
+	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	r := plain(Options{})
+	eyes := r.Eyes(Work)
+	for _, width := range []int{0, 60} {
+		rows := r.FitBanner(eyes, text, width, 3)
+		if len(rows) != 3 {
+			t.Fatalf("width %d: %d rows, want 3", width, len(rows))
+		}
+		for i, want := range text[:2] {
+			if !strings.Contains(rows[i], want) {
+				t.Errorf("width %d row %d: %q, want %q", width, i, rows[i], want)
+			}
+		}
+	}
+	// a narrow pane still clips the kept rows
+	if rows := r.FitBanner(eyes, text, 18, 3); !strings.Contains(rows[0], "…") {
+		t.Errorf("narrow: %q, want a clipped first row", rows[0])
+	}
+}
