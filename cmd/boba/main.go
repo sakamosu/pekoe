@@ -36,6 +36,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"boba/internal/client"
 	"boba/internal/config"
 	"boba/internal/daemon"
@@ -135,7 +137,11 @@ func helpCup() string {
 	})
 	pearls := []string{r.Eyes(mascot.Work), r.Eyes(mascot.Wait), r.Eyes(mascot.Done)}
 	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
-	return strings.Join(r.Cup(pearls, text, nil), "\n") + "\n"
+	width := 0 // not a terminal: no limit
+	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {
+		width = tw - 1 // keep the last column free, as the splash does
+	}
+	return strings.Join(r.FitCup(pearls, text, nil, width, 0), "\n") + "\n"
 }
 
 func usage() {
