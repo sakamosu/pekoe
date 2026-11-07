@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 //go:embed tapi.json
@@ -430,4 +431,53 @@ func (r *Renderer) Cup(pearls []string, text []string, border func(string) strin
 		}
 	}
 	return rows
+}
+
+// minTextRoom is the narrowest text column FitCup keeps beside the cup.
+const minTextRoom = 8
+
+// FitCup is Cup made to fit width × height cells (0 = no limit). When the
+// text column doesn't fit it is clipped with "…", then dropped; when even
+// the bare cup doesn't fit, only the clipped text is left. Every row is at
+// most width cells, so nothing runs past the pane edge.
+func (r *Renderer) FitCup(pearls, text []string, border func(string) string, width, height int) []string {
+	widest := func(rows []string) int {
+		n := 0
+		for _, l := range rows {
+			n = max(n, ansi.StringWidth(l))
+		}
+		return n
+	}
+	fits := func(rows []string) bool {
+		return (width <= 0 || widest(rows) <= width) && (height <= 0 || len(rows) <= height)
+	}
+	if rows := r.Cup(pearls, text, border); fits(rows) {
+		return rows
+	}
+	bare := r.Cup(pearls, nil, border)
+	if fits(bare) {
+		// Cup puts the text 4 cells right of the cup
+		if room := width - widest(bare) - 4; room >= minTextRoom {
+			return r.Cup(pearls, clipAll(text, room), border)
+		}
+		return bare
+	}
+	if width > 0 {
+		text = clipAll(text, width)
+	}
+	if height > 0 && len(text) > height {
+		text = text[:height]
+	}
+	return text
+}
+
+func clipAll(text []string, n int) []string {
+	out := make([]string, len(text))
+	for i, t := range text {
+		if ansi.StringWidth(t) > n {
+			t = ansi.Truncate(t, n, "…")
+		}
+		out[i] = t
+	}
+	return out
 }

@@ -205,3 +205,34 @@ func TestGapIsOneCellNotSpace(t *testing.T) {
 		t.Error("ascii gap should be a space")
 	}
 }
+
+// FitCup never returns a row wider than width or more rows than height;
+// with no limit it is Cup itself.
+func TestFitCup(t *testing.T) {
+	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	for _, g := range []string{"unicode", "narrow", "ascii"} {
+		r := plain(Options{Glyphs: g})
+		for n := 0; n <= 6; n++ {
+			ps := make([]string, n)
+			for i := range ps {
+				ps[i] = r.Eyes(Work)
+			}
+			if got, want := r.FitCup(ps, text, nil, 0, 0), r.Cup(ps, text, nil); strings.Join(got, "\n") != strings.Join(want, "\n") {
+				t.Errorf("%s n=%d: no limit should be Cup", g, n)
+			}
+			for width := 1; width <= 60; width++ {
+				for _, height := range []int{0, 2, 7} {
+					rows := r.FitCup(ps, text, nil, width, height)
+					if height > 0 && len(rows) > height {
+						t.Errorf("%s n=%d %dx%d: %d rows", g, n, width, height, len(rows))
+					}
+					for i, l := range rows {
+						if ansi.StringWidth(l) > width {
+							t.Errorf("%s n=%d %dx%d row %d: width %d: %q", g, n, width, height, i, ansi.StringWidth(l), l)
+						}
+					}
+				}
+			}
+		}
+	}
+}
