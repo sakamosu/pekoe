@@ -339,7 +339,14 @@ func (r *Renderer) draw(name, eyes, bg string) []string {
 			if cbg == "" {
 				cbg = bg
 			}
-			b.WriteString(r.paint(g, c.FG, cbg))
+			fg := c.FG
+			// Ghostty draws a symbol (● ◕ ×) up to two cells wide when a
+			// space follows it, so the gap between the eyes is a solid
+			// block in the face color instead of a space.
+			if g == " " && cbg != "" && !r.noColor && !r.ASCII() {
+				g, fg = "█", cbg
+			}
+			b.WriteString(r.paint(g, fg, cbg))
 		}
 		lines[y] = b.String()
 	}
