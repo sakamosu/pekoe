@@ -129,6 +129,12 @@ function waitBody(s, box) {
     tool.append(el("span", "ic", "?"), document.createTextNode(t.name));
     box.append(tool);
     if (t.input) box.append(el("pre", "input", t.input));
+    const cut = cutNote(t);
+    if (cut) {
+      const w = el("div", "also");
+      w.append(el("span", "ic", "⚠"), document.createTextNode(" " + cut));
+      box.append(w);
+    }
     if (t.also_in && t.also_in.length) {
       const also = el("div", "also");
       also.append(el("span", "ic", "⚠"), document.createTextNode(" " + t.touches + " also changed in " + t.also_in.join(", ")));
@@ -382,10 +388,22 @@ function togglePause() {
 
 // ---- answer: always through a confirmation that shows what is allowed ----
 // pending_tool is pekoe's one-line summary of the last tool the agent asked
-// for (cut at 200 bytes); the sheet also shows the bottom of the screen,
-// where the agent's own permission dialog says exactly what it will run.
+// for (cut at 200 bytes); the sheet also shows the screen (the last 80
+// lines, scrolled to the bottom, scrollable up), where the agent's own
+// permission dialog says exactly what it will run.
 
 let pending = null;
+
+// cutNote: when the summary leaves part of the command out (cut short, or
+// several lines folded into one), say how much, so a long or padded
+// command is not judged by its first line.
+function cutNote(t) {
+  if (!t || (!t.cut && !(t.lines > 1))) return "";
+  const parts = [];
+  if (t.lines > 1) parts.push(t.lines + " lines");
+  if (t.size) parts.push(t.size >= 1024 ? (t.size / 1024).toFixed(1) + " KB" : t.size + " bytes");
+  return (t.cut ? "summary cut" : "multi-line") + " (" + parts.join(", ") + "): read the whole command on the screen";
+}
 
 function confirmAnswer(s, answer) {
   busy = true;
@@ -395,6 +413,10 @@ function confirmAnswer(s, answer) {
   $("sheet-title").textContent = `${answer} · ${s.slug}`;
   $("sheet-tool").textContent = s.pending_tool ? s.pending_tool.name : "(no tool detail)";
   $("sheet-input").textContent = s.pending_tool ? s.pending_tool.input || "" : s.last_message || "";
+  const cut = cutNote(s.pending_tool);
+  $("sheet-warn").hidden = !cut;
+  $("sheet-warn").textContent = cut ? "⚠ " + cut : "";
+  sheet.classList.toggle("long", !!cut);
   const ok = $("sheet-ok");
   ok.textContent = answer;
   ok.className = "btn " + answer;
@@ -404,7 +426,9 @@ function confirmAnswer(s, answer) {
   $("sheet").hidden = false;
   api("/api/sessions/" + encodeURIComponent(s.slug) + "/screen").then((r) => {
     if (!pending || pending.slug !== s.slug) return;
-    scr.replaceChildren(termLines(screenRows(r).slice(-18)));
+    // every line the screen call returns, not just the bottom: a command
+    // padded with blank lines still has its start in reach by scrolling
+    scr.replaceChildren(termLines(screenRows(r)));
     scr.scrollTop = scr.scrollHeight;
   }).catch((e) => { scr.textContent = "(" + e.message + ")"; });
 }

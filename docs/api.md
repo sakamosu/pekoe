@@ -49,7 +49,7 @@
   "state_since": "2026-11-07T10:00:00Z",
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
-  "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション
+  "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。input は主な引数 1 つの 1 行の要約(改行のかたまりは " ⏎ "、200 バイトまで)。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション。引数が複数行なら lines(行数)、要約が切れていれば cut: true と size(全体のバイト数)
   "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none
   "diffstat": {"added": 120, "deleted": 8, "files": 4},
   "prompts": 7,                    // スナップショット数

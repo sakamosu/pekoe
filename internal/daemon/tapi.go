@@ -117,9 +117,9 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 			t.state, t.waitKind, t.pending = state.Running, "", nil
 		})
 	case "PreToolUse":
-		sum := toolSummary(hp.ToolName, hp.ToolInput)
+		tool := summarizeTool(hp.ToolName, hp.ToolInput)
 		d.tapiUpdate(func(t *tapiState) {
-			t.pending = &state.Tool{Name: hp.ToolName, Input: sum}
+			t.pending = &tool
 			if hp.ToolName == "AskUserQuestion" {
 				t.state, t.waitKind = state.Waiting, "question"
 			} else {
