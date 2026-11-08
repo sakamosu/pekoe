@@ -176,15 +176,28 @@
     const top = r.bottom + 8 + 60 < innerHeight ? r.bottom + 8 : Math.max(8, r.top - 68);
     Object.assign(frame.style, { top: top + 'px', left: Math.min(Math.max(8, r.x), innerWidth - 328) + 'px' });
     root.appendChild(frame);
-    frame.addEventListener('load', () => frame.focus());
+    // The box answers over a port of its own: a message posted to this
+    // window would reach the page's listeners too. The port goes only to
+    // the extension's origin, and the box takes it only with our nonce.
+    const ch = new MessageChannel();
+    let handed = false;
+    frame.addEventListener('load', () => {
+      if (!handed) {
+        handed = true;
+        frame.contentWindow.postMessage({ pekoe: 'port', nonce }, chrome.runtime.getURL('').replace(/\/$/, ''), [ch.port2]);
+      }
+      frame.focus();
+    });
+    let closed = false;
     const close = () => {
-      window.removeEventListener('message', onMsg);
+      closed = true;
+      ch.port1.close();
       frame.remove();
       overlay.style.display = label.style.display = 'none';
     };
-    const onMsg = async (e) => {
+    ch.port1.onmessage = async (e) => {
       const d = e.data;
-      if (e.source !== frame.contentWindow || !d || d.pekoe !== 'prompt' || d.nonce !== nonce) return;
+      if (closed || !d) return;
       if (d.type === 'cancel') { close(); return; }
       if (d.type !== 'submit') return;
       close();
@@ -198,7 +211,6 @@
         toast(`Send failed: ${err.message}`, false);
       }
     };
-    window.addEventListener('message', onMsg);
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
