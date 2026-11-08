@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -91,6 +92,27 @@ func trimURL(u string) string {
 		u = u[:len(u)-1]
 	}
 	return u
+}
+
+// linkClick opens a link with a left click on it: the press remembers the
+// URL under the pointer (u), the release opens it when it is still on it.
+func (m *model) linkClick(ev tea.MouseMsg, u string) tea.Cmd {
+	switch ev.Action {
+	case tea.MouseActionPress:
+		m.linkDown = u
+	case tea.MouseActionRelease:
+		down := m.linkDown
+		m.linkDown = ""
+		if down != "" && down == u {
+			return func() tea.Msg {
+				if err := openURL(u); err != nil {
+					return errMsg{err}
+				}
+				return infoMsg("opened " + u)
+			}
+		}
+	}
+	return nil
 }
 
 // openURL hands a URL to the OS default handler (open / xdg-open).

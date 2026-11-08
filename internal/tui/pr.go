@@ -70,8 +70,9 @@ type prSendMsg struct {
 // ---- items ----
 
 type prItem struct {
-	kind    string // check | review | thread | comment
+	kind    string // body | check | review | thread | comment
 	key     string
+	body    string // body: the PR description
 	url     string
 	group   string // threads: file path (a header row precedes each new group)
 	check   *daemon.PRCheck
@@ -82,7 +83,7 @@ type prItem struct {
 
 var bucketOrder = map[string]int{"fail": 0, "pending": 1, "pass": 2, "skip": 3}
 
-// prItems lists the selectable rows in display order: failed checks first,
+// prItems lists the selectable rows in display order: the description, failed checks first,
 // each reviewer's latest review, unresolved threads first (grouped by file),
 // then the conversation.
 func prItems(v *daemon.PRView) []prItem {
@@ -90,6 +91,9 @@ func prItems(v *daemon.PRView) []prItem {
 		return nil
 	}
 	var out []prItem
+	if strings.TrimSpace(v.Body) != "" {
+		out = append(out, prItem{kind: "body", key: "b", url: v.URL, body: v.Body})
+	}
 	checks := append([]daemon.PRCheck(nil), v.Checks...)
 	sort.SliceStable(checks, func(i, j int) bool { return bucketOrder[checks[i].Bucket] < bucketOrder[checks[j].Bucket] })
 	for i := range checks {
@@ -369,6 +373,8 @@ func (m *model) prRows(cw int) (rows []row, start, end int) {
 		if it.kind != kind {
 			kind = it.kind
 			switch kind {
+			case "body":
+				section("Description", "")
 			case "check":
 				var fail, pend, pass int
 				for _, c := range v.Checks {
@@ -431,6 +437,20 @@ func (m *model) prRows(cw int) (rows []row, start, end int) {
 	return rows, start, end
 }
 
+// prLinkAt returns the URL drawn at (x, y) of the PR view's body.
+func (m *model) prLinkAt(x, y int) string {
+	s, p := m.current(), m.pr
+	if s == nil || p.view == nil || p.slug != s.Slug || x < 0 || y < 0 {
+		return ""
+	}
+	aw, _ := m.agentSize()
+	rows, _, _ := m.prRows(aw)
+	if i := p.top + y; i < len(rows) {
+		return linkAt(rows[i].Text, x)
+	}
+	return ""
+}
+
 // prItemLine is one item row (without the gutter), cw cells wide.
 func (m *model) prItemLine(it prItem, cw int) string {
 	th := m.th
@@ -442,6 +462,9 @@ func (m *model) prItemLine(it prItem, cw int) string {
 		return theme.Ago(time.Since(t))
 	}
 	switch it.kind {
+	case "body":
+		lk := theme.StateLook{Icon: m.ic.Comments, Role: theme.Dim}
+		return icon(lk) + th.FG(theme.Text, fit(mdFirstLine(it.body), max(cw-2, 1)))
 	case "check":
 		c := it.check
 		lk := m.checkLook(c)
@@ -515,6 +538,8 @@ func (m *model) prExpansion(it prItem, width int) []string {
 	dimw := func(s string) string { return th.FG(theme.Dim, s) }
 	var out []string
 	switch it.kind {
+	case "body":
+		out = append(out, renderMarkdown(th, m.ic, it.body, width)...)
 	case "check":
 		c := it.check
 		if c.URL != "" {
@@ -549,18 +574,18 @@ func (m *model) prExpansion(it prItem, width int) []string {
 		if strings.TrimSpace(r.Body) == "" {
 			out = append(out, dimw("(no text)"))
 		}
-		out = append(out, wrapText(r.Body, width)...)
+		out = append(out, renderMarkdown(th, m.ic, r.Body, width)...)
 	case "thread":
 		t := it.thread
 		out = append(out, dimw(fmt.Sprintf("%s:%d", cleanText(t.Path), threadLine(*t))))
 		for _, c := range t.Comments {
 			out = append(out, dimw(cleanText(c.Author)+" · "+theme.Ago(time.Since(c.At))+" ago"))
-			for _, l := range wrapText(c.Body, width-2) {
+			for _, l := range renderMarkdown(th, m.ic, c.Body, width-2) {
 				out = append(out, "  "+l)
 			}
 		}
 	case "comment":
-		out = append(out, wrapText(it.comment.Body, width)...)
+		out = append(out, renderMarkdown(th, m.ic, it.comment.Body, width)...)
 	}
 	return out
 }
@@ -769,7 +794,7 @@ func (m *model) prSend() tea.Cmd {
 	}
 	var items []prItem
 	for _, it := range picked {
-		if it.kind == "check" && it.check.Bucket != "fail" {
+		if it.kind == "body" || (it.kind == "check" && it.check.Bucket != "fail") {
 			continue // only failing checks are worth an agent's time
 		}
 		items = append(items, it)

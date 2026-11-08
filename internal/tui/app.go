@@ -1532,8 +1532,11 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			m.move(&m.pr.sel, len(prItems(m.pr.view)), 1)
 		case ev.Button == tea.MouseButtonWheelUp:
 			m.move(&m.pr.sel, len(prItems(m.pr.view)), -1)
-		case ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft:
-			m.focus = pAgent
+		case ev.Button == tea.MouseButtonLeft:
+			if ev.Action == tea.MouseActionPress {
+				m.focus = pAgent
+			}
+			return m.linkClick(ev, m.prLinkAt(x, y))
 		}
 		return nil
 	}
