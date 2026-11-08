@@ -166,6 +166,67 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
 }
 
+// ---- run: one command in the worktree (TUI `!`) ----
+
+type runP struct {
+	Slug    string `json:"slug"`
+	Command string `json:"command"` // empty: only report the run window's state
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+}
+
+// RunState is what run.start answers: whether the session's run window is
+// still running, or holds a finished command waiting to be closed. Started is
+// set when this call spawned it.
+type RunState struct {
+	Running  bool `json:"running"`
+	Finished bool `json:"finished"`
+	Started  bool `json:"started"`
+}
+
+// hRunStart runs one command in a pty of its own, in the worktree with the
+// dev server's environment, through the user's shell. A session has at most
+// one run window: while one is running (or finished but not closed), the
+// call starts nothing and says so, and the TUI shows that window instead.
+func (d *Daemon) hRunStart(p runP) (any, error) {
+	s, err := d.snapshot(p.Slug)
+	if err != nil {
+		return nil, err
+	}
+	if d.Eng.Alive(p.Slug, engine.WinRun) {
+		return RunState{Running: true}, nil
+	}
+	if sc, err := d.Eng.Capture(p.Slug, engine.WinRun); err == nil && sc.Dead {
+		return RunState{Finished: true}, nil
+	}
+	cmd := strings.TrimSpace(p.Command)
+	if cmd == "" {
+		return RunState{}, nil
+	}
+	sh := os.Getenv("SHELL")
+	if sh == "" {
+		sh = "/bin/sh"
+	}
+	w, h := d.spawnSize(p.Width, p.Height)
+	full := "/bin/sh -c " + shellQuote(runScript(sh, cmd, w, h))
+	env := append(append([]string{}, s.Env...), "BOBA_SESSION="+p.Slug)
+	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinRun, Dir: s.Path, Env: env, Command: full, Width: w, Height: h, Quiet: true}); err != nil {
+		return nil, err
+	}
+	return RunState{Running: true, Started: true}, nil
+}
+
+// runScript is the run window's sh script. It waits (up to 1 s) for the pty
+// to get its size: tmux makes the window at the session's size and resizes
+// it (and sets Quiet's option) right after, and a command over before that
+// (echo) would have its output pushed into the scrollback by the shrink. Then it echoes the
+// command (dim) so the window says what ran, and hands the pty to the
+// user's shell, whose exit status becomes the pane's.
+func runScript(sh, cmd string, w, h int) string {
+	return fmt.Sprintf(`i=0; while [ "$(stty size 2>/dev/null)" != "%d %d" ] && [ $i -lt 20 ]; do sleep 0.05; i=$((i+1)); done; `, h, w) +
+		`printf '\033[2m$ %s\033[0m\n' ` + shellQuote(cmd) + "; exec " + shellQuote(sh) + " -c " + shellQuote(cmd)
+}
+
 // ---- land: rebase → test → push → gh pr create; teardown after merge ----
 
 func (d *Daemon) hLand(p slugP) (any, error) {

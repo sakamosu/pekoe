@@ -301,6 +301,9 @@ func (t *Tmux) Spawn(s Spawn) error {
 	t.mu.Unlock()
 	_, _ = t.run("set-option", "-w", "-t", t.target(s.Slug, s.Window), "automatic-rename", "off")
 	_, _ = t.run("set-option", "-w", "-t", t.target(s.Slug, s.Window), "allow-rename", "off")
+	if s.Quiet { // tmux < 3.3 has no such option: the line stays
+		_, _ = t.run("set-option", "-w", "-t", t.target(s.Slug, s.Window), "remain-on-exit-format", "")
+	}
 	if s.Width > 0 && s.Height > 0 {
 		_ = t.Resize(s.Slug, s.Window, s.Width, s.Height)
 	}
@@ -386,7 +389,7 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 	// 別プロセスで順に取ると、その間に pane が書き換わり(Backspace 長押しなど)
 	// カーソル位置と文字列が食い違って、描いたカーソルが揺れる。
 	all, err := t.run("display-message", "-p", "-t", tg,
-		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size}",
+		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size} #{pane_dead_status}",
 		";", "capture-pane", "-p", "-e", "-t", tg)
 	if err != nil {
 		return nil, err
@@ -406,6 +409,12 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 	sc.MouseAny = f[6] == "1"
 	sc.Dead = f[7] == "1"
 	sc.History, _ = strconv.Atoi(f[8])
+	sc.ExitStatus = -1
+	if len(f) > 9 { // empty while the process runs
+		if n, err := strconv.Atoi(f[9]); err == nil {
+			sc.ExitStatus = n
+		}
+	}
 	sc.Lines = strings.Split(out, "\n")
 	for len(sc.Lines) < sc.Height {
 		sc.Lines = append(sc.Lines, "")

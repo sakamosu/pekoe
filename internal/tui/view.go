@@ -513,8 +513,13 @@ func (m *model) viewAgent(width, height int) []string {
 		winLabel, icon = "Review", m.ic.Vim
 	case engine.WinDev:
 		winLabel = "Dev"
+	case engine.WinRun:
+		winLabel = "Run"
 	}
 	extra := "· " + s.Agent
+	if m.window == engine.WinRun && m.runs[s.Slug] != "" {
+		extra = "· $ " + m.runs[s.Slug]
+	}
 	if s.Port > 0 {
 		extra += fmt.Sprintf(" · :%d", s.Port)
 	}
@@ -620,7 +625,9 @@ func (m *model) screenRows(cw, ch int) []row {
 			}
 		}
 	}
-	if sc.Dead {
+	if sc.Dead && m.window == engine.WinRun {
+		lines = append(dropPaneDead(lines), "", m.runExitLine())
+	} else if sc.Dead {
 		lines = append(lines, m.th.FG(theme.Dim, "exited · ")+m.th.Bold(theme.Secondary, "↵")+m.th.FG(theme.Dim, " restart  ")+m.th.Bold(theme.Secondary, "x")+m.th.FG(theme.Dim, " close"))
 	}
 	rows := make([]row, 0, len(lines))
@@ -911,6 +918,9 @@ func (m *model) modeName() (string, string) {
 		if m.window == engine.WinReview {
 			return "REVIEW", m.ic.Vim
 		}
+		if m.window == engine.WinRun {
+			return "RUN", m.ic.Agent
+		}
 		return "TYPE", m.ic.Agent
 	}
 	switch m.focus {
@@ -951,6 +961,9 @@ func (m *model) hints() [][2]string {
 		if p == "" {
 			p = "^q"
 		}
+		if m.runDone() {
+			return [][2]string{{"↵", "back to the agent"}, {"x", "close"}, {p, "leave"}}
+		}
 		if m.screen != nil && m.screen.Dead {
 			return [][2]string{{"↵", "restart"}, {"x", "close"}, {p, "back"}}
 		}
@@ -988,6 +1001,9 @@ func (m *model) hints() [][2]string {
 		}
 		if m.pendingPick() != nil {
 			return [][2]string{{"↵", "send"}, {"i", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"?", "help"}}
+		}
+		if m.runDone() {
+			return [][2]string{{"↵", "back to the agent"}, {"v", "agent"}, {"h", "back"}, {"?", "help"}}
 		}
 		if m.screen != nil && m.screen.Dead {
 			return [][2]string{{"↵", "restart"}, {"h", "back"}, {"r", "review"}, {"?", "help"}}

@@ -532,7 +532,7 @@ func (m *model) panelKeysFull() [][3]string {
 	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
 	switch m.focus {
 	case pSessions:
-		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"/", "filter", "/"}}, common...)
+		return append([][3]string{{"j/k", "move", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"!", "run a command in the worktree", "!"}, {"/", "filter", "/"}}, common...)
 	case pSecond:
 		if m.sub2 == subIssues {
 			return issuePanelKeysFull()

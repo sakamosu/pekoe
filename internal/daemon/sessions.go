@@ -1090,7 +1090,7 @@ func (d *Daemon) hResize(p resizeP) (any, error) {
 		}
 		d.mu.Unlock()
 		for _, s := range slugs {
-			for _, w := range []string{engine.WinAgent, engine.WinReview, engine.WinDev} {
+			for _, w := range []string{engine.WinAgent, engine.WinReview, engine.WinDev, engine.WinRun} {
 				_ = d.Eng.Resize(s, w, p.Width, p.Height)
 			}
 		}

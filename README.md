@@ -102,7 +102,7 @@ boba                                                  # TUI
 
 ## TUI
 
-左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser ⇄ Issues、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの。preview・dev・PR の窓に切り替わる)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。複数リポジトリのセッションはリポジトリごとの見出しでまとめる。
+左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser ⇄ Issues、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの。preview・dev・run・PR の窓に切り替わる)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。複数リポジトリのセッションはリポジトリごとの見出しでまとめる。
 
 セッションの状態はアイコンと色で出す(配色は [docs/ui-guidelines.md](docs/ui-guidelines.md) のトークン)。最下行左端のマスコット tapi は全セッションの最優先の状態を顔で表し、隣の 1 行で誰が何をしているかを言う:
 
@@ -130,6 +130,7 @@ boba                                                  # TUI
 | `p` | PR ビュー(checks・レビュー・スレッド。`space` で選んで `s` でエージェントに送る) |
 | `v` | preview 窓(dev server のスクショを TUI 内に表示。`m` モバイル幅・`c` before/after)→ dev 窓 → agent |
 | `b` `l` `d` | ポートを Chrome で開く / land(衝突予報つきの確認)/ dev server |
+| `!` | その worktree でコマンドを 1 回実行(run 窓)。エージェントの画面の `! <cmd>` やコードを初期値に入れる。確認やパスワードにもそのまま答えられ、終わったら `↵` で agent に戻り、`y` で結果をエージェントに伝える |
 | `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを bobad が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |

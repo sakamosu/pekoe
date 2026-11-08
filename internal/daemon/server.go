@@ -428,6 +428,7 @@ func (d *Daemon) registerHandlers() {
 		"worktree.rm":           bind(d.hRm),
 		"land":                  bind(d.hLand),
 		"dev.toggle":            bind(d.hDevToggle),
+		"run.start":             bind(d.hRunStart),
 		"changes":               bind(d.hChanges),
 		"conflicts.list":        bind(d.hConflicts),
 		"review.start":          bind(d.hReviewStart),

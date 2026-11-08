@@ -13,6 +13,9 @@ const (
 	WinAgent  = "agent"
 	WinReview = "review"
 	WinDev    = "dev"
+	// WinRun runs one command the user typed (TUI `!`) and stays on screen
+	// after it exits, so its output and exit status can be read.
+	WinRun = "run"
 )
 
 type Spawn struct {
@@ -23,6 +26,10 @@ type Spawn struct {
 	Command string // run through the user's shell
 	Width   int
 	Height  int
+	// Quiet leaves no "Pane is dead" line when the process exits: the
+	// client says how it ended. tmux writes that line on the bottom row,
+	// scrolling a short output's first line away.
+	Quiet bool
 }
 
 type Screen struct {
@@ -37,7 +44,9 @@ type Screen struct {
 	AltScreen bool `json:"alt_screen"`
 	MouseAny  bool `json:"mouse"`
 	Dead      bool `json:"dead"`
-	History   int  `json:"history"` // lines scrolled off the top (for the unread line)
+	// ExitStatus is the exit status of a dead pane's process (-1: unknown).
+	ExitStatus int `json:"exit_status"`
+	History    int `json:"history"` // lines scrolled off the top (for the unread line)
 }
 
 // Output is a chunk produced by a pane.
