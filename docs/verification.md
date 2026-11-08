@@ -104,6 +104,8 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 
 TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、prefix + `h` `l`)はすべて実装済み。prefix は `[keys] prefix` で変更できる。既定は `ctrl+q`(JIS 配列で押しやすく、Claude Code が使わない)。入力モード中は prefix だけで抜けて Sessions に戻る。
 
+複数リポジトリ(`repo.list`、[1] のリポジトリ見出し、今のリポジトリ、`w`): デーモン側は `TestRepoListCwdAndRemembered`(セッション・cwd(worktree の中から)・覚えたもの(`repo.resolve` でも引ける)・`path_` の設定ファイル・場所不明の設定ファイル)と main の `TestKnownReposIncludeConfigOnly` `TestResolveRepoRef`。TUI は `TestSessionsGroupedByRepo`(truecolor/ansi/none × nerd/unicode/ascii × 180/90 列で全行が端末幅ちょうど)、`TestSingleRepoHasNoHeadings` `TestSelectionSkipsHeadings` `TestSelectedSessionStaysInView` `TestCurrentRepoFollowsSelection` `TestRepoPickerModal` `TestCommandsTargetCurrentRepo`(偽 bobad で `session.new` / `worktree.list` / `issues.list` / `pick.send` の `repo` を確認) `TestOutsideRepo` `TestStartRepoWithoutSessions` `TestStartUpFollowsStartRepo`。隔離したデーモンで、一時ディレクトリの 2 リポジトリに交互にセッションを作り、web で起動 → web のセッションが選ばれ Worktrees とバーが web、`k` で見出しを飛ばして api に移ると Worktrees・バーも api に変わり `n` のセッションが api に、`w` → web → `n` のセッションが web に作られることを確認。90 列のタブ表示、リポジトリの外での起動(設定ファイルだけから `w` の一覧を作り、`n` → リポジトリ選択 → 作成)も確認。
+
 ## デザイン原則のチェックリスト
 
 | 項目 | 結果 |

@@ -235,10 +235,11 @@ type newModal struct {
 	pickID   int64
 	pickText string
 	err      string
+	repo     *daemon.KnownRepo // where the session is created (the current repository)
 }
 
 func newNewModal(m *model, branch string) *newModal {
-	n := &newModal{m: m}
+	n := &newModal{m: m, repo: m.curRepo()}
 	for i := range n.inputs {
 		n.inputs[i] = &input{}
 	}
@@ -274,9 +275,9 @@ func (n *newModal) sess() *state.Session {
 func (n *newModal) view() []string {
 	m := n.m
 	th := m.th
-	repo := "repo"
-	if len(m.worktrees) > 0 {
-		repo = strings.TrimSuffix(lastPath(m.worktrees[0].Path), "/")
+	repo := "no repository · esc, then w"
+	if n.repo != nil {
+		repo = n.repo.Name
 	}
 	title := theme.Prefix(m.ic.Worktrees) + th.Bold(theme.Primary, "New session") + " " + th.FG(theme.Dim, "· "+repo)
 	col := func(icon, label, value string) string {
@@ -395,6 +396,11 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 		return nil
 	case "enter":
 		branch := strings.TrimSpace(n.inputs[0].String())
+		if n.repo == nil {
+			n.err = "no repository: esc, then w to pick one"
+			return nil
+		}
+		dir := n.repo.Dir
 		if branch == "" {
 			n.err = "branch is required"
 			return nil
@@ -411,7 +417,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 			id, text := n.pickID, n.pickText
 			return func() tea.Msg {
 				var pk state.Pick
-				if err := m.cl.Call("pick.send", map[string]any{"id": id, "new_branch": branch, "text": text, "repo": m.cwd}, &pk); err != nil {
+				if err := m.cl.Call("pick.send", map[string]any{"id": id, "new_branch": branch, "text": text, "repo": dir}, &pk); err != nil {
 					n.err = err.Error()
 					return nil
 				}
@@ -420,7 +426,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 		}
 		return func() tea.Msg {
 			var s state.Session
-			err := m.cl.Call("session.new", map[string]any{"repo": m.cwd, "branch": branch, "from": from, "prompt": prompt, "width": aw, "height": ah}, &s)
+			err := m.cl.Call("session.new", map[string]any{"repo": dir, "branch": branch, "from": from, "prompt": prompt, "width": aw, "height": ah}, &s)
 			if err != nil {
 				n.err = err.Error()
 				return nil
@@ -514,7 +520,7 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
 		g := g
 		h.items = append(h.items, helpItem{key: g[0], action: g[1], global: true})
 	}
@@ -661,16 +667,16 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 		case "q", "quit":
 			return tea.Quit
 		case "new":
-			nm := newNewModal(m, "")
-			if len(f) > 1 {
-				nm.inputs[0] = &input{text: []rune(f[1]), pos: len(f[1])}
-				if len(f) > 2 {
-					p := strings.Join(f[2:], " ")
-					nm.inputs[2] = &input{text: []rune(p), pos: len([]rune(p))}
+			m.modal = nil
+			return m.openNew(func(nm *newModal) {
+				if len(f) > 1 {
+					nm.inputs[0] = &input{text: []rune(f[1]), pos: len(f[1])}
+					if len(f) > 2 {
+						p := strings.Join(f[2:], " ")
+						nm.inputs[2] = &input{text: []rune(p), pos: len([]rune(p))}
+					}
 				}
-			}
-			m.modal = nm
-			return nil
+			})
 		case "send":
 			if need() {
 				return done(m.act("session.send", map[string]any{"slug": s.Slug, "text": arg, "submit": true}, "sent"))

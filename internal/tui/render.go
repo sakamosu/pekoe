@@ -112,9 +112,13 @@ func (m *model) box(width, height int, o boxOpt) []string {
 		avail--
 	}
 	if len(rows) > avail {
-		if o.bottom {
+		switch {
+		case o.bottom:
 			rows = rows[len(rows)-avail:]
-		} else {
+		case selRow(rows) >= avail: // keep the selected row in view
+			start := clampi(selRow(rows)-avail+1, 0, len(rows)-avail)
+			rows = rows[start : start+avail]
+		default:
 			rows = rows[:avail]
 		}
 	}
