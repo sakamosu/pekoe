@@ -339,6 +339,17 @@ func (m *model) barTapi(width int) string {
 // bigRows centers the 3-line face with a caption: only for an empty main
 // pane (no session, worktree being created, setup failed, session ended).
 func (m *model) bigRows(width, height int, mood mascot.Mood, caption, sub string) []row {
+	return m.bigRowsWith(width, height, mood, caption, sub, false)
+}
+
+// bigRowsTip is bigRows with a tip under the caption (tips.go), for the
+// panes the user just waits in: no session selected, worktree being created.
+// The tip only takes rows the face and the caption leave.
+func (m *model) bigRowsTip(width, height int, mood mascot.Mood, caption, sub string) []row {
+	return m.bigRowsWith(width, height, mood, caption, sub, true)
+}
+
+func (m *model) bigRowsWith(width, height int, mood mascot.Mood, caption, sub string, withTip bool) []row {
 	r := m.tapi.r
 	anim := m.animating()
 	f := m.tapi.frame
@@ -391,6 +402,11 @@ func (m *model) bigRows(width, height int, mood mascot.Mood, caption, sub string
 	if sub != "" {
 		lines++
 	}
+	var tip []row
+	if withTip {
+		tip = m.tipRows(width, height-lines)
+		lines += len(tip)
+	}
 	var rows []row
 	for i := 0; i < (height-lines)/2; i++ {
 		rows = append(rows, row{})
@@ -404,7 +420,7 @@ func (m *model) bigRows(width, height int, mood mascot.Mood, caption, sub string
 	if sub != "" {
 		rows = append(rows, center(m.th.FG(theme.Dim, sub)))
 	}
-	return rows
+	return append(rows, tip...)
 }
 
 // creatingSub is the running setup step under "creating worktree …".

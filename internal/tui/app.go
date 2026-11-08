@@ -149,6 +149,7 @@ type model struct {
 	chat     chatState  // tapi chat in the main panel (chat.go)
 	order    ptyOrder   // keys reach the ptys in the order typed (order.go)
 	spinning bool       // the 80 ms spinner tick is scheduled
+	tip      tipState   // the tip in the empty main pane (tips.go)
 }
 
 func TermSize() (int, int) {
@@ -204,6 +205,7 @@ func newModel(cl *client.Client, cwd string) *model {
 	}
 	m.width, m.height = TermSize()
 	m.newTapi()
+	m.initTips("") // Run keeps them in paths.TipsFile()
 	return m
 }
 
@@ -213,6 +215,7 @@ func Run(cl *client.Client, cwd string) error {
 	}
 	m := newModel(cl, cwd)
 	m.layout, m.layoutPath = LoadLayout(), paths.LayoutFile()
+	m.initTips(paths.TipsFile())
 	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
 		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
@@ -525,6 +528,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		_, cmd = m.route(msg)
 	}
+	m.tipSync()
 	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
 }
 
@@ -1167,6 +1171,11 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.openChat()
 	case "T":
 		return m.confirmResetChat()
+	case tipKey: // the next tip, while the empty main pane shows one (tips.go)
+		if m.tipSpot() {
+			m.nextTip()
+			return nil
+		}
 	}
 	if m.prefixKey(k) {
 		m.prefix = true

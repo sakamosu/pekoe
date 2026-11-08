@@ -717,7 +717,11 @@ func (r *reviewModel) bar() string {
 		}
 		right = th.FG(role, r.msg)
 	} else {
-		right = m.keyHints([][2]string{{"a", "approve"}, {"x", "revert"}, {"c", "comment"}, {"?", "ask"}, {"]h", "next"}, {"S", "send"}}, max(r.width-w(left)-2, 0))
+		right = m.keyHints(reviewBarKeys, max(r.width-w(left)-2, 0))
 	}
 	return left + strings.Repeat(" ", max(r.width-w(left)-w(right), 1)) + right
 }
+
+// reviewBarKeys are the built-in review surface's keys on its bottom bar
+// ([review] surface = "tui"); it has no help list of its own.
+var reviewBarKeys = [][2]string{{"a", "approve"}, {"x", "revert"}, {"c", "comment"}, {"?", "ask"}, {"]h", "next"}, {"S", "send"}}

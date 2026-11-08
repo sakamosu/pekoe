@@ -507,7 +507,7 @@ func (m *model) viewAgent(width, height int) []string {
 	s := m.current()
 	f := m.focus == pAgent
 	if s == nil {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRows(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
 	}
 	if m.window == winPR {
 		return m.viewPR(s, width, height)
@@ -549,7 +549,7 @@ func (m *model) viewAgent(width, height int) []string {
 	cw := width - 4
 	ch := height - 2
 	if s.State == state.Creating {
-		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Work, "creating worktree "+s.Branch, creatingSub(m.progress[s.Slug])), focused: f})
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRowsTip(cw, ch, mascot.Work, "creating worktree "+s.Branch, creatingSub(m.progress[s.Slug])), focused: f})
 	}
 	if s.State == state.Failed && m.window == engine.WinAgent && (m.screen == nil || m.screen.Dead) {
 		rows := m.bigRows(cw, ch-4, mascot.Error, "setup failed", "")
