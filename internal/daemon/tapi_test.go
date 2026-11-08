@@ -140,6 +140,18 @@ func TestTapiHooks(t *testing.T) {
 	if v := tapi(); v.State != state.Waiting || v.WaitKind != "question" {
 		t.Fatalf("question: %+v", v)
 	}
+	// Claude Code shows the question through its permission dialog (#66)
+	event(t, d, "Notification", TapiSlug, map[string]any{"notification_type": "permission_prompt"})
+	if v := tapi(); v.State != state.Waiting || v.WaitKind != "question" {
+		t.Fatalf("question after permission_prompt: %+v", v)
+	}
+	// another tool's permission prompt stays a permission
+	event(t, d, "PostToolUse", TapiSlug, map[string]any{"tool_name": "AskUserQuestion"})
+	event(t, d, "PreToolUse", TapiSlug, map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "rm x"}})
+	event(t, d, "Notification", TapiSlug, map[string]any{"notification_type": "permission_prompt"})
+	if v := tapi(); v.WaitKind != "permission" {
+		t.Fatalf("Bash permission: %+v", v)
+	}
 	event(t, d, "Stop", TapiSlug, map[string]any{"last_assistant_message": "3 alerts"})
 	waitFor(t, func() bool { v := tapi(); return v.State == state.Idle && v.LastMessage == "3 alerts" })
 

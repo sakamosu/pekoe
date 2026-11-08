@@ -145,6 +145,11 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 				}
 				return
 			}
+			if kind == "permission" && t.askingQuestion() {
+				// AskUserQuestion comes up as a permission dialog: keep it
+				// a question, as for sessions (askingQuestion in hooks.go)
+				kind = "question"
+			}
 			t.state, t.waitKind = state.Waiting, kind
 		})
 	case "Stop":
@@ -162,6 +167,13 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 			t.state, t.waitKind, t.pending = state.Idle, "", nil
 		})
 	}
+}
+
+// askingQuestion: tapi is still in the AskUserQuestion its last PreToolUse
+// started (the narrow test of askingQuestion in hooks.go).
+func (t *tapiState) askingQuestion() bool {
+	return t.state == state.Waiting && t.waitKind == "question" &&
+		t.pending != nil && t.pending.Name == "AskUserQuestion"
 }
 
 // inTapiDir reports whether cwd is tapi's working directory or below it.
