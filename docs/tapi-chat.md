@@ -52,7 +52,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | UserPromptSubmit | running |
 | PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
 | PostToolUse | waiting なら running に戻す |
-| Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog など → waiting / question、idle_prompt → idle |
+| Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |
 | Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い |
 | SessionEnd | idle |
 

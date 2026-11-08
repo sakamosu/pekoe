@@ -23,7 +23,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | --- | --- |
 | SessionStart → session_id を保存して `--resume` に使う | 実機で session_id を記録。tmux ごと落とした後、`--resume <id>` で復元した(e2e) |
 | UserPromptSubmit → `refs/pekoe/<slug>/prompt-<n>` | 実機と e2e |
-| Notification → 許可待ちか質問かを区別 | `notification_type`(permission_prompt / idle_prompt / elicitation_dialog)で判別。旧形式は文面から判断。`TestClassifyNotification`、実機で Bash の許可待ちを検知 |
+| Notification → 許可待ちか質問かを区別 | `notification_type`(permission_prompt / idle_prompt / elicitation_dialog)で判別。旧形式は文面から判断。知らない種類・判断できない文面は permission(Web から許可/拒否しかできない側)にする。`TestClassifyNotification`、実機で Bash の許可待ちを検知 |
 | Stop → done・`test` 自動実行・結果を左ペインへ | 実機と e2e(`✓test`) |
 | PreToolUse → 直近のツールを左ペインへ | Sessions パネルのフッターに選択中セッションの直近ツールを表示 |
 | OSC 9/99/777・タイトル・`[y/n]` のフォールバック | hooks のないエージェント向けに `output.go` で実装。Claude Code の信頼確認ダイアログは hooks より前に出るので、最初の hook が届くまでは画面を読んで検知する(実機で検知・許可まで確認) |

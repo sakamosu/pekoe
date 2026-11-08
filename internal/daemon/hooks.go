@@ -255,6 +255,12 @@ func askingQuestion(s *state.Session) bool {
 // classifyNotification separates permission prompts from questions.
 // Claude Code sends notification_type (permission_prompt, idle_prompt,
 // elicitation_dialog); older versions only a message.
+//
+// Anything it does not recognize is a permission: a "question" lets the web
+// keypad press digits and arrows, which on a permission menu could pick
+// "don't ask again", while a permission only takes allow/deny. The one
+// question a permission_prompt stands for (AskUserQuestion) is kept a
+// question by askingQuestion, which also covers unknown types.
 func classifyNotification(hp hookPayload) string {
 	switch hp.NotificationType {
 	case "permission_prompt":
@@ -265,6 +271,9 @@ func classifyNotification(hp hookPayload) string {
 		return "question"
 	case "auth_success":
 		return ""
+	case "":
+	default:
+		return "permission"
 	}
 	m := strings.ToLower(hp.Message)
 	switch {
@@ -273,7 +282,7 @@ func classifyNotification(hp hookPayload) string {
 	case strings.Contains(m, "waiting for your input"):
 		return "idle"
 	}
-	return "question"
+	return "permission"
 }
 
 func (d *Daemon) snapshotPrompt(slug, prompt string) {

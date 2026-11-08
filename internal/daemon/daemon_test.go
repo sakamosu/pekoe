@@ -345,6 +345,11 @@ func TestClassifyNotification(t *testing.T) {
 		{hookPayload{NotificationType: "elicitation_dialog"}, "question"},
 		{hookPayload{Message: "Claude needs your permission to use Bash"}, "permission"},
 		{hookPayload{Message: "Claude is waiting for your input"}, "idle"},
+		{hookPayload{NotificationType: "auth_success"}, ""},
+		// unknown kinds fall on the safe side: allow/deny only, no keypad
+		{hookPayload{NotificationType: "some_future_type", Message: "Claude wants to run Bash"}, "permission"},
+		{hookPayload{NotificationType: "some_future_type"}, "permission"},
+		{hookPayload{Message: "something new"}, "permission"},
 	}
 	for _, c := range cases {
 		if got := classifyNotification(c.in); got != c.want {
@@ -381,6 +386,25 @@ func TestPermissionPromptAfterQuestion(t *testing.T) {
 			got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
 			if got.State != state.Waiting || got.WaitKind != c.want {
 				t.Fatalf("got %s/%s, want waiting/%s", got.State, got.WaitKind, c.want)
+			}
+		})
+	}
+	// an unknown notification type during AskUserQuestion stays a question;
+	// after another tool it is a permission
+	for _, c := range []struct {
+		name  string
+		tools []map[string]any
+		want  string
+	}{{"unknown after question", []map[string]any{ask}, "question"}, {"unknown after bash", []map[string]any{bash}, "permission"}} {
+		t.Run(c.name, func(t *testing.T) {
+			d, _, repo := setup(t)
+			call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+			for _, p := range c.tools {
+				event(t, d, "PreToolUse", "main", p)
+			}
+			event(t, d, "Notification", "main", map[string]any{"notification_type": "some_future_type", "message": "?"})
+			if got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); got.WaitKind != c.want {
+				t.Fatalf("got %s, want %s", got.WaitKind, c.want)
 			}
 		})
 	}
