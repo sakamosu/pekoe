@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 const (
@@ -71,7 +71,7 @@ type Summary struct {
 }
 
 // Aggregate picks the most urgent mood across all sessions, regardless of
-// which one is shown. lastActive is the last key press or bobad event.
+// which one is shown. lastActive is the last key press or pekoed event.
 func Aggregate(ss []*state.Session, seen map[string]time.Time, now, lastActive time.Time) Summary {
 	sum := Summary{Mood: Idle, Total: len(ss)}
 	latest := time.Time{}

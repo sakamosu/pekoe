@@ -7,14 +7,14 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/config"
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // tapiPRModel pins what the user's config could change (icons, animate), so
-// the tests don't depend on ~/.config/boba.
+// the tests don't depend on ~/.config/pekoe.
 func tapiPRModel(t *testing.T, color string, mc config.Mascot) *model {
 	t.Helper()
 	m := tapiModel(t, color, mc)

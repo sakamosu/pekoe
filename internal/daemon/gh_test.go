@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 // issues as `gh issue list --json number,title,labels,assignees,updatedAt,comments,url` prints them
@@ -81,7 +81,7 @@ func TestLandWithPRAndMergeTeardown(t *testing.T) {
 		}
 		sleep()
 	}
-	if !strings.HasPrefix(s.Path, os.Getenv("BOBA_WORKTREES")) {
+	if !strings.HasPrefix(s.Path, os.Getenv("PEKOE_WORKTREES")) {
 		t.Fatalf("worktree outside ~/worktrees: %s", s.Path)
 	}
 	os.WriteFile(filepath.Join(s.Path, "b.txt"), []byte("b\n"), 0o644)

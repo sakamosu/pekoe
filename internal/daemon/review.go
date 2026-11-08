@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/engine"
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 type changeEntry struct {
@@ -401,7 +401,7 @@ func (d *Daemon) hAsk(p askP) (any, error) {
 }
 
 // hFlush sends all unsent comments as one message and records a review point
-// (refs/boba/<slug>/review-<n>) so the next review shows only what changed.
+// (refs/pekoe/<slug>/review-<n>) so the next review shows only what changed.
 func (d *Daemon) hFlush(p slugP) (any, error) {
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
@@ -412,11 +412,11 @@ func (d *Daemon) hFlush(p slugP) (any, error) {
 		return nil, err
 	}
 	n := s.ReviewN + 1
-	sha, err := gitx.SnapshotCommit(s.Path, fmt.Sprintf("boba review #%d", n))
+	sha, err := gitx.SnapshotCommit(s.Path, fmt.Sprintf("pekoe review #%d", n))
 	if err != nil {
 		return nil, err
 	}
-	ref := fmt.Sprintf("refs/boba/%s/review-%d", p.Slug, n)
+	ref := fmt.Sprintf("refs/pekoe/%s/review-%d", p.Slug, n)
 	if err := gitx.UpdateRef(s.Path, ref, sha); err != nil {
 		return nil, err
 	}

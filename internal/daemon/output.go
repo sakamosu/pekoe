@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/engine"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
 )
 
 func execCommand(ctx context.Context, name string, args ...string) *exec.Cmd {

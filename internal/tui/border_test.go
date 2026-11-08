@@ -6,13 +6,13 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/theme"
+	"pekoe/internal/theme"
 )
 
 // borderModel ignores the user's global theme so the defaults are tested.
 func borderModel(t *testing.T, mode string) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", mode)
+	t.Setenv("PEKOE_COLOR", mode)
 	m := newModel(nil, "")
 	m.th = theme.Load(nil)
 	m.width, m.height = 120, 40

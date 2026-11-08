@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/errcatch"
-	"boba/internal/paths"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
 )
 
 // feedDev scans dev window output (called from the output loop only).
@@ -209,7 +209,7 @@ func (d *Daemon) dropConsole(r errcatch.Report) {
 
 var attachNumRe = regexp.MustCompile(`-(\d+)\.md$`)
 
-// sendAttachment writes body(n) to ~/.local/share/boba/<repo-id>/errors/
+// sendAttachment writes body(n) to ~/.local/share/pekoe/<repo-id>/errors/
 // <slug>-<n>.md and pastes "@<file> <instruction>" into the agent.
 func (d *Daemon) sendAttachment(slug, repoID string, body func(n int) string, instruction string) (string, error) {
 	if repoID == "" {

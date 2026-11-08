@@ -13,12 +13,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/client"
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/gitx"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/client"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/gitx"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 type reviewMsg struct {
@@ -76,7 +76,7 @@ func newReviewModel(cl *client.Client, slug string, th *theme.Theme, ic theme.Ic
 }
 
 // RunReview opens the review surface for a session from the CLI:
-// nvim (+ boba.nvim) when configured, otherwise the built-in screen.
+// nvim (+ pekoe.nvim) when configured, otherwise the built-in screen.
 func RunReview(cl *client.Client, slug string) error {
 	g, _ := config.LoadGlobal()
 	var s state.Session
@@ -88,9 +88,9 @@ func RunReview(cl *client.Client, slug string) error {
 		if nv, err := exec.LookPath("nvim"); err == nil {
 			args := []string{"nvim"}
 			if rtp := NvimPluginDir(); rtp != "" {
-				args = append(args, "-c", "set rtp+="+rtp+" | runtime plugin/boba.lua")
+				args = append(args, "-c", "set rtp+="+rtp+" | runtime plugin/pekoe.lua")
 			}
-			env := append(os.Environ(), "BOBA_SESSION="+slug, "BOBA_REVIEW=1")
+			env := append(os.Environ(), "PEKOE_SESSION="+slug, "PEKOE_REVIEW=1")
 			if err := os.Chdir(s.Path); err != nil {
 				return err
 			}
@@ -102,7 +102,7 @@ func RunReview(cl *client.Client, slug string) error {
 	}
 	w, h := TermSize()
 	th := theme.Load(&g.Theme)
-	rm := newReviewModel(cl, slug, th, theme.Icons(theme.IconsFromEnv()), w, h, os.Getenv("BOBA_SQUARE") != "")
+	rm := newReviewModel(cl, slug, th, theme.Icons(theme.IconsFromEnv()), w, h, os.Getenv("PEKOE_SQUARE") != "")
 	rm.standalone = true
 	p := tea.NewProgram(&standaloneReview{rm}, tea.WithAltScreen())
 	go pump(cl, p)
@@ -111,9 +111,9 @@ func RunReview(cl *client.Client, slug string) error {
 	return err
 }
 
-// NvimPluginDir finds boba's nvim/ directory next to the binary or source.
+// NvimPluginDir finds pekoe's nvim/ directory next to the binary or source.
 func NvimPluginDir() string {
-	if d := os.Getenv("BOBA_NVIM_RTP"); d != "" {
+	if d := os.Getenv("PEKOE_NVIM_RTP"); d != "" {
 		return d
 	}
 	exe, err := os.Executable()
@@ -125,10 +125,10 @@ func NvimPluginDir() string {
 	}
 	for _, c := range []string{
 		filepath.Join(filepath.Dir(exe), "..", "nvim"),
-		filepath.Join(filepath.Dir(exe), "..", "share", "boba", "nvim"),
+		filepath.Join(filepath.Dir(exe), "..", "share", "pekoe", "nvim"),
 		filepath.Join(filepath.Dir(exe), "nvim"),
 	} {
-		if _, err := os.Stat(filepath.Join(c, "lua", "boba", "init.lua")); err == nil {
+		if _, err := os.Stat(filepath.Join(c, "lua", "pekoe", "init.lua")); err == nil {
 			abs, _ := filepath.Abs(c)
 			return abs
 		}

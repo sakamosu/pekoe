@@ -1,5 +1,5 @@
 // Package termstyle parses capture-pane -e lines into runs of text and
-// style. bobad uses it for the phone's agent screen (web.go): nothing here
+// style. pekoed uses it for the phone's agent screen (web.go): nothing here
 // is HTML, the page puts each run's text in with textContent and its colors
 // through classes (a theme role) or a CSSOM color (#rrggbb, built here from
 // numbers), so the agent's output cannot become markup. The TUI uses it to

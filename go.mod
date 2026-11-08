@@ -1,4 +1,4 @@
-module boba
+module pekoe
 
 go 1.25.5
 

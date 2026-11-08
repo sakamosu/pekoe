@@ -6,13 +6,13 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/theme"
 )
 
 func mdTheme(t *testing.T, mode string) *theme.Theme {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", mode)
+	t.Setenv("PEKOE_COLOR", mode)
 	return theme.Load(nil)
 }
 

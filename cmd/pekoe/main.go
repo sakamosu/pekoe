@@ -1,23 +1,24 @@
-// boba — Orca-style multi-agent workflow inside Ghostty.
+// pekoe — Orca-style multi-agent workflow inside Ghostty.
 //
-//	boba                      open the TUI (starts bobad if needed)
-//	boba init                 draft this repository's config
-//	boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt text]
-//	boba open <worktree> [--resume|--new]
-//	boba adopt                bring agents started by hand under boba
-//	boba ls [--all|--repo R]  sessions and states (default: this repository)
-//	boba send <slug> <text>   write to the agent's pty (Enter appended)
-//	boba event <Hook>         called by Claude Code hooks (stdin JSON)
-//	boba review [<slug>|gh#N] open the review surface
-//	boba land <slug> / boba rm <slug> [--force]
-//	boba dev <slug>           start/stop the dev server on the session port
-//	boba undo <slug> [n]      throw away the changes of the last (or n-th) prompt
-//	boba answer <slug> allow|deny|always
-//	boba attach <slug>        attach the raw tmux window (debug)
-//	boba hooks install|uninstall|status
-//	boba ext                  port and token for the Chrome extension
-//	boba mcp                  MCP server (stdio) for agents
-//	boba daemon start|stop|status|run
+//	pekoe                      open the TUI (starts pekoed if needed)
+//	pekoe init                 draft this repository's config
+//	pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt text]
+//	pekoe open <worktree> [--resume|--new]
+//	pekoe adopt                bring agents started by hand under pekoe
+//	pekoe ls [--all|--repo R]  sessions and states (default: this repository)
+//	pekoe send <slug> <text>   write to the agent's pty (Enter appended)
+//	pekoe event <Hook>         called by Claude Code hooks (stdin JSON)
+//	pekoe review [<slug>|gh#N] open the review surface
+//	pekoe land <slug> / pekoe rm <slug> [--force]
+//	pekoe dev <slug>           start/stop the dev server on the session port
+//	pekoe undo <slug> [n]      throw away the changes of the last (or n-th) prompt
+//	pekoe answer <slug> allow|deny|always
+//	pekoe attach <slug>        attach the raw tmux window (debug)
+//	pekoe hooks install|uninstall|status
+//	pekoe ext                  port and token for the Chrome extension
+//	pekoe mcp                  MCP server (stdio) for agents
+//	pekoe daemon start|stop|status|run
+//	pekoe migrate [--dry-run] [--prune-old]   move a boba installation to pekoe
 package main
 
 import (
@@ -39,17 +40,18 @@ import (
 
 	"golang.org/x/term"
 
-	"boba/internal/client"
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/hooks"
-	"boba/internal/mascot"
-	"boba/internal/mcp"
-	"boba/internal/paths"
-	"boba/internal/state"
-	"boba/internal/theme"
-	"boba/internal/tui"
+	"pekoe/internal/client"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/hooks"
+	"pekoe/internal/mascot"
+	"pekoe/internal/mcp"
+	"pekoe/internal/migrate"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
+	"pekoe/internal/tui"
 )
 
 var jsonOut bool
@@ -58,7 +60,7 @@ func main() {
 	// global flags, before or after the subcommand
 	args, global := splitGlobal(os.Args[1:])
 	jsonOut = global
-	if filepath.Base(os.Args[0]) == "bobad" {
+	if filepath.Base(os.Args[0]) == "pekoed" {
 		args = append([]string{"daemon", "run"}, args...)
 	}
 	if len(args) == 0 {
@@ -120,10 +122,12 @@ func main() {
 		}
 	case "daemon":
 		err = cmdDaemon(args)
+	case "migrate":
+		err = cmdMigrate(args)
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
-		fmt.Println("boba", daemon.Version)
+		fmt.Println("pekoe", daemon.Version)
 	default:
 		usage()
 		os.Exit(2)
@@ -132,7 +136,7 @@ func main() {
 	die(err)
 }
 
-// helpTapi is tapi on top of `boba --help` (a still image).
+// helpTapi is tapi on top of `pekoe --help` (a still image).
 func helpTapi() string {
 	g, err := config.LoadGlobal()
 	if err != nil {
@@ -145,7 +149,7 @@ func helpTapi() string {
 		Light:  g.Mascot.LightPalette(),
 		Colors: g.Mascot.Colors,
 	})
-	text := []string{"boba v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
+	text := []string{"pekoe v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
 	width := 0 // not a terminal: no limit
 	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {
 		// left-aligned, so only the last column is kept free: a glyph the
@@ -159,31 +163,33 @@ func usage() {
 	fmt.Print(helpTapi())
 	fmt.Print(`
 
-  boba                         open the TUI
-  boba init                    draft ~/.config/boba/repos/<repo-id>.toml
-  boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]
-  boba open <worktree> [--resume|--new]
-  boba adopt [--yes]           take over agents started by hand
-  boba ls [--all|--repo R] [--json]   sessions (default: this repository; outside one, all)
-  boba issues [--repo R] [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
-  boba issues <N> [--repo R] [--json]  an issue's body and comments
-  boba conflicts [--repo R] [--json]  sessions touching the same files (conflict forecast)
-  boba send <slug> <text>      <slug> may also be <repo>/<slug>
-  boba review [<slug> | gh#N [--repo R]]
-  boba land <slug>             rebase → test → gh pr create (teardown after merge)
-  boba rm <slug> [--force]     teardown → delete worktree
-  boba dev <slug>              toggle the dev server on the session's port
-  boba undo <slug> [n]         undo the last (or n-th) prompt's changes
-  boba answer <slug> allow|deny|always
-  boba hooks install|uninstall|status
-  boba ext                     port + token for the Chrome extension
-  boba web                     phone web UI on the tailnet: state, URL, login link ([web])
-  boba mcp                     MCP server for agents (claude mcp add boba -- boba mcp)
-  boba daemon start|stop|status
-  boba daemon stop --kill-agents [--yes]
-                               also stop the tmux server ($BOBA_TMUX_SOCKET) and
+  pekoe                         open the TUI
+  pekoe init                    draft ~/.config/pekoe/repos/<repo-id>.toml
+  pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]
+  pekoe open <worktree> [--resume|--new]
+  pekoe adopt [--yes]           take over agents started by hand
+  pekoe ls [--all|--repo R] [--json]   sessions (default: this repository; outside one, all)
+  pekoe issues [--repo R] [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
+  pekoe issues <N> [--repo R] [--json]  an issue's body and comments
+  pekoe conflicts [--repo R] [--json]  sessions touching the same files (conflict forecast)
+  pekoe send <slug> <text>      <slug> may also be <repo>/<slug>
+  pekoe review [<slug> | gh#N [--repo R]]
+  pekoe land <slug>             rebase → test → gh pr create (teardown after merge)
+  pekoe rm <slug> [--force]     teardown → delete worktree
+  pekoe dev <slug>              toggle the dev server on the session's port
+  pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
+  pekoe answer <slug> allow|deny|always
+  pekoe hooks install|uninstall|status
+  pekoe ext                     port + token for the Chrome extension
+  pekoe web                     phone web UI on the tailnet: state, URL, login link ([web])
+  pekoe mcp                     MCP server for agents (claude mcp add pekoe -- pekoe mcp)
+  pekoe daemon start|stop|status
+  pekoe daemon stop --kill-agents [--yes]
+                               also stop the tmux server ($PEKOE_TMUX_SOCKET) and
                                ALL its agents · for sandboxes; on the default
-                               socket "boba" this kills every real agent
+                               socket "pekoe" this kills every real agent
+  pekoe migrate [--dry-run] [--prune-old]
+                               move a boba installation (the old name) to pekoe
 
   R is a repo-id, a short name (as in ~/worktrees/<name>) or a path.
 `)
@@ -193,7 +199,7 @@ func die(err error) {
 	if err == nil {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "boba:", err)
+	fmt.Fprintln(os.Stderr, "pekoe:", err)
 	os.Exit(1)
 }
 
@@ -233,7 +239,7 @@ func runTUI() error {
 	cl := connect()
 	defer cl.Close()
 	if !hooks.Installed() {
-		fmt.Fprintln(os.Stderr, "hint: Claude Code hooks are not installed; run `boba hooks install` so boba can see agent states.")
+		fmt.Fprintln(os.Stderr, "hint: Claude Code hooks are not installed; run `pekoe hooks install` so pekoe can see agent states.")
 	}
 	return tui.Run(cl, cwd())
 }
@@ -340,7 +346,7 @@ func cmdNew(args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]")
+		return fmt.Errorf("usage: pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]")
 	}
 	cl := connect()
 	defer cl.Close()
@@ -407,7 +413,7 @@ func cmdNew(args []string) error {
 					return fmt.Errorf("%s", u.Error)
 				}
 				if u.State != state.Creating {
-					fmt.Printf("%s started · open with `boba` · attach raw with `boba attach %s`\n", u.Agent, u.Slug)
+					fmt.Printf("%s started · open with `pekoe` · attach raw with `pekoe attach %s`\n", u.Agent, u.Slug)
 					return nil
 				}
 			}
@@ -519,11 +525,11 @@ func cmdAdopt(args []string) error {
 		fmt.Println("no unmanaged agents found")
 		return nil
 	}
-	fmt.Println("agents running outside boba:")
+	fmt.Println("agents running outside pekoe:")
 	for _, c := range res.Candidates {
 		fmt.Printf("  pid %-6d %-8s %s  session %s\n", c.PID, c.Where, c.Cwd, c.SessionID)
 	}
-	fmt.Println("adopting stops each one (Ctrl-C twice) and resumes the same session inside boba.")
+	fmt.Println("adopting stops each one (Ctrl-C twice) and resumes the same session inside pekoe.")
 	if f["yes"] == "" && !confirm("adopt them?") {
 		return nil
 	}
@@ -565,10 +571,10 @@ func cmdLs(args []string) error {
 	}
 	if len(ss) == 0 {
 		if scope != nil {
-			fmt.Printf("no sessions in %s · `boba ls --all` for every repository · start one with `boba new <branch>`\n", scope.Name)
+			fmt.Printf("no sessions in %s · `pekoe ls --all` for every repository · start one with `pekoe new <branch>`\n", scope.Name)
 			return nil
 		}
-		fmt.Println("no sessions · start one with `boba new <branch>`")
+		fmt.Println("no sessions · start one with `pekoe new <branch>`")
 		return nil
 	}
 	ic := theme.Icons(theme.IconsFromEnv())
@@ -579,7 +585,7 @@ func cmdLs(args []string) error {
 	return nil
 }
 
-// lsScope is the repository `boba ls` is limited to, nil for every one:
+// lsScope is the repository `pekoe ls` is limited to, nil for every one:
 // --repo wins, --all shows everything, else the current directory's
 // repository (nil outside one).
 func lsScope(f map[string]string, resolve func(string) (*daemon.KnownRepo, error), here func() *daemon.KnownRepo) (*daemon.KnownRepo, error) {
@@ -592,7 +598,7 @@ func lsScope(f map[string]string, resolve func(string) (*daemon.KnownRepo, error
 	return here(), nil
 }
 
-// lsLines renders `boba ls`: sessions in creation order, grouped under a
+// lsLines renders `pekoe ls`: sessions in creation order, grouped under a
 // heading per repository when grouped and there is more than one. A slug
 // that is not just the branch (a collision put the repository name in
 // front) is shown, since send / land / rm take the slug.
@@ -654,7 +660,7 @@ func lsLines(th *theme.Theme, ic theme.IconSet, ss []*state.Session, grouped boo
 	return out
 }
 
-// resolveRepoFlag asks bobad which repository a --repo value (repo-id,
+// resolveRepoFlag asks pekoed which repository a --repo value (repo-id,
 // short name or path) means.
 func resolveRepoFlag(cl *client.Client, q string) (*daemon.KnownRepo, error) {
 	if q == "true" { // --repo with no value
@@ -677,7 +683,7 @@ func hereRepo(cl *client.Client) *daemon.KnownRepo {
 }
 
 // repoDir is the repository a command acts on: --repo when given, else the
-// current directory. bobad resolves worktrees to their main repository.
+// current directory. pekoed resolves worktrees to their main repository.
 func repoDir(cl *client.Client, f map[string]string) (string, error) {
 	if f["repo"] == "" {
 		return cwd(), nil
@@ -708,7 +714,7 @@ func cmdIssues(args []string) error {
 	if len(pos) > 0 {
 		n, err := strconv.Atoi(strings.TrimPrefix(pos[0], "#"))
 		if err != nil {
-			return fmt.Errorf("usage: boba issues [<N>] [--repo R] [--all|--label L] [--refresh]")
+			return fmt.Errorf("usage: pekoe issues [<N>] [--repo R] [--all|--label L] [--refresh]")
 		}
 		var det daemon.IssueDetail
 		if err := cl.Call("issues.view", map[string]any{"repo": dir, "number": n, "refresh": f["refresh"] == "true"}, &det); err != nil {
@@ -835,7 +841,7 @@ func cmdSend(args []string) error {
 		return err
 	}
 	if len(pos) < 2 {
-		return fmt.Errorf("usage: boba send <slug> <text>   (text '-' reads stdin)")
+		return fmt.Errorf("usage: pekoe send <slug> <text>   (text '-' reads stdin)")
 	}
 	text := strings.Join(pos[1:], " ")
 	if text == "-" {
@@ -847,7 +853,7 @@ func cmdSend(args []string) error {
 	return cl.Call("session.send", map[string]any{"slug": pos[0], "text": text, "submit": f["no-enter"] == ""}, nil)
 }
 
-// cmdEvent forwards a hook's stdin JSON to bobad. It must be fast and must
+// cmdEvent forwards a hook's stdin JSON to pekoed. It must be fast and must
 // never break Claude Code: errors are swallowed, exit code is always 0.
 func cmdEvent(args []string) {
 	hook := ""
@@ -867,7 +873,7 @@ func cmdEvent(args []string) {
 	}
 	defer cl.Close()
 	_ = cl.CallTimeout("session.event", map[string]any{
-		"hook": hook, "session": os.Getenv("BOBA_SESSION"), "payload": json.RawMessage(b),
+		"hook": hook, "session": os.Getenv("PEKOE_SESSION"), "payload": json.RawMessage(b),
 	}, nil, 8*time.Second)
 }
 
@@ -946,7 +952,7 @@ func cmdRm(args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: boba rm <slug> [--force]")
+		return fmt.Errorf("usage: pekoe rm <slug> [--force]")
 	}
 	cl := connect()
 	defer cl.Close()
@@ -972,7 +978,7 @@ func cmdUndo(args []string) error {
 		return err
 	}
 	if len(args) < 1 {
-		return fmt.Errorf("usage: boba undo <slug> [n]")
+		return fmt.Errorf("usage: pekoe undo <slug> [n]")
 	}
 	n := 0
 	if len(args) > 1 {
@@ -994,7 +1000,7 @@ func cmdAnswer(args []string) error {
 		return err
 	}
 	if len(args) < 2 {
-		return fmt.Errorf("usage: boba answer <slug> allow|deny|always")
+		return fmt.Errorf("usage: pekoe answer <slug> allow|deny|always")
 	}
 	cl := connect()
 	defer cl.Close()
@@ -1007,7 +1013,7 @@ func cmdAttach(args []string) error {
 		return err
 	}
 	if len(args) < 1 {
-		return fmt.Errorf("usage: boba attach <slug> [agent|review|dev]")
+		return fmt.Errorf("usage: pekoe attach <slug> [agent|review|dev]")
 	}
 	w := "agent"
 	if len(args) > 1 {
@@ -1018,7 +1024,7 @@ func cmdAttach(args []string) error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(tm, []string{"tmux", "-L", sock, "attach-session", "-t", "boba:=" + args[0] + "~" + w}, os.Environ())
+	return syscall.Exec(tm, []string{"tmux", "-L", sock, "attach-session", "-t", "pekoe:=" + args[0] + "~" + w}, os.Environ())
 }
 
 func cmdHooks(args []string) error {
@@ -1038,8 +1044,10 @@ func cmdHooks(args []string) error {
 	case "status":
 		if hooks.Installed() {
 			fmt.Println("installed in", hooks.SettingsPath())
+		} else if hooks.HasLegacy() {
+			fmt.Println("old boba hooks found in", hooks.SettingsPath(), "· run `pekoe migrate` (or `pekoe hooks install`)")
 		} else {
-			fmt.Println("not installed · run `boba hooks install`")
+			fmt.Println("not installed · run `pekoe hooks install`")
 		}
 		return nil
 	case "install", "uninstall":
@@ -1051,7 +1059,7 @@ func cmdHooks(args []string) error {
 			fmt.Println("already up to date:", path)
 			return nil
 		}
-		fmt.Printf("%s will be updated (%s boba hooks for %s).\n", path, map[bool]string{true: "remove", false: "add"}[sub == "uninstall"], strings.Join(hooks.Events, ", "))
+		fmt.Printf("%s will be updated (%s pekoe hooks for %s).\n", path, map[bool]string{true: "remove", false: "add"}[sub == "uninstall"], strings.Join(hooks.Events, ", "))
 		if f["yes"] == "" && !confirm("write it? (a backup is kept)") {
 			return nil
 		}
@@ -1065,7 +1073,28 @@ func cmdHooks(args []string) error {
 		fmt.Println("done:", path)
 		return nil
 	}
-	return fmt.Errorf("usage: boba hooks install|uninstall|status")
+	return fmt.Errorf("usage: pekoe hooks install|uninstall|status")
+}
+
+// cmdMigrate moves a boba installation (pekoe's old name) to pekoe's names.
+func cmdMigrate(args []string) error {
+	f, pos, err := parseCmd("migrate", args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return &usageError{use: specs["migrate"].use, msg: "unexpected argument " + pos[0]}
+	}
+	bin, _ := os.Executable()
+	if b, err := filepath.EvalSymlinks(bin); err == nil {
+		bin = b
+	}
+	return migrate.Run(migrate.DefaultLayout(), migrate.Options{
+		DryRun:   f["dry-run"] != "",
+		PruneOld: f["prune-old"] != "",
+		Bin:      bin,
+		Out:      os.Stdout,
+	})
 }
 
 func cmdExt() error {
@@ -1087,14 +1116,14 @@ func cmdExt() error {
 		exe = r
 	}
 	extDir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "extension")
-	if alt := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "boba", "extension"); hintDir(extDir) == "" && hintDir(alt) != "" {
+	if alt := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "pekoe", "extension"); hintDir(extDir) == "" && hintDir(alt) != "" {
 		extDir = alt
 	}
-	fmt.Printf("port   %d\ntoken  %s\n\nChrome: chrome://extensions → Developer mode → Load unpacked\n        (choose extension/ in the boba repository%s) → enter port and token in the extension's options\n", info.Port, info.Token, hintDir(extDir))
+	fmt.Printf("port   %d\ntoken  %s\n\nChrome: chrome://extensions → Developer mode → Load unpacked\n        (choose extension/ in the pekoe repository%s) → enter port and token in the extension's options\n", info.Port, info.Token, hintDir(extDir))
 	return nil
 }
 
-// webStatus is web.status as `boba web` reads it (--json prints it as is).
+// webStatus is web.status as `pekoe web` reads it (--json prints it as is).
 type webStatus struct {
 	Built   bool     `json:"built"`
 	Enabled bool     `json:"enabled"`
@@ -1121,11 +1150,11 @@ func cmdWeb() error {
 	return nil
 }
 
-// printWebStatus is the human view of `boba web`.
+// printWebStatus is the human view of `pekoe web`.
 func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 	if !st.Built {
 		// --json still says so; here, say how to get it
-		fmt.Fprintln(w, "this boba is built without the web UI (no Tailscale code in it).")
+		fmt.Fprintln(w, "this pekoe is built without the web UI (no Tailscale code in it).")
 		if st.Enabled {
 			fmt.Fprintln(w, "[web] enable = true in the config is ignored.")
 		}
@@ -1133,7 +1162,7 @@ func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 		return
 	}
 	if !st.Enabled {
-		fmt.Fprintf(w, "web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart bobad (boba daemon stop; boba daemon start). See docs/web.md.\n", globalConfig)
+		fmt.Fprintf(w, "web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart pekoed (pekoe daemon stop; pekoe daemon start). See docs/web.md.\n", globalConfig)
 		return
 	}
 	fmt.Fprintln(w, "state ", st.State)
@@ -1143,13 +1172,13 @@ func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 	switch {
 	case st.AuthURL != "":
 		fmt.Fprintln(w, "login ", st.AuthURL)
-		fmt.Fprintln(w, "\nOpen the login URL to add this machine to your tailnet (once), or restart bobad with TS_AUTHKEY.")
+		fmt.Fprintln(w, "\nOpen the login URL to add this machine to your tailnet (once), or restart pekoed with TS_AUTHKEY.")
 	case st.State == "needs-login":
-		// tsnet takes a few seconds after bobad starts to get the URL
+		// tsnet takes a few seconds after pekoed starts to get the URL
 		// from the control server; until then there is nothing to open
 		fmt.Fprintln(w, "login  (getting the login URL…)")
-		fmt.Fprintln(w, "\nThe login URL is not ready yet. Run `boba web` again in a few seconds.")
-		fmt.Fprintln(w, "If it never shows up, the machine may be waiting for approval in the Tailscale admin console (see bobad.log).")
+		fmt.Fprintln(w, "\nThe login URL is not ready yet. Run `pekoe web` again in a few seconds.")
+		fmt.Fprintln(w, "If it never shows up, the machine may be waiting for approval in the Tailscale admin console (see pekoed.log).")
 	}
 	if st.Error != "" {
 		fmt.Fprintln(w, "error ", st.Error)
@@ -1163,7 +1192,7 @@ func hintDir(d string) string {
 	return ""
 }
 
-// daemonStopTimeout bounds how long `boba daemon stop` waits for bobad's
+// daemonStopTimeout bounds how long `pekoe daemon stop` waits for pekoed's
 // process to exit (its shutdown closes HTTP within 1 s, then tmux and state.db).
 const daemonStopTimeout = 10 * time.Second
 
@@ -1198,12 +1227,12 @@ func cmdDaemon(args []string) error {
 	case "start":
 		if cl, err := client.Dial(); err == nil {
 			cl.Close()
-			fmt.Println("bobad is already running")
+			fmt.Println("pekoed is already running")
 			return nil
 		}
 		cl := connect()
 		cl.Close()
-		fmt.Println("bobad started · log:", paths.DaemonLog())
+		fmt.Println("pekoed started · log:", paths.DaemonLog())
 		return nil
 	case "stop":
 		if f["kill-agents"] != "" {
@@ -1214,15 +1243,15 @@ func cmdDaemon(args []string) error {
 			return err
 		}
 		if !running {
-			fmt.Println("bobad is not running")
+			fmt.Println("pekoed is not running")
 			return nil
 		}
-		fmt.Println("bobad stopped (agents keep running in tmux; they are picked up on next start)")
+		fmt.Println("pekoed stopped (agents keep running in tmux; they are picked up on next start)")
 		return nil
 	case "status":
 		cl, err := client.Dial()
 		if err != nil {
-			fmt.Println("bobad is not running")
+			fmt.Println("pekoed is not running")
 			return nil
 		}
 		defer cl.Close()
@@ -1234,14 +1263,14 @@ func cmdDaemon(args []string) error {
 			printJSON(st)
 			return nil
 		}
-		fmt.Printf("bobad %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
+		fmt.Printf("pekoed %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
 		return nil
 	}
 	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}
 }
 
-// stopKillAgents stops bobad and its tmux server ($BOBA_TMUX_SOCKET), ending
-// every agent on it. Meant for throwaway sandboxes; works when bobad is
+// stopKillAgents stops pekoed and its tmux server ($PEKOE_TMUX_SOCKET), ending
+// every agent on it. Meant for throwaway sandboxes; works when pekoed is
 // already gone, too.
 func stopKillAgents(yes bool) error {
 	sock := paths.TmuxSocketName()
@@ -1250,25 +1279,25 @@ func stopKillAgents(yes bool) error {
 			return fmt.Errorf("--kill-agents ends every agent on tmux server %q; pass --yes to confirm", sock)
 		}
 		warn := ""
-		if sock == "boba" {
+		if sock == "pekoe" {
 			warn = " This is the default (real) server: ALL your agents will be killed."
 		}
-		if !confirm(fmt.Sprintf("stop bobad and tmux server %q, killing its agents?%s", sock, warn)) {
+		if !confirm(fmt.Sprintf("stop pekoed and tmux server %q, killing its agents?%s", sock, warn)) {
 			return nil
 		}
 	}
-	// waits for bobad to go, so it does not restart the server under us
+	// waits for pekoed to go, so it does not restart the server under us
 	running, err := client.StopDaemon(map[string]any{"kill_agents": true}, daemonStopTimeout)
 	if err != nil {
 		return err
 	}
 	if running {
-		fmt.Println("bobad stopped")
+		fmt.Println("pekoed stopped")
 	} else {
-		fmt.Println("bobad is not running")
+		fmt.Println("pekoed is not running")
 	}
-	// bobad killed the server on its way out; this catches what it could not
-	// (bobad already gone, or a server it never reached).
+	// pekoed killed the server on its way out; this catches what it could not
+	// (pekoed already gone, or a server it never reached).
 	tm := engine.NewTmux(sock)
 	tm.PidFile = paths.TmuxPidFile(sock)
 	if err := tm.KillServer(); err != nil {

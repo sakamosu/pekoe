@@ -14,19 +14,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/sys/unix"
 
-	"boba/internal/client"
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/client"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // The preview window: a screenshot of the session's dev server
-// (http://localhost:<port><path>, taken by bobad with headless Chrome) drawn
+// (http://localhost:<port><path>, taken by pekoed with headless Chrome) drawn
 // in the main panel with Kitty graphics, so checking a UI change needs no
 // trip to Chrome. It is the counterpart of the Chrome pick: the pick asks for
-// a change, the preview checks the result. bobad retakes it when the agent
+// a change, the preview checks the result. pekoed retakes it when the agent
 // stops; the TUI only shows it.
 
 // winPreview is drawn by the TUI itself: no tmux window behind it.
@@ -286,7 +286,7 @@ func (m *model) closePreview() tea.Cmd {
 	return m.fetchScreen()
 }
 
-// capturePreview asks bobad for a screenshot now (path / mobile optional).
+// capturePreview asks pekoed for a screenshot now (path / mobile optional).
 func (m *model) capturePreview(params map[string]any) tea.Cmd {
 	s := m.current()
 	if s == nil {

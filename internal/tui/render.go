@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/theme"
+	"pekoe/internal/theme"
 )
 
 // width-aware helpers on ANSI strings

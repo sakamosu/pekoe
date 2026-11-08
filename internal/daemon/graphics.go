@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"boba/internal/engine"
+	"pekoe/internal/engine"
 )
 
 // Kitty graphics passthrough (design: 入れ子の税).

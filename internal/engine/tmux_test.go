@@ -28,7 +28,7 @@ terminal-features[5] xterm-256color:RGB`
 // Against a real private tmux server: repeated starts keep one entry, and
 // copies left by older versions collapse to one.
 func TestEnsureTerminalFeature(t *testing.T) {
-	tm := &Tmux{Socket: "boba-test-features", Session: "t"}
+	tm := &Tmux{Socket: "pekoe-test-features", Session: "t"}
 	if _, err := tm.run("new-session", "-d", "-s", "t", "sleep 30"); err != nil {
 		t.Skip("tmux unavailable:", err)
 	}
@@ -65,7 +65,7 @@ func TestKillServerFallsBackToPidFile(t *testing.T) {
 		return d
 	}
 	tmpA, tmpB := shortDir(), shortDir()
-	tm := &Tmux{Socket: "boba-test-kill", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	tm := &Tmux{Socket: "pekoe-test-kill", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
 	t.Setenv("TMUX_TMPDIR", tmpA)
 	if _, err := tm.run("new-session", "-d", "-s", "t", "sleep 60"); err != nil {
 		t.Skip("tmux unavailable:", err)
@@ -96,14 +96,14 @@ func TestIsTmuxServerCmd(t *testing.T) {
 		cmd  string
 		want bool
 	}{
-		{"tmux -L boba-sb-x -f /dev/null new-session -d -s boba -n _keeper", true},
-		{"/opt/homebrew/bin/tmux -L boba-sb-x new-session", true},
-		{"tmux -L boba -f /dev/null new-session", false}, // another server
-		{"tmux -L boba-sb-xy new-session", false},        // prefix only
-		{"sleep 3600 -L boba-sb-x", false},               // not tmux
+		{"tmux -L pekoe-sb-x -f /dev/null new-session -d -s pekoe -n _keeper", true},
+		{"/opt/homebrew/bin/tmux -L pekoe-sb-x new-session", true},
+		{"tmux -L pekoe -f /dev/null new-session", false}, // another server
+		{"tmux -L pekoe-sb-xy new-session", false},        // prefix only
+		{"sleep 3600 -L pekoe-sb-x", false},               // not tmux
 		{"", false},
 	} {
-		if got := isTmuxServerCmd(tc.cmd, "boba-sb-x"); got != tc.want {
+		if got := isTmuxServerCmd(tc.cmd, "pekoe-sb-x"); got != tc.want {
 			t.Errorf("%q: got %v, want %v", tc.cmd, got, tc.want)
 		}
 	}

@@ -20,7 +20,7 @@ import (
 
 // cursorMark は入力位置を示す幅 0 のマーカー。ansi.Truncate / StringWidth は
 // APC を制御列として扱うので、レイアウト処理を素通りする。
-const cursorMark = "\x1b_boba-cursor\x1b\\"
+const cursorMark = "\x1b_pekoe-cursor\x1b\\"
 
 // extractCursor は lines からマーカーを取り除き、最初に見つかった位置(0 始まりの
 // 列・行)を返す。見つからなければ ok=false。

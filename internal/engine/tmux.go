@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Tmux runs every agent in its own window of one tmux session ("boba") on
+// Tmux runs every agent in its own window of one tmux session ("pekoe") on
 // a private server socket, and watches all panes through one control-mode
 // client (`tmux -C`), which reports raw pane output as %output lines.
 type Tmux struct {
@@ -38,9 +38,9 @@ type paneRef struct{ slug, window string }
 
 func NewTmux(socket string) *Tmux {
 	if socket == "" {
-		socket = "boba"
+		socket = "pekoe"
 	}
-	return &Tmux{Socket: socket, Session: "boba", out: make(chan Output, 1024), panes: map[string]paneRef{}, closed: make(chan struct{})}
+	return &Tmux{Socket: socket, Session: "pekoe", out: make(chan Output, 1024), panes: map[string]paneRef{}, closed: make(chan struct{})}
 }
 
 func (t *Tmux) cmd(args ...string) *exec.Cmd {
@@ -109,7 +109,7 @@ func (t *Tmux) Start() error {
 }
 
 // ensureTerminalFeature keeps exactly one entry of f in the server-wide
-// terminal-features array. The server outlives bobad, so a plain append
+// terminal-features array. The server outlives pekoed, so a plain append
 // (-sa) on every start piles up copies.
 func (t *Tmux) ensureTerminalFeature(f string) {
 	out, err := t.run("show-options", "-s", "terminal-features")
@@ -344,7 +344,7 @@ func (t *Tmux) SendText(slug, window, text string) error {
 	if !strings.Contains(text, "\n") {
 		return t.SendLiteral(slug, window, text)
 	}
-	buf := "boba-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	buf := "pekoe-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	c := t.cmd("load-buffer", "-b", buf, "-")
 	c.Stdin = strings.NewReader(text)
 	if out, err := c.CombinedOutput(); err != nil {

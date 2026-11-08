@@ -1,6 +1,6 @@
-// Package initdetect drafts ~/.config/boba/repos/<repo-id>.toml for
-// `boba init`. It is only used to write the draft; boba never consults it at
-// runtime. Rules live in ~/.config/boba/defaults/*.toml and can be edited.
+// Package initdetect drafts ~/.config/pekoe/repos/<repo-id>.toml for
+// `pekoe init`. It is only used to write the draft; pekoe never consults it at
+// runtime. Rules live in ~/.config/pekoe/defaults/*.toml and can be edited.
 package initdetect
 
 import (
@@ -13,8 +13,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"boba/internal/gitx"
-	"boba/internal/paths"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
 )
 
 type Rule struct {
@@ -31,8 +31,8 @@ type ruleFile struct {
 	Rule []Rule `toml:"rule"`
 }
 
-const builtin = `# boba init の検出ルール。先頭から順に評価し、files のどれかが存在すれば採用する。
-# 自由に書き換えてよい(boba は実行時にこのファイルを読まない)。
+const builtin = `# pekoe init の検出ルール。先頭から順に評価し、files のどれかが存在すれば採用する。
+# 自由に書き換えてよい(pekoe は実行時にこのファイルを読まない)。
 
 [[rule]]
 name  = "mise"
@@ -117,7 +117,7 @@ test  = "bin/rails test"
 order = 10
 `
 
-// Rules loads ~/.config/boba/defaults/*.toml, writing the builtin set the
+// Rules loads ~/.config/pekoe/defaults/*.toml, writing the builtin set the
 // first time so the user has something to edit.
 func Rules() ([]Rule, error) {
 	dir := paths.DefaultsDir()
@@ -246,7 +246,7 @@ func list(xs []string) string {
 // Render produces the config draft. Commands are plain shell lines.
 func Render(copyFiles, clone, setup []string, dev, test string) string {
 	var b strings.Builder
-	b.WriteString("# boba repo config (boba init が下書き。実行時に検出はしない)\n")
+	b.WriteString("# pekoe repo config (pekoe init が下書き。実行時に検出はしない)\n")
 	b.WriteString("# 変数: {{slug}} {{branch}} {{port}} {{path}} {{repo}}\n\n")
 	b.WriteString("[worktree]\n")
 	fmt.Fprintf(&b, "copy  = %s\n", list(copyFiles))

@@ -1,7 +1,7 @@
 package tui
 
 // Issue inbox: [2] Issues sub tab (worktrees / browser / issues) and the
-// selected issue read in the main panel. Data comes from bobad's issues.list
+// selected issue read in the main panel. Data comes from pekoed's issues.list
 // / issues.view (gh issue list / view, cached in the daemon).
 
 import (
@@ -12,9 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 const subIssues = 2 // m.sub2: 0 worktrees, 1 browser, 2 issues

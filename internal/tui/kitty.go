@@ -28,7 +28,7 @@ const (
 
 type kittyKeyMsg struct{ name string }
 
-func kittyEnabled() bool { return os.Getenv("BOBA_KITTY") != "0" }
+func kittyEnabled() bool { return os.Getenv("PEKOE_KITTY") != "0" }
 
 // kittyFilter is a tea.WithFilter hook.
 func kittyFilter(_ tea.Model, msg tea.Msg) tea.Msg {
@@ -148,9 +148,9 @@ func writeTerm(seq string) tea.Cmd {
 // ---- Kitty graphics: inline images in our own UI (pick screenshots) ----
 
 // graphicsCapable: Kitty graphics can't be detected reliably in-band through
-// every multiplexer, so go by terminal identity (BOBA_GRAPHICS=0/1 overrides).
+// every multiplexer, so go by terminal identity (PEKOE_GRAPHICS=0/1 overrides).
 func graphicsCapable() bool {
-	switch os.Getenv("BOBA_GRAPHICS") {
+	switch os.Getenv("PEKOE_GRAPHICS") {
 	case "1":
 		return true
 	case "0":

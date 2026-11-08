@@ -9,9 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/state"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
 )
 
 func TestFitCells(t *testing.T) {

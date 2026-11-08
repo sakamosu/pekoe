@@ -15,10 +15,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/termstyle"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/termstyle"
+	"pekoe/internal/theme"
 )
 
 // runPromptMsg answers `!`: the session's run window state and, when none
@@ -199,7 +199,7 @@ func (m *model) runExitLine() string {
 
 // dropPaneDead removes tmux's "Pane is dead (status N, <date>)" line (and
 // the blank rows before it): the run window says how it ended itself.
-// (bobad turns the line off; tmux before 3.3 still writes it.)
+// (pekoed turns the line off; tmux before 3.3 still writes it.)
 func dropPaneDead(lines []string) []string {
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := strings.TrimSpace(ansi.Strip(lines[i]))

@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"boba/internal/gitx"
-	"boba/internal/state"
+	"pekoe/internal/gitx"
+	"pekoe/internal/state"
 )
 
 // ConflictPair is one entry of conflicts.list.

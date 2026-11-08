@@ -7,13 +7,13 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/config"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/state"
 )
 
 func forecastModel(t *testing.T, color string) *model {
 	t.Helper()
-	t.Setenv("BOBA_ICONS", "unicode")
+	t.Setenv("PEKOE_ICONS", "unicode")
 	m := tapiModel(t, color, config.Mascot{Glyphs: "ascii"})
 	m.width, m.height = 120, 24
 	now := time.Now()
@@ -71,7 +71,7 @@ func TestSessionListConflictTag(t *testing.T) {
 		t.Fatalf("overlap tag %q, want warn %q", got, want)
 	}
 	// ascii icons
-	t.Setenv("BOBA_ICONS", "ascii")
+	t.Setenv("PEKOE_ICONS", "ascii")
 	ma := tapiModel(t, "none", config.Mascot{Glyphs: "ascii"})
 	if got := ma.conflictTag(m.sessions[0]); got != "!2" {
 		t.Fatalf("ascii tag %q", got)
@@ -113,7 +113,7 @@ func TestChangesShowPeersAndLandForecast(t *testing.T) {
 			t.Fatalf("%s: footer: %q", color, l)
 		}
 
-		// land: the forecast sits above boba's question
+		// land: the forecast sits above pekoe's question
 		m.sessionAction("l", m.sessions[0])
 		out = m.View()
 		lines := strings.Split(out, "\n")

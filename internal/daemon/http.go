@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/errcatch"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 type Tab struct {

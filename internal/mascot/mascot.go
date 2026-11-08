@@ -1,4 +1,4 @@
-// Package mascot draws tapi, boba's tapioca pearl (docs/mascot.md).
+// Package mascot draws tapi, pekoe's tapioca pearl (docs/mascot.md).
 // tapi is a state display, not decoration: sprites are cells of
 // [glyph, fg role, bg role] resolved against a palette (hi / bd / sh / eye)
 // and painted with lipgloss.

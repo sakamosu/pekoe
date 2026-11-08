@@ -1,4 +1,4 @@
-// Package paths resolves every location boba reads or writes.
+// Package paths resolves every location pekoe reads or writes.
 // Nothing here points inside a target repository (design: リポジトリを汚さない).
 package paths
 
@@ -16,34 +16,34 @@ func home() string {
 	return h
 }
 
-// root returns $BOBA_HOME when set (used by tests and sandboxes).
-func root() string { return os.Getenv("BOBA_HOME") }
+// root returns $PEKOE_HOME when set (used by tests and sandboxes).
+func root() string { return os.Getenv("PEKOE_HOME") }
 
-// ConfigDir is ~/.config/boba.
+// ConfigDir is ~/.config/pekoe.
 func ConfigDir() string {
 	if r := root(); r != "" {
 		return filepath.Join(r, "config")
 	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "boba")
+		return filepath.Join(x, "pekoe")
 	}
-	return filepath.Join(home(), ".config", "boba")
+	return filepath.Join(home(), ".config", "pekoe")
 }
 
-// DataDir is ~/.local/share/boba.
+// DataDir is ~/.local/share/pekoe.
 func DataDir() string {
 	if r := root(); r != "" {
 		return filepath.Join(r, "share")
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "boba")
+		return filepath.Join(x, "pekoe")
 	}
-	return filepath.Join(home(), ".local", "share", "boba")
+	return filepath.Join(home(), ".local", "share", "pekoe")
 }
 
-// WorktreesRoot is ~/worktrees. boba only ever deletes below this directory.
+// WorktreesRoot is ~/worktrees. pekoe only ever deletes below this directory.
 func WorktreesRoot() string {
-	if w := os.Getenv("BOBA_WORKTREES"); w != "" {
+	if w := os.Getenv("PEKOE_WORKTREES"); w != "" {
 		return w
 	}
 	if r := root(); r != "" {
@@ -53,30 +53,30 @@ func WorktreesRoot() string {
 }
 
 func Socket() string {
-	if s := os.Getenv("BOBA_SOCK"); s != "" {
+	if s := os.Getenv("PEKOE_SOCK"); s != "" {
 		return s
 	}
-	return filepath.Join(DataDir(), "bobad.sock")
+	return filepath.Join(DataDir(), "pekoed.sock")
 }
 
 func StateDB() string   { return filepath.Join(DataDir(), "state.db") }
 func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
-func DaemonLog() string { return filepath.Join(DataDir(), "bobad.log") }
-func PidFile() string   { return filepath.Join(DataDir(), "bobad.pid") }
+func DaemonLog() string { return filepath.Join(DataDir(), "pekoed.log") }
+func PidFile() string   { return filepath.Join(DataDir(), "pekoed.pid") }
 
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 
-// LockFile is held (flock) by the one bobad serving this data directory.
-func LockFile() string { return filepath.Join(DataDir(), "bobad.lock") }
+// LockFile is held (flock) by the one pekoed serving this data directory.
+func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 
-// TmuxSocketName is the private tmux server's -L name ($BOBA_TMUX_SOCKET,
-// default "boba").
+// TmuxSocketName is the private tmux server's -L name ($PEKOE_TMUX_SOCKET,
+// default "pekoe").
 func TmuxSocketName() string {
-	if s := os.Getenv("BOBA_TMUX_SOCKET"); s != "" {
+	if s := os.Getenv("PEKOE_TMUX_SOCKET"); s != "" {
 		return s
 	}
-	return "boba"
+	return "pekoe"
 }
 
 // TmuxPidFile records the pid of the tmux server named socket, so it can be
@@ -91,23 +91,23 @@ func ReposConfigDir() string {
 }
 func DefaultsDir() string { return filepath.Join(ConfigDir(), "defaults") }
 
-// RepoConfig is ~/.config/boba/repos/<repo-id>.toml.
+// RepoConfig is ~/.config/pekoe/repos/<repo-id>.toml.
 func RepoConfig(repoID string) string {
 	return filepath.Join(ReposConfigDir(), repoID+".toml")
 }
 
-// PicksDir is ~/.local/share/boba/<repo-id>/picks.
+// PicksDir is ~/.local/share/pekoe/<repo-id>/picks.
 func PicksDir(repoID string) string {
 	return filepath.Join(DataDir(), repoID, "picks")
 }
 
-// PreviewDir is ~/.local/share/boba/<repo-id>/preview/<slug>: the in-terminal
+// PreviewDir is ~/.local/share/pekoe/<repo-id>/preview/<slug>: the in-terminal
 // browser preview's screenshots and its remembered path.
 func PreviewDir(repoID, slug string) string {
 	return filepath.Join(DataDir(), repoID, "preview", slug)
 }
 
-// ErrorsDir is ~/.local/share/boba/<repo-id>/errors (errors sent to agents).
+// ErrorsDir is ~/.local/share/pekoe/<repo-id>/errors (errors sent to agents).
 func ErrorsDir(repoID string) string {
 	return filepath.Join(DataDir(), repoID, "errors")
 }

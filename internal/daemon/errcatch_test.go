@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/engine"
-	"boba/internal/errcatch"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/state"
 )
 
 // dev window output → one report per distinct error (chunks, repeats), an

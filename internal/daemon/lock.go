@@ -8,19 +8,19 @@ import (
 	"syscall"
 	"time"
 
-	"boba/internal/paths"
+	"pekoe/internal/paths"
 )
 
-// ErrAlreadyRunning: another bobad owns this data directory.
-var ErrAlreadyRunning = errors.New("bobad is already running")
+// ErrAlreadyRunning: another pekoed owns this data directory.
+var ErrAlreadyRunning = errors.New("pekoed is already running")
 
-// lockWait bounds how long a starting bobad waits for the lock while its
+// lockWait bounds how long a starting pekoed waits for the lock while its
 // holder is not serving (still starting, or shutting down after
-// `boba daemon stop`). A variable so tests can shorten it.
+// `pekoe daemon stop`). A variable so tests can shorten it.
 var lockWait = 5 * time.Second
 
-// acquireLock takes an exclusive flock on bobad.lock in the data directory
-// and keeps it for the daemon's lifetime: one bobad per state.db, however
+// acquireLock takes an exclusive flock on pekoed.lock in the data directory
+// and keeps it for the daemon's lifetime: one pekoed per state.db, however
 // many clients autostart one at the same moment. The kernel drops the lock
 // when the process dies, so a crash never leaves a stale lock behind.
 //

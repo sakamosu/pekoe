@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 func plain(o Options) *Renderer { o.NoColor = true; return New(o) }
@@ -96,8 +96,8 @@ func TestColorOverride(t *testing.T) {
 // Banner is tapi alone: the 3-line face and its text, nothing around it.
 func TestBanner(t *testing.T) {
 	r := plain(Options{Shape: "round"})
-	got := r.Banner("● ●", []string{"boba", "", "x", "4th"})
-	want := []string{"🬞🬹🬹🬹🬏    boba", "█● ●█", "🬁🬎🬎🬎🬀    x", "         4th"}
+	got := r.Banner("● ●", []string{"pekoe", "", "x", "4th"})
+	want := []string{"🬞🬹🬹🬹🬏    pekoe", "█● ●█", "🬁🬎🬎🬎🬀    x", "         4th"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -218,7 +218,7 @@ func TestEyeGapWithoutColor(t *testing.T) {
 // FitBanner never returns a row wider than width or more rows than height;
 // with no limit it is Banner itself.
 func TestFitBanner(t *testing.T) {
-	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	text := []string{"pekoe v0.1.0", "agents in worktrees", "", "1 session alive"}
 	for _, g := range []string{"unicode", "narrow", "ascii"} {
 		r := plain(Options{Glyphs: g})
 		eyes := r.Eyes(Work)
@@ -243,7 +243,7 @@ func TestFitBanner(t *testing.T) {
 
 // A pane as tall as tapi keeps the top text rows instead of dropping them all.
 func TestFitBannerShortKeepsText(t *testing.T) {
-	text := []string{"boba v0.1.0", "agents in worktrees", "", "1 session alive"}
+	text := []string{"pekoe v0.1.0", "agents in worktrees", "", "1 session alive"}
 	r := plain(Options{})
 	eyes := r.Eyes(Work)
 	for _, width := range []int{0, 60} {

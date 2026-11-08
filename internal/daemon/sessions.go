@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/config"
-	"boba/internal/engine"
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/engine"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // ---- session bookkeeping ----
@@ -454,7 +454,7 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	if !run("port", func() error { return nil }) {
 		return
 	}
-	env := append(repo.Config.EnvList(vars), "BOBA_SESSION="+slug, "BOBA_PORT="+strconv.Itoa(s.Port))
+	env := append(repo.Config.EnvList(vars), "PEKOE_SESSION="+slug, "PEKOE_PORT="+strconv.Itoa(s.Port))
 	for _, c := range repo.Config.Hooks.Setup {
 		cmd := vars.Expand(c)
 		if !run("setup:"+c, func() error {
@@ -480,8 +480,8 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		}
 	}
 	run("start", func() error {
-		if sha, err := gitx.SnapshotCommit(s.Path, "boba snapshot #0"); err == nil {
-			ref := fmt.Sprintf("refs/boba/%s/prompt-0", slug)
+		if sha, err := gitx.SnapshotCommit(s.Path, "pekoe snapshot #0"); err == nil {
+			ref := fmt.Sprintf("refs/pekoe/%s/prompt-0", slug)
 			_ = gitx.UpdateRef(s.Path, ref, sha)
 			_ = d.DB.AddPrompt(slug, 0, "(start)", ref)
 		}
@@ -606,15 +606,15 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 		}
 	}
 	env := append([]string{}, s.Env...)
-	env = append(env, "BOBA_SESSION="+slug, "BOBA_SOCK="+paths.Socket(), "BOBA=1")
-	if os.Getenv("BOBA_HOME") != "" {
-		env = append(env, "BOBA_HOME="+os.Getenv("BOBA_HOME"))
+	env = append(env, "PEKOE_SESSION="+slug, "PEKOE_SOCK="+paths.Socket(), "PEKOE=1")
+	if os.Getenv("PEKOE_HOME") != "" {
+		env = append(env, "PEKOE_HOME="+os.Getenv("PEKOE_HOME"))
 	}
 	w, h = d.spawnSize(w, h)
 	// Keep the window alive after the agent exits so the user sees why.
 	// the pane stays after exit (remain-on-exit) and reports itself dead, so
 	// the TUI can offer restart instead of typing into nothing
-	full := cmd + `; printf '\n[boba] agent exited (%s). ↵ restart · x close\n' "$?"`
+	full := cmd + `; printf '\n[pekoe] agent exited (%s). ↵ restart · x close\n' "$?"`
 	if err := d.Eng.Spawn(engine.Spawn{Slug: slug, Window: engine.WinAgent, Dir: s.Path, Env: env, Command: full, Width: w, Height: h}); err != nil {
 		return err
 	}
@@ -758,11 +758,11 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 		Slug: slug, Branch: branch, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir, Path: top,
 		Agent: agent, State: state.Idle, StateSince: time.Now(), CreatedAt: time.Now(), Port: port,
 		Managed: paths.UnderWorktrees(top), Base: base, Test: state.Test{Status: "none"},
-		Env: append(repo.Config.EnvList(vars), "BOBA_PORT="+strconv.Itoa(port)),
+		Env: append(repo.Config.EnvList(vars), "PEKOE_PORT="+strconv.Itoa(port)),
 	}
 	d.add(s)
-	if sha, err := gitx.SnapshotCommit(top, "boba snapshot #0"); err == nil {
-		ref := fmt.Sprintf("refs/boba/%s/prompt-0", slug)
+	if sha, err := gitx.SnapshotCommit(top, "pekoe snapshot #0"); err == nil {
+		ref := fmt.Sprintf("refs/pekoe/%s/prompt-0", slug)
 		_ = gitx.UpdateRef(top, ref, sha)
 		_ = d.DB.AddPrompt(slug, 0, "(open)", ref)
 	}
@@ -781,7 +781,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 
 type adoptP struct {
 	Path    string `json:"path"`
-	Confirm bool   `json:"confirm"` // stop the original process and resume inside boba
+	Confirm bool   `json:"confirm"` // stop the original process and resume inside pekoe
 }
 
 type adoptCandidate struct {
@@ -793,7 +793,7 @@ type adoptCandidate struct {
 
 // hAdopt finds agents started by hand in other tabs (or tmux sessions on the
 // default server). A process cannot move between ptys, so adopting means
-// stopping it and resuming the same Claude Code session inside boba.
+// stopping it and resuming the same Claude Code session inside pekoe.
 func (d *Daemon) hAdopt(p adoptP) (any, error) {
 	cands := findAgentProcesses()
 	if p.Path != "" {
@@ -871,15 +871,15 @@ func findAgentProcesses() []adoptCandidate {
 		if pid == self || comm != "claude" {
 			continue
 		}
-		if os.Getenv("BOBA_TEST") == "" && f[1] == "??" {
+		if os.Getenv("PEKOE_TEST") == "" && f[1] == "??" {
 			continue // no tty: not interactive
 		}
 		cwd := processCwd(pid)
 		if cwd == "" {
 			continue
 		}
-		if env := processHasBobaEnv(pid); env {
-			continue // already inside boba
+		if env := processHasPekoeEnv(pid); env {
+			continue // already inside pekoe
 		}
 		res = append(res, adoptCandidate{PID: pid, Cwd: cwd, Where: f[1]})
 	}
@@ -899,9 +899,9 @@ func processCwd(pid int) string {
 	return ""
 }
 
-func processHasBobaEnv(pid int) bool {
+func processHasPekoeEnv(pid int) bool {
 	out, err := exec.Command("ps", "eww", "-o", "command=", "-p", strconv.Itoa(pid)).Output()
-	return err == nil && strings.Contains(string(out), "BOBA_SESSION=")
+	return err == nil && strings.Contains(string(out), "PEKOE_SESSION=")
 }
 
 // ---- input ----
@@ -1182,8 +1182,8 @@ func (d *Daemon) hUndo(p undoP) (any, error) {
 		}
 	}
 	// keep a safety ref of the current state
-	if sha, err := gitx.SnapshotCommit(s.Path, "boba before undo"); err == nil {
-		_ = gitx.UpdateRef(s.Path, fmt.Sprintf("refs/boba/%s/undo-%d", p.Slug, time.Now().Unix()), sha)
+	if sha, err := gitx.SnapshotCommit(s.Path, "pekoe before undo"); err == nil {
+		_ = gitx.UpdateRef(s.Path, fmt.Sprintf("refs/pekoe/%s/undo-%d", p.Slug, time.Now().Unix()), sha)
 	}
 	if err := gitx.RestoreSnapshot(s.Path, target.Ref); err != nil {
 		return nil, err
@@ -1279,7 +1279,7 @@ func (d *Daemon) restore() {
 		if _, err := os.Stat(s.Path); err != nil {
 			d.update(s.Slug, func(x *state.Session) {
 				x.State = state.Failed
-				x.Error = "worktree missing: " + s.Path + " (boba rm " + s.Slug + " to forget it)"
+				x.Error = "worktree missing: " + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
 			})
 			continue
 		}

@@ -1,4 +1,4 @@
-// Package daemon is bobad: the single owner of worktrees, sessions, state
+// Package daemon is pekoed: the single owner of worktrees, sessions, state
 // and review records. Every client (TUI, CLI, Neovim, Chrome, MCP) is a thin
 // display layer over the JSON Lines API served here (see docs/api.md).
 package daemon
@@ -18,11 +18,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"boba/internal/config"
-	"boba/internal/engine"
-	"boba/internal/errcatch"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/engine"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 const Version = "0.1.0"
@@ -84,7 +84,7 @@ type Daemon struct {
 	Eng     engine.Engine
 	Global  *config.Global
 	ln      net.Listener
-	lock    *os.File // flock on bobad.lock, held for the daemon's lifetime (lock.go)
+	lock    *os.File // flock on pekoed.lock, held for the daemon's lifetime (lock.go)
 	sockID  fileID   // the socket file this daemon created
 	httpSrv *http.Server
 	token   string
@@ -134,7 +134,7 @@ func New() (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	// before state.db is opened and restored: a second bobad must never
+	// before state.db is opened and restored: a second pekoed must never
 	// read or write it (issue #42)
 	lock, err := acquireLock()
 	if err != nil {
@@ -176,8 +176,8 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("terminal engine: %w", err)
 	}
 	sock := paths.Socket()
-	// The lock (New) rules out a second bobad on this data directory; this
-	// catches one on another data directory that shares $BOBA_SOCK.
+	// The lock (New) rules out a second pekoed on this data directory; this
+	// catches one on another data directory that shares $PEKOE_SOCK.
 	if socketServes() {
 		d.releaseLock()
 		return ErrAlreadyRunning
@@ -204,7 +204,7 @@ func (d *Daemon) Run() error {
 		log.Printf("http: %v (extension disabled)", err)
 	}
 	d.startWeb() // no-op (tsnet untouched) unless [web] enable = true
-	log.Printf("bobad %s listening on %s", Version, sock)
+	log.Printf("pekoed %s listening on %s", Version, sock)
 
 	go func() {
 		<-d.stop
@@ -251,7 +251,7 @@ func (d *Daemon) shutdown() {
 		removeIfOwned(paths.Socket(), d.sockID)
 	}
 	removePidFileIfOwned()
-	d.releaseLock() // last: the next bobad may start from here on
+	d.releaseLock() // last: the next pekoed may start from here on
 }
 
 func (d *Daemon) releaseLock() {

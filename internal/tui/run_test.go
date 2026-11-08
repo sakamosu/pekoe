@@ -9,9 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/state"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
 )
 
 func TestRunSuggest(t *testing.T) {
@@ -64,13 +64,13 @@ func TestRunReport(t *testing.T) {
 	}
 }
 
-// runModel: one session selected in [1], talking to a fake bobad.
-func runModel(t *testing.T) (*model, *fakeBobad, *runReplies) {
+// runModel: one session selected in [1], talking to a fake pekoed.
+func runModel(t *testing.T) (*model, *fakePekoed, *runReplies) {
 	t.Helper()
-	f, cl := startFakeBobad(t)
+	f, cl := startFakePekoed(t)
 	rr := &runReplies{agent: []string{"⏺ Please run:", "", "  ! gh auth login"}}
 	f.reply = rr.reply
-	t.Setenv("BOBA_COLOR", "none")
+	t.Setenv("PEKOE_COLOR", "none")
 	m := newModel(cl, "/src/api")
 	m.tapi.splash = false
 	m.width, m.height = 140, 40
@@ -138,7 +138,7 @@ func TestRunWindowFlow(t *testing.T) {
 	}
 	rr.mu.Lock()
 	rr.run = map[string]any{"running": true, "started": true, "command": "read -p ok x", "exit_status": -1}
-	m.sessions[0].Run = "read -p ok x" // session.updated from bobad
+	m.sessions[0].Run = "read -p ok x" // session.updated from pekoed
 	rr.runSc = &engine.Screen{Lines: []string{"$ read -p ok x", "ok"}, Width: 100, Height: 30}
 	rr.mu.Unlock()
 	runCmd(m, m.onKey(key("enter")))
@@ -333,7 +333,7 @@ func TestRunPasteKeepsLines(t *testing.T) {
 	}
 }
 
-// review #52: another TUI's run is open: show it, named as bobad names it.
+// review #52: another TUI's run is open: show it, named as pekoed names it.
 func TestRunShowsOtherRunsCommand(t *testing.T) {
 	m, _, rr := runModel(t)
 	rr.run = map[string]any{}

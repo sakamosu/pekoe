@@ -1,6 +1,6 @@
-// Package hooks installs boba's Claude Code hooks into ~/.claude/settings.json
+// Package hooks installs pekoe's Claude Code hooks into ~/.claude/settings.json
 // (user scope: applies to every repository; project .claude/ is never touched).
-// Each hook just runs `boba event`, which forwards stdin to bobad.
+// Each hook just runs `pekoe event`, which forwards stdin to pekoed.
 package hooks
 
 import (
@@ -15,7 +15,12 @@ import (
 
 var Events = []string{"SessionStart", "UserPromptSubmit", "Notification", "Stop", "PreToolUse", "PostToolUse", "SessionEnd"}
 
-const marker = "boba event"
+const marker = "pekoe event"
+
+// legacyMarker finds the hooks of boba, pekoe's old name. Install and
+// uninstall drop them, so `pekoe hooks install` (and `pekoe migrate`)
+// replaces them instead of running both.
+const legacyMarker = "boba event"
 
 func SettingsPath() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
@@ -38,7 +43,7 @@ func shq(s string) string {
 
 func isOurs(h map[string]any) bool {
 	c, _ := h["command"].(string)
-	return strings.Contains(c, marker)
+	return strings.Contains(c, marker) || strings.Contains(c, legacyMarker)
 }
 
 // Plan returns the new settings content (and whether anything changes).
@@ -120,12 +125,12 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 		return
 	}
 	if len(before) > 0 {
-		backup = fmt.Sprintf("%s.boba-backup-%s", path, time.Now().Format("20060102-150405"))
+		backup = fmt.Sprintf("%s.pekoe-backup-%s", path, time.Now().Format("20060102-150405"))
 		if err = os.WriteFile(backup, before, 0o600); err != nil {
 			return
 		}
 	}
-	tmp := path + ".boba-tmp"
+	tmp := path + ".pekoe-tmp"
 	if err = os.WriteFile(tmp, after, 0o600); err != nil {
 		return
 	}
@@ -133,7 +138,7 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 	return
 }
 
-// Installed reports whether every boba hook is present.
+// Installed reports whether every pekoe hook is present.
 func Installed() bool {
 	b, err := os.ReadFile(SettingsPath())
 	if err != nil {
@@ -145,4 +150,11 @@ func Installed() bool {
 		}
 	}
 	return bytes.Contains(b, []byte(marker))
+}
+
+// HasLegacy reports whether settings.json still has boba's (pekoe's old
+// name) hooks.
+func HasLegacy() bool {
+	b, err := os.ReadFile(SettingsPath())
+	return err == nil && bytes.Contains(b, []byte(legacyMarker))
 }

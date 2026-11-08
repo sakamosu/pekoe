@@ -16,7 +16,7 @@ func TestSlug(t *testing.T) {
 
 func TestUnderWorktrees(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("BOBA_WORKTREES", root)
+	t.Setenv("PEKOE_WORKTREES", root)
 	inside := filepath.Join(root, "app", "feat-x")
 	os.MkdirAll(inside, 0o755)
 	if !UnderWorktrees(inside) {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // gitRepo makes a repository with one commit at <tmp>/<parent>/<name>.

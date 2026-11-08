@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"boba/internal/config"
+	"pekoe/internal/config"
 )
 
 // WebRoles are the roles the web UI (docs/web.md) paints, in CSS order.

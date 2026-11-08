@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/engine"
-	"boba/internal/gitx"
-	"boba/internal/initdetect"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/gitx"
+	"pekoe/internal/initdetect"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // ---- worktree list ----
@@ -111,7 +111,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		if err := d.teardown(s); err != nil && !p.Force {
 			return nil, err
 		}
-		gitx.DeleteRefs(s.Path, "refs/boba/"+p.Slug+"/")
+		gitx.DeleteRefs(s.Path, "refs/pekoe/"+p.Slug+"/")
 		if s.Managed && paths.UnderWorktrees(s.Path) {
 			if err := gitx.RemoveWorktree(s.RepoDir, s.Path, true); err != nil {
 				// not registered (half-created): delete the directory we made
@@ -159,8 +159,8 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 		return nil, fmt.Errorf("no [hooks] dev command in %s", paths.RepoConfig(s.RepoID))
 	}
 	cmd := d.vars(s).Expand(cfg.Hooks.Dev)
-	full := cmd + `; printf '\n[boba] dev server exited (%s)\n' "$?"`
-	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "BOBA_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
+	full := cmd + `; printf '\n[pekoe] dev server exited (%s)\n' "$?"`
+	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
 		return nil, err
 	}
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
@@ -239,7 +239,7 @@ func (d *Daemon) hRunStart(p runP) (any, error) {
 	}
 	w, h := d.spawnSize(p.Width, p.Height)
 	full := "/bin/sh -c " + shellQuote(runScript(sh, cmd, w, h))
-	env := append(append([]string{}, s.Env...), "BOBA_SESSION="+p.Slug)
+	env := append(append([]string{}, s.Env...), "PEKOE_SESSION="+p.Slug)
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinRun, Dir: s.Path, Env: env, Command: full, Width: w, Height: h, Quiet: true}); err != nil {
 		return nil, err
 	}
@@ -390,7 +390,7 @@ func (d *Daemon) finishLanding(slug string) error {
 	if err := d.teardown(s); err != nil {
 		log.Printf("teardown %s: %v", slug, err)
 	}
-	gitx.DeleteRefs(s.Path, "refs/boba/"+slug+"/")
+	gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
 	if s.Managed && paths.UnderWorktrees(s.Path) {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
 			log.Printf("remove worktree %s: %v", s.Path, err)
@@ -403,7 +403,7 @@ func (d *Daemon) finishLanding(slug string) error {
 }
 
 // watchPRs fills in the PR number of sessions whose branch got a PR outside
-// boba (e.g. the agent ran `gh pr create`), so the list can show it.
+// pekoe (e.g. the agent ran `gh pr create`), so the list can show it.
 func (d *Daemon) watchPRs() {
 	d.mu.Lock()
 	var check []state.Session
@@ -477,7 +477,7 @@ func (d *Daemon) hEditorOpen(p editorP) (any, error) {
 	return map[string]any{"ok": true}, nil
 }
 
-// ---- boba init ----
+// ---- pekoe init ----
 
 type initP struct {
 	Path string `json:"path"`
@@ -524,7 +524,7 @@ type surfaceP struct {
 }
 
 // hReviewSurface swaps the right pane to nvim (claude keeps running in its
-// own window). nvim gets BOBA_SESSION and opens :BobaReview by itself.
+// own window). nvim gets PEKOE_SESSION and opens :PekoeReview by itself.
 func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
@@ -544,14 +544,14 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 	}
 	if rtp != "" {
 		// after the user's config: plugin managers like lazy.nvim reset rtp at startup
-		cmd += " -c " + shellQuote("set rtp+="+rtp+" | runtime plugin/boba.lua")
+		cmd += " -c " + shellQuote("set rtp+="+rtp+" | runtime plugin/pekoe.lua")
 	}
-	env := append(append([]string{}, s.Env...), "BOBA_SESSION="+p.Slug, "BOBA_REVIEW=1", "BOBA_SOCK="+paths.Socket())
+	env := append(append([]string{}, s.Env...), "PEKOE_SESSION="+p.Slug, "PEKOE_REVIEW=1", "PEKOE_SOCK="+paths.Socket())
 	return nil, d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinReview, Dir: s.Path, Env: env, Command: cmd, Width: p.Width, Height: p.Height})
 }
 
 func nvimPluginDir() string {
-	if v := os.Getenv("BOBA_NVIM_RTP"); v != "" {
+	if v := os.Getenv("PEKOE_NVIM_RTP"); v != "" {
 		return v
 	}
 	exe, err := os.Executable()
@@ -561,8 +561,8 @@ func nvimPluginDir() string {
 	if r, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = r
 	}
-	for _, c := range []string{filepath.Join(filepath.Dir(exe), "..", "nvim"), filepath.Join(filepath.Dir(exe), "..", "share", "boba", "nvim")} {
-		if _, err := os.Stat(filepath.Join(c, "lua", "boba", "init.lua")); err == nil {
+	for _, c := range []string{filepath.Join(filepath.Dir(exe), "..", "nvim"), filepath.Join(filepath.Dir(exe), "..", "share", "pekoe", "nvim")} {
+		if _, err := os.Stat(filepath.Join(c, "lua", "pekoe", "init.lua")); err == nil {
 			abs, _ := filepath.Abs(c)
 			return abs
 		}

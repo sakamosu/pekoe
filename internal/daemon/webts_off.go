@@ -13,7 +13,7 @@ import (
 
 const webBuilt = false
 
-var errNoWebBuild = errors.New("this boba is built without the web UI (Tailscale); rebuild with: make install WEB=1")
+var errNoWebBuild = errors.New("this pekoe is built without the web UI (Tailscale); rebuild with: make install WEB=1")
 
 func (d *Daemon) startWeb() {
 	if !d.Global.Web.Enable {

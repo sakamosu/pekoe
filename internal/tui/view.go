@@ -11,10 +11,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/rivo/uniseg"
 
-	"boba/internal/engine"
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func (m *model) View() string {
@@ -40,7 +40,7 @@ func (m *model) View() string {
 		body = joinH(left, right, 1)
 	}
 	if c, ok := m.modal.(*confirmModal); ok && len(body) >= 2 {
-		// boba asks: one line at the bottom of the main pane, puppy first
+		// pekoe asks: one line at the bottom of the main pane, puppy first
 		x, _ := m.agentOrigin()
 		cw := m.agentContentWidth()
 		lines := append(m.noteLines(c, cw), m.askLine(c, cw))
@@ -329,7 +329,7 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 			}
 		}
 		if len(rows) == 0 {
-			rows = append(rows, row{Text: th.FG(theme.Dim, "  no localhost tabs · install the extension (boba ext)")})
+			rows = append(rows, row{Text: th.FG(theme.Dim, "  no localhost tabs · install the extension (pekoe ext)")})
 		}
 		footer := ""
 		if errs > 0 {
@@ -498,7 +498,7 @@ func (m *model) viewAgent(width, height int) []string {
 	s := m.current()
 	f := m.focus == pAgent
 	if s == nil {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRows(width-4, height-2, m.emptyMood(), "no session selected", "n new session · boba new <branch>"), focused: f})
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRows(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
 	}
 	if m.window == winPR {
 		return m.viewPR(s, width, height)

@@ -13,8 +13,8 @@ import (
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
 
-	"boba/internal/config"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/state"
 )
 
 type Role string
@@ -87,7 +87,7 @@ func Load(cfg *config.Theme) *Theme {
 	if cfg != nil {
 		mode = cfg.Mode
 	}
-	if env := os.Getenv("BOBA_COLOR"); env != "" {
+	if env := os.Getenv("PEKOE_COLOR"); env != "" {
 		mode = env
 	}
 	t := &Theme{Mode: DetectMode(mode), colors: map[Role]lipgloss.TerminalColor{}}
@@ -191,7 +191,7 @@ type IconSet struct {
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func IconsFromEnv() string {
-	if v := os.Getenv("BOBA_ICONS"); v != "" {
+	if v := os.Getenv("PEKOE_ICONS"); v != "" {
 		return v
 	}
 	g, err := config.LoadGlobal()
@@ -306,7 +306,7 @@ func Ago(d time.Duration) string {
 	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
-// SessionLine is the one-line summary used by `boba ls`:
+// SessionLine is the one-line summary used by `pekoe ls`:
 // ● feat/csv  wait 2m  +120 -8  ✓test  :3003
 func SessionLine(t *Theme, ic IconSet, s *state.Session, now time.Time, frame int) string {
 	lk := Look(ic, s.State, frame, false)

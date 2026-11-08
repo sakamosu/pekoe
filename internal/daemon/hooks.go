@@ -17,17 +17,17 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"boba/internal/config"
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
-// Hook payloads come from Claude Code on stdin of `boba event` (session_id,
+// Hook payloads come from Claude Code on stdin of `pekoe event` (session_id,
 // cwd, hook_event_name, …). State is taken from hooks, never from the screen.
 type eventP struct {
 	Hook    string          `json:"hook"`
-	Session string          `json:"session"` // $BOBA_SESSION of the hook process
+	Session string          `json:"session"` // $PEKOE_SESSION of the hook process
 	Payload json.RawMessage `json:"payload"`
 }
 
@@ -46,7 +46,7 @@ type hookPayload struct {
 	LastAssistant    string          `json:"last_assistant_message"`
 }
 
-// resolveSession maps a hook to a session: $BOBA_SESSION first, then the
+// resolveSession maps a hook to a session: $PEKOE_SESSION first, then the
 // longest worktree path containing cwd.
 func (d *Daemon) resolveSession(env, cwd string) string {
 	d.mu.Lock()
@@ -142,7 +142,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 	}
 	slug := d.resolveSession(p.Session, hp.Cwd)
 	if slug == "" {
-		return map[string]any{"ignored": true}, nil // not a boba session
+		return map[string]any{"ignored": true}, nil // not a pekoe session
 	}
 	switch hook {
 	case "SessionStart":
@@ -249,12 +249,12 @@ func (d *Daemon) snapshotPrompt(slug, prompt string) {
 		return
 	}
 	n := s.Prompts + 1
-	sha, err := gitx.SnapshotCommit(s.Path, fmt.Sprintf("boba prompt #%d\n\n%s", n, prompt))
+	sha, err := gitx.SnapshotCommit(s.Path, fmt.Sprintf("pekoe prompt #%d\n\n%s", n, prompt))
 	if err != nil {
 		log.Printf("snapshot %s: %v", slug, err)
 		return
 	}
-	ref := fmt.Sprintf("refs/boba/%s/prompt-%d", slug, n)
+	ref := fmt.Sprintf("refs/pekoe/%s/prompt-%d", slug, n)
 	if err := gitx.UpdateRef(s.Path, ref, sha); err != nil {
 		log.Printf("update-ref: %v", err)
 		return
@@ -591,7 +591,7 @@ func (d *Daemon) notify(s *state.Session) {
 	if err != nil {
 		return
 	}
-	req.Header.Set("Title", "boba · "+s.WaitKind)
+	req.Header.Set("Title", "pekoe · "+s.WaitKind)
 	req.Header.Set("Tags", "hourglass")
 	cl := &http.Client{Timeout: 5 * time.Second}
 	if resp, err := cl.Do(req); err == nil {

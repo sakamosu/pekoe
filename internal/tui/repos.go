@@ -1,13 +1,13 @@
 package tui
 
-// The current repository. One bobad serves every repository; the TUI lists
+// The current repository. One pekoed serves every repository; the TUI lists
 // every session (grouped by repository in [1]) and acts on one repository at
 // a time: n, Issues, Worktrees and picks sent to a new session go to the
 // current repository, which is
 //
 //  1. the one picked with w (until the selection moves to another session),
 //  2. else the selected session's repository,
-//  3. else the repository boba was started in.
+//  3. else the repository pekoe was started in.
 
 import (
 	"fmt"
@@ -16,9 +16,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"boba/internal/daemon"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 type reposMsg []daemon.KnownRepo
@@ -37,7 +37,7 @@ func (m *model) loadRepos() tea.Cmd {
 	}
 }
 
-// homeRepo is the repository boba was started in (nil outside one).
+// homeRepo is the repository pekoe was started in (nil outside one).
 func (m *model) homeRepo() *daemon.KnownRepo {
 	for i := range m.repos {
 		if m.repos[i].Cwd {
@@ -79,7 +79,7 @@ func (m *model) curRepoDir() string {
 }
 
 // pickHome runs once, when both the sessions and the repositories are in:
-// boba starts on the repository it was started in — its first session, or
+// pekoe starts on the repository it was started in — its first session, or
 // the repository itself when it has none (so n does not go elsewhere).
 func (m *model) pickHome() {
 	if m.homePicked || !m.sessionsIn || !m.reposLoaded {
@@ -115,7 +115,7 @@ func (m *model) repoSync() tea.Cmd {
 	var cmds []tea.Cmd
 	if !m.repoSynced || name != m.repoTitle {
 		m.repoTitle = name
-		title := "boba"
+		title := "pekoe"
 		if name != "" {
 			title += " · " + name
 		}
@@ -351,9 +351,9 @@ func (m *model) chooseRepo(r daemon.KnownRepo) tea.Cmd {
 
 func infoMsgCmd(s string) tea.Cmd { return func() tea.Msg { return infoMsg(s) } }
 
-// noRepoHint is the one line shown when boba runs outside every repository
+// noRepoHint is the one line shown when pekoe runs outside every repository
 // and knows none to offer.
-const noRepoHint = "not in a git repository · run boba inside one (cd <repo> && boba)"
+const noRepoHint = "not in a git repository · run pekoe inside one (cd <repo> && pekoe)"
 
 // pickableRepos are the repositories w can switch to.
 func (m *model) pickableRepos() []daemon.KnownRepo {
@@ -444,7 +444,7 @@ func (p *repoPicker) view() []string {
 		where := homeTilde(r.Dir)
 		nameRole := theme.Text
 		if r.Dir == "" {
-			where, nameRole = "path unknown · run boba in it once", theme.Dim
+			where, nameRole = "path unknown · run pekoe in it once", theme.Dim
 		}
 		nameW := clampi(cw/3, 8, 24)
 		countW := 12
@@ -475,7 +475,7 @@ func (p *repoPicker) key(k tea.KeyMsg) tea.Cmd {
 		}
 		r := rs[p.sel]
 		if r.Dir == "" {
-			m.setMsg(m.repoName(&r)+": path unknown · run boba inside it once", true)
+			m.setMsg(m.repoName(&r)+": path unknown · run pekoe inside it once", true)
 			return nil
 		}
 		cmd := m.chooseRepo(r)

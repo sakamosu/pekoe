@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"boba/internal/config"
+	"pekoe/internal/config"
 )
 
 func sgr(hex string) string {
@@ -32,7 +32,7 @@ func hueDist(a, b float64) float64 {
 }
 
 func TestFocusRampEndsAtPrimaryAndBlueEnd(t *testing.T) {
-	t.Setenv("BOBA_COLOR", "truecolor")
+	t.Setenv("PEKOE_COLOR", "truecolor")
 	th := Load(nil)
 	for _, n := range []int{2, 7, 40, 160} {
 		r := th.FocusRamp(n)
@@ -105,12 +105,12 @@ func must(hex string) [3]float64 {
 
 func TestFocusRampFallsBackToSolidPrimary(t *testing.T) {
 	for _, mode := range []string{"ansi", "none"} {
-		t.Setenv("BOBA_COLOR", mode)
+		t.Setenv("PEKOE_COLOR", mode)
 		if Load(nil).FocusRamp(10) != nil {
 			t.Errorf("%s mode must keep a solid border", mode)
 		}
 	}
-	t.Setenv("BOBA_COLOR", "truecolor")
+	t.Setenv("PEKOE_COLOR", "truecolor")
 	cases := []struct {
 		name   string
 		colors map[string]string

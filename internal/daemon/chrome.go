@@ -37,14 +37,14 @@ const defaultChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chr
 
 const mobileUA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
 
-// chromeBinary is $BOBA_CHROME, else Google Chrome in /Applications.
+// chromeBinary is $PEKOE_CHROME, else Google Chrome in /Applications.
 func chromeBinary() (string, error) {
-	bin := os.Getenv("BOBA_CHROME")
+	bin := os.Getenv("PEKOE_CHROME")
 	if bin == "" {
 		bin = defaultChrome
 	}
 	if st, err := os.Stat(bin); err != nil || st.IsDir() {
-		return "", fmt.Errorf("Google Chrome not found at %s · install it or set BOBA_CHROME to a Chrome binary", bin)
+		return "", fmt.Errorf("Google Chrome not found at %s · install it or set PEKOE_CHROME to a Chrome binary", bin)
 	}
 	return bin, nil
 }
@@ -73,7 +73,7 @@ func (chromeCapturer) Capture(ctx context.Context, r CaptureReq) error {
 	if err != nil {
 		return err
 	}
-	profile, err := os.MkdirTemp("", "boba-chrome-")
+	profile, err := os.MkdirTemp("", "pekoe-chrome-")
 	if err != nil {
 		return err
 	}

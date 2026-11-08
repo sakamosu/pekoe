@@ -9,11 +9,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // The PR view: the main panel's fourth window, next to agent / review / dev.

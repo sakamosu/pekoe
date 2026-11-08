@@ -1,5 +1,5 @@
 // Package engine is the terminal layer. Phase 1 uses tmux (a dedicated
-// server, `tmux -L boba`) for pty management, rendering and persistence.
+// server, `tmux -L pekoe`) for pty management, rendering and persistence.
 // The daemon only talks to the Engine interface so the tmux engine can be
 // replaced by a libghostty-vt mux later without losing features.
 package engine
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Window kinds inside one boba session.
+// Window kinds inside one pekoe session.
 const (
 	WinAgent  = "agent"
 	WinReview = "review"
@@ -76,12 +76,12 @@ type Engine interface {
 	Resize(slug, window string, w, h int) error
 	Kill(slug, window string) error
 	KillSession(slug string) error
-	// Sessions lists boba windows currently alive: slug -> windows.
+	// Sessions lists pekoe windows currently alive: slug -> windows.
 	Sessions() (map[string][]string, error)
 	Output() <-chan Output
 	Close()
 	// KillServer stops the terminal server itself, ending every agent.
-	// Only `boba daemon stop --kill-agents` uses it; a plain stop keeps the
+	// Only `pekoe daemon stop --kill-agents` uses it; a plain stop keeps the
 	// agents running for the next daemon.
 	KillServer() error
 }

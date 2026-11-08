@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/engine"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
 )
 
 func screenModel(t *testing.T) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", "truecolor")
+	t.Setenv("PEKOE_COLOR", "truecolor")
 	m := newModel(nil, "")
 	m.width, m.height = 222, 60
 	m.sessions = []*state.Session{{Slug: "a", Branch: "a", State: state.Running}}
@@ -18,7 +18,7 @@ func screenModel(t *testing.T) *model {
 	return m
 }
 
-// A window spawned at a size the pane doesn't have (`boba new` from an agent,
+// A window spawned at a size the pane doesn't have (`pekoe new` from an agent,
 // no terminal → 67x37) is resized to the pane once it is shown, once.
 func TestFitScreenResizesMismatchedWindow(t *testing.T) {
 	m := screenModel(t)

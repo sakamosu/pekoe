@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // fakeCapturer writes a PNG of the viewport size and records the requests.
@@ -196,9 +196,9 @@ func TestPreviewCaptureError(t *testing.T) {
 }
 
 func TestChromeMissing(t *testing.T) {
-	t.Setenv("BOBA_CHROME", filepath.Join(t.TempDir(), "nope"))
+	t.Setenv("PEKOE_CHROME", filepath.Join(t.TempDir(), "nope"))
 	err := chromeCapturer{}.Capture(context.Background(), CaptureReq{URL: "http://localhost:1/", Out: filepath.Join(t.TempDir(), "x.png"), Width: 10, Height: 10})
-	if err == nil || !strings.Contains(err.Error(), "Google Chrome not found") || !strings.Contains(err.Error(), "BOBA_CHROME") {
+	if err == nil || !strings.Contains(err.Error(), "Google Chrome not found") || !strings.Contains(err.Error(), "PEKOE_CHROME") {
 		t.Fatalf("err: %v", err)
 	}
 }

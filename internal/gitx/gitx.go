@@ -1,5 +1,5 @@
-// Package gitx wraps the git CLI (no libgit2). Everything boba stores in git
-// lives under refs/boba/, which is never pushed and never shows in git log.
+// Package gitx wraps the git CLI (no libgit2). Everything pekoe stores in git
+// lives under refs/pekoe/, which is never pushed and never shows in git log.
 package gitx
 
 import (
@@ -231,7 +231,7 @@ func IgnoredFiles(dir string) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
-// ---- snapshots under refs/boba/<slug>/ ----
+// ---- snapshots under refs/pekoe/<slug>/ ----
 
 // SnapshotTree writes the full working tree (tracked + untracked, minus
 // ignored) to a tree object without touching the real index.
@@ -240,7 +240,7 @@ func SnapshotTree(dir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp(gitDir, "boba-index-*")
+	tmp, err := os.CreateTemp(gitDir, "pekoe-index-*")
 	if err != nil {
 		return "", err
 	}
@@ -277,8 +277,8 @@ func SnapshotCommit(dir, message string) (string, error) {
 		args = []string{"commit-tree", tree, "-p", "HEAD", "-m", message}
 	}
 	env := []string{
-		"GIT_AUTHOR_NAME=boba", "GIT_AUTHOR_EMAIL=boba@localhost",
-		"GIT_COMMITTER_NAME=boba", "GIT_COMMITTER_EMAIL=boba@localhost",
+		"GIT_AUTHOR_NAME=pekoe", "GIT_AUTHOR_EMAIL=pekoe@localhost",
+		"GIT_COMMITTER_NAME=pekoe", "GIT_COMMITTER_EMAIL=pekoe@localhost",
 	}
 	return RunEnv(dir, env, args...)
 }

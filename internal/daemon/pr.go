@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 // ---- PR view: one `gh api graphql` call → everything the TUI shows ----

@@ -10,9 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"boba/internal/daemon"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func jsonUnmarshal(b []byte, v any) error {
@@ -179,7 +179,7 @@ type confirmModal struct {
 	m           *model
 	title, text string
 	target      string
-	subject     string // what the question is about (boba asks: "delete worktree fix-ci?")
+	subject     string // what the question is about (pekoe asks: "delete worktree fix-ci?")
 	destructive bool
 	yes         func() tea.Cmd
 	notes       []confirmNote // lines above the question (land: conflict forecast)

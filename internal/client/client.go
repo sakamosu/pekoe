@@ -1,4 +1,4 @@
-// Package client talks to bobad over the unix socket (JSON Lines).
+// Package client talks to pekoed over the unix socket (JSON Lines).
 package client
 
 import (
@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"boba/internal/paths"
+	"pekoe/internal/paths"
 )
 
 type Event struct {
@@ -57,7 +57,7 @@ func Connect() (*Client, error) {
 	if err := StartDaemon(); err != nil {
 		return nil, err
 	}
-	// generous: the new bobad may first wait for an old one to finish
+	// generous: the new pekoed may first wait for an old one to finish
 	// shutting down (it holds the lock until it is gone)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -66,12 +66,12 @@ func Connect() (*Client, error) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return nil, fmt.Errorf("bobad did not start; see %s", paths.DaemonLog())
+	return nil, fmt.Errorf("pekoed did not start; see %s", paths.DaemonLog())
 }
 
-// StopDaemon asks the running bobad to stop and waits until its process has
+// StopDaemon asks the running pekoed to stop and waits until its process has
 // exited, so a following start (or a client's autostart) finds it gone.
-// It reports running=false when no bobad answered.
+// It reports running=false when no pekoed answered.
 func StopDaemon(params any, timeout time.Duration) (running bool, err error) {
 	cl, err := Dial()
 	if err != nil {
@@ -91,7 +91,7 @@ func StopDaemon(params any, timeout time.Duration) (running bool, err error) {
 		return true, nil
 	}
 	if !WaitExit(st.Pid, timeout) {
-		return true, fmt.Errorf("bobad (pid %d) did not exit within %s; see %s", st.Pid, timeout, paths.DaemonLog())
+		return true, fmt.Errorf("pekoed (pid %d) did not exit within %s; see %s", st.Pid, timeout, paths.DaemonLog())
 	}
 	return true, nil
 }
@@ -108,7 +108,7 @@ func WaitExit(pid int, timeout time.Duration) bool {
 	}
 }
 
-// StartDaemon launches `boba daemon run` detached, logging to bobad.log.
+// StartDaemon launches `pekoe daemon run` detached, logging to pekoed.log.
 func StartDaemon() error {
 	self, err := os.Executable()
 	if err != nil {
@@ -159,10 +159,10 @@ func (cl *Client) read() {
 			ch <- m
 		}
 	}
-	cl.err.Store(errors.New("connection to bobad closed"))
+	cl.err.Store(errors.New("connection to pekoed closed"))
 	cl.mu.Lock()
 	for id, ch := range cl.pending {
-		ch <- msg{Error: "connection to bobad closed"}
+		ch <- msg{Error: "connection to pekoed closed"}
 		delete(cl.pending, id)
 	}
 	cl.mu.Unlock()
