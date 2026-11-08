@@ -61,7 +61,8 @@ boba                         # TUI
 | `boba answer <slug> allow\|deny\|always` | 許可待ちに答える |
 | `boba ext` | Chrome 拡張に入れる port と token |
 | `boba mcp` | エージェント用 MCP サーバ(`claude mcp add boba -- boba mcp`) |
-| `boba daemon start\|stop\|status` | デーモン操作 |
+| `boba daemon start\|stop\|status` | デーモン操作。`stop` してもエージェントは tmux の中で動き続ける |
+| `boba daemon stop --kill-agents [--yes]` | デーモンに加えて tmux サーバー(`$BOBA_TMUX_SOCKET`)も止める。**既定のソケット `boba` に使うと全エージェントが止まる**。隔離環境の片付け用。対話端末では確認を出し、それ以外では `--yes` が要る |
 
 ### TUI
 
@@ -168,7 +169,14 @@ deny  = "n"
 make build && make test     # go vet + go test + nvim のヘッドレステスト
 ```
 
-テストや試用で本物の環境を汚したくないときは `BOBA_HOME`(設定・状態の置き場)、`BOBA_SOCK`、`BOBA_TMUX_SOCKET`、`BOBA_WORKTREES` で隔離できる。
+テストや試用で本物の環境を汚したくないときは `BOBA_HOME`(設定・状態の置き場)、`BOBA_SOCK`、`BOBA_TMUX_SOCKET`、`BOBA_WORKTREES` で隔離できる。まとめて切るには `scripts/sandbox.sh` を使う:
+
+```sh
+scripts/sandbox.sh                    # 隔離したデーモンを立ててサブシェルへ。抜けると片付く
+scripts/sandbox.sh boba new feat/x    # コマンドを 1 つだけ
+```
+
+一時ディレクトリに 4 つを切り、今のソースをビルドした `boba` でデーモンを立てる(`BOBA_BIN` で既製のバイナリも指定できる)。終わると、失敗や Ctrl-C で抜けたときも含めて `boba daemon stop --kill-agents --yes` で tmux サーバーごと止め、一時ディレクトリを消す。手で隔離環境を立てたときも、最後に同じ環境変数のまま `boba daemon stop --kill-agents --yes` で片付ける(`boba daemon stop` だけでは tmux サーバーと偽エージェントが残る)。tmux サーバーの pid は起動時に `$BOBA_HOME/share/tmux-<socket>.pid` に記録するので、`TMUX_TMPDIR` が違うなどで `kill-server` が届かなくても止められる。
 
 ### 現状の制約
 

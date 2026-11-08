@@ -100,6 +100,7 @@ type Daemon struct {
 	progress   map[string][]Step
 	stop       chan struct{}
 	stopOnce   sync.Once
+	killAgents atomic.Bool // daemon.stop {kill_agents}: also stop the tmux server
 	handlers   map[string]func(json.RawMessage) (any, error)
 	testHook   func(ev string, data any) // observes events in tests
 	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
@@ -135,7 +136,7 @@ func New() (*Daemon, error) {
 	}
 	d := &Daemon{
 		DB: db, Global: g,
-		Eng:       engine.NewTmux(os.Getenv("BOBA_TMUX_SOCKET")),
+		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
 		cancels:   map[string]context.CancelFunc{},
@@ -150,6 +151,12 @@ func New() (*Daemon, error) {
 	}
 	d.registerHandlers()
 	return d, nil
+}
+
+func newTmux() *engine.Tmux {
+	t := engine.NewTmux(paths.TmuxSocketName())
+	t.PidFile = paths.TmuxPidFile(t.Socket)
+	return t
 }
 
 // Run serves until Stop is called.
@@ -211,7 +218,12 @@ func (d *Daemon) shutdown() {
 		d.httpSrv.Shutdown(ctx)
 		cancel()
 	}
-	d.Eng.Close() // agents keep running inside tmux
+	d.Eng.Close()            // agents keep running inside tmux …
+	if d.killAgents.Load() { // … unless asked to end them (sandboxes)
+		if err := d.Eng.KillServer(); err != nil {
+			log.Printf("kill agents: %v", err)
+		}
+	}
 	d.DB.Close()
 	os.Remove(paths.Socket())
 	os.Remove(paths.PidFile())
@@ -332,7 +344,16 @@ func (d *Daemon) registerHandlers() {
 			d.mu.Unlock()
 			return map[string]any{"pid": os.Getpid(), "version": Version, "sessions": n, "http_port": d.Global.HTTP.Port, "socket": paths.Socket()}, nil
 		},
-		"daemon.stop": func(json.RawMessage) (any, error) {
+		"daemon.stop": func(raw json.RawMessage) (any, error) {
+			var p struct {
+				KillAgents bool `json:"kill_agents"`
+			}
+			if len(raw) > 0 {
+				_ = json.Unmarshal(raw, &p)
+			}
+			if p.KillAgents {
+				d.killAgents.Store(true)
+			}
 			go func() { time.Sleep(100 * time.Millisecond); d.Stop() }()
 			return nil, nil
 		},

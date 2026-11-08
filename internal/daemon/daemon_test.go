@@ -99,6 +99,7 @@ func (f *fakeEngine) KillSession(slug string) error {
 func (f *fakeEngine) Sessions() (map[string][]string, error) { return map[string][]string{}, nil }
 func (f *fakeEngine) Output() <-chan engine.Output           { return f.out }
 func (f *fakeEngine) Close()                                 {}
+func (f *fakeEngine) KillServer() error                      { return f.rec("killserver") }
 func (f *fakeEngine) last() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -66,4 +66,8 @@ type Engine interface {
 	Sessions() (map[string][]string, error)
 	Output() <-chan Output
 	Close()
+	// KillServer stops the terminal server itself, ending every agent.
+	// Only `boba daemon stop --kill-agents` uses it; a plain stop keeps the
+	// agents running for the next daemon.
+	KillServer() error
 }
