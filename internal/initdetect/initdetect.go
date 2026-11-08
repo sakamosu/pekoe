@@ -121,13 +121,13 @@ order = 10
 // first time so the user has something to edit.
 func Rules() ([]Rule, error) {
 	dir := paths.DefaultsDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
 		return nil, err
 	}
 	files, _ := filepath.Glob(filepath.Join(dir, "*.toml"))
 	if len(files) == 0 {
 		p := filepath.Join(dir, "init.toml")
-		if err := os.WriteFile(p, []byte(builtin), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte(builtin), paths.FilePerm); err != nil {
 			return nil, err
 		}
 		files = []string{p}

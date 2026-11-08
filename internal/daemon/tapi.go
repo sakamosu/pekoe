@@ -314,13 +314,13 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 		return fmt.Errorf("[tapi] agent %q is not defined in [agents]", name)
 	}
 	dir := paths.TapiDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
 		return err
 	}
 	repos, addDirs := d.tapiAddDirs()
 	doc := []byte(tapiInstructions(repos))
 	for _, f := range []string{"CLAUDE.md", "AGENTS.md"} {
-		if err := os.WriteFile(filepath.Join(dir, f), doc, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, f), doc, paths.FilePerm); err != nil {
 			return err
 		}
 	}

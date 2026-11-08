@@ -216,7 +216,7 @@ func (d *Daemon) sendAttachment(slug, repoID string, body func(n int) string, in
 		repoID = "_unresolved"
 	}
 	dir := paths.ErrorsDir(repoID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
 		return "", err
 	}
 	n := 1
@@ -230,7 +230,7 @@ func (d *Daemon) sendAttachment(slug, repoID string, body func(n int) string, in
 		}
 	}
 	file := filepath.Join(dir, fmt.Sprintf("%s-%04d.md", slug, n))
-	if err := os.WriteFile(file, []byte(body(n)), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(body(n)), paths.FilePerm); err != nil {
 		return "", err
 	}
 	line := "@" + file

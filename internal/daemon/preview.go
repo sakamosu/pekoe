@@ -187,7 +187,7 @@ func (d *Daemon) savePreview(s *state.Session, p *Preview) {
 		Before *Shot  `json:"before,omitempty"`
 	}{p.Path, p.Mobile, p.N, p.After, p.Before}
 	b, _ := json.MarshalIndent(keep, "", "  ")
-	if err := os.WriteFile(filepath.Join(previewDir(s), "preview.json"), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(previewDir(s), "preview.json"), b, paths.FilePerm); err != nil {
 		log.Printf("preview %s: %v", s.Slug, err)
 	}
 }

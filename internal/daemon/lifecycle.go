@@ -508,10 +508,10 @@ func (d *Daemon) hInitWrite(p initWriteP) (any, error) {
 	if _, err := os.Stat(dst); err == nil && !p.Over {
 		return nil, fmt.Errorf("%s already exists", dst)
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), paths.DirPerm); err != nil {
 		return nil, err
 	}
-	return map[string]any{"path": dst}, os.WriteFile(dst, []byte(p.TOML), 0o644)
+	return map[string]any{"path": dst}, os.WriteFile(dst, []byte(p.TOML), paths.FilePerm)
 }
 
 // ---- review surface (nvim in the session's review window) ----

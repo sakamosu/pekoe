@@ -148,7 +148,7 @@ func moveDir(src, dst string) {
 	if _, err := os.Stat(dst); err == nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), paths.DirPerm); err != nil {
 		return
 	}
 	if err := os.Rename(src, dst); err != nil {

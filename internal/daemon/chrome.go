@@ -205,7 +205,7 @@ func shoot(ctx context.Context, c *cdp, r CaptureReq) error {
 	if err != nil || len(png) == 0 {
 		return errors.New("Chrome returned no screenshot")
 	}
-	return os.WriteFile(r.Out, png, 0o644)
+	return os.WriteFile(r.Out, png, 0o600)
 }
 
 // ---- a minimal CDP client over --remote-debugging-pipe ----
