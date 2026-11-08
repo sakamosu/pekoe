@@ -68,7 +68,7 @@ allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admi
 
 - `allow_users` が空なら起動しない(誰も入れないサーバーを立てても意味がないので、エラーにして `pekoe web` に出す)
 - `allow_devices` は強く勧める(下の脅威モデルを参照)
-- 設定を変えたら pekoed を再起動する(`pekoe daemon stop; pekoe daemon start`。エージェントは tmux の中で動き続ける)
+- 設定を変えたら pekoed を再起動する(`pekoe daemon restart`。エージェントは tmux の中で動き続ける)
 
 ### 初回の tailnet 参加
 

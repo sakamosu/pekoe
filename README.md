@@ -74,7 +74,7 @@ pekoe version
 
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/`。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
-既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon stop; pekoe daemon start` で pekoed を新しいバイナリに替える。
+既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon restart` で pekoed を新しいバイナリに替える(エージェントは tmux の中で動き続ける。launchd で動かしているときは launchd から起動し直す)。
 
 hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけ。プロジェクト側の `.claude/` は触らない。`pekoe hooks status` で確認、`pekoe hooks uninstall` で pekoe の分だけ外す。
 
@@ -115,7 +115,7 @@ pekoe                                                 # TUI
 | `pekoe ext` | Chrome 拡張に入れる port と token |
 | `pekoe web` | Web UI の状態・URL・初回のログイン URL |
 | `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
-| `pekoe daemon start\|stop\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。エージェントは tmux の中で動き続ける |
+| `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける |
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [reset [--yes]]` | tapi chat の状態 / 終了して会話を忘れる(TUI の `T` と同じ) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
@@ -126,7 +126,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- `answer`・`dev`・`init` の書き込み・`daemon stop` は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- `answer`・`dev`・`init` の書き込み・`daemon stop` / `daemon restart` は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
