@@ -89,7 +89,9 @@ func (d *Daemon) authorize(req Request) error {
 // authorizeSend: sending text stays open to agents (a hub agent hands work
 // to its sessions), but only into an agent's input box, and not while it
 // shows a permission menu, which would take the text's first character as
-// its choice. Other windows (dev, run) are shells.
+// its choice: with or without submit, by the hooks' state or the screen
+// (promptUp, the test hSend applies to every submit). Other windows (dev,
+// run) are shells.
 func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		raw = json.RawMessage("{}")
@@ -109,8 +111,8 @@ func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	if webAnswerable(s) {
-		return fmt.Errorf("%s is waiting for a permission answer; answer it in the pekoe TUI first, then send", p.Slug)
+	if d.promptUp(p.Slug, s.State, s.WaitKind) {
+		return promptUpErr(p.Slug, errPromptUpTUI)
 	}
 	return nil
 }

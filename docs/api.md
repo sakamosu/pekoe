@@ -29,10 +29,22 @@
 - token は pekoed が起動時に `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)に作る。再起動しても変わらない
 - TUI・CLI・Neovim はこのファイルを読んで毎回付ける。MCP サーバー(`pekoe mcp`)は付けない。エージェントのペインの環境には token もそのパスも渡さない
 - token が要るメソッド: `session.answer`、`session.keys`、`tapi.send`、`tapi.keys`、`init.write`、`run.start`、`dev.toggle`、`daemon.stop`。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない
-- `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手が許可待ち(`wait_kind` が `question` 以外の `waiting`)の間は `<slug> is waiting for a permission answer; …` のエラーになる(許可メニューは最初の 1 文字を選択肢として受け取るため)
+- `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
 - ほかのメソッドは token なしで使える
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
 - 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。エージェントからファイルを読めなくする設定は README の「エージェントに pekoe を使わせるときの権限」
+
+### send と許可ダイアログ
+
+許可メニューは最初の 1 文字を選択肢として受け取り、Enter は選ばれている「Yes」を確定する。そこで `session.send` / `tapi.send` は、許可ダイアログが出ている間は文字を打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が `question` 以外の `waiting`)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。
+
+| いつ | だれ | 結果 |
+| --- | --- | --- |
+| 打つ前 | token なし(agent 窓への送信すべて) | `<slug> is waiting for a permission answer: answer it in the pekoe TUI first, then send (nothing was sent)` |
+| 打つ前 | token あり・Web UI・Chrome 拡張(`submit` つき) | `<slug> is waiting for a permission answer: answer it first, then send (nothing was sent)`。Web UI は 409 |
+| Enter の直前 | `submit` つきのすべて | `<slug> is waiting for a permission answer: the text was typed but not submitted (Enter would have answered it)`。文字は入力欄に残る。Web UI は 409 |
+
+TUI がユーザーの打鍵として送るペースト(token あり・`submit` なし)は止めない。
 
 ### Session オブジェクト
 
@@ -99,7 +111,7 @@
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
-| `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。token なしでは agent の窓だけ、許可待ちの間は断る(上の「人間だけの操作」) |
+| `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」) |
 | `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時)。人間だけ(human token が要る) |
 | `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う)。人間だけ(human token が要る) |
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"\|"run"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height, dead, exit_status, signal?}`(`exit_status` は終わった窓の終了コード。動いている間やシグナルで終わったときは -1。`signal` は `"SIGINT"` など) |

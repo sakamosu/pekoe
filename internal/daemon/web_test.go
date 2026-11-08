@@ -664,3 +664,53 @@ func TestWebPendingToolPadded(t *testing.T) {
 		t.Fatalf("cut: %+v", pt)
 	}
 }
+
+// A permission dialog the hooks have not reported yet is on the screen:
+// send types nothing and presses no Enter (Enter would pick "Yes").
+func TestSendHeldByPromptOnScreen(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	event(t, d, "UserPromptSubmit", "main", map[string]any{"prompt": "go"}) // running, no prompt reported
+	fe.mu.Lock()
+	fe.lines = []string{"╭───╮", "│ Bash command", "│   rm -rf build", "│ Do you want to proceed?", "│ ❯ 1. Yes", "│   2. Yes, and don't ask again", "│   3. No (esc)", "╰───╯", ""}
+	fe.mu.Unlock()
+	before := sentCount(fe)
+	w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": "続けて"}})
+	if w.Code != http.StatusConflict || sentCount(fe) != before {
+		t.Fatalf("send over a prompt: %d %s / %s", w.Code, w.Body, fe.last())
+	}
+	if _, err := d.Call("session.send", mustJSON(sendP{Slug: "main", Text: "x", Submit: true})); !errors.Is(err, errPromptUp) {
+		t.Fatalf("session.send: %v", err)
+	}
+	// a plain paste (no submit) is the user's own typing: not held
+	if _, err := d.Call("session.send", mustJSON(sendP{Slug: "main", Text: "y"})); err != nil {
+		t.Fatal(err)
+	}
+	// no prompt on screen: typed and submitted
+	fe.mu.Lock()
+	fe.lines = []string{"> ", "Do you want to proceed with the refactor? I can also 1. Yes, rename"}
+	fe.mu.Unlock()
+	if w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": "はい"}}); w.Code != 200 || !strings.HasSuffix(fe.last(), "text:はい\nkeys:Enter") {
+		t.Fatalf("plain send: %d %s", w.Code, fe.last())
+	}
+}
+
+func TestPermissionOnScreen(t *testing.T) {
+	cases := []struct {
+		lines []string
+		want  bool
+	}{
+		{[]string{"Do you want to make this edit to a.ts?", "❯ 1. Yes", "  2. Yes, allow all edits", "  3. No", "", ""}, true},
+		{[]string{"\x1b[1mDo you want to proceed?\x1b[0m", "\x1b[36m❯\x1b[0m 1. Yes", "  2. No"}, true},
+		{[]string{"Overwrite? [y/N]", "Continue? (y/n) "}, true},
+		{[]string{"Asked earlier: continue? (y/n)", "> "}, false},
+		{[]string{"Do you want to proceed with option 1?", "1. Yes is what I'd pick", "> "}, false},
+		{[]string{"> "}, false},
+		{nil, false},
+	}
+	for _, c := range cases {
+		if got := permissionOnScreen(c.lines); got != c.want {
+			t.Errorf("%q → %v, want %v", c.lines, got, c.want)
+		}
+	}
+}

@@ -168,4 +168,23 @@ func TestAgentMethodsWithoutToken(t *testing.T) {
 	if e := c.call("session.send", map[string]any{"slug": "nope", "text": "x"}, ""); !strings.Contains(e, "nope") {
 		t.Errorf("send to an unknown slug: error = %q", e)
 	}
+
+	// a dialog on the screen that no hook has reported yet holds the send
+	// too, with or without submit; with the token only a submit is held
+	fe.mu.Lock()
+	fe.lines = []string{"Do you want to proceed?", "❯ 1. Yes", "  2. No"}
+	fe.mu.Unlock()
+	before = sentCount(fe)
+	for _, submit := range []bool{true, false} {
+		e := c.call("session.send", map[string]any{"slug": "main", "text": "2", "submit": submit}, "")
+		if !strings.Contains(e, "main is waiting for a permission answer: answer it in the pekoe TUI first") {
+			t.Fatalf("send (submit %v) over an on-screen prompt: error = %q", submit, e)
+		}
+	}
+	if e := c.call("session.send", map[string]any{"slug": "main", "text": "go", "submit": true}, d.humanToken); !strings.Contains(e, "main is waiting for a permission answer: answer it first") {
+		t.Fatalf("submit with the token over an on-screen prompt: error = %q", e)
+	}
+	if got := sentSince(fe, before); len(got) != 0 {
+		t.Fatalf("held sends reached the engine: %v", got)
+	}
 }

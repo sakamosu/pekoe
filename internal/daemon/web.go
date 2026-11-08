@@ -544,8 +544,11 @@ func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 
 func webErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
-	if strings.Contains(err.Error(), "no such session") {
+	switch {
+	case strings.Contains(err.Error(), "no such session"):
 		code = http.StatusNotFound
+	case errors.Is(err, errPromptUp), errors.Is(err, errPromptUpTyped), errors.Is(err, errPromptUpTUI):
+		code = http.StatusConflict
 	}
 	http.Error(w, err.Error(), code)
 }
