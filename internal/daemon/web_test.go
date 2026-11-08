@@ -116,6 +116,20 @@ func answerReq(from, answer string, tool *state.Tool) webReq {
 	return webReq{method: "POST", path: "/api/sessions/main/answer", from: from, body: map[string]any{"answer": answer, "tool": tool}}
 }
 
+func keysReq(from string, keys ...string) webReq {
+	return webReq{method: "POST", path: "/api/sessions/main/keys", from: from, body: map[string]any{"keys": keys}}
+}
+
+// questionSession puts "main" into an AskUserQuestion menu.
+func questionSession(t *testing.T, d *Daemon, repo string) {
+	t.Helper()
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	event(t, d, "PreToolUse", "main", map[string]any{"tool_name": "AskUserQuestion", "tool_input": map[string]any{"question": "which db?"}})
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.State != state.Waiting || s.WaitKind != "question" {
+		t.Fatalf("not a question: %+v", s)
+	}
+}
+
 func sentCount(fe *fakeEngine) int {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
@@ -142,6 +156,7 @@ func TestWebRejectsOthers(t *testing.T) {
 			{path: "/api/sessions/main/screen", from: from},
 			answerReq(from, "allow", &tool),
 			{method: "POST", path: "/api/sessions/main/send", from: from, body: map[string]any{"text": "rm -rf"}},
+			keysReq(from, "1"),
 		} {
 			if w := doWeb(t, h, q); w.Code != http.StatusForbidden {
 				t.Errorf("%s %s %s: %d, want 403", name, q.method, q.path, w.Code)
@@ -169,6 +184,23 @@ func TestWebAllowDevices(t *testing.T) {
 	}
 	if w := doWeb(t, h, webReq{path: "/api/sessions", from: ipLaptop}); w.Code != http.StatusForbidden {
 		t.Fatalf("laptop (same user, not in allow_devices): %d, want 403", w.Code)
+	}
+}
+
+// The keypad is held to the same door: a device outside allow_devices
+// presses nothing.
+func TestWebKeysAllowDevices(t *testing.T) {
+	d, fe, repo, h := webSetup(t, "iPhone")
+	questionSession(t, d, repo)
+	before := sentCount(fe)
+	if w := doWeb(t, h, keysReq(ipLaptop, "Enter")); w.Code != http.StatusForbidden {
+		t.Fatalf("laptop: %d, want 403", w.Code)
+	}
+	if sentCount(fe) != before {
+		t.Fatalf("a refused device reached the agent: %s", fe.last())
+	}
+	if w := doWeb(t, h, keysReq(ipPhone, "Enter")); w.Code != 200 {
+		t.Fatalf("phone: %d %s", w.Code, w.Body)
 	}
 }
 
@@ -524,5 +556,76 @@ func TestWebTheme(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &res)
 	if lk := res.Sessions[0].Look; lk != (webLook{Icon: "●", Role: "warn", Word: "wait"}) {
 		t.Fatalf("look: %+v", lk)
+	}
+}
+
+// The keypad drives a question's menu with a fixed set of keys.
+func TestWebKeys(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	questionSession(t, d, repo)
+	for _, keys := range [][]string{{"Down"}, {"Up", "Up"}, {"Tab", "BTab", "Space"}, {"Left", "Right"}, {"3"}, {"0", "9"}, {"Enter"}, {"Escape"}} {
+		w := doWeb(t, h, keysReq(ipPhone, keys...))
+		if w.Code != 200 {
+			t.Fatalf("keys %v: %d %s", keys, w.Code, w.Body)
+		}
+		if want := "keys:" + strings.Join(keys, ","); !strings.HasSuffix(fe.last(), want) {
+			t.Fatalf("keys %v: sent %s", keys, fe.last())
+		}
+	}
+	before := sentCount(fe)
+	for name, body := range map[string]any{
+		"ctrl-c":     map[string]any{"keys": []string{"C-c"}},
+		"meta":       map[string]any{"keys": []string{"M-x"}},
+		"lowercase":  map[string]any{"keys": []string{"enter"}},
+		"text":       map[string]any{"keys": []string{"rm -rf /"}},
+		"letter":     map[string]any{"keys": []string{"y"}},
+		"two digits": map[string]any{"keys": []string{"12"}},
+		"hex":        map[string]any{"keys": []string{"0x03"}},
+		"one bad":    map[string]any{"keys": []string{"Down", "C-c"}},
+		"empty":      map[string]any{"keys": []string{}},
+		"none":       map[string]any{},
+		"too many":   map[string]any{"keys": []string{"Down", "Down", "Down", "Down", "Down", "Down", "Down", "Down", "Down"}},
+		"not a list": map[string]any{"keys": "Down"},
+	} {
+		q := webReq{method: "POST", path: "/api/sessions/main/keys", from: ipPhone, body: body}
+		if w := doWeb(t, h, q); w.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d, want 400", name, w.Code)
+		}
+	}
+	if sentCount(fe) != before {
+		t.Fatalf("a refused key reached the agent: %s", fe.last())
+	}
+	if w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/nope/keys", from: ipPhone, body: map[string]any{"keys": []string{"Down"}}}); w.Code != http.StatusNotFound {
+		t.Errorf("unknown session: %d", w.Code)
+	}
+}
+
+// Keys never reach a permission menu ("2" or Down+Enter is "don't ask
+// again") nor a session that is not waiting on a question.
+func TestWebKeysOnlyOnQuestion(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	waitingSession(t, d, repo)
+	before := sentCount(fe)
+	for _, keys := range [][]string{{"2"}, {"Down", "Enter"}, {"Enter"}} {
+		if w := doWeb(t, h, keysReq(ipPhone, keys...)); w.Code != http.StatusConflict {
+			t.Errorf("permission prompt %v: %d, want 409", keys, w.Code)
+		}
+	}
+	// running
+	event(t, d, "PostToolUse", "main", map[string]any{"tool_name": "Bash"})
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.State != state.Running {
+		t.Fatalf("not running: %s", s.State)
+	}
+	if w := doWeb(t, h, keysReq(ipPhone, "Enter")); w.Code != http.StatusConflict {
+		t.Errorf("running: %d, want 409", w.Code)
+	}
+	// a question whose agent was stopped
+	event(t, d, "PreToolUse", "main", map[string]any{"tool_name": "AskUserQuestion", "tool_input": map[string]any{"question": "which db?"}})
+	d.update("main", func(s *state.Session) { s.Stopped = true })
+	if w := doWeb(t, h, keysReq(ipPhone, "Enter")); w.Code != http.StatusConflict {
+		t.Errorf("stopped: %d, want 409", w.Code)
+	}
+	if sentCount(fe) != before {
+		t.Fatalf("typed into the agent: %s", fe.last())
 	}
 }
