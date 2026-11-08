@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestTerminalFeatureIndexes(t *testing.T) {
@@ -143,5 +144,43 @@ func TestTargetWithDotInSlug(t *testing.T) {
 	// plain names keep the name target (no extra lookup)
 	if got := tm.target("feat-x", "agent"); got != "t:=feat-x~agent" {
 		t.Fatalf("target %q", got)
+	}
+}
+
+// Against a real private tmux server: SendText types control characters
+// as nothing, on both paths (send-keys -l for one line, paste-buffer for
+// several), so text cannot end a paste or press Shift-Tab / ^C.
+func TestSendTextDropsControls(t *testing.T) {
+	d, err := os.MkdirTemp("/tmp", "bt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(d) })
+	t.Setenv("TMUX_TMPDIR", d)
+	tm := &Tmux{Socket: "pekoe-test-sendtext", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	out := d + "/out"
+	// raw: ^C is a byte for cat, not a signal; cat writes what arrives
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", winName("s", "agent"), "stty raw -echo; exec cat > "+out); err != nil {
+		t.Skip("tmux unavailable:", err)
+	}
+	tm.recordPid()
+	pid := tm.recordedPid()
+	t.Cleanup(func() { tm.KillServer(); killTmuxPid(pid, tm.Socket) })
+	time.Sleep(200 * time.Millisecond)
+	if err := tm.SendText("s", "agent", "A\x1b[ZB\x03C"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tm.SendText("s", "agent", "D\x1b[201~\x1b[ZE\nF\x03G"); err != nil {
+		t.Fatal(err)
+	}
+	var got []byte
+	for i := 0; i < 40; i++ {
+		time.Sleep(50 * time.Millisecond)
+		if got, _ = os.ReadFile(out); strings.Contains(string(got), "G") {
+			break
+		}
+	}
+	if s := string(got); !strings.Contains(s, "A[ZBC") || !strings.Contains(s, "FG") || strings.ContainsAny(s, "\x1b\x03") {
+		t.Fatalf("pane got %q", s)
 	}
 }

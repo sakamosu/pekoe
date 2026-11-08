@@ -465,6 +465,12 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("text must be at most %d characters", webMaxText), http.StatusBadRequest)
 		return
 	}
+	// text, not keys: an ESC or ^C in it would press keys the keypad never
+	// offers (Shift-Tab, interrupt). SendText drops them too; say so here.
+	if engine.HasControl(text) {
+		http.Error(w, "text must not contain control characters", http.StatusBadRequest)
+		return
+	}
 	s, err := d.snapshot(slug)
 	if err != nil {
 		webErr(w, err)

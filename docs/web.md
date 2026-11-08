@@ -108,6 +108,8 @@ token もパスワードも cookie も持たない。リクエストごとに、
 
 allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニューは最初の 1 文字を選択肢として受け取るので、「2つ目も…」のような文が「Yes, and don't ask again」(= always)になってしまう。質問(`wait_kind == question`)には send かキーパッドで答える。
 
+send はテキストを送るもので、キーは送らない。改行とタブ以外の制御文字(ESC、`^C`、DEL など)を含む本文は 400。ESC を通すと Shift-Tab(`\e[Z`)などのキーやペーストの終端を打てて、キーパッドの許可リストを迂回できてしまうため。デーモン側でも、テキストとして pty に送る経路(`session.send` / `tapi.send`、エラーやピックの送信、opencode への初期プロンプト)はすべて同じ文字を落としてから送る。
+
 ### keys(キーパッド)の扱い
 
 AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・数字・Enter で操作するもので、文字を打ち込む send では答えられない(複数の質問がタブで並び、最後に Submit)。そこで質問待ちのときだけ、決まったキーを送るキーパッドを出す。
@@ -139,7 +141,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中 → その他(新しい順) |
 | `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
-| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。409: allow / deny で答える許可待ちの間 |
+| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。409: allow / deny で答える許可待ちの間 |
 | `POST /api/sessions/{slug}/keys` | `{keys: ["Down", …]}` | `{ok: true}`。1〜8 個のキーを順に送る。キーは `Up Down Left Right Tab BTab Space Enter Escape 0`〜`9` だけ。400: 許可外のキー・個数 / 409: 質問待ち(`wait_kind == question`、`stopped` でない)以外 |
 
 WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test look pr_look`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。

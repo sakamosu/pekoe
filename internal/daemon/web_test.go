@@ -337,6 +337,15 @@ func TestWebSend(t *testing.T) {
 	if !strings.HasSuffix(fe.last(), "text:テストも直して\nkeys:Enter") {
 		t.Fatalf("send: %s", fe.last())
 	}
+	// control characters are keys, not text: refused (line breaks and tabs are text)
+	for _, text := range []string{"a\x1b[Zb", "stop\x03", "x\x1b[201~y", "del\x7f", "c1\u009b2~"} {
+		if w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": text}}); w.Code != http.StatusBadRequest {
+			t.Errorf("send %q: %d", text, w.Code)
+		}
+	}
+	if w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": "1行目\r\n\t2行目"}}); w.Code != 200 {
+		t.Errorf("multi-line send: %d %s", w.Code, w.Body)
+	}
 	for _, text := range []string{"", "   ", strings.Repeat("あ", webMaxText+1)} {
 		if w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": text}}); w.Code != http.StatusBadRequest {
 			t.Errorf("send %d chars: %d", len(text), w.Code)
