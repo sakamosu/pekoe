@@ -70,6 +70,50 @@ func CommonDir(dir string) (string, error) {
 	return d, nil
 }
 
+// ErrNotWorktree: the directory is not the top of a git worktree (it may sit
+// inside one, or not be under git at all).
+var ErrNotWorktree = errors.New("not a git worktree")
+
+// ErrForeignWorktree: the directory is a worktree of another repository.
+var ErrForeignWorktree = errors.New("a worktree of another repository")
+
+// CheckWorktreeOf tells whether path is the top of a worktree of the
+// repository whose main worktree (or any worktree) is repoDir, by comparing
+// their common git directories. Repositories that share a name (forks, or
+// clones without an origin) share ~/worktrees/<name>, so a directory found
+// there is not necessarily ours. nil = ours; ErrNotWorktree; ErrForeignWorktree.
+func CheckWorktreeOf(repoDir, path string) error {
+	top, err := Toplevel(path)
+	if err != nil || !samePath(top, path) {
+		return ErrNotWorktree
+	}
+	mine, err := CommonDir(repoDir)
+	if err != nil {
+		return err
+	}
+	theirs, err := CommonDir(path)
+	if err != nil {
+		return ErrNotWorktree
+	}
+	if !samePath(mine, theirs) {
+		return ErrForeignWorktree
+	}
+	return nil
+}
+
+func samePath(a, b string) bool {
+	clean := func(p string) string {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			p = r
+		}
+		return filepath.Clean(p)
+	}
+	return clean(a) == clean(b)
+}
+
 // MainWorktree returns the primary worktree path of the repository.
 func MainWorktree(dir string) (string, error) {
 	wts, err := Worktrees(dir)

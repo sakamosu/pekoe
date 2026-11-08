@@ -166,3 +166,36 @@ func TestCurrentBranch(t *testing.T) {
 		t.Fatalf("detached HEAD: got %q, want HEAD", got)
 	}
 }
+
+func newRepo(t *testing.T, dir string) string {
+	t.Helper()
+	os.MkdirAll(dir, 0o755)
+	git(t, dir, "init", "-q", "-b", "main")
+	git(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+	return dir
+}
+
+// Two repositories with the same name share ~/worktrees/<name>: a directory
+// there is told apart by its common git directory.
+func TestCheckWorktreeOf(t *testing.T) {
+	a := newRepo(t, filepath.Join(t.TempDir(), "app"))
+	b := newRepo(t, filepath.Join(t.TempDir(), "app"))
+	wt := filepath.Join(t.TempDir(), "app", "feat-x")
+	if err := AddWorktree(b, wt, "feat/x", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckWorktreeOf(b, wt); err != nil {
+		t.Fatalf("own worktree: %v", err)
+	}
+	if err := CheckWorktreeOf(a, wt); err != ErrForeignWorktree {
+		t.Fatalf("other repository's worktree: %v", err)
+	}
+	sub := filepath.Join(wt, "sub")
+	os.MkdirAll(sub, 0o755)
+	if err := CheckWorktreeOf(b, sub); err != ErrNotWorktree {
+		t.Fatalf("a directory inside a worktree: %v", err)
+	}
+	if err := CheckWorktreeOf(a, t.TempDir()); err != ErrNotWorktree {
+		t.Fatalf("plain directory: %v", err)
+	}
+}

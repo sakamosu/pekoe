@@ -101,24 +101,39 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !p.Force && s.Managed {
+	_, statErr := os.Stat(s.Path)
+	exists := statErr == nil
+	// the directory may belong to another repository of the same name (a
+	// fork shares ~/worktrees/<name>): then it is not ours to run hooks in or
+	// to delete
+	owner := error(nil)
+	if exists {
+		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
+	}
+	foreign := errors.Is(owner, gitx.ErrForeignWorktree)
+	if !p.Force && s.Managed && !foreign {
 		if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
 			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
 		}
 	}
 	_ = d.Eng.KillSession(p.Slug)
-	if _, err := os.Stat(s.Path); err == nil {
+	deleted := false
+	if exists && foreign {
+		log.Printf("rm %s: %s is a worktree of another repository; left as is", p.Slug, s.Path)
+	} else if exists {
 		if err := d.teardown(s); err != nil && !p.Force {
 			return nil, err
 		}
 		gitx.DeleteRefs(s.Path, "refs/pekoe/"+p.Slug+"/")
 		if s.Managed && paths.UnderWorktrees(s.Path) {
-			if err := gitx.RemoveWorktree(s.RepoDir, s.Path, true); err != nil {
-				// not registered (half-created): delete the directory we made
-				if paths.UnderWorktrees(s.Path) {
-					os.RemoveAll(s.Path)
-					_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
-				}
+			if owner == nil {
+				deleted = gitx.RemoveWorktree(s.RepoDir, s.Path, true) == nil
+			}
+			if !deleted && s.OwnDir {
+				// not registered (half-created): delete the directory this
+				// session made, and nothing else
+				deleted = os.RemoveAll(s.Path) == nil
+				_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
 			}
 		}
 	}
@@ -140,7 +155,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	d.catch.Forget(p.Slug)
 	removeAttachments(s.RepoID, p.Slug)
 	d.emit("session.removed", s)
-	return map[string]any{"removed": p.Slug, "worktree_deleted": s.Managed}, nil
+	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
 }
 
 // ---- dev server ----
@@ -387,10 +402,14 @@ func (d *Daemon) finishLanding(slug string) error {
 		return err
 	}
 	_ = d.Eng.KillSession(slug)
-	if err := d.teardown(s); err != nil {
-		log.Printf("teardown %s: %v", slug, err)
+	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {
+		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
+	} else {
+		if err := d.teardown(s); err != nil {
+			log.Printf("teardown %s: %v", slug, err)
+		}
+		gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
 	}
-	gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
 	if s.Managed && paths.UnderWorktrees(s.Path) {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
 			log.Printf("remove worktree %s: %v", s.Path, err)

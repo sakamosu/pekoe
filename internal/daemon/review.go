@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -502,14 +503,22 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	}
 	slug := d.uniqueSlug(local, repo.ID, repo.Name)
 	path := paths.Worktree(repo.Name, slug)
-	if err := gitx.AddWorktree(repo.Dir, path, local, ""); err != nil && !strings.Contains(err.Error(), "already") {
-		return nil, err
+	own := false
+	if _, err := os.Stat(path); err == nil {
+		if err := reusableWorktree(repo.Dir, path); err != nil {
+			return nil, err
+		}
+	} else {
+		own = true
+		if err := gitx.AddWorktree(repo.Dir, path, local, ""); err != nil && !strings.Contains(err.Error(), "already") {
+			return nil, err
+		}
 	}
 	port, _ := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	s := &state.Session{
 		Slug: slug, Branch: local, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir, Path: path,
 		Agent: "claude", State: state.Done, StateSince: time.Now(), CreatedAt: time.Now(), Port: port,
-		Managed: true, Base: pr.Base, PR: p.Number, PRReview: true, Test: state.Test{Status: "none"},
+		Managed: true, OwnDir: own, Base: pr.Base, PR: p.Number, PRReview: true, Test: state.Test{Status: "none"},
 		LastMessage: pr.Title, Stopped: true,
 	}
 	d.add(s)

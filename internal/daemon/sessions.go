@@ -437,13 +437,14 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		return true
 	}
 	if !run("worktree", func() error {
-		if fi, err := os.Stat(s.Path); err == nil && fi.IsDir() {
-			// an existing worktree for this branch: reuse it
-			if top, err := gitx.Toplevel(s.Path); err == nil && top != "" {
-				return nil
-			}
-			return fmt.Errorf("%s exists and is not a worktree", s.Path)
+		if _, err := os.Stat(s.Path); err == nil {
+			// an existing worktree for this branch: reuse it, but only when
+			// it is this repository's (a fork shares ~/worktrees/<name>)
+			return reusableWorktree(repo.Dir, s.Path)
 		}
+		// whatever is at s.Path from here on is ours, even if git stops
+		// half way: rm may delete it
+		d.update(slug, func(x *state.Session) { x.OwnDir = true })
 		return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 	}) {
 		return
@@ -488,6 +489,21 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		d.update(slug, func(x *state.Session) { x.Env = env })
 		return d.spawnAgent(slug, prompt, "", p.Width, p.Height)
 	})
+}
+
+// reusableWorktree accepts an existing directory as a session's worktree only
+// when it is a worktree of the repository at repoDir.
+func reusableWorktree(repoDir, path string) error {
+	switch err := gitx.CheckWorktreeOf(repoDir, path); {
+	case err == nil:
+		return nil
+	case errors.Is(err, gitx.ErrForeignWorktree):
+		return fmt.Errorf("%s already exists as a worktree of another repository; not reusing it", path)
+	case errors.Is(err, gitx.ErrNotWorktree):
+		return fmt.Errorf("%s exists and is not a worktree", path)
+	default:
+		return err
+	}
 }
 
 func tail(s string, n int) string {

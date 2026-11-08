@@ -97,6 +97,8 @@ pekoe は、Orca の開発体験(複数エージェントの並列運用・workt
 
 **slug** — slug は全リポジトリで 1 つの名前空間。ブランチ名から作った slug が別リポジトリのセッションと衝突したら `<repo>-<slug>`(`web-feat-x`)にし、それも埋まっていれば `-2` `-3` を付ける。同じリポジトリの同じブランチは同じ slug のまま(「already exists」)。既存セッションの slug は変えない。slug を取るコマンドは `<repo>/<slug>` でも指定でき、`<repo>` は repo-id か短い名前、`<slug>` は本物の slug でもリポジトリ名を前に付ける前の形でもよい(`web/feat-x` → `web-feat-x`)。
 
+**worktree の持ち主** — 同じ名前のリポジトリ(フォークなど)は `~/worktrees/<name>/` を共有する。`new` で既にあるディレクトリを使うのは、git の common dir がそのリポジトリのものと一致する worktree のときだけ。別のリポジトリの worktree なら失敗にし、`rm` / キャンセルでも中身に触らない(teardown も実行しない)。git に登録されていないディレクトリを `rm` が丸ごと消すのは、そのセッションが自分で作ったとき(`own_dir`)だけ。
+
 **Issue インボックス** — 左パネル [2] のサブタブ Issues に `gh issue list` の結果(既定は自分担当の open)を出し、選んだ issue の本文とコメントをメインパネルで読む。`n` で `fix/`(bug ラベル)か `feat/` + タイトルの kebab-case を提案して `pekoe new --from gh#N` と同じ流れでセッションを作る。セッションは issue 番号を覚えるので(ブランチ名に番号があればそれでも)、行にそのセッションの状態が出て Enter で飛べる。issue → 実装 → PR → CI → マージを pekoe の中で一周するための入口。gh が無い・未認証・GitHub リモートが無いときは 1 行の案内だけを出す。
 
 **設定ファイル** `~/.config/pekoe/repos/<repo-id>.toml`(repo-id は origin URL の正規化、なければパス)
