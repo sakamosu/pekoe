@@ -10,6 +10,7 @@ let current = null; // slug shown in the detail view
 let listTimer = 0, screenTimer = 0;
 let busy = false;
 let sending = false; // a send is in flight
+let pressing = false; // a keypad key is in flight
 let touching = false; // a finger is on the list: do not move rows under it
 const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
 
@@ -119,7 +120,8 @@ function sessionRow(s) {
 }
 
 // waitBody: what the agent is asking, and the buttons (allow/deny only for
-// a permission prompt; a question is answered by sending words).
+// a permission prompt; a question is answered with the keypad or by
+// sending words, in the session's own view).
 function waitBody(s, box) {
   const t = s.pending_tool;
   if (t) {
@@ -144,7 +146,7 @@ function waitBody(s, box) {
     row.append(deny, allow);
     box.append(row);
   } else if (s.wait_kind === "question") {
-    box.append(el("div", "msg", "質問です。画面を見て、答えを send で送ってください。"));
+    box.append(el("div", "msg", "質問です。開いて画面を見ながら、キーパッドか send で答えてください。"));
   }
 }
 
@@ -221,6 +223,7 @@ function renderDetailHead() {
   $("d-name").textContent = current || "";
   renderTarget(s);
   if (!s) {
+    renderKeypad(null);
     head.append(el("div", "empty", current + " is gone"));
     if (!busy) ask.hidden = true;
     return;
@@ -228,6 +231,7 @@ function renderDetailHead() {
   const l2 = el("div", "line2");
   l2.append(document.createTextNode(s.repo), sep(), document.createTextNode(s.agent), ...(details(s, false).length ? [sep(), ...details(s, false)] : []));
   head.append(line1(s), l2);
+  renderKeypad(s);
   if (busy) return; // the confirm sheet is open: keep what it was opened from
   ask.replaceChildren();
   ask.hidden = s.state !== "waiting";
@@ -453,6 +457,45 @@ async function doSend(ev) {
   if (current) renderTarget(sessions.find((x) => x.slug === current));
 }
 
+// ---- keypad: a question's menu (AskUserQuestion) by its keys ----
+// Shown only while the session waits on a question; pekoed refuses keys
+// in any other state (a permission menu stays allow/deny only).
+
+function questionUp(s) {
+  return !!s && s.state === "waiting" && s.wait_kind === "question" && !s.stopped;
+}
+
+function renderKeypad(s) {
+  const pad = $("d-keys");
+  pad.hidden = !questionUp(s);
+  for (const b of pad.querySelectorAll("button")) b.disabled = pressing;
+}
+
+async function pressKey(key) {
+  const slug = current;
+  if (!slug || pressing) return;
+  const s = sessions.find((x) => x.slug === slug);
+  if (!questionUp(s)) return;
+  // one key at a time: the buttons stay off until pekoed has sent it, so a
+  // double tap is not two Downs (or two Enters)
+  pressing = true;
+  renderKeypad(s);
+  try {
+    await api("/api/sessions/" + encodeURIComponent(slug) + "/keys", { keys: [key] });
+    setTimeout(refreshScreen, 150);
+    setTimeout(refreshScreen, 700);
+    if (key === "Enter" || key === "Escape") setTimeout(refresh, 700);
+  } catch (e) {
+    toast(slug + ": " + e.message);
+    refresh();
+  }
+  // a short pause after the reply: the menu redraws before the next key
+  setTimeout(() => {
+    pressing = false;
+    if (current) renderKeypad(sessions.find((x) => x.slug === current));
+  }, 200);
+}
+
 // ---- routing & polling ----
 
 function go(slug) {
@@ -506,6 +549,9 @@ $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
 $("d-pause").addEventListener("click", togglePause);
+for (const b of $("d-keys").querySelectorAll("button[data-key]")) {
+  b.addEventListener("click", () => pressKey(b.dataset.key));
+}
 document.addEventListener("selectionchange", resumeIfHeld);
 {
   const pre = $("d-screen");

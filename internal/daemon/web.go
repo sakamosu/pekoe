@@ -67,7 +67,18 @@ const (
 	webMaxBody  = 64 << 10
 	webMaxText  = 4000 // runes in one send
 	webTailRows = 80   // screen lines returned
+	webMaxKeys  = 8    // keys in one /keys request
 )
+
+// webKeys: what the keypad may press in a question's menu (tmux key
+// names). Moving, toggling, picking a numbered choice, submitting,
+// backing out: no modifiers (C-c, M-…) and no free text, which is send's.
+var webKeys = map[string]bool{
+	"Up": true, "Down": true, "Left": true, "Right": true,
+	"Tab": true, "BTab": true, "Space": true, "Enter": true, "Escape": true,
+	"0": true, "1": true, "2": true, "3": true, "4": true,
+	"5": true, "6": true, "7": true, "8": true, "9": true,
+}
 
 // webHandler builds the whole web UI: static files and /api/.
 func (d *Daemon) webHandler(o webOpts) http.Handler {
@@ -96,6 +107,7 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	mux.HandleFunc("GET /api/sessions/{slug}/screen", d.webScreen)
 	mux.HandleFunc("POST /api/sessions/{slug}/answer", d.webAnswer)
 	mux.HandleFunc("POST /api/sessions/{slug}/send", d.webSend)
+	mux.HandleFunc("POST /api/sessions/{slug}/keys", d.webKeys)
 	return webGuard(o, mux)
 }
 
@@ -467,6 +479,57 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 	p := peerFrom(r)
 	log.Printf("web: %s sends %d chars to %s (from %s)", p.Login, len(text), slug, p.Device)
 	if _, err := d.Call("session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
+		webErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// webQuestion: a question (AskUserQuestion, elicitation) is up, the menu
+// the keypad drives.
+func webQuestion(s *state.Session) bool {
+	return s.State == state.Waiting && s.WaitKind == "question" && !s.Stopped
+}
+
+// webKeys presses a few keys in a question's menu (arrows, Tab, Space,
+// digits, Enter, Escape). Only while a question waits: in a permission
+// menu "2" or Down+Enter would pick "don't ask again", the always the web
+// never gives, so that menu stays allow/deny only.
+func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if len(in.Keys) == 0 || len(in.Keys) > webMaxKeys {
+		http.Error(w, fmt.Sprintf("keys must be 1 to %d keys", webMaxKeys), http.StatusBadRequest)
+		return
+	}
+	for _, k := range in.Keys {
+		if !webKeys[k] {
+			http.Error(w, fmt.Sprintf("key %q is not allowed", k), http.StatusBadRequest)
+			return
+		}
+	}
+	s, err := d.snapshot(slug)
+	if err != nil {
+		webErr(w, err)
+		return
+	}
+	if webAnswerable(s) {
+		http.Error(w, slug+" is waiting for allow/deny: answer it with allow or deny", http.StatusConflict)
+		return
+	}
+	if !webQuestion(s) {
+		http.Error(w, fmt.Sprintf("%s is not waiting on a question (state: %s)", slug, s.State), http.StatusConflict)
+		return
+	}
+	p := peerFrom(r)
+	log.Printf("web: %s presses %s on %s (from %s)", p.Login, strings.Join(in.Keys, " "), slug, p.Device)
+	if _, err := d.Call("session.keys", mustJSON(keysP{Slug: slug, Keys: in.Keys})); err != nil {
 		webErr(w, err)
 		return
 	}

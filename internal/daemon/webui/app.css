@@ -146,6 +146,17 @@ main { padding: 4px 10px 8px; }
   -webkit-user-select: text; user-select: text;
 }
 
+/* the keypad for a question's menu: keys only, sent on tap */
+.keypad { margin: 12px 0 0; padding: 8px 10px 10px; }
+.keys-cap { margin-bottom: 8px; font-size: 12px; color: var(--dim); }
+.keys-cap .ic { margin-right: 6px; }
+.keys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+.keys-grid.three { grid-template-columns: repeat(3, 1fr); }
+.keys-grid.two { grid-template-columns: 1fr 1fr; }
+.keys-grid.nums { grid-template-columns: repeat(5, 1fr); }
+.keys-grid .btn { padding: 0 4px; min-width: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.keys-grid .btn:active:not(:disabled) { background: var(--select); }
+
 .send { margin-top: 12px; }
 /* where send goes: the slug the button will hit, right above the box */
 .to {
