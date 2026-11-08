@@ -176,15 +176,28 @@
     const top = r.bottom + 8 + 60 < innerHeight ? r.bottom + 8 : Math.max(8, r.top - 68);
     Object.assign(frame.style, { top: top + 'px', left: Math.min(Math.max(8, r.x), innerWidth - 328) + 'px' });
     root.appendChild(frame);
-    frame.addEventListener('load', () => frame.focus());
+    // The box answers over a port of its own: a message posted to this
+    // window would reach the page's listeners too. The port goes only to
+    // the extension's origin, and the box takes it only with our nonce.
+    const ch = new MessageChannel();
+    let handed = false;
+    frame.addEventListener('load', () => {
+      if (!handed) {
+        handed = true;
+        frame.contentWindow.postMessage({ pekoe: 'port', nonce }, chrome.runtime.getURL('').replace(/\/$/, ''), [ch.port2]);
+      }
+      frame.focus();
+    });
+    let closed = false;
     const close = () => {
-      window.removeEventListener('message', onMsg);
+      closed = true;
+      ch.port1.close();
       frame.remove();
       overlay.style.display = label.style.display = 'none';
     };
-    const onMsg = async (e) => {
+    ch.port1.onmessage = async (e) => {
       const d = e.data;
-      if (e.source !== frame.contentWindow || !d || d.pekoe !== 'prompt' || d.nonce !== nonce) return;
+      if (closed || !d) return;
       if (d.type === 'cancel') { close(); return; }
       if (d.type !== 'submit') return;
       close();
@@ -198,7 +211,6 @@
         toast(`Send failed: ${err.message}`, false);
       }
     };
-    window.addEventListener('message', onMsg);
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
@@ -206,10 +218,21 @@
   });
 
   // ---- console relay (page.js only emits on localhost) -----------------
+  // The page can dispatch this event itself, so what is relayed is cut to
+  // the daemon's caps (http.go: limitConsole) before it leaves the tab.
+  const cut = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
   window.addEventListener('pekoe:console', (e) => {
     try {
       const { url, errors } = JSON.parse(e.detail);
-      if (Array.isArray(errors) && errors.length) chrome.runtime.sendMessage({ type: 'console', url, errors }).catch(() => {});
+      if (!Array.isArray(errors) || !errors.length) return;
+      const list = errors.slice(0, 50).map((x) => ({
+        message: cut(String(x?.message ?? ''), 2000),
+        source: cut(x?.source, 500),
+        line: Number.isInteger(x?.line) ? x.line : undefined,
+        stack: cut(x?.stack, 8000),
+        at: cut(x?.at, 64),
+      }));
+      chrome.runtime.sendMessage({ type: 'console', url: cut(url, 500), errors: list }).catch(() => {});
     } catch {}
   });
 })();

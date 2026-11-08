@@ -274,3 +274,16 @@ func TestResolveAndExcerpt(t *testing.T) {
 		t.Fatalf("excerpt near the top:\n%s", ex)
 	}
 }
+
+// A console error is the page's text: its message is cleaned like a
+// terminal line, so the one-line prompt carries no control characters.
+func TestFromConsoleCleansMessage(t *testing.T) {
+	b := FromConsole("Boom\x1b[201~\x1b[Z\x03 here", "", "http://localhost:3000/a.js", 3)
+	if b.Lines[0] != "Boom here" || b.Message != "Boom here" {
+		t.Fatalf("lines %q message %q", b.Lines, b.Message)
+	}
+	r := Report{Source: SourceBrowser, Text: strings.Join(b.Lines, "\n"), Kind: b.Kind}
+	if p := InlinePrompt(r); strings.ContainsAny(p, "\x1b\x03") {
+		t.Fatalf("prompt %q", p)
+	}
+}

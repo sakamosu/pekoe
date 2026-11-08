@@ -465,6 +465,12 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("text must be at most %d characters", webMaxText), http.StatusBadRequest)
 		return
 	}
+	// text, not keys: an ESC or ^C in it would press keys the keypad never
+	// offers (Shift-Tab, interrupt). SendText drops them too; say so here.
+	if engine.HasControl(text) {
+		http.Error(w, "text must not contain control characters", http.StatusBadRequest)
+		return
+	}
 	s, err := d.snapshot(slug)
 	if err != nil {
 		webErr(w, err)
@@ -538,8 +544,11 @@ func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 
 func webErr(w http.ResponseWriter, err error) {
 	code := http.StatusInternalServerError
-	if strings.Contains(err.Error(), "no such session") {
+	switch {
+	case strings.Contains(err.Error(), "no such session"):
 		code = http.StatusNotFound
+	case errors.Is(err, errPromptUp), errors.Is(err, errPromptUpTyped), errors.Is(err, errPromptUpTUI):
+		code = http.StatusConflict
 	}
 	http.Error(w, err.Error(), code)
 }

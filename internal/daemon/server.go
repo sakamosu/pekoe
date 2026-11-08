@@ -98,29 +98,30 @@ type Daemon struct {
 
 	humanToken string // unlocks the human-only methods over the socket (human.go)
 
-	mu         sync.Mutex
-	runMu      sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
-	tapiMu     sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
-	tapi       tapiState  // tapi chat, in memory only (tapi.go; under mu)
-	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
-	sessions   map[string]*state.Session
-	conns      map[*conn]bool
-	cancels    map[string]context.CancelFunc // creating sessions
-	asks       map[string]string             // slug -> hunk id awaiting an answer
-	tabs       []Tab
-	errors     map[int][]ConsoleError // port -> recent errors
-	out        map[string]*outState
-	progress   map[string][]Step
-	stop       chan struct{}
-	stopOnce   sync.Once
-	killAgents atomic.Bool // daemon.stop {kill_agents}: also stop the tmux server
-	handlers   map[string]func(json.RawMessage) (any, error)
-	testHook   func(ev string, data any) // observes events in tests
-	graphicsOK bool                      // the attached TUI's terminal speaks Kitty graphics
-	paneW      int                       // the TUI's agent pane size (last session.resize "*"),
-	paneH      int                       // used when a client spawns without knowing it (CLI)
-	preview    *previewer                // in-terminal browser preview (preview.go)
-	cf         conflictScan              // conflict forecast (conflicts.go)
+	mu          sync.Mutex
+	runMu       sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
+	tapiMu      sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
+	tapi        tapiState  // tapi chat, in memory only (tapi.go; under mu)
+	saveMu      sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
+	sessions    map[string]*state.Session
+	conns       map[*conn]bool
+	cancels     map[string]context.CancelFunc // creating sessions
+	asks        map[string]string             // slug -> hunk id awaiting an answer
+	tabs        []Tab
+	errors      map[int][]ConsoleError // port -> recent errors
+	consoleRate map[int]consoleWindow  // port -> errors taken this minute (http.go, under mu)
+	out         map[string]*outState
+	progress    map[string][]Step
+	stop        chan struct{}
+	stopOnce    sync.Once
+	killAgents  atomic.Bool // daemon.stop {kill_agents}: also stop the tmux server
+	handlers    map[string]func(json.RawMessage) (any, error)
+	testHook    func(ev string, data any) // observes events in tests
+	graphicsOK  bool                      // the attached TUI's terminal speaks Kitty graphics
+	paneW       int                       // the TUI's agent pane size (last session.resize "*"),
+	paneH       int                       // used when a client spawns without knowing it (CLI)
+	preview     *previewer                // in-terminal browser preview (preview.go)
+	cf          conflictScan              // conflict forecast (conflicts.go)
 
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)

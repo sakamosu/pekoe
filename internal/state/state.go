@@ -40,6 +40,11 @@ type Tool struct {
 	Input   string   `json:"input"`
 	Touches string   `json:"touches,omitempty"` // file the tool will change (Edit/Write)
 	AlsoIn  []string `json:"also_in,omitempty"` // other open sessions that already changed Touches
+	// Input is a one-line summary of the argument; these say how much of
+	// it the summary leaves out, so a reader knows to look at the whole.
+	Lines int  `json:"lines,omitempty"` // lines in the argument, when more than one
+	Size  int  `json:"size,omitempty"`  // bytes in the argument, when Cut
+	Cut   bool `json:"cut,omitempty"`   // Input was cut short
 }
 
 // Overlap is a conflict forecast against another open session of the same

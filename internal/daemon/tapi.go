@@ -117,9 +117,9 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 			t.state, t.waitKind, t.pending = state.Running, "", nil
 		})
 	case "PreToolUse":
-		sum := toolSummary(hp.ToolName, hp.ToolInput)
+		tool := summarizeTool(hp.ToolName, hp.ToolInput)
 		d.tapiUpdate(func(t *tapiState) {
-			t.pending = &state.Tool{Name: hp.ToolName, Input: sum}
+			t.pending = &tool
 			if hp.ToolName == "AskUserQuestion" {
 				t.state, t.waitKind = state.Waiting, "question"
 			} else {
@@ -474,11 +474,24 @@ func (d *Daemon) hTapiSend(p tapiSendP) (any, error) {
 	if err := d.tapiNeedsWindow(); err != nil {
 		return nil, err
 	}
+	// as hSend: an instruction never goes into a permission prompt
+	promptUp := func() bool {
+		d.mu.Lock()
+		st, wk := d.tapi.state, d.tapi.waitKind
+		d.mu.Unlock()
+		return d.promptUp(TapiSlug, st, wk)
+	}
+	if p.Submit && promptUp() {
+		return nil, promptUpErr(TapiSlug, errPromptUp)
+	}
 	if err := d.Eng.SendText(TapiSlug, engine.WinAgent, p.Text); err != nil {
 		return nil, err
 	}
 	if p.Submit {
 		time.Sleep(150 * time.Millisecond)
+		if promptUp() {
+			return nil, promptUpErr(TapiSlug, errPromptUpTyped)
+		}
 		if err := d.Eng.SendKeys(TapiSlug, engine.WinAgent, "Enter"); err != nil {
 			return nil, err
 		}

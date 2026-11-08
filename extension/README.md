@@ -27,6 +27,7 @@ localhost / 127.0.0.1 のページでは `window.onerror`・`unhandledrejection`
 | `manifest.json` | MV3 マニフェスト |
 | `background.js` | service worker。スクショ撮影・切り抜き、pekoed への POST(`/pick` `/console` `/tabs`) |
 | `content.js` | isolated world。選択 UI(closed shadow root)、outerHTML・スタイル・座標の収集 |
+| `prompt.html` / `prompt.js` | 指示の入力欄(拡張のオリジンの iframe)。content.js とは MessageChannel のポートでやりとりする(ページと共有している window には postMessage しないので、打った指示はページから読めない) |
 | `page.js` | MAIN world。React / Vue / Svelte のコンポーネント名とソース位置の検出、console の捕捉 |
 | `options.html` / `options.js` | port と token の設定、`GET /health` の接続テスト |
 

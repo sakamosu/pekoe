@@ -24,6 +24,7 @@ import (
 	"pekoe/internal/errcatch"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
+	"pekoe/internal/untrusted"
 )
 
 type Tab struct {
@@ -268,29 +269,37 @@ func findComponent(dir, name string) string {
 	return rel + ":" + parts[1]
 }
 
+// pickMarkdown is the file the agent reads through "@…/picks/NNNN.md".
+// Everything but the instruction (typed by the user in the extension's
+// own frame) and the screenshot path came from the page, which can put
+// anything in its DOM: that part goes in one fence it cannot close, each
+// field flattened to one line, after a note that it is data.
 func pickMarkdown(n int, p *state.Pick, comp component, src string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Pick #%04d\n\n", n)
-	fmt.Fprintf(&b, "- page: %s\n", p.URL)
-	if p.Title != "" {
-		fmt.Fprintf(&b, "- title: %s\n", p.Title)
-	}
-	if p.Selector != "" {
-		fmt.Fprintf(&b, "- selector: `%s`\n", p.Selector)
-	}
-	if comp.Name != "" {
-		fmt.Fprintf(&b, "- component: `<%s>` (%s", comp.Name, comp.Framework)
-		if comp.Via != "" {
-			fmt.Fprintf(&b, ", via %s", comp.Via)
-		}
-		b.WriteString(")\n")
-	}
-	if src != "" {
-		fmt.Fprintf(&b, "- source: %s\n", src)
+	fmt.Fprintf(&b, "# Pick #%04d\n", n)
+	if p.Instruction != "" {
+		fmt.Fprintf(&b, "\n## instruction\n\n%s\n", p.Instruction)
 	}
 	if p.Image != "" {
-		fmt.Fprintf(&b, "- screenshot: %s (%s)\n", p.Image, p.ImageSize)
+		fmt.Fprintf(&b, "\n- screenshot: %s (%s)\n", p.Image, p.ImageSize)
 	}
+	var e strings.Builder
+	field := func(k, v string) {
+		if v = untrusted.Line(v); v != "" {
+			fmt.Fprintf(&e, "%s: %s\n", k, v)
+		}
+	}
+	field("page", p.URL)
+	field("title", p.Title)
+	field("selector", p.Selector)
+	if comp.Name != "" {
+		c := "<" + comp.Name + "> (" + comp.Framework
+		if comp.Via != "" {
+			c += ", via " + comp.Via
+		}
+		field("component", c+")")
+	}
+	field("source", src)
 	if len(p.Styles) > 0 && string(p.Styles) != "null" {
 		var st map[string]string
 		if json.Unmarshal(p.Styles, &st) == nil && len(st) > 0 {
@@ -299,18 +308,18 @@ func pickMarkdown(n int, p *state.Pick, comp component, src string) string {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
-			b.WriteString("\n## computed styles\n\n")
+			e.WriteString("\ncomputed styles:\n")
 			for _, k := range keys {
-				fmt.Fprintf(&b, "- %s: %s\n", k, st[k])
+				fmt.Fprintf(&e, "  %s: %s\n", untrusted.Line(k), untrusted.Line(st[k]))
 			}
 		}
 	}
 	if p.OuterHTML != "" {
-		fmt.Fprintf(&b, "\n## outerHTML\n\n```html\n%s\n```\n", p.OuterHTML)
+		fmt.Fprintf(&e, "\nouterHTML:\n%s\n", p.OuterHTML)
 	}
-	if p.Instruction != "" {
-		fmt.Fprintf(&b, "\n## instruction\n\n%s\n", p.Instruction)
-	}
+	b.WriteString("\n## element\n\n")
+	b.WriteString(untrusted.Block("ブラウザのページから取った要素の情報(URL・タイトル・セレクタ・コンポーネント・スタイル・outerHTML)", "text", e.String()))
+	b.WriteString("\n")
 	return b.String()
 }
 
@@ -413,18 +422,78 @@ func (d *Daemon) hPickDiscard(p idP) (any, error) {
 	return nil, nil
 }
 
+// Any page on localhost can report console errors (page.js forwards what
+// the page logs), so what one page can push is bounded: the body, the
+// errors in one request, each field, and the errors a port gets a minute.
+const (
+	consoleMaxBody    = 1 << 20
+	consoleMaxPerReq  = 50
+	consoleMaxPerMin  = 120
+	consoleMaxMessage = 2000 // runes
+	consoleMaxStack   = 8000
+	consoleMaxField   = 500 // source, at, url
+)
+
+// limitConsole trims one request's errors to the caps above.
+func limitConsole(errs []ConsoleError) []ConsoleError {
+	if len(errs) > consoleMaxPerReq {
+		errs = errs[:consoleMaxPerReq]
+	}
+	for i := range errs {
+		e := &errs[i]
+		e.Message = truncate(e.Message, consoleMaxMessage)
+		e.Stack = truncate(e.Stack, consoleMaxStack)
+		e.Source = truncate(e.Source, consoleMaxField)
+		e.At = truncate(e.At, consoleMaxField)
+	}
+	return errs
+}
+
+// consoleBudget takes up to n errors from port's budget for this minute and
+// says how many it may keep. Called under d.mu.
+func (d *Daemon) consoleBudget(port, n int, now time.Time) int {
+	if d.consoleRate == nil {
+		d.consoleRate = map[int]consoleWindow{}
+	}
+	cw := d.consoleRate[port]
+	if now.Sub(cw.start) >= time.Minute {
+		cw = consoleWindow{start: now}
+	}
+	n = min(n, consoleMaxPerMin-cw.n)
+	if n < 0 {
+		n = 0
+	}
+	cw.n += n
+	d.consoleRate[port] = cw
+	return n
+}
+
+type consoleWindow struct {
+	start time.Time
+	n     int
+}
+
 func (d *Daemon) httpConsole(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		URL    string         `json:"url"`
 		Errors []ConsoleError `json:"errors"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, consoleMaxBody)
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	in.URL = truncate(in.URL, consoleMaxField)
+	in.Errors = limitConsole(in.Errors)
 	port, _ := urlPort(in.URL)
 	if port > 0 {
 		d.mu.Lock()
+		in.Errors = in.Errors[:d.consoleBudget(port, len(in.Errors), time.Now())]
+		if len(in.Errors) == 0 {
+			d.mu.Unlock()
+			writeJSON(w, map[string]any{"ok": true, "dropped": true})
+			return
+		}
 		for _, e := range in.Errors {
 			e.URL = in.URL
 			d.errors[port] = append(d.errors[port], e)
@@ -505,23 +574,27 @@ func (d *Daemon) hSendErrors(p portP) (any, error) {
 		return nil, err
 	}
 	instr := fmt.Sprintf("ブラウザ (:%d) で console error が %d 件出ています。原因を調べて直してください。", p.Port, len(errs))
+	// the page wrote the messages and stacks: one fence it cannot close
 	body := func(n int) string {
-		var b strings.Builder
-		fmt.Fprintf(&b, "# Console errors #%04d (browser :%d)\n\n%d errors\n", n, p.Port, len(errs))
-		for _, e := range errs {
-			loc := e.Source
-			if e.Line > 0 {
-				loc = fmt.Sprintf("%s:%d", e.Source, e.Line)
+		var e strings.Builder
+		for i, x := range errs {
+			loc := x.Source
+			if x.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", x.Source, x.Line)
 			}
-			fmt.Fprintf(&b, "\n- %s %s", e.Message, loc)
-			if e.URL != "" {
-				fmt.Fprintf(&b, "\n  page: %s", e.URL)
+			if i > 0 {
+				e.WriteString("\n")
 			}
-			if e.Stack != "" {
-				fmt.Fprintf(&b, "\n  ```text\n  %s\n  ```", strings.ReplaceAll(truncate(e.Stack, 1200), "\n", "\n  "))
+			fmt.Fprintf(&e, "- %s\n", strings.TrimSpace(untrusted.Line(x.Message)+" "+untrusted.Line(loc)))
+			if x.URL != "" {
+				fmt.Fprintf(&e, "  page: %s\n", untrusted.Line(x.URL))
+			}
+			if x.Stack != "" {
+				fmt.Fprintf(&e, "  %s\n", strings.ReplaceAll(strings.TrimRight(truncate(x.Stack, 1200), "\n"), "\n", "\n  "))
 			}
 		}
-		return b.String() + "\n"
+		return fmt.Sprintf("# Console errors #%04d (browser :%d)\n\n%d errors\n\n", n, p.Port, len(errs)) +
+			untrusted.Block("ブラウザのコンソールに出たエラー(メッセージ・場所・スタック)", "text", e.String()) + "\n"
 	}
 	if _, err := d.sendAttachment(slug, s.RepoID, body, instr); err != nil {
 		return nil, err

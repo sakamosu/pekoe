@@ -207,6 +207,8 @@ main { padding: 4px 10px 8px; }
 .sheet .input { max-height: 22vh; }
 .sheet-cap { margin-top: 10px; font-size: 12px; color: var(--dim); }
 .sheet-screen { font-size: 11px; max-height: 30vh; background: var(--term-bg); }
+.sheet-warn { margin-top: 8px; font-size: 13px; color: var(--warn); }
+.sheet.long .sheet-screen { max-height: 45vh; }
 
 .toast {
   position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 20;

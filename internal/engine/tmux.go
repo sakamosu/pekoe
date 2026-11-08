@@ -363,7 +363,14 @@ func (t *Tmux) exists(slug, window string) bool {
 	return false
 }
 
+// SendText types text, never keys: control characters are dropped first
+// (CleanText), so an ESC, a ^C or a paste terminator in the text cannot
+// turn into a keypress. Keys go through SendKeys / SendHex.
 func (t *Tmux) SendText(slug, window, text string) error {
+	text = CleanText(text)
+	if text == "" {
+		return nil
+	}
 	if !strings.Contains(text, "\n") {
 		return t.SendLiteral(slug, window, text)
 	}

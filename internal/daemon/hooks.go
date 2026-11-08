@@ -115,7 +115,17 @@ func touches(name string, input json.RawMessage, root string) string {
 	return p
 }
 
-func toolSummary(name string, input json.RawMessage) string {
+var (
+	summaryBreaks = regexp.MustCompile(`[ \t]*[\r\n][\s]*`)
+	summarySpaces = regexp.MustCompile(`[ \t]{3,}`)
+)
+
+// summarizeTool is the one-line summary of a tool call that pending_tool
+// and last_tool show: the argument that says what it does, with each run
+// of line breaks shown as " ⏎ " and long runs of spaces folded, so blank
+// lines or padding cannot push the rest out of the first 200 bytes, then
+// cut there. Lines / Size / Cut say how much the summary leaves out.
+func summarizeTool(name string, input json.RawMessage) state.Tool {
 	var m map[string]any
 	_ = json.Unmarshal(input, &m)
 	pick := func(keys ...string) string {
@@ -126,8 +136,13 @@ func toolSummary(name string, input json.RawMessage) string {
 		}
 		return ""
 	}
-	arg := pick("command", "file_path", "path", "pattern", "url", "query", "description", "prompt")
-	arg = strings.ReplaceAll(arg, "\n", " ")
+	raw := pick("command", "file_path", "path", "pattern", "url", "query", "description", "prompt")
+	t := state.Tool{Name: name}
+	if n := strings.Count(strings.TrimRight(raw, "\r\n"), "\n") + 1; n > 1 {
+		t.Lines = n
+	}
+	arg := summaryBreaks.ReplaceAllString(strings.TrimSpace(raw), " ⏎ ")
+	arg = summarySpaces.ReplaceAllString(arg, " ")
 	if len(arg) > 200 {
 		// on a rune boundary: half a character is invalid UTF-8, which JSON
 		// turns into U+FFFD and the web UI's prompt check (sameTool) then
@@ -137,8 +152,10 @@ func toolSummary(name string, input json.RawMessage) string {
 			cut--
 		}
 		arg = arg[:cut] + "…"
+		t.Cut, t.Size = true, len(raw)
 	}
-	return arg
+	t.Input = arg
+	return t
 }
 
 func (d *Daemon) hEvent(p eventP) (any, error) {
@@ -182,11 +199,13 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 			s.WaitKind, s.PendingTool = "", nil
 		})
 	case "PreToolUse":
-		sum := toolSummary(hp.ToolName, hp.ToolInput)
+		tool := summarizeTool(hp.ToolName, hp.ToolInput)
 		d.update(slug, func(s *state.Session) {
-			s.LastTool = strings.TrimSpace(hp.ToolName + " " + sum)
-			t := touches(hp.ToolName, hp.ToolInput, s.Path)
-			s.PendingTool = &state.Tool{Name: hp.ToolName, Input: sum, Touches: t, AlsoIn: d.alsoChangedLocked(s, t)}
+			s.LastTool = strings.TrimSpace(hp.ToolName + " " + tool.Input)
+			pt := tool
+			pt.Touches = touches(hp.ToolName, hp.ToolInput, s.Path)
+			pt.AlsoIn = d.alsoChangedLocked(s, pt.Touches)
+			s.PendingTool = &pt
 			if hp.ToolName == "AskUserQuestion" {
 				s.State, s.WaitKind = state.Waiting, "question"
 			} else if s.State == state.Waiting || s.State == state.Idle || s.State == state.Done {
@@ -255,6 +274,12 @@ func askingQuestion(s *state.Session) bool {
 // classifyNotification separates permission prompts from questions.
 // Claude Code sends notification_type (permission_prompt, idle_prompt,
 // elicitation_dialog); older versions only a message.
+//
+// Anything it does not recognize is a permission: a "question" lets the web
+// keypad press digits and arrows, which on a permission menu could pick
+// "don't ask again", while a permission only takes allow/deny. The one
+// question a permission_prompt stands for (AskUserQuestion) is kept a
+// question by askingQuestion, which also covers unknown types.
 func classifyNotification(hp hookPayload) string {
 	switch hp.NotificationType {
 	case "permission_prompt":
@@ -265,6 +290,9 @@ func classifyNotification(hp hookPayload) string {
 		return "question"
 	case "auth_success":
 		return ""
+	case "":
+	default:
+		return "permission"
 	}
 	m := strings.ToLower(hp.Message)
 	switch {
@@ -273,7 +301,7 @@ func classifyNotification(hp hookPayload) string {
 	case strings.Contains(m, "waiting for your input"):
 		return "idle"
 	}
-	return "question"
+	return "permission"
 }
 
 func (d *Daemon) snapshotPrompt(slug, prompt string) {

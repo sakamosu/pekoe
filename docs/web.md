@@ -99,7 +99,8 @@ token もパスワードも cookie も持たない。リクエストごとに、
 - 受け付ける答えは `allow` と `deny` だけ。`always`(と CLI の別名 `a` `y` `yes` `n` など)は 400。恒久的な許可は端末の前で決める
 - `wait_kind` が `question`(AskUserQuestion など)のときは 409。allow / deny で答えるものではないので、画面を見てキーパッドか `send` で答える
 - 押したときに画面に出ていたツール(名前と引数)を一緒に送り、pekoed の今の `pending_tool` と違えば 409(「内容が変わりました」)。読んでいないプロンプトに allow が当たるのを防ぐ
-- 押す前に確認シートを挟む。シートには pekoe の要約(`pending_tool`:ツール名と主な引数 1 つ、200 バイトまで)と、画面の最後 18 行(エージェント自身の許可ダイアログ。実行するコマンドの全体が出る)を並べる。**判断は画面の方で行う**
+- 押す前に確認シートを挟む。シートには pekoe の要約(`pending_tool`:ツール名と主な引数 1 つ、200 バイトまで)と、画面(`/screen` が返す最後 80 行。開いたときは一番下で、上にスクロールできる。エージェント自身の許可ダイアログに実行するコマンドの全体が出る)を並べる。**判断は画面の方で行う**
+- 要約は改行のかたまりを ` ⏎ ` 1 つに、長い空白の並びを 1 つにまとめてから 200 バイトで切る。空行や空白で水増ししても、本体が要約の外に押し出されない。引数が複数行(`lines`)か、要約が切れている(`cut`、全体の `size`)ときは、一覧とシートに「⚠ 全体は画面で読む」旨の警告を出し、シートの画面を高くする
 - 一致の確認は `session.answer` の中(`expect`)で、キーを送る直前に行う
 
 `pending_tool` は「最後に届いた PreToolUse」で、許可ダイアログが出ているツールそのものとは限らない(エージェントが複数のツールを並行に呼ぶと、後から来た方が残る)。また 200 バイトで切った要約なので、末尾だけ違うコマンドは区別できない。だから要約の一致は「読んでから状況が変わっていないか」の検出に使い、何を許可するかは画面で確かめる作りにしている。
@@ -107,6 +108,8 @@ token もパスワードも cookie も持たない。リクエストごとに、
 ### send の扱い
 
 allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニューは最初の 1 文字を選択肢として受け取るので、「2つ目も…」のような文が「Yes, and don't ask again」(= always)になってしまう。質問(`wait_kind == question`)には send かキーパッドで答える。
+
+send はテキストを送るもので、キーは送らない。改行とタブ以外の制御文字(ESC、`^C`、DEL など)を含む本文は 400。ESC を通すと Shift-Tab(`\e[Z`)などのキーやペーストの終端を打てて、キーパッドの許可リストを迂回できてしまうため。デーモン側でも、テキストとして pty に送る経路(`session.send` / `tapi.send`、エラーやピックの送信、opencode への初期プロンプト)はすべて同じ文字を落としてから送る。
 
 ### keys(キーパッド)の扱い
 
@@ -122,10 +125,11 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | 脅威 | 対策 | 残る穴 |
 | --- | --- | --- |
 | **Mac 上のプロセス(エージェント自身を含む)がなりすます** | localhost に何も開かない。ヘッダ(`Tailscale-User-Login` など)を信じず、接続ごとに WhoIs。Mac 自身(アドレス、または WhoIs のホスト名)からの接続は拒否するので、エージェントが Mac の Tailscale 経由で `https://pekoe…/` を叩いて自分の許可待ちに allow を返すことはできない。`TS_AUTHKEY` はエージェントに渡さない | Mac 上で同じユーザーとして動くプロセスは、もともと `tmux -L pekoe send-keys` で自分の pty にキーを送れる(下の「pekoe の API」も)。Web UI はその穴を広げないが、塞ぎもしない。また、エージェントが同じユーザーの**別の端末**(ssh できる Linux 機など)に入って叩くことはできる → `allow_devices` で iPhone だけに絞る |
-| **エージェントが pekoe の API(unix ソケット)で許可待ちに答える** | ソケットは 0600 だが、同じユーザーのエージェントはつなげる。そこで許可待ちへの回答・生キー・tapi chat への入力・設定の書き込み・コマンドの実行・デーモンの停止(`session.answer` `session.keys` `tapi.send` `tapi.keys` `init.write` `run.start` `dev.toggle` `daemon.stop`)は、`human-token`(データディレクトリの 0600 のファイル)を付けた呼び出しだけ受け付ける。TUI・CLI・Neovim はファイルを読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。`session.send` はハブのために token なしでも使えるが、エージェントの入力欄だけに限り、許可待ちの間は断る(許可メニューは最初の 1 文字を選択肢として受け取るため) | 同じユーザーのエージェントは、Bash でファイルを読めば token を手に入れられる。Claude Code の sandbox と `Read` の deny で `human-token` を読めなくしておく(README の「エージェントに pekoe を使わせるときの権限」)。また `Bash(pekoe *)` のように pekoe を丸ごと許可しない。許可するなら `pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` に絞る。状態はエージェントの hook(`pekoe event`)が報告するので、`pekoe event` を叩けるエージェントは状態を偽って send の確認をすり抜けうる(`pekoe event` も許可しない) |
+| **エージェントが pekoe の API(unix ソケット)で許可待ちに答える** | ソケットは 0600 だが、同じユーザーのエージェントはつなげる。そこで許可待ちへの回答・生キー・tapi chat への入力・設定の書き込み・コマンドの実行・デーモンの停止(`session.answer` `session.keys` `tapi.send` `tapi.keys` `init.write` `run.start` `dev.toggle` `daemon.stop`)は、`human-token`(データディレクトリの 0600 のファイル)を付けた呼び出しだけ受け付ける。TUI・CLI・Neovim はファイルを読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。`session.send` はハブのために token なしでも使えるが、エージェントの入力欄だけに限る(許可ダイアログが出ている間の扱いは次の行) | 同じユーザーのエージェントは、Bash でファイルを読めば token を手に入れられる。Claude Code の sandbox と `Read` の deny で `human-token` を読めなくしておく(README の「エージェントに pekoe を使わせるときの権限」)。また `Bash(pekoe *)` のように pekoe を丸ごと許可しない。許可するなら `pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` に絞る。状態はエージェントの hook(`pekoe event`)が報告するので、`pekoe event` を叩けるエージェントは状態を偽って、send の確認のうち hook の状態を見る方をすり抜けうる(画面の判定は残る。`pekoe event` も許可しない) |
 | **tailnet 上の他人・他の端末** | `allow_users` / `allow_devices`。タグつきノード(サーバー・CI)は常に拒否 | tailnet の ACL で他人から `pekoe:443` への到達自体を止めておくとなお良い |
 | **iPhone のブラウザで開いた悪意あるページ(CSRF・DNS rebinding)** | 書き込みにはカスタムヘッダと JSON が必須(クロスオリジンではプリフライトになり通らない)。`Origin` / `Sec-Fetch-Site` を確認。`Host` が自分の名前でなければ拒否 | — |
 | **キーパッドで許可メニューを操作する** | keys は `wait_kind == question` のときだけ受け付け、許可待ち(`answerable`)では 409。許可メニューに数字や ↓ + Enter を送れると「Yes, and don't ask again」(= always)を選べてしまうので、許可は allow / deny だけのまま。送れるキーも矢印・Tab・Space・数字・Enter・Esc に絞り、`C-c` などの修飾キーや任意の文字列は送れない(エージェントを止める・シェルに文字を流し込むといった、メニュー操作以上のことをさせない) | Claude Code は AskUserQuestion の PreToolUse の直後に permission_prompt の Notification も送る。これを question のまま扱うのは、待ちの対象(`pending_tool`)がまだ AskUserQuestion のときだけで、別のツールの PreToolUse が来ていれば permission になる。pekoe が質問と判断した直後(AskUserQuestion の PreToolUse)から、エージェントが答えを受け取るまでの間に別の許可ダイアログに切り替わると、その間に送ったキーはそちらに当たりうる。hook が状態を変えるまでの短い窓で、1 回に送るのも 1 キー |
+| **許可ダイアログに send の文字や Enter が入る** | 許可メニューは最初の 1 文字を選択肢として受け取り(「2…」は「Yes, and don't ask again」= always)、Enter は選ばれている「Yes」を確定する。そこで send は、許可ダイアログが出ている間は打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が question 以外)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。判定は 1 つ(`promptUp`)で、どこから来たかで確かめる時点が変わる: token なしのソケット(ハブのエージェント)は `submit` の有無にかかわらず打つ前に断る。token あり(TUI・CLI・Neovim)・Web UI・Chrome 拡張(ピックやエラーの送信)は `submit` つきの送信を、打つ前と Enter の直前の 2 回確かめ、打つ前なら何も送らず、打った後なら Enter だけ送らない(文字は入力欄に残る。Web は 409)。エラー文はどれも `<slug> is waiting for a permission answer: …` で、そのあとに何が起きたか(何も送っていない / 打ったが Enter は送っていない)を続ける。Web は send の前に `answerable` でも 409 を返す | 2 回目の確認から Enter が届くまでの数ミリ秒の間にダイアログが出ると、Enter はそれを確定しうる(許可は 1 回分で、always にはならない)。token ありの `submit` なしの送信(TUI がユーザーの打鍵として送るペースト)は止めない。画面の判定は Claude Code と `[y/n]` 形式の文言に合わせたもので、ほかのエージェントの見た目の違うダイアログは hook の状態でしか止められない |
 | **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send / 質問へのキー操作ができる。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
 | **Certificate Transparency ログ** | — | HTTPS 証明書を取ると、`pekoe.<tailnet>.ts.net` という名前が CT ログ(誰でも検索できる公開ログ)に載る。tailnet 名(`tail1234` のようなランダム名か、自分で付けた名前)とホスト名が世に出る。tailnet の外からは到達できないので中身は見えないが、名前に秘密を含めない。気になるなら `hostname` を目立たないものにし、tailnet 名はランダムのものを使う |
 | **Funnel での公開** | `ListenFunnel` を呼ばない。tsnet は起動時に serve 設定を空にする | — |
@@ -139,7 +143,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中 → その他(新しい順) |
 | `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
-| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。409: allow / deny で答える許可待ちの間 |
+| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
 | `POST /api/sessions/{slug}/keys` | `{keys: ["Down", …]}` | `{ok: true}`。1〜8 個のキーを順に送る。キーは `Up Down Left Right Tab BTab Space Enter Escape 0`〜`9` だけ。400: 許可外のキー・個数 / 409: 質問待ち(`wait_kind == question`、`stopped` でない)以外 |
 
 WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test look pr_look`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。

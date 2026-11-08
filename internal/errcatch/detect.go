@@ -280,6 +280,13 @@ func tidyMessage(m string) string {
 // FromText builds a block from text that is already known to be one error
 // (a browser console error: message + stack).
 func FromText(kind, message, stack string) Block {
+	// the page wrote it: clean it like a terminal line (ANSI, control
+	// characters), one line at a time
+	var ml []string
+	for _, l := range strings.Split(message, "\n") {
+		ml = append(ml, cleanLine(l))
+	}
+	message = strings.Join(ml, "\n")
 	lines := []string{message}
 	for _, l := range strings.Split(stack, "\n") {
 		l = cleanLine(l)

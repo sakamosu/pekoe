@@ -67,9 +67,13 @@ type Engine interface {
 	Spawn(s Spawn) error
 	Alive(slug, window string) bool
 	// SendText writes text to the pty. Multi-line text is wrapped in bracketed paste.
+	// It is text only: control characters other than newline and tab are
+	// dropped (CleanText), never sent as keys.
 	SendText(slug, window, text string) error
 	// SendKeys sends named keys (tmux key names: Enter, Escape, C-c, Up …).
 	SendKeys(slug, window string, keys ...string) error
+	// SendLiteral types characters as keys, as given (the key path: what
+	// the user typed in the TUI, a one-key answer).
 	SendLiteral(slug, window, text string) error
 	SendHex(slug, window string, hex []string) error
 	Capture(slug, window string) (*Screen, error)
@@ -101,4 +105,34 @@ func SignalName(raw string) string {
 		return "signal " + raw
 	}
 	return "SIG" + strings.TrimPrefix(strings.ToUpper(raw), "SIG")
+}
+
+// CleanText is text as SendText types it: line breaks become "\n" (CRLF
+// and a lone CR too, so a CR never lands as Enter), tabs stay, and every
+// other control character (C0, DEL, C1) is dropped. ESC is what would let
+// text end a bracketed paste or press Shift-Tab; ^C would interrupt.
+func CleanText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r':
+			return '\n'
+		case r == '\n' || r == '\t':
+			return r
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// HasControl reports whether s has a control character CleanText would
+// drop (line breaks and tabs are fine).
+func HasControl(s string) bool {
+	for _, r := range s {
+		if r != '\n' && r != '\r' && r != '\t' && (r < 0x20 || r == 0x7f || r >= 0x80 && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
 }
