@@ -946,6 +946,13 @@ type keysP struct {
 }
 
 func (d *Daemon) hKeys(p keysP) (any, error) {
+	if p.Slug == TapiSlug { // tapi chat has its own methods (tapi.keys)
+		return nil, fmt.Errorf("no such session: %s", p.Slug)
+	}
+	return d.sendKeys(p)
+}
+
+func (d *Daemon) sendKeys(p keysP) (any, error) {
 	w := win(p.Window)
 	if p.Literal != "" {
 		if err := d.Eng.SendLiteral(p.Slug, w, p.Literal); err != nil {
@@ -1094,6 +1101,7 @@ func (d *Daemon) hResize(p resizeP) (any, error) {
 				_ = d.Eng.Resize(s, w, p.Width, p.Height)
 			}
 		}
+		_ = d.Eng.Resize(TapiSlug, engine.WinAgent, p.Width, p.Height) // tapi chat shows in the same pane
 		return nil, nil
 	}
 	return nil, d.Eng.Resize(p.Slug, win(p.Window), p.Width, p.Height)

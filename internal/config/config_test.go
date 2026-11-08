@@ -26,3 +26,24 @@ func TestWebStateDir(t *testing.T) {
 		t.Fatalf("~ not expanded: %s", g.Web.StateDir)
 	}
 }
+
+// [tapi] agent names an [agents.*] entry; claude by default.
+func TestTapiAgent(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PEKOE_HOME", root)
+	g, err := LoadGlobal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Tapi.Agent != "claude" {
+		t.Fatalf("default: %q", g.Tapi.Agent)
+	}
+	os.MkdirAll(filepath.Join(root, "config"), 0o755)
+	os.WriteFile(filepath.Join(root, "config", "config.toml"), []byte("[tapi]\nagent = \"claude-ask\"\n[agents.claude-ask]\ncommand = \"claude --permission-mode plan\"\n"), 0o644)
+	if g, err = LoadGlobal(); err != nil {
+		t.Fatal(err)
+	}
+	if g.Tapi.Agent != "claude-ask" || g.Agents["claude-ask"].Command != "claude --permission-mode plan" {
+		t.Fatalf("configured: %q %+v", g.Tapi.Agent, g.Agents["claude-ask"])
+	}
+}

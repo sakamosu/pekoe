@@ -95,6 +95,8 @@ type Daemon struct {
 
 	mu         sync.Mutex
 	runMu      sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
+	tapiMu     sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
+	tapi       tapiState  // tapi chat, in memory only (tapi.go; under mu)
 	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
 	sessions   map[string]*state.Session
 	conns      map[*conn]bool
@@ -161,6 +163,7 @@ func New() (*Daemon, error) {
 		prFetched: map[string]time.Time{},
 		catch:     errcatch.NewStore(),
 		devScan:   map[string]*errcatch.Scanner{},
+		tapi:      newTapiState(),
 	}
 	d.registerHandlers()
 	return d, nil
@@ -467,6 +470,14 @@ func (d *Daemon) registerHandlers() {
 		"term.caps":             bind(d.hTermCaps),
 		"issues.list":           bind(d.hIssuesList),
 		"issues.view":           bind(d.hIssuesView),
+		"tapi.get":              func(json.RawMessage) (any, error) { return d.tapiView(), nil },
+		"tapi.open":             bind(d.hTapiOpen),
+		"tapi.restart":          bind(d.hTapiRestart),
+		"tapi.reset":            bind(d.hTapiReset),
+		"tapi.screen":           bind(d.hTapiScreen),
+		"tapi.send":             bind(d.hTapiSend),
+		"tapi.keys":             bind(d.hTapiKeys),
+		"tapi.resize":           bind(d.hTapiResize),
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h

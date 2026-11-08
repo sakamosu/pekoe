@@ -18,6 +18,7 @@
 //	pekoe ext                  port and token for the Chrome extension
 //	pekoe mcp                  MCP server (stdio) for agents
 //	pekoe daemon start|stop|status|run
+//	pekoe tapi [reset]         tapi chat (TUI: t): state, or forget the conversation
 //	pekoe migrate [--dry-run] [--prune-old]   move a boba installation to pekoe
 package main
 
@@ -124,6 +125,8 @@ func main() {
 		err = cmdDaemon(args)
 	case "migrate":
 		err = cmdMigrate(args)
+	case "tapi":
+		err = cmdTapi(args)
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
@@ -183,6 +186,8 @@ func usage() {
   pekoe ext                     port + token for the Chrome extension
   pekoe web                     phone web UI on the tailnet: state, URL, login link ([web])
   pekoe mcp                     MCP server for agents (claude mcp add pekoe -- pekoe mcp)
+  pekoe tapi [reset [--yes]]    tapi chat (t in the TUI): state, or end it and forget
+                               the conversation
   pekoe daemon start|stop|status
   pekoe daemon stop --kill-agents [--yes]
                                also stop the tmux server ($PEKOE_TMUX_SOCKET) and
@@ -1267,6 +1272,67 @@ func cmdDaemon(args []string) error {
 		return nil
 	}
 	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}
+}
+
+// cmdTapi shows tapi chat's state, or resets it (docs/tapi-chat.md).
+func cmdTapi(args []string) error {
+	sub, name := "status", "tapi"
+	if len(args) > 0 && !isFlag(args[0]) {
+		sub, args = args[0], args[1:]
+		if sub == "reset" {
+			name = "tapi reset"
+		}
+	}
+	f, pos, err := parseCmd(name, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return &usageError{use: specs[name].use, msg: "unexpected argument " + pos[0]}
+	}
+	switch sub {
+	case "status":
+		cl := connect()
+		defer cl.Close()
+		var v daemon.Tapi
+		if err := cl.Call("tapi.get", nil, &v); err != nil {
+			return err
+		}
+		if jsonOut {
+			printJSON(v)
+			return nil
+		}
+		switch {
+		case !v.Started:
+			fmt.Printf("tapi chat is not started (t in the TUI) · agent %s · %s\n", v.Agent, v.Dir)
+		case !v.Alive:
+			fmt.Printf("tapi chat: agent exited · agent %s · %s\n", v.Agent, v.Dir)
+		default:
+			st := string(v.State)
+			if v.WaitKind != "" {
+				st += " (" + v.WaitKind + ")"
+			}
+			fmt.Printf("tapi chat: %s · agent %s · %s\n", st, v.Agent, v.Dir)
+		}
+		return nil
+	case "reset":
+		if f["yes"] == "" {
+			if !stdinIsTerminal() {
+				return fmt.Errorf("tapi reset ends tapi chat and deletes its conversation; pass --yes to confirm")
+			}
+			if !confirm("end tapi chat and forget its conversation?") {
+				return nil
+			}
+		}
+		cl := connect()
+		defer cl.Close()
+		if err := cl.Call("tapi.reset", nil, nil); err != nil {
+			return err
+		}
+		fmt.Println("tapi chat reset")
+		return nil
+	}
+	return &usageError{use: specs["tapi"].use, msg: "unknown subcommand " + sub}
 }
 
 // stopKillAgents stops pekoed and its tmux server ($PEKOE_TMUX_SOCKET), ending

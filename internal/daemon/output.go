@@ -99,6 +99,10 @@ func (d *Daemon) outputLoop() {
 }
 
 func (d *Daemon) onOutput(o engine.Output) {
+	if o.Slug == TapiSlug {
+		d.tapiOutput(o)
+		return
+	}
 	now := time.Now()
 	d.mu.Lock()
 	st := d.out[o.Slug]
@@ -166,6 +170,7 @@ func (d *Daemon) flushOutputEvents() {
 	for _, s := range slugs {
 		d.emit("session.output", map[string]any{"slug": s})
 	}
+	d.flushTapiOutput(now)
 }
 
 // tickLoop: activity decay, fallback state detection for agents without

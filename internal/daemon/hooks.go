@@ -48,7 +48,12 @@ type hookPayload struct {
 
 // resolveSession maps a hook to a session: $PEKOE_SESSION first, then the
 // longest worktree path containing cwd.
+// tapi chat (TapiSlug) is matched the same way: by its reserved name, or
+// by a cwd inside its working directory.
 func (d *Daemon) resolveSession(env, cwd string) string {
+	if env == TapiSlug {
+		return TapiSlug
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if env != "" {
@@ -60,6 +65,9 @@ func (d *Daemon) resolveSession(env, cwd string) string {
 		return ""
 	}
 	cwd = realpath(cwd)
+	if inTapiDir(cwd) {
+		return TapiSlug
+	}
 	best, bestLen := "", 0
 	for slug, s := range d.sessions {
 		p := realpath(s.Path)
@@ -143,6 +151,10 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 	slug := d.resolveSession(p.Session, hp.Cwd)
 	if slug == "" {
 		return map[string]any{"ignored": true}, nil // not a pekoe session
+	}
+	if slug == TapiSlug {
+		d.tapiEvent(hook, hp)
+		return map[string]any{"slug": slug}, nil
 	}
 	switch hook {
 	case "SessionStart":
