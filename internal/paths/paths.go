@@ -64,6 +64,9 @@ func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
 func DaemonLog() string { return filepath.Join(DataDir(), "pekoed.log") }
 func PidFile() string   { return filepath.Join(DataDir(), "pekoed.pid") }
 
+// LayoutFile keeps the TUI's panel widths (<prefix> z < > =).
+func LayoutFile() string { return filepath.Join(DataDir(), "layout.json") }
+
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 

@@ -46,7 +46,7 @@ func lineWith(t *testing.T, out, sub string) string {
 
 func TestSessionListConflictTag(t *testing.T) {
 	m := forecastModel(t, "none")
-	cw := leftWidth(m.width) - 4
+	cw := m.leftWidth() - 4
 	now := time.Now()
 	a := ansi.Strip(m.sessionLine(m.sessions[0], cw, now))
 	// the tags survive; the long branch name gives way

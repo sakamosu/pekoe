@@ -34,9 +34,12 @@ func (m *model) View() string {
 	var body []string
 	if narrow(m.width) {
 		body = m.viewNarrow()
+	} else if m.zoomed() {
+		body = m.viewAgent(m.width, m.height-1)
 	} else {
-		left := m.viewLeft(leftWidth(m.width), m.height-1)
-		right := m.viewAgent(m.width-leftWidth(m.width)-1, m.height-1)
+		lw := m.leftWidth()
+		left := m.viewLeft(lw, m.height-1)
+		right := m.viewAgent(m.width-lw-1, m.height-1)
 		body = joinH(left, right, 1)
 	}
 	if c, ok := m.modal.(*confirmModal); ok && len(body) >= 2 {
@@ -71,10 +74,10 @@ func (m *model) paintBg(out string) string {
 }
 
 func (m *model) agentContentWidth() int {
-	if narrow(m.width) {
+	if narrow(m.width) || m.zoomed() {
 		return m.width - 4
 	}
-	return m.width - leftWidth(m.width) - 1 - 4
+	return m.width - m.leftWidth() - 1 - 4
 }
 
 // ---- left column ----
@@ -487,7 +490,10 @@ func (m *model) agentOrigin() (int, int) {
 	if narrow(m.width) {
 		return 2, m.narrowTopH() + 1
 	}
-	return leftWidth(m.width) + 1 + 2, 1
+	if m.zoomed() {
+		return 2, 1
+	}
+	return m.leftWidth() + 1 + 2, 1
 }
 
 func (m *model) viewAgent(width, height int) []string {
@@ -957,15 +963,19 @@ func (m *model) hints() [][2]string {
 		return m.modal.hints()
 	}
 	if m.typing {
-		p := strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^")
-		if p == "" {
-			p = "^q"
-		}
+		p := m.prefixLabel()
 		if m.runDone() {
 			return [][2]string{{"↵", "back to the agent"}, {"x", "close"}, {p, "leave"}}
 		}
 		if m.screen != nil && m.screen.Dead {
 			return [][2]string{{"↵", "restart"}, {"x", "close"}, {p, "back"}}
+		}
+		if !narrow(m.width) {
+			zoom := "zoom"
+			if m.zoomed() {
+				zoom = "unzoom"
+			}
+			return [][2]string{{p, "back"}, {p + " z", zoom}, {p + " < >", "width"}}
 		}
 		return [][2]string{{p, "back"}}
 	}
@@ -1027,6 +1037,9 @@ func (m *model) viewBar() string {
 	th := m.th
 	name, icon := m.modeName()
 	segs := []string{m.barTapi(m.width), m.pill(theme.Prefix(icon)+name, theme.Primary, theme.Bg, true)}
+	if m.zoomed() { // the left column is hidden: say so, and how to get it back
+		segs = append(segs, m.pill("zoom "+th.FG(theme.Dim, m.prefixLabel()+" z"), theme.Surface, theme.Text, false))
+	}
 	repo := m.curRepo()
 	path := "" // the selected session's worktree; none for a picked repository
 	if s := m.current(); s != nil && (m.chosen == nil || m.chosen.ID == s.RepoID) {
