@@ -6,6 +6,9 @@ package tui
 // arrives, and wait in a short queue instead.
 
 import (
+	"fmt"
+	"hash/fnv"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"time"
@@ -101,15 +104,22 @@ func (m *model) showReaction(r mascot.Reaction, now time.Time) {
 	cur := t.toast
 	switch {
 	case cur == nil || now.After(cur.until):
-		t.toast = q.toast(now)
+		m.raise(q, now)
 	case cur.react == nil: // wait / error: never covered
 		m.queueReaction(q)
 	case mascot.PRPriority(r.Event) <= mascot.PRPriority(cur.react.Event):
 		m.queueReaction(queuedReaction{r: *cur.react, at: now, dur: cur.until.Sub(now)})
-		t.toast = q.toast(now)
+		m.raise(q, now)
 	default:
 		m.queueReaction(q)
 	}
+}
+
+// raise puts q up as the toast, remembering the frame it came up on (the
+// confetti counts from there).
+func (m *model) raise(q queuedReaction, now time.Time) {
+	m.tapi.toast = q.toast(now)
+	m.tapi.toast.frame0 = m.tapi.frame
 }
 
 func (q queuedReaction) toast(now time.Time) *toast {
@@ -171,7 +181,7 @@ func (m *model) tapiExpire() {
 	}
 	q := t.prQueue[best]
 	t.prQueue = append(t.prQueue[:best], t.prQueue[best+1:]...)
-	t.toast = q.toast(now)
+	m.raise(q, now)
 }
 
 // cloudy lists open PRs with a failing check for the idle face.
@@ -201,18 +211,130 @@ func (m *model) reactionInner(t *toast) string {
 	return " " + r.Line(r.ReactionEyes(ev, frame)) + "  " + r.PaintReaction(ev, t.text) + " "
 }
 
-// confettiBorder is a border run of n cells with confetti thrown on it:
-// a merged PR's toast only, and only with animations on. The glyphs
-// twinkle frame by frame while focused and hold still otherwise.
-func (m *model) confettiBorder(n, seed int) string {
+// ---- confetti ----
+
+// The confetti on a merged PR's toast (docs/mascot.md「PR と CI への反
+// 応」): sparkles scattered unevenly on the top and bottom borders, each
+// twinkling on its own beat. Where they sit, what they are and how they
+// beat all come from the PR, so redrawing never moves them; only the frame
+// count moves them along, and it stands still while the window is
+// unfocused.
+const (
+	burstFrames = 2 // the first 800 ms: every sparkle lit, a rung above its usual
+	fadeFrom    = 3 // a few go out for good from here on (the toast is 10 frames)
+	fadeSpan    = 7
+)
+
+type spark struct {
+	pos    int        // cell on the border run, never next to a corner
+	ladder []string   // brightest → faintest
+	off    int        // the rung it starts from: 0 is the big glyph, few get it; never the faintest
+	gap    int        // dark frames before it flashes again
+	phase  int        // where in its beat it starts
+	role   theme.Role // secondary mostly, a little warn and primary
+	fade   int        // frame it goes out for good; 0 keeps it to the end
+}
+
+// confettiSeed is the PR's own: the session and the PR number.
+func confettiSeed(r *mascot.Reaction) uint64 {
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%s#%d", r.Slug, r.PR.Number)
+	return h.Sum64()
+}
+
+// pick draws from weighted choices.
+func pick(rng *rand.Rand, weights ...int) int {
+	sum := 0
+	for _, w := range weights {
+		sum += w
+	}
+	n := rng.IntN(sum)
+	for i, w := range weights {
+		if n < w {
+			return i
+		}
+		n -= w
+	}
+	return len(weights) - 1
+}
+
+// confettiLayout scatters sparkles over a border run of n cells. Gaps are
+// 2–6 cells (never touching, never a long bare stretch) and the cells next
+// to the corners stay bare. edge tells the borders apart.
+func confettiLayout(n int, seed, edge uint64, set [][]string) []spark {
+	rng := rand.New(rand.NewPCG(seed, edge))
+	var out []spark
+	for p := 1 + rng.IntN(3); p <= n-2; p += 2 + rng.IntN(5) {
+		ladder := set[pick(rng, 4, 3, 3)%len(set)]
+		s := spark{pos: p, ladder: ladder,
+			off:  min(pick(rng, 2, 4, 4), len(ladder)-2),
+			gap:  1 + rng.IntN(3),
+			role: []theme.Role{theme.Secondary, theme.Warn, theme.Primary}[pick(rng, 6, 2, 2)],
+		}
+		s.phase = rng.IntN(len(ladder) - s.off + s.gap)
+		if rng.IntN(5) < 2 {
+			s.fade = fadeFrom + rng.IntN(fadeSpan)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// confettiLayouts gives the top and bottom borders their own scatter.
+func confettiLayouts(n int, seed uint64, set [][]string) (top, bottom []spark) {
+	top = confettiLayout(n, seed, 1, set)
+	for edge := uint64(2); edge < 10; edge++ {
+		bottom = confettiLayout(n, seed, edge, set)
+		if !samePlaces(top, bottom) {
+			break
+		}
+	}
+	return top, bottom
+}
+
+func samePlaces(a, b []spark) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].pos != b[i].pos {
+			return false
+		}
+	}
+	return true
+}
+
+// glyph is the sparkle e frames after the toast came up; "" is dark.
+// It bursts a rung above where it usually starts, then steps down its
+// ladder, goes dark for gap frames and flashes back.
+func (s spark) glyph(e int) string {
+	if s.fade > 0 && e >= s.fade {
+		return ""
+	}
+	if e < burstFrames {
+		return s.ladder[max(s.off-1, 0)]
+	}
+	lit := len(s.ladder) - s.off
+	k := (e + s.phase) % (lit + s.gap)
+	if k >= lit {
+		return ""
+	}
+	return s.ladder[s.off+k]
+}
+
+// confettiBorders are the top and bottom border runs of n cells with the
+// confetti on them: a merged PR's toast only, and only with animations on.
+func (m *model) confettiBorders(n int, t *toast) (top, bottom string) {
 	set := theme.Confetti(m.ic)
 	if m.tapi.r.ASCII() {
 		set = theme.Confetti(theme.Icons("ascii"))
 	}
-	frame := 0
-	if m.animating() {
-		frame = m.tapi.frame
-	}
+	e := max(m.tapi.frame-t.frame0, 0)
+	up, down := confettiLayouts(n, confettiSeed(t.react), set)
+	return m.confettiRun(n, up, e), m.confettiRun(n, down, e)
+}
+
+func (m *model) confettiRun(n int, sparks []spark, e int) string {
 	var b strings.Builder
 	run := 0
 	flush := func() {
@@ -221,14 +343,18 @@ func (m *model) confettiBorder(n, seed int) string {
 			run = 0
 		}
 	}
-	for i := 0; i < n; i++ {
-		if (i+seed)%5 == 2 {
-			flush()
-			b.WriteString(m.th.FG(theme.Secondary, set[(i/5+seed+frame)%len(set)]))
+	at := 0
+	for _, s := range sparks {
+		g := s.glyph(e)
+		if g == "" {
 			continue
 		}
-		run++
+		run += s.pos - at
+		flush()
+		b.WriteString(m.th.FG(s.role, g))
+		at = s.pos + 1
 	}
+	run += n - at
 	flush()
 	return b.String()
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -292,20 +293,130 @@ func TestDemoScript(t *testing.T) {
 	}
 }
 
-func TestConfettiGlyphs(t *testing.T) {
-	for _, name := range []string{"nerd", "unicode", "ascii"} {
-		set := theme.Confetti(theme.Icons(name))
-		if len(set) < 3 {
-			t.Fatalf("%s: %v", name, set)
+// The confetti sits unevenly (gaps of 2–6, never next to a corner), comes
+// from the PR so it holds still across redraws, and differs between the
+// top and bottom borders and between PRs.
+func TestConfettiLayout(t *testing.T) {
+	set := theme.Confetti(theme.Icons("unicode"))
+	places := func(sp []spark) []int {
+		var out []int
+		for _, s := range sp {
+			out = append(out, s.pos)
 		}
-		for _, g := range set {
-			if ansi.StringWidth(g) != 1 {
-				t.Errorf("%s: %q is not one cell", name, g)
-			}
-			if name == "ascii" && g[0] > 127 {
-				t.Errorf("ascii: %q", g)
+		return out
+	}
+	for _, n := range []int{4, 9, 30, 41, 80} {
+		for _, slug := range []string{"fix-ci", "feat/demo", "a", "tapi-demo"} {
+			for _, pr := range []int{1, 42, 1234} {
+				seed := confettiSeed(&mascot.Reaction{Slug: slug, PR: mascot.PR{Number: pr}})
+				top, bottom := confettiLayouts(n, seed, set)
+				for _, sp := range [][]spark{top, bottom} {
+					gaps := map[int]bool{}
+					for i, s := range sp {
+						if s.pos < 1 || s.pos > n-2 {
+							t.Errorf("n=%d %s#%d: sparkle at %d, next to a corner", n, slug, pr, s.pos)
+						}
+						if i > 0 {
+							g := s.pos - sp[i-1].pos
+							if g < 2 || g > 6 {
+								t.Errorf("n=%d %s#%d: gap %d", n, slug, pr, g)
+							}
+							gaps[g] = true
+						}
+					}
+					if n >= 30 && len(gaps) < 2 {
+						t.Errorf("n=%d %s#%d: evenly spaced %v", n, slug, pr, places(sp))
+					}
+				}
+				if n >= 30 && slices.Equal(places(top), places(bottom)) {
+					t.Errorf("n=%d %s#%d: top and bottom alike %v", n, slug, pr, places(top))
+				}
+				t2, b2 := confettiLayouts(n, seed, set)
+				if !slices.Equal(places(top), places(t2)) || !slices.Equal(places(bottom), places(b2)) {
+					t.Errorf("n=%d %s#%d: layout moved between draws", n, slug, pr)
+				}
 			}
 		}
+	}
+	a := confettiSeed(&mascot.Reaction{Slug: "fix-ci", PR: mascot.PR{Number: 42}})
+	b := confettiSeed(&mascot.Reaction{Slug: "fix-ci", PR: mascot.PR{Number: 43}})
+	ta, _ := confettiLayouts(40, a, set)
+	tb, _ := confettiLayouts(40, b, set)
+	if slices.Equal(places(ta), places(tb)) {
+		t.Errorf("two PRs share a layout: %v", places(ta))
+	}
+}
+
+// Sparkles burst lit, then twinkle out of step: not all of them change on
+// the same frame, few are big, and some go out before the toast does.
+func TestConfettiTwinkle(t *testing.T) {
+	set := theme.Confetti(theme.Icons("unicode"))
+	var all []spark
+	for pr := 1; pr <= 20; pr++ {
+		top, bottom := confettiLayouts(40, confettiSeed(&mascot.Reaction{Slug: "x", PR: mascot.PR{Number: pr}}), set)
+		all = append(append(all, top...), bottom...)
+	}
+	big, faded := 0, 0
+	for _, s := range all {
+		if s.glyph(0) != s.ladder[max(s.off-1, 0)] || s.off > len(s.ladder)-2 {
+			t.Fatalf("not lit at the burst: %+v", s)
+		}
+		if s.off == 0 {
+			big++
+		}
+		if s.glyph(9) == "" && s.fade > 0 {
+			faded++
+		}
+	}
+	if big*3 > len(all) || big == 0 {
+		t.Errorf("big sparkles: %d of %d", big, len(all))
+	}
+	if faded == 0 || faded*2 > len(all) {
+		t.Errorf("faded by the end: %d of %d", faded, len(all))
+	}
+	for e := burstFrames; e < burstFrames+6; e++ {
+		changed := 0
+		for _, s := range all {
+			if s.glyph(e) != s.glyph(e+1) {
+				changed++
+			}
+		}
+		if changed == len(all) {
+			t.Errorf("frame %d: every sparkle changes at once", e)
+		}
+	}
+}
+
+// The merged toast: confetti counts from the frame the toast came up and
+// holds still while tapi's frame does.
+func TestConfettiOnToast(t *testing.T) {
+	m := tapiPRModel(t, "none", config.Mascot{Shape: "round"})
+	m.ic = theme.Icons("unicode")
+	m.buildTapi(nil)
+	m.tapi.frame = 7
+	m.showReaction(mascot.Reaction{Event: mascot.PRMerged, Slug: "fix-ci", Name: "fix-ci", PR: mascot.PR{Number: 42, State: "MERGED"}}, time.Now())
+	first := m.toastBlock()
+	if m.tapi.toast.frame0 != 7 {
+		t.Fatalf("frame0 %d", m.tapi.toast.frame0)
+	}
+	if again := m.toastBlock(); ansi.Strip(again[0]) != ansi.Strip(first[0]) {
+		t.Errorf("redraw moved the confetti:\n%s\n%s", ansi.Strip(first[0]), ansi.Strip(again[0]))
+	}
+	differ := false
+	for f := 8; f < 14; f++ {
+		m.tapi.frame = f
+		tb := m.toastBlock()
+		if ansi.Strip(tb[0]+tb[2]) != ansi.Strip(first[0]+first[2]) {
+			differ = true
+		}
+		for i, l := range tb {
+			if ansi.StringWidth(l) != ansi.StringWidth(first[1]) {
+				t.Errorf("frame %d row %d: width %d", f, i, ansi.StringWidth(l))
+			}
+		}
+	}
+	if !differ {
+		t.Error("confetti never twinkles")
 	}
 }
 

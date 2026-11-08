@@ -32,11 +32,12 @@ type tapiTickMsg struct{}
 type splashDoneMsg struct{}
 
 type toast struct {
-	slug  string
-	mood  mascot.Mood
-	text  string
-	until time.Time
-	react *mascot.Reaction // a PR reaction (tapi_pr.go); nil for wait / error
+	slug   string
+	mood   mascot.Mood
+	text   string
+	until  time.Time
+	react  *mascot.Reaction // a PR reaction (tapi_pr.go); nil for wait / error
+	frame0 int              // tapi's frame when it came up (the confetti counts from it)
 }
 
 type tapiState struct {
@@ -458,10 +459,11 @@ func (m *model) toastBlock() []string {
 	}
 	b := func(s string) string { return th.FG(theme.Border, s) }
 	if t.react != nil && t.react.Event == mascot.PRMerged && m.g.AnimateOn() {
+		top, bottom := m.confettiBorders(iw, t)
 		return []string{
-			b(tl) + m.confettiBorder(iw, 0) + b(tr),
+			b(tl) + top + b(tr),
 			b("│") + inner + b("│"),
-			b(bl) + m.confettiBorder(iw, 3) + b(br),
+			b(bl) + bottom + b(br),
 		}
 	}
 	return []string{
