@@ -21,3 +21,17 @@ func TestTapiInstructionsTip(t *testing.T) {
 		t.Error("the greeting example should match the zoom tip")
 	}
 }
+
+// tapi's face is in the tapi chat title only (docs/mascot.md「顔は1か所」):
+// the instructions draw no face for the replies and say not to use one.
+func TestTapiInstructionsNoFace(t *testing.T) {
+	doc := tapiInstructions(nil)
+	for name, text := range map[string]string{"CLAUDE.md": doc, "persona": tapiPersona} {
+		if strings.Contains(text, "▐") || strings.Contains(text, "▌") {
+			t.Errorf("%s still draws a face", name)
+		}
+		if !strings.Contains(text, "絵文字・顔文字") {
+			t.Errorf("%s should say not to use emoji or kaomoji", name)
+		}
+	}
+}
