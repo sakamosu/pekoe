@@ -11,22 +11,22 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/paths"
+	"pekoe/internal/paths"
 )
 
 // lockEnv isolates a data directory and a socket (kept short: macOS caps
 // unix socket paths at ~104 bytes, too short for t.TempDir()).
 func lockEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("BOBA_HOME", t.TempDir())
-	t.Setenv("BOBA_WORKTREES", filepath.Join(os.Getenv("BOBA_HOME"), "wt"))
-	t.Setenv("BOBA_TMUX_SOCKET", "boba-test-unused") // never started: fakeEngine
-	dir, err := os.MkdirTemp("/tmp", "bobalk")
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	t.Setenv("PEKOE_WORKTREES", filepath.Join(os.Getenv("PEKOE_HOME"), "wt"))
+	t.Setenv("PEKOE_TMUX_SOCKET", "pekoe-test-unused") // never started: fakeEngine
+	dir, err := os.MkdirTemp("/tmp", "pekoelk")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	t.Setenv("BOBA_SOCK", filepath.Join(dir, "s"))
+	t.Setenv("PEKOE_SOCK", filepath.Join(dir, "s"))
 	old := lockWait
 	lockWait = 3 * time.Second
 	t.Cleanup(func() { lockWait = old })
@@ -74,7 +74,7 @@ func stopAndWait(t *testing.T, d *Daemon, done chan error) {
 	}
 }
 
-// A second bobad on the same data directory must not start, whether the
+// A second pekoed on the same data directory must not start, whether the
 // first is serving or not yet listening, and must not open state.db.
 func TestSecondDaemonRefused(t *testing.T) {
 	lockEnv(t)
@@ -119,7 +119,7 @@ func TestShutdownKeepsNewerSocket(t *testing.T) {
 	done := runBG(d)
 	waitServing(t)
 
-	// another daemon took over the path (e.g. one sharing $BOBA_SOCK)
+	// another daemon took over the path (e.g. one sharing $PEKOE_SOCK)
 	sock := paths.Socket()
 	os.Remove(sock)
 	ln, err := net.Listen("unix", sock)

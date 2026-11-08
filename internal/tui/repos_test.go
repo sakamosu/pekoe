@@ -15,14 +15,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/client"
-	"boba/internal/daemon"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/client"
+	"pekoe/internal/daemon"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
-// fakeBobad answers the TUI's calls over a real socket and records them.
-type fakeBobad struct {
+// fakePekoed answers the TUI's calls over a real socket and records them.
+type fakePekoed struct {
 	mu    sync.Mutex
 	calls []fakeCall
 	reply func(method string) any
@@ -33,7 +33,7 @@ type fakeCall struct {
 	params map[string]any
 }
 
-func (f *fakeBobad) find(method string) []map[string]any {
+func (f *fakePekoed) find(method string) []map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []map[string]any
@@ -45,7 +45,7 @@ func (f *fakeBobad) find(method string) []map[string]any {
 	return out
 }
 
-func startFakeBobad(t *testing.T) (*fakeBobad, *client.Client) {
+func startFakePekoed(t *testing.T) (*fakePekoed, *client.Client) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "bb") // unix socket paths are short
 	if err != nil {
@@ -58,7 +58,7 @@ func startFakeBobad(t *testing.T) (*fakeBobad, *client.Client) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	f := &fakeBobad{reply: func(string) any { return nil }}
+	f := &fakePekoed{reply: func(string) any { return nil }}
 	go func() {
 		for {
 			c, err := l.Accept()
@@ -87,7 +87,7 @@ func startFakeBobad(t *testing.T) (*fakeBobad, *client.Client) {
 			}()
 		}
 	}()
-	t.Setenv("BOBA_SOCK", sock)
+	t.Setenv("PEKOE_SOCK", sock)
 	cl, err := client.Dial()
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func sess(slug string, r daemon.KnownRepo, st state.State, at time.Time) *state.
 // two repositories, created interleaved: api-1, web-1, api-2
 func repoModel(t *testing.T, color string, width int) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", color)
+	t.Setenv("PEKOE_COLOR", color)
 	m := newModel(nil, "/src/api")
 	m.tapi.splash = false
 	m.width, m.height = width, 40
@@ -367,9 +367,9 @@ func TestRepoPickerModal(t *testing.T) {
 }
 
 // n, Issues, Worktrees and picks go to the current repository, not the
-// directory boba was started in.
+// directory pekoe was started in.
 func TestCommandsTargetCurrentRepo(t *testing.T) {
-	f, cl := startFakeBobad(t)
+	f, cl := startFakePekoed(t)
 	m := repoModel(t, "none", 180)
 	listed := append([]*state.Session{sess("web-2", appB, state.Creating, time.Now())}, m.sessions...)
 	f.reply = func(method string) any {
@@ -508,7 +508,7 @@ func TestStartRepoWithoutSessions(t *testing.T) {
 // The real start-up: session.list and repo.list answer in either order.
 func TestStartUpFollowsStartRepo(t *testing.T) {
 	for _, reposFirst := range []bool{false, true} {
-		t.Setenv("BOBA_COLOR", "none")
+		t.Setenv("PEKOE_COLOR", "none")
 		m := newModel(nil, "/src/web/sub")
 		m.tapi.splash = false
 		m.width, m.height = 180, 40
@@ -553,8 +553,8 @@ func TestRepoLabels(t *testing.T) {
 			[]daemon.KnownRepo{kr("github.com_a_api", "api", ""), kr("gitlab.com_a_api", "api", ""), kr("github.com_b_api", "api", "")},
 			map[string]string{"github.com_a_api": "github.com/a/api", "gitlab.com_a_api": "gitlab.com/a/api", "github.com_b_api": "github.com/b/api"}},
 		{"a path id adds its parent directory",
-			[]daemon.KnownRepo{kr("github.com_sakamosu_boba", "boba", "/Users/me/repos/boba"), kr("path_Users_me_my_repos_boba", "boba", "/Users/me/my_repos/boba")},
-			map[string]string{"github.com_sakamosu_boba": "sakamosu/boba", "path_Users_me_my_repos_boba": "my_repos/boba"}},
+			[]daemon.KnownRepo{kr("github.com_sakamosu_pekoe", "pekoe", "/Users/me/repos/pekoe"), kr("path_Users_me_my_repos_pekoe", "pekoe", "/Users/me/my_repos/pekoe")},
+			map[string]string{"github.com_sakamosu_pekoe": "sakamosu/pekoe", "path_Users_me_my_repos_pekoe": "my_repos/pekoe"}},
 		{"two paths: parents until they differ",
 			[]daemon.KnownRepo{kr("path_x_src_app", "app", "/x/src/app"), kr("path_y_src_app", "app", "/y/src/app")},
 			map[string]string{"path_x_src_app": "x/src/app", "path_y_src_app": "y/src/app"}},

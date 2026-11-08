@@ -14,16 +14,16 @@ import (
 	"sync"
 	"time"
 
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // In-terminal browser preview: the counterpart of the Chrome pick. A pick is
 // "ask for a change"; the preview is "check the result" without leaving the
-// terminal. bobad takes a screenshot of http://localhost:<port><path> with
+// terminal. pekoed takes a screenshot of http://localhost:<port><path> with
 // headless Chrome and the TUI draws it with Kitty graphics.
 //
-// Screenshots live in ~/.local/share/boba/<repo-id>/preview/<slug>/ (never in
+// Screenshots live in ~/.local/share/pekoe/<repo-id>/preview/<slug>/ (never in
 // the repository). The last two are kept: after (the newest) and before.
 
 // Viewport sizes (CSS pixels).

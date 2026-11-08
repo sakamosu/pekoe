@@ -6,14 +6,14 @@ import (
 	"time"
 )
 
-// `boba daemon stop` returns only once bobad's process is gone, and says so
+// `pekoe daemon stop` returns only once pekoed's process is gone, and says so
 // when it is not gone in time.
 func TestWaitExit(t *testing.T) {
 	quick := exec.Command("sleep", "0.2")
 	if err := quick.Start(); err != nil {
 		t.Fatal(err)
 	}
-	go quick.Wait() // reap, as a detached bobad is reaped by init
+	go quick.Wait() // reap, as a detached pekoed is reaped by init
 	if !WaitExit(quick.Process.Pid, 5*time.Second) {
 		t.Fatal("WaitExit: exited process reported alive")
 	}

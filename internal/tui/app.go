@@ -1,4 +1,4 @@
-// Package tui is boba's terminal UI: a thin display/input layer over bobad.
+// Package tui is pekoe's terminal UI: a thin display/input layer over pekoed.
 // Layout (docs/ui-guidelines.md): numbered context panels on the left,
 // the agent's screen on the right, a powerline bar at the bottom.
 package tui
@@ -16,13 +16,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 
-	"boba/internal/client"
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/errcatch"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/client"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // ---- messages ----
@@ -79,14 +79,14 @@ type model struct {
 	sessions []*state.Session
 	sel      int // index into visible(); repository headings are not rows of it
 
-	repos       []daemon.KnownRepo // repo.list: repositories boba knows (repos.go)
+	repos       []daemon.KnownRepo // repo.list: repositories pekoe knows (repos.go)
 	reposLoaded bool
 	chosen      *daemon.KnownRepo // picked with w; wins over the selection's repository
 	repoKey     string            // Dir of the repository Worktrees / Issues were loaded for
 	repoSynced  bool
 	repoTitle   string // the repository name in the window title (repoSync)
 	sessionsIn  bool   // the first session.list answered
-	homePicked  bool   // the start-up selection followed the repository boba was started in
+	homePicked  bool   // the start-up selection followed the repository pekoe was started in
 	filter      string
 	filterOn    bool
 
@@ -198,7 +198,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		dismissed:  map[string]time.Time{},
 		progress:   map[string][]daemon.Step{},
 		answers:    map[string]string{},
-		square:     os.Getenv("BOBA_SQUARE") != "",
+		square:     os.Getenv("PEKOE_SQUARE") != "",
 		graphics:   graphicsCapable(),
 		sentImages: map[int64]bool{},
 		ime:        &imeCursor{},
@@ -243,13 +243,13 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
 	}
 	g := m.graphics
-	cmds = append(cmds, func() tea.Msg { // lets bobad answer agents' graphics queries
+	cmds = append(cmds, func() tea.Msg { // lets pekoed answer agents' graphics queries
 		_ = m.cl.Call("term.caps", map[string]any{"kitty_graphics": g}, nil)
 		return nil
 	})
@@ -348,7 +348,7 @@ func (m *model) resizeAll() tea.Cmd {
 
 // fitScreen resizes the shown window's pty when it doesn't match the pane.
 // resizeAll only runs at start and on terminal resizes, so a window spawned
-// later by someone who didn't know the pane size (`boba new` run by an
+// later by someone who didn't know the pane size (`pekoe new` run by an
 // agent, whose stdout isn't a terminal) would otherwise keep its size: the
 // agent wraps narrower than the pane, or paints past its border.
 func (m *model) fitScreen(slug, window string, sc *engine.Screen) tea.Cmd {
@@ -618,7 +618,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, spin(m.g.AnimateOn())
 
 	case disconnectedMsg:
-		m.setMsg("lost connection to bobad", true)
+		m.setMsg("lost connection to pekoed", true)
 		return m, tea.Quit
 
 	case issuesMsg, issueViewMsg:
@@ -722,7 +722,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen, m.screenOf = msg.sc, msg.slug
 		cmd = tea.Batch(cmd, m.fitScreen(msg.slug, msg.window, msg.sc))
 		if msg.window == engine.WinReview && msg.sc.Dead {
-			// nvim exited (:BobaSend → :qa): back to the agent screen
+			// nvim exited (:PekoeSend → :qa): back to the agent screen
 			slug := s.Slug
 			m.window = engine.WinAgent
 			m.screen = nil
@@ -1204,9 +1204,9 @@ func (m *model) quit() tea.Cmd {
 			running++
 		}
 	}
-	// agents live in bobad, so quitting the TUI never kills them
+	// agents live in pekoed, so quitting the TUI never kills them
 	if running > 0 {
-		m.modal = newConfirmModal(m, "Quit", fmt.Sprintf("%d agents are running. They keep running in bobad.", running), "", false, func() tea.Cmd { return tea.Quit })
+		m.modal = newConfirmModal(m, "Quit", fmt.Sprintf("%d agents are running. They keep running in pekoed.", running), "", false, func() tea.Cmd { return tea.Quit })
 		return nil
 	}
 	return tea.Quit
@@ -1316,7 +1316,7 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 			return infoMsg("opened " + url)
 		}
 	case "l":
-		m.modal = newConfirmModal(m, "Land", "rebase → test → push → gh pr create", "boba land "+s.Slug, false, func() tea.Cmd {
+		m.modal = newConfirmModal(m, "Land", "rebase → test → push → gh pr create", "pekoe land "+s.Slug, false, func() tea.Cmd {
 			return func() tea.Msg {
 				var res map[string]any
 				if err := m.cl.Call("land", map[string]any{"slug": s.Slug}, &res); err != nil {
@@ -1347,7 +1347,7 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 			return m.act("worktree.rm", map[string]any{"slug": s.Slug, "force": true}, "deleted "+s.Slug)
 		}).about(s.Branch)
 	case "u":
-		m.modal = newConfirmModal(m, "Undo prompt", fmt.Sprintf("restore the worktree to snapshot #%d (before the last prompt)", s.Prompts), fmt.Sprintf("refs/boba/%s/prompt-%d", s.Slug, s.Prompts), true, func() tea.Cmd {
+		m.modal = newConfirmModal(m, "Undo prompt", fmt.Sprintf("restore the worktree to snapshot #%d (before the last prompt)", s.Prompts), fmt.Sprintf("refs/pekoe/%s/prompt-%d", s.Slug, s.Prompts), true, func() tea.Cmd {
 			return m.act("session.undo", map[string]any{"slug": s.Slug}, "undid the last prompt")
 		}).about(s.Branch)
 	case "R":

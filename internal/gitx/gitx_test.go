@@ -103,7 +103,7 @@ func TestSnapshotAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := UpdateRef(dir, "refs/boba/s/prompt-1", sha); err != nil {
+	if err := UpdateRef(dir, "refs/pekoe/s/prompt-1", sha); err != nil {
 		t.Fatal(err)
 	}
 	// the real index and branch are untouched
@@ -137,12 +137,12 @@ func TestSnapshotAndRestore(t *testing.T) {
 func TestAddExclude(t *testing.T) {
 	dir := t.TempDir()
 	git(t, dir, "init", "-q")
-	if err := AddExclude(dir, ".boba/"); err != nil {
+	if err := AddExclude(dir, ".pekoe/"); err != nil {
 		t.Fatal(err)
 	}
-	AddExclude(dir, ".boba/")
+	AddExclude(dir, ".pekoe/")
 	b, _ := os.ReadFile(filepath.Join(dir, ".git", "info", "exclude"))
-	if strings.Count(string(b), ".boba/") != 1 {
+	if strings.Count(string(b), ".pekoe/") != 1 {
 		t.Fatalf("exclude: %q", b)
 	}
 }

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/engine"
-	"boba/internal/state"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
 )
 
 // fakeEngine records what would be written to the pty.
@@ -139,8 +139,8 @@ func run(t *testing.T, dir string, args ...string) {
 func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("BOBA_HOME", home)
-	t.Setenv("BOBA_WORKTREES", filepath.Join(home, "wt"))
+	t.Setenv("PEKOE_HOME", home)
+	t.Setenv("PEKOE_WORKTREES", filepath.Join(home, "wt"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "claude"))
 	repo := filepath.Join(t.TempDir(), "app")
 	os.MkdirAll(repo, 0o755)
@@ -251,9 +251,9 @@ func TestSessionLifecycleAndReview(t *testing.T) {
 func TestNewRunsSetupAndFailsVisibly(t *testing.T) {
 	d, _, repo := setup(t)
 	id := call[map[string]any](t, d, "init.detect", map[string]any{"path": repo})["repo_id"].(string)
-	os.MkdirAll(filepath.Join(os.Getenv("BOBA_HOME"), "config", "repos"), 0o755)
+	os.MkdirAll(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos"), 0o755)
 	cfg := "[hooks]\nsetup = [\"echo {{slug}}:{{port}} > marker\", \"false\"]\n"
-	os.WriteFile(filepath.Join(os.Getenv("BOBA_HOME"), "config", "repos", id+".toml"), []byte(cfg), 0o644)
+	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte(cfg), 0o644)
 	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
 	var s state.Session
 	for i := 0; i < 100; i++ {
@@ -444,7 +444,7 @@ func TestRestartSkipsUnknownResumeID(t *testing.T) {
 		t.Fatalf("resumed an id with no conversation: %s", fe.last())
 	}
 	// with a stored conversation it resumes that id
-	dir := claudeProjectDir(realpath(repo)) // boba records the resolved worktree path
+	dir := claudeProjectDir(realpath(repo)) // pekoe records the resolved worktree path
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "saved-1.jsonl"), []byte("{}\n"), 0o644)
 	event(t, d, "SessionStart", "main", map[string]any{"session_id": "saved-1"})
@@ -527,7 +527,7 @@ func TestRunWindow(t *testing.T) {
 		t.Fatalf("not through the user's shell: %s", sp.Command)
 	}
 	env := strings.Join(sp.Env, "\n")
-	if !strings.Contains(env, "BOBA_SESSION="+s.Slug) || !strings.Contains(env, fmt.Sprintf("BOBA_PORT=%d", s.Port)) {
+	if !strings.Contains(env, "PEKOE_SESSION="+s.Slug) || !strings.Contains(env, fmt.Sprintf("PEKOE_PORT=%d", s.Port)) {
 		t.Fatalf("dev's environment expected: %v", sp.Env)
 	}
 

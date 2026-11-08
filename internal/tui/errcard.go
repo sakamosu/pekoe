@@ -1,6 +1,6 @@
 package tui
 
-// Error cards: bobad finds errors in a session's dev window and browser and
+// Error cards: pekoed finds errors in a session's dev window and browser and
 // offers them here ("send this error?"). One card at a time in the agent
 // pane (a pick card comes first: the human asked for that one); the rest
 // wait as rows of the Picks panel. Nothing reaches the agent until s.
@@ -13,9 +13,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"boba/internal/engine"
-	"boba/internal/errcatch"
-	"boba/internal/theme"
+	"pekoe/internal/engine"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/theme"
 )
 
 type errsMsg []errcatch.Report

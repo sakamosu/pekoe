@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Links in the agent pane. boba holds the mouse, so Ghostty never sees a
-// click on an OSC 8 link (or a bare URL) the agent printed; boba resolves the
+// Links in the agent pane. pekoe holds the mouse, so Ghostty never sees a
+// click on an OSC 8 link (or a bare URL) the agent printed; pekoe resolves the
 // cell under the click itself and hands the URL to the OS, as Ghostty would.
 
 // bareURL matches URLs printed without OSC 8; trailing punctuation that

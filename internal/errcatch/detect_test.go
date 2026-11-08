@@ -88,7 +88,7 @@ func TestDetectors(t *testing.T) {
 		{
 			name: "go panic",
 			out: "panic: runtime error: index out of range [3] with length 2\n\ngoroutine 1 [running]:\nmain.lookup(...)\n\t/Users/me/app/main.go:12 +0x1d\nmain.main()\n\t/Users/me/app/main.go:7 +0x18\nexit status 2\n" +
-				"[boba] dev server exited (1)\n",
+				"[pekoe] dev server exited (1)\n",
 			kind: "go", message: "panic: runtime error: index out of range [3] with length 2", file: "/Users/me/app/main.go", line: 12, nLines: 8,
 		},
 		{

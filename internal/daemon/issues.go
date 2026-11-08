@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"boba/internal/gitx"
-	"boba/internal/state"
+	"pekoe/internal/gitx"
+	"pekoe/internal/state"
 )
 
 // ---- issue inbox: gh issue list / view, matched against sessions ----

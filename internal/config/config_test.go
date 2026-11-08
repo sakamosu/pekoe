@@ -8,13 +8,13 @@ import (
 
 func TestWebStateDir(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("BOBA_HOME", root)
+	t.Setenv("PEKOE_HOME", root)
 	t.Setenv("HOME", filepath.Join(root, "home"))
 	g, err := LoadGlobal()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Web.Enable || g.Web.Hostname != "boba" || g.Web.StateDir != filepath.Join(root, "share", "tsnet") {
+	if g.Web.Enable || g.Web.Hostname != "pekoe" || g.Web.StateDir != filepath.Join(root, "share", "tsnet") {
 		t.Fatalf("defaults: %+v", g.Web)
 	}
 	os.MkdirAll(filepath.Join(root, "config"), 0o755)

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 // twoSessions opens sessions "a" and "b" on worktrees branched from main,

@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/config"
-	"boba/internal/state"
+	"pekoe/internal/config"
+	"pekoe/internal/state"
 )
 
-const webHost = "boba.example.ts.net"
+const webHost = "pekoe.example.ts.net"
 
 // fakeTailnet stands in for tsnet's WhoIs: remote IP -> peer.
 type fakeTailnet map[string]*webPeer
@@ -175,12 +175,12 @@ func TestWebAllowDevices(t *testing.T) {
 // A name other than the node's own (DNS rebinding) is refused.
 func TestWebHostCheck(t *testing.T) {
 	_, _, _, h := webSetup(t)
-	for _, host := range []string{"evil.example.com", "100.64.0.1", "boba", "localhost"} {
+	for _, host := range []string{"evil.example.com", "100.64.0.1", "pekoe", "localhost"} {
 		if w := doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone, host: host}); w.Code != http.StatusMisdirectedRequest {
 			t.Errorf("host %s: %d, want 421", host, w.Code)
 		}
 	}
-	if w := doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone, host: "BOBA.example.ts.net:443"}); w.Code != 200 {
+	if w := doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone, host: "PEKOE.example.ts.net:443"}); w.Code != 200 {
 		t.Fatalf("own name with port: %d", w.Code)
 	}
 }
@@ -384,8 +384,8 @@ func TestWebOffStartsNothing(t *testing.T) {
 	if _, err := os.Stat(d.Global.Web.StateDir); !os.IsNotExist(err) {
 		t.Fatalf("tsnet state dir exists: %v", err)
 	}
-	if !strings.HasPrefix(d.Global.Web.StateDir, filepath.Join(os.Getenv("BOBA_HOME"), "share")) {
-		t.Fatalf("state dir outside BOBA_HOME: %s", d.Global.Web.StateDir)
+	if !strings.HasPrefix(d.Global.Web.StateDir, filepath.Join(os.Getenv("PEKOE_HOME"), "share")) {
+		t.Fatalf("state dir outside PEKOE_HOME: %s", d.Global.Web.StateDir)
 	}
 	d.web.mu.Lock()
 	stop := d.web.stop

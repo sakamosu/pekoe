@@ -12,9 +12,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 const (
@@ -235,7 +235,7 @@ func (m *model) confettiBorder(n, seed int) string {
 
 // ---- demo ----
 
-// BOBA_TAPI_DEMO=pr plays a scripted PR on the selected session (or a
+// PEKOE_TAPI_DEMO=pr plays a scripted PR on the selected session (or a
 // stand-in) every few seconds, through the same path as a daemon update:
 // each face once, a repeat that stays silent, two changes at once, and
 // the merge. For checking the faces by eye; nothing reaches the daemon.
@@ -264,7 +264,7 @@ func demoScript(now time.Time) []mascot.PR {
 	}
 }
 
-func demoOn() bool { return os.Getenv("BOBA_TAPI_DEMO") == "pr" }
+func demoOn() bool { return os.Getenv("PEKOE_TAPI_DEMO") == "pr" }
 
 func (m *model) demoStep() tea.Cmd {
 	t := m.tapi

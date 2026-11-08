@@ -12,9 +12,9 @@ import (
 	"testing"
 )
 
-// fakeDaemon answers every request on $BOBA_SOCK with a null result and
+// fakeDaemon answers every request on $PEKOE_SOCK with a null result and
 // records the methods, so a test can see what a command would have done.
-// Being reachable, it also keeps client.Connect from starting a bobad.
+// Being reachable, it also keeps client.Connect from starting a pekoed.
 type fakeDaemon struct {
 	mu      sync.Mutex
 	methods []string
@@ -34,15 +34,15 @@ func (f *fakeDaemon) reset() {
 
 func startFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
-	t.Setenv("BOBA_HOME", t.TempDir())
-	t.Setenv("BOBA_TMUX_SOCKET", "boba-test-unused")
-	dir, err := os.MkdirTemp("/tmp", "bobacli") // short: unix socket path limit
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	t.Setenv("PEKOE_TMUX_SOCKET", "pekoe-test-unused")
+	dir, err := os.MkdirTemp("/tmp", "pekoecli") // short: unix socket path limit
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "s")
-	t.Setenv("BOBA_SOCK", sock)
+	t.Setenv("PEKOE_SOCK", sock)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestHelpDoesNothing(t *testing.T) {
 			t.Errorf("%v: err = %v, want the usage", args, err)
 		}
 		if c := fd.calls(); len(c) > 0 {
-			t.Errorf("%v: called bobad: %v", args, c)
+			t.Errorf("%v: called pekoed: %v", args, c)
 		}
 	}
 }
@@ -194,12 +194,12 @@ func TestUnknownFlagRefused(t *testing.T) {
 			t.Errorf("%v: err = %v, want a usage error", args, err)
 		}
 		if c := fd.calls(); len(c) > 0 {
-			t.Errorf("%v: called bobad: %v", args, c)
+			t.Errorf("%v: called pekoed: %v", args, c)
 		}
 	}
 }
 
-// The right usage still reaches bobad.
+// The right usage still reaches pekoed.
 func TestDaemonStopStillStops(t *testing.T) {
 	fd := startFakeDaemon(t)
 	if err := dispatch("daemon", "stop"); err != nil {

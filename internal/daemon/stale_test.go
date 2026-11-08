@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // rm racing with background updates (hooks, PR polling, issue matching)
@@ -78,7 +78,7 @@ func TestRestartRealignsStaleRepoID(t *testing.T) {
 
 	// restart: a new daemon on the same state.db
 	d.DB.Close()
-	d.releaseLock() // as shutdown does: the next bobad needs the lock
+	d.releaseLock() // as shutdown does: the next pekoed needs the lock
 	d2, err := New()
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestRestartRealignsStaleRepoID(t *testing.T) {
 	if rs := d2.knownRepos(); len(rs) != 1 || rs[0].ID != want || rs[0].Sessions != 2 {
 		t.Fatalf("known repos: %+v", rs)
 	}
-	// session.list for the repository (boba ls in it) has both
+	// session.list for the repository (pekoe ls in it) has both
 	if l := call[[]state.Session](t, d2, "session.list", map[string]any{"repo_id": want}); len(l) != 2 {
 		t.Fatalf("list: %d", len(l))
 	}

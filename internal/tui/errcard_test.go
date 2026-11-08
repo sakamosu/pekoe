@@ -7,10 +7,10 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/engine"
-	"boba/internal/errcatch"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/engine"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func errModel(t *testing.T) *model {

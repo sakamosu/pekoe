@@ -8,11 +8,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func samplePR() *daemon.PRView {
@@ -46,7 +46,7 @@ func samplePR() *daemon.PRView {
 
 func prModel(t *testing.T, color string, width, height int) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", color)
+	t.Setenv("PEKOE_COLOR", color)
 	m := newModel(nil, "")
 	m.tapi.splash = false
 	m.width, m.height = width, height
@@ -146,7 +146,7 @@ func TestPRViewNarrow(t *testing.T) {
 
 func TestPRViewIcons(t *testing.T) {
 	for _, set := range []string{"nerd", "unicode", "ascii"} {
-		t.Setenv("BOBA_ICONS", set)
+		t.Setenv("PEKOE_ICONS", set)
 		m := prModel(t, "none", 120, 40)
 		m.ic = theme.Icons(set)
 		viewLines(t, m)
@@ -273,7 +273,7 @@ func TestSessionListPRIcon(t *testing.T) {
 }
 
 func TestPRKeyOpensView(t *testing.T) {
-	t.Setenv("BOBA_COLOR", "none")
+	t.Setenv("PEKOE_COLOR", "none")
 	m := newModel(nil, "")
 	m.g = &config.Global{}
 	m.width, m.height = 140, 40

@@ -1,6 +1,6 @@
-// Package config loads ~/.config/boba/config.toml (global) and
-// ~/.config/boba/repos/<repo-id>.toml (per repository).
-// boba knows nothing about package managers at runtime: hooks are plain
+// Package config loads ~/.config/pekoe/config.toml (global) and
+// ~/.config/pekoe/repos/<repo-id>.toml (per repository).
+// pekoe knows nothing about package managers at runtime: hooks are plain
 // shell command lists with {{var}} substitution (design: ただのシェル).
 package config
 
@@ -13,7 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"boba/internal/paths"
+	"pekoe/internal/paths"
 )
 
 type Worktree struct {
@@ -50,7 +50,7 @@ type Agent struct {
 	Allow   string `toml:"allow"`   // keys answering a permission prompt with yes
 	Always  string `toml:"always"`
 	Deny    string `toml:"deny"`
-	Hooks   bool   `toml:"hooks"` // agent reports state through `boba event`
+	Hooks   bool   `toml:"hooks"` // agent reports state through `pekoe event`
 }
 
 type Theme struct {
@@ -77,12 +77,12 @@ func (m Mascot) LightPalette() bool {
 	return p == "light" || p == "e"
 }
 
-// Web is [web]: the phone UI that bobad serves on the tailnet through an
+// Web is [web]: the phone UI that pekoed serves on the tailnet through an
 // embedded tsnet node (docs/web.md). Off by default; while off, tsnet is
 // never started.
 type Web struct {
 	Enable   bool   `toml:"enable"`
-	Hostname string `toml:"hostname"` // tailnet machine name, default "boba"
+	Hostname string `toml:"hostname"` // tailnet machine name, default "pekoe"
 	// AllowUsers are Tailscale login names (WhoIs UserProfile.LoginName,
 	// e.g. "you@github"). Empty refuses to start: nobody would get in.
 	AllowUsers []string `toml:"allow_users"`
@@ -151,7 +151,7 @@ func LoadGlobal() (*Global, error) {
 		g.HTTP.Port = 47777
 	}
 	if g.Web.Hostname == "" {
-		g.Web.Hostname = "boba"
+		g.Web.Hostname = "pekoe"
 	}
 	if g.Web.StateDir == "" {
 		g.Web.StateDir = paths.WebStateDir()

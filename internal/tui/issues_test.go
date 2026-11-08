@@ -8,15 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/daemon"
-	"boba/internal/errcatch"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/errcatch"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func issueModel(t *testing.T, color string, width int) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", color)
+	t.Setenv("PEKOE_COLOR", color)
 	m := newModel(nil, "")
 	m.tapi.splash = false
 	m.width, m.height = width, 40

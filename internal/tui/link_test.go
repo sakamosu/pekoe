@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/engine"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 
 	"github.com/charmbracelet/x/ansi"
 )

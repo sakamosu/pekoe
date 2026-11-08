@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The default build carries no Tailscale code: boba is also used where a
+// The default build carries no Tailscale code: pekoe is also used where a
 // VPN client inside the binary is not allowed. Only -tags web links it
 // (docs/web.md).
 func TestDefaultBuildHasNoTailscale(t *testing.T) {

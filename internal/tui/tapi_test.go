@@ -8,14 +8,14 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/config"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func tapiModel(t *testing.T, color string, mc config.Mascot) *model {
 	t.Helper()
-	t.Setenv("BOBA_COLOR", color)
+	t.Setenv("PEKOE_COLOR", color)
 	m := newModel(nil, "")
 	m.g.Mascot = mc
 	m.buildTapi(nil)
@@ -57,7 +57,7 @@ func TestTapiViewKeepsWidth(t *testing.T) {
 			}
 		}
 		if !strings.Contains(ansi.Strip(views[1]), "delete worktree b? [y/n]") {
-			t.Errorf("%s: boba asks line missing", c.color)
+			t.Errorf("%s: pekoe asks line missing", c.color)
 		}
 	}
 }
@@ -86,11 +86,11 @@ func TestTapiToastRules(t *testing.T) {
 
 func TestNotifySeq(t *testing.T) {
 	t.Setenv("TERM_PROGRAM", "ghostty")
-	if got := notifySeq("boba", "a;b\x1b"); got != "\x1b]777;notify;boba;a b \x07" {
+	if got := notifySeq("pekoe", "a;b\x1b"); got != "\x1b]777;notify;pekoe;a b \x07" {
 		t.Fatalf("%q", got)
 	}
 	t.Setenv("TERM_PROGRAM", "Apple_Terminal")
-	if got := notifySeq("boba", "x"); got != "\x1b]9;boba: x\x07" {
+	if got := notifySeq("pekoe", "x"); got != "\x1b]9;pekoe: x\x07" {
 		t.Fatalf("%q", got)
 	}
 }
@@ -185,7 +185,7 @@ func TestSplashSnapshot(t *testing.T) {
 		{"unicode", 60, `
 ····························································
 ····························································
-················🬞🬹🬹🬹🬏····boba·v0.1.0························
+················🬞🬹🬹🬹🬏····pekoe·v0.1.0·······················
 ················█●·●█····agents·in·worktrees················
 ················🬁🬎🬎🬎🬀·······································
 ·························1·session·alive····················
@@ -195,7 +195,7 @@ func TestSplashSnapshot(t *testing.T) {
 		{"narrow", 60, `
 ····························································
 ····························································
-················🬞🬹🬹🬹🬏····boba·v0.1.0························
+················🬞🬹🬹🬹🬏····pekoe·v0.1.0·······················
 ················█🞄·🞄█····agents·in·worktrees················
 ················🬁🬎🬎🬎🬀·······································
 ·························1·session·alive····················
@@ -205,7 +205,7 @@ func TestSplashSnapshot(t *testing.T) {
 		{"ascii", 60, `
 ····························································
 ····························································
-················.---.····boba·v0.1.0························
+················.---.····pekoe·v0.1.0·······················
 ················|o·o|····agents·in·worktrees················
 ················'---'·······································
 ·························1·session·alive····················
@@ -215,7 +215,7 @@ func TestSplashSnapshot(t *testing.T) {
 		{"narrow", 24, `
 ························
 ························
-·🬞🬹🬹🬹🬏····boba·v0.1.0···
+·🬞🬹🬹🬹🬏····pekoe·v0.1.0··
 ·█🞄·🞄█····agents·in·wo…·
 ·🬁🬎🬎🬎🬀··················
 ··········1·session·al…·
@@ -235,7 +235,7 @@ func TestSplashSnapshot(t *testing.T) {
 		{"narrow", 6, `
 ······
 ······
-·bob…·
+·pek…·
 ·age…·
 ······
 ·1·s…·

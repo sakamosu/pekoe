@@ -2,7 +2,7 @@ package tui
 
 // tapi, the pearl (docs/mascot.md): one face in the status bar, a dot per
 // session, a 3-line face only in an empty main pane, toasts for unseen
-// wait/error, and boba's own y/n prompts. Animations run at most every
+// wait/error, and pekoe's own y/n prompts. Animations run at most every
 // 400 ms and stop while the terminal window is not focused.
 
 import (
@@ -16,10 +16,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 
-	"boba/internal/daemon"
-	"boba/internal/mascot"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/daemon"
+	"pekoe/internal/mascot"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 const (
@@ -56,7 +56,7 @@ type tapiState struct {
 	prs         map[string]*mascot.PR // the summary tapi saw last, per session
 	prToasted   map[string]time.Time
 	prQueue     []queuedReaction
-	demoPR      map[string]*mascot.PR // BOBA_TAPI_DEMO=pr
+	demoPR      map[string]*mascot.PR // PEKOE_TAPI_DEMO=pr
 	demoSession *state.Session
 	demoStep    int
 	demoAt      time.Time
@@ -238,7 +238,7 @@ func (m *model) escalate() tea.Cmd {
 			continue
 		}
 		m.tapi.notified[key] = true
-		b.WriteString(notifySeq("boba", mascot.SessionSpeech(s)))
+		b.WriteString(notifySeq("pekoe", mascot.SessionSpeech(s)))
 	}
 	if b.Len() == 0 {
 		return nil
@@ -447,7 +447,7 @@ func (m *model) toastBlock() []string {
 	}
 }
 
-// askLine is boba asking: the puppy leads a one-line y/n prompt that sits
+// askLine is pekoe asking: the puppy leads a one-line y/n prompt that sits
 // on the main pane's bottom row instead of a dialog.
 func (m *model) askLine(c *confirmModal, width int) string {
 	th := m.th
@@ -494,7 +494,7 @@ func (m *model) splashView() string {
 		alive = fmt.Sprintf("%d sessions alive", live)
 	}
 	text := []string{
-		m.th.Bold(theme.Text, "boba") + " " + m.th.FG(theme.Dim, "v"+daemon.Version),
+		m.th.Bold(theme.Text, "pekoe") + " " + m.th.FG(theme.Dim, "v"+daemon.Version),
 		m.th.FG(theme.Dim, "agents in worktrees"),
 		"",
 		m.th.FG(theme.Dim, alive),

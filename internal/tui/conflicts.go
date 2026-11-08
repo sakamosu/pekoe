@@ -1,6 +1,6 @@
 package tui
 
-// Conflict forecast in the TUI. bobad computes it (daemon/conflicts.go) and
+// Conflict forecast in the TUI. pekoed computes it (daemon/conflicts.go) and
 // ships it on each Session as Overlaps / PendingTool.AlsoIn; this file only
 // draws it: ⚠N in the session list, the peer per file in Changes, notes
 // above the land question.
@@ -11,8 +11,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func overlapRole(o state.Overlap) theme.Role {
@@ -134,7 +134,7 @@ func (m *model) landNotes(s *state.Session) []confirmNote {
 	const most = 3
 	if len(notes) > most {
 		rest := len(notes) - (most - 1)
-		notes = append(notes[:most-1], confirmNote{theme.Dim, "", "", fmt.Sprintf("+%d more sessions · boba conflicts", rest)})
+		notes = append(notes[:most-1], confirmNote{theme.Dim, "", "", fmt.Sprintf("+%d more sessions · pekoe conflicts", rest)})
 	}
 	if len(notes) == 0 {
 		open := 0
@@ -157,7 +157,7 @@ func plural(n int) string {
 	return "s"
 }
 
-// noteLines renders a confirm's notes to sit right above boba's ask line,
+// noteLines renders a confirm's notes to sit right above pekoe's ask line,
 // on the same select band so they read as one block.
 func (m *model) noteLines(c *confirmModal, width int) []string {
 	th := m.th

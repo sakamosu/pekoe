@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
-// KnownRepo is a repository bobad knows about: one that has a session, one
-// boba resolved before (remembered in the state DB), or one with
-// ~/.config/boba/repos/<repo-id>.toml.
+// KnownRepo is a repository pekoed knows about: one that has a session, one
+// pekoe resolved before (remembered in the state DB), or one with
+// ~/.config/pekoe/repos/<repo-id>.toml.
 type KnownRepo struct {
 	ID       string `json:"repo_id"`
 	Name     string `json:"name"`          // short name (~/worktrees/<name>)
@@ -235,7 +235,7 @@ func (d *Daemon) resolveRepoRef(q, cwd string) (*KnownRepo, error) {
 	case len(ms) > 1:
 		return nil, ambiguous(q, ms)
 	}
-	// a bare directory name relative to cwd ("boba --repo app" next to app/)
+	// a bare directory name relative to cwd ("pekoe --repo app" next to app/)
 	if cwd != "" {
 		if fi, err := os.Stat(filepath.Join(cwd, q)); err == nil && fi.IsDir() {
 			return fromPath(filepath.Join(cwd, q))
@@ -359,7 +359,7 @@ const locateMissTTL = time.Minute
 
 // locateRepos finds where repositories known only by their id live: a path_
 // id spells its path (underscores are ambiguous, so the guess is checked),
-// any other id is matched against the worktrees boba created under
+// any other id is matched against the worktrees pekoe created under
 // ~/worktrees/<name>.
 func (d *Daemon) locateRepos(ids []string) map[string]string {
 	found := map[string]string{}

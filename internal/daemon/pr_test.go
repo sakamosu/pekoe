@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 // prFixture builds the graphql answer the fake gh returns.

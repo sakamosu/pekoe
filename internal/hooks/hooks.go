@@ -1,6 +1,6 @@
-// Package hooks installs boba's Claude Code hooks into ~/.claude/settings.json
+// Package hooks installs pekoe's Claude Code hooks into ~/.claude/settings.json
 // (user scope: applies to every repository; project .claude/ is never touched).
-// Each hook just runs `boba event`, which forwards stdin to bobad.
+// Each hook just runs `pekoe event`, which forwards stdin to pekoed.
 package hooks
 
 import (
@@ -15,7 +15,7 @@ import (
 
 var Events = []string{"SessionStart", "UserPromptSubmit", "Notification", "Stop", "PreToolUse", "PostToolUse", "SessionEnd"}
 
-const marker = "boba event"
+const marker = "pekoe event"
 
 func SettingsPath() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
@@ -120,12 +120,12 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 		return
 	}
 	if len(before) > 0 {
-		backup = fmt.Sprintf("%s.boba-backup-%s", path, time.Now().Format("20060102-150405"))
+		backup = fmt.Sprintf("%s.pekoe-backup-%s", path, time.Now().Format("20060102-150405"))
 		if err = os.WriteFile(backup, before, 0o600); err != nil {
 			return
 		}
 	}
-	tmp := path + ".boba-tmp"
+	tmp := path + ".pekoe-tmp"
 	if err = os.WriteFile(tmp, after, 0o600); err != nil {
 		return
 	}
@@ -133,7 +133,7 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 	return
 }
 
-// Installed reports whether every boba hook is present.
+// Installed reports whether every pekoe hook is present.
 func Installed() bool {
 	b, err := os.ReadFile(SettingsPath())
 	if err != nil {

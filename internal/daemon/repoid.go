@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"boba/internal/gitx"
-	"boba/internal/paths"
-	"boba/internal/state"
+	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // A repository's id (gitx.RepoID) is its origin URL, or its path when it has
 // none, so the same directory changes id when an origin is added after its
 // sessions were created (or was recorded before origins were looked at).
 // Sessions keep the id they were created with, and a stale one splits the
-// repository in two: `boba ls` in the repository leaves them out and the
+// repository in two: `pekoe ls` in the repository leaves them out and the
 // TUI shows two headings. realignRepoIDs (on start) and resolved (whenever
 // a repository is resolved from a path) bring them to the current id.
 
@@ -59,13 +59,13 @@ func (d *Daemon) realignRepoIDs() {
 // realignRepo moves what is filed under an old id of r.Dir to r.ID:
 //   - sessions (RepoID, Repo), saved;
 //   - their ports (the ports table is keyed by repo_id+slug; the number is
-//     kept, so dev servers and BOBA_PORT stay the same);
+//     kept, so dev servers and PEKOE_PORT stay the same);
 //   - their picks, and the repository's other picks when no session is left
 //     on the old id (another clone with the same origin may still use it);
 //   - their preview directory (<data>/<id>/preview/<slug>: remembered path);
 //   - the remembered repository (kv repo:<id>), the step durations of
 //     session creation (kv dur:<id>:<step>) and the per-repo config
-//     ~/.config/boba/repos/<id>.toml when the new id has none.
+//     ~/.config/pekoe/repos/<id>.toml when the new id has none.
 //
 // Left where they are, by design: picks' .md/.png files and error
 // attachments (<data>/<old>/picks, errors) — they were handed to agents and

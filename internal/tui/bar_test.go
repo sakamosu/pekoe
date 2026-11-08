@@ -7,10 +7,10 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/config"
-	"boba/internal/daemon"
-	"boba/internal/state"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func barModel(t *testing.T, width int) *model {
@@ -19,7 +19,7 @@ func barModel(t *testing.T, width int) *model {
 	m := tapiModel(t, "truecolor", config.Mascot{Shape: "round"})
 	m.width = width
 	m.sessions = []*state.Session{
-		{Slug: "a", Branch: "feat/a", RepoID: "r1", Path: "/home/u/worktrees/boba/feat-statusbar-worktree-path", State: state.Running, StateSince: time.Now()},
+		{Slug: "a", Branch: "feat/a", RepoID: "r1", Path: "/home/u/worktrees/pekoe/feat-statusbar-worktree-path", State: state.Running, StateSince: time.Now()},
 	}
 	m.sel = 0
 	return m
@@ -29,7 +29,7 @@ func TestBarShowsWorktreePath(t *testing.T) {
 	m := barModel(t, 200)
 	bar := m.viewBar()
 	plain := ansi.Strip(bar)
-	if !strings.Contains(plain, " ~/worktrees/boba/feat-statusbar-worktree-path ") {
+	if !strings.Contains(plain, " ~/worktrees/pekoe/feat-statusbar-worktree-path ") {
 		t.Fatalf("path missing: %q", plain)
 	}
 	if !strings.Contains(plain, "? help") {
@@ -39,7 +39,7 @@ func TestBarShowsWorktreePath(t *testing.T) {
 		t.Errorf("width %d, want %d", w(bar), m.width)
 	}
 	// dim, a neutral role: never a hue
-	if !strings.Contains(bar, m.th.FG(theme.Dim, "~/worktrees/boba/feat-statusbar-worktree-path")) {
+	if !strings.Contains(bar, m.th.FG(theme.Dim, "~/worktrees/pekoe/feat-statusbar-worktree-path")) {
 		t.Errorf("path is not dim: %q", bar)
 	}
 }
@@ -98,7 +98,7 @@ func TestClipLeft(t *testing.T) {
 		want string
 	}{
 		{"~/a/b", 10, "~/a/b"},
-		{"~/worktrees/boba/x", 8, "…/boba/x"},
+		{"~/worktrees/pekoe/x", 9, "…/pekoe/x"},
 		{"~/ほげ/ふが", 6, "…/ふが"},
 		{"~/ほげ/ふが", 5, "…ふが"},
 		{"abc", 1, "…"},

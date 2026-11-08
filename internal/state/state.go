@@ -1,4 +1,4 @@
-// Package state is bobad's external memory: ~/.local/share/boba/state.db.
+// Package state is pekoed's external memory: ~/.local/share/pekoe/state.db.
 // Sessions, the port ledger, prompts, review points, hunk approvals,
 // comments, picks. Used to restore after a daemon restart.
 package state
@@ -123,7 +123,7 @@ type Session struct {
 	PR              int       `json:"pr,omitempty"`
 	PRReview        bool      `json:"pr_review,omitempty"` // reviewing someone else's PR
 	PRStatus        *PRStatus `json:"pr_status,omitempty"` // small summary of the PR, polled from GitHub
-	Managed         bool      `json:"managed"`             // worktree created by boba (under ~/worktrees)
+	Managed         bool      `json:"managed"`             // worktree created by pekoe (under ~/worktrees)
 	Base            string    `json:"base"`
 	Issue           int       `json:"issue,omitempty"` // GitHub issue the session was started from (--from gh#N)
 	Error           string    `json:"error,omitempty"`

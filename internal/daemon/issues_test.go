@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 func ghCalls(t *testing.T, gh, sub string) int {
@@ -223,7 +223,7 @@ func TestSuggestBranch(t *testing.T) {
 	}{
 		{12, "Login fails on Safari", []string{"bug", "ui"}, "fix/login-fails-on-safari"},
 		{3, "Add dark mode", []string{"enhancement"}, "feat/add-dark-mode"},
-		{4, "Crash: `boba new` panics (v0.1)!", []string{"type: bug"}, "fix/crash-boba-new-panics-v0-1"},
+		{4, "Crash: `pekoe new` panics (v0.1)!", []string{"type: bug"}, "fix/crash-pekoe-new-panics-v0-1"},
 		{5, "Don't drop the user's .env", nil, "feat/dont-drop-the-users-env"},
 		{6, "ログイン画面が真っ白になる", []string{"bug"}, "fix/issue-6"},
 		{7, "ログインで CSV export が落ちる", nil, "feat/issue-7-csv-export"},

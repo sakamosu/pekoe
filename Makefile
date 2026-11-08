@@ -1,8 +1,8 @@
-# boba — build, test, install
+# pekoe — build, test, install
 GO      ?= go
 export GOTOOLCHAIN ?= local
 PREFIX  ?= $(HOME)/.local
-BIN     := bin/boba
+BIN     := bin/pekoe
 # WEB=1 builds in the phone web UI ([web], docs/web.md), which links Tailscale
 # (tsnet). The default build has no Tailscale code at all.
 WEB     ?=
@@ -11,8 +11,8 @@ TAGS    := $(if $(WEB),-tags web)
 .PHONY: build test vet install install-launchd uninstall-launchd nvim-test clean
 
 build:
-	$(GO) build $(TAGS) -o $(BIN) ./cmd/boba
-	ln -sf boba bin/bobad
+	$(GO) build $(TAGS) -o $(BIN) ./cmd/pekoe
+	ln -sf pekoe bin/pekoed
 
 # both builds: the default (no Tailscale) and -tags web
 test: vet
@@ -29,21 +29,21 @@ nvim-test:
 
 # installs the binary and links the nvim plugin + extension next to it
 install: build
-	install -d $(PREFIX)/bin $(PREFIX)/share/boba
-	install -m 0755 $(BIN) $(PREFIX)/bin/boba
-	ln -sf boba $(PREFIX)/bin/bobad
-	ln -sfn $(CURDIR)/nvim $(PREFIX)/share/boba/nvim
-	ln -sfn $(CURDIR)/extension $(PREFIX)/share/boba/extension
-	@echo "installed $(PREFIX)/bin/boba — next: boba hooks install"
+	install -d $(PREFIX)/bin $(PREFIX)/share/pekoe
+	install -m 0755 $(BIN) $(PREFIX)/bin/pekoe
+	ln -sf pekoe $(PREFIX)/bin/pekoed
+	ln -sfn $(CURDIR)/nvim $(PREFIX)/share/pekoe/nvim
+	ln -sfn $(CURDIR)/extension $(PREFIX)/share/pekoe/extension
+	@echo "installed $(PREFIX)/bin/pekoe — next: pekoe hooks install"
 
 install-launchd: install
-	mkdir -p $(HOME)/Library/LaunchAgents $(HOME)/.local/share/boba
-	sed -e 's|BOBA_BIN|$(PREFIX)/bin/boba|' -e 's|HOME|$(HOME)|g' contrib/launchd/dev.boba.bobad.plist > $(HOME)/Library/LaunchAgents/dev.boba.bobad.plist
-	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/dev.boba.bobad.plist || launchctl kickstart -k gui/$$(id -u)/dev.boba.bobad
+	mkdir -p $(HOME)/Library/LaunchAgents $(HOME)/.local/share/pekoe
+	sed -e 's|PEKOE_BIN|$(PREFIX)/bin/pekoe|' -e 's|HOME|$(HOME)|g' contrib/launchd/dev.pekoe.pekoed.plist > $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist
+	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist || launchctl kickstart -k gui/$$(id -u)/dev.pekoe.pekoed
 
 uninstall-launchd:
-	-launchctl bootout gui/$$(id -u)/dev.boba.bobad
-	rm -f $(HOME)/Library/LaunchAgents/dev.boba.bobad.plist
+	-launchctl bootout gui/$$(id -u)/dev.pekoe.pekoed
+	rm -f $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist
 
 clean:
-	rm -f bin/boba bin/bobad
+	rm -f bin/pekoe bin/pekoed

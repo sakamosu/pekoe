@@ -1,6 +1,6 @@
 // Package mcp is the reverse channel: an MCP server (stdio) the agent can
 // call. `open_in_editor` becomes an editor.open event that nvim handles.
-// Register with: claude mcp add boba -- boba mcp
+// Register with: claude mcp add pekoe -- pekoe mcp
 package mcp
 
 import (
@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 
-	"boba/internal/client"
+	"pekoe/internal/client"
 )
 
 type rpc struct {
@@ -48,7 +48,7 @@ var tools = []map[string]any{
 	},
 	{
 		"name":        "session_list",
-		"description": "List boba sessions (worktrees with agents) and their states.",
+		"description": "List pekoe sessions (worktrees with agents) and their states.",
 		"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
 	},
 }
@@ -57,7 +57,7 @@ func Serve(in io.Reader, out io.Writer) error {
 	enc := json.NewEncoder(out)
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
-	slug := os.Getenv("BOBA_SESSION")
+	slug := os.Getenv("PEKOE_SESSION")
 	for sc.Scan() {
 		var r rpc
 		if json.Unmarshal(sc.Bytes(), &r) != nil {
@@ -79,7 +79,7 @@ func Serve(in io.Reader, out io.Writer) error {
 			rep.Result = map[string]any{
 				"protocolVersion": p.ProtocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": "boba", "version": "0.1.0"},
+				"serverInfo":      map[string]any{"name": "pekoe", "version": "0.1.0"},
 			}
 		case "ping":
 			rep.Result = map[string]any{}
@@ -106,7 +106,7 @@ func Serve(in io.Reader, out io.Writer) error {
 func call(name string, args json.RawMessage, slug string) (string, bool) {
 	cl, err := client.Dial()
 	if err != nil {
-		return "bobad is not running", true
+		return "pekoed is not running", true
 	}
 	defer cl.Close()
 	switch name {

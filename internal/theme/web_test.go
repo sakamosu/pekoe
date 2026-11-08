@@ -3,7 +3,7 @@ package theme
 import (
 	"testing"
 
-	"boba/internal/config"
+	"pekoe/internal/config"
 )
 
 func TestWebPalette(t *testing.T) {

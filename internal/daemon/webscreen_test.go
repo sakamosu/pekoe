@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"boba/internal/termstyle"
+	"pekoe/internal/termstyle"
 )
 
 // What the agent prints reaches the page only as run text. Colors are a

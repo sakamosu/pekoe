@@ -14,7 +14,7 @@ func TestPlanKeepsOtherHooksAndIsIdempotent(t *testing.T) {
 	orig := `{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"say done"}]}]}}`
 	os.WriteFile(filepath.Join(dir, "settings.json"), []byte(orig), 0o600)
 
-	path, before, after, changed, err := Plan("/usr/local/bin/boba", false)
+	path, before, after, changed, err := Plan("/usr/local/bin/pekoe", false)
 	if err != nil || !changed {
 		t.Fatalf("plan: %v changed=%v", err, changed)
 	}
@@ -34,17 +34,17 @@ func TestPlanKeepsOtherHooksAndIsIdempotent(t *testing.T) {
 		t.Fatal("user's own Stop hook lost")
 	}
 	// second install changes nothing
-	if _, _, _, changed, _ := Plan("/usr/local/bin/boba", false); changed {
+	if _, _, _, changed, _ := Plan("/usr/local/bin/pekoe", false); changed {
 		t.Fatal("install is not idempotent")
 	}
 	// uninstall removes only ours
-	path, before, after, _, _ = Plan("/usr/local/bin/boba", true)
+	path, before, after, _, _ = Plan("/usr/local/bin/pekoe", true)
 	Apply(path, before, after)
 	b, _ = os.ReadFile(path)
-	if strings.Contains(string(b), "boba event") || !strings.Contains(string(b), "say done") {
+	if strings.Contains(string(b), "pekoe event") || !strings.Contains(string(b), "say done") {
 		t.Fatalf("uninstall: %s", b)
 	}
-	backups, _ := filepath.Glob(filepath.Join(dir, "settings.json.boba-backup-*"))
+	backups, _ := filepath.Glob(filepath.Join(dir, "settings.json.pekoe-backup-*"))
 	if len(backups) == 0 {
 		t.Fatal("no backup kept")
 	}

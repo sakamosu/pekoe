@@ -1,6 +1,6 @@
 package daemon
 
-// The phone web UI ([web], docs/web.md). bobad serves it on the tailnet
+// The phone web UI ([web], docs/web.md). pekoed serves it on the tailnet
 // only, through an embedded tsnet node (webts.go); this file is the HTTP
 // layer, which knows nothing about tsnet: who is calling comes from a
 // whoIsFunc, so tests can put a fake in its place.
@@ -32,11 +32,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"boba/internal/config"
-	"boba/internal/engine"
-	"boba/internal/state"
-	"boba/internal/termstyle"
-	"boba/internal/theme"
+	"pekoe/internal/config"
+	"pekoe/internal/engine"
+	"pekoe/internal/state"
+	"pekoe/internal/termstyle"
+	"pekoe/internal/theme"
 )
 
 //go:embed webui
@@ -63,7 +63,7 @@ type webOpts struct {
 }
 
 const (
-	webHeader   = "X-Boba-Web" // every write carries it: forces a CORS preflight cross-origin
+	webHeader   = "X-Pekoe-Web" // every write carries it: forces a CORS preflight cross-origin
 	webMaxBody  = 64 << 10
 	webMaxText  = 4000 // runes in one send
 	webTailRows = 80   // screen lines returned
@@ -481,8 +481,8 @@ func webErr(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), code)
 }
 
-// takeAuthKeyEnv removes the tailnet auth key from bobad's environment and
-// returns it. bobad's environment reaches tmux and so every agent pane: an
+// takeAuthKeyEnv removes the tailnet auth key from pekoed's environment and
+// returns it. pekoed's environment reaches tmux and so every agent pane: an
 // agent holding the key could join the tailnet as the user and call the
 // web UI from a node that is not "this machine". Called before the
 // terminal engine starts.
@@ -497,9 +497,9 @@ func takeAuthKeyEnv() string {
 	return key
 }
 
-// ---- status (boba web) ----
+// ---- status (pekoe web) ----
 
-// webStatus is what `boba web` shows: whether the node is up, and the
+// webStatus is what `pekoe web` shows: whether the node is up, and the
 // login URL while it waits for the first join.
 type webStatus struct {
 	Built   bool     `json:"built"` // this binary has the web UI (-tags web)

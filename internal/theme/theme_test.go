@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/state"
+	"pekoe/internal/state"
 )
 
 var allStates = []state.State{state.Creating, state.Running, state.Waiting, state.Idle, state.Done,
@@ -17,7 +17,7 @@ var allStates = []state.State{state.Creating, state.Running, state.Waiting, stat
 // In none mode and with ascii icons every state must still be readable from
 // its symbol and word alone (guidelines: 色だけの状態表示をしない).
 func TestStatesReadableWithoutColor(t *testing.T) {
-	t.Setenv("BOBA_COLOR", "none")
+	t.Setenv("PEKOE_COLOR", "none")
 	th := Load(nil)
 	if th.Mode != None {
 		t.Fatalf("mode = %s", th.Mode)
@@ -90,12 +90,12 @@ func TestPRLookDistinct(t *testing.T) {
 	}
 }
 
-// auto colors only when stdout is a terminal: `boba issues | cat` must not
+// auto colors only when stdout is a terminal: `pekoe issues | cat` must not
 // leak escape codes, while an explicit mode still wins.
 func TestAutoModeFollowsStdoutTerminal(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	os.Unsetenv("NO_COLOR")
-	t.Setenv("BOBA_COLOR", "")
+	t.Setenv("PEKOE_COLOR", "")
 	t.Setenv("COLORTERM", "truecolor")
 	prev := StdoutIsTerminal
 	t.Cleanup(func() { StdoutIsTerminal = prev })

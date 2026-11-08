@@ -12,7 +12,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"boba/internal/theme"
+	"pekoe/internal/theme"
 )
 
 var (

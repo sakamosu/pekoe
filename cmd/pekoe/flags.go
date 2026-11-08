@@ -41,7 +41,7 @@ func exitUsage(err error) bool {
 		fmt.Println("usage: " + ue.use)
 		os.Exit(0)
 	}
-	fmt.Fprintln(os.Stderr, "boba: "+ue.msg)
+	fmt.Fprintln(os.Stderr, "pekoe: "+ue.msg)
 	fmt.Fprintln(os.Stderr, "usage: "+ue.use)
 	os.Exit(2)
 	return true
@@ -134,32 +134,32 @@ func (sp spec) parse(args []string) (map[string]string, []string, error) {
 // Every subcommand's flags. `--json` is global (stripped in main, before or
 // after the subcommand) and so is not listed here.
 var specs = map[string]spec{
-	"init":      {use: "boba init [<dir>] [--yes] [--overwrite] [--print]", bools: []string{"yes", "overwrite", "print"}},
-	"new":       {use: "boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base"}},
-	"open":      {use: "boba open [<worktree>] [--resume|--new] [--agent NAME]", bools: []string{"resume", "new"}, vals: []string{"agent"}},
-	"adopt":     {use: "boba adopt [<path>] [--yes]", bools: []string{"yes"}},
-	"ls":        {use: "boba ls [--all|--repo R] [--json]", bools: []string{"all"}, vals: []string{"repo"}},
-	"issues":    {use: "boba issues [<N>] [--repo R] [--all|--label L] [--refresh] [--json]", bools: []string{"all", "mine", "refresh"}, vals: []string{"repo", "label"}},
-	"conflicts": {use: "boba conflicts [--repo R] [--json]", vals: []string{"repo"}},
-	"send":      {use: "boba send <slug> <text> [--no-enter]   (text '-' reads stdin; -- before text that starts with -)", bools: []string{"no-enter"}},
-	"event":     {use: "boba event <Hook>   (called by Claude Code hooks, JSON on stdin)"},
-	"review":    {use: "boba review [<slug> | gh#N [--repo R]]", vals: []string{"repo"}},
-	"land":      {use: "boba land <slug>   rebase → test → gh pr create"},
-	"rm":        {use: "boba rm <slug> [--force] [--yes]", bools: []string{"force", "yes"}},
-	"dev":       {use: "boba dev <slug>   toggle the dev server on the session's port"},
-	"undo":      {use: "boba undo <slug> [n]"},
-	"answer":    {use: "boba answer <slug> allow|deny|always"},
-	"attach":    {use: "boba attach <slug> [agent|review|dev]"},
-	"hooks":     {use: "boba hooks install|uninstall|status [--yes]", bools: []string{"yes"}},
-	"ext":       {use: "boba ext   port + token for the Chrome extension"},
-	"mcp":       {use: "boba mcp   MCP server for agents (stdio)"},
-	"web":       {use: "boba web [--json]   phone web UI on the tailnet: state, URL, login link"},
+	"init":      {use: "pekoe init [<dir>] [--yes] [--overwrite] [--print]", bools: []string{"yes", "overwrite", "print"}},
+	"new":       {use: "pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base"}},
+	"open":      {use: "pekoe open [<worktree>] [--resume|--new] [--agent NAME]", bools: []string{"resume", "new"}, vals: []string{"agent"}},
+	"adopt":     {use: "pekoe adopt [<path>] [--yes]", bools: []string{"yes"}},
+	"ls":        {use: "pekoe ls [--all|--repo R] [--json]", bools: []string{"all"}, vals: []string{"repo"}},
+	"issues":    {use: "pekoe issues [<N>] [--repo R] [--all|--label L] [--refresh] [--json]", bools: []string{"all", "mine", "refresh"}, vals: []string{"repo", "label"}},
+	"conflicts": {use: "pekoe conflicts [--repo R] [--json]", vals: []string{"repo"}},
+	"send":      {use: "pekoe send <slug> <text> [--no-enter]   (text '-' reads stdin; -- before text that starts with -)", bools: []string{"no-enter"}},
+	"event":     {use: "pekoe event <Hook>   (called by Claude Code hooks, JSON on stdin)"},
+	"review":    {use: "pekoe review [<slug> | gh#N [--repo R]]", vals: []string{"repo"}},
+	"land":      {use: "pekoe land <slug>   rebase → test → gh pr create"},
+	"rm":        {use: "pekoe rm <slug> [--force] [--yes]", bools: []string{"force", "yes"}},
+	"dev":       {use: "pekoe dev <slug>   toggle the dev server on the session's port"},
+	"undo":      {use: "pekoe undo <slug> [n]"},
+	"answer":    {use: "pekoe answer <slug> allow|deny|always"},
+	"attach":    {use: "pekoe attach <slug> [agent|review|dev]"},
+	"hooks":     {use: "pekoe hooks install|uninstall|status [--yes]", bools: []string{"yes"}},
+	"ext":       {use: "pekoe ext   port + token for the Chrome extension"},
+	"mcp":       {use: "pekoe mcp   MCP server for agents (stdio)"},
+	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},
 
-	"daemon":        {use: "boba daemon start|stop|status"},
-	"daemon start":  {use: "boba daemon start"},
-	"daemon status": {use: "boba daemon status [--json]"},
-	"daemon run":    {use: "boba daemon run   (foreground; normally started for you)"},
-	"daemon stop":   {use: "boba daemon stop [--kill-agents [--yes]]", bools: []string{"kill-agents", "yes"}},
+	"daemon":        {use: "pekoe daemon start|stop|status"},
+	"daemon start":  {use: "pekoe daemon start"},
+	"daemon status": {use: "pekoe daemon status [--json]"},
+	"daemon run":    {use: "pekoe daemon run   (foreground; normally started for you)"},
+	"daemon stop":   {use: "pekoe daemon stop [--kill-agents [--yes]]", bools: []string{"kill-agents", "yes"}},
 }
 
 // parseCmd parses args against the named spec.

@@ -2,12 +2,12 @@
 
 package daemon
 
-// The tsnet side of the web UI: bobad joins the tailnet as its own machine
-// ([web] hostname, default "boba") and serves HTTPS on :443 there, and only
+// The tsnet side of the web UI: pekoed joins the tailnet as its own machine
+// ([web] hostname, default "pekoe") and serves HTTPS on :443 there, and only
 // there. Nothing in this file runs unless [web] enable = true.
 //
 // Only built with -tags web (make install WEB=1). The default build has no
-// Tailscale code at all (webts_off.go): boba is also used where a VPN
+// Tailscale code at all (webts_off.go): pekoe is also used where a VPN
 // client in the binary is not welcome.
 
 import (
@@ -30,8 +30,8 @@ import (
 const webBuilt = true
 
 // startWeb brings the tsnet node up in the background. The first start
-// without an auth key waits for a login: the URL goes to bobad's log and
-// to `boba web`.
+// without an auth key waits for a login: the URL goes to pekoed's log and
+// to `pekoe web`.
 func (d *Daemon) startWeb() {
 	cfg := d.Global.Web
 	if !cfg.Enable {
@@ -48,7 +48,7 @@ func (d *Daemon) startWeb() {
 		return
 	}
 	if !filepath.IsAbs(cfg.StateDir) {
-		// bobad's working directory is wherever boba was first run: a
+		// pekoed's working directory is wherever pekoe was first run: a
 		// relative state_dir would put the node key inside some repository
 		fail(fmt.Errorf("[web] state_dir must be an absolute path: %q", cfg.StateDir))
 		return
@@ -191,7 +191,7 @@ func (d *Daemon) stopWeb() {
 	}
 }
 
-// watchWeb keeps the status `boba web` shows: the backend state, the URLs
+// watchWeb keeps the status `pekoe web` shows: the backend state, the URLs
 // and, while it needs a login, the URL to open (logged once per URL).
 func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Client) {
 	lastURL := ""
@@ -214,7 +214,7 @@ func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 				s.URLs = urls
 			})
 			if st.AuthURL != "" && st.AuthURL != lastURL {
-				log.Printf("web: to join the tailnet, open %s (or start bobad with TS_AUTHKEY)", st.AuthURL)
+				log.Printf("web: to join the tailnet, open %s (or start pekoed with TS_AUTHKEY)", st.AuthURL)
 			}
 			lastURL = st.AuthURL
 		}
