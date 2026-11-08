@@ -3,19 +3,26 @@ GO      ?= go
 export GOTOOLCHAIN ?= local
 PREFIX  ?= $(HOME)/.local
 BIN     := bin/boba
+# WEB=1 builds in the phone web UI ([web], docs/web.md), which links Tailscale
+# (tsnet). The default build has no Tailscale code at all.
+WEB     ?=
+TAGS    := $(if $(WEB),-tags web)
 
 .PHONY: build test vet install install-launchd uninstall-launchd nvim-test clean
 
 build:
-	$(GO) build -o $(BIN) ./cmd/boba
+	$(GO) build $(TAGS) -o $(BIN) ./cmd/boba
 	ln -sf boba bin/bobad
 
+# both builds: the default (no Tailscale) and -tags web
 test: vet
 	$(GO) test ./...
+	$(GO) test -tags web ./internal/daemon/ ./cmd/...
 	sh nvim/test/run.sh
 
 vet:
 	$(GO) vet ./...
+	$(GO) vet -tags web ./...
 
 nvim-test:
 	sh nvim/test/run.sh

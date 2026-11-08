@@ -415,8 +415,9 @@ func webErr(w http.ResponseWriter, err error) {
 // webStatus is what `boba web` shows: whether the node is up, and the
 // login URL while it waits for the first join.
 type webStatus struct {
+	Built   bool     `json:"built"` // this binary has the web UI (-tags web)
 	Enabled bool     `json:"enabled"`
-	State   string   `json:"state"` // off | starting | needs-login | running | error
+	State   string   `json:"state"` // off | unavailable (not built) | starting | needs-login | running | error
 	AuthURL string   `json:"auth_url,omitempty"`
 	URLs    []string `json:"urls,omitempty"`
 	Error   string   `json:"error,omitempty"`

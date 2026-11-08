@@ -1100,6 +1100,7 @@ func cmdWeb() error {
 	cl := connect()
 	defer cl.Close()
 	var st struct {
+		Built   bool     `json:"built"`
 		Enabled bool     `json:"enabled"`
 		State   string   `json:"state"`
 		AuthURL string   `json:"auth_url"`
@@ -1111,6 +1112,15 @@ func cmdWeb() error {
 	}
 	if jsonOut {
 		printJSON(st)
+		return nil
+	}
+	if !st.Built {
+		// --json above still says so; here, say how to get it
+		fmt.Println("this boba is built without the web UI (no Tailscale code in it).")
+		if st.Enabled {
+			fmt.Println("[web] enable = true in the config is ignored.")
+		}
+		fmt.Println("To use it, rebuild with: make install WEB=1 (docs/web.md).")
 		return nil
 	}
 	if !st.Enabled {

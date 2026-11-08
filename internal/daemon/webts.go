@@ -1,18 +1,19 @@
+//go:build web
+
 package daemon
 
 // The tsnet side of the web UI: bobad joins the tailnet as its own machine
 // ([web] hostname, default "boba") and serves HTTPS on :443 there, and only
 // there. Nothing in this file runs unless [web] enable = true.
+//
+// Only built with -tags web (make install WEB=1). The default build has no
+// Tailscale code at all (webts_off.go): boba is also used where a VPN
+// client in the binary is not welcome.
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"image"
-	"image/color"
-	"image/png"
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"strings"
@@ -23,6 +24,8 @@ import (
 	"tailscale.com/ipn"
 	"tailscale.com/tsnet"
 )
+
+const webBuilt = true
 
 // startWeb brings the tsnet node up in the background. The first start
 // without an auth key waits for a login: the URL goes to bobad's log and
@@ -176,52 +179,4 @@ func tsWhoIs(lc *local.Client) whoIsFunc {
 		}
 		return &webPeer{Login: res.UserProfile.LoginName, Device: dev, Tagged: res.Node.IsTagged()}, nil
 	}
-}
-
-// ---- icon ----
-
-var (
-	iconMu  sync.Mutex
-	iconPNG = map[int][]byte{}
-)
-
-// serveIcon: the home screen icon (iOS wants a PNG), size×size. A pearl on
-// the bg colour, drawn once per size.
-func serveIcon(size int) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		iconMu.Lock()
-		b := iconPNG[size]
-		if b == nil {
-			b = drawIcon(size)
-			iconPNG[size] = b
-		}
-		iconMu.Unlock()
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "max-age=86400")
-		w.Write(b)
-	}
-}
-
-func drawIcon(n int) []byte {
-	img := image.NewRGBA(image.Rect(0, 0, n, n))
-	bg := color.RGBA{0x15, 0x14, 0x21, 0xff}
-	pearl := color.RGBA{0xff, 0x87, 0xda, 0xff} // primary
-	hi := color.RGBA{0xff, 0xd6, 0xf2, 0xff}
-	c, r := float64(n)/2, float64(n)*0.30
-	for y := 0; y < n; y++ {
-		for x := 0; x < n; x++ {
-			fx, fy := float64(x)+0.5, float64(y)+0.5
-			col := bg
-			if math.Hypot(fx-c, fy-c*1.08) <= r {
-				col = pearl
-				if math.Hypot(fx-(c-r*0.35), fy-(c*1.08-r*0.4)) <= r*0.22 {
-					col = hi
-				}
-			}
-			img.Set(x, y, col)
-		}
-	}
-	var b bytes.Buffer
-	png.Encode(&b, img)
-	return b.Bytes()
 }

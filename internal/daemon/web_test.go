@@ -389,18 +389,40 @@ func TestWebOffStartsNothing(t *testing.T) {
 		t.Fatal("a tsnet node was set up")
 	}
 	st := call[webStatus](t, d, "web.status", nil)
-	if st.Enabled || st.State != "off" {
+	if st.Enabled || st.State != "off" || st.Built != webBuilt {
 		t.Fatalf("status: %+v", st)
 	}
 }
 
 // enable without allow_users refuses to start rather than serve nobody.
 func TestWebNeedsAllowUsers(t *testing.T) {
+	if !webBuilt {
+		t.Skip("built without -tags web")
+	}
 	d, _, _ := setup(t)
 	d.Global.Web.Enable = true
 	d.startWeb()
 	st := call[webStatus](t, d, "web.status", nil)
 	if st.State != "error" || !strings.Contains(st.Error, "allow_users") {
+		t.Fatalf("status: %+v", st)
+	}
+	if _, err := os.Stat(d.Global.Web.StateDir); !os.IsNotExist(err) {
+		t.Fatalf("tsnet state dir exists: %v", err)
+	}
+}
+
+// The default build has no tsnet: [web] enable = true (say, from a config
+// shared with a machine that has it) is reported, never acted on.
+func TestWebNotBuilt(t *testing.T) {
+	if webBuilt {
+		t.Skip("built with -tags web")
+	}
+	d, _, _ := setup(t)
+	d.Global.Web.Enable = true
+	d.Global.Web.AllowUsers = []string{"me@github"}
+	d.startWeb()
+	st := call[webStatus](t, d, "web.status", nil)
+	if st.Built || st.State != "unavailable" || !strings.Contains(st.Error, "WEB=1") {
 		t.Fatalf("status: %+v", st)
 	}
 	if _, err := os.Stat(d.Global.Web.StateDir); !os.IsNotExist(err) {

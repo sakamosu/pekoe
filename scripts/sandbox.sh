@@ -4,6 +4,7 @@
 #   scripts/sandbox.sh                   # interactive subshell
 #   scripts/sandbox.sh boba new feat/x   # one command
 #   BOBA_BIN=/path/to/boba scripts/sandbox.sh ...   # use a prebuilt binary
+#   WEB=1 scripts/sandbox.sh ...         # build with the web UI (-tags web)
 #
 # A temp dir holds BOBA_HOME / BOBA_SOCK / BOBA_WORKTREES, and the tmux server
 # gets its own name (BOBA_TMUX_SOCKET=boba-sb-…). The real daemon
@@ -36,7 +37,7 @@ mkdir -p "$dir/bin"
 if [ -n "${BOBA_BIN:-}" ]; then
 	ln -s "$(cd "$(dirname "$BOBA_BIN")" && pwd)/$(basename "$BOBA_BIN")" "$dir/bin/boba"
 else
-	(cd "$repo" && go build -o "$dir/bin/boba" ./cmd/boba)
+	(cd "$repo" && go build ${WEB:+-tags web} -o "$dir/bin/boba" ./cmd/boba)
 fi
 ln -s boba "$dir/bin/bobad"
 

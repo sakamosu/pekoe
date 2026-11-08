@@ -32,9 +32,22 @@ iPhone (Safari / ホーム画面)
 - 静的ファイル(`internal/daemon/webui/`)は `go:embed`。外部 CDN・フォントは読まない。PWA の manifest とアイコン(PNG をその場で描く)つき。Service Worker と Web Push は入れない(通知は `[notify] ntfy` で足りる)
 - 更新は 3 秒ごとのポーリング(画面を開いている間は画面テキストも 2.5 秒ごと)。アプリが裏に回ると止まる
 
+### ビルド:既定は Tailscale なし
+
+Web UI は build tag `web` を付けたビルドにだけ入る。職場の Mac のように VPN クライアントを含むソフトを入れたくない環境もあるので、既定のビルドには Tailscale のコードを一切含めない。
+
+```sh
+make install          # 既定: Web UI なし(Tailscale のコードを含まない、約 19MB)
+make install WEB=1    # Web UI 入り(-tags web、tsnet をリンク、約 38MB)
+```
+
+- 既定のビルドでは `go version -m boba` にも `tailscale.com` は出ない(`internal/daemon/webts.go` が `//go:build web`、代わりに `webts_off.go`)。ただし `go.mod` には依存として載っている
+- 既定のビルドで設定に `[web] enable = true` があっても(dotfiles で個人の Mac と設定を共有しているなど)、何もせずに bobad のログに警告を出すだけ。`boba web` は「Web UI なしのビルド」と再ビルドの方法を出す
+- `make test` は両方のビルドを検査する。隔離環境で Web UI 入りを試すには `WEB=1 scripts/sandbox.sh`
+
 ### `[web]` が無効なとき
 
-既定は無効。無効なら `startWeb` は状態を `off` にして戻るだけで、`tsnet.Server` を作らず、状態ディレクトリも作らず、ソケットも開かない(`TestWebOffStartsNothing`)。tsnet のコードはバイナリにはリンクされる(サイズは約 19MB → 38MB)が、リンクされた tailscale パッケージの `init()` にはゴルーチン・ファイル・ネットワークを使うものはない。
+Web UI 入りのビルドでも既定は無効。無効なら `startWeb` は状態を `off` にして戻るだけで、`tsnet.Server` を作らず、状態ディレクトリも作らず、ソケットも開かない(`TestWebOffStartsNothing`)。リンクされた tailscale パッケージの `init()` には、ゴルーチン・ファイル・ネットワークを使うものはない。
 
 ## 設定
 
@@ -56,10 +69,11 @@ allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admi
 
 ### 初回の tailnet 参加
 
-1. tailnet の admin console で MagicDNS と HTTPS Certificates を有効にする
-2. `[web]` を書いて bobad を再起動する
-3. `boba web` を実行する。`state needs-login` と `login https://login.tailscale.com/a/…` が出るので、そのリンクを開いて承認する(同じ URL は `bobad.log` にも出る)。auth key を使うなら `auth_key` か `TS_AUTHKEY` を設定して再起動すれば、URL は出ずに参加する
-4. `boba web` が `state running` と `url https://boba.<tailnet>.ts.net/` を出したら、iPhone の Safari でその URL を開き、共有メニューから「ホーム画面に追加」
+1. `make install WEB=1` で Web UI 入りのビルドを入れる
+2. tailnet の admin console で MagicDNS と HTTPS Certificates を有効にする
+3. `[web]` を書いて bobad を再起動する
+4. `boba web` を実行する。`state needs-login` と `login https://login.tailscale.com/a/…` が出るので、そのリンクを開いて承認する(同じ URL は `bobad.log` にも出る)。auth key を使うなら `auth_key` か `TS_AUTHKEY` を設定して再起動すれば、URL は出ずに参加する
+5. `boba web` が `state running` と `url https://boba.<tailnet>.ts.net/` を出したら、iPhone の Safari でその URL を開き、共有メニューから「ホーム画面に追加」
 
 参加後の鍵は `state_dir`(既定 `~/.local/share/boba/tsnet`、パーミッション 700)に残るので、2 回目以降は何もしなくてよい。auth key を設定に書いた場合は、参加後に消してよい。admin console で `boba` マシンの key expiry を無効にしておくと、180 日ごとの再ログインが要らない。
 

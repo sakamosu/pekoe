@@ -392,6 +392,7 @@ func (d *Daemon) registerHandlers() {
 		},
 		"web.status": func(json.RawMessage) (any, error) {
 			st := d.web.get()
+			st.Built = webBuilt
 			if st.State == "" {
 				st.State = "off"
 			}
