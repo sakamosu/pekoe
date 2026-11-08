@@ -236,7 +236,7 @@ icons = "nerd"              # nerd | unicode | ascii
 primary = "#ff87da"
 [mascot]                    # マスコット tapi(docs/mascot.md)
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
-glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を ⬤ に) | ascii
+glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
 palette = "dark"            # dark(D ミルキー＋影) | light(E キャラメル)
 splash  = true              # 起動時のスプラッシュ
 [mascot.colors]             # hi / bd / sh / eye を上書き

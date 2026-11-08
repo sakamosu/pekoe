@@ -68,7 +68,7 @@ func TestEyesAndCells(t *testing.T) {
 		}
 	}
 	n := plain(Options{Glyphs: "narrow"})
-	if n.Eyes(Work) != "⬤ ⬤" || n.CellGlyph(Done) != "⬤" || n.Eyes(Error) != "⨯ ⨯" || n.ASCII() {
+	if n.Eyes(Work) != "🞄 🞄" || n.CellGlyph(Done) != "🞄" || n.Eyes(Error) != "⨯ ⨯" || n.ASCII() {
 		t.Errorf("narrow: work=%q done=%q error=%q", n.Eyes(Work), n.CellGlyph(Done), n.Eyes(Error))
 	}
 	a := plain(Options{Glyphs: "ascii"})
