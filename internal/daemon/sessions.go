@@ -968,7 +968,17 @@ func (d *Daemon) hKeys(p keysP) (any, error) {
 type answerP struct {
 	Slug   string `json:"slug"`
 	Answer string `json:"answer"` // allow | deny | always | y | n
+	// Expect, when given, is the prompt the user was shown: the answer is
+	// refused (errPromptChanged) unless the session still waits on that
+	// tool. The web UI always sends it (web.go).
+	Expect *answerExpect `json:"expect,omitempty"`
 }
+
+type answerExpect struct {
+	Tool *state.Tool `json:"tool"`
+}
+
+var errPromptChanged = errors.New("the prompt changed; look again")
 
 func (d *Daemon) sendKeySpec(slug, spec string) error {
 	if spec == "" {
@@ -988,6 +998,9 @@ func (d *Daemon) hAnswer(p answerP) (any, error) {
 	if s.State != state.Waiting {
 		// never type a stray "1" into the agent's prompt
 		return nil, fmt.Errorf("%s is not waiting (state: %s)", p.Slug, s.State)
+	}
+	if p.Expect != nil && !sameTool(s.PendingTool, p.Expect.Tool) {
+		return nil, errPromptChanged
 	}
 	ag := d.Global.Agents[s.Agent]
 	var spec string

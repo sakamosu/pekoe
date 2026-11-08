@@ -88,6 +88,8 @@ type Daemon struct {
 	sockID  fileID   // the socket file this daemon created
 	httpSrv *http.Server
 	token   string
+	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
+	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
 	mu         sync.Mutex
 	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
@@ -143,7 +145,7 @@ func New() (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{
-		DB: db, Global: g, lock: lock,
+		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(),
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
@@ -200,6 +202,7 @@ func (d *Daemon) Run() error {
 	if err := d.startHTTP(); err != nil {
 		log.Printf("http: %v (extension disabled)", err)
 	}
+	d.startWeb() // no-op (tsnet untouched) unless [web] enable = true
 	log.Printf("bobad %s listening on %s", Version, sock)
 
 	go func() {
@@ -228,6 +231,7 @@ func (d *Daemon) Run() error {
 func (d *Daemon) Stop() { d.stopOnce.Do(func() { close(d.stop) }) }
 
 func (d *Daemon) shutdown() {
+	d.stopWeb()
 	if d.httpSrv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		d.httpSrv.Shutdown(ctx)
@@ -386,6 +390,14 @@ func (d *Daemon) registerHandlers() {
 		},
 		"ext.info": func(json.RawMessage) (any, error) {
 			return map[string]any{"port": d.Global.HTTP.Port, "token": d.token}, nil
+		},
+		"web.status": func(json.RawMessage) (any, error) {
+			st := d.web.get()
+			st.Built = webBuilt
+			if st.State == "" {
+				st.State = "off"
+			}
+			return st, nil
 		},
 		"repo.list":       bind(d.hRepoList),
 		"repo.resolve":    bind(d.hRepoResolve),

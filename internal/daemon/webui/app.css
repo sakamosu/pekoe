@@ -1,0 +1,144 @@
+/* boba web — docs/ui-guidelines.md の配色をそのまま。色は意味にだけ、記号と対で。 */
+:root {
+  --bg: #151421;
+  --surface: #1e1d2c;
+  --border: #3b3b4d;
+  --dim: #848495;
+  --text: #e0e0eb;
+  --primary: #ff87da;
+  --secondary: #11cded;
+  --warn: #edc812;
+  --ok: #51d75e;
+  --err: #ff7172;
+  --select: #441e39;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  min-height: 100vh;
+  -webkit-text-size-adjust: 100%;
+}
+button, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+.dim { color: var(--dim); }
+
+.bar {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 12px 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.bar h1 { margin: 0; font: 600 17px/1.2 var(--mono); color: var(--primary); }
+.bar .sum { margin-left: auto; font: 13px var(--mono); color: var(--dim); }
+.back {
+  background: none; border: 0; padding: 0; color: var(--secondary);
+  font: 15px var(--mono);
+}
+
+/* ---- list ---- */
+#list { padding: 8px 0 24px; }
+.empty { padding: 32px 16px; color: var(--dim); text-align: center; }
+.row-s {
+  display: block; width: 100%; text-align: left;
+  padding: 12px 16px; background: none;
+  border: 0; border-bottom: 1px solid var(--border);
+}
+.row-s:active { background: var(--select); }
+.line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ic { font-family: var(--mono); width: 1.1em; flex: none; }
+.slug { font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st { margin-left: auto; font: 13px var(--mono); flex: none; }
+.line2 { margin: 2px 0 0 calc(1.1em + 8px); font-size: 13px; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.s-run .ic, .s-run .st { color: var(--ok); }
+.s-wait .ic, .s-wait .st { color: var(--warn); }
+.s-idle .ic, .s-idle .st { color: var(--dim); }
+.s-done .ic, .s-done .st { color: var(--secondary); }
+.s-fail .ic, .s-fail .st { color: var(--err); }
+
+/* a waiting session: the one thing the phone is for */
+.wait-card {
+  margin: 8px 12px; padding: 12px;
+  border: 1px solid var(--warn); border-radius: 10px;
+  background: var(--surface);
+}
+.wait-card .row-s { padding: 0 0 8px; border: 0; }
+.tool { font: 600 14px var(--mono); color: var(--text); }
+.input {
+  margin: 6px 0 0; padding: 8px 10px;
+  background: var(--bg); border-radius: 6px;
+  font: 13px/1.4 var(--mono); color: var(--text);
+  white-space: pre-wrap; word-break: break-all;
+  max-height: 9.5em; overflow: auto;
+}
+.msg { margin-top: 6px; font-size: 13px; color: var(--dim); }
+.also { margin-top: 6px; font: 13px var(--mono); color: var(--warn); }
+
+.row { display: flex; gap: 10px; margin-top: 12px; }
+.row .btn { flex: 1; }
+.btn {
+  min-height: 44px; padding: 0 16px;
+  border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); font: 600 15px var(--mono);
+}
+.btn:disabled { opacity: .5; }
+.btn.allow { color: var(--ok); border-color: var(--ok); }
+.btn.deny { color: var(--err); border-color: var(--err); }
+.btn.key { color: var(--secondary); border-color: var(--secondary); }
+
+/* ---- detail ---- */
+#detail { padding: 12px 16px 24px; }
+.head .line2 { margin-left: 0; white-space: normal; }
+.ask { margin: 12px 0; padding: 12px; border: 1px solid var(--warn); border-radius: 10px; background: var(--surface); }
+.screen { margin-top: 12px; }
+.cap { font: 12px var(--mono); color: var(--dim); margin-bottom: 4px; }
+#d-screen {
+  margin: 0; padding: 10px;
+  background: #0f0e18; border: 1px solid var(--border); border-radius: 8px;
+  font: 11px/1.35 var(--mono); color: var(--text);
+  white-space: pre-wrap; word-break: break-all;
+  max-height: 55vh; overflow: auto;
+}
+.send { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.send textarea {
+  flex: 1; min-height: 44px; max-height: 30vh; resize: vertical;
+  padding: 10px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 16px; /* no zoom on focus (iOS) */
+}
+.send textarea:focus { outline: none; border-color: var(--primary); }
+
+.who { padding: 8px 16px 16px; font: 12px var(--mono); color: var(--dim); }
+
+/* ---- confirm sheet ---- */
+.sheet-back {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: flex-end;
+  background: rgba(21, 20, 33, .6);
+}
+.sheet {
+  width: 100%; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 2px solid var(--primary); border-radius: 14px 14px 0 0;
+}
+.sheet h2 { margin: 0 0 10px; font: 600 16px var(--mono); }
+.sheet .target { font: 600 14px var(--mono); }
+.sheet .input { max-height: 22vh; }
+.sheet-cap { margin-top: 10px; }
+.sheet-screen { font-size: 11px; max-height: 30vh; }
+.sheet.danger { border-top-color: var(--err); }
+
+.toast {
+  position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 20;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--err);
+  font: 13px var(--mono);
+}
+.toast.ok { border-color: var(--ok); }

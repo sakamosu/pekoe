@@ -15,7 +15,9 @@
 ## テスト
 
 ```sh
-make test   # go vet + go test ./... + nvim のヘッドレステスト
+make test   # go vet + go test ./...(既定と -tags web の両方)+ nvim のヘッドレステスト
 ```
+
+Web UI(`internal/daemon/webts.go`)は `-tags web` のビルドにだけ入る。既定のビルドに Tailscale のコードを持ち込まない(`webts.go` 以外から `tailscale.com` を import しない)。
 
 daemon のテストは偽エンジン(`internal/daemon/daemon_test.go` の `fakeEngine`)で動く。`engine.Engine` にメソッドを足したら偽エンジンにも足す。

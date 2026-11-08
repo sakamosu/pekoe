@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"boba/internal/config"
 	"boba/internal/gitx"
@@ -120,7 +121,14 @@ func toolSummary(name string, input json.RawMessage) string {
 	arg := pick("command", "file_path", "path", "pattern", "url", "query", "description", "prompt")
 	arg = strings.ReplaceAll(arg, "\n", " ")
 	if len(arg) > 200 {
-		arg = arg[:200] + "…"
+		// on a rune boundary: half a character is invalid UTF-8, which JSON
+		// turns into U+FFFD and the web UI's prompt check (sameTool) then
+		// never matches
+		cut := 200
+		for cut > 0 && !utf8.RuneStart(arg[cut]) {
+			cut--
+		}
+		arg = arg[:cut] + "…"
 	}
 	return arg
 }

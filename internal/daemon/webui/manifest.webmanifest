@@ -1,0 +1,15 @@
+{
+  "name": "boba",
+  "short_name": "boba",
+  "description": "agents in worktrees — sessions, permission prompts, send",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#151421",
+  "theme_color": "#151421",
+  "icons": [
+    { "src": "/icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

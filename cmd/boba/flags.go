@@ -153,6 +153,7 @@ var specs = map[string]spec{
 	"hooks":     {use: "boba hooks install|uninstall|status [--yes]", bools: []string{"yes"}},
 	"ext":       {use: "boba ext   port + token for the Chrome extension"},
 	"mcp":       {use: "boba mcp   MCP server for agents (stdio)"},
+	"web":       {use: "boba web [--json]   phone web UI on the tailnet: state, URL, login link"},
 
 	"daemon":        {use: "boba daemon start|stop|status"},
 	"daemon start":  {use: "boba daemon start"},

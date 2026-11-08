@@ -64,6 +64,9 @@ func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
 func DaemonLog() string { return filepath.Join(DataDir(), "bobad.log") }
 func PidFile() string   { return filepath.Join(DataDir(), "bobad.pid") }
 
+// WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
+func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
+
 // LockFile is held (flock) by the one bobad serving this data directory.
 func LockFile() string { return filepath.Join(DataDir(), "bobad.lock") }
 
