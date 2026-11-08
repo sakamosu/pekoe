@@ -541,3 +541,20 @@ func (d *DB) Set(k, v string) error {
 	_, err := d.db.Exec(`INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)`, k, v)
 	return err
 }
+
+// Prefixed returns every kv pair whose key starts with prefix, as {k, v}.
+func (d *DB) Prefixed(prefix string) [][2]string {
+	rows, err := d.db.Query(`SELECT k, v FROM kv WHERE substr(k, 1, ?) = ? ORDER BY k`, len(prefix), prefix)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out [][2]string
+	for rows.Next() {
+		var k, v string
+		if rows.Scan(&k, &v) == nil {
+			out = append(out, [2]string{k, v})
+		}
+	}
+	return out
+}

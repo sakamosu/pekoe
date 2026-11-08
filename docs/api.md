@@ -74,7 +74,7 @@
 | `daemon.status` | — | `{pid, version, sessions, http_port}` |
 | `daemon.stop` | — | `null` |
 | `subscribe` | `{events: [prefix]}` | `null` |
-| `repo.list` | — | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + `~/.config/boba/repos/*.toml` があるもの。名前順 |
+| `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/boba/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
@@ -143,9 +143,10 @@
 {
   "repo_id": "github.com_me_app",
   "name": "app",                 // 短い名前(~/worktrees/<name>)。設定ファイルしかないときは repo-id から推測
-  "dir": "/Users/me/src/app",    // メインの worktree。設定ファイルしか知らないときは省略
+  "dir": "/Users/me/src/app",    // メインの worktree。場所が分からない(設定ファイルだけで、探しても見つからない)ときは省略
   "sessions": 2,                 // landed でないセッションの数
-  "config": true                 // ~/.config/boba/repos/<repo-id>.toml がある
+  "config": true,                // ~/.config/boba/repos/<repo-id>.toml がある
+  "cwd": true                    // repo.list に渡した cwd がこのリポジトリの中(それ以外は省略)
 }
 ```
 

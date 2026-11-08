@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"boba/internal/gitx"
 	"boba/internal/paths"
 	"boba/internal/state"
 )
@@ -202,4 +203,65 @@ func mustReal(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return r
+}
+
+func repoByName(rs []KnownRepo, name string) *KnownRepo {
+	for i := range rs {
+		if rs[i].Name == name {
+			return &rs[i]
+		}
+	}
+	return nil
+}
+
+// repo.list {cwd} (the TUI): the cwd's repository, also from inside one of
+// its worktrees, is remembered and marked; configs are located when their
+// repo-id spells a path.
+func TestRepoListCwdAndRemembered(t *testing.T) {
+	d, _, app := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": app, "resume": "new"})
+
+	web := mustReal(t, gitRepo(t, "x", "web"))
+	wt := filepath.Join(t.TempDir(), "web-wt")
+	run(t, web, "git", "worktree", "add", "-q", "-b", "feat/x", wt)
+
+	my := mustReal(t, gitRepo(t, "y", "my_tool")) // underscore: ambiguous in a path_ id
+	myID, _ := gitx.RepoID(my)
+	os.MkdirAll(paths.ReposConfigDir(), 0o755)
+	os.WriteFile(paths.RepoConfig(myID), []byte(""), 0o644)
+	os.WriteFile(paths.RepoConfig("github.com_me_ghost"), []byte(""), 0o644)
+
+	rs := call[[]KnownRepo](t, d, "repo.list", map[string]any{"cwd": wt})
+	if r := repoByName(rs, "app"); r == nil || r.Sessions != 1 || r.Cwd {
+		t.Fatalf("app: %+v", rs)
+	}
+	if r := repoByName(rs, "web"); r == nil || !r.Cwd || mustReal(t, r.Dir) != web || r.Sessions != 0 {
+		t.Fatalf("web (cwd inside its worktree resolves to the main worktree): %+v", rs)
+	}
+	if r := repoByName(rs, "my_tool"); r == nil || mustReal(t, r.Dir) != my || !r.Config {
+		t.Fatalf("my_tool (config only, path_ id): %+v", rs)
+	}
+	if r := repoByName(rs, "ghost"); r == nil || r.Dir != "" || !r.Config {
+		t.Fatalf("ghost (config, path unknown): %+v", rs)
+	}
+
+	// remembered: still listed when asked from elsewhere, and resolvable by name
+	rs = call[[]KnownRepo](t, d, "repo.list", map[string]any{"cwd": t.TempDir()})
+	if r := repoByName(rs, "web"); r == nil || r.Cwd || mustReal(t, r.Dir) != web {
+		t.Fatalf("web should be remembered: %+v", rs)
+	}
+	for _, r := range rs {
+		if r.Cwd {
+			t.Fatalf("outside every repository nothing is cwd: %+v", r)
+		}
+	}
+	if r := call[KnownRepo](t, d, "repo.resolve", map[string]any{"repo": "web"}); mustReal(t, r.Dir) != web || r.Cwd {
+		t.Fatalf("resolve remembered: %+v", r)
+	}
+	// without cwd (the CLI) nothing is marked
+	for _, r := range call[[]KnownRepo](t, d, "repo.list", nil) {
+		if r.Cwd {
+			t.Fatalf("no cwd, no mark: %+v", r)
+		}
+	}
 }

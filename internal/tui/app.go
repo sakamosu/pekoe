@@ -37,7 +37,10 @@ type screenMsg struct {
 	err          error
 }
 type sessionsMsg []*state.Session
-type worktreesMsg []daemon.WorktreeView
+type worktreesMsg struct {
+	dir  string // the repository they belong to
+	list []daemon.WorktreeView
+}
 type changesMsg struct {
 	slug string
 	list []change
@@ -74,9 +77,17 @@ type model struct {
 	fitReq        string // last pty-resize request fitScreen sent (dedupes)
 
 	sessions []*state.Session
-	sel      int
-	filter   string
-	filterOn bool
+	sel      int // index into visible(); repository headings are not rows of it
+
+	repos       []daemon.KnownRepo // repo.list: repositories boba knows (repos.go)
+	reposLoaded bool
+	chosen      *daemon.KnownRepo // picked with w; wins over the selection's repository
+	repoKey     string           // Dir of the repository Worktrees / Issues were loaded for
+	repoSynced  bool
+	sessionsIn  bool // the first session.list answered
+	homePicked  bool // the start-up selection followed the repository boba was started in
+	filter      string
+	filterOn    bool
 
 	worktrees []daemon.WorktreeView
 	wsel      int
@@ -231,7 +242,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadWorktrees(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("boba")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
@@ -267,14 +278,15 @@ func (m *model) loadSessions() tea.Cmd {
 	}
 }
 
+// loadWorktrees lists the current repository's worktrees.
 func (m *model) loadWorktrees() tea.Cmd {
-	cwd := m.cwd
+	dir := m.curRepoDir()
 	return func() tea.Msg {
 		var ws []daemon.WorktreeView
-		if err := m.cl.Call("worktree.list", map[string]any{"repo": cwd}, &ws); err != nil {
-			_ = m.cl.Call("worktree.list", nil, &ws)
+		if dir != "" && m.cl != nil {
+			_ = m.cl.Call("worktree.list", map[string]any{"repo": dir}, &ws)
 		}
-		return worktreesMsg(ws)
+		return worktreesMsg{dir: dir, list: ws}
 	}
 }
 
@@ -384,7 +396,7 @@ func (m *model) visible() []*state.Session {
 	}
 	var out []*state.Session
 	for _, s := range m.sessions {
-		if strings.Contains(strings.ToLower(s.Branch+" "+s.Slug), strings.ToLower(m.filter)) {
+		if strings.Contains(strings.ToLower(s.Branch+" "+s.Slug+" "+s.Repo), strings.ToLower(m.filter)) {
 			out = append(out, s)
 		}
 	}
@@ -430,6 +442,9 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	if cur == m.lastSel {
 		return nil
+	}
+	if m.chosen != nil && s != nil && m.lastSel != "" && m.lastSel != "-" {
+		m.chosen = nil // moving to a session makes its repository the current one
 	}
 	var cmds []tea.Cmd
 	if m.lastSel != "" && m.screen != nil && m.screenOf == m.lastSel {
@@ -506,7 +521,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		_, cmd = m.route(msg)
 	}
-	return m, tea.Batch(cmd, m.previewSync())
+	return m, tea.Batch(cmd, m.previewSync(), m.repoSync())
 }
 
 func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
@@ -618,6 +633,22 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setMsg(string(msg), false)
 		return m, nil
 
+	case reposMsg:
+		m.repos, m.reposLoaded = msg, true
+		if m.sessionsIn && !m.homePicked {
+			m.pickHome()
+			return m, m.onSelChange()
+		}
+		if m.chosen != nil {
+			for _, r := range m.repos {
+				if r.ID == m.chosen.ID {
+					rr := r
+					m.chosen = &rr
+				}
+			}
+		}
+		return m, nil
+
 	case sessionsMsg:
 		cur := ""
 		if s := m.current(); s != nil {
@@ -631,10 +662,15 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
+		m.sessionsIn = true
+		m.pickHome()
 		return m, tea.Batch(m.onSelChange(), m.maybePermission())
 
 	case worktreesMsg:
-		m.worktrees = msg
+		if msg.dir != m.curRepoDir() {
+			return m, nil // the current repository changed meanwhile
+		}
+		m.worktrees = msg.list
 		m.wsel = clampi(m.wsel, 0, max(len(m.worktrees)-1, 0))
 		return m, nil
 
@@ -758,7 +794,8 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// sortSessions: creation order, landed sessions sink to the bottom.
+// sortSessions: creation order, landed sessions sink to the bottom, then
+// grouped by repository (a repository sits where its first session would).
 func (m *model) sortSessions() {
 	sort.SliceStable(m.sessions, func(i, j int) bool {
 		li, lj := m.sessions[i].State == state.Landed, m.sessions[j].State == state.Landed
@@ -767,6 +804,7 @@ func (m *model) sortSessions() {
 		}
 		return m.sessions[i].CreatedAt.Before(m.sessions[j].CreatedAt)
 	})
+	groupByRepo(m.sessions)
 }
 
 func (m *model) upsert(s *state.Session) {
@@ -809,7 +847,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		}
 		var cmds []tea.Cmd
 		if ev.Event == "session.created" {
-			cmds = append(cmds, m.loadWorktrees())
+			cmds = append(cmds, m.loadWorktrees(), m.loadRepos())
 		}
 		if curSlug == "" {
 			cmds = append(cmds, m.onSelChange())
@@ -838,7 +876,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		}
 		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
 		m.lastSel = "-"
-		return tea.Batch(m.onSelChange(), m.loadWorktrees())
+		return tea.Batch(m.onSelChange(), m.loadWorktrees(), m.loadRepos())
 	case "session.progress":
 		var p struct {
 			Slug  string        `json:"slug"`
@@ -1053,6 +1091,8 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	case ":":
 		m.modal = newCommandModal(m)
 		return nil
+	case "w":
+		return m.openRepoPicker(nil)
 	}
 	if m.prefixKey(k) {
 		m.prefix = true
@@ -1157,8 +1197,7 @@ func (m *model) common(key string) (tea.Cmd, bool) {
 	s := m.current()
 	switch key {
 	case "n":
-		m.modal = newNewModal(m, "")
-		return nil, true
+		return m.openNew(nil), true
 	case "r":
 		if s == nil {
 			return nil, true
@@ -1401,8 +1440,7 @@ func (m *model) keyPicks(key string) tea.Cmd {
 		}
 	case "n":
 		if pk != nil {
-			m.modal = newNewModal(m, "")
-			m.modal.(*newModal).pickID = pk.ID
+			return m.openNew(func(nm *newModal) { nm.pickID = pk.ID })
 		}
 	case "d", "x":
 		if pk != nil {

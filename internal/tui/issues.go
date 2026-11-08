@@ -21,14 +21,16 @@ import (
 const subIssues = 2 // m.sub2: 0 worktrees, 1 browser, 2 issues
 
 type issuesMsg struct {
+	repo string // the repository it was fetched for
 	list *daemon.IssueList
 	err  error
 }
 
 type issueViewMsg struct {
-	n   int
-	det *daemon.IssueDetail
-	err error
+	repo string
+	n    int
+	det  *daemon.IssueDetail
+	err  error
 }
 
 type issuesState struct {
@@ -57,13 +59,28 @@ func (is *issuesState) ensure() {
 	}
 }
 
+// resetRepo forgets what was fetched for another repository (the filter
+// and label stay: they mean the same in every repository).
+func (is *issuesState) resetRepo() {
+	is.list, is.loading, is.err = nil, false, ""
+	is.sel, is.scroll = 0, 0
+	is.query, is.queryOn = "", false
+	is.details, is.viewErr, is.fetching = nil, nil, nil
+	is.ensure()
+}
+
 // ---- loading ----
 
 func (m *model) loadIssues(refresh bool) tea.Cmd {
 	is := &m.iss
 	is.ensure()
+	repo := m.curRepoDir()
+	if repo == "" {
+		is.loading = false
+		return nil // no repository: issueRows says so
+	}
 	is.loading = true
-	params := map[string]any{"repo": m.cwd, "filter": is.filter, "label": is.label, "refresh": refresh}
+	params := map[string]any{"repo": repo, "filter": is.filter, "label": is.label, "refresh": refresh}
 	if refresh {
 		is.details = map[int]*daemon.IssueDetail{}
 		is.viewErr = map[int]string{}
@@ -74,9 +91,9 @@ func (m *model) loadIssues(refresh bool) tea.Cmd {
 		}
 		var l daemon.IssueList
 		if err := m.cl.Call("issues.list", params, &l); err != nil {
-			return issuesMsg{err: err}
+			return issuesMsg{repo: repo, err: err}
 		}
-		return issuesMsg{list: &l}
+		return issuesMsg{repo: repo, list: &l}
 	}
 }
 
@@ -91,13 +108,13 @@ func (m *model) loadIssueView(refresh bool) tea.Cmd {
 		return nil
 	}
 	m.iss.fetching[n] = true
-	repo := m.cwd
+	repo := m.curRepoDir()
 	return func() tea.Msg {
 		var det daemon.IssueDetail
 		if err := m.cl.Call("issues.view", map[string]any{"repo": repo, "number": n, "refresh": refresh}, &det); err != nil {
-			return issueViewMsg{n: n, err: err}
+			return issueViewMsg{repo: repo, n: n, err: err}
 		}
-		return issueViewMsg{n: n, det: &det}
+		return issueViewMsg{repo: repo, n: n, det: &det}
 	}
 }
 
@@ -106,6 +123,9 @@ func (m *model) onIssuesMsg(msg tea.Msg) tea.Cmd {
 	is.ensure()
 	switch msg := msg.(type) {
 	case issuesMsg:
+		if msg.repo != m.curRepoDir() {
+			return nil // fetched for the repository we just left
+		}
 		is.loading = false
 		if msg.err != nil {
 			is.err = firstLine(msg.err.Error())
@@ -118,6 +138,9 @@ func (m *model) onIssuesMsg(msg tea.Msg) tea.Cmd {
 			return m.loadIssueView(false)
 		}
 	case issueViewMsg:
+		if msg.repo != m.curRepoDir() {
+			return nil
+		}
 		delete(is.fetching, msg.n)
 		if msg.err != nil {
 			is.viewErr[msg.n] = firstLine(msg.err.Error())
@@ -336,11 +359,12 @@ func (m *model) newFromIssue(cur *daemon.Issue) tea.Cmd {
 	if s := m.issueSession(cur); s != nil {
 		m.setMsg(fmt.Sprintf("#%d already has a session: %s · ↵ jump", cur.Number, s.Branch), false)
 	}
-	nm := newNewModal(m, daemon.SuggestBranch(cur.Number, cur.Title, cur.Labels))
+	branch := daemon.SuggestBranch(cur.Number, cur.Title, cur.Labels)
 	from := fmt.Sprintf("gh#%d", cur.Number)
-	nm.inputs[1] = &input{text: []rune(from), pos: len(from)}
-	m.modal = nm
-	return nil
+	return m.openNew(func(nm *newModal) {
+		nm.inputs[0] = &input{text: []rune(branch), pos: len([]rune(branch))}
+		nm.inputs[1] = &input{text: []rune(from), pos: len(from)}
+	})
 }
 
 func (m *model) openIssueURL(cur *daemon.Issue) tea.Cmd {
@@ -452,6 +476,9 @@ func (l *labelModal) key(k tea.KeyMsg) tea.Cmd {
 func (m *model) issuesTitle(f bool) string {
 	n := len(m.visibleIssues())
 	extra := m.issueFilterName()
+	if r := m.repoScope(); r != "" {
+		extra = r + " " + extra // the repository is part of the range
+	}
 	if m.iss.query != "" || m.iss.queryOn {
 		extra += " filter:" + m.iss.query
 		if m.iss.queryOn {
@@ -482,6 +509,8 @@ func (m *model) issueRows(cw int, f bool) []row {
 	th := m.th
 	is := &m.iss
 	switch {
+	case is.list == nil && m.curRepo() == nil:
+		return []row{{Text: th.FG(theme.Dim, "  no repository · w pick one")}}
 	case is.list == nil && is.err != "":
 		return []row{{Text: th.FG(theme.Err, "  "+is.err)}}
 	case is.list == nil:

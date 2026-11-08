@@ -22,8 +22,8 @@ func issueModel(t *testing.T, color string, width int) *model {
 	m.width, m.height = width, 40
 	now := time.Now()
 	m.sessions = []*state.Session{
-		{Slug: "fix-login-safari", Branch: "fix/login-safari", State: state.Waiting, RepoID: "r", Issue: 12, StateSince: now},
-		{Slug: "other", Branch: "other", State: state.Running, RepoID: "r", StateSince: now},
+		{Slug: "fix-login-safari", Branch: "fix/login-safari", State: state.Waiting, RepoID: "r", Repo: "app", RepoDir: "/src/app", Issue: 12, StateSince: now},
+		{Slug: "other", Branch: "other", State: state.Running, RepoID: "r", Repo: "app", RepoDir: "/src/app", StateSince: now},
 	}
 	m.iss.list = &daemon.IssueList{RepoID: "r", Filter: "mine", FetchedAt: now, Issues: []daemon.Issue{
 		{Number: 12, Title: "Login fails on Safari", Labels: []string{"bug", "ui"}, Comments: 2, UpdatedAt: now.Add(-2 * time.Hour), URL: "https://github.com/me/app/issues/12",
@@ -142,7 +142,7 @@ func TestIssuesPanelRender(t *testing.T) {
 		m.focus = pSecond
 		m.sub2 = subIssues
 		out := checkSize(t, m, c.color)
-		if !strings.Contains(out, "[2] "+theme.Prefix(m.ic.Issues)+"Issues 3 mine") {
+		if !strings.Contains(out, "[2] "+theme.Prefix(m.ic.Issues)+"Issues 3 app mine") {
 			t.Errorf("%s: title line missing:\n%s", c.color, out)
 		}
 		var row12 string
@@ -169,7 +169,7 @@ func TestIssuesPanelUnavailable(t *testing.T) {
 	m.iss.list = &daemon.IssueList{Filter: "mine", Unavailable: "no GitHub remote", FetchedAt: time.Now()}
 	m.focus, m.sub2 = pSecond, subIssues
 	out := checkSize(t, m, "unavailable")
-	if !strings.Contains(out, "no GitHub remote") || !strings.Contains(out, "Issues 0 mine") {
+	if !strings.Contains(out, "no GitHub remote") || !strings.Contains(out, "Issues 0 app mine") {
 		t.Fatalf("unavailable:\n%s", out)
 	}
 	m.onKey(key("j"))
@@ -210,7 +210,7 @@ func TestIssueKeys(t *testing.T) {
 	if v := m.visibleIssues(); len(v) != 1 || v[0].Number != 12 {
 		t.Fatalf("filter: %+v", v)
 	}
-	if out := checkSize(t, m, "filtered"); !strings.Contains(out, "Issues 1 mine filter:safari") {
+	if out := checkSize(t, m, "filtered"); !strings.Contains(out, "Issues 1 app mine filter:safari") {
 		t.Fatalf("filtered title:\n%s", out)
 	}
 	m.onKey(key("/"))

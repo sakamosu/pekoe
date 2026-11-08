@@ -251,6 +251,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.remember(repo)
 	if !gitx.HasHead(repo.Dir) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
@@ -678,6 +679,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.remember(repo)
 	d.mu.Lock()
 	for _, s := range d.sessions {
 		if s.Path == top {

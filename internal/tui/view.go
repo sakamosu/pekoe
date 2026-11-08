@@ -172,11 +172,15 @@ func (m *model) sessionRows(cw int) ([]row, string) {
 			toReview++
 		}
 	}
+	headings := m.multiRepo()
 	for i, s := range vis {
+		if headings && (i == 0 || repoKeyOf(vis[i-1]) != repoKeyOf(s)) {
+			rows = append(rows, row{Text: m.repoHeading(s, cw)})
+		}
 		rows = append(rows, row{Text: m.sessionLine(s, cw, now), Sel: i == m.sel})
 	}
 	if len(vis) == 0 {
-		hint := "no sessions · n new"
+		hint := m.sessionsEmptyHint()
 		if m.filter != "" {
 			hint = "no match"
 		}
@@ -361,10 +365,13 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 		}
 		rows = append(rows, row{Text: mark + th.FG(nameRole, fit(name, 17)) + th.FG(theme.Dim, extra), Sel: f && i == m.wsel})
 	}
-	if len(rows) == 0 {
+	if len(rows) == 0 && m.curRepo() != nil {
 		rows = append(rows, row{Text: th.FG(theme.Dim, "  no worktrees")})
 	}
-	title := m.panelTitle(2, m.ic.Worktrees, fmt.Sprintf("Worktrees %d", len(m.worktrees)), "", f)
+	if len(rows) == 0 && m.curRepo() == nil {
+		rows = append(rows, row{Text: th.FG(theme.Dim, "  no repository · w pick one")})
+	}
+	title := m.panelTitle(2, m.ic.Worktrees, fmt.Sprintf("Worktrees %d", len(m.worktrees)), m.repoScope(), f)
 	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
 }
 
@@ -734,10 +741,8 @@ func (m *model) pickKey(k tea.KeyMsg) (tea.Cmd, bool) {
 		})
 		return nil, true
 	case "ctrl+n":
-		nm := newNewModal(m, "")
-		nm.pickID, nm.pickText = pk.ID, in.String()
-		m.modal = nm
-		return nil, true
+		text := in.String()
+		return m.openNew(func(nm *newModal) { nm.pickID, nm.pickText = pk.ID, text }), true
 	}
 	if in.key(k) {
 		return nil, true
@@ -977,12 +982,19 @@ func (m *model) viewBar() string {
 	th := m.th
 	name, icon := m.modeName()
 	segs := []string{m.barTapi(m.width), m.pill(theme.Prefix(icon)+name, theme.Primary, theme.Bg, true)}
-	if s := m.current(); s != nil {
+	repo := m.curRepo()
+	if s := m.current(); s != nil && (m.chosen == nil || m.chosen.ID == s.RepoID) {
 		port := ""
 		if s.Port > 0 {
 			port = " " + th.FG(theme.Dim, fmt.Sprintf(":%d", s.Port))
 		}
-		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+s.Branch+port, theme.Select, theme.Text, false))
+		name := ""
+		if repo != nil {
+			name = th.FG(theme.Dim, repo.Name+" ")
+		}
+		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+name+s.Branch+port, theme.Select, theme.Text, false))
+	} else if repo != nil {
+		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+repo.Name, theme.Select, theme.Text, false))
 	}
 	// session counts are tapi's speech now (barTapi); picks stay here
 	var counts []string
@@ -1018,8 +1030,11 @@ func (m *model) viewBar() string {
 // ---- narrow (< 100 columns): left column becomes one tabbed panel ----
 
 func (m *model) narrowTopH() int {
-	n := len(m.visible())
+	n := 0
 	switch m.narrowTab {
+	case 0:
+		rows, _ := m.sessionRows(max(m.width-4, 1)) // repository headings count
+		n = len(rows)
 	case 1:
 		n = len(m.worktrees)
 	case 2:
@@ -1068,7 +1083,7 @@ func (m *model) viewNarrow() []string {
 			rows = append(rows, row{Text: m.changeLine(c, peers[c.Path], m.width-4), Sel: f && i == m.csel})
 		}
 	}
-	if sel := m.sel; (m.narrowTab == 0 || m.narrowTab == 2) && len(rows) > topH-2 {
+	if sel := selRow(rows); (m.narrowTab == 0 || m.narrowTab == 2) && len(rows) > topH-2 {
 		if m.narrowTab == 2 {
 			sel = m.iss.sel
 		}

@@ -115,6 +115,8 @@ type Daemon struct {
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
 	devFlushAt time.Time
 
+	locateMiss map[string]time.Time // repo-ids knownRepos could not locate (repos.go), under mu
+
 	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
 }
 
