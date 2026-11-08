@@ -116,6 +116,8 @@ func dispatch(args ...string) error {
 		return cmdConflicts(rest)
 	case "review":
 		return cmdReview(rest)
+	case "tip":
+		return cmdTip(rest)
 	case "web":
 		if _, _, err := parseCmd("web", rest); err != nil {
 			return err
@@ -154,6 +156,7 @@ func TestHelpDoesNothing(t *testing.T) {
 		{"conflicts", "-h"},
 		{"review", "--help"},
 		{"web", "--help"},
+		{"tip", "--help"},
 	} {
 		fd.reset()
 		err := dispatch(args...)
@@ -186,6 +189,8 @@ func TestUnknownFlagRefused(t *testing.T) {
 		{"hooks", "install", "--force"},
 		{"ls", "--mine"},
 		{"issues", "--label"},
+		{"tip", "--doc"},
+		{"tip", "zoom", "extra"},
 	} {
 		fd.reset()
 		err := dispatch(args...)
@@ -262,7 +267,7 @@ func TestSplitGlobal(t *testing.T) {
 
 // Every subcommand main dispatches has a declared spec.
 func TestEverySubcommandHasSpec(t *testing.T) {
-	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon status", "daemon run", "tapi", "tapi reset"} {
+	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon status", "daemon run", "tapi", "tapi reset", "tip"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
 		}
