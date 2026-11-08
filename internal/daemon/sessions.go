@@ -288,7 +288,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	if !gitx.HasHead(repo.Dir) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
@@ -716,7 +716,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	d.mu.Lock()
 	for _, s := range d.sessions {
 		if s.Path == top {
@@ -1243,11 +1243,15 @@ func (d *Daemon) restore() {
 		return
 	}
 	alive, _ := d.Eng.Sessions()
+	d.mu.Lock()
 	for _, s := range list {
-		d.mu.Lock()
 		d.sessions[s.Slug] = s
 		d.out[s.Slug] = &outState{}
-		d.mu.Unlock()
+	}
+	d.mu.Unlock()
+	// before anything reads per-repo config or files by repo-id
+	d.realignRepoIDs()
+	for _, s := range list {
 		if s.State == state.Landed {
 			continue
 		}

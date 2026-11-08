@@ -379,7 +379,7 @@ func (d *Daemon) hInitDetect(p initP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	return initdetect.Detect(repo.Dir, repo.ID)
 }
 
@@ -394,7 +394,7 @@ func (d *Daemon) hInitWrite(p initWriteP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	dst := paths.RepoConfig(repo.ID)
 	if _, err := os.Stat(dst); err == nil && !p.Over {
 		return nil, fmt.Errorf("%s already exists", dst)
