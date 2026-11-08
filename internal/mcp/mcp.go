@@ -105,7 +105,7 @@ func Serve(in io.Reader, out io.Writer) error {
 }
 
 func call(name string, args json.RawMessage, slug string) (string, bool) {
-	cl, err := client.Dial()
+	cl, err := client.DialAgent() // it serves an agent: no human token
 	if err != nil {
 		return "pekoed is not running", true
 	}

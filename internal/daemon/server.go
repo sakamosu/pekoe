@@ -33,6 +33,9 @@ type Request struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method"`
 	Params json.RawMessage `json:"params,omitempty"`
+	// Token is the human token (human.go), sent by the TUI, the CLI and
+	// Neovim; the human-only methods are refused without it.
+	Token string `json:"token,omitempty"`
 }
 
 type Response struct {
@@ -92,6 +95,8 @@ type Daemon struct {
 	token   string
 	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
 	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
+
+	humanToken string // unlocks the human-only methods over the socket (human.go)
 
 	mu         sync.Mutex
 	runMu      sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
@@ -155,8 +160,14 @@ func New() (*Daemon, error) {
 		lock.Close()
 		return nil, err
 	}
+	humanToken, err := loadOrCreateHumanToken()
+	if err != nil {
+		db.Close()
+		lock.Close()
+		return nil, fmt.Errorf("human token: %w", err)
+	}
 	d := &Daemon{
-		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(),
+		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(), humanToken: humanToken,
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
@@ -314,6 +325,10 @@ func (d *Daemon) serve(nc net.Conn) {
 		}
 		// Long operations must not block the connection's other requests.
 		go func(req Request) {
+			if err := d.authorize(req); err != nil {
+				c.send(Response{ID: req.ID, Error: err.Error()})
+				return
+			}
 			res, err := d.Call(req.Method, req.Params)
 			r := Response{ID: req.ID, Result: res}
 			if err != nil {
