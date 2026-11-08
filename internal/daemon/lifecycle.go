@@ -321,7 +321,7 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	}
 	if !hasOrigin {
 		// local-only repository: fast-forward the base branch in the main worktree
-		mainBranch, _ := gitx.Run(s.RepoDir, "rev-parse", "--abbrev-ref", "HEAD")
+		mainBranch := gitx.CurrentBranch(s.RepoDir)
 		if mainBranch == base {
 			if _, err := gitx.Run(s.RepoDir, "merge", "--ff-only", s.Branch); err != nil {
 				return nil, err

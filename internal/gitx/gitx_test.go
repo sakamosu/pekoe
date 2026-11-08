@@ -146,3 +146,23 @@ func TestAddExclude(t *testing.T) {
 		t.Fatalf("exclude: %q", b)
 	}
 }
+
+func TestCurrentBranch(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	// unborn: rev-parse --abbrev-ref HEAD would print "HEAD"
+	if got := CurrentBranch(dir); got != "main" {
+		t.Fatalf("unborn branch: got %q, want main", got)
+	}
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644)
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+	git(t, dir, "checkout", "-qb", "feat/x")
+	if got := CurrentBranch(dir); got != "feat/x" {
+		t.Fatalf("branch: got %q, want feat/x", got)
+	}
+	git(t, dir, "checkout", "-q", "--detach")
+	if got := CurrentBranch(dir); got != "HEAD" {
+		t.Fatalf("detached HEAD: got %q, want HEAD", got)
+	}
+}

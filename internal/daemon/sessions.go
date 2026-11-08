@@ -736,7 +736,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if (p.Resume == "" || p.Resume == "ask") && len(past) > 0 {
 		return map[string]any{"needs_choice": true, "past": past}, nil
 	}
-	branch, _ := gitx.Run(top, "rev-parse", "--abbrev-ref", "HEAD")
+	branch := gitx.CurrentBranch(top)
 	name := branch
 	if name == "HEAD" || name == "" {
 		name = filepath.Base(top)
@@ -1283,6 +1283,7 @@ func (d *Daemon) restore() {
 			})
 			continue
 		}
+		d.refreshBranch(s.Slug)
 		hasAgent, hasRun := false, false
 		for _, w := range alive[s.Slug] {
 			if w == engine.WinAgent {

@@ -444,6 +444,7 @@ func (d *Daemon) baseCommit(s *state.Session, since int) (sha, label string) {
 }
 
 func (d *Daemon) refreshDiffstat(slug string) {
+	d.refreshBranch(slug)
 	s, err := d.snapshot(slug)
 	if err != nil {
 		return
@@ -460,6 +461,27 @@ func (d *Daemon) refreshDiffstat(slug string) {
 	st := gitx.DiffStat(files)
 	d.update(slug, func(x *state.Session) {
 		x.Diffstat = state.Stat{Added: st.Added, Deleted: st.Deleted, Files: st.Files}
+	})
+}
+
+// refreshBranch re-reads the branch name of a session whose stored name is
+// not a real branch. Sessions adopted on an unborn branch (before this was
+// fixed) or on a detached HEAD were saved as "HEAD"; once the worktree is on a
+// branch, show that. A real name is never replaced, so a detached HEAD in the
+// middle of a rebase cannot clobber it.
+func (d *Daemon) refreshBranch(slug string) {
+	s, err := d.snapshot(slug)
+	if err != nil || (s.Branch != "HEAD" && s.Branch != "") {
+		return
+	}
+	b := gitx.CurrentBranch(s.Path)
+	if b == "" || b == "HEAD" {
+		return
+	}
+	d.update(slug, func(x *state.Session) {
+		if x.Branch == "HEAD" || x.Branch == "" {
+			x.Branch = b
+		}
 	})
 }
 

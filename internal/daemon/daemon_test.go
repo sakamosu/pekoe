@@ -630,3 +630,65 @@ func TestRunStartSerialized(t *testing.T) {
 		t.Fatalf("%d run windows spawned", n)
 	}
 }
+
+// A repository adopted right after `git init` has no commits: its branch must
+// still be recorded by name, not as "HEAD".
+func TestAdoptUnbornBranch(t *testing.T) {
+	d, _, _ := setup(t)
+	repo := filepath.Join(t.TempDir(), "fresh")
+	os.MkdirAll(repo, 0o755)
+	run(t, repo, "git", "init", "-q", "-b", "main")
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	if s.Branch != "main" {
+		t.Fatalf("branch = %q, want main", s.Branch)
+	}
+}
+
+// Sessions saved as "HEAD" (adopted on a detached HEAD, or on an unborn branch
+// before that was fixed) pick up the real branch name on the next update and
+// on daemon restart; a real name is never overwritten by a detached HEAD.
+func TestBranchNameRefreshed(t *testing.T) {
+	d, _, repo := setup(t)
+	run(t, repo, "git", "checkout", "-q", "--detach")
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	if s.Branch != "HEAD" {
+		t.Fatalf("detached: branch = %q, want HEAD", s.Branch)
+	}
+	d.refreshDiffstat(s.Slug) // still detached: stays HEAD
+	if got, _ := d.snapshot(s.Slug); got.Branch != "HEAD" {
+		t.Fatalf("still detached: branch = %q", got.Branch)
+	}
+	run(t, repo, "git", "checkout", "-q", "main")
+	stop(t, d, s.Slug, map[string]any{})
+	if got, _ := d.snapshot(s.Slug); got.Branch != "main" {
+		t.Fatalf("after Stop: branch = %q, want main", got.Branch)
+	}
+	// a real name survives a detached HEAD (e.g. mid-rebase)
+	run(t, repo, "git", "checkout", "-q", "--detach")
+	d.refreshDiffstat(s.Slug)
+	if got, _ := d.snapshot(s.Slug); got.Branch != "main" {
+		t.Fatalf("detached again: branch = %q, want main", got.Branch)
+	}
+	run(t, repo, "git", "checkout", "-q", "main")
+
+	// a row already stored as "HEAD" is fixed on restart
+	d.update(s.Slug, func(x *state.Session) { x.Branch = "HEAD" })
+	d.DB.Close()
+	d.releaseLock()
+	d2, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2.Eng = newFake()
+	t.Cleanup(func() { d2.DB.Close(); d2.releaseLock() })
+	d2.restore()
+	if got, _ := d2.snapshot(s.Slug); got.Branch != "main" {
+		t.Fatalf("after restart: branch = %q, want main", got.Branch)
+	}
+	saved, _ := d2.DB.Sessions()
+	for _, x := range saved {
+		if x.Slug == s.Slug && x.Branch != "main" {
+			t.Fatalf("persisted branch = %q, want main", x.Branch)
+		}
+	}
+}
