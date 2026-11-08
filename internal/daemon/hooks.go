@@ -201,6 +201,12 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 				}
 				return
 			}
+			if kind == "permission" && askingQuestion(s) {
+				// Claude Code shows AskUserQuestion through its permission
+				// dialog, so a permission_prompt follows the PreToolUse.
+				// Keep it a question so the web keypad can answer it.
+				kind = "question"
+			}
 			s.State, s.WaitKind = state.Waiting, kind
 			s.LastMessage = hp.Message
 		})
@@ -217,6 +223,17 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		})
 	}
 	return map[string]any{"slug": slug}, nil
+}
+
+// askingQuestion reports whether s is still in the AskUserQuestion that its
+// last PreToolUse started. It is deliberately narrow: a "question" lets the
+// web keypad type digits and arrows into the agent, and on a real permission
+// menu that could pick "Yes, and don't ask again". Any other tool's
+// PreToolUse replaces PendingTool (and leaves the Waiting state), so its
+// permission prompt stays a permission.
+func askingQuestion(s *state.Session) bool {
+	return s.State == state.Waiting && s.WaitKind == "question" &&
+		s.PendingTool != nil && s.PendingTool.Name == "AskUserQuestion"
 }
 
 // classifyNotification separates permission prompts from questions.

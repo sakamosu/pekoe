@@ -341,6 +341,48 @@ func TestClassifyNotification(t *testing.T) {
 	}
 }
 
+// Claude Code follows AskUserQuestion's PreToolUse with a permission_prompt
+// Notification; it must stay a question, but only while AskUserQuestion is
+// still the pending tool.
+func TestPermissionPromptAfterQuestion(t *testing.T) {
+	ask := map[string]any{"tool_name": "AskUserQuestion", "tool_input": map[string]any{"question": "which db?"}}
+	bash := map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "pnpm migrate"}}
+	prompt := map[string]any{"notification_type": "permission_prompt", "message": "Claude needs your permission to use AskUserQuestion"}
+	cases := []struct {
+		name  string
+		tools []map[string]any
+		want  string
+	}{
+		{"question", []map[string]any{ask}, "question"},
+		{"bash", []map[string]any{bash}, "permission"},
+		{"bash after question", []map[string]any{ask, bash}, "permission"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d, _, repo := setup(t)
+			call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+			event(t, d, "UserPromptSubmit", "main", map[string]any{"prompt": "go"})
+			for _, p := range c.tools {
+				event(t, d, "PreToolUse", "main", p)
+			}
+			event(t, d, "Notification", "main", prompt)
+			got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
+			if got.State != state.Waiting || got.WaitKind != c.want {
+				t.Fatalf("got %s/%s, want waiting/%s", got.State, got.WaitKind, c.want)
+			}
+		})
+	}
+	// a question that was answered (PostToolUse) no longer covers a later prompt
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	event(t, d, "PreToolUse", "main", ask)
+	event(t, d, "PostToolUse", "main", map[string]any{"tool_name": "AskUserQuestion"})
+	event(t, d, "Notification", "main", prompt)
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); got.WaitKind != "permission" {
+		t.Fatalf("after answer: %s", got.WaitKind)
+	}
+}
+
 func sleep() { timeSleep(50) }
 
 // review.ask sends the hunk to the agent; the answer is cut out of the
