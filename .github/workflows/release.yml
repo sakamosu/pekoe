@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # goreleaser の版。goreleaser-action は本体を GitHub Release のアセットから取るが、
+  # その配信が 504 で落ちることがあるので、Go のモジュールプロキシ(proxy.golang.org)から入れる。
+  GORELEASER_VERSION: v2.20.0
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
@@ -15,13 +20,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # changelog に前のタグからの履歴が要る
+      # setup-go は GitHub のマニフェスト(actions/go-versions)から Go を取り、取れなければ go.dev から取る。
+      # どちらも落ちていればここで止まる(その場合は再実行する)。
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+      # goreleaser は go.mod より新しい Go を要求する(v2.20.0 は go >= 1.27.3)ので GOTOOLCHAIN=auto にする。
+      # ツールチェーンも golang.org/toolchain としてモジュールプロキシから落ちてくる。
+      # goreleaser がビルドする pekoe 側は go.mod の版のまま。
+      - name: Install goreleaser
+        run: GOTOOLCHAIN=auto go install "github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION}"
+      - name: Release
+        run: |
+          goreleaser check
+          goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
