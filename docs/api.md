@@ -136,10 +136,37 @@
 | `ext.info` | — | `{port, token}`(`pekoe ext`) |
 | `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
+| `tapi.get` | — | `Tapi`(下記) |
+| `tapi.open` | `{width?, height?}` | `Tapi`。tapi chat のエージェントを、窓が無ければ起動する(pekoed の起動時には起動しない)。窓が残っていれば(pekoed を再起動しても tmux サーバーは残る)そのまま |
+| `tapi.restart` | `{width?, height?}` | `Tapi`。窓を作り直す(エージェントが終了した後の ↵。Claude Code は `--continue` で同じ会話を続ける) |
+| `tapi.reset` | — | `Tapi`。窓を閉じ、Claude Code の会話の記録(`~/.claude/projects/<tapi の cwd>/`)を消す。次の `tapi.open` は新しい会話 |
+| `tapi.screen` | — | `session.screen` と同じ形(起動前はエラー) |
+| `tapi.send` | `{text, submit?}` | `session.send` と同じ |
+| `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
+| `tapi.resize` | `{width, height}` | pty サイズ変更(`session.resize "*"` でも合わせる) |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
+
+### Tapi オブジェクト
+
+tapi chat(TUI の `t`、docs/tapi-chat.md)。セッションではないので `session.*` には出てこない(`session.list` に載らず、state.db にも保存しない。Web UI からも見えない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
+
+```jsonc
+{
+  "agent": "claude",                       // [tapi] agent
+  "dir": "~/.local/share/pekoe/tapi",      // 稼働ディレクトリ(pekoed が CLAUDE.md / AGENTS.md を書く)
+  "started": true,                         // 窓がある(エージェントが終了していても true)
+  "alive": true,                           // エージェントが動いている
+  "state": "waiting",                      // running | waiting | idle(hook から)
+  "wait_kind": "permission",               // permission | question
+  "pending_tool": {"name": "Bash", "input": "gh api …"},
+  "last_message": "…",                     // 最後の返事
+  "claude_session_id": "…",
+  "state_since": "2026-11-08T21:37:30+09:00"
+}
+```
 
 ### KnownRepo オブジェクト
 
@@ -267,6 +294,8 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `browser.updated` | `[tabs]` |
 | `error.updated` | `{report: ErrorReport, fresh}`(`fresh` は新規か、送信・無視後の再発。回数の更新や送信・無視では false) |
 | `editor.open` | `{path, line, note, slug}` |
+| `tapi.updated` | `Tapi` |
+| `tapi.output` | `{}`(tapi chat の画面更新の合図。30ms で間引く) |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 
 ## 2. HTTP(Chrome 拡張)
