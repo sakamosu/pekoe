@@ -164,6 +164,11 @@ func TestBrowserErrorsShareTheCardFlow(t *testing.T) {
 	if !strings.Contains(fe.sent[len(fe.sent)-2], "console error が 2 件") || !strings.HasPrefix(fe.sent[len(fe.sent)-2], "text:@") {
 		t.Fatalf("bulk line: %s", fe.sent[len(fe.sent)-2])
 	}
+	// the file fences what the page wrote, after a note
+	file := strings.Fields(strings.TrimPrefix(fe.sent[len(fe.sent)-2], "text:@"))[0]
+	if b, err := os.ReadFile(file); err != nil || !strings.Contains(string(b), "信頼できないデータ") || !strings.Contains(string(b), "```text\n- Warning") || !strings.Contains(string(b), "\n- Error: other\n") {
+		t.Fatalf("bulk file: %v\n%s", err, b)
+	}
 	if n := len(call[[]errcatch.Report](t, d, "error.list", map[string]any{"slug": s.Slug})); n != 0 {
 		t.Fatal("bulk send must mark the cards sent")
 	}

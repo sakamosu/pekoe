@@ -41,7 +41,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | 項目 | 確認 |
 | --- | --- |
 | `pekoe new` の 5 歩(worktree → copy/clone → setup → port → 起動) | e2e、TUI の New モーダル(モック 04) |
-| `--from gh#N`(issue 本文を初期プロンプトに) | `issuePrompt`(gh issue view)。作ったセッションに `issue` 番号を記録(`TestIssuesMatchSessions`) |
+| `--from gh#N`(issue 本文を初期プロンプトに) | `issuePrompt`(gh issue view)。作ったセッションに `issue` 番号を記録(`TestIssuesMatchSessions`)。題と本文は信頼できないデータとして閉じられないフェンスに入れる(`TestIssueTextFencesBody`。ピックの .md は `TestPickMarkdownFencesPage`、エラーは `TestMarkdownFencesOutput`) |
 | Issue インボックス(`issues.list` / `issues.view`、[2] Issues、`pekoe issues`) | 偽 gh でパース・フィルタ・キャッシュ・セッションとの突き合わせ・gh が使えないとき(`TestIssuesList*` `TestIssuesView` `TestIssuesUnavailable` `TestIssuesMatchSessions`)、ブランチ名の提案(`TestSuggestBranch`)、サブタブ巡回と描画(`TestSubtabCyclesThreeWays` `TestNarrowTabsIncludeIssues` `TestIssuesPanelRender` `TestIssueKeys`)。隔離したデーモンと本物の gh で、公開リポジトリの issue 一覧・本文表示・`n` からのセッション作成・Enter でのジャンプ・90 列のタブ化・GitHub リモートの無いリポジトリでの 1 行表示を確認 |
 | `pekoe open`(過去のセッションを resume するか選ぶ)/ `pekoe adopt` | `TestSessionLifecycleAndReview`(open)。adopt は候補の列挙と確認つきの取り込みとして実装 |
 | `pekoe land`(rebase → test → `gh pr create` → マージ検出 → teardown) | `TestLandWithPRAndMergeTeardown`(偽 gh + bare origin)、ローカル fast-forward は e2e |
