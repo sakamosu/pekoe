@@ -422,18 +422,78 @@ func (d *Daemon) hPickDiscard(p idP) (any, error) {
 	return nil, nil
 }
 
+// Any page on localhost can report console errors (page.js forwards what
+// the page logs), so what one page can push is bounded: the body, the
+// errors in one request, each field, and the errors a port gets a minute.
+const (
+	consoleMaxBody    = 1 << 20
+	consoleMaxPerReq  = 50
+	consoleMaxPerMin  = 120
+	consoleMaxMessage = 2000 // runes
+	consoleMaxStack   = 8000
+	consoleMaxField   = 500 // source, at, url
+)
+
+// limitConsole trims one request's errors to the caps above.
+func limitConsole(errs []ConsoleError) []ConsoleError {
+	if len(errs) > consoleMaxPerReq {
+		errs = errs[:consoleMaxPerReq]
+	}
+	for i := range errs {
+		e := &errs[i]
+		e.Message = truncate(e.Message, consoleMaxMessage)
+		e.Stack = truncate(e.Stack, consoleMaxStack)
+		e.Source = truncate(e.Source, consoleMaxField)
+		e.At = truncate(e.At, consoleMaxField)
+	}
+	return errs
+}
+
+// consoleBudget takes up to n errors from port's budget for this minute and
+// says how many it may keep. Called under d.mu.
+func (d *Daemon) consoleBudget(port, n int, now time.Time) int {
+	if d.consoleRate == nil {
+		d.consoleRate = map[int]consoleWindow{}
+	}
+	cw := d.consoleRate[port]
+	if now.Sub(cw.start) >= time.Minute {
+		cw = consoleWindow{start: now}
+	}
+	n = min(n, consoleMaxPerMin-cw.n)
+	if n < 0 {
+		n = 0
+	}
+	cw.n += n
+	d.consoleRate[port] = cw
+	return n
+}
+
+type consoleWindow struct {
+	start time.Time
+	n     int
+}
+
 func (d *Daemon) httpConsole(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		URL    string         `json:"url"`
 		Errors []ConsoleError `json:"errors"`
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, consoleMaxBody)
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	in.URL = truncate(in.URL, consoleMaxField)
+	in.Errors = limitConsole(in.Errors)
 	port, _ := urlPort(in.URL)
 	if port > 0 {
 		d.mu.Lock()
+		in.Errors = in.Errors[:d.consoleBudget(port, len(in.Errors), time.Now())]
+		if len(in.Errors) == 0 {
+			d.mu.Unlock()
+			writeJSON(w, map[string]any{"ok": true, "dropped": true})
+			return
+		}
 		for _, e := range in.Errors {
 			e.URL = in.URL
 			d.errors[port] = append(d.errors[port], e)

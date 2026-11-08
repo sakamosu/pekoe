@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -178,5 +181,79 @@ func TestBrowserErrorsShareTheCardFlow(t *testing.T) {
 	call[errcatch.Report](t, d, "error.ignore", map[string]any{"id": l[0].ID})
 	if n := len(call[[]errcatch.Report](t, d, "error.list", map[string]any{"slug": s.Slug})); n != 0 {
 		t.Fatal("ignored error still offered")
+	}
+}
+
+// A localhost page decides what it logs: one request keeps at most
+// consoleMaxPerReq errors with each field cut, and a port gets at most
+// consoleMaxPerMin errors a minute.
+func TestConsoleLimits(t *testing.T) {
+	d, _, _ := setup(t)
+	d.token = "secret"
+	post := func(port, n int, msg string) int {
+		errs := make([]ConsoleError, n)
+		for i := range errs {
+			errs[i] = ConsoleError{Message: fmt.Sprintf("%s %d", msg, i)}
+			if i == 0 {
+				errs[i].Stack, errs[i].Source = strings.Repeat("s", consoleMaxStack*2), strings.Repeat("x", 5000)
+			}
+		}
+		b, _ := json.Marshal(map[string]any{"url": fmt.Sprintf("http://localhost:%d/", port), "errors": errs})
+		r := httptest.NewRequest("POST", "/console", bytes.NewReader(b))
+		r.Header.Set("Origin", "chrome-extension://x")
+		r.Header.Set("Authorization", "Bearer secret")
+		w := httptest.NewRecorder()
+		d.guard(d.httpConsole)(w, r)
+		return w.Code
+	}
+	kept := func(port int) []ConsoleError {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return append([]ConsoleError(nil), d.errors[port]...)
+	}
+	if c := post(4100, 200, "boom"); c != 200 {
+		t.Fatalf("post: %d", c)
+	}
+	got := kept(4100)
+	if len(got) != consoleMaxPerReq {
+		t.Fatalf("kept %d of one request", len(got))
+	}
+	if n := len([]rune(got[0].Stack)); n != consoleMaxStack || len([]rune(got[0].Source)) != consoleMaxField {
+		t.Fatalf("fields not cut: stack %d source %d", n, len([]rune(got[0].Source)))
+	}
+	// the minute's budget: 120 in all, the rest dropped
+	post(4101, 50, "a")
+	post(4101, 50, "b")
+	post(4101, 50, "c")
+	post(4101, 50, "d")
+	d.mu.Lock()
+	taken := d.consoleRate[4101].n
+	d.mu.Unlock()
+	if taken != consoleMaxPerMin {
+		t.Fatalf("took %d in a minute", taken)
+	}
+	if n := len(kept(4101)); n != 100 { // the panel keeps the last 100
+		t.Fatalf("kept %d", n)
+	}
+	post(4101, 1, "late")
+	if l := kept(4101); l[len(l)-1].Message == "late 0" {
+		t.Fatal("over the minute's budget, still taken")
+	}
+	// another port has its own budget; a new minute refills it
+	if post(4102, 1, "e"); len(kept(4102)) != 1 {
+		t.Fatal("other port")
+	}
+	if n := d.consoleBudget(4101, 10, time.Now().Add(61*time.Second)); n != 10 {
+		t.Fatalf("next minute: %d", n)
+	}
+	// a body over the cap is refused
+	big := `{"url":"http://localhost:4103/","errors":[{"message":"` + strings.Repeat("m", consoleMaxBody) + `"}]}`
+	r := httptest.NewRequest("POST", "/console", strings.NewReader(big))
+	r.Header.Set("Origin", "chrome-extension://x")
+	r.Header.Set("Authorization", "Bearer secret")
+	w := httptest.NewRecorder()
+	d.guard(d.httpConsole)(w, r)
+	if w.Code != http.StatusBadRequest || len(kept(4103)) != 0 {
+		t.Fatalf("big body: %d", w.Code)
 	}
 }

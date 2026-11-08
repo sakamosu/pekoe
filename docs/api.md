@@ -325,7 +325,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | path | body | 処理 |
 | --- | --- | --- |
 | `POST /pick` | `Pick` 入力(下記) | 保存して URL のポートからセッションを解決。指示つきで解決できれば即 pty へ。できなければ TUI に「どのセッションに送る?」 |
-| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる。ポートの持ち主のセッションがあれば、スタックかスクリプト位置のあるものはエラーカード(`error.*`)にもなる |
+| `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる。ポートの持ち主のセッションがあれば、スタックかスクリプト位置のあるものはエラーカード(`error.*`)にもなる。localhost のページなら何でも送れるので上限がある: 本文 1 MiB、1 回 50 件(超えた分は捨てる)、message 2000 文字・stack 8000 文字・source / at / url 500 文字で切る、1 ポートにつき 1 分 120 件(超えた分は捨てる)。拡張も中継の前に同じ件数と長さに切る |
 | `POST /tabs` | `{tabs: [{url, title}]}` | 開いている localhost タブの一覧 |
 | `GET /health` | — | `{ok: true}`(token 必須) |
 

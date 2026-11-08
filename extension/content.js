@@ -206,10 +206,21 @@
   });
 
   // ---- console relay (page.js only emits on localhost) -----------------
+  // The page can dispatch this event itself, so what is relayed is cut to
+  // the daemon's caps (http.go: limitConsole) before it leaves the tab.
+  const cut = (v, n) => (typeof v === 'string' ? v.slice(0, n) : undefined);
   window.addEventListener('pekoe:console', (e) => {
     try {
       const { url, errors } = JSON.parse(e.detail);
-      if (Array.isArray(errors) && errors.length) chrome.runtime.sendMessage({ type: 'console', url, errors }).catch(() => {});
+      if (!Array.isArray(errors) || !errors.length) return;
+      const list = errors.slice(0, 50).map((x) => ({
+        message: cut(String(x?.message ?? ''), 2000),
+        source: cut(x?.source, 500),
+        line: Number.isInteger(x?.line) ? x.line : undefined,
+        stack: cut(x?.stack, 8000),
+        at: cut(x?.at, 64),
+      }));
+      chrome.runtime.sendMessage({ type: 'console', url: cut(url, 500), errors: list }).catch(() => {});
     } catch {}
   });
 })();
