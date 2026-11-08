@@ -42,6 +42,7 @@ import (
 	"boba/internal/client"
 	"boba/internal/config"
 	"boba/internal/daemon"
+	"boba/internal/engine"
 	"boba/internal/hooks"
 	"boba/internal/mascot"
 	"boba/internal/mcp"
@@ -174,6 +175,10 @@ func usage() {
   boba ext                     port + token for the Chrome extension
   boba mcp                     MCP server for agents (claude mcp add boba -- boba mcp)
   boba daemon start|stop|status
+  boba daemon stop --kill-agents [--yes]
+                               also stop the tmux server ($BOBA_TMUX_SOCKET) and
+                               ALL its agents · for sandboxes; on the default
+                               socket "boba" this kills every real agent
 
   R is a repo-id, a short name (as in ~/worktrees/<name>) or a path.
 `)
@@ -986,10 +991,7 @@ func cmdAttach(args []string) error {
 	if len(args) > 1 {
 		w = args[1]
 	}
-	sock := os.Getenv("BOBA_TMUX_SOCKET")
-	if sock == "" {
-		sock = "boba"
-	}
+	sock := paths.TmuxSocketName()
 	tm, err := exec.LookPath("tmux")
 	if err != nil {
 		return err
@@ -1102,6 +1104,10 @@ func cmdDaemon(args []string) error {
 		fmt.Println("bobad started · log:", paths.DaemonLog())
 		return nil
 	case "stop":
+		f, _ := flags(args[1:], "kill-agents", "yes")
+		if f["kill-agents"] != "" {
+			return stopKillAgents(f["yes"] != "")
+		}
 		cl, err := client.Dial()
 		if err != nil {
 			fmt.Println("bobad is not running")
@@ -1131,5 +1137,53 @@ func cmdDaemon(args []string) error {
 		fmt.Printf("bobad %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
 		return nil
 	}
-	return fmt.Errorf("usage: boba daemon start|stop|status")
+	return fmt.Errorf("usage: boba daemon start|stop [--kill-agents [--yes]]|status")
 }
+
+// stopKillAgents stops bobad and its tmux server ($BOBA_TMUX_SOCKET), ending
+// every agent on it. Meant for throwaway sandboxes; works when bobad is
+// already gone, too.
+func stopKillAgents(yes bool) error {
+	sock := paths.TmuxSocketName()
+	if !yes {
+		if !stdinIsTerminal() {
+			return fmt.Errorf("--kill-agents ends every agent on tmux server %q; pass --yes to confirm", sock)
+		}
+		warn := ""
+		if sock == "boba" {
+			warn = " This is the default (real) server: ALL your agents will be killed."
+		}
+		if !confirm(fmt.Sprintf("stop bobad and tmux server %q, killing its agents?%s", sock, warn)) {
+			return nil
+		}
+	}
+	if cl, err := client.Dial(); err == nil {
+		err := cl.Call("daemon.stop", map[string]any{"kill_agents": true}, nil)
+		cl.Close()
+		if err != nil {
+			return err
+		}
+		// wait for bobad to go, so it does not restart the server under us
+		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+			c, err := client.Dial()
+			if err != nil {
+				break
+			}
+			c.Close()
+		}
+		fmt.Println("bobad stopped")
+	} else {
+		fmt.Println("bobad is not running")
+	}
+	// bobad killed the server on its way out; this catches what it could not
+	// (bobad already gone, or a server it never reached).
+	tm := engine.NewTmux(sock)
+	tm.PidFile = paths.TmuxPidFile(sock)
+	if err := tm.KillServer(); err != nil {
+		return err
+	}
+	fmt.Printf("tmux server %q stopped\n", sock)
+	return nil
+}
+
+func stdinIsTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }

@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +21,10 @@ import (
 type Tmux struct {
 	Socket  string // -L name
 	Session string
+	// PidFile, when set, records the server's pid at Start so KillServer can
+	// still stop it when `kill-server` cannot reach the socket (e.g. the
+	// server was started under a different TMUX_TMPDIR).
+	PidFile string
 	out     chan Output
 	mu      sync.Mutex
 	panes   map[string]paneRef // pane id (%3) -> ref
@@ -96,6 +102,7 @@ func (t *Tmux) Start() error {
 		_, _ = t.run(o...)
 	}
 	t.ensureTerminalFeature("xterm-256color:RGB:hyperlinks")
+	t.recordPid()
 	t.started = true
 	t.refreshPanesLocked()
 	return t.startControl()
@@ -462,5 +469,111 @@ func (t *Tmux) Close() {
 	}
 }
 
-// KillServer stops the private tmux server (used by tests).
-func (t *Tmux) KillServer() { _, _ = t.run("kill-server") }
+// serverPid asks the running server for its pid (0 when unreachable).
+func (t *Tmux) serverPid() int {
+	out, err := t.run("display-message", "-p", "#{pid}")
+	if err != nil {
+		return 0
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(out))
+	return pid
+}
+
+func (t *Tmux) recordPid() {
+	if t.PidFile == "" {
+		return
+	}
+	if pid := t.serverPid(); pid > 0 {
+		_ = os.WriteFile(t.PidFile, []byte(strconv.Itoa(pid)), 0o644)
+	}
+}
+
+func (t *Tmux) recordedPid() int {
+	if t.PidFile == "" {
+		return 0
+	}
+	b, err := os.ReadFile(t.PidFile)
+	if err != nil {
+		return 0
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return pid
+}
+
+// KillServer stops the private tmux server and with it every agent on it.
+// It runs `kill-server`, then makes sure the server process is gone: the
+// pid comes from the live server or, when its socket cannot be reached,
+// from PidFile. Stopping a server that is not running is not an error.
+func (t *Tmux) KillServer() error {
+	pids := []int{}
+	if pid := t.serverPid(); pid > 0 {
+		pids = append(pids, pid)
+	}
+	if pid := t.recordedPid(); pid > 0 && (len(pids) == 0 || pids[0] != pid) {
+		pids = append(pids, pid)
+	}
+	_, _ = t.run("kill-server")
+	var errs []string
+	for _, pid := range pids {
+		if err := killTmuxPid(pid, t.Socket); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if t.PidFile != "" {
+		_ = os.Remove(t.PidFile)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("tmux server: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// killTmuxPid stops pid if it is still the tmux server for socket (a
+// recorded pid may since belong to another process, even another tmux
+// server): SIGTERM, then SIGKILL.
+func killTmuxPid(pid int, socket string) error {
+	if pid <= 0 {
+		return nil
+	}
+	isTmux := func() bool {
+		out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+		return err == nil && isTmuxServerCmd(strings.TrimSpace(string(out)), socket)
+	}
+	gone := func(d time.Duration) bool {
+		for end := time.Now().Add(d); ; time.Sleep(50 * time.Millisecond) {
+			if !isTmux() {
+				return true
+			}
+			if time.Now().After(end) {
+				return false
+			}
+		}
+	}
+	if gone(300 * time.Millisecond) {
+		return nil
+	}
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	if gone(2 * time.Second) {
+		return nil
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	if gone(2 * time.Second) {
+		return nil
+	}
+	return fmt.Errorf("pid %d did not exit", pid)
+}
+
+// isTmuxServerCmd reports whether a `ps -o command=` line is tmux running
+// on the -L socket (the server keeps the argv of the client that started it).
+func isTmuxServerCmd(cmd, socket string) bool {
+	f := strings.Fields(cmd)
+	if len(f) == 0 || !strings.HasPrefix(filepath.Base(f[0]), "tmux") {
+		return false
+	}
+	for i := 1; i+1 < len(f); i++ {
+		if f[i] == "-L" && f[i+1] == socket {
+			return true
+		}
+	}
+	return false
+}

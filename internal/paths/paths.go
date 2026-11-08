@@ -59,10 +59,26 @@ func Socket() string {
 	return filepath.Join(DataDir(), "bobad.sock")
 }
 
-func StateDB() string      { return filepath.Join(DataDir(), "state.db") }
-func TokenFile() string    { return filepath.Join(DataDir(), "http-token") }
-func DaemonLog() string    { return filepath.Join(DataDir(), "bobad.log") }
-func PidFile() string      { return filepath.Join(DataDir(), "bobad.pid") }
+func StateDB() string   { return filepath.Join(DataDir(), "state.db") }
+func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
+func DaemonLog() string { return filepath.Join(DataDir(), "bobad.log") }
+func PidFile() string   { return filepath.Join(DataDir(), "bobad.pid") }
+
+// TmuxSocketName is the private tmux server's -L name ($BOBA_TMUX_SOCKET,
+// default "boba").
+func TmuxSocketName() string {
+	if s := os.Getenv("BOBA_TMUX_SOCKET"); s != "" {
+		return s
+	}
+	return "boba"
+}
+
+// TmuxPidFile records the pid of the tmux server named socket, so it can be
+// stopped even when its socket is unreachable.
+func TmuxPidFile(socket string) string {
+	return filepath.Join(DataDir(), "tmux-"+Slug(socket)+".pid")
+}
+
 func GlobalConfig() string { return filepath.Join(ConfigDir(), "config.toml") }
 func ReposConfigDir() string {
 	return filepath.Join(ConfigDir(), "repos")
