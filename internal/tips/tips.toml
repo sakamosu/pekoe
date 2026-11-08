@@ -228,3 +228,10 @@ short = "pekoe init でリポジトリの設定を下書きする"
 detail = "lockfile・.envrc・git の無視ファイルから setup や copy を推測し、コピーするファイルを番号で選ばせてから書く。--print なら書かずに出すだけ。"
 keys = ["pekoe init", "--print"]
 docs = ["README.md#クイックスタート"]
+
+[[tip]]
+id = "update"
+short = "pekoe update で最新のリリースに入れ替える"
+detail = "GitHub の最新リリースを取って checksums.txt と照らし、pekoe と nvim・Chrome 拡張を入れ替える。Web UI 入りなら _web の版を取る。--check は新しい版があるか見るだけ。"
+keys = ["pekoe update", "--check"]
+docs = ["README.md#更新"]

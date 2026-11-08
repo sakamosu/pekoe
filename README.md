@@ -55,7 +55,7 @@ make install-launchd    # 任意: ログイン時に pekoed を起動
 
 ### リリースから(ビルド済みバイナリ)
 
-GitHub Release に darwin / linux × arm64 / amd64 の既定ビルド(Web UI なし)を置いている。repo は private なので `gh` で落とす:
+GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。repo は private なので `gh` で落とす(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す):
 
 ```sh
 ver=0.2.0                                 # 入れるバージョン(gh release list で確認)
@@ -75,6 +75,26 @@ pekoe version
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/`。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
 既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon restart` で pekoed を新しいバイナリに替える(エージェントは tmux の中で動き続ける。launchd で動かしているときは launchd から起動し直す)。
+
+### 更新
+
+```sh
+pekoe update --check    # 新しいリリースがあるか見るだけ(誰でも使える)
+pekoe update            # 最新のリリースに入れ替える
+pekoe update --version v0.2.0 --force   # 特定の版に(古くなるときは --force)
+```
+
+`pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
+
+- 今の版が最新以上なら何もしない。`make install` の版(`git describe` の `0.1.0-59-g3761d74`)は「0.1.0 より 59 コミット先」として比べる。`dev` など比べられない版のときは確認する
+- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめる(private の今は来歴がないので警告だけ出す)
+- 入れ替えるのは、今動いている pekoe の実体(シンボリックリンクをたどった先)、隣の `pekoed`、`<prefix>/share/pekoe/nvim` と `extension` だけ。`~/.local/share/pekoe` の他のもの(`state.db` など)には触らない。バイナリは隣に書いてから rename し、途中で失敗したら入れ替えた分を戻す
+- `make install` で入れたときの `nvim` / `extension` はリポジトリへのリンクなので、リンクをリリースの中身のディレクトリに置き換える(リポジトリには書き込まない。確認を出す。`make install` し直せばリンクに戻る)
+- Web UI 入りの pekoe で、リリースに `_web` のアーカイブがないときは断る(`--no-web` で既定のビルドを入れるか、`make install WEB=1` でソースから入れる)
+- 書き込めない場所や Homebrew などのパッケージマネージャーが入れたものは断る
+- 終わると新旧の版を出し、pekoed が動いていれば `pekoe daemon restart` するか聞く。Chrome 拡張を入れ替えたら `chrome://extensions` で再読み込みする
+- repo が private の間はトークンが要る。`$GITHUB_TOKEN` / `$GH_TOKEN`、なければ `gh auth token` を使う(`gh auth login` しておく)
+- 入れ替えは人間だけの操作。エージェントのセッションの中(`$PEKOE_SESSION` がある)や `human-token` を読めないところからは `only a person can do this` で断る。`--check` は誰でも使える
 
 hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけ。プロジェクト側の `.claude/` は触らない。`pekoe hooks status` で確認、`pekoe hooks uninstall` で pekoe の分だけ外す。
 
@@ -119,14 +139,15 @@ pekoe                                                 # TUI
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [reset [--yes]]` | tapi chat の状態 / 終了して会話を忘れる(TUI の `T` と同じ) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
+| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
 | `pekoe migrate [--dry-run] [--prune-old]` | boba からの移行(設定・状態・refs・hooks を一度に書き換える。[boba からの移行](#boba-からの移行)) |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status`)。サブコマンドの前後どちらにも書ける
+- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- `answer`・`dev`・`init` の書き込み・`daemon stop` / `daemon restart` は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- `answer`・`dev`・`init` の書き込み・`daemon stop` / `daemon restart`・`update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -397,7 +418,7 @@ WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
 
 ### リリースの切り方
 
-`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォームをクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
+`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォーム × 既定 / `-tags web` をクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で既定と `-tags web` の govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

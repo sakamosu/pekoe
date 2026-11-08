@@ -39,7 +39,9 @@ var humanOnly = map[string]bool{
 	"daemon.stop":    true, // stops pekoed (and, with kill_agents, every agent)
 }
 
-var errHumanOnly = errors.New("only a person can do this: use the pekoe TUI, or run pekoe from your own terminal (agents cannot answer prompts, press keys or run commands through pekoe)")
+// ErrHumanOnly refuses a human-only operation to an agent (also used by
+// `pekoe update`, which refuses before it reaches pekoed).
+var ErrHumanOnly = errors.New("only a person can do this: use the pekoe TUI, or run pekoe from your own terminal (agents cannot answer prompts, press keys or run commands through pekoe)")
 
 // loadOrCreateHumanToken keeps one token per data directory, so clients
 // that read it once stay valid across daemon restarts.
@@ -78,7 +80,7 @@ func (d *Daemon) authorize(req Request) error {
 		return nil
 	}
 	if humanOnly[req.Method] {
-		return fmt.Errorf("%s: %w", req.Method, errHumanOnly)
+		return fmt.Errorf("%s: %w", req.Method, ErrHumanOnly)
 	}
 	if req.Method == "session.send" {
 		return d.authorizeSend(req.Params)
@@ -105,7 +107,7 @@ func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 		return fmt.Errorf("bad params: %w", err)
 	}
 	if win(p.Window) != engine.WinAgent {
-		return fmt.Errorf("session.send to the %s window: %w", p.Window, errHumanOnly)
+		return fmt.Errorf("session.send to the %s window: %w", p.Window, ErrHumanOnly)
 	}
 	s, err := d.snapshot(p.Slug)
 	if err != nil {

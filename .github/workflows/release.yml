@@ -43,9 +43,11 @@ jobs:
           got="$(go env GOVERSION)"
           echo "go.mod: $want, runner: $got"
           test "$want" = "$got"
-      # 配るのと同じ Go・同じビルド(既定。-tags web は配らない)で検査する
+      # 配るのと同じ Go・同じビルド(既定と -tags web の両方を配る)で検査する
       - name: govulncheck
-        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+        run: |
+          go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
+          go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -tags web ./...
       # goreleaser は go.mod より新しい Go を要求する(v2.20.0 は go >= 1.27.3)ので GOTOOLCHAIN=auto にする。
       # ツールチェーンも golang.org/toolchain としてモジュールプロキシから落ちてくる。
       # goreleaser がビルドする pekoe 側は go.mod の版(GOTOOLCHAIN=local)のまま。
