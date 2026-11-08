@@ -64,6 +64,8 @@ boba                         # TUI
 | `boba daemon start\|stop\|status` | デーモン操作。`stop` はデーモンのプロセスが終わるまで待って戻る。`stop` してもエージェントは tmux の中で動き続ける |
 | `boba daemon stop --kill-agents [--yes]` | デーモンに加えて tmux サーバー(`$BOBA_TMUX_SOCKET`)も止める。**既定のソケット `boba` に使うと全エージェントが止まる**。隔離環境の片付け用。対話端末では確認を出し、それ以外では `--yes` が要る |
 
+どのサブコマンドも `--help` / `-h` で使い方を出すだけで、何もせずに終わる(終了コード 0)。知らないフラグや値のない `--repo` などはエラーにして使い方を出す(終了コード 2)。`--json` はサブコマンドの前後どちらにも書ける。`-` で始まる文字列を位置引数として渡すときは `--` の後に書く(例: `boba send <slug> -- --verbose を外して`)。
+
 ### TUI
 
 左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。
