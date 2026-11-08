@@ -155,11 +155,12 @@ var specs = map[string]spec{
 	"mcp":       {use: "pekoe mcp   MCP server for agents (stdio)"},
 	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},
 
-	"daemon":        {use: "pekoe daemon start|stop|status"},
-	"daemon start":  {use: "pekoe daemon start"},
-	"daemon status": {use: "pekoe daemon status [--json]"},
-	"daemon run":    {use: "pekoe daemon run   (foreground; normally started for you)"},
-	"daemon stop":   {use: "pekoe daemon stop [--kill-agents [--yes]]", bools: []string{"kill-agents", "yes"}},
+	"daemon":         {use: "pekoe daemon start|stop|restart|status"},
+	"daemon start":   {use: "pekoe daemon start"},
+	"daemon restart": {use: "pekoe daemon restart   stop, wait, start again (e.g. after make install; agents keep running)"},
+	"daemon status":  {use: "pekoe daemon status [--json]"},
+	"daemon run":     {use: "pekoe daemon run   (foreground; normally started for you)"},
+	"daemon stop":    {use: "pekoe daemon stop [--kill-agents [--yes]]", bools: []string{"kill-agents", "yes"}},
 
 	"tapi":       {use: "pekoe tapi [status|reset] [--json]   tapi chat (TUI: t)"},
 	"tapi reset": {use: "pekoe tapi reset [--yes]   end tapi chat and forget its conversation", bools: []string{"yes"}},

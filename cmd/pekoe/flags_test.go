@@ -18,6 +18,15 @@ import (
 type fakeDaemon struct {
 	mu      sync.Mutex
 	methods []string
+	results map[string]any    // method -> result (default null)
+	errs    map[string]string // method -> error
+}
+
+// note records something that is not a request (a test's stub), in order.
+func (f *fakeDaemon) note(s string) {
+	f.mu.Lock()
+	f.methods = append(f.methods, s)
+	f.mu.Unlock()
 }
 
 func (f *fakeDaemon) calls() []string {
@@ -68,8 +77,12 @@ func startFakeDaemon(t *testing.T) *fakeDaemon {
 					}
 					fd.mu.Lock()
 					fd.methods = append(fd.methods, req.Method)
+					resp := map[string]any{"id": req.ID, "result": fd.results[req.Method]}
+					if e := fd.errs[req.Method]; e != "" {
+						resp["error"] = e
+					}
 					fd.mu.Unlock()
-					b, _ := json.Marshal(map[string]any{"id": req.ID, "result": nil})
+					b, _ := json.Marshal(resp)
 					c.Write(append(b, '\n'))
 				}
 			}()
@@ -138,6 +151,8 @@ func TestHelpDoesNothing(t *testing.T) {
 		{"daemon", "--help"},
 		{"daemon", "start", "--help"},
 		{"daemon", "run", "--help"},
+		{"daemon", "restart", "--help"},
+		{"daemon", "restart", "-h"},
 		{"rm", "feat-x", "--yes", "--force", "--help"},
 		{"rm", "-h", "feat-x"},
 		{"land", "feat-x", "--help"},
@@ -176,6 +191,8 @@ func TestUnknownFlagRefused(t *testing.T) {
 		{"daemon", "stop", "--kill-agent"},
 		{"daemon", "stop", "--bogus"},
 		{"daemon", "stop", "extra"},
+		{"daemon", "restart", "--kill-agents"}, // restart keeps the agents
+		{"daemon", "restart", "extra"},
 		{"daemon", "--bogus"},
 		{"daemon", "frobnicate"},
 		{"rm", "feat-x", "--forse"},
@@ -267,7 +284,7 @@ func TestSplitGlobal(t *testing.T) {
 
 // Every subcommand main dispatches has a declared spec.
 func TestEverySubcommandHasSpec(t *testing.T) {
-	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon status", "daemon run", "tapi", "tapi reset", "tip"} {
+	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
 		}

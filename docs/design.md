@@ -77,7 +77,7 @@ pekoe は、Orca の開発体験(複数エージェントの並列運用・workt
 
 **永続性** — エージェントは pekoed 専用の tmux サーバー(`tmux -L pekoe`)の中で動くので、ターミナルを閉じても、`pekoe daemon stop` やデーモンの再起動でも止まらない。次に起動した pekoed は state.db からセッションを読み戻し、生きている tmux のウィンドウにそのままつなぎ直す(会話も実行中の処理も途切れない)。起動時には各セッションの repo-id をリポジトリの今の origin から引き直し、作成後に origin が付いたリポジトリのセッションも今の ID に揃える(ポート番号は変わらない)。tmux サーバーごと止めるのは `pekoe daemon stop --kill-agents` だけで、これは使い捨ての隔離環境の片付け用。`claude --resume` が使われるのは tmux サーバーごと消えていたとき(OS の再起動、`tmux -L pekoe kill-server`、`--kill-agents` など)だけで、`x` で止めたもの以外を state.db の session\_id で起動し直す(会話は戻るが、プロセスとその時点で動いていたツールは戻らない)。その id の会話がまだ保存されていなければ `--continue`、それもなければ新しく起動する。worktree が見つからないセッションは failed として残り、`pekoe rm` で消せる。
 
-**デーモンは 1 つだけ** — pekoed は起動時、state.db を開く前に `~/.local/share/pekoe/pekoed.lock` に `flock` をかけ、動いている間ずっと持つ。取れなければ、持ち主がソケットに応答していればすぐに「already running」で終わり、応答していなければ(起動中か終了処理中)最大 5 秒待ってから取り直す。複数のクライアントが同時に自動起動しても、残るのは 1 つだけ。終了時はソケットと pid ファイルを、まだ自分が作ったもの(ソケットは `Listen` 直後の inode、pid ファイルは中身の pid)のときだけ消し、ロックはその後で最後に放す。`pekoe daemon stop` はプロセスが終わるまで(最大 10 秒)待ってから戻り、時間内に終わらなければエラーにする。
+**デーモンは 1 つだけ** — pekoed は起動時、state.db を開く前に `~/.local/share/pekoe/pekoed.lock` に `flock` をかけ、動いている間ずっと持つ。取れなければ、持ち主がソケットに応答していればすぐに「already running」で終わり、応答していなければ(起動中か終了処理中)最大 5 秒待ってから取り直す。複数のクライアントが同時に自動起動しても、残るのは 1 つだけ。終了時はソケットと pid ファイルを、まだ自分が作ったもの(ソケットは `Listen` 直後の inode、pid ファイルは中身の pid)のときだけ消し、ロックはその後で最後に放す。`pekoe daemon stop` はプロセスが終わるまで(最大 10 秒)待ってから戻り、時間内に終わらなければエラーにする。`pekoe daemon restart` も同じように待ってから起動し、止められなかったときは起動しない。launchd(`make install-launchd`)が動かしている pekoed だったときは `launchctl kickstart` で起動し直して launchd の管理下に残す。plist の `KeepAlive` は `SuccessfulExit = false`(失敗したときだけ起動し直す)で、止めた pekoed は終了コード 0 で終わるので、止めてから起動するまでの間に launchd が別に立ち上げることはない。
 
 ## worktree フロー
 
@@ -314,7 +314,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe review [<slug> \| gh#N [--repo R]]` | レビュー面を開く |
 | `pekoe land <slug>` / `pekoe rm <slug>` | 取り込む / 消す |
 | `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
-| `pekoe daemon start\|stop\|status` | デーモン操作 |
+| `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す) |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。pekoed にはつながらない |
 | `pekoe migrate [--dry-run] [--prune-old]` | 旧名 boba の環境から一度だけ移す(下記) |

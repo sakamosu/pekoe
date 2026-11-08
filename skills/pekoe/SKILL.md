@@ -72,7 +72,7 @@ EOF
 
 ## 人間だけの操作
 
-pekoed は、許可待ちへの回答(`pekoe answer`)・生キー・設定の書き込み(`pekoe init` の書き込み)・`pekoe dev`・run 窓でのコマンド実行・`pekoe daemon stop` を、人間用トークン(`human-token`)を付けた呼び出しにしか許さない。エージェントから実行すると `only a person can do this` で断られる。
+pekoed は、許可待ちへの回答(`pekoe answer`)・生キー・設定の書き込み(`pekoe init` の書き込み)・`pekoe dev`・run 窓でのコマンド実行・`pekoe daemon stop`(`restart` も)を、人間用トークン(`human-token`)を付けた呼び出しにしか許さない。エージェントから実行すると `only a person can do this` で断られる。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
 - ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code の sandbox でトークンのファイルを読めなくすることを勧める(設定例は pekoe の README「エージェントに pekoe を使わせるときの権限」)
@@ -82,7 +82,7 @@ pekoed は、許可待ちへの回答(`pekoe answer`)・生キー・設定の書
 - `pekoe land`(push と PR 作成)、マージ、`pekoe rm` / worktree 削除、`pekoe answer`(他セッションの許可に代わりに答える。そもそもエージェントからは断られる)は、ユーザーに明示的に頼まれたときだけ
 - 自分自身のセッション(環境変数 `$PEKOE_SESSION` の slug)に `pekoe send` しない
 - 同じ作業のために何個もセッションを作らない。並行させる理由がある単位でだけ分ける。既存セッションの続きなら `pekoe send` で足す
-- 本物のデーモンを止めたり壊したりしない。引数なしの `pekoe daemon stop` は、ユーザーに頼まれたときだけ実行する。`tmux -L pekoe kill-server` や、`PEKOE_TMUX_SOCKET` を空や `pekoe` にしたままの `pekoe daemon stop --kill-agents` は使わない(全エージェントが止まる)
+- 本物のデーモンを止めたり壊したりしない。引数なしの `pekoe daemon stop` / `pekoe daemon restart` は、ユーザーに頼まれたときだけ実行する(どちらも人間だけの操作で、エージェントからは断られる)。`tmux -L pekoe kill-server` や、`PEKOE_TMUX_SOCKET` を空や `pekoe` にしたままの `pekoe daemon stop --kill-agents` は使わない(全エージェントが止まる)
 
 ## 隔離した環境で動作確認するとき
 
