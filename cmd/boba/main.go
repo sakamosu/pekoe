@@ -1076,6 +1076,10 @@ func hintDir(d string) string {
 	return ""
 }
 
+// daemonStopTimeout bounds how long `boba daemon stop` waits for bobad's
+// process to exit (its shutdown closes HTTP within 1 s, then tmux and state.db).
+const daemonStopTimeout = 10 * time.Second
+
 func cmdDaemon(args []string) error {
 	sub := "status"
 	if len(args) > 0 {
@@ -1108,14 +1112,13 @@ func cmdDaemon(args []string) error {
 		if f["kill-agents"] != "" {
 			return stopKillAgents(f["yes"] != "")
 		}
-		cl, err := client.Dial()
+		running, err := client.StopDaemon(nil, daemonStopTimeout)
 		if err != nil {
+			return err
+		}
+		if !running {
 			fmt.Println("bobad is not running")
 			return nil
-		}
-		defer cl.Close()
-		if err := cl.Call("daemon.stop", nil, nil); err != nil {
-			return err
 		}
 		fmt.Println("bobad stopped (agents keep running in tmux; they are picked up on next start)")
 		return nil
@@ -1157,20 +1160,12 @@ func stopKillAgents(yes bool) error {
 			return nil
 		}
 	}
-	if cl, err := client.Dial(); err == nil {
-		err := cl.Call("daemon.stop", map[string]any{"kill_agents": true}, nil)
-		cl.Close()
-		if err != nil {
-			return err
-		}
-		// wait for bobad to go, so it does not restart the server under us
-		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
-			c, err := client.Dial()
-			if err != nil {
-				break
-			}
-			c.Close()
-		}
+	// waits for bobad to go, so it does not restart the server under us
+	running, err := client.StopDaemon(map[string]any{"kill_agents": true}, daemonStopTimeout)
+	if err != nil {
+		return err
+	}
+	if running {
 		fmt.Println("bobad stopped")
 	} else {
 		fmt.Println("bobad is not running")

@@ -32,6 +32,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | 未読ライン | 離れた時点の行位置を記録し、戻ったときに `── new ──` を差し込む |
 | 永続性 | デーモンを再起動してもセッションが残る(tmux が生存)。tmux ごと落ちたら `--resume` で復元(e2e) |
 | 隔離環境の片付け(`boba daemon stop --kill-agents`) | `TestStopKillAgents`(偽エンジンで、`kill_agents` のときだけ `KillServer` が呼ばれ、既定では呼ばれない)、`TestKillServerFallsBackToPidFile`(本物の tmux を別の `TMUX_TMPDIR` で立て、`kill-server` が届かなくても記録した pid で止まる)。`scripts/sandbox.sh` で、偽エージェントの窓を足してから正常終了・コマンドの失敗(exit 3)・Ctrl-C(SIGINT、exit 130)で抜け、どれも `ps` に `tmux -L boba-sb-…` と偽エージェントが残らず、一時ディレクトリも消えた。デーモンを先に止めた後・`TMUX_TMPDIR` を変えた状態からでも tmux サーバーだけ止まり、端末でないところで `--yes` がなければ断ることも確認 |
+| デーモンは 1 つだけ(#42: 再起動後に孤児の bobad が state.db を古い状態で上書きした) | `TestSecondDaemonRefused`(ロックを持つデーモンがあれば、応答中ならすぐ、起動中なら待った後に `ErrAlreadyRunning`)、`TestShutdownKeepsNewerSocket`(終了中の古いデーモンが、別のデーモンが作り直したソケットと pid ファイルを消さない。Go の `UnixListener.Close` が持ち主を確かめずに unlink していたのも原因で、`SetUnlinkOnClose(false)` にした)、`TestStopThenConcurrentStartsYieldOne`(終了処理が遅れている間に 6 つ同時に起動しても 1 つだけ)、`TestWaitExit`。`scripts/sandbox.sh` で `daemon stop && daemon start` を 10 回、stop 直後の 8 並列の自動起動(`boba ls`)を 10 回、stop の最中に 8 並列の自動起動を 10 回繰り返し、毎回 `ps` で bobad が 1 つだった |
 | 衝突予報(⚠N・also changed in・Changes の相手・land の予報・`boba conflicts`) | `TestConflictForecast`(同じ行 → conflict、違う行 → overlap、別ファイル → なし、未コミットは overlap のみ、許可待ちの Edit に also_in)、`TestSessionListConflictTag` `TestPermissionModalAlsoChanged` `TestChangesShowPeersAndLandForecast`。隔離 e2e で 3 セッションを並べ、TUI(140 列 unicode / 80 列 ascii)と CLI で表示を確認 |
 
 ## worktree フロー

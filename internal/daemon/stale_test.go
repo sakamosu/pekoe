@@ -78,12 +78,13 @@ func TestRestartRealignsStaleRepoID(t *testing.T) {
 
 	// restart: a new daemon on the same state.db
 	d.DB.Close()
+	d.releaseLock() // as shutdown does: the next bobad needs the lock
 	d2, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	d2.Eng = newFake()
-	t.Cleanup(func() { d2.DB.Close() })
+	t.Cleanup(func() { d2.DB.Close(); d2.releaseLock() })
 	d2.restore()
 
 	for _, slug := range []string{main.Slug, feat.Slug} {

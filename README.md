@@ -61,7 +61,7 @@ boba                         # TUI
 | `boba answer <slug> allow\|deny\|always` | 許可待ちに答える |
 | `boba ext` | Chrome 拡張に入れる port と token |
 | `boba mcp` | エージェント用 MCP サーバ(`claude mcp add boba -- boba mcp`) |
-| `boba daemon start\|stop\|status` | デーモン操作。`stop` してもエージェントは tmux の中で動き続ける |
+| `boba daemon start\|stop\|status` | デーモン操作。`stop` はデーモンのプロセスが終わるまで待って戻る。`stop` してもエージェントは tmux の中で動き続ける |
 | `boba daemon stop --kill-agents [--yes]` | デーモンに加えて tmux サーバー(`$BOBA_TMUX_SOCKET`)も止める。**既定のソケット `boba` に使うと全エージェントが止まる**。隔離環境の片付け用。対話端末では確認を出し、それ以外では `--yes` が要る |
 
 ### TUI
