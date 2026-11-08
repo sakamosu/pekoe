@@ -1,0 +1,7 @@
+# SHA で固定した GitHub Actions を、版のコメントと一緒に上げる PR を作る。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

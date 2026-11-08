@@ -1,33 +1,54 @@
 # v* タグの push で GoReleaser がクロスビルドして GitHub Release を作る(.goreleaser.yaml)。
+# アクションはコミット SHA で固定する(コメントの版は Dependabot が SHA と一緒に上げる)。
 name: release
 
 on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+# ジョブで要るものだけを足す
+permissions: {}
 
 env:
   # goreleaser の版。goreleaser-action は本体を GitHub Release のアセットから取るが、
   # その配信が 504 で落ちることがあるので、Go のモジュールプロキシ(proxy.golang.org)から入れる。
   GORELEASER_VERSION: v2.20.0
+  # govulncheck の版(v1.9.0 は go >= 1.26.0)
+  GOVULNCHECK_VERSION: v1.9.0
+  # setup-go が入れた Go(= go.mod の go 行)だけを使う。auto だと新しい Go に
+  # 切り替わり、ビルドや govulncheck が別の Go で動いてしまう
+  GOTOOLCHAIN: local
 
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Release を作ってアーカイブを上げる
+      id-token: write # 来歴(attestation)の署名に Sigstore の証明書を取る
+      attestations: write # 来歴を保存する
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # changelog に前のタグからの履歴が要る
+          persist-credentials: false # git push はしない
       # setup-go は GitHub のマニフェスト(actions/go-versions)から Go を取り、取れなければ go.dev から取る。
       # どちらも落ちていればここで止まる(その場合は再実行する)。
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false # リリースは他のブランチが書いたキャッシュを使わない
+      - name: Check Go version
+        run: |
+          want="go$(go mod edit -json | jq -r .Go)"
+          got="$(go env GOVERSION)"
+          echo "go.mod: $want, runner: $got"
+          test "$want" = "$got"
+      # 配るのと同じ Go・同じビルド(既定。-tags web は配らない)で検査する
+      - name: govulncheck
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
       # goreleaser は go.mod より新しい Go を要求する(v2.20.0 は go >= 1.27.3)ので GOTOOLCHAIN=auto にする。
       # ツールチェーンも golang.org/toolchain としてモジュールプロキシから落ちてくる。
-      # goreleaser がビルドする pekoe 側は go.mod の版のまま。
+      # goreleaser がビルドする pekoe 側は go.mod の版(GOTOOLCHAIN=local)のまま。
       - name: Install goreleaser
         run: GOTOOLCHAIN=auto go install "github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION}"
       - name: Release
@@ -36,3 +57,10 @@ jobs:
           goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # checksums.txt に載ったアーカイブごとに SLSA のビルド来歴を付ける。
+      # 確かめ方は README の「リリースから」(gh attestation verify)。
+      # private リポジトリでは GitHub Enterprise Cloud でないと使えないので、公開しているときだけ
+      - if: ${{ !github.event.repository.private }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt

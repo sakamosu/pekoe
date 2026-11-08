@@ -81,11 +81,11 @@ func saveLayout(path string, l Layout) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), paths.DirPerm); err != nil {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	if err := os.WriteFile(tmp, b, paths.FilePerm); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

@@ -11,7 +11,7 @@ TAGS    := $(if $(WEB),-tags web)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
 LDFLAGS := -X pekoe/internal/daemon.Version=$(or $(VERSION),dev)
 
-.PHONY: build test vet install install-launchd uninstall-launchd nvim-test clean
+.PHONY: build test vet vulncheck install install-launchd uninstall-launchd nvim-test clean
 
 build:
 	$(GO) build $(TAGS) -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pekoe
@@ -26,6 +26,13 @@ test: vet
 vet:
 	$(GO) vet ./...
 	$(GO) vet -tags web ./...
+
+# known vulnerabilities reachable from both builds, checked with the Go that
+# builds them (GOTOOLCHAIN=local: auto would switch Go and hide stdlib ones)
+GOVULNCHECK_VERSION ?= v1.9.0
+vulncheck:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) -tags web ./...
 
 nvim-test:
 	sh nvim/test/run.sh

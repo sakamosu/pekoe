@@ -495,7 +495,7 @@ func (t *Tmux) recordPid() {
 		return
 	}
 	if pid := t.serverPid(); pid > 0 {
-		_ = os.WriteFile(t.PidFile, []byte(strconv.Itoa(pid)), 0o644)
+		_ = os.WriteFile(t.PidFile, []byte(strconv.Itoa(pid)), 0o600)
 	}
 }
 

@@ -198,7 +198,7 @@ func (d *Daemon) receivePick(in pickIn) (*state.Pick, error) {
 	}
 	n := d.DB.NextPickNumber()
 	dir := paths.PicksDir(repoID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
 		return nil, err
 	}
 	base := filepath.Join(dir, fmt.Sprintf("%04d", n))
@@ -210,14 +210,14 @@ func (d *Daemon) receivePick(in pickIn) (*state.Pick, error) {
 	if in.Screenshot != "" {
 		if _, data, ok := strings.Cut(in.Screenshot, ","); ok {
 			if b, err := base64.StdEncoding.DecodeString(data); err == nil {
-				if os.WriteFile(base+".png", b, 0o644) == nil {
+				if os.WriteFile(base+".png", b, paths.FilePerm) == nil {
 					pk.Image = base + ".png"
 					pk.ImageSize = pngSize(b)
 				}
 			}
 		}
 	}
-	if err := os.WriteFile(pk.File, []byte(pickMarkdown(n, pk, comp, srcLoc)), 0o644); err != nil {
+	if err := os.WriteFile(pk.File, []byte(pickMarkdown(n, pk, comp, srcLoc)), paths.FilePerm); err != nil {
 		return nil, err
 	}
 	if err := d.DB.AddPick(pk); err != nil {

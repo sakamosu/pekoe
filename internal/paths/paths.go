@@ -3,6 +3,8 @@
 package paths
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,11 +167,60 @@ func Slug(branch string) string {
 	return s
 }
 
+// DirPerm and FilePerm are the modes of pekoe's own directories and files
+// below DataDir and ConfigDir: they hold prompts, session env, page captures
+// and logs, so only the owner may read them.
+const (
+	DirPerm  fs.FileMode = 0o700
+	FilePerm fs.FileMode = 0o600
+)
+
+// Ensure creates dirs (and missing parents) with DirPerm.
 func Ensure(dirs ...string) error {
 	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		if err := os.MkdirAll(d, DirPerm); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Tighten removes group and other access from root and everything below it,
+// fixing files written by older versions with 0644 / 0755. Symlinks are not
+// followed (neither a symlinked root nor links inside it), so files that live
+// elsewhere — a dotfiles repo, say — are left alone. A missing root is fine.
+// It keeps going past entries it cannot fix and returns the first error.
+func Tighten(root string) error {
+	var first error
+	keep := func(err error) {
+		if err != nil && first == nil {
+			first = err
+		}
+	}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			keep(err)
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			keep(err)
+			return nil
+		}
+		if m := info.Mode().Perm(); m&0o077 != 0 {
+			keep(os.Chmod(p, m&^0o077))
+		}
+		return nil
+	})
+	keep(err)
+	return first
 }

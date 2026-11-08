@@ -572,8 +572,8 @@ func (d *Daemon) runTest(slug string) {
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
 	out, err := shell(context.Background(), s.Path, s.Env, cmd, 20*time.Minute)
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
-	_ = os.MkdirAll(logDir, 0o755)
-	_ = os.WriteFile(filepath.Join(logDir, slug+"-test.log"), []byte(out), 0o644)
+	_ = os.MkdirAll(logDir, paths.DirPerm)
+	_ = os.WriteFile(filepath.Join(logDir, slug+"-test.log"), []byte(out), paths.FilePerm)
 	t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
 	if err != nil {
 		t.Status = "fail"

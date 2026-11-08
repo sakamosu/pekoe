@@ -117,7 +117,7 @@ func StartDaemon() error {
 	if err := paths.Ensure(paths.DataDir()); err != nil {
 		return err
 	}
-	logf, err := os.OpenFile(paths.DaemonLog(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	logf, err := os.OpenFile(paths.DaemonLog(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, paths.FilePerm)
 	if err != nil {
 		return err
 	}

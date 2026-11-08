@@ -134,6 +134,12 @@ func New() (*Daemon, error) {
 	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir()); err != nil {
 		return nil, err
 	}
+	// files written by versions that used 0644 / 0755
+	for _, dir := range []string{paths.DataDir(), paths.ConfigDir()} {
+		if err := paths.Tighten(dir); err != nil {
+			log.Printf("permissions of %s: %v", dir, err)
+		}
+	}
 	g, err := config.LoadGlobal()
 	if err != nil {
 		return nil, err
@@ -188,7 +194,7 @@ func (d *Daemon) Run() error {
 		return ErrAlreadyRunning
 	}
 	_ = os.Remove(sock)
-	_ = os.MkdirAll(filepath.Dir(sock), 0o755)
+	_ = os.MkdirAll(filepath.Dir(sock), paths.DirPerm)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		d.releaseLock()
@@ -200,7 +206,7 @@ func (d *Daemon) Run() error {
 	d.sockID, _ = statID(sock)
 	_ = os.Chmod(sock, 0o600)
 	d.ln = ln
-	_ = os.WriteFile(paths.PidFile(), []byte(fmt.Sprint(os.Getpid())), 0o644)
+	_ = os.WriteFile(paths.PidFile(), []byte(fmt.Sprint(os.Getpid())), paths.FilePerm)
 
 	d.restore()
 	go d.outputLoop()
