@@ -288,6 +288,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | hunk 承認・レビューコメント | 状態 DB | hunk はパス + 内容ハッシュで識別 |
 | Claude Code の hooks | `~/.claude/settings.json` | ユーザー側に書き、全リポジトリに一括で効く。プロジェクト側 `.claude/` は触らない |
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | pekoe が削除していい領域はこの配下だけ |
+| 見せた tip の記録 | `~/.local/share/pekoe/tips.json` | TUI と `pekoe tip`(tapi chat)で共通。一巡したら空からやり直す |
 | ポート台帳・DB 名・セッション ID・状態 | `~/.local/share/pekoe/state.db`(SQLite) | デーモンの外部記憶。再起動後の復元に使う |
 | デーモンの socket | `~/.local/share/pekoe/pekoed.sock` | TUI・CLI・nvim が繋ぐ |
 | デーモンのロック | `~/.local/share/pekoe/pekoed.lock` | 動いている pekoed が `flock` で持つ。1 つの state.db に pekoed は 1 つ |
@@ -315,6 +316,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
 | `pekoe daemon start\|stop\|status` | デーモン操作 |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
+| `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。pekoed にはつながらない |
 | `pekoe migrate [--dry-run] [--prune-old]` | 旧名 boba の環境から一度だけ移す(下記) |
 
 **旧名 boba からの移行(`pekoe migrate`)** — 旧名を読み続ける互換処理は持たず、移行はこのコマンドで一度に済ませる。デーモンが動いていれば何もせずに中止する。手順は、`~/.config/boba` を `~/.config/pekoe` に、`~/.local/share/boba` を `~/.local/share/pekoe` に移して `bobad.sock` `bobad.log` `bobad.pid` `bobad.lock` を `pekoed.*` に改名 → state.db に残る旧パスと `refs/boba/…` の ref 名を書き換え、セッションの env(`sessions.data` の JSON の `env` 配列だけを解いて書き換える)の `BOBA_<NAME>=…` / `BOBA=…` をキーだけ `PEKOE_<NAME>=…` / `PEKOE=…` に改名(同じ新キーがすでにあれば旧キーの方を捨てる。プロンプト本文など利用者が書いた列は触らない)→ 各リポジトリの `refs/boba/*` を `refs/pekoe/*` にコピー(`--prune-old` のときだけ旧 ref を消す)→ `~/.claude/settings.json` の `boba event` の hooks を `pekoe event` に置き換え → 最後に手作業で残るもの(MCP の登録し直し、launchd、nvim の設定、Chrome 拡張の再読み込み、旧 tmux サーバー)を表示する。`--dry-run` は何も書かずにすることだけを出す。移すものが無い(旧ディレクトリが残っていない)ときも state.db 以降の手順は新しい `~/.local/share/pekoe` に対して行うので、env の改名が入る前に移行を済ませた環境は、デーモンを止めてもう一度 `pekoe migrate` を実行すれば直る(専用のオプションは設けない)。
@@ -345,6 +347,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | Issues: Enter / `n` | その issue のセッションへ飛ぶ / issue からセッション作成(ブランチ名を提案するモーダル) |
 | Issues: `f` `/` `o` `R` | 自分担当 → 全 open → ラベル指定 / 絞り込み / ブラウザで開く / 再取得 |
 | `?` | ヘルプ |
+| `.` | 次の tip。[4] の空き表示(セッション未選択・worktree 作成中)に tip が出ている間だけ効く |
 | prefix + `h` `l` | 左ペインと右ペインのフォーカス移動(右ペインにフォーカス中はキーがすべて claude に渡る) |
 | prefix + `z` | 右ペインのズーム(全幅にして左ペインを隠す)の切り替え。左のパネルにフォーカスを移すとズームは解ける |
 | prefix + `<` `>` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(端末幅の 40%、34〜56 列)に戻す。ズーム中ならズームを解いてから調整。左ペインは 34 列、右ペインの pty は 20 列が下限。幅は割合で `layout.json`(データディレクトリ)に保存し、描画はすぐ変え、tmux と pty の resize はキーが 200ms 止まってから 1 回だけ送る。100 列未満では効かない |

@@ -164,6 +164,8 @@ var specs = map[string]spec{
 	"tapi":       {use: "pekoe tapi [status|reset] [--json]   tapi chat (TUI: t)"},
 	"tapi reset": {use: "pekoe tapi reset [--yes]   end tapi chat and forget its conversation", bools: []string{"yes"}},
 
+	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
+
 	"migrate": {use: "pekoe migrate [--dry-run] [--prune-old]   move a boba installation (the old name) to pekoe", bools: []string{"dry-run", "prune-old"}},
 }
 

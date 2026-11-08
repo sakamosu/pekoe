@@ -118,11 +118,12 @@ pekoe                                                 # TUI
 | `pekoe daemon start\|stop\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。エージェントは tmux の中で動き続ける |
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [reset [--yes]]` | tapi chat の状態 / 終了して会話を忘れる(TUI の `T` と同じ) |
+| `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
 | `pekoe migrate [--dry-run] [--prune-old]` | boba からの移行(設定・状態・refs・hooks を一度に書き換える。[boba からの移行](#boba-からの移行)) |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `daemon status`)。サブコマンドの前後どちらにも書ける
+- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
 - `answer`・`dev`・`init` の書き込み・`daemon stop` は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
@@ -165,6 +166,7 @@ pekoe                                                 # TUI
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
 | `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `ext` `q`) |
+| `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
 | `1`–`4` `Tab` `[` `]` | パネル移動 / サブタブ切替 |
 | `q` | 終了 |
 
@@ -187,6 +189,15 @@ pekoe                                                 # TUI
 - tapi の顔はタイトルに出て、考え中・許可待ちで表情が変わる。閉じている間に許可待ち・質問待ちになると、最下行の声が `chat waits · t` になる
 - `T`(または `pekoe tapi reset`)で終了し、Claude Code の会話の記録も消す。pekoe 側には何も保存しない。Web UI には出ない
 - エージェントは `[tapi] agent` で変えられる([設定](#設定))
+
+### TIPS
+
+pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出るのは 2 か所:
+
+- [4] の空き表示(セッションを選んでいないとき、worktree の作成中)。tapi の顔とキャプションの下に `tip` の見出しと 1 行の説明、詳しい説明を出す。`.` で次の tip。高さや幅が足りなければ詳しい説明から省き、それでも入らなければ出さない
+- tapi chat の最初の返事のあいさつ。「なんか tip ちょうだい」と頼めば次の 1 つ、「もっと詳しく」と聞けば tip が指す docs を読んで説明する(tapi は `pekoe tip` と `pekoe tip --doc` を使う)
+
+見せた tip は `~/.local/share/pekoe/tips.json` に記録し、全部を一巡するまで同じものは出さない(TUI と tapi chat で共通)。`[tips] enable = false` で両方とも止まる。一覧は `pekoe tip --list`、中身は `internal/tips/tips.toml`。TIPS の文面だけは日本語(ほかの表示は英語)。
 
 ## レビュー
 
@@ -329,6 +340,8 @@ allow   = "y"
 deny    = "n"
 [tapi]                      # tapi chat(TUI の t)
 agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
+[tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
+enable = true               # false で両方とも出さない
 ```
 
 `[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` を書ける。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
@@ -340,6 +353,7 @@ agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir 
 | 設定 | `~/.config/pekoe/` |
 | 状態 DB・socket・ログ・picks | `~/.local/share/pekoe/` |
 | TUI のペイン幅・ズーム | `~/.local/share/pekoe/layout.json`(`^q` `<` `>` `=` `z` で書き換わる) |
+| 見せた tip の記録 | `~/.local/share/pekoe/tips.json`(一巡すると空からやり直す) |
 | tapi chat の稼働ディレクトリ | `~/.local/share/pekoe/tapi/`(会話の記録は Claude Code の `~/.claude/projects/` 側。`pekoe tapi reset` で消える) |
 | 人間用トークン(許可待ちへの回答などに要る。エージェントに読ませない) | `~/.local/share/pekoe/human-token` |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |

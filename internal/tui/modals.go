@@ -520,7 +520,7 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {m.prefixLabel(), "leave typing (back to Sessions)"}, {m.prefixLabel() + " h l", "focus left / main panel"}, {m.prefixLabel() + " z", "zoom the main panel (toggle)"}, {m.prefixLabel() + " < >", "narrow / widen the left panels"}, {m.prefixLabel() + " =", "default panel widths"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range m.globalHelpKeys() {
 		g := g
 		it := helpItem{key: g[0], action: g[1], global: true}
 		switch g[0] {
@@ -529,54 +529,110 @@ func newHelpModal(m *model) *helpModal {
 		}
 		h.items = append(h.items, it)
 	}
+	if m.tipSpot() { // only while the empty main pane shows a tip
+		k := tipHelpKey
+		h.items = append(h.items, helpItem{key: k[0], action: k[1], run: send(k[0]), global: true})
+	}
 	return h
+}
+
+// tipHelpKey is the help line of the tip key, listed only while a tip shows.
+var tipHelpKey = [2]string{tipKey, "next tip"}
+
+// globalHelpKeys are the keys that work from every panel (the lower half
+// of the help).
+func (m *model) globalHelpKeys() [][2]string {
+	p := m.prefixLabel()
+	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}}
+}
+
+// Names of the panel key lists in helpSets.
+const (
+	hsSessions  = "sessions"
+	hsWorktrees = "worktrees"
+	hsBrowser   = "browser"
+	hsIssues    = "issues"
+	hsChanges   = "changes"
+	hsPicks     = "picks"
+	hsErrorList = "picks: an error"
+	hsChat      = "tapi chat"
+	hsIssueMain = "issue (main panel)"
+	hsPreview   = "preview"
+	hsPR        = "PR view"
+	hsPRReview  = "PR view: someone else's PR"
+	hsErrorCard = "agent: an error card"
+	hsAgent     = "agent"
+)
+
+// helpSets is every list of panel keys the help can show (key, action, key
+// to send), by name. panelKeysFull picks one; tests walk them all (every
+// key has a tip or a reason not to, internal/tips).
+func (m *model) helpSets() map[string][][3]string {
+	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
+	pr := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},
+		{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
+	return map[string][][3]string{
+		hsSessions:  append([][3]string{{"j/k", "move (wraps at the ends)", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"!", "run a command in the worktree", "!"}, {"/", "filter", "/"}}, common...),
+		hsIssues:    issuePanelKeysFull(),
+		hsBrowser:   {{"j/k", "move", "j"}, {"↵", "select the tab's session", "\r"}, {"E", "send console errors", "E"}},
+		hsWorktrees: {{"j/k", "move", "j"}, {"↵", "open session in worktree", "\r"}, {"n", "new", "n"}, {"D", "delete", "D"}},
+		hsErrorList: {{"j/k", "move", "j"}, {"↵", "error detail", "\r"}, {"s", "send error", "s"}, {"i", "ignore error", "i"}},
+		hsPicks:     {{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}},
+		hsChanges:   {{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}},
+		hsChat:      chatKeysFull(),
+		hsIssueMain: {{"j/k", "scroll", "j"}, {"↵", "jump to its session", "\r"}, {"n", "new session from the issue", "n"},
+			{"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"h", "back to Issues", "h"}, {"esc", "back to the agent", "esc"}},
+		hsPreview:   m.previewKeysFull(),
+		hsPR:        pr,
+		hsPRReview:  append(append([][3]string(nil), pr[:2]...), pr[4:]...), // someone else's PR: nothing goes to an agent
+		hsErrorCard: append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "preview / dev window", "v"}}, common...),
+		hsAgent:     append([][3]string{{"i", "type into the agent", "i"}, {"v", "preview / dev window", "v"}}, common...),
+	}
 }
 
 // panelKeysFull lists every key of the focused panel: key, action, key to send.
 func (m *model) panelKeysFull() [][3]string {
-	common := [][3]string{{"n", "new session", "n"}, {"r", "review", "r"}, {"p", "PR view", "p"}, {"b", "open port in Chrome", "b"}, {"d", "dev server start/stop", "d"}, {"l", "land", "l"}, {"u", "undo last prompt", "u"}, {"R", "restart agent (resume)", "R"}, {"x", "end session", "x"}, {"D", "delete worktree", "D"}}
+	return m.helpSets()[m.panelKeySet()]
+}
+
+// panelKeySet names the helpSets list of the focused panel.
+func (m *model) panelKeySet() string {
 	switch m.focus {
 	case pSessions:
-		return append([][3]string{{"j/k", "move (wraps at the ends)", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"!", "run a command in the worktree", "!"}, {"/", "filter", "/"}}, common...)
+		return hsSessions
 	case pSecond:
 		if m.sub2 == subIssues {
-			return issuePanelKeysFull()
+			return hsIssues
 		}
 		if m.sub2 == 1 {
-			return [][3]string{{"j/k", "move", "j"}, {"↵", "select the tab's session", "\r"}, {"E", "send console errors", "E"}}
+			return hsBrowser
 		}
-		return [][3]string{{"j/k", "move", "j"}, {"↵", "open session in worktree", "\r"}, {"n", "new", "n"}, {"D", "delete", "D"}}
+		return hsWorktrees
 	case pThird:
 		if m.sub3 == 1 && m.selectedError() != nil {
-			return [][3]string{{"j/k", "move", "j"}, {"↵", "error detail", "\r"}, {"s", "send error", "s"}, {"i", "ignore error", "i"}}
+			return hsErrorList
 		}
 		if m.sub3 == 1 {
-			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
+			return hsPicks
 		}
-		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
+		return hsChanges
 	}
-	if m.chat.open {
-		return chatKeysFull()
-	}
-	if m.issueShown() {
-		return [][3]string{{"j/k", "scroll", "j"}, {"↵", "jump to its session", "\r"}, {"n", "new session from the issue", "n"},
-			{"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"h", "back to Issues", "h"}, {"esc", "back to the agent", "esc"}}
-	}
-	if m.window == winPreview {
-		return m.previewKeysFull()
-	}
-	if m.window == winPR {
-		keys := [][3]string{{"j/k", "move", "j"}, {"↵", "expand (thread, failed log)", "\r"}, {"space", "select for send", " "}, {"s", "send to the agent", "s"},
-			{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
+	switch {
+	case m.chat.open:
+		return hsChat
+	case m.issueShown():
+		return hsIssueMain
+	case m.window == winPreview:
+		return hsPreview
+	case m.window == winPR:
 		if s := m.current(); s != nil && s.PRReview {
-			keys = append(keys[:2], keys[4:]...) // someone else's PR: nothing goes to an agent
+			return hsPRReview
 		}
-		return keys
+		return hsPR
+	case m.pendingError() != nil:
+		return hsErrorCard
 	}
-	if m.pendingError() != nil {
-		return append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "preview / dev window", "v"}}, common...)
-	}
-	return append([][3]string{{"i", "type into the agent", "i"}, {"v", "preview / dev window", "v"}}, common...)
+	return hsAgent
 }
 
 func (h *helpModal) mode() (string, string) { return "HELP", "" }

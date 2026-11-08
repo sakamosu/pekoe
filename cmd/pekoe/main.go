@@ -127,6 +127,8 @@ func main() {
 		err = cmdMigrate(args)
 	case "tapi":
 		err = cmdTapi(args)
+	case "tip", "tips":
+		err = cmdTip(args)
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
@@ -188,6 +190,8 @@ func usage() {
   pekoe mcp                     MCP server for agents (claude mcp add pekoe -- pekoe mcp)
   pekoe tapi [reset [--yes]]    tapi chat (t in the TUI): state, or end it and forget
                                the conversation
+  pekoe tip [<id>] [--list] [--doc PATH]
+                               a tip about pekoe, one not shown yet ([tips])
   pekoe daemon start|stop|status
   pekoe daemon stop --kill-agents [--yes]
                                also stop the tmux server ($PEKOE_TMUX_SOCKET) and
