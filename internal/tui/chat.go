@@ -230,32 +230,23 @@ func (m *model) confirmResetChat() tea.Cmd {
 	return nil
 }
 
-// chatSend writes a key to tapi's pty.
+// chatSend writes a key to tapi's pty, in the order typed (order.go).
 func (m *model) chatSend(f fwd) tea.Cmd {
-	return func() tea.Msg {
-		var err error
+	return m.inOrder(func() error {
 		switch {
 		case f.paste != "":
-			err = m.cl.Call("tapi.send", map[string]any{"text": f.paste}, nil)
+			return m.cl.Call("tapi.send", map[string]any{"text": f.paste}, nil)
 		case f.literal != "":
-			err = m.cl.Call("tapi.keys", map[string]any{"literal": f.literal}, nil)
+			return m.cl.Call("tapi.keys", map[string]any{"literal": f.literal}, nil)
 		case len(f.keys) > 0:
-			err = m.cl.Call("tapi.keys", map[string]any{"keys": f.keys}, nil)
-		}
-		if err != nil {
-			return errMsg{err}
+			return m.cl.Call("tapi.keys", map[string]any{"keys": f.keys}, nil)
 		}
 		return nil
-	}
+	})
 }
 
 func (m *model) chatKeys(params map[string]any) tea.Cmd {
-	return func() tea.Msg {
-		if err := m.cl.Call("tapi.keys", params, nil); err != nil {
-			return errMsg{err}
-		}
-		return nil
-	}
+	return m.inOrder(func() error { return m.cl.Call("tapi.keys", params, nil) })
 }
 
 // chatMouse: a mouse event inside the main panel while tapi chat shows.
