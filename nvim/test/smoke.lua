@@ -103,7 +103,7 @@ local ok, err = xpcall(function()
   check(find(dt, "       83 +  for await (const r of stream()) {"), "diff shows + line with new number")
   check(not find(dt, "@@ -120,2 +121,3 @@"), "approved hunk hidden by default")
   local vt = virt_texts(R.diff_buf)
-  check(find(vt, "指示 #6: stream the rows"), "prompt annotation virtual text")
+  check(find(vt, "prompt #6: stream the rows"), "prompt annotation virtual text")
   check(find(vt, "use a generator"), "unsent comment virtual line")
   local signs = 0
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(R.diff_buf, -1, 0, -1, { details = true })) do

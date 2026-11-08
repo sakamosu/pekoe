@@ -58,7 +58,7 @@ end
 function M.answer(answer, slug)
   slug = slug or (cur and cur.slug) or (M.queue[1] and M.queue[1].slug)
   if not slug then
-    ui.notify("許可待ちのセッションはありません", vim.log.levels.WARN)
+    ui.notify("no sessions waiting for permission", vim.log.levels.WARN)
     return
   end
   client.call("session.answer", { slug = slug, answer = answer }, function()
@@ -76,9 +76,9 @@ function M.go(slug)
   end
   sessions.target = slug
   if vim.env.BOBA_SESSION and vim.env.BOBA_SESSION ~= "" then
-    ui.notify(slug .. ": boba の TUI に戻ってセッションを開いてください(:BobaSend で戻れます)")
+    ui.notify(slug .. ": go back to the boba TUI and open the session (:BobaSend takes you back)")
   else
-    ui.notify(slug .. ": ターミナルで `boba` を開くとこのセッションに答えられます(送信先に設定しました)")
+    ui.notify(slug .. ": run `boba` in a terminal to answer this session (set as send target)")
   end
 end
 
@@ -108,7 +108,7 @@ show = function(s)
   end
   table.insert(rows, hint)
   if #M.queue > 1 then
-    table.insert(rows, { { string.format("  (ほか %d 件待ち)", #M.queue - 1), "BobaDim" } })
+    table.insert(rows, { { string.format("  (%d more waiting)", #M.queue - 1), "BobaDim" } })
   end
 
   local prev = vim.api.nvim_get_current_win()

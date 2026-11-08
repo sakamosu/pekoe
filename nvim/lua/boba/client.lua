@@ -187,7 +187,7 @@ function M.connect()
       if err then
         if not st.warned and #st.queue > 0 then
           st.warned = true
-          vim.notify("boba: bobad に接続できません (" .. path .. "): " .. err, vim.log.levels.WARN)
+          vim.notify("boba: cannot connect to bobad (" .. path .. "): " .. err, vim.log.levels.WARN)
         end
         on_disconnect("boba: not connected (" .. err .. ")")
         return

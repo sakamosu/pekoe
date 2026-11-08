@@ -20,7 +20,7 @@ function M.load(slug)
         end
         vim.fn.setqflist({}, " ", { title = "boba risks · " .. s, items = items })
         if #items == 0 then
-          vim.notify("boba: " .. s .. " に危ない箇所の指摘はありません")
+          vim.notify("boba: " .. s .. " has no risks flagged")
         else
           vim.cmd("copen")
         end

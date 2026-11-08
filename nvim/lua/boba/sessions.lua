@@ -54,7 +54,7 @@ end
 function M.pick(cb, prompt)
   M.list(function(list)
     if #list == 0 then
-      ui.notify("セッションがありません", vim.log.levels.WARN)
+      ui.notify("no sessions", vim.log.levels.WARN)
       return
     end
     vim.ui.select(list, {
@@ -130,7 +130,7 @@ function M.open_list()
       })
     end
     if #rows == 0 then
-      rows = { { { "  セッションがありません", "BobaDim" } } }
+      rows = { { { "  no sessions", "BobaDim" } } }
     end
     local buf, win = ui.float(rows, { title = "◆ Sessions", enter = true, min_width = 50 })
     vim.wo[win].cursorline = true
@@ -141,7 +141,7 @@ function M.open_list()
       ui.close_win(win)
       if s then
         M.target = s.slug
-        ui.notify("送信先: " .. s.slug)
+        ui.notify("send target: " .. s.slug)
       end
     end, o)
     vim.keymap.set("n", "r", function()
