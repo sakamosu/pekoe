@@ -383,10 +383,35 @@ func (m *model) subtabHint(f bool) string {
 }
 
 func homeTilde(p string) string {
-	if h, err := userHome(); err == nil && strings.HasPrefix(p, h) {
+	h, err := userHome()
+	if err != nil || h == "" || h == "/" {
+		return p
+	}
+	h = strings.TrimSuffix(h, "/")
+	if p == h || strings.HasPrefix(p, h+"/") { // not /Users/yukiX for /Users/yuki
 		return "~" + strings.TrimPrefix(p, h)
 	}
 	return p
+}
+
+// clipLeft keeps the tail of s within n cells, marking the cut with a
+// leading "…" (paths: the end names the worktree).
+func clipLeft(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if w(s) <= n {
+		return s
+	}
+	if n == 1 {
+		return "…"
+	}
+	r := []rune(s)
+	i := len(r)
+	for i > 0 && w(string(r[i-1:])) <= n-1 {
+		i--
+	}
+	return "…" + string(r[i:])
 }
 
 func (m *model) thirdPanel(width, h int, f bool) []string {
@@ -978,12 +1003,18 @@ func (m *model) hints() [][2]string {
 	return [][2]string{{"j/k", "move"}, {"↵", "open"}, {"n", "new"}, {"r", "review"}, {"]a", "next wait"}, {"?", "help"}}
 }
 
+// barPathMin is the least room the worktree path is shown in; below it a
+// "…" stub says nothing, so the path is left out.
+const barPathMin = 8
+
 func (m *model) viewBar() string {
 	th := m.th
 	name, icon := m.modeName()
 	segs := []string{m.barTapi(m.width), m.pill(theme.Prefix(icon)+name, theme.Primary, theme.Bg, true)}
 	repo := m.curRepo()
+	path := "" // the selected session's worktree; none for a picked repository
 	if s := m.current(); s != nil && (m.chosen == nil || m.chosen.ID == s.RepoID) {
+		path = homeTilde(s.Path)
 		port := ""
 		if s.Port > 0 {
 			port = " " + th.FG(theme.Dim, fmt.Sprintf(":%d", s.Port))
@@ -1022,6 +1053,11 @@ func (m *model) viewBar() string {
 		right = th.FG(role, clip(strings.SplitN(m.msg, "\n", 2)[0], max(rightW, 0)))
 	} else {
 		right = m.keyHints(m.hints(), max(rightW, 0))
+	}
+	// the path takes only what the hints leave (one space before it, two
+	// after, as between hints) and gives up its head first
+	if room := m.width - w(left) - w(right) - 3; path != "" && room >= barPathMin {
+		left += " " + th.FG(theme.Dim, clipLeft(path, room))
 	}
 	gap := max(m.width-w(left)-w(right), 1)
 	return left + strings.Repeat(" ", gap) + right
