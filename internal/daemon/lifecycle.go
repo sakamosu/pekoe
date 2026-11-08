@@ -88,7 +88,7 @@ func (d *Daemon) teardown(s *state.Session) error {
 	cfg := d.repoConfig(s)
 	v := d.vars(s)
 	for _, c := range cfg.Hooks.Teardown {
-		cmd := v.Expand(c)
+		cmd := v.ExpandShell(c)
 		if out, err := shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
 			return fmt.Errorf("teardown %q: %v\n%s", cmd, err, tail(out, 10))
 		}
@@ -173,7 +173,7 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	if cfg.Hooks.Dev == "" {
 		return nil, fmt.Errorf("no [hooks] dev command in %s", paths.RepoConfig(s.RepoID))
 	}
-	cmd := d.vars(s).Expand(cfg.Hooks.Dev)
+	cmd := d.vars(s).ExpandShell(cfg.Hooks.Dev)
 	full := cmd + `; printf '\n[pekoe] dev server exited (%s)\n' "$?"`
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
 		return nil, err
@@ -322,7 +322,7 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	steps = append(steps, "rebased onto "+onto)
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
-		cmd := d.vars(s).Expand(cfg.Hooks.Test)
+		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
 		out, err := shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
 		t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
 		if err != nil {

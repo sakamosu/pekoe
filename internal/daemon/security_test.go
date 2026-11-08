@@ -92,3 +92,24 @@ func TestCancelKeepsDirectoryItDidNotMake(t *testing.T) {
 		t.Fatal("cancel deleted a directory the session did not make")
 	}
 }
+
+// {{branch}} in a setup hook is one literal word for the shell.
+func TestSetupHookQuotesBranch(t *testing.T) {
+	d, _, repo := setup(t)
+	id := call[map[string]any](t, d, "init.detect", map[string]any{"path": repo})["repo_id"].(string)
+	os.MkdirAll(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos"), 0o755)
+	cfg := "[hooks]\nsetup = [\"printf %s {{branch}} > marker\"]\n"
+	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte(cfg), 0o644)
+	branch := "fix$(touch${IFS}pwned)"
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": branch})
+	s = waitCreated(t, d, s.Slug)
+	if s.State == state.Failed {
+		t.Fatalf("setup failed: %s", s.Error)
+	}
+	if _, err := os.Stat(filepath.Join(s.Path, "pwned")); err == nil {
+		t.Fatal("the branch name ran as a command")
+	}
+	if b, _ := os.ReadFile(filepath.Join(s.Path, "marker")); string(b) != branch {
+		t.Fatalf("marker = %q, want the branch name as is", b)
+	}
+}

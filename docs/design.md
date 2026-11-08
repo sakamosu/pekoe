@@ -120,7 +120,7 @@ DATABASE_URL = "postgres:///app_{{slug}}"
 COMPOSE_PROJECT_NAME = "{{slug}}"
 ```
 
-変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}` の 5 つ。setup は順に実行し、失敗したら止めて左ペインに赤で出す。届かないものは `setup = ["./scripts/pekoe-setup.sh"]` と逃げられる。
+変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}` の 5 つ。シェルに渡すコマンドでは、シェルが特別に扱う文字を含む値だけ単引用符で囲む(普通の値は変えないので、`"{{path}}"` のように自分で囲んだ設定もそのまま動く)。setup は順に実行し、失敗したら止めて左ペインに赤で出す。届かないものは `setup = ["./scripts/pekoe-setup.sh"]` と逃げられる。
 
 **自動検出(`pekoe init`)** はこのファイルの下書きを作るだけで、実行時には参照しない。
 

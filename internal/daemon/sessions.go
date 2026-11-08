@@ -332,7 +332,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	}
 	dv := config.Vars{Slug: slug, Branch: p.Branch, Path: s.Path, Repo: repo.Name, Port: port}
 	for i, c := range repo.Config.Hooks.Setup {
-		steps = append(steps, Step{Name: fmt.Sprintf("setup%d", i), Label: stepLabel(c), Detail: dv.Expand(c)})
+		steps = append(steps, Step{Name: fmt.Sprintf("setup%d", i), Label: stepLabel(c), Detail: dv.ExpandShell(c)})
 	}
 	steps = append(steps, Step{Name: "start", Label: "start", Detail: agent + " · new session · snapshot #0"})
 	for i := range steps {
@@ -457,7 +457,7 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	}
 	env := append(repo.Config.EnvList(vars), "PEKOE_SESSION="+slug, "PEKOE_PORT="+strconv.Itoa(s.Port))
 	for _, c := range repo.Config.Hooks.Setup {
-		cmd := vars.Expand(c)
+		cmd := vars.ExpandShell(c)
 		if !run("setup:"+c, func() error {
 			out, err := shell(ctx, s.Path, env, cmd, 30*time.Minute)
 			if err != nil {

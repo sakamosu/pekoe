@@ -568,7 +568,7 @@ func (d *Daemon) runTest(slug string) {
 	if cfg.Hooks.Test == "" {
 		return
 	}
-	cmd := d.vars(s).Expand(cfg.Hooks.Test)
+	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
 	out, err := shell(context.Background(), s.Path, s.Env, cmd, 20*time.Minute)
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
@@ -607,7 +607,7 @@ func (d *Daemon) runGatekeeper(slug string) {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	c := execCommand(ctx, sh, "-c", d.vars(s).Expand(cfg.Review.Gatekeeper))
+	c := execCommand(ctx, sh, "-c", d.vars(s).ExpandShell(cfg.Review.Gatekeeper))
 	c.Dir = s.Path
 	c.Stdin = bytes.NewReader(diff)
 	out, err := c.Output()

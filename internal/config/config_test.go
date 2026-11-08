@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -45,5 +46,28 @@ func TestTapiAgent(t *testing.T) {
 	}
 	if g.Tapi.Agent != "claude-ask" || g.Agents["claude-ask"].Command != "claude --permission-mode plan" {
 		t.Fatalf("configured: %q %+v", g.Tapi.Agent, g.Agents["claude-ask"])
+	}
+}
+
+// Values put into a shell command line are passed as one literal word, and
+// plain values stay as they were (configs that quote them keep working).
+func TestExpandShell(t *testing.T) {
+	for _, v := range []string{"fix$(echo pwned)", "x`id`", "a;b|c&d", "it's", "a b", "~", ""} {
+		got, err := exec.Command("/bin/sh", "-c", Vars{Branch: v}.ExpandShell("printf '%s|' {{branch}}")).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != v+"|" {
+			t.Errorf("branch %q came out as %q", v, got)
+		}
+	}
+	v := Vars{Slug: "feat-x", Branch: "feat/x", Path: "/Users/me/worktrees/app/feat-x", Repo: "my.app", Port: 3000}
+	in := `createdb app_{{slug}} && cd "{{path}}" && echo '{{branch}}' {{repo}} {{port}}`
+	if got, want := v.ExpandShell(in), `createdb app_feat-x && cd "/Users/me/worktrees/app/feat-x" && echo 'feat/x' my.app 3000`; got != want {
+		t.Errorf("plain values changed:\n got %s\nwant %s", got, want)
+	}
+	// [env] values are not for a shell: no quotes there
+	if got := (Vars{Branch: "a b"}).Expand("{{branch}}"); got != "a b" {
+		t.Errorf("Expand quoted: %q", got)
 	}
 }
