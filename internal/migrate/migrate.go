@@ -4,7 +4,8 @@
 //
 //	~/.config/boba            → ~/.config/pekoe
 //	~/.local/share/boba       → ~/.local/share/pekoe (bobad.* → pekoed.*)
-//	state.db                  old paths and refs/boba/ → new ones
+//	state.db                  old paths and refs/boba/ → new ones,
+//	                          sessions' env BOBA_* → PEKOE_*
 //	refs/boba/* in each repo  → copied to refs/pekoe/* (--prune-old deletes the old)
 //	~/.claude/settings.json   `boba event` hooks → `pekoe event`
 package migrate
@@ -98,7 +99,9 @@ func (r *runner) step(format string, a ...any) {
 
 // Run migrates. Nothing is changed when a daemon is running or a
 // destination directory is already in use; with DryRun nothing is changed
-// at all. Running it again after a migration is harmless.
+// at all. Running it again after a migration is harmless: with nothing to
+// move it still rewrites the new state.db (old env names left by an
+// earlier pekoe migrate included).
 func Run(l Layout, o Options) error {
 	r := &runner{l: l, o: o, out: o.Out}
 	if r.out == nil {
@@ -403,6 +406,11 @@ func (r *runner) rewriteDB(path string) ([]string, error) {
 		}
 		changed += len(ups)
 	}
+	n, err := r.rewriteEnv(tx)
+	if err != nil {
+		return nil, err
+	}
+	changed += n
 	if r.o.DryRun {
 		err = tx.Rollback()
 	} else {
@@ -415,6 +423,117 @@ func (r *runner) rewriteDB(path string) ([]string, error) {
 		r.step("state.db: nothing to rewrite")
 	}
 	return knownRepos(db)
+}
+
+// rewriteEnv renames the old variables in each session's env (the JSON
+// "env" of sessions.data, given to its agent, dev and run windows):
+// BOBA_<NAME>=v → PEKOE_<NAME>=v and BOBA=v → PEKOE=v. Only the env array
+// is touched; the rest of the JSON is left as it is.
+func (r *runner) rewriteEnv(tx *sql.Tx) (int, error) {
+	rows, err := tx.Query(`SELECT rowid, data FROM sessions WHERE data IS NOT NULL`)
+	if err != nil {
+		if strings.Contains(err.Error(), "no such table") {
+			return 0, nil
+		}
+		return 0, err
+	}
+	type upd struct {
+		id int64
+		v  string
+	}
+	var ups []upd
+	for rows.Next() {
+		var id int64
+		var v string
+		if err := rows.Scan(&id, &v); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if nv, ok := renameEnv(v); ok {
+			ups = append(ups, upd{id, nv})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, u := range ups {
+		if !r.o.DryRun {
+			if _, err := tx.Exec(`UPDATE sessions SET data = ? WHERE rowid = ?`, u.v, u.id); err != nil {
+				return 0, err
+			}
+		}
+	}
+	if len(ups) > 0 {
+		r.step("state.db: sessions.data · %d rows (env BOBA_* → PEKOE_*)", len(ups))
+	}
+	return len(ups), nil
+}
+
+// renameEnv returns data with the old keys in its "env" renamed, and
+// whether anything changed. An old entry whose new key is already set is
+// dropped (the new one wins). Data that is not a JSON object is left alone.
+func renameEnv(data string) (string, bool) {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal([]byte(data), &obj) != nil {
+		return data, false
+	}
+	raw, ok := obj["env"]
+	if !ok {
+		return data, false
+	}
+	var env []string
+	if json.Unmarshal(raw, &env) != nil {
+		return data, false
+	}
+	has := map[string]bool{}
+	for _, e := range env {
+		k, _, _ := strings.Cut(e, "=")
+		has[k] = true
+	}
+	out := make([]string, 0, len(env))
+	changed := false
+	for _, e := range env {
+		k, v, eq := strings.Cut(e, "=")
+		nk := newEnvKey(k)
+		if nk == k {
+			out = append(out, e)
+			continue
+		}
+		changed = true
+		if has[nk] {
+			continue
+		}
+		has[nk] = true
+		if eq {
+			nk += "=" + v
+		}
+		out = append(out, nk)
+	}
+	if !changed {
+		return data, false
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return data, false
+	}
+	obj["env"] = b
+	nd, err := json.Marshal(obj)
+	if err != nil {
+		return data, false
+	}
+	return string(nd), true
+}
+
+// newEnvKey: BOBA → PEKOE, BOBA_<NAME> → PEKOE_<NAME>, others unchanged.
+func newEnvKey(k string) string {
+	if k == "BOBA" {
+		return "PEKOE"
+	}
+	if rest, ok := strings.CutPrefix(k, "BOBA_"); ok {
+		return "PEKOE_" + rest
+	}
+	return k
 }
 
 func queryStrings(db *sql.DB, q string, args ...any) ([]string, error) {
