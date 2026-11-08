@@ -41,9 +41,15 @@ install-launchd: install
 	sed -e 's|PEKOE_BIN|$(PREFIX)/bin/pekoe|' -e 's|HOME|$(HOME)|g' contrib/launchd/dev.pekoe.pekoed.plist > $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist
 	launchctl bootstrap gui/$$(id -u) $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist || launchctl kickstart -k gui/$$(id -u)/dev.pekoe.pekoed
 
+# also drops dev.boba.bobad, the agent of pekoe's old name, when it is there
 uninstall-launchd:
 	-launchctl bootout gui/$$(id -u)/dev.pekoe.pekoed
 	rm -f $(HOME)/Library/LaunchAgents/dev.pekoe.pekoed.plist
+	@if [ -f $(HOME)/Library/LaunchAgents/dev.boba.bobad.plist ] || launchctl print gui/$$(id -u)/dev.boba.bobad >/dev/null 2>&1; then \
+		launchctl bootout gui/$$(id -u)/dev.boba.bobad || true; \
+		rm -f $(HOME)/Library/LaunchAgents/dev.boba.bobad.plist; \
+		echo "removed the old launchd agent dev.boba.bobad"; \
+	fi
 
 clean:
 	rm -f bin/pekoe bin/pekoed

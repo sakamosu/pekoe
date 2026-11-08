@@ -160,6 +160,8 @@ var specs = map[string]spec{
 	"daemon status": {use: "pekoe daemon status [--json]"},
 	"daemon run":    {use: "pekoe daemon run   (foreground; normally started for you)"},
 	"daemon stop":   {use: "pekoe daemon stop [--kill-agents [--yes]]", bools: []string{"kill-agents", "yes"}},
+
+	"migrate": {use: "pekoe migrate [--dry-run] [--prune-old]   move a boba installation (the old name) to pekoe", bools: []string{"dry-run", "prune-old"}},
 }
 
 // parseCmd parses args against the named spec.
