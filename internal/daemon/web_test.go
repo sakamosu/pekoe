@@ -351,6 +351,7 @@ func TestWebStatic(t *testing.T) {
 		"/app.js":               "javascript",
 		"/app.css":              "text/css",
 		"/manifest.webmanifest": "application/manifest+json",
+		"/theme.css":            "text/css",
 		"/icon.png":             "image/png",
 	} {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
@@ -495,5 +496,32 @@ func TestTakeAuthKeyEnv(t *testing.T) {
 	}
 	if os.Getenv("TS_AUTHKEY") != "" || os.Getenv("TS_AUTH_KEY") != "" {
 		t.Fatal("still in the environment")
+	}
+}
+
+// The phone uses the TUI's palette (with the user's [theme.colors]) and the
+// TUI's state look, so a session reads the same in both.
+func TestWebTheme(t *testing.T) {
+	d, _, repo, h := webSetup(t)
+	d.Global.Theme.Colors = map[string]string{"ok": "#00ff00", "err": "red;}*{display:none"}
+	w := doWeb(t, h, webReq{path: "/theme.css", from: ipPhone})
+	css := w.Body.String()
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("theme.css: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{"--bg: #151421;", "--ok: #00ff00;", "--err: #ff7172;", "--primary-end: #9bb7f2;"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("theme.css lacks %q:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "display") {
+		t.Fatalf("a bad color got into the CSS:\n%s", css)
+	}
+	waitingSession(t, d, repo)
+	w = doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone})
+	var res struct{ Sessions []webSession }
+	json.Unmarshal(w.Body.Bytes(), &res)
+	if lk := res.Sessions[0].Look; lk != (webLook{Icon: "●", Role: "warn", Word: "wait"}) {
+		t.Fatalf("look: %+v", lk)
 	}
 }

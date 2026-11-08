@@ -1,24 +1,19 @@
-/* boba web — docs/ui-guidelines.md の配色をそのまま。色は意味にだけ、記号と対で。 */
+/* boba web — the TUI's look on a phone (docs/ui-guidelines.md).
+   Colors come from /theme.css (bobad writes the TUI's palette, with the
+   user's [theme.colors], as variables): here only role names.
+   - color means something, always paired with a symbol; neon stays small
+   - one focus: the gradient border (primary → primary-end), title in primary
+   - selection is the select background, no cursor glyph */
 :root {
-  --bg: #151421;
-  --surface: #1e1d2c;
-  --border: #3b3b4d;
-  --dim: #848495;
-  --text: #e0e0eb;
-  --primary: #ff87da;
-  --secondary: #11cded;
-  --warn: #edc812;
-  --ok: #51d75e;
-  --err: #ff7172;
-  --select: #441e39;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --term-bg: color-mix(in oklch, var(--bg) 70%, black);
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  font: 14px/1.45 var(--mono);
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
   min-height: 100vh;
   -webkit-text-size-adjust: 100%;
@@ -27,118 +22,208 @@ button, textarea { font: inherit; color: inherit; }
 [hidden] { display: none !important; }
 .dim { color: var(--dim); }
 
+/* roles as classes: a look's role from the API, a key, a diff count */
+.r-ok { color: var(--ok); }
+.r-warn { color: var(--warn); }
+.r-err { color: var(--err); }
+.r-primary { color: var(--primary); }
+.r-secondary { color: var(--secondary); }
+.r-dim { color: var(--dim); }
+.r-text { color: var(--text); }
+
+/* ---- status line: the one primary-filled segment ---- */
 .bar {
   position: sticky; top: 0; z-index: 2;
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 12px 16px 10px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
 }
-.bar h1 { margin: 0; font: 600 17px/1.2 var(--mono); color: var(--primary); }
-.bar .sum { margin-left: auto; font: 13px var(--mono); color: var(--dim); }
+.pill {
+  margin: 0; padding: 1px 10px; border-radius: 999px;
+  background: var(--primary); color: var(--bg);
+  font: 700 14px/1.5 var(--mono);
+}
+.bar .sum { margin-left: auto; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; }
 .back {
-  background: none; border: 0; padding: 0; color: var(--secondary);
-  font: 15px var(--mono);
+  background: none; border: 0; padding: 4px 0; color: var(--secondary);
+  font: 600 14px var(--mono);
 }
 
-/* ---- list ---- */
-#list { padding: 8px 0 24px; }
-.empty { padding: 32px 16px; color: var(--dim); text-align: center; }
+/* ---- panels: a border with the title on it, as in the TUI ---- */
+main { padding: 4px 10px 8px; }
+.panel {
+  position: relative;
+  margin: 14px 0 0; padding: 12px 0 0;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.panel > .ttl {
+  position: absolute; top: -0.75em; left: 10px; max-width: calc(100% - 20px);
+  padding: 0 6px; background: var(--bg);
+  font-size: 13px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.panel.focus {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    linear-gradient(to bottom right, var(--primary), var(--primary-end)) border-box;
+  background:
+    linear-gradient(var(--bg), var(--bg)) padding-box,
+    linear-gradient(to bottom right in oklch, var(--primary), var(--primary-end)) border-box;
+}
+.panel.focus > .ttl .name { color: var(--primary); font-weight: 700; }
+.panel .foot {
+  padding: 6px 12px 8px; border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--dim);
+}
+.panel .foot .gap { display: inline-block; width: 2em; }
+.empty { padding: 20px 12px; color: var(--dim); }
+
+/* ---- Sessions rows: icon  name  state  age / repo · diff · #pr ---- */
 .row-s {
   display: block; width: 100%; text-align: left;
-  padding: 12px 16px; background: none;
-  border: 0; border-bottom: 1px solid var(--border);
+  padding: 7px 12px; background: none; border: 0;
+  -webkit-tap-highlight-color: transparent;
 }
-.row-s:active { background: var(--select); }
+.row-s:active, .row-s.sel { background: var(--select); }
 .line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.ic { font-family: var(--mono); width: 1.1em; flex: none; }
-.slug { font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st { margin-left: auto; font: 13px var(--mono); flex: none; }
-.line2 { margin: 2px 0 0 calc(1.1em + 8px); font-size: 13px; color: var(--dim);
+.ic { width: 1.1em; flex: none; text-align: center; }
+.name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.word { margin-left: auto; flex: none; min-width: 4.5em; }
+.age { flex: none; min-width: 2.5em; text-align: right; color: var(--dim); }
+.line2 { margin: 1px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line2 .sep { padding: 0 .4em; }
 
-.s-run .ic, .s-run .st { color: var(--ok); }
-.s-wait .ic, .s-wait .st { color: var(--warn); }
-.s-idle .ic, .s-idle .st { color: var(--dim); }
-.s-done .ic, .s-done .st { color: var(--secondary); }
-.s-fail .ic, .s-fail .st { color: var(--err); }
-
-/* a waiting session: the one thing the phone is for */
-.wait-card {
-  margin: 8px 12px; padding: 12px;
-  border: 1px solid var(--warn); border-radius: 10px;
+/* a session waiting on the user: an in-pane card (border, not primary) */
+.card {
+  margin: 4px 8px 8px; padding: 0 0 10px;
+  border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface);
 }
-.wait-card .row-s { padding: 0 0 8px; border: 0; }
-.tool { font: 600 14px var(--mono); color: var(--text); }
+.card .row-s { border-radius: 8px 8px 0 0; }
+.card .body { padding: 0 10px; }
+.tool { margin-top: 2px; font-weight: 700; }
+.tool .ic { color: var(--secondary); margin-right: 6px; }
+/* what will run: full width, sunk into bg, no colored text */
 .input {
   margin: 6px 0 0; padding: 8px 10px;
-  background: var(--bg); border-radius: 6px;
+  background: var(--bg); border-radius: 4px;
   font: 13px/1.4 var(--mono); color: var(--text);
   white-space: pre-wrap; word-break: break-all;
   max-height: 9.5em; overflow: auto;
 }
 .msg { margin-top: 6px; font-size: 13px; color: var(--dim); }
-.also { margin-top: 6px; font: 13px var(--mono); color: var(--warn); }
+.also { margin-top: 6px; font-size: 13px; color: var(--dim); }
+.also .ic { color: var(--warn); }
 
-.row { display: flex; gap: 10px; margin-top: 12px; }
+.row { display: flex; gap: 10px; margin-top: 10px; }
 .row .btn { flex: 1; }
 .btn {
   min-height: 44px; padding: 0 16px;
-  border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface); font: 600 15px var(--mono);
+  border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg); font: 700 15px var(--mono);
 }
-.btn:disabled { opacity: .5; }
+.btn:disabled { opacity: .45; }
 .btn.allow { color: var(--ok); border-color: var(--ok); }
 .btn.deny { color: var(--err); border-color: var(--err); }
 .btn.key { color: var(--secondary); border-color: var(--secondary); }
 
 /* ---- detail ---- */
-#detail { padding: 12px 16px 24px; }
+.head { padding: 0 12px 10px; }
 .head .line2 { margin-left: 0; white-space: normal; }
-.ask { margin: 12px 0; padding: 12px; border: 1px solid var(--warn); border-radius: 10px; background: var(--surface); }
-.screen { margin-top: 12px; }
-.cap { font: 12px var(--mono); color: var(--dim); margin-bottom: 4px; }
+#d-ask { margin: 10px 0 0; }
+#d-ask .body { padding-top: 10px; }
+.screen-panel { padding-top: 14px; }
+.screen-tools { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; font-size: 12px; color: var(--dim); }
+.screen-tools .at { margin-left: auto; }
 #d-screen {
-  margin: 0; padding: 10px;
-  background: #0f0e18; border: 1px solid var(--border); border-radius: 8px;
+  margin: 0 6px 6px; padding: 8px;
+  background: var(--term-bg); border-radius: 4px;
   font: 11px/1.35 var(--mono); color: var(--text);
   white-space: pre-wrap; word-break: break-all;
-  max-height: 55vh; overflow: auto;
+  max-height: 58vh; overflow: auto;
+  -webkit-user-select: text; user-select: text;
 }
-.send { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+
+.send { margin-top: 12px; }
+/* where send goes: the slug the button will hit, right above the box */
+.to {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  margin-bottom: 6px; padding: 8px 10px;
+  border: 1px solid var(--border); border-left: 3px solid var(--secondary); border-radius: 6px;
+  background: var(--surface);
+}
+.to-k { flex: none; font-size: 12px; color: var(--dim); }
+.to-slug { flex: none; max-width: 60%; font: 700 16px var(--mono); color: var(--secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.to-repo { min-width: 0; font-size: 12px; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.to.gone { border-left-color: var(--err); }
+.to.gone .to-slug { color: var(--err); }
+.send-row { display: flex; gap: 8px; align-items: flex-end; }
 .send textarea {
   flex: 1; min-height: 44px; max-height: 30vh; resize: vertical;
-  padding: 10px; border-radius: 8px;
-  border: 1px solid var(--border); background: var(--surface);
-  font-size: 16px; /* no zoom on focus (iOS) */
+  padding: 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg);
+  font: 16px/1.4 var(--mono); /* 16px: no zoom on focus (iOS) */
 }
 .send textarea:focus { outline: none; border-color: var(--primary); }
 
-.who { padding: 8px 16px 16px; font: 12px var(--mono); color: var(--dim); }
+.who { padding: 8px 12px 16px; font-size: 12px; color: var(--dim); }
 
-/* ---- confirm sheet ---- */
+/* ---- confirm: a modal, gradient frame; a deny is err, solid ---- */
 .sheet-back {
   position: fixed; inset: 0; z-index: 10;
   display: flex; align-items: flex-end;
-  background: rgba(21, 20, 33, .6);
+  background: transparent; /* no dimming (guidelines): the frame is enough */
 }
 .sheet {
-  width: 100%; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 2px solid var(--primary); border-radius: 14px 14px 0 0;
+  width: 100%; padding: 16px 14px calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid transparent; border-bottom: 0; border-radius: 12px 12px 0 0;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(to bottom right, var(--primary), var(--primary-end)) border-box;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(to bottom right in oklch, var(--primary), var(--primary-end)) border-box;
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, .35);
 }
-.sheet h2 { margin: 0 0 10px; font: 600 16px var(--mono); }
-.sheet .target { font: 600 14px var(--mono); }
+.sheet h2 { margin: 0 0 10px; font: 700 15px var(--mono); color: var(--primary); }
+.sheet.danger { background: var(--surface); border-color: var(--err); }
+.sheet.danger h2 { color: var(--err); }
+.sheet .target { font: 700 14px var(--mono); }
 .sheet .input { max-height: 22vh; }
-.sheet-cap { margin-top: 10px; }
-.sheet-screen { font-size: 11px; max-height: 30vh; }
-.sheet.danger { border-top-color: var(--err); }
+.sheet-cap { margin-top: 10px; font-size: 12px; color: var(--dim); }
+.sheet-screen { font-size: 11px; max-height: 30vh; background: var(--term-bg); }
 
 .toast {
   position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 20;
-  padding: 10px 12px; border-radius: 8px;
+  padding: 10px 12px; border-radius: 6px;
   background: var(--surface); border: 1px solid var(--err);
-  font: 13px var(--mono);
+  font-size: 13px;
 }
+.toast .ic { margin-right: 6px; color: var(--err); }
 .toast.ok { border-color: var(--ok); }
+.toast.ok .ic { color: var(--ok); }
+
+/* ---- agent screen colors: the 16 terminal colors are theme roles ---- */
+.f-border { color: var(--border); } .k-border { background: var(--border); }
+.f-err { color: var(--err); } .k-err { background: var(--err); }
+.f-ok { color: var(--ok); } .k-ok { background: var(--ok); }
+.f-warn { color: var(--warn); } .k-warn { background: var(--warn); }
+.f-primary-end { color: var(--primary-end); } .k-primary-end { background: var(--primary-end); }
+.f-primary { color: var(--primary); } .k-primary { background: var(--primary); }
+.f-secondary { color: var(--secondary); } .k-secondary { background: var(--secondary); }
+.f-text { color: var(--text); } .k-text { background: var(--text); }
+.f-dim { color: var(--dim); } .k-dim { background: var(--dim); }
+.f-bg { color: var(--bg); } .k-bg { background: var(--bg); }
+.t-b { font-weight: 700; }
+.t-d { opacity: .6; }
+.t-i { font-style: italic; }
+.t-u { text-decoration: underline; }
+.t-s { text-decoration: line-through; }
+.t-u.t-s { text-decoration: underline line-through; }
+
+/* pause: a small key-colored button (the screen stays still to copy) */
+.btn.small { min-height: 32px; padding: 0 10px; font-size: 12px; }

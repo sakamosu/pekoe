@@ -13,28 +13,50 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon.png">
 <link rel="icon" href="/icon.png">
+<link rel="stylesheet" href="/theme.css">
 <link rel="stylesheet" href="/app.css">
 <script src="/app.js" defer></script>
 </head>
 <body>
 <header class="bar">
+  <h1 class="pill" id="title">boba</h1>
   <button class="back" id="back" hidden aria-label="back">‹ sessions</button>
-  <h1 id="title">boba</h1>
   <span class="sum" id="sum"></span>
 </header>
 
-<main id="list" aria-live="polite"></main>
+<main id="list">
+  <section class="panel focus">
+    <div class="ttl"><span class="name">◆ Sessions</span> <span id="l-count"></span></div>
+    <div id="l-rows" aria-live="polite"></div>
+    <div class="foot" id="l-foot" hidden></div>
+  </section>
+</main>
 
 <main id="detail" hidden>
-  <section class="head" id="d-head"></section>
-  <section class="ask" id="d-ask" hidden></section>
-  <section class="screen">
-    <div class="cap">screen <span class="dim" id="d-at"></span></div>
+  <section class="panel">
+    <div class="ttl"><span class="name">◆ Session</span></div>
+    <div class="head" id="d-head"></div>
+  </section>
+  <section class="card" id="d-ask" hidden></section>
+  <section class="panel focus screen-panel">
+    <div class="ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
+    <div class="screen-tools">
+      <button type="button" class="btn key small" id="d-pause" aria-pressed="false">❚❚ pause</button>
+      <span id="d-live"></span>
+      <span class="at" id="d-at"></span>
+    </div>
     <pre id="d-screen" tabindex="0"></pre>
   </section>
   <form class="send" id="d-send" autocomplete="off">
-    <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send"></textarea>
-    <button type="submit" class="btn key" id="d-send-btn">send</button>
+    <div class="to" id="d-to" aria-live="polite">
+      <span class="to-k">送り先</span>
+      <span class="to-slug" id="d-to-slug"></span>
+      <span class="to-repo" id="d-to-repo"></span>
+    </div>
+    <div class="send-row">
+      <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send" aria-describedby="d-to"></textarea>
+      <button type="submit" class="btn key" id="d-send-btn">send</button>
+    </div>
   </form>
 </main>
 
@@ -45,7 +67,7 @@
     <h2 id="sheet-title"></h2>
     <div class="target" id="sheet-tool"></div>
     <pre class="input" id="sheet-input"></pre>
-    <div class="cap sheet-cap">screen — the prompt as the agent shows it</div>
+    <div class="sheet-cap">screen — the prompt as the agent shows it</div>
     <pre class="input sheet-screen" id="sheet-screen"></pre>
     <div class="row">
       <button class="btn" id="sheet-cancel">cancel</button>
