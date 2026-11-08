@@ -90,7 +90,7 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 | `boba land` | rebase → test → `gh pr create`。マージ検出後に teardown を走らせて worktree を削除 |
 | `boba rm <slug>` | teardown → worktree 削除。`~/worktrees` 配下以外は消さない |
 
-**複数リポジトリ** — デーモンは 1 つで全リポジトリのセッションを扱う。CLI の対象リポジトリは今いるディレクトリから決まり、`--repo R` で明示できる。`R` は repo-id・短い名前(`~/worktrees/<repo>` の `<repo>`)・パスのどれでもよく、解決はデーモンの 1 か所(`repo.resolve`)でする。短い名前で引けるのは既知のリポジトリ(セッションがあるもの + `~/.config/boba/repos/*.toml` があるもの)で、同じ名前が複数あれば候補の repo-id を出してエラーにする。
+**複数リポジトリ** — デーモンは 1 つで全リポジトリのセッションを扱う。CLI の対象リポジトリは今いるディレクトリから決まり、`--repo R` で明示できる。`R` は repo-id・短い名前(`~/worktrees/<repo>` の `<repo>`)・パスのどれでもよく、解決はデーモンの 1 か所(`repo.resolve`)でする。短い名前で引けるのは既知のリポジトリ(セッションがあるもの + 一度 boba で解決したもの + `~/.config/boba/repos/*.toml` があるもの。`repo.list`)で、同じ名前が複数あれば候補の repo-id を出してエラーにする。
 
 **slug** — slug は全リポジトリで 1 つの名前空間。ブランチ名から作った slug が別リポジトリのセッションと衝突したら `<repo>-<slug>`(`web-feat-x`)にし、それも埋まっていれば `-2` `-3` を付ける。同じリポジトリの同じブランチは同じ slug のまま(「already exists」)。既存セッションの slug は変えない。slug を取るコマンドは `<repo>/<slug>` でも指定でき、`<repo>` は repo-id か短い名前、`<slug>` は本物の slug でもリポジトリ名を前に付ける前の形でもよい(`web/feat-x` → `web-feat-x`)。
 

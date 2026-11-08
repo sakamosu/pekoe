@@ -10,18 +10,42 @@ import (
 	"strings"
 	"time"
 
+	"boba/internal/gitx"
 	"boba/internal/paths"
 	"boba/internal/state"
 )
 
-// KnownRepo is a repository bobad knows about: one that has a session, or
-// one with ~/.config/boba/repos/<repo-id>.toml.
+// KnownRepo is a repository bobad knows about: one that has a session, one
+// boba resolved before (remembered in the state DB), or one with
+// ~/.config/boba/repos/<repo-id>.toml.
 type KnownRepo struct {
 	ID       string `json:"repo_id"`
 	Name     string `json:"name"`          // short name (~/worktrees/<name>)
-	Dir      string `json:"dir,omitempty"` // main worktree; empty when only the config is known
+	Dir      string `json:"dir,omitempty"` // main worktree; empty when only the config is known and it was not found
 	Sessions int    `json:"sessions"`      // sessions that are not landed
 	Config   bool   `json:"config"`        // has a per-repo config file
+	Cwd      bool   `json:"cwd,omitempty"` // repo.list: the cwd passed is inside it
+}
+
+const repoKVPrefix = "repo:"
+
+type rememberedRepo struct {
+	Dir  string `json:"dir"`
+	Name string `json:"name"`
+}
+
+// remember records a resolved repository, so knownRepos still knows where
+// it is after its last session is gone (the TUI offers it with w).
+func (d *Daemon) remember(r *repoInfo) {
+	if r == nil || r.ID == "" || r.Dir == "" {
+		return
+	}
+	key := repoKVPrefix + r.ID
+	b, _ := json.Marshal(rememberedRepo{Dir: r.Dir, Name: r.Name})
+	if d.DB.Get(key) == string(b) {
+		return
+	}
+	_ = d.DB.Set(key, string(b))
 }
 
 // knownRepos lists the known repositories ordered by name, then id.
@@ -53,6 +77,27 @@ func (d *Daemon) knownRepos() []KnownRepo {
 		}
 	}
 	d.mu.Unlock()
+	for _, kv := range d.DB.Prefixed(repoKVPrefix) {
+		var rr rememberedRepo
+		if json.Unmarshal([]byte(kv[1]), &rr) != nil {
+			continue
+		}
+		if fi, err := os.Stat(rr.Dir); err != nil || !fi.IsDir() {
+			continue // moved or deleted since
+		}
+		id := strings.TrimPrefix(kv[0], repoKVPrefix)
+		r := by[id]
+		if r == nil {
+			r = &KnownRepo{ID: id}
+			by[id] = r
+		}
+		if r.Dir == "" { // a session's directory wins
+			r.Dir = rr.Dir
+		}
+		if r.Name == "" {
+			r.Name = rr.Name
+		}
+	}
 	if es, err := os.ReadDir(paths.ReposConfigDir()); err == nil {
 		for _, e := range es {
 			id, ok := strings.CutSuffix(e.Name(), ".toml")
@@ -65,6 +110,21 @@ func (d *Daemon) knownRepos() []KnownRepo {
 				by[id] = r
 			}
 			r.Config = true
+		}
+	}
+	// a repo-id alone says nothing about where the repository lives
+	var unlocated []string
+	for id, r := range by {
+		if r.Dir == "" {
+			unlocated = append(unlocated, id)
+		}
+	}
+	for id, dir := range d.locateRepos(unlocated) {
+		ri := &repoInfo{ID: id, Dir: dir, Name: gitx.RepoName(dir)}
+		d.remember(ri)
+		by[id].Dir = dir
+		if by[id].Name == "" {
+			by[id].Name = ri.Name
 		}
 	}
 	out := make([]KnownRepo, 0, len(by))
@@ -272,6 +332,117 @@ type repoResolveP struct {
 	Cwd  string `json:"cwd"`
 }
 
-func (d *Daemon) hRepoList(struct{}) (any, error) { return d.knownRepos(), nil }
+type repoListP struct {
+	Cwd string `json:"cwd"`
+}
+
+// hRepoList lists the known repositories. With cwd, the repository it is in
+// is remembered (so it is listed) and marked cwd.
+func (d *Daemon) hRepoList(p repoListP) (any, error) {
+	cwdID := ""
+	if p.Cwd != "" {
+		if ri, err := resolveRepo(p.Cwd); err == nil {
+			d.remember(ri)
+			cwdID = ri.ID
+		}
+	}
+	rs := d.knownRepos()
+	for i := range rs {
+		rs[i].Cwd = cwdID != "" && rs[i].ID == cwdID
+	}
+	return rs, nil
+}
+
+// locateMissTTL: how long a repo-id that could not be located is not
+// searched for again (knownRepos runs on every --repo and <repo>/<slug>).
+const locateMissTTL = time.Minute
+
+// locateRepos finds where repositories known only by their id live: a path_
+// id spells its path (underscores are ambiguous, so the guess is checked),
+// any other id is matched against the worktrees boba created under
+// ~/worktrees/<name>.
+func (d *Daemon) locateRepos(ids []string) map[string]string {
+	found := map[string]string{}
+	want := map[string]bool{}
+	d.mu.Lock()
+	for _, id := range ids {
+		if t, ok := d.locateMiss[id]; !ok || time.Since(t) > locateMissTTL {
+			want[id] = true
+		}
+	}
+	d.mu.Unlock()
+	if len(want) == 0 {
+		return found
+	}
+	for id := range want {
+		if rest, ok := strings.CutPrefix(id, "path_"); ok {
+			if dir := pathFromID(rest); dir != "" {
+				if got, err := gitx.RepoID(dir); err == nil && got == id {
+					found[id] = dir
+					delete(want, id)
+				}
+			}
+		}
+	}
+	root := paths.WorktreesRoot()
+	groups, _ := os.ReadDir(root)
+	for _, g := range groups {
+		if len(want) == 0 {
+			break
+		}
+		if !g.IsDir() {
+			continue
+		}
+		wts, _ := os.ReadDir(filepath.Join(root, g.Name()))
+		for _, wt := range wts {
+			if !wt.IsDir() {
+				continue
+			}
+			main, err := gitx.MainWorktree(filepath.Join(root, g.Name(), wt.Name()))
+			if err != nil {
+				continue
+			}
+			if id, err := gitx.RepoID(main); err == nil && want[id] {
+				found[id] = main
+				delete(want, id)
+			}
+			break // every worktree of a group shares its repository
+		}
+	}
+	d.mu.Lock()
+	if d.locateMiss == nil {
+		d.locateMiss = map[string]time.Time{}
+	}
+	for id := range want {
+		d.locateMiss[id] = time.Now()
+	}
+	d.mu.Unlock()
+	return found
+}
+
+// pathFromID turns "Users_me_my_app" back into an existing directory: each
+// underscore is either a separator or part of a name, so the choices are
+// checked against the filesystem, one directory level at a time.
+func pathFromID(rest string) string {
+	parts := strings.Split(rest, "_")
+	var walk func(dir string, i int) string
+	walk = func(dir string, i int) string {
+		for j := i; j < len(parts); j++ {
+			p := filepath.Join(dir, strings.Join(parts[i:j+1], "_"))
+			fi, err := os.Stat(p)
+			if err != nil || !fi.IsDir() {
+				continue
+			}
+			if j == len(parts)-1 {
+				return p
+			}
+			if got := walk(p, j+1); got != "" {
+				return got
+			}
+		}
+		return ""
+	}
+	return walk("/", 0)
+}
 
 func (d *Daemon) hRepoResolve(p repoResolveP) (any, error) { return d.resolveRepoRef(p.Repo, p.Cwd) }
