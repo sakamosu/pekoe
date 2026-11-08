@@ -5,7 +5,7 @@ end
 vim.g.loaded_boba = true
 
 if vim.fn.has("nvim-0.10") ~= 1 then
-  vim.notify("boba.nvim は Neovim 0.10 以上が必要です", vim.log.levels.ERROR)
+  vim.notify("boba.nvim requires Neovim 0.10 or later", vim.log.levels.ERROR)
   return
 end
 
@@ -37,27 +37,27 @@ end
 cmd("BobaReview", function(a)
   boba()
   require("boba.review").open(a.args ~= "" and a.args or nil)
-end, { nargs = "?", complete = slug_complete, desc = "boba: レビュー面を開く" })
+end, { nargs = "?", complete = slug_complete, desc = "boba: open the review" })
 
 cmd("BobaSend", function(a)
   boba()
   require("boba.review").send(a.args ~= "" and a.args or nil)
-end, { nargs = "?", complete = slug_complete, desc = "boba: 未送信コメントをまとめて送る" })
+end, { nargs = "?", complete = slug_complete, desc = "boba: send all unsent comments" })
 
 cmd("BobaSessions", function()
   boba()
   require("boba.sessions").open_list()
-end, { desc = "boba: セッション一覧(Enter で送信先に)" })
+end, { desc = "boba: list sessions (Enter sets the send target)" })
 
 cmd("BobaSendRange", function(a)
   boba()
   require("boba.send").range({ line1 = a.line1, line2 = a.line2 })
-end, { range = true, desc = "boba: 範囲をセッションに送る" })
+end, { range = true, desc = "boba: send the range to a session" })
 
 cmd("BobaNew", function(a)
   boba()
   require("boba.send").new_session({ line1 = a.line1, line2 = a.line2 })
-end, { range = true, desc = "boba: 範囲を初期指示に新セッション" })
+end, { range = true, desc = "boba: start a new session with the range as its prompt" })
 
 cmd("BobaAnswer", function(a)
   boba()
@@ -68,7 +68,7 @@ cmd("BobaAnswer", function(a)
     return
   end
   require("boba.approval").answer(ans, a.fargs[2])
-end, { nargs = "+", desc = "boba: 許可待ちに答える" })
+end, { nargs = "+", desc = "boba: answer a pending permission" })
 
 cmd("BobaFollow", function(a)
   boba()
@@ -77,12 +77,12 @@ cmd("BobaFollow", function(a)
   else
     require("boba.follow").start(a.args ~= "" and a.args or nil)
   end
-end, { nargs = "?", bang = true, complete = slug_complete, desc = "boba: エージェントの編集を追う(! で停止)" })
+end, { nargs = "?", bang = true, complete = slug_complete, desc = "boba: follow the agent's edits (! to stop)" })
 
 cmd("BobaFixDiagnostics", function(a)
   boba()
   require("boba.send").fix_diagnostics(a.bang, a.args ~= "" and a.args or nil)
-end, { nargs = "?", bang = true, complete = slug_complete, desc = "boba: LSP 診断を送る(! でワークスペース)" })
+end, { nargs = "?", bang = true, complete = slug_complete, desc = "boba: send LSP diagnostics (! for the workspace)" })
 
 local group = vim.api.nvim_create_augroup("BobaPlugin", { clear = true })
 local function on_enter()
@@ -102,4 +102,4 @@ end
 cmd("BobaRisks", function(a)
   boba()
   require("boba.risks").load(a.args ~= "" and a.args or nil)
-end, { nargs = "?", complete = slug_complete, desc = "boba: 門番の指摘を quickfix に" })
+end, { nargs = "?", complete = slug_complete, desc = "boba: load the gatekeeper's risks into quickfix" })

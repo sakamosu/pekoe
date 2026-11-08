@@ -144,8 +144,8 @@ function M.start(slug)
       end
     end)
     F.unsub = client.on("session.updated", on_updated)
-    ui.notify("follow: " .. s .. "(:BobaFollow! で停止)")
-  end, "follow するセッション")
+    ui.notify("follow: " .. s .. " (:BobaFollow! to stop)")
+  end, "session to follow")
 end
 
 function M.stop(quiet)
@@ -162,7 +162,7 @@ function M.stop(quiet)
   local slug = F.slug
   F = nil
   if not quiet then
-    ui.notify("follow 停止: " .. slug)
+    ui.notify("follow stopped: " .. slug)
   end
 end
 

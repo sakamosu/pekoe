@@ -48,13 +48,13 @@ local function setup_keymaps()
   if km.send_range then
     vim.keymap.set("x", km.send_range, function()
       require("boba.send").range()
-    end, { desc = "boba: 選択範囲をセッションに送る" })
+    end, { desc = "boba: send the selection to a session" })
     table.insert(global_maps, { "x", km.send_range })
   end
   if km.new_session then
     vim.keymap.set("x", km.new_session, function()
       require("boba.send").new_session()
-    end, { desc = "boba: 選択から新セッション" })
+    end, { desc = "boba: new session from the selection" })
     table.insert(global_maps, { "x", km.new_session })
   end
 end

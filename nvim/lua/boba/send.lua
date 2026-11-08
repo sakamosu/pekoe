@@ -53,7 +53,7 @@ end
 
 function M.send_text(slug, text, on_ok)
   client.call("session.send", { slug = slug, text = text, submit = true }, function(res)
-    ui.notify("送信しました → " .. slug)
+    ui.notify("sent → " .. slug)
     if on_ok then
       on_ok(res)
     end
@@ -64,13 +64,13 @@ end
 function M.range(opts)
   local rng = M.get_range(opts)
   sessions.pick(function(s)
-    ui.input({ title = string.format("> %s · L%d-%d に指示", s.slug, rng.l1, rng.l2) }, function(instr)
+    ui.input({ title = string.format("> %s · prompt for L%d-%d", s.slug, rng.l1, rng.l2) }, function(instr)
       if instr == nil then
         return
       end
       M.send_text(s.slug, M.build_text(rng, s.path, instr))
     end)
-  end, "送信先セッション")
+  end, "send to session")
 end
 
 local function git_toplevel(dir)
@@ -88,21 +88,21 @@ function M.new_session(opts)
   local dir = name ~= "" and vim.fn.fnamemodify(name, ":p:h") or vim.fn.getcwd()
   local repo = git_toplevel(dir) or git_toplevel(vim.fn.getcwd())
   if not repo then
-    ui.notify("git リポジトリの中ではありません", vim.log.levels.ERROR)
+    ui.notify("not inside a git repository", vim.log.levels.ERROR)
     return
   end
-  vim.ui.input({ prompt = "新しいブランチ名: " }, function(branch)
+  vim.ui.input({ prompt = "new branch name: " }, function(branch)
     if not branch or vim.trim(branch) == "" then
       return
     end
     branch = vim.trim(branch)
-    ui.input({ title = "> " .. branch .. " への指示" }, function(instr)
+    ui.input({ title = "> " .. branch .. " · prompt" }, function(instr)
       if instr == nil then
         return
       end
       local text = M.build_text(rng, repo, instr)
       client.call("session.new", { repo = repo, branch = branch, prompt = text }, function(s)
-        ui.notify("セッションを作成中: " .. ((s and s.slug) or branch))
+        ui.notify("creating session: " .. ((s and s.slug) or branch))
       end)
     end)
   end)
@@ -140,7 +140,7 @@ end
 function M.fix_diagnostics(workspace, slug)
   local diags = vim.diagnostic.get(not workspace and vim.api.nvim_get_current_buf() or nil)
   if #diags == 0 then
-    ui.notify("診断はありません")
+    ui.notify("no diagnostics")
     return
   end
   sessions.resolve(slug, function(s)
@@ -149,7 +149,7 @@ function M.fix_diagnostics(workspace, slug)
       local text = "次の LSP 診断を修正してください:\n" .. table.concat(lines, "\n")
       M.send_text(s, text)
     end)
-  end, "診断の送信先")
+  end, "send diagnostics to")
 end
 
 return M

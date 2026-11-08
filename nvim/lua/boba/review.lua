@@ -83,7 +83,7 @@ local function render_list()
     })
   end
   if #rows == 0 then
-    rows = { { { "  変更はありません", "BobaDim" } } }
+    rows = { { { "  no changes", "BobaDim" } } }
   end
   ui.render_chunks(R.list_buf, rows)
   if valid_win(R.list_win) then
@@ -141,7 +141,7 @@ local function render_diff(restore)
   R.line_info, R.hunk_lnums = {}, {}
   local lines, hls, signs, notes = {}, {}, {}, {}
   if not file then
-    lines = { "", "  レビューする変更はありません" }
+    lines = { "", "  nothing to review" }
   else
     local hunks = visible_hunks(file)
     for hi, h in ipairs(hunks) do
@@ -162,7 +162,7 @@ local function render_diff(restore)
         table.insert(hls, { ln, #(h.header or "@@"), -1, "BobaErr" })
       end
       if type(h.prompt) == "table" and h.prompt.n then
-        table.insert(notes, { ln, string.format("指示 #%s: %s", h.prompt.n, h.prompt.text or "") })
+        table.insert(notes, { ln, string.format("prompt #%s: %s", h.prompt.n, h.prompt.text or "") })
       end
       for _, l in ipairs(h.lines or {}) do
         local kind = l.kind or " "
@@ -184,9 +184,9 @@ local function render_diff(restore)
     if #hunks == 0 then
       local n = #(file.hunks or {})
       if n > 0 then
-        lines = { "", string.format("  ✓ %d hunks すべて承認済み(%s で表示)", n, cfg().keymaps.review.toggle_approved or "A") }
+        lines = { "", string.format("  ✓ all %d hunks approved (%s to show)", n, cfg().keymaps.review.toggle_approved or "A") }
       else
-        lines = { "", "  (表示できる差分がありません)" }
+        lines = { "", "  (no diff to show)" }
       end
     end
   end
@@ -445,7 +445,7 @@ end
 local function with_hunk(fn)
   local h, idx = M.current_hunk()
   if not h then
-    ui.notify("hunk がありません", vim.log.levels.WARN)
+    ui.notify("no hunk here", vim.log.levels.WARN)
     return
   end
   fn(h, idx)
@@ -463,7 +463,7 @@ end
 
 function M.reject()
   with_hunk(function(h, idx)
-    ui.input({ title = "✗ 差し戻し(理由・任意)" }, function(text)
+    ui.input({ title = "✗ send back (why? optional)" }, function(text)
       if text == nil then
         return
       end
@@ -486,7 +486,7 @@ function M.comment()
   local info = R.line_info[cur]
   local file = cur_file()
   if not info or not file then
-    ui.notify("コメントする行がありません", vim.log.levels.WARN)
+    ui.notify("no line to comment on", vim.log.levels.WARN)
     return
   end
   local line
@@ -514,7 +514,7 @@ end
 
 function M.ask()
   with_hunk(function(h)
-    ui.input({ title = "? 意図を聞く(空なら既定の質問)" }, function(text)
+    ui.input({ title = "? ask the agent (empty: default question)" }, function(text)
       if text == nil then
         return
       end
@@ -524,7 +524,7 @@ function M.ask()
       end
       M._asked[h.id] = true
       client.call("review.ask", p, function()
-        ui.notify("エージェントに質問しました。返事を待っています…")
+        ui.notify("asked the agent. waiting for the answer…")
       end)
     end)
   end)
@@ -546,7 +546,7 @@ function M.show_answer(d)
     table.insert(rows, t)
   end
   local buf, win = ui.float(rows, {
-    title = "? 意図 · " .. (d.slug or ""),
+    title = "? answer · " .. (d.slug or ""),
     enter = true,
     width = math.min(80, math.floor(vim.o.columns * 0.7)),
     ft = "markdown",
@@ -569,18 +569,18 @@ end
 function M._quit()
   local ok, err = pcall(vim.cmd, "qa")
   if not ok then
-    ui.notify("終了できません: " .. tostring(err), vim.log.levels.WARN)
+    ui.notify("cannot finish: " .. tostring(err), vim.log.levels.WARN)
   end
 end
 
 function M.send(slug)
   slug = slug or (R and R.slug) or sessions.default_slug()
   if not slug then
-    ui.notify("送信先のセッションがありません", vim.log.levels.WARN)
+    ui.notify("no session to send to", vim.log.levels.WARN)
     return
   end
   client.call("review.flush", { slug = slug }, function()
-    ui.notify("コメントを送信しました → " .. slug)
+    ui.notify("comments sent → " .. slug)
     if vim.env.BOBA_SESSION and vim.env.BOBA_SESSION ~= "" then
       M._quit()
     elseif R and R.slug == slug then
@@ -643,12 +643,12 @@ end
 
 local function common_maps(buf)
   local km = cfg().keymaps.review
-  map(buf, km.toggle_approved, M.toggle_approved, "boba: 承認済み hunk の表示切替")
-  map(buf, km.send, function() M.send() end, "boba: コメントを送信")
-  map(buf, km.refresh, function() M.refresh() end, "boba: 再取得")
-  map(buf, km.close, M.close, "boba: レビューを閉じる")
-  map(buf, km.next_hunk, function() M.move_hunk(1) end, "boba: 次の hunk")
-  map(buf, km.prev_hunk, function() M.move_hunk(-1) end, "boba: 前の hunk")
+  map(buf, km.toggle_approved, M.toggle_approved, "boba: show/hide approved hunks")
+  map(buf, km.send, function() M.send() end, "boba: send comments")
+  map(buf, km.refresh, function() M.refresh() end, "boba: refresh")
+  map(buf, km.close, M.close, "boba: close the review")
+  map(buf, km.next_hunk, function() M.move_hunk(1) end, "boba: next hunk")
+  map(buf, km.prev_hunk, function() M.move_hunk(-1) end, "boba: previous hunk")
 end
 
 local function set_name(buf, name)
@@ -708,23 +708,23 @@ local function create_layout(slug)
   local km = cfg().keymaps.review
   map(R.list_buf, km.select or "<CR>", function()
     M.select_file(vim.api.nvim_win_get_cursor(R.list_win)[1], { focus = true })
-  end, "boba: ファイルを開く")
+  end, "boba: open the file")
   map(R.list_buf, "l", function()
     M.select_file(vim.api.nvim_win_get_cursor(R.list_win)[1], { focus = true })
-  end, "boba: ファイルを開く")
+  end, "boba: open the file")
   common_maps(R.list_buf)
 
   -- 差分のキー
-  map(R.diff_buf, km.approve, M.approve, "boba: hunk を承認")
-  map(R.diff_buf, km.reject, M.reject, "boba: hunk を差し戻す")
-  map(R.diff_buf, km.comment, M.comment, "boba: 行にコメント")
-  map(R.diff_buf, km.ask, M.ask, "boba: 意図を聞く")
-  map(R.diff_buf, km.open_file, M.open_file, "boba: 実ファイルを開く")
+  map(R.diff_buf, km.approve, M.approve, "boba: approve the hunk")
+  map(R.diff_buf, km.reject, M.reject, "boba: send back the hunk")
+  map(R.diff_buf, km.comment, M.comment, "boba: comment on the line")
+  map(R.diff_buf, km.ask, M.ask, "boba: ask the agent")
+  map(R.diff_buf, km.open_file, M.open_file, "boba: open the real file")
   map(R.diff_buf, "h", function()
     if valid_win(R.list_win) then
       vim.api.nvim_set_current_win(R.list_win)
     end
-  end, "boba: ファイル一覧へ")
+  end, "boba: go to the file list")
   common_maps(R.diff_buf)
 
   local group = vim.api.nvim_create_augroup("BobaReviewLayout", { clear = true })
@@ -779,7 +779,7 @@ function M.open(slug, cb)
         cb()
       end
     end)
-  end, "レビューするセッション")
+  end, "session to review")
 end
 
 function M.setup_events()
