@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -98,6 +99,12 @@ type Tapi struct {
 	Agent string `toml:"agent"` // a name in [agents.*], default "claude"
 }
 
+// Tips is [tips]: one feature at a time in the TUI's empty main pane and
+// in tapi chat's greeting (internal/tips). On by default.
+type Tips struct {
+	Enable *bool `toml:"enable"`
+}
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
@@ -120,6 +127,7 @@ type Global struct {
 		Base int `toml:"base"`
 	} `toml:"ports"`
 	Tapi    Tapi  `toml:"tapi"`
+	Tips    Tips  `toml:"tips"`
 	Animate *bool `toml:"animate"`
 	Picks   struct {
 		AutoSend *bool `toml:"auto_send"`
@@ -208,6 +216,21 @@ func LoadGlobal() (*Global, error) {
 
 func (g *Global) AnimateOn() bool  { return g.Animate == nil || *g.Animate }
 func (g *Global) AutoSendOn() bool { return g.Picks.AutoSend == nil || *g.Picks.AutoSend }
+
+// Sections are the top-level names of config.toml ([web], [tips] …, and
+// the bare key animate), as Global declares them.
+func Sections() []string {
+	t := reflect.TypeOf(Global{})
+	out := make([]string, 0, t.NumField())
+	for i := range t.NumField() {
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("toml"), ","); name != "" && name != "-" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func (g *Global) TipsOn() bool { return g.Tips.Enable == nil || *g.Tips.Enable }
 
 // LoadRepo reads the per-repo config. A missing file is not an error.
 func LoadRepo(repoID string) (*Repo, bool, error) {

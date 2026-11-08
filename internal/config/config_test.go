@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"pekoe/internal/tips"
 )
 
 func TestWebStateDir(t *testing.T) {
@@ -69,5 +71,41 @@ func TestExpandShell(t *testing.T) {
 	// [env] values are not for a shell: no quotes there
 	if got := (Vars{Branch: "a b"}).Expand("{{branch}}"); got != "a b" {
 		t.Errorf("Expand quoted: %q", got)
+	}
+}
+
+// [tips] enable is on unless set to false.
+func TestTipsEnable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PEKOE_HOME", root)
+	g, err := LoadGlobal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.TipsOn() {
+		t.Fatal("tips should be on by default")
+	}
+	os.MkdirAll(filepath.Join(root, "config"), 0o700)
+	os.WriteFile(filepath.Join(root, "config", "config.toml"), []byte("[tips]\nenable = false\n"), 0o600)
+	if g, err = LoadGlobal(); err != nil {
+		t.Fatal(err)
+	}
+	if g.TipsOn() {
+		t.Fatal("[tips] enable = false should turn tips off")
+	}
+}
+
+// Every section of config.toml has a tip or a reason not to (internal/tips
+// NoTip), and every section a tip names exists.
+func TestTipsCoverSections(t *testing.T) {
+	have := map[string]string{}
+	for _, s := range Sections() {
+		have["["+s+"]"] = "config.toml"
+	}
+	if have["[tips]"] == "" || have["[animate]"] == "" {
+		t.Fatalf("sections: %v", Sections())
+	}
+	for _, e := range tips.Coverage(tips.KindConfig, have) {
+		t.Error(e)
 	}
 }

@@ -74,6 +74,10 @@ func HumanTokenFile() string { return filepath.Join(DataDir(), "human-token") }
 // LayoutFile keeps the TUI's panel widths (<prefix> z < > =).
 func LayoutFile() string { return filepath.Join(DataDir(), "layout.json") }
 
+// TipsFile records which tips were shown (internal/tips), shared by the TUI
+// and `pekoe tip`.
+func TipsFile() string { return filepath.Join(DataDir(), "tips.json") }
+
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 
