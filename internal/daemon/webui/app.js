@@ -294,21 +294,86 @@ function screenRows(r) {
   return (r.lines || []).map((l) => [{ t: l }]);
 }
 
+// ---- keeping the screen still while it is being copied ----
+// The screen is redrawn only when its content changed, and not at all while
+// text in it is selected (iOS: also while the long-press menu is up, which
+// keeps a selection) or a finger is on it, or while the user paused it.
+// A skipped redraw is caught up as soon as the selection goes away.
+
+let screenSig = "";      // the slug and content now on screen
+let screenPaused = false; // the pause button
+let screenHeld = false;   // a redraw was skipped for a selection or a touch
+let screenTouch = false;
+
+function selectingScreen() {
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+  const pre = $("d-screen");
+  return pre.contains(sel.anchorNode) || pre.contains(sel.focusNode);
+}
+
+function holdScreen() {
+  return screenTouch || selectingScreen();
+}
+
+function renderScreenState() {
+  const btn = $("d-pause"), st = $("d-live");
+  btn.textContent = screenPaused ? "▶ resume" : "❚❚ pause";
+  btn.setAttribute("aria-pressed", String(screenPaused));
+  st.replaceChildren();
+  if (screenPaused) st.append(colored("warn", "❚❚"), document.createTextNode(" paused"));
+  else if (screenHeld) st.append(colored("dim", "○"), document.createTextNode(" hold · selecting"));
+  else st.append(colored("ok", "●"), document.createTextNode(" live"));
+}
+
+function resumeIfHeld() {
+  if (screenHeld && !screenPaused && !holdScreen()) {
+    screenHeld = false;
+    renderScreenState();
+    refreshScreen();
+  }
+}
+
 async function refreshScreen() {
-  if (!current) return;
+  if (!current || screenPaused) return;
+  if (holdScreen()) {
+    if (!screenHeld) {
+      screenHeld = true;
+      renderScreenState();
+    }
+    return;
+  }
   const slug = current;
   const pre = $("d-screen");
   try {
     const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/screen");
-    if (slug !== current) return; // answered after a switch: not this screen
+    if (slug !== current || screenPaused) return; // answered after a switch or a pause
+    if (holdScreen()) { // a selection started while it was on the way
+      screenHeld = true;
+      renderScreenState();
+      return;
+    }
+    $("d-at").textContent = new Date().toLocaleTimeString();
+    const sig = slug + "\n" + JSON.stringify([r.rows, r.lines, r.dead]);
+    if (sig === screenSig) return; // nothing new: leave the DOM (and any selection) alone
+    screenSig = sig;
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
     pre.replaceChildren(termLines(screenRows(r)));
     if (r.dead) pre.append("\n", el("span", "f-dim", "[agent exited]"));
     if (atBottom) pre.scrollTop = pre.scrollHeight;
-    $("d-at").textContent = new Date().toLocaleTimeString();
   } catch (e) {
-    if (slug === current) pre.textContent = "(" + e.message + ")";
+    if (slug === current) {
+      screenSig = "";
+      pre.textContent = "(" + e.message + ")";
+    }
   }
+}
+
+function togglePause() {
+  screenPaused = !screenPaused;
+  screenHeld = false;
+  renderScreenState();
+  if (!screenPaused) refreshScreen();
 }
 
 // ---- answer: always through a confirmation that shows what is allowed ----
@@ -408,6 +473,9 @@ function route() {
   $("back").hidden = !current;
   if (current) {
     $("d-screen").textContent = "";
+    screenSig = "";
+    screenPaused = screenHeld = false;
+    renderScreenState();
     renderDetailHead();
     refreshScreen();
   } else {
@@ -437,6 +505,19 @@ $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
+$("d-pause").addEventListener("click", togglePause);
+document.addEventListener("selectionchange", resumeIfHeld);
+{
+  const pre = $("d-screen");
+  pre.addEventListener("pointerdown", () => (screenTouch = true));
+  // a long press turns into a selection: hold on until that has settled
+  const up = () => setTimeout(() => {
+    screenTouch = false;
+    resumeIfHeld();
+  }, 600);
+  document.addEventListener("pointerup", () => screenTouch && up());
+  document.addEventListener("pointercancel", () => screenTouch && up());
+}
 // hold the list still while a finger is on it: a redraw between touch and
 // click could put another session's row under the finger
 const list = $("list");

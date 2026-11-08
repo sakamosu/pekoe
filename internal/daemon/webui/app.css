@@ -224,3 +224,6 @@ main { padding: 4px 10px 8px; }
 .t-u { text-decoration: underline; }
 .t-s { text-decoration: line-through; }
 .t-u.t-s { text-decoration: underline line-through; }
+
+/* pause: a small key-colored button (the screen stays still to copy) */
+.btn.small { min-height: 32px; padding: 0 10px; font-size: 12px; }

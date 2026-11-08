@@ -40,7 +40,11 @@
   <section class="card" id="d-ask" hidden></section>
   <section class="panel focus screen-panel">
     <div class="ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
-    <div class="screen-tools"><span class="at" id="d-at"></span></div>
+    <div class="screen-tools">
+      <button type="button" class="btn key small" id="d-pause" aria-pressed="false">❚❚ pause</button>
+      <span id="d-live"></span>
+      <span class="at" id="d-at"></span>
+    </div>
     <pre id="d-screen" tabindex="0"></pre>
   </section>
   <form class="send" id="d-send" autocomplete="off">
