@@ -3,7 +3,7 @@
 Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記録。
 
 - テスト: `make test`(go vet + `go test ./...` + nvim ヘッドレステスト)
-- 隔離 e2e: `BOBA_HOME` / `BOBA_SOCK` / `BOBA_TMUX_SOCKET` / `BOBA_WORKTREES` で隔離し、偽エージェントで端から端まで流した。今後は `scripts/sandbox.sh` で立てる(終わると `boba daemon stop --kill-agents --yes` で tmux サーバーごと片付く)
+- 隔離 e2e: `PEKOE_HOME` / `PEKOE_SOCK` / `PEKOE_TMUX_SOCKET` / `PEKOE_WORKTREES` で隔離し、偽エージェントで端から端まで流した。今後は `scripts/sandbox.sh` で立てる(終わると `pekoe daemon stop --kill-agents --yes` で tmux サーバーごと片付く)
 - 実機: 本物の Claude Code 2.1.319 と、実機の Chrome に読み込んだ拡張
 
 ## 設計原則
@@ -11,8 +11,8 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | 原則 | 実装 | 確認 |
 | --- | --- | --- |
 | デーモンに賢さ、クライアントは薄く | `internal/daemon` が唯一の状態の持ち主。TUI・CLI・nvim・拡張・MCP は `docs/api.md` を叩くだけ | TUI のレビュー面で付けた承認とコメントが nvim のレビュー面にそのまま出た |
-| ただのシェル | `[hooks]` はシェルコマンドの列で、`{{slug}} {{branch}} {{port}} {{path}} {{repo}}` を埋めて `$SHELL -c` で実行。`boba init` の検出は下書きだけ | `TestNewRunsSetupAndFailsVisibly`(変数展開、失敗したら止めて赤で表示) |
-| リポジトリを汚さない | 設定・状態は `~/.config/boba`・`~/.local/share/boba`、スナップショットは `refs/boba/` | `TestSnapshotAndRestore`(index と `git log` に出ない、ignored を含めない)、land 後に `refs/boba` が 0 件 |
+| ただのシェル | `[hooks]` はシェルコマンドの列で、`{{slug}} {{branch}} {{port}} {{path}} {{repo}}` を埋めて `$SHELL -c` で実行。`pekoe init` の検出は下書きだけ | `TestNewRunsSetupAndFailsVisibly`(変数展開、失敗したら止めて赤で表示) |
+| リポジトリを汚さない | 設定・状態は `~/.config/pekoe`・`~/.local/share/pekoe`、スナップショットは `refs/pekoe/` | `TestSnapshotAndRestore`(index と `git log` に出ない、ignored を含めない)、land 後に `refs/pekoe` が 0 件 |
 | Claude Code の使い方を変えない | pty にキー入力と同じ形で書き込む(複数行は bracketed paste)。状態は hooks から受け取る | 実機の Claude Code で、プロンプト・許可・Stop が hooks から反映された |
 | 段階的に差し替えられる | `engine.Engine` インターフェースの裏に tmux エンジン | daemon テストは偽エンジンで動き、本番は tmux エンジン |
 | レビューを中心に置く | レビュー地点 `review-<n>`、hunk 単位の承認、hunk とプロンプトの対応 | e2e と `TestSessionLifecycleAndReview` |
@@ -22,32 +22,32 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | 項目 | 確認 |
 | --- | --- |
 | SessionStart → session_id を保存して `--resume` に使う | 実機で session_id を記録。tmux ごと落とした後、`--resume <id>` で復元した(e2e) |
-| UserPromptSubmit → `refs/boba/<slug>/prompt-<n>` | 実機と e2e |
+| UserPromptSubmit → `refs/pekoe/<slug>/prompt-<n>` | 実機と e2e |
 | Notification → 許可待ちか質問かを区別 | `notification_type`(permission_prompt / idle_prompt / elicitation_dialog)で判別。旧形式は文面から判断。`TestClassifyNotification`、実機で Bash の許可待ちを検知 |
 | Stop → done・`test` 自動実行・結果を左ペインへ | 実機と e2e(`✓test`) |
 | PreToolUse → 直近のツールを左ペインへ | Sessions パネルのフッターに選択中セッションの直近ツールを表示 |
 | OSC 9/99/777・タイトル・`[y/n]` のフォールバック | hooks のないエージェント向けに `output.go` で実装。Claude Code の信頼確認ダイアログは hooks より前に出るので、最初の hook が届くまでは画面を読んで検知する(実機で検知・許可まで確認) |
-| 左ペインの 1 行(状態・待ち時間・diffstat・テスト・ポート) | `boba ls` と Sessions パネル |
+| 左ペインの 1 行(状態・待ち時間・diffstat・テスト・ポート) | `pekoe ls` と Sessions パネル |
 | Attention queue `]a` / `[a` | `attention.next` と TUI の `returnTo`、e2e |
 | 未読ライン | 離れた時点の行位置を記録し、戻ったときに `── new ──` を差し込む |
 | 永続性 | デーモンを再起動してもセッションが残る(tmux が生存)。tmux ごと落ちたら `--resume` で復元(e2e) |
-| 隔離環境の片付け(`boba daemon stop --kill-agents`) | `TestStopKillAgents`(偽エンジンで、`kill_agents` のときだけ `KillServer` が呼ばれ、既定では呼ばれない)、`TestKillServerFallsBackToPidFile`(本物の tmux を別の `TMUX_TMPDIR` で立て、`kill-server` が届かなくても記録した pid で止まる)。`scripts/sandbox.sh` で、偽エージェントの窓を足してから正常終了・コマンドの失敗(exit 3)・Ctrl-C(SIGINT、exit 130)で抜け、どれも `ps` に `tmux -L boba-sb-…` と偽エージェントが残らず、一時ディレクトリも消えた。デーモンを先に止めた後・`TMUX_TMPDIR` を変えた状態からでも tmux サーバーだけ止まり、端末でないところで `--yes` がなければ断ることも確認 |
-| デーモンは 1 つだけ(#42: 再起動後に孤児の bobad が state.db を古い状態で上書きした) | `TestSecondDaemonRefused`(ロックを持つデーモンがあれば、応答中ならすぐ、起動中なら待った後に `ErrAlreadyRunning`)、`TestShutdownKeepsNewerSocket`(終了中の古いデーモンが、別のデーモンが作り直したソケットと pid ファイルを消さない。Go の `UnixListener.Close` が持ち主を確かめずに unlink していたのも原因で、`SetUnlinkOnClose(false)` にした)、`TestStopThenConcurrentStartsYieldOne`(終了処理が遅れている間に 6 つ同時に起動しても 1 つだけ)、`TestWaitExit`。`scripts/sandbox.sh` で `daemon stop && daemon start` を 10 回、stop 直後の 8 並列の自動起動(`boba ls`)を 10 回、stop の最中に 8 並列の自動起動を 10 回繰り返し、毎回 `ps` で bobad が 1 つだった |
-| CLI のフラグ(`--help` で `daemon stop` が走った) | `TestHelpDoesNothing`(`daemon stop --help` など状態を変えるものを含む 23 通りで、偽デーモンに 1 件も要求が届かない)、`TestUnknownFlagRefused`(`--kill-agent` の打ち間違い・`-f`・値のない `--repo`・余分な位置引数がどれも使い方つきのエラーで、要求は届かない)、`TestDaemonStopStillStops` `TestParseFlags` `TestSplitGlobal`。`scripts/sandbox.sh` で実バイナリから `daemon stop --help` などが終了コード 0 で使い方を出し、デーモンの pid が変わらないこと、知らないフラグが終了コード 2 になること、`--json` がサブコマンドの前後どちらでも効くこと、`boba event` は知らない引数があっても 0 で終わることを確認 |
-| 衝突予報(⚠N・also changed in・Changes の相手・land の予報・`boba conflicts`) | `TestConflictForecast`(同じ行 → conflict、違う行 → overlap、別ファイル → なし、未コミットは overlap のみ、許可待ちの Edit に also_in)、`TestSessionListConflictTag` `TestPermissionModalAlsoChanged` `TestChangesShowPeersAndLandForecast`。隔離 e2e で 3 セッションを並べ、TUI(140 列 unicode / 80 列 ascii)と CLI で表示を確認 |
+| 隔離環境の片付け(`pekoe daemon stop --kill-agents`) | `TestStopKillAgents`(偽エンジンで、`kill_agents` のときだけ `KillServer` が呼ばれ、既定では呼ばれない)、`TestKillServerFallsBackToPidFile`(本物の tmux を別の `TMUX_TMPDIR` で立て、`kill-server` が届かなくても記録した pid で止まる)。`scripts/sandbox.sh` で、偽エージェントの窓を足してから正常終了・コマンドの失敗(exit 3)・Ctrl-C(SIGINT、exit 130)で抜け、どれも `ps` に `tmux -L pekoe-sb-…` と偽エージェントが残らず、一時ディレクトリも消えた。デーモンを先に止めた後・`TMUX_TMPDIR` を変えた状態からでも tmux サーバーだけ止まり、端末でないところで `--yes` がなければ断ることも確認 |
+| デーモンは 1 つだけ(#42: 再起動後に孤児の pekoed が state.db を古い状態で上書きした) | `TestSecondDaemonRefused`(ロックを持つデーモンがあれば、応答中ならすぐ、起動中なら待った後に `ErrAlreadyRunning`)、`TestShutdownKeepsNewerSocket`(終了中の古いデーモンが、別のデーモンが作り直したソケットと pid ファイルを消さない。Go の `UnixListener.Close` が持ち主を確かめずに unlink していたのも原因で、`SetUnlinkOnClose(false)` にした)、`TestStopThenConcurrentStartsYieldOne`(終了処理が遅れている間に 6 つ同時に起動しても 1 つだけ)、`TestWaitExit`。`scripts/sandbox.sh` で `daemon stop && daemon start` を 10 回、stop 直後の 8 並列の自動起動(`pekoe ls`)を 10 回、stop の最中に 8 並列の自動起動を 10 回繰り返し、毎回 `ps` で pekoed が 1 つだった |
+| CLI のフラグ(`--help` で `daemon stop` が走った) | `TestHelpDoesNothing`(`daemon stop --help` など状態を変えるものを含む 23 通りで、偽デーモンに 1 件も要求が届かない)、`TestUnknownFlagRefused`(`--kill-agent` の打ち間違い・`-f`・値のない `--repo`・余分な位置引数がどれも使い方つきのエラーで、要求は届かない)、`TestDaemonStopStillStops` `TestParseFlags` `TestSplitGlobal`。`scripts/sandbox.sh` で実バイナリから `daemon stop --help` などが終了コード 0 で使い方を出し、デーモンの pid が変わらないこと、知らないフラグが終了コード 2 になること、`--json` がサブコマンドの前後どちらでも効くこと、`pekoe event` は知らない引数があっても 0 で終わることを確認 |
+| 衝突予報(⚠N・also changed in・Changes の相手・land の予報・`pekoe conflicts`) | `TestConflictForecast`(同じ行 → conflict、違う行 → overlap、別ファイル → なし、未コミットは overlap のみ、許可待ちの Edit に also_in)、`TestSessionListConflictTag` `TestPermissionModalAlsoChanged` `TestChangesShowPeersAndLandForecast`。隔離 e2e で 3 セッションを並べ、TUI(140 列 unicode / 80 列 ascii)と CLI で表示を確認 |
 
 ## worktree フロー
 
 | 項目 | 確認 |
 | --- | --- |
-| `boba new` の 5 歩(worktree → copy/clone → setup → port → 起動) | e2e、TUI の New モーダル(モック 04) |
+| `pekoe new` の 5 歩(worktree → copy/clone → setup → port → 起動) | e2e、TUI の New モーダル(モック 04) |
 | `--from gh#N`(issue 本文を初期プロンプトに) | `issuePrompt`(gh issue view)。作ったセッションに `issue` 番号を記録(`TestIssuesMatchSessions`) |
-| Issue インボックス(`issues.list` / `issues.view`、[2] Issues、`boba issues`) | 偽 gh でパース・フィルタ・キャッシュ・セッションとの突き合わせ・gh が使えないとき(`TestIssuesList*` `TestIssuesView` `TestIssuesUnavailable` `TestIssuesMatchSessions`)、ブランチ名の提案(`TestSuggestBranch`)、サブタブ巡回と描画(`TestSubtabCyclesThreeWays` `TestNarrowTabsIncludeIssues` `TestIssuesPanelRender` `TestIssueKeys`)。隔離したデーモンと本物の gh で、公開リポジトリの issue 一覧・本文表示・`n` からのセッション作成・Enter でのジャンプ・90 列のタブ化・GitHub リモートの無いリポジトリでの 1 行表示を確認 |
-| `boba open`(過去のセッションを resume するか選ぶ)/ `boba adopt` | `TestSessionLifecycleAndReview`(open)。adopt は候補の列挙と確認つきの取り込みとして実装 |
-| `boba land`(rebase → test → `gh pr create` → マージ検出 → teardown) | `TestLandWithPRAndMergeTeardown`(偽 gh + bare origin)、ローカル fast-forward は e2e |
-| `boba rm` は `~/worktrees` 配下しか消さない | `TestUnderWorktrees`、`TestSessionLifecycleAndReview`(外部リポジトリが残る) |
-| 設定ファイル `~/.config/boba/repos/<repo-id>.toml` | `TestNormalizeURL`(origin URL の正規化) |
-| `boba init` の自動検出(lockfile、mise、direnv、無視ファイル) | `initdetect`。ルールは `~/.config/boba/defaults/init.toml` で編集できる |
+| Issue インボックス(`issues.list` / `issues.view`、[2] Issues、`pekoe issues`) | 偽 gh でパース・フィルタ・キャッシュ・セッションとの突き合わせ・gh が使えないとき(`TestIssuesList*` `TestIssuesView` `TestIssuesUnavailable` `TestIssuesMatchSessions`)、ブランチ名の提案(`TestSuggestBranch`)、サブタブ巡回と描画(`TestSubtabCyclesThreeWays` `TestNarrowTabsIncludeIssues` `TestIssuesPanelRender` `TestIssueKeys`)。隔離したデーモンと本物の gh で、公開リポジトリの issue 一覧・本文表示・`n` からのセッション作成・Enter でのジャンプ・90 列のタブ化・GitHub リモートの無いリポジトリでの 1 行表示を確認 |
+| `pekoe open`(過去のセッションを resume するか選ぶ)/ `pekoe adopt` | `TestSessionLifecycleAndReview`(open)。adopt は候補の列挙と確認つきの取り込みとして実装 |
+| `pekoe land`(rebase → test → `gh pr create` → マージ検出 → teardown) | `TestLandWithPRAndMergeTeardown`(偽 gh + bare origin)、ローカル fast-forward は e2e |
+| `pekoe rm` は `~/worktrees` 配下しか消さない | `TestUnderWorktrees`、`TestSessionLifecycleAndReview`(外部リポジトリが残る) |
+| 設定ファイル `~/.config/pekoe/repos/<repo-id>.toml` | `TestNormalizeURL`(origin URL の正規化) |
+| `pekoe init` の自動検出(lockfile、mise、direnv、無視ファイル) | `initdetect`。ルールは `~/.config/pekoe/defaults/init.toml` で編集できる |
 | ポート台帳 | `AllocPort`(決定的、使用中は飛ばす)。タブ → ポート → セッションの対応は実機の Chrome で確認 |
 | docker compose / DB | `[env] COMPOSE_PROJECT_NAME = "{{slug}}"` と teardown で対応(リポジトリ側の設定に委ねる) |
 | プロンプト単位 undo | `TestSnapshotAndRestore`、e2e |
@@ -56,12 +56,12 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 
 | 項目 | 状況 |
 | --- | --- |
-| 段階 1: tmux エンジン(専用サーバ `-L boba`、control mode で出力を監視) | 実装・確認済み。tmux 3.5a の `window-size manual` で落ちる不具合は、ウィンドウごとの `resize-window` で回避 |
+| 段階 1: tmux エンジン(専用サーバ `-L pekoe`、control mode で出力を監視) | 実装・確認済み。tmux 3.5a の `window-size manual` で落ちる不具合は、ウィンドウごとの `resize-window` で回避 |
 | 右ペインのサイズを pty に伝える | `session.resize` → `resize-window` |
 | パススルー: OSC 52、通知 OSC、マウス(SGR) | 実装済み |
 | パススルー: OSC 8 | tmux の `terminal-features` に hyperlinks を設定。`capture-pane -e` の出力に `ESC ] 8 ;; url` が残ることを確認済み |
 | パススルー: Kitty keyboard | 実装済み。TUI が Ghostty に disambiguate モード(`CSI > 1 u`)を要求し、届いた CSI u を解釈する。従来形式のないキー(Shift+Enter など)は tmux のキー名で送り、tmux(`extended-keys on`、`csi-u`)がエージェントに CSI u で届ける。経路全体を確認し、本物の Claude Code で Shift+Enter が改行になった。実機の Ghostty でも確認した。エージェントが要求しなければ従来形式のまま(`TestDecodeCSIu`) |
-| パススルー: Kitty graphics | 実装済み。tmux の中のアプリが使う Unicode プレースホルダ方式に対応。画像の命令(tmux の DCS で包まれたものも展開)を `%output` から取り出して Ghostty に流し、プレースホルダの文字は `capture-pane` を通って右ペインに出る。カーソル位置への直接配置はデータ転送だけにする。対応確認の問い合わせ(`a=q`)には、外側が対応端末のときだけ bobad が代わりに OK を返す(`TestSplitCarry` `TestGraphicsCommandsUnwrapsTmuxPassthrough` `TestPassGraphics`)。実機の Ghostty で、tmux 向けに包んだ形の画像がプレースホルダの位置に表示された |
+| パススルー: Kitty graphics | 実装済み。tmux の中のアプリが使う Unicode プレースホルダ方式に対応。画像の命令(tmux の DCS で包まれたものも展開)を `%output` から取り出して Ghostty に流し、プレースホルダの文字は `capture-pane` を通って右ペインに出る。カーソル位置への直接配置はデータ転送だけにする。対応確認の問い合わせ(`a=q`)には、外側が対応端末のときだけ pekoed が代わりに OK を返す(`TestSplitCarry` `TestGraphicsCommandsUnwrapsTmuxPassthrough` `TestPassGraphics`)。実機の Ghostty で、tmux 向けに包んだ形の画像がプレースホルダの位置に表示された |
 | ピックのスクリーンショット表示 | 対応端末では、破線のプレースホルダの代わりに Kitty graphics で画像を表示する(ガイドライン「プレースホルダを置き換える形で」)。実機の Ghostty で、Chrome から送ったボタンの切り抜きがカードに表示された |
 | ブラウザプレビュー(preview 窓) | 撮影は CDP over `--remote-debugging-pipe`。偽キャプチャで自動撮り直し・before 保持・dev 停止時のメッセージ・パスとモバイルの記憶を確認(`TestPreviewAutoRetakeOnStop` `TestPreviewDevServerDown` `TestPreviewRemembersPathAndMobile`)。実 Chrome で 1280×800 と 390×844@2x を撮り、モバイル幅でメディアクエリが効くことを確認(`TestChromeCaptureReal`)。TUI はエスケープ列・リサイズ計算・画像の差し替えと削除・破線プレースホルダ(`TestGfxSync` `TestFitCells` `TestPreviewImagesFollowLayoutAndLeaveNothing` `TestPreviewPlaceholderWithoutGraphics`)。実機 Ghostty での表示確認は未了 |
 | 段階 2: libghostty-vt の自前 mux | **対象外**(同上) |
@@ -72,7 +72,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | --- | --- |
 | ⌘⇧E で選択 → 入力欄 → POST | 実機の Chrome でピックを送信(指示「余白を広げて」) |
 | IME(Google 日本語入力)での指示入力 | 入力欄を拡張ページの iframe(`prompt.html`)に移し、変換確定の Enter(`isComposing` / keyCode 229)では送信しない。実機の Google 日本語入力で「余白を広げて」を入力して送信できた(ピック #2 が Claude に届いた) |
-| `boba rm` でピックも消す | `TestHTTPGuardAndPick`(md・png・記録が残らない) |
+| `pekoe rm` でピックも消す | `TestHTTPGuardAndPick`(md・png・記録が残らない) |
 | ペイロード(outerHTML、セレクタ、計算済みスタイル、切り抜き、コンポーネント名、ソース位置) | 実機で md と png(108×48)が保存された。React 19 で `_debugSource` がない場合は rg で検索 |
 | 長い HTML を pty に流さない(`@…/picks/0012.md` の 1 行) | 実機で Claude が md と png を読んで作業を始めた |
 | localhost 以外はセッションを選ばせる | e2e(未解決のピックはカードとセッションピッカーへ) |
@@ -85,9 +85,9 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 
 | 項目 | 確認 |
 | --- | --- |
-| A. レビュー(`]h` `[h` `a` `x` `c` `?` `:BobaSend`) | nvim テスト 50 項目、TUI の `r` で右ペインが nvim に替わり `:BobaSend` で戻る |
+| A. レビュー(`]h` `[h` `a` `x` `c` `?` `:PekoeSend`) | nvim テスト 50 項目、TUI の `r` で右ペインが nvim に替わり `:PekoeSend` で戻る |
 | B. 範囲送信 / C. 承認フロート / D. Follow / E. 診断送信 / F. `open_in_editor` | nvim テスト、MCP の e2e(`editor.open` イベント) |
-| 門番の結果を quickfix に | `:BobaRisks` |
+| 門番の結果を quickfix に | `:PekoeRisks` |
 
 ## レビュー機能
 
@@ -104,11 +104,11 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 
 ## CLI とキーバインド
 
-設計書の CLI 一覧(`boba` `init` `new` `open` `adopt` `ls` `send` `event` `review` `land` `rm` `dev` `daemon`)はすべて実装済み。追加で `undo` `answer` `attach` `hooks` `ext` `mcp`。`--json` に対応。
+設計書の CLI 一覧(`pekoe` `init` `new` `open` `adopt` `ls` `send` `event` `review` `land` `rm` `dev` `daemon`)はすべて実装済み。追加で `undo` `answer` `attach` `hooks` `ext` `mcp`。`--json` に対応。
 
 TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、prefix + `h` `l`)はすべて実装済み。prefix は `[keys] prefix` で変更できる。既定は `ctrl+q`(JIS 配列で押しやすく、Claude Code が使わない)。入力モード中は prefix だけで抜けて Sessions に戻る。
 
-複数リポジトリ(`repo.list`、[1] のリポジトリ見出し、今のリポジトリ、`w`): デーモン側は `TestRepoListCwdAndRemembered`(セッション・cwd(worktree の中から)・覚えたもの(`repo.resolve` でも引ける)・`path_` の設定ファイル・場所不明の設定ファイル)と main の `TestKnownReposIncludeConfigOnly` `TestResolveRepoRef`。TUI は `TestSessionsGroupedByRepo`(truecolor/ansi/none × nerd/unicode/ascii × 180/90 列で全行が端末幅ちょうど)、`TestSingleRepoHasNoHeadings` `TestSelectionSkipsHeadings` `TestSelectedSessionStaysInView` `TestCurrentRepoFollowsSelection` `TestRepoPickerModal` `TestCommandsTargetCurrentRepo`(偽 bobad で `session.new` / `worktree.list` / `issues.list` / `pick.send` の `repo` を確認) `TestOutsideRepo` `TestStartRepoWithoutSessions` `TestStartUpFollowsStartRepo`。隔離したデーモンで、一時ディレクトリの 2 リポジトリに交互にセッションを作り、web で起動 → web のセッションが選ばれ Worktrees とバーが web、`k` で見出しを飛ばして api に移ると Worktrees・バーも api に変わり `n` のセッションが api に、`w` → web → `n` のセッションが web に作られることを確認。90 列のタブ表示、リポジトリの外での起動(設定ファイルだけから `w` の一覧を作り、`n` → リポジトリ選択 → 作成)も確認。
+複数リポジトリ(`repo.list`、[1] のリポジトリ見出し、今のリポジトリ、`w`): デーモン側は `TestRepoListCwdAndRemembered`(セッション・cwd(worktree の中から)・覚えたもの(`repo.resolve` でも引ける)・`path_` の設定ファイル・場所不明の設定ファイル)と main の `TestKnownReposIncludeConfigOnly` `TestResolveRepoRef`。TUI は `TestSessionsGroupedByRepo`(truecolor/ansi/none × nerd/unicode/ascii × 180/90 列で全行が端末幅ちょうど)、`TestSingleRepoHasNoHeadings` `TestSelectionSkipsHeadings` `TestSelectedSessionStaysInView` `TestCurrentRepoFollowsSelection` `TestRepoPickerModal` `TestCommandsTargetCurrentRepo`(偽 pekoed で `session.new` / `worktree.list` / `issues.list` / `pick.send` の `repo` を確認) `TestOutsideRepo` `TestStartRepoWithoutSessions` `TestStartUpFollowsStartRepo`。隔離したデーモンで、一時ディレクトリの 2 リポジトリに交互にセッションを作り、web で起動 → web のセッションが選ばれ Worktrees とバーが web、`k` で見出しを飛ばして api に移ると Worktrees・バーも api に変わり `n` のセッションが api に、`w` → web → `n` のセッションが web に作られることを確認。90 列のタブ表示、リポジトリの外での起動(設定ファイルだけから `w` の一覧を作り、`n` → リポジトリ選択 → 作成)も確認。
 
 ## デザイン原則のチェックリスト
 
@@ -157,7 +157,7 @@ TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、pr
 | | 区切り線のあと、手順のリスト(✓ / スピナー / ○)と所要時間 | ✓ |
 | | `esc cancel & remove worktree  ↵ open when ready  b background` | ✓ |
 | | 作成中のセッション行(`creating` は dim のスピナー)、Worktrees の `creating…` | ✓ |
-| | 空の Agent ペインに ASCII ロゴ(dim、primary の ● 1 つ)と `waiting for worktree…` | ✓(ロゴは boba) |
+| | 空の Agent ペインに ASCII ロゴ(dim、primary の ● 1 つ)と `waiting for worktree…` | ✓(ロゴは pekoe) |
 | | install 段のゲージ(━ と ─、62%) | ✓ 同じリポジトリで前回その setup にかかった時間を記録し、2 秒以上かかった段にだけ、それを基準にゲージと数値(`50% · 2s of ~3s`)を出す。完了するまでは 99% で止める。2 回目の作成で描画を確認 |
 | 05 Browser pick | `[2] Browser · 2 tabs linked by port`、`:3001 /path → session`、`2 console errors … E send to session` | ✓ |
 | | `[3] Picks`(未送信は secondary の ●、送信済みは dim の ✓) | ✓ |
@@ -170,4 +170,4 @@ TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、pr
 ガイドラインの指示に合わせて、モックから意図的に変えた点:
 
 - パネルのタイトルは、モックでは枠の内側の 1 行目にあるが、ガイドラインの ASCII 図どおり上の枠線に埋め込んだ。行を節約できる
-- モックの名前 `am` は `boba` に置き換えた(タイトル、`refs/boba/…/prompt-<n>`、`~/.config/boba`、ロゴ)
+- モックの名前 `am` は `pekoe` に置き換えた(タイトル、`refs/pekoe/…/prompt-<n>`、`~/.config/pekoe`、ロゴ)

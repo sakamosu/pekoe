@@ -1,10 +1,10 @@
-# bobad API
+# pekoed API
 
 すべてのクライアント(TUI・CLI・Neovim・Chrome 拡張・MCP)が叩く共通 API。賢さはデーモン側にあり、クライアントは表示と入力だけを持つ。
 
 ## 1. unix socket(TUI・CLI・Neovim)
 
-`~/.local/share/boba/bobad.sock`(`$BOBA_HOME` があれば `$BOBA_HOME/share/bobad.sock`)。改行区切りの JSON(JSON Lines)。1 接続でリクエストとイベントが混ざって流れる。
+`~/.local/share/pekoe/pekoed.sock`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/pekoed.sock`)。改行区切りの JSON(JSON Lines)。1 接続でリクエストとイベントが混ざって流れる。
 
 ```jsonc
 // client → daemon
@@ -64,7 +64,7 @@
 }
 ```
 
-**衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、bobad が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
+**衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、pekoed が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
 
 ### メソッド
 
@@ -73,9 +73,9 @@
 | method | params | result |
 | --- | --- | --- |
 | `daemon.status` | — | `{pid, version, sessions, http_port}` |
-| `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `boba daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる。終了を待つには `daemon.status` の `pid` を見る(`boba daemon stop` はそうしている) |
+| `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
-| `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/boba/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
+| `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
@@ -91,7 +91,7 @@
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
 | `session.kill` | `{slug}` | セッション終了(worktree は残す) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
-| `session.event` | `{hook, payload}` | hooks から(`boba event` が呼ぶ) |
+| `session.event` | `{hook, payload}` | hooks から(`pekoe event` が呼ぶ) |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
@@ -101,7 +101,7 @@
 | `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
-| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`boba conflicts`) |
+| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`pekoe conflicts`) |
 | `review.start` | `{slug}` | state を reviewing に |
 | `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |
@@ -122,8 +122,8 @@
 | `init.write` | `{path, toml, overwrite?}` | `{path}` |
 | `session.restart` | `{slug, width?, height?}` | エージェントを再起動(Claude Code セッションを resume) |
 | `session.progress` | `{slug}` | 作成中の手順 `{slug, steps}` |
-| `review.surface` | `{slug, width, height}` | 右ペインを nvim(boba.nvim のレビュー面)に入れ替える。claude は裏で動き続ける |
-| `review.pr` | `{repo, number}` | `boba review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
+| `review.surface` | `{slug, width, height}` | 右ペインを nvim(pekoe.nvim のレビュー面)に入れ替える。claude は裏で動き続ける |
+| `review.pr` | `{repo, number}` | `pekoe review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
@@ -131,10 +131,10 @@
 | `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
 | `error.list` | `{slug?, all?}` | `[ErrorReport]`(古い順。既定は未対応 = `new` だけ、`all` で送信済み・無視も) |
 | `error.get` | `{id}` | `ErrorReport` + `excerpt`(先頭フレームが worktree 内なら前後 5 行の抜粋) |
-| `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
+| `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/pekoe/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
-| `ext.info` | — | `{port, token}`(`boba ext`) |
-| `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?}`(`boba web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL |
+| `ext.info` | — | `{port, token}`(`pekoe ext`) |
+| `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
@@ -149,7 +149,7 @@
   "name": "app",                 // 短い名前(~/worktrees/<name>)。設定ファイルしかないときは repo-id から推測
   "dir": "/Users/me/src/app",    // メインの worktree。場所が分からない(設定ファイルだけで、探しても見つからない)ときは省略
   "sessions": 2,                 // landed でないセッションの数
-  "config": true,                // ~/.config/boba/repos/<repo-id>.toml がある
+  "config": true,                // ~/.config/pekoe/repos/<repo-id>.toml がある
   "cwd": true                    // repo.list に渡した cwd がこのリポジトリの中(それ以外は省略)
 }
 ```
@@ -160,7 +160,7 @@
 {
   "slug": "feat-x", "port": 3001, "path": "/settings", "mobile": false,
   "width": 1280, "height": 800,          // 次に撮るビューポート(CSS px)
-  "after":  {"file": "~/.local/share/boba/<repo-id>/preview/feat-x/shot-7.png", "width": 1280, "height": 800, "path": "/settings", "mobile": false, "at": "..."},
+  "after":  {"file": "~/.local/share/pekoe/<repo-id>/preview/feat-x/shot-7.png", "width": 1280, "height": 800, "path": "/settings", "mobile": false, "at": "..."},
   "before": {"file": ".../shot-6.png", ...},   // 1 つ前。これより古いものは消す
   "n": 7, "busy": false,
   "error": "dev server is not running · d to start",
@@ -230,7 +230,7 @@
 
 ### ErrorReport オブジェクト
 
-dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の Traceback)とブラウザの console error から bobad が拾ったエラー。メッセージと先頭フレームを正規化した指紋でまとめ、同じものは `count` が増える。
+dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の Traceback)とブラウザの console error から pekoed が拾ったエラー。メッセージと先頭フレームを正規化した指紋でまとめ、同じものは `count` が増える。
 
 ```jsonc
 {
@@ -271,9 +271,9 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 
 ## 2. HTTP(Chrome 拡張)
 
-`http://127.0.0.1:<port>`(既定 47777、`~/.config/boba/config.toml` の `[http] port`)。
+`http://127.0.0.1:<port>`(既定 47777、`~/.config/pekoe/config.toml` の `[http] port`)。
 
-- すべてのリクエストに `Authorization: Bearer <token>` が必要。token は初回起動時に `~/.local/share/boba/http-token` に生成される(`boba ext` で port と token を表示)
+- すべてのリクエストに `Authorization: Bearer <token>` が必要。token は初回起動時に `~/.local/share/pekoe/http-token` に生成される(`pekoe ext` で port と token を表示)
 - `Origin` が `chrome-extension://` で始まらないリクエストは 403
 - 一方向。拡張は「その場で POST、送ったら終わり」
 
@@ -301,7 +301,7 @@ Pick 入力:
 
 ## 3. HTTPS(Web UI、tailnet 上)
 
-Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のときだけ、bobad に埋め込んだ tsnet ノードが `https://<hostname>.<tailnet>.ts.net/` で待ち受ける。localhost には何も開かない。token は無く、接続ごとに Tailscale の WhoIs で `allow_users`(と `allow_devices`)に入っているかを確かめる。パスと認証・脅威モデルは [web.md](web.md)。
+Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のときだけ、pekoed に埋め込んだ tsnet ノードが `https://<hostname>.<tailnet>.ts.net/` で待ち受ける。localhost には何も開かない。token は無く、接続ごとに Tailscale の WhoIs で `allow_users`(と `allow_devices`)に入っているかを確かめる。パスと認証・脅威モデルは [web.md](web.md)。
 
 | method / path | body | 処理 |
 | --- | --- | --- |
@@ -311,8 +311,8 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400、待っていない・質問・プロンプトが変わったら 409 |
 | `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409 |
 
-POST には `X-Boba-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
+POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
 
 ## 4. MCP(エージェント → nvim)
 
-`boba mcp` が stdio の MCP サーバとして動き、デーモンに中継する。`claude mcp add boba -- boba mcp` で登録する。ツールは `open_in_editor(path, line, note?)` と `session_list()`。
+`pekoe mcp` が stdio の MCP サーバとして動き、デーモンに中継する。`claude mcp add pekoe -- pekoe mcp` で登録する。ツールは `open_in_editor(path, line, note?)` と `session_list()`。
