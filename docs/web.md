@@ -44,6 +44,8 @@ make install          # 既定: Web UI なし(Tailscale のコードを含まな
 make install WEB=1    # Web UI 入り(-tags web、tsnet をリンク、約 38MB)
 ```
 
+GitHub Release にも両方を置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(配置は同じ)。`pekoe update` は今の pekoe が Web UI 入りなら `_web` の方を取る(README の「更新」)。
+
 - 既定のビルドでは `go version -m pekoe` にも `tailscale.com` は出ない(`internal/daemon/webts.go` が `//go:build web`、代わりに `webts_off.go`)。ただし `go.mod` には依存として載っている
 - 既定のビルドで設定に `[web] enable = true` があっても(dotfiles で個人の Mac と設定を共有しているなど)、何もせずに pekoed のログに警告を出すだけ。`pekoe web` は「Web UI なしのビルド」と再ビルドの方法を出す
 - `make test` は両方のビルドを検査する。隔離環境で Web UI 入りを試すには `WEB=1 scripts/sandbox.sh`
