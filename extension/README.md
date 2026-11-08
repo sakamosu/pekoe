@@ -7,7 +7,7 @@
 1. `chrome://extensions` を開く
 2. 右上の「デベロッパーモード」をオンにする
 3. 「パッケージ化されていない拡張機能を読み込む」でこの `extension/` ディレクトリを選ぶ
-4. 拡張の「詳細」→「拡張機能のオプション」を開き、`boba ext` が表示する port と token を入力して「保存」→「接続テスト」
+4. 拡張の「詳細」→「拡張機能のオプション」を開き、`boba ext` が表示する port と token を入力して「Save」→「Test connection」
 
 ショートカットは `chrome://extensions/shortcuts` で変更できます(既定: macOS ⌘⇧E / その他 Ctrl+Shift+E)。
 

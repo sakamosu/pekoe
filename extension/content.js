@@ -193,9 +193,9 @@
       const pick = { ...base, instruction: String(d.value || ''), rect: rectOf(el) };
       try {
         const res = await chrome.runtime.sendMessage({ type: 'pick', pick, viewportWidth: innerWidth });
-        toast(res?.ok ? 'boba に送信しました' : `送信失敗: ${res?.error || 'unknown'}`, !!res?.ok);
+        toast(res?.ok ? 'Sent to boba' : `Send failed: ${res?.error || 'unknown'}`, !!res?.ok);
       } catch (err) {
-        toast(`送信失敗: ${err.message}`, false);
+        toast(`Send failed: ${err.message}`, false);
       }
     };
     window.addEventListener('message', onMsg);

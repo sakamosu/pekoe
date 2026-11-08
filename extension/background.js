@@ -28,7 +28,7 @@ async function post(path, body) {
     });
     return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
   } catch (e) {
-    return { ok: false, error: `bobad に接続できません (${e.message})` };
+    return { ok: false, error: `Cannot connect to bobad (${e.message})` };
   }
 }
 
