@@ -329,6 +329,12 @@ git tag v0.2.0 && git push origin v0.2.0
 goreleaser release --snapshot --clean   # 手元で試す(dist/ にできる。公開はしない)
 ```
 
+goreleaser はワークフローでも手元でも Go のモジュールプロキシから入れる(GitHub Release のアセット配信が落ちることがあるため)。版はワークフローの `GORELEASER_VERSION` に合わせる。
+
+```sh
+GOTOOLCHAIN=auto go install github.com/goreleaser/goreleaser/v2@v2.20.0
+```
+
 ### 現状の制約
 
 - ターミナル層は設計書の段階 1(tmux エンジン)。段階 2(libghostty-vt の自前 mux)は未着手で、設計どおり任意
