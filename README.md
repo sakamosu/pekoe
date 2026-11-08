@@ -176,7 +176,7 @@ pekoe                                                 # TUI
 
 ### Claude Code スキル
 
-[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。Claude Code から pekoe で別 worktree・別エージェントに作業を任せるためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
+[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。main のチェックアウトで動く Claude Code をハブにして、変更依頼を `pekoe new` で別 worktree・別エージェントに任せ、追加の指示も main から `pekoe send` で送るためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
 
 ### iPhone から(Web UI)
 
