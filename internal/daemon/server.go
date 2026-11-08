@@ -89,6 +89,7 @@ type Daemon struct {
 	token   string
 
 	mu         sync.Mutex
+	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
 	sessions   map[string]*state.Session
 	conns      map[*conn]bool
 	cancels    map[string]context.CancelFunc // creating sessions

@@ -122,7 +122,9 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			}
 		}
 	}
-	_ = d.DB.DeleteSession(p.Slug)
+	// out of memory and state.db together, before anything else can save it
+	// again (an update racing with rm used to write it back: see persist)
+	d.forget(p.Slug)
 	// picks addressed to this session go with it (no leftovers)
 	if picks, err := d.DB.Picks(1000); err == nil {
 		for _, pk := range picks {
@@ -137,12 +139,6 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	}
 	d.catch.Forget(p.Slug)
 	removeAttachments(s.RepoID, p.Slug)
-	d.mu.Lock()
-	delete(d.sessions, p.Slug)
-	delete(d.out, p.Slug)
-	delete(d.progress, p.Slug)
-	delete(d.prFetched, p.Slug)
-	d.mu.Unlock()
 	d.emit("session.removed", s)
 	return map[string]any{"removed": p.Slug, "worktree_deleted": s.Managed}, nil
 }
@@ -383,7 +379,7 @@ func (d *Daemon) hInitDetect(p initP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	return initdetect.Detect(repo.Dir, repo.ID)
 }
 
@@ -398,7 +394,7 @@ func (d *Daemon) hInitWrite(p initWriteP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	dst := paths.RepoConfig(repo.ID)
 	if _, err := os.Stat(dst); err == nil && !p.Over {
 		return nil, fmt.Errorf("%s already exists", dst)

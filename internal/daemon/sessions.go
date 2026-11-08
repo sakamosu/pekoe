@@ -42,12 +42,55 @@ func (d *Daemon) snapshot(slug string) (*state.Session, error) {
 	if !ok {
 		return nil, fmt.Errorf("no such session: %s", slug)
 	}
+	return d.copyLocked(s), nil
+}
+
+// copyLocked copies s with its live counters filled in (under mu).
+func (d *Daemon) copyLocked(s *state.Session) *state.Session {
 	c := *s
-	c.Activity = d.activityLocked(slug)
-	if o := d.out[slug]; o != nil {
+	c.Activity = d.activityLocked(s.Slug)
+	if o := d.out[s.Slug]; o != nil {
 		c.Unread = o.unread
 	}
-	return &c, nil
+	return &c
+}
+
+// persist writes the session to state.db, but only while it is still the one
+// in memory. The write happens outside mu (no disk I/O under the daemon-wide
+// lock), so without this check a save that copied the session just before
+// session removal could land after DeleteSession and bring a removed
+// session back on the next restart. saveMu orders persist against forget:
+// either the save finishes before the delete, or it sees the session gone.
+// It also makes concurrent saves of one slug write the newest copy last.
+func (d *Daemon) persist(s *state.Session) {
+	d.saveMu.Lock()
+	defer d.saveMu.Unlock()
+	d.mu.Lock()
+	if d.sessions[s.Slug] != s { // removed (or replaced by a new session of the same slug)
+		d.mu.Unlock()
+		return
+	}
+	c := d.copyLocked(s)
+	d.mu.Unlock()
+	if err := d.DB.SaveSession(c); err != nil {
+		log.Printf("save %s: %v", s.Slug, err)
+	}
+}
+
+// forget drops a session from memory and from state.db as one step with
+// respect to persist (see there).
+func (d *Daemon) forget(slug string) {
+	d.saveMu.Lock()
+	defer d.saveMu.Unlock()
+	d.mu.Lock()
+	delete(d.sessions, slug)
+	delete(d.out, slug)
+	delete(d.progress, slug)
+	delete(d.prFetched, slug)
+	d.mu.Unlock()
+	if err := d.DB.DeleteSession(slug); err != nil {
+		log.Printf("delete %s: %v", slug, err)
+	}
 }
 
 // update mutates a session under the lock, persists it and emits events.
@@ -63,27 +106,21 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	if s.State != prev {
 		s.StateSince = time.Now()
 	}
-	c := *s
-	c.Activity = d.activityLocked(slug)
-	if o := d.out[slug]; o != nil {
-		c.Unread = o.unread
-	}
+	c := d.copyLocked(s)
 	d.mu.Unlock()
-	if err := d.DB.SaveSession(&c); err != nil {
-		log.Printf("save %s: %v", slug, err)
-	}
-	d.emit("session.updated", &c)
+	d.persist(s)
+	d.emit("session.updated", c)
 	if c.State != prev {
 		switch c.State {
 		case state.Waiting:
-			d.emit("session.waiting", &c)
-			go d.notify(&c)
+			d.emit("session.waiting", c)
+			go d.notify(c)
 		case state.Done:
-			d.emit("session.done", &c)
+			d.emit("session.done", c)
 		}
-		d.previewOnState(&c, prev)
+		d.previewOnState(c, prev)
 	}
-	return &c, nil
+	return c, nil
 }
 
 func (d *Daemon) setState(slug string, st state.State, waitKind string) {
@@ -108,7 +145,7 @@ func (d *Daemon) add(s *state.Session) {
 	}
 	c := *s
 	d.mu.Unlock()
-	_ = d.DB.SaveSession(&c)
+	d.persist(s)
 	d.emit("session.created", &c)
 }
 
@@ -251,7 +288,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	if !gitx.HasHead(repo.Dir) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
@@ -679,7 +716,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.remember(repo)
+	d.resolved(repo)
 	d.mu.Lock()
 	for _, s := range d.sessions {
 		if s.Path == top {
@@ -1206,11 +1243,15 @@ func (d *Daemon) restore() {
 		return
 	}
 	alive, _ := d.Eng.Sessions()
+	d.mu.Lock()
 	for _, s := range list {
-		d.mu.Lock()
 		d.sessions[s.Slug] = s
 		d.out[s.Slug] = &outState{}
-		d.mu.Unlock()
+	}
+	d.mu.Unlock()
+	// before anything reads per-repo config or files by repo-id
+	d.realignRepoIDs()
+	for _, s := range list {
 		if s.State == state.Landed {
 			continue
 		}
@@ -1218,8 +1259,15 @@ func (d *Daemon) restore() {
 			d.update(s.Slug, func(x *state.Session) { x.State = state.Failed; x.Error = "interrupted by daemon restart" })
 			continue
 		}
+		// Kept (as failed) rather than dropped even for managed worktrees: the
+		// directory may be only temporarily unreachable (unmounted volume,
+		// renamed parent), and dropping it would lose prompts and review
+		// history. Since persist/forget, rm no longer leaves such rows behind.
 		if _, err := os.Stat(s.Path); err != nil {
-			d.update(s.Slug, func(x *state.Session) { x.State = state.Failed; x.Error = "worktree missing: " + s.Path })
+			d.update(s.Slug, func(x *state.Session) {
+				x.State = state.Failed
+				x.Error = "worktree missing: " + s.Path + " (boba rm " + s.Slug + " to forget it)"
+			})
 			continue
 		}
 		hasAgent := false

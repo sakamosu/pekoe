@@ -342,7 +342,7 @@ func (d *Daemon) hRepoList(p repoListP) (any, error) {
 	cwdID := ""
 	if p.Cwd != "" {
 		if ri, err := resolveRepo(p.Cwd); err == nil {
-			d.remember(ri)
+			d.resolved(ri)
 			cwdID = ri.ID
 		}
 	}

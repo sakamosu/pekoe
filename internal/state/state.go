@@ -261,6 +261,14 @@ func (d *DB) PortOwner(port int) (repoID, slug string, ok bool) {
 	return repoID, slug, err == nil
 }
 
+// MovePort re-files the port of (oldID, slug) under newID, keeping the port
+// number, for a session whose repository's id changed (an origin was added
+// after it was created). A row already present for (newID, slug) wins.
+func (d *DB) MovePort(oldID, newID, slug string) error {
+	_, err := d.db.Exec(`UPDATE OR IGNORE ports SET repo_id=? WHERE repo_id=? AND slug=?`, newID, oldID, slug)
+	return err
+}
+
 // ---- prompts (snapshots) ----
 
 type Prompt struct {
@@ -454,6 +462,32 @@ func (d *DB) SavePick(p *Pick) error {
 	return err
 }
 
+// MovePicks re-files picks from oldID to newID: those addressed to one of
+// slugs, or, with all, every pick of oldID (also those not addressed to a
+// session). Only the id changes; the .md/.png files stay where they are, as
+// picks refer to them by absolute path.
+func (d *DB) MovePicks(oldID, newID string, slugs []string, all bool) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	q := `UPDATE picks SET repo_id=?, data=json_set(data, '$.repo_id', ?) WHERE repo_id=?`
+	if all {
+		if _, err := tx.Exec(q, newID, newID, oldID); err != nil {
+			tx.Rollback()
+			return err
+		}
+	} else {
+		for _, slug := range slugs {
+			if _, err := tx.Exec(q+` AND slug=?`, newID, newID, oldID, slug); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}
+
 func (d *DB) Picks(limit int) ([]*Pick, error) {
 	rows, err := d.db.Query(`SELECT data FROM picks ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
@@ -539,6 +573,11 @@ func (d *DB) Get(k string) string {
 
 func (d *DB) Set(k, v string) error {
 	_, err := d.db.Exec(`INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)`, k, v)
+	return err
+}
+
+func (d *DB) Delete(k string) error {
+	_, err := d.db.Exec(`DELETE FROM kv WHERE k=?`, k)
 	return err
 }
 
