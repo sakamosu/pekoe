@@ -17,7 +17,7 @@
 //	pekoe hooks install|uninstall|status
 //	pekoe ext                  port and token for the Chrome extension
 //	pekoe mcp                  MCP server (stdio) for agents
-//	pekoe daemon start|stop|status|run
+//	pekoe daemon start|stop|restart|status|run
 //	pekoe tapi [reset]         tapi chat (TUI: t): state, or forget the conversation
 //	pekoe migrate [--dry-run] [--prune-old]   move a boba installation to pekoe
 package main
@@ -192,7 +192,9 @@ func usage() {
                                the conversation
   pekoe tip [<id>] [--list] [--doc PATH]
                                a tip about pekoe, one not shown yet ([tips])
-  pekoe daemon start|stop|status
+  pekoe daemon start|stop|restart|status
+                               restart: stop, wait, start the installed binary
+                               (after make install; agents keep running)
   pekoe daemon stop --kill-agents [--yes]
                                also stop the tmux server ($PEKOE_TMUX_SOCKET) and
                                ALL its agents · for sandboxes; on the default
@@ -1171,7 +1173,7 @@ func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 		return
 	}
 	if !st.Enabled {
-		fmt.Fprintf(w, "web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart pekoed (pekoe daemon stop; pekoe daemon start). See docs/web.md.\n", globalConfig)
+		fmt.Fprintf(w, "web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart pekoed (pekoe daemon restart). See docs/web.md.\n", globalConfig)
 		return
 	}
 	fmt.Fprintln(w, "state ", st.State)
@@ -1203,7 +1205,7 @@ func hintDir(d string) string {
 
 // daemonStopTimeout bounds how long `pekoe daemon stop` waits for pekoed's
 // process to exit (its shutdown closes HTTP within 1 s, then tmux and state.db).
-const daemonStopTimeout = 10 * time.Second
+var daemonStopTimeout = 10 * time.Second
 
 func cmdDaemon(args []string) error {
 	sub, name := "status", "daemon"
@@ -1257,6 +1259,8 @@ func cmdDaemon(args []string) error {
 		}
 		fmt.Println("pekoed stopped (agents keep running in tmux; they are picked up on next start)")
 		return nil
+	case "restart":
+		return restartDaemon()
 	case "status":
 		cl, err := client.Dial()
 		if err != nil {

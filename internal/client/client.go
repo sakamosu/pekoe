@@ -88,7 +88,13 @@ func Connect() (*Client, error) {
 	}
 	// generous: the new pekoed may first wait for an old one to finish
 	// shutting down (it holds the lock until it is gone)
-	deadline := time.Now().Add(10 * time.Second)
+	return WaitDial(10 * time.Second)
+}
+
+// WaitDial dials pekoed until it answers or timeout passes: for a pekoed
+// that is being started (by StartDaemon, or by launchd).
+func WaitDial(timeout time.Duration) (*Client, error) {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if cl, err := Dial(); err == nil {
 			return cl, nil
