@@ -137,7 +137,7 @@ TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、pr
 | 01 Sessions | `[1] Sessions 1/5`(フォーカス時は primary の太字タイトル) | ✓ |
 | | 行: 状態アイコン(実行中は Braille スピナー)・名前・`run/wait/done/idle`・経過時間・`+n -n` | ✓(設計書の 1 行に合わせ、テスト結果の ✓/✗ を追加) |
 | | フッター `1 waiting · oldest 3m    1 to review`(アイコンは状態色、文字は dim) | ✓ |
-| | `[2] Worktrees`(カレントの印は secondary、ポートとパスは dim) | ✓ |
+| | `[2] Worktrees`(カレントの印は text、ポートとパスは dim) | ✓ |
 | | `[3] Changes 4 feat/csv`(A/M/D は ok/warn/err) | ✓ |
 | | `[4] Agent feat/csv · claude · :3001`、右端にスパークラインとトークン数 | ✓ |
 | | ステータスライン: モードのピル(primary の塗り)・ブランチ(select の塗り)・集計(surface の塗り)、右にキーヒント 6 個 | ✓ |

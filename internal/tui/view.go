@@ -312,7 +312,7 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 		for i, t := range m.tabs {
 			mark := "  "
 			if cur != nil && t.Slug == cur.Slug {
-				mark = th.FG(theme.Secondary, fit(m.ic.Current, 1)) + " "
+				mark = th.FG(theme.Text, fit(m.ic.Current, 1)) + " "
 			}
 			target := th.FG(theme.Dim, "?")
 			if t.Slug != "" {
@@ -343,7 +343,7 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 		mark := "  "
 		isCur := cur != nil && wt.Slug == cur.Slug
 		if isCur {
-			mark = th.FG(theme.Secondary, fit(m.ic.Current, 1)) + " "
+			mark = th.FG(theme.Text, fit(m.ic.Current, 1)) + " "
 		}
 		name := wt.Branch
 		if name == "" {
