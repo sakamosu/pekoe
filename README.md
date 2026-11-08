@@ -61,6 +61,7 @@ GitHub Release に darwin / linux × arm64 / amd64 の既定ビルド(Web UI な
 ver=0.2.0                                 # 入れるバージョン(gh release list で確認)
 gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt
 shasum -a 256 --ignore-missing -c checksums.txt
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # このリポジトリのワークフローがビルドしたか
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -68,6 +69,8 @@ ln -sf ~/.local/opt/pekoe/bin/pekoe ~/.local/bin/pekoe
 ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
+
+`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴は release.yml に attestation を足した後の、リポジトリが公開されているときのリリースにだけ付く(private リポジトリでは GitHub Enterprise Cloud が要るので付けない)。
 
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/`。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
@@ -342,7 +345,7 @@ WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
 
 ### リリースの切り方
 
-`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォームをクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作る。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
+`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォームをクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

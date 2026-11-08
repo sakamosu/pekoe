@@ -1,0 +1,39 @@
+# 既定ビルドと -tags web の両方を govulncheck で検査する。
+# 依存を変えたとき(push / PR)と、新しい脆弱性の公開に備えて週に一度回す。
+name: govulncheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 0 * * 1" # 月曜 9:17(JST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOVULNCHECK_VERSION: v1.9.0 # go >= 1.26.0
+  # go.mod の go 行の Go で検査する。auto だと govulncheck の要求で新しい Go に
+  # 切り替わり、その Go の標準ライブラリを見て脆弱性が隠れることがある
+  GOTOOLCHAIN: local
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tags: ["", "web"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: govulncheck ${{ matrix.tags || 'default' }}
+        run: go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ${MATRIX_TAGS:+-tags "$MATRIX_TAGS"} ./...
+        env:
+          MATRIX_TAGS: ${{ matrix.tags }}
