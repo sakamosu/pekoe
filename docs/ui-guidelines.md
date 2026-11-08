@@ -337,7 +337,7 @@ err       = 1
 
 【カラーモード】
 
-- `auto` は `NO_COLOR` があれば none、`COLORTERM=truecolor|24bit` なら truecolor、それ以外は ansi。
+- `auto` は `NO_COLOR` があるか stdout が端末でない（パイプ・リダイレクト）なら none、`COLORTERM=truecolor|24bit` なら truecolor、それ以外は ansi。`BOBA_COLOR` や設定でモードを明示した場合はそちらが優先される。
 - ansi モードでは bg / surface / select を塗らない。端末の背景を尊重し、選択行は reverse video。
 - none モードでも記号と状態語で全状態が読めることをテストで保証する。
 
