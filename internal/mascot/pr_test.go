@@ -72,7 +72,7 @@ func TestReactPicksTheMostImportant(t *testing.T) {
 	}
 }
 
-// Every reaction names the session and the PR number, in Japanese, with
+// Every reaction names the session and the PR number, in short casual English, with
 // no "!" (docs/mascot.md: speech has no exclamation marks).
 func TestReactionSpeech(t *testing.T) {
 	for _, e := range PREvents {
@@ -102,7 +102,7 @@ func TestReactionSpeech(t *testing.T) {
 		}
 	}
 	r := Reaction{Event: PRCIFailed, Name: "a", PR: PR{Number: 1, Fail: 2}}
-	if !strings.Contains(strings.Join(r.Lines(), "\n"), "2 件") {
+	if !strings.Contains(strings.Join(r.Lines(), "\n"), "failing checks: 2") {
 		t.Error("{fail} filled in")
 	}
 }

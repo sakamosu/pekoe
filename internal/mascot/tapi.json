@@ -22,12 +22,12 @@
     "sleep": {"eyes": "- -", "cell": "◦", "accent": "i"}
   },
   "reactions": {
-    "merged":            {"eyes": "✦ ✦", "ascii": "* *", "accent": "d", "lines": ["{name} #{pr} マージされた", "{name} #{pr} 入った、おめでとう", "{name} #{pr} おつかれさま、マージ"]},
-    "ci_failed":         {"eyes": "╥ ╥", "ascii": "T T", "accent": "x", "lines": ["{name} #{pr} の CI 落ちちゃった", "{name} #{pr} の check が {fail} 件こけた", "{name} #{pr} の CI だめだった"]},
-    "changes_requested": {"eyes": "> <", "ascii": "> <", "accent": "q", "lines": ["{name} #{pr} に修正依頼きた", "{name} #{pr} 直してほしいって", "{name} #{pr} changes requested"]},
-    "new_comment":       {"eyes": "◒ ◒", "ascii": "o.o", "accent": "q", "lines": ["{name} #{pr} にコメントきてる", "{name} #{pr} 未解決が {unresolved} 件", "{name} #{pr} 誰かが何か言ってる"]},
-    "approved":          {"eyes": "◠ ◠", "ascii": "^.^", "accent": "d", "lines": ["{name} #{pr} approve もらえた", "{name} #{pr} 承認された、うれしい", "{name} #{pr} レビュー通った"]},
-    "ci_passed":         {"eyes": "^ ^", "ascii": "^ ^", "accent": "d", "lines": ["{name} #{pr} の CI 通った", "{name} #{pr} 全部 green", "{name} #{pr} の check ぜんぶ通過"]},
-    "ci_running":        {"eyes": "◔ ◔", "alt": "◓ ◓", "ascii": ". .", "ascii_alt": "o o", "accent": "i", "lines": ["{name} #{pr} の CI 見守り中", "{name} #{pr} の check 走ってる", "{name} #{pr} の CI どうかな"]}
+    "merged":            {"eyes": "✦ ✦", "ascii": "* *", "accent": "d", "lines": ["{name} #{pr} merged", "{name} #{pr} is in, congrats", "{name} #{pr} merged, nice work"]},
+    "ci_failed":         {"eyes": "╥ ╥", "ascii": "T T", "accent": "x", "lines": ["{name} #{pr} CI fell over", "{name} #{pr} failing checks: {fail}", "{name} #{pr} CI didn't make it"]},
+    "changes_requested": {"eyes": "> <", "ascii": "> <", "accent": "q", "lines": ["{name} #{pr} got change requests", "{name} #{pr} they want some fixes", "{name} #{pr} changes requested"]},
+    "new_comment":       {"eyes": "◒ ◒", "ascii": "o.o", "accent": "q", "lines": ["{name} #{pr} has new comments", "{name} #{pr} unresolved: {unresolved}", "{name} #{pr} someone said something"]},
+    "approved":          {"eyes": "◠ ◠", "ascii": "^.^", "accent": "d", "lines": ["{name} #{pr} got approved", "{name} #{pr} approved, feels good", "{name} #{pr} passed review"]},
+    "ci_passed":         {"eyes": "^ ^", "ascii": "^ ^", "accent": "d", "lines": ["{name} #{pr} CI passed", "{name} #{pr} all green", "{name} #{pr} every check passed"]},
+    "ci_running":        {"eyes": "◔ ◔", "alt": "◓ ◓", "ascii": ". .", "ascii_alt": "o o", "accent": "i", "lines": ["{name} #{pr} watching CI", "{name} #{pr} checks are running", "{name} #{pr} CI, fingers crossed"]}
   }
 }

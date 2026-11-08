@@ -1063,7 +1063,7 @@ func cmdExt() error {
 	if alt := filepath.Join(filepath.Dir(filepath.Dir(exe)), "share", "boba", "extension"); hintDir(extDir) == "" && hintDir(alt) != "" {
 		extDir = alt
 	}
-	fmt.Printf("port   %d\ntoken  %s\n\nChrome: chrome://extensions → デベロッパーモード → パッケージ化されていない拡張機能を読み込む\n        (boba リポジトリの extension/ を選ぶ%s) → 拡張のオプションに port と token を入力\n", info.Port, info.Token, hintDir(extDir))
+	fmt.Printf("port   %d\ntoken  %s\n\nChrome: chrome://extensions → Developer mode → Load unpacked\n        (choose extension/ in the boba repository%s) → enter port and token in the extension's options\n", info.Port, info.Token, hintDir(extDir))
 	return nil
 }
 
