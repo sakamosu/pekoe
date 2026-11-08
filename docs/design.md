@@ -76,6 +76,8 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 
 **永続性** — エージェントは bobad 専用の tmux サーバー(`tmux -L boba`)の中で動くので、ターミナルを閉じても、`boba daemon stop` やデーモンの再起動でも止まらない。次に起動した bobad は state.db からセッションを読み戻し、生きている tmux のウィンドウにそのままつなぎ直す(会話も実行中の処理も途切れない)。起動時には各セッションの repo-id をリポジトリの今の origin から引き直し、作成後に origin が付いたリポジトリのセッションも今の ID に揃える(ポート番号は変わらない)。tmux サーバーごと止めるのは `boba daemon stop --kill-agents` だけで、これは使い捨ての隔離環境の片付け用。`claude --resume` が使われるのは tmux サーバーごと消えていたとき(OS の再起動、`tmux -L boba kill-server`、`--kill-agents` など)だけで、`x` で止めたもの以外を state.db の session\_id で起動し直す(会話は戻るが、プロセスとその時点で動いていたツールは戻らない)。その id の会話がまだ保存されていなければ `--continue`、それもなければ新しく起動する。worktree が見つからないセッションは failed として残り、`boba rm` で消せる。
 
+**デーモンは 1 つだけ** — bobad は起動時、state.db を開く前に `~/.local/share/boba/bobad.lock` に `flock` をかけ、動いている間ずっと持つ。取れなければ、持ち主がソケットに応答していればすぐに「already running」で終わり、応答していなければ(起動中か終了処理中)最大 5 秒待ってから取り直す。複数のクライアントが同時に自動起動しても、残るのは 1 つだけ。終了時はソケットと pid ファイルを、まだ自分が作ったもの(ソケットは `Listen` 直後の inode、pid ファイルは中身の pid)のときだけ消し、ロックはその後で最後に放す。`boba daemon stop` はプロセスが終わるまで(最大 10 秒)待ってから戻り、時間内に終わらなければエラーにする。
+
 ## worktree フロー
 
 `boba new feat/x` 一発で「worktree 作成 → 無視ファイルの持ち込み → setup コマンド → ポート割当 → セッション起動」が走る。boba が知っているのはこの 5 歩だけで、中身はリポジトリごとの設定が決める。
@@ -275,13 +277,14 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | boba が削除していい領域はこの配下だけ |
 | ポート台帳・DB 名・セッション ID・状態 | `~/.local/share/boba/state.db`(SQLite) | デーモンの外部記憶。再起動後の復元に使う |
 | デーモンの socket | `~/.local/share/boba/bobad.sock` | TUI・CLI・nvim が繋ぐ |
+| デーモンのロック | `~/.local/share/boba/bobad.lock` | 動いている bobad が `flock` で持つ。1 つの state.db に bobad は 1 つ |
 | 拡張用 HTTP | `127.0.0.1:<port>` + トークン | トークンはインストール時に生成し拡張の storage に入れる |
 
 将来チームに広げる場合は、リポジトリ内 `.boba.toml` を「あれば読む・個人設定が上書き」の順で足す。
 
 ## CLI コマンドとキーバインド
 
-CLI は人間とエージェントの両方が叩く。出力は `--json` で機械可読にできる。
+CLI は人間とエージェントの両方が叩く。出力は `--json` で機械可読にできる。各サブコマンドは受け付けるフラグ(bool と値つき)を宣言し(`cmd/boba/flags.go`)、知らないフラグはエラーにする。`--help` / `-h` は何も実行せずに使い方だけを出す。打ち間違いや `--help` が状態を変えるコマンドにそのまま流れないようにするため。
 
 | コマンド | すること |
 | --- | --- |

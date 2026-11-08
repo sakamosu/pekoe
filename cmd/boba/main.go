@@ -55,17 +55,9 @@ import (
 var jsonOut bool
 
 func main() {
-	args := os.Args[1:]
-	// global flags
-	var rest []string
-	for _, a := range args {
-		if a == "--json" {
-			jsonOut = true
-			continue
-		}
-		rest = append(rest, a)
-	}
-	args = rest
+	// global flags, before or after the subcommand
+	args, global := splitGlobal(os.Args[1:])
+	jsonOut = global
 	if filepath.Base(os.Args[0]) == "bobad" {
 		args = append([]string{"daemon", "run"}, args...)
 	}
@@ -93,16 +85,19 @@ func main() {
 	case "send":
 		err = cmdSend(args)
 	case "event":
-		cmdEvent(args) // never fails the hook
+		if _, _, err := parseCmd("event", args); err != nil && helpRequested(err) {
+			exitUsage(err)
+		}
+		cmdEvent(args) // never fails the hook (unknown flags included)
 		return
 	case "review":
 		err = cmdReview(args)
 	case "land":
-		err = cmdSimple("land", args, "land <slug>")
+		err = cmdSimple("land", "land", args)
 	case "rm":
 		err = cmdRm(args)
 	case "dev":
-		err = cmdSimple("dev.toggle", args, "dev <slug>")
+		err = cmdSimple("dev", "dev.toggle", args)
 	case "undo":
 		err = cmdUndo(args)
 	case "answer":
@@ -112,9 +107,13 @@ func main() {
 	case "hooks":
 		err = cmdHooks(args)
 	case "ext":
-		err = cmdExt()
+		if _, _, err = parseCmd("ext", args); err == nil {
+			err = cmdExt()
+		}
 	case "mcp":
-		err = mcp.Serve(os.Stdin, os.Stdout)
+		if _, _, err = parseCmd("mcp", args); err == nil {
+			err = mcp.Serve(os.Stdin, os.Stdout)
+		}
 	case "daemon":
 		err = cmdDaemon(args)
 	case "help", "-h", "--help":
@@ -125,6 +124,7 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	exitUsage(err)
 	die(err)
 }
 
@@ -209,35 +209,6 @@ func cwd() string {
 	return d
 }
 
-// flag parsing: --name value / --name=value / --bool
-func flags(args []string, bools ...string) (map[string]string, []string) {
-	isBool := map[string]bool{}
-	for _, b := range bools {
-		isBool[b] = true
-	}
-	f := map[string]string{}
-	var pos []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !strings.HasPrefix(a, "--") || a == "--" {
-			pos = append(pos, a)
-			continue
-		}
-		k := strings.TrimPrefix(a, "--")
-		if key, v, ok := strings.Cut(k, "="); ok {
-			f[key] = v
-			continue
-		}
-		if isBool[k] || i+1 >= len(args) {
-			f[k] = "true"
-			continue
-		}
-		f[k] = args[i+1]
-		i++
-	}
-	return f, pos
-}
-
 // agentPaneSize is the pty size to ask for when spawning an agent from the
 // CLI: the agent pane of a TUI in this terminal, or 0x0 when stdout is not a
 // terminal (run by an agent or a script). 0 lets the daemon use the running
@@ -263,7 +234,10 @@ func runTUI() error {
 }
 
 func cmdInit(args []string) error {
-	f, pos := flags(args, "yes", "overwrite", "print")
+	f, pos, err := parseCmd("init", args)
+	if err != nil {
+		return err
+	}
 	dir := cwd()
 	if len(pos) > 0 {
 		dir = pos[0]
@@ -356,7 +330,10 @@ func confirm(q string) bool {
 }
 
 func cmdNew(args []string) error {
-	f, pos := flags(args, "wait")
+	f, pos, err := parseCmd("new", args)
+	if err != nil {
+		return err
+	}
 	if len(pos) < 1 {
 		return fmt.Errorf("usage: boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]")
 	}
@@ -443,7 +420,10 @@ func fmtMs(ms int64) string {
 }
 
 func cmdOpen(args []string) error {
-	f, pos := flags(args, "resume", "new")
+	f, pos, err := parseCmd("open", args)
+	if err != nil {
+		return err
+	}
 	dir := cwd()
 	if len(pos) > 0 {
 		dir, _ = filepath.Abs(pos[0])
@@ -509,7 +489,10 @@ func cmdOpen(args []string) error {
 }
 
 func cmdAdopt(args []string) error {
-	f, pos := flags(args, "yes")
+	f, pos, err := parseCmd("adopt", args)
+	if err != nil {
+		return err
+	}
 	path := ""
 	if len(pos) > 0 {
 		path, _ = filepath.Abs(pos[0])
@@ -553,7 +536,10 @@ func cmdAdopt(args []string) error {
 // only that repository's sessions; --all shows every repository and
 // --repo another one. Outside a repository it shows everything.
 func cmdLs(args []string) error {
-	f, _ := flags(args, "all")
+	f, _, err := parseCmd("ls", args)
+	if err != nil {
+		return err
+	}
 	cl := connect()
 	defer cl.Close()
 	scope, err := lsScope(f, func(q string) (*daemon.KnownRepo, error) { return resolveRepoFlag(cl, q) }, func() *daemon.KnownRepo { return hereRepo(cl) })
@@ -702,7 +688,10 @@ func repoDir(cl *client.Client, f map[string]string) (string, error) {
 }
 
 func cmdIssues(args []string) error {
-	f, pos := flags(args, "all", "mine", "refresh")
+	f, pos, err := parseCmd("issues", args)
+	if err != nil {
+		return err
+	}
 	cl := connect()
 	defer cl.Close()
 	dir, err := repoDir(cl, f)
@@ -789,7 +778,10 @@ func cmdIssues(args []string) error {
 // same repository that touch the same files, and whether their committed
 // contents would conflict (git merge-tree) or merge automatically.
 func cmdConflicts(args []string) error {
-	f, _ := flags(args)
+	f, _, err := parseCmd("conflicts", args)
+	if err != nil {
+		return err
+	}
 	cl := connect()
 	defer cl.Close()
 	id := ""
@@ -833,7 +825,10 @@ func cmdConflicts(args []string) error {
 }
 
 func cmdSend(args []string) error {
-	f, pos := flags(args, "no-enter")
+	f, pos, err := parseCmd("send", args)
+	if err != nil {
+		return err
+	}
 	if len(pos) < 2 {
 		return fmt.Errorf("usage: boba send <slug> <text>   (text '-' reads stdin)")
 	}
@@ -872,7 +867,10 @@ func cmdEvent(args []string) {
 }
 
 func cmdReview(args []string) error {
-	f, pos := flags(args)
+	f, pos, err := parseCmd("review", args)
+	if err != nil {
+		return err
+	}
 	cl := connect()
 	defer cl.Close()
 	if len(pos) > 0 && strings.HasPrefix(pos[0], "gh#") {
@@ -911,14 +909,18 @@ func cmdReview(args []string) error {
 	return tui.RunReview(cl, slug)
 }
 
-func cmdSimple(method string, args []string, use string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("usage: boba %s", use)
+func cmdSimple(name, method string, args []string) error {
+	_, pos, err := parseCmd(name, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: %s", specs[name].use)
 	}
 	cl := connect()
 	defer cl.Close()
 	var res any
-	if err := cl.Call(method, map[string]any{"slug": args[0]}, &res); err != nil {
+	if err := cl.Call(method, map[string]any{"slug": pos[0]}, &res); err != nil {
 		return err
 	}
 	if jsonOut {
@@ -934,7 +936,10 @@ func cmdSimple(method string, args []string, use string) error {
 }
 
 func cmdRm(args []string) error {
-	f, pos := flags(args, "force", "yes")
+	f, pos, err := parseCmd("rm", args)
+	if err != nil {
+		return err
+	}
 	if len(pos) < 1 {
 		return fmt.Errorf("usage: boba rm <slug> [--force]")
 	}
@@ -957,6 +962,10 @@ func cmdRm(args []string) error {
 }
 
 func cmdUndo(args []string) error {
+	_, args, err := parseCmd("undo", args)
+	if err != nil {
+		return err
+	}
 	if len(args) < 1 {
 		return fmt.Errorf("usage: boba undo <slug> [n]")
 	}
@@ -975,6 +984,10 @@ func cmdUndo(args []string) error {
 }
 
 func cmdAnswer(args []string) error {
+	_, args, err := parseCmd("answer", args)
+	if err != nil {
+		return err
+	}
 	if len(args) < 2 {
 		return fmt.Errorf("usage: boba answer <slug> allow|deny|always")
 	}
@@ -984,6 +997,10 @@ func cmdAnswer(args []string) error {
 }
 
 func cmdAttach(args []string) error {
+	_, args, err := parseCmd("attach", args)
+	if err != nil {
+		return err
+	}
 	if len(args) < 1 {
 		return fmt.Errorf("usage: boba attach <slug> [agent|review|dev]")
 	}
@@ -1000,11 +1017,14 @@ func cmdAttach(args []string) error {
 }
 
 func cmdHooks(args []string) error {
-	sub := "status"
-	if len(args) > 0 {
-		sub = args[0]
+	f, pos, err := parseCmd("hooks", args)
+	if err != nil {
+		return err
 	}
-	f, _ := flags(args, "yes")
+	sub := "status"
+	if len(pos) > 0 {
+		sub = pos[0]
+	}
 	bin, _ := os.Executable()
 	if b, err := filepath.EvalSymlinks(bin); err == nil {
 		bin = b
@@ -1076,10 +1096,25 @@ func hintDir(d string) string {
 	return ""
 }
 
+// daemonStopTimeout bounds how long `boba daemon stop` waits for bobad's
+// process to exit (its shutdown closes HTTP within 1 s, then tmux and state.db).
+const daemonStopTimeout = 10 * time.Second
+
 func cmdDaemon(args []string) error {
-	sub := "status"
-	if len(args) > 0 {
-		sub = args[0]
+	sub, name := "status", "daemon"
+	if len(args) > 0 && !isFlag(args[0]) {
+		sub, args = args[0], args[1:]
+		name = "daemon " + sub
+	}
+	if _, ok := specs[name]; !ok {
+		name = "daemon" // unknown subcommand: --help still answers
+	}
+	f, pos, err := parseCmd(name, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 0 {
+		return &usageError{use: specs[name].use, msg: "unexpected argument " + pos[0]}
 	}
 	switch sub {
 	case "run":
@@ -1104,18 +1139,16 @@ func cmdDaemon(args []string) error {
 		fmt.Println("bobad started · log:", paths.DaemonLog())
 		return nil
 	case "stop":
-		f, _ := flags(args[1:], "kill-agents", "yes")
 		if f["kill-agents"] != "" {
 			return stopKillAgents(f["yes"] != "")
 		}
-		cl, err := client.Dial()
+		running, err := client.StopDaemon(nil, daemonStopTimeout)
 		if err != nil {
+			return err
+		}
+		if !running {
 			fmt.Println("bobad is not running")
 			return nil
-		}
-		defer cl.Close()
-		if err := cl.Call("daemon.stop", nil, nil); err != nil {
-			return err
 		}
 		fmt.Println("bobad stopped (agents keep running in tmux; they are picked up on next start)")
 		return nil
@@ -1137,7 +1170,7 @@ func cmdDaemon(args []string) error {
 		fmt.Printf("bobad %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
 		return nil
 	}
-	return fmt.Errorf("usage: boba daemon start|stop [--kill-agents [--yes]]|status")
+	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}
 }
 
 // stopKillAgents stops bobad and its tmux server ($BOBA_TMUX_SOCKET), ending
@@ -1157,20 +1190,12 @@ func stopKillAgents(yes bool) error {
 			return nil
 		}
 	}
-	if cl, err := client.Dial(); err == nil {
-		err := cl.Call("daemon.stop", map[string]any{"kill_agents": true}, nil)
-		cl.Close()
-		if err != nil {
-			return err
-		}
-		// wait for bobad to go, so it does not restart the server under us
-		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
-			c, err := client.Dial()
-			if err != nil {
-				break
-			}
-			c.Close()
-		}
+	// waits for bobad to go, so it does not restart the server under us
+	running, err := client.StopDaemon(map[string]any{"kill_agents": true}, daemonStopTimeout)
+	if err != nil {
+		return err
+	}
+	if running {
 		fmt.Println("bobad stopped")
 	} else {
 		fmt.Println("bobad is not running")

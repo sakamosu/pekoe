@@ -37,7 +37,10 @@ func TestLsScope(t *testing.T) {
 		{"--repo unknown", []string{"--repo", "nope"}, inApp, nil, true},
 	}
 	for _, c := range cases {
-		f, _ := flags(c.args, "all")
+		f, _, err := parseCmd("ls", c.args)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
 		got, err := lsScope(f, resolve, c.here)
 		if (err != nil) != c.err || got != c.want {
 			t.Errorf("%s: got %+v, %v", c.name, got, err)

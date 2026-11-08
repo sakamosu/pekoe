@@ -57,7 +57,9 @@ func Connect() (*Client, error) {
 	if err := StartDaemon(); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	// generous: the new bobad may first wait for an old one to finish
+	// shutting down (it holds the lock until it is gone)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if cl, err := Dial(); err == nil {
 			return cl, nil
@@ -65,6 +67,45 @@ func Connect() (*Client, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("bobad did not start; see %s", paths.DaemonLog())
+}
+
+// StopDaemon asks the running bobad to stop and waits until its process has
+// exited, so a following start (or a client's autostart) finds it gone.
+// It reports running=false when no bobad answered.
+func StopDaemon(params any, timeout time.Duration) (running bool, err error) {
+	cl, err := Dial()
+	if err != nil {
+		return false, nil
+	}
+	defer cl.Close()
+	var st struct {
+		Pid int `json:"pid"`
+	}
+	if err := cl.Call("daemon.status", nil, &st); err != nil {
+		return true, err
+	}
+	if err := cl.Call("daemon.stop", params, nil); err != nil {
+		return true, err
+	}
+	if st.Pid <= 0 {
+		return true, nil
+	}
+	if !WaitExit(st.Pid, timeout) {
+		return true, fmt.Errorf("bobad (pid %d) did not exit within %s; see %s", st.Pid, timeout, paths.DaemonLog())
+	}
+	return true, nil
+}
+
+// WaitExit waits up to timeout for process pid to exit.
+func WaitExit(pid int, timeout time.Duration) bool {
+	for end := time.Now().Add(timeout); ; time.Sleep(50 * time.Millisecond) {
+		if !alive(pid) {
+			return true
+		}
+		if time.Now().After(end) {
+			return false
+		}
+	}
 }
 
 // StartDaemon launches `boba daemon run` detached, logging to bobad.log.

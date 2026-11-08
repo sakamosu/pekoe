@@ -64,6 +64,9 @@ func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
 func DaemonLog() string { return filepath.Join(DataDir(), "bobad.log") }
 func PidFile() string   { return filepath.Join(DataDir(), "bobad.pid") }
 
+// LockFile is held (flock) by the one bobad serving this data directory.
+func LockFile() string { return filepath.Join(DataDir(), "bobad.lock") }
+
 // TmuxSocketName is the private tmux server's -L name ($BOBA_TMUX_SOCKET,
 // default "boba").
 func TmuxSocketName() string {

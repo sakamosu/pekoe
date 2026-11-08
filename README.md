@@ -61,8 +61,10 @@ boba                         # TUI
 | `boba answer <slug> allow\|deny\|always` | 許可待ちに答える |
 | `boba ext` | Chrome 拡張に入れる port と token |
 | `boba mcp` | エージェント用 MCP サーバ(`claude mcp add boba -- boba mcp`) |
-| `boba daemon start\|stop\|status` | デーモン操作。`stop` してもエージェントは tmux の中で動き続ける |
+| `boba daemon start\|stop\|status` | デーモン操作。`stop` はデーモンのプロセスが終わるまで待って戻る。`stop` してもエージェントは tmux の中で動き続ける |
 | `boba daemon stop --kill-agents [--yes]` | デーモンに加えて tmux サーバー(`$BOBA_TMUX_SOCKET`)も止める。**既定のソケット `boba` に使うと全エージェントが止まる**。隔離環境の片付け用。対話端末では確認を出し、それ以外では `--yes` が要る |
+
+どのサブコマンドも `--help` / `-h` で使い方を出すだけで、何もせずに終わる(終了コード 0)。知らないフラグや値のない `--repo` などはエラーにして使い方を出す(終了コード 2)。`--json` はサブコマンドの前後どちらにも書ける。`-` で始まる文字列を位置引数として渡すときは `--` の後に書く(例: `boba send <slug> -- --verbose を外して`)。
 
 ### TUI
 

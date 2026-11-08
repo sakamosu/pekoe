@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -85,6 +84,8 @@ type Daemon struct {
 	Eng     engine.Engine
 	Global  *config.Global
 	ln      net.Listener
+	lock    *os.File // flock on bobad.lock, held for the daemon's lifetime (lock.go)
+	sockID  fileID   // the socket file this daemon created
 	httpSrv *http.Server
 	token   string
 
@@ -130,12 +131,19 @@ func New() (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := state.Open(paths.StateDB())
+	// before state.db is opened and restored: a second bobad must never
+	// read or write it (issue #42)
+	lock, err := acquireLock()
 	if err != nil {
 		return nil, err
 	}
+	db, err := state.Open(paths.StateDB())
+	if err != nil {
+		lock.Close()
+		return nil, err
+	}
 	d := &Daemon{
-		DB: db, Global: g,
+		DB: db, Global: g, lock: lock,
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
@@ -165,16 +173,23 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("terminal engine: %w", err)
 	}
 	sock := paths.Socket()
-	if c, err := net.DialTimeout("unix", sock, 300*time.Millisecond); err == nil {
-		c.Close()
-		return errors.New("bobad is already running")
+	// The lock (New) rules out a second bobad on this data directory; this
+	// catches one on another data directory that shares $BOBA_SOCK.
+	if socketServes() {
+		d.releaseLock()
+		return ErrAlreadyRunning
 	}
 	_ = os.Remove(sock)
 	_ = os.MkdirAll(filepath.Dir(sock), 0o755)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
+		d.releaseLock()
 		return err
 	}
+	// Closing a UnixListener unlinks its path without checking whose file
+	// is there now; shutdown removes it only while it is still ours.
+	ln.(*net.UnixListener).SetUnlinkOnClose(false)
+	d.sockID, _ = statID(sock)
 	_ = os.Chmod(sock, 0o600)
 	d.ln = ln
 	_ = os.WriteFile(paths.PidFile(), []byte(fmt.Sprint(os.Getpid())), 0o644)
@@ -225,8 +240,20 @@ func (d *Daemon) shutdown() {
 		}
 	}
 	d.DB.Close()
-	os.Remove(paths.Socket())
-	os.Remove(paths.PidFile())
+	// Only what is still ours: a stale path must not take down the socket
+	// or pid file of a daemon that started meanwhile (issue #42).
+	if d.sockID != (fileID{}) {
+		removeIfOwned(paths.Socket(), d.sockID)
+	}
+	removePidFileIfOwned()
+	d.releaseLock() // last: the next bobad may start from here on
+}
+
+func (d *Daemon) releaseLock() {
+	if d.lock != nil {
+		d.lock.Close()
+		d.lock = nil
+	}
 }
 
 func (d *Daemon) serve(nc net.Conn) {

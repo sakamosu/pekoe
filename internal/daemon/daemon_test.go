@@ -134,7 +134,7 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	}
 	fe := newFake()
 	d.Eng = fe
-	t.Cleanup(func() { d.DB.Close() })
+	t.Cleanup(func() { d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
 }
 
