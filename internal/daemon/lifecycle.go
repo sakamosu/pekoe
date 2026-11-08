@@ -166,6 +166,115 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
 }
 
+// ---- run: one command in the worktree (TUI `!`) ----
+
+type runP struct {
+	Slug    string `json:"slug"`
+	Command string `json:"command"` // empty: only report the run window's state
+	Width   int    `json:"width"`
+	Height  int    `json:"height"`
+}
+
+// RunState is what run.start and run.close answer: whether the session's
+// run window is still running, or holds a finished command waiting to be
+// closed, which command it is (the daemon keeps it: every TUI, and one
+// restarted meanwhile, names the same) and how it ended. Started is set
+// when this call spawned it.
+type RunState struct {
+	Running    bool   `json:"running"`
+	Finished   bool   `json:"finished"`
+	Started    bool   `json:"started"`
+	Command    string `json:"command,omitempty"`
+	ExitStatus int    `json:"exit_status"`      // -1: still running, unknown, or killed by Signal
+	Signal     string `json:"signal,omitempty"` // "SIGINT" when Ctrl-C ended it
+}
+
+// runState reads the session's run window. Callers hold runMu.
+func (d *Daemon) runState(s *state.Session) RunState {
+	st := RunState{Command: s.Run, ExitStatus: -1}
+	if d.Eng.Alive(s.Slug, engine.WinRun) {
+		st.Running = true
+		return st
+	}
+	if sc, err := d.Eng.Capture(s.Slug, engine.WinRun); err == nil && sc.Dead {
+		st.Finished = true
+		st.ExitStatus, st.Signal = sc.ExitStatus, sc.Signal
+	}
+	return st
+}
+
+// hRunStart runs one command in a pty of its own, in the worktree with the
+// dev server's environment, through the user's shell. A session has at most
+// one run window: while one is running (or finished but not closed), the
+// call starts nothing and says so, and the TUI shows that window instead.
+// Calls are serialized (runMu): Enter pressed twice must not let the second
+// Spawn kill the first run and start the command again.
+func (d *Daemon) hRunStart(p runP) (any, error) {
+	d.runMu.Lock()
+	defer d.runMu.Unlock()
+	s, err := d.snapshot(p.Slug)
+	if err != nil {
+		return nil, err
+	}
+	if st := d.runState(s); st.Running || st.Finished {
+		return st, nil
+	}
+	cmd := strings.TrimSpace(p.Command)
+	if cmd == "" {
+		return RunState{ExitStatus: -1}, nil
+	}
+	// never outside the worktree: tmux starts in $HOME when -c is missing
+	switch s.State {
+	case state.Creating:
+		return nil, fmt.Errorf("%s is still being created", p.Slug)
+	case state.Landed:
+		return nil, fmt.Errorf("%s has landed; its worktree is gone", p.Slug)
+	}
+	if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("worktree missing: %s", s.Path)
+	}
+	sh := os.Getenv("SHELL")
+	if sh == "" {
+		sh = "/bin/sh"
+	}
+	w, h := d.spawnSize(p.Width, p.Height)
+	full := "/bin/sh -c " + shellQuote(runScript(sh, cmd, w, h))
+	env := append(append([]string{}, s.Env...), "BOBA_SESSION="+p.Slug)
+	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinRun, Dir: s.Path, Env: env, Command: full, Width: w, Height: h, Quiet: true}); err != nil {
+		return nil, err
+	}
+	d.update(p.Slug, func(x *state.Session) { x.Run = cmd })
+	return RunState{Running: true, Started: true, Command: cmd, ExitStatus: -1}, nil
+}
+
+// hRunClose closes the run window (finished or not) and answers how it
+// ended, for the TUI's "tell the agent?".
+func (d *Daemon) hRunClose(p slugP) (any, error) {
+	d.runMu.Lock()
+	defer d.runMu.Unlock()
+	s, err := d.snapshot(p.Slug)
+	if err != nil {
+		return nil, err
+	}
+	st := d.runState(s)
+	_ = d.Eng.Kill(p.Slug, engine.WinRun)
+	if s.Run != "" {
+		d.update(p.Slug, func(x *state.Session) { x.Run = "" })
+	}
+	return st, nil
+}
+
+// runScript is the run window's sh script. It waits (up to 1 s) for the pty
+// to get its size: tmux makes the window at the session's size and resizes
+// it (and sets Quiet's option) right after, and a command over before that
+// (echo) would have its output pushed into the scrollback by the shrink.
+// Then it echoes the command (dim) so the window says what ran, and hands
+// the pty to the user's shell, whose exit status becomes the pane's.
+func runScript(sh, cmd string, w, h int) string {
+	return fmt.Sprintf(`i=0; while [ "$(stty size 2>/dev/null)" != "%d %d" ] && [ $i -lt 20 ]; do sleep 0.05; i=$((i+1)); done; `, h, w) +
+		`printf '\033[2m$ %s\033[0m\n' ` + shellQuote(cmd) + "; exec " + shellQuote(sh) + " -c " + shellQuote(cmd)
+}
+
 // ---- land: rebase → test → push → gh pr create; teardown after merge ----
 
 func (d *Daemon) hLand(p slugP) (any, error) {
@@ -477,6 +586,10 @@ func (d *Daemon) hWindowKill(p windowP) (any, error) {
 	}
 	if p.Window == engine.WinDev {
 		d.update(p.Slug, func(s *state.Session) { s.Dev = false })
+	}
+	if p.Window == engine.WinRun {
+		_, err := d.hRunClose(slugP{Slug: p.Slug})
+		return nil, err
 	}
 	return nil, nil
 }

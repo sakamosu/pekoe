@@ -35,6 +35,7 @@ import (
 	"boba/internal/config"
 	"boba/internal/engine"
 	"boba/internal/state"
+	"boba/internal/termstyle"
 	"boba/internal/theme"
 )
 
@@ -353,19 +354,19 @@ func (d *Daemon) webScreen(w http.ResponseWriter, r *http.Request) {
 		webErr(w, errors.New("no screen"))
 		return
 	}
-	// rows: the lines with their colors (webscreen.go); lines: the same
+	// rows: the lines with their colors (termstyle); lines: the same
 	// lines as plain text (the confirm sheet, older pages)
-	rows := styledTail(sc.Lines, webTailRows)
+	rows := termstyle.Tail(sc.Lines, webTailRows)
 	writeJSON(w, map[string]any{"slug": slug, "rows": rows, "lines": plainOf(rows), "dead": sc.Dead})
 }
 
 // plainTail: the last n lines without colours, trailing blank lines dropped.
-func plainTail(lines []string, n int) []string { return plainOf(styledTail(lines, n)) }
+func plainTail(lines []string, n int) []string { return plainOf(termstyle.Tail(lines, n)) }
 
-func plainOf(rows [][]webRun) []string {
+func plainOf(rows [][]termstyle.Run) []string {
 	out := make([]string, len(rows))
 	for i, r := range rows {
-		out[i] = runsText(r)
+		out[i] = termstyle.Text(r)
 	}
 	return out
 }

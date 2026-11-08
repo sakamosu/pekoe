@@ -119,6 +119,7 @@ type Session struct {
 	Activity        []int     `json:"activity"`
 	Tokens          int       `json:"tokens"`
 	Dev             bool      `json:"dev"`
+	Run             string    `json:"run,omitempty"` // command in the open run window (TUI !)
 	PR              int       `json:"pr,omitempty"`
 	PRReview        bool      `json:"pr_review,omitempty"` // reviewing someone else's PR
 	PRStatus        *PRStatus `json:"pr_status,omitempty"` // small summary of the PR, polled from GitHub

@@ -131,7 +131,7 @@ allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニ�
 
 WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test look pr_look`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
 
-Run は 1 行の中の同じ見た目の区間: `{t, fg?, bg?, b?, d?, i?, u?, s?}`(テキスト、文字色、背景色、太字・薄字・斜体・下線・取り消し線)。bobad が `capture-pane -e` の SGR を解析して作る(`internal/daemon/webscreen.go`)。色は 16 色なら TUI の役割名(`err ok warn primary secondary text dim border primary-end`、反転の既定色は `bg` / `text`)で、ユーザーのテーマがそのまま効く。256 色と truecolor は `#rrggbb`。OSC 8 のリンクやカーソル移動など、色以外のエスケープと制御文字は捨てる。行ごとに既定の見た目から始め(TUI と同じ)、行末の空白は背景色があっても落とす。
+Run は 1 行の中の同じ見た目の区間: `{t, fg?, bg?, b?, d?, i?, u?, s?}`(テキスト、文字色、背景色、太字・薄字・斜体・下線・取り消し線)。bobad が `capture-pane -e` の SGR を解析して作る(`internal/termstyle`)。色は 16 色なら TUI の役割名(`err ok warn primary secondary text dim border primary-end`、反転の既定色は `bg` / `text`)で、ユーザーのテーマがそのまま効く。256 色と truecolor は `#rrggbb`。OSC 8 のリンクやカーソル移動など、色以外のエスケープと制御文字は捨てる。行ごとに既定の見た目から始め(TUI と同じ)、行末の空白は背景色があっても落とす。
 
 画面の文字はエージェントの出力で、信用しない。Run には HTML を作らず、ページは `t` を `textContent` で入れ、色は決まった役割名のクラスか、`#rrggbb` を確かめてから CSSOM(`style.color`)で当てる。どちらでもない値は無視する。CSP(`style-src 'self'`)はそのまま。
 

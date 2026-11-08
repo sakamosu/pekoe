@@ -1090,7 +1090,7 @@ func (d *Daemon) hResize(p resizeP) (any, error) {
 		}
 		d.mu.Unlock()
 		for _, s := range slugs {
-			for _, w := range []string{engine.WinAgent, engine.WinReview, engine.WinDev} {
+			for _, w := range []string{engine.WinAgent, engine.WinReview, engine.WinDev, engine.WinRun} {
 				_ = d.Eng.Resize(s, w, p.Width, p.Height)
 			}
 		}
@@ -1283,7 +1283,7 @@ func (d *Daemon) restore() {
 			})
 			continue
 		}
-		hasAgent := false
+		hasAgent, hasRun := false, false
 		for _, w := range alive[s.Slug] {
 			if w == engine.WinAgent {
 				hasAgent = true
@@ -1291,6 +1291,12 @@ func (d *Daemon) restore() {
 			if w == engine.WinDev {
 				s.Dev = true
 			}
+			if w == engine.WinRun {
+				hasRun = true
+			}
+		}
+		if s.Run != "" && !hasRun { // the tmux server went away with it
+			d.update(s.Slug, func(x *state.Session) { x.Run = "" })
 		}
 		if hasAgent || s.Stopped {
 			continue

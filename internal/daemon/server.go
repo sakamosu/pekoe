@@ -92,6 +92,7 @@ type Daemon struct {
 	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
 	mu         sync.Mutex
+	runMu      sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
 	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
 	sessions   map[string]*state.Session
 	conns      map[*conn]bool
@@ -428,6 +429,8 @@ func (d *Daemon) registerHandlers() {
 		"worktree.rm":           bind(d.hRm),
 		"land":                  bind(d.hLand),
 		"dev.toggle":            bind(d.hDevToggle),
+		"run.start":             bind(d.hRunStart),
+		"run.close":             bind(d.hRunClose),
 		"changes":               bind(d.hChanges),
 		"conflicts.list":        bind(d.hConflicts),
 		"review.start":          bind(d.hReviewStart),

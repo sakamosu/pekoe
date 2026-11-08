@@ -108,7 +108,7 @@ type model struct {
 	typing    bool
 	guard     mouseGuard    // reassembles mouse reports split across reads
 	linkDown  string        // URL under the last left press in the agent panel
-	window    string        // agent | review | dev | pr | preview shown in the main panel
+	window    string        // agent | review | dev | run | pr | preview shown in the main panel
 	pr        *prState      // the PR view's data (pr.go)
 	pv        *previewState // the preview window (preview.go)
 
@@ -761,6 +761,15 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewMsg:
 		return m, m.onPreviewMsg(msg)
 
+	case runPromptMsg:
+		return m, m.onRunPrompt(msg)
+
+	case runStartedMsg:
+		return m, m.onRunStarted(msg)
+
+	case runClosedMsg:
+		return m, m.onRunClosed(msg)
+
 	case reviewOpenMsg:
 		rm := newReviewModel(m.cl, msg.slug, m.th, m.ic, m.width, m.height, m.square)
 		m.review = rm
@@ -986,6 +995,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 			s := m.current()
 			switch k.String() {
 			case "enter":
+				if m.window == engine.WinRun {
+					return m.finishRun()
+				}
 				if s != nil && m.window == engine.WinAgent {
 					aw, ah := m.agentSize()
 					return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
@@ -996,10 +1008,16 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 				}
 			case "x", "esc":
 				m.typing = false
+				if s != nil && m.window == engine.WinRun {
+					return m.closeRun(false) // without telling the agent
+				}
 				if s != nil && m.window != engine.WinAgent {
+					// the dead screen goes with the window: left as the
+					// agent's, ↵ would restart the running agent
 					w := m.window
 					m.window = engine.WinAgent
-					return m.act("window.kill", map[string]any{"slug": s.Slug, "window": w}, "")
+					m.screen = nil
+					return tea.Batch(m.act("window.kill", map[string]any{"slug": s.Slug, "window": w}, ""), m.fetchScreen())
 				}
 				if s != nil {
 					return m.act("session.kill", map[string]any{"slug": s.Slug}, "ended "+s.Slug)
@@ -1253,11 +1271,17 @@ func (m *model) keySessions(key string) tea.Cmd {
 		if m.window == winPreview { // typing goes to the agent
 			return m.closePreview()
 		}
-		if m.screen != nil && m.screen.Dead {
+		if m.screen != nil && m.screen.Dead && m.window == engine.WinAgent {
 			aw, ah := m.agentSize()
 			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
 		}
 		return nil
+	case "!": // run one command in the worktree (run.go)
+		return m.openRun()
+	case "x":
+		if m.runDone() { // the panel's "x close": the run, not the session
+			return m.closeRun(false)
+		}
 	case "/":
 		m.filterOn = true
 		m.filter = ""
@@ -1465,12 +1489,19 @@ func (m *model) keyAgent(key string) tea.Cmd {
 			aw, ah := m.agentSize()
 			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
 		}
+		if m.runDone() && key != "i" {
+			return m.finishRun()
+		}
 		m.typing = true
 		delete(m.unreadAt, s.Slug)
 		return nil
 	case "h", "left", "esc":
 		m.focus = pSessions
 		return nil
+	case "x":
+		if m.runDone() { // the panel's "x close": the run, not the session
+			return m.closeRun(false)
+		}
 	case "r", "n":
 		cmd, _ := m.common(key)
 		return cmd
@@ -1478,7 +1509,7 @@ func (m *model) keyAgent(key string) tea.Cmd {
 		if s == nil {
 			return nil
 		}
-		if m.window == engine.WinDev {
+		if m.window == engine.WinDev || m.window == engine.WinRun {
 			m.window = engine.WinAgent
 			m.screen = nil
 			return m.fetchScreen()

@@ -5,6 +5,8 @@
 package engine
 
 import (
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -13,6 +15,9 @@ const (
 	WinAgent  = "agent"
 	WinReview = "review"
 	WinDev    = "dev"
+	// WinRun runs one command the user typed (TUI `!`) and stays on screen
+	// after it exits, so its output and exit status can be read.
+	WinRun = "run"
 )
 
 type Spawn struct {
@@ -23,6 +28,10 @@ type Spawn struct {
 	Command string // run through the user's shell
 	Width   int
 	Height  int
+	// Quiet leaves no "Pane is dead" line when the process exits: the
+	// client says how it ended. tmux writes that line on the bottom row,
+	// scrolling a short output's first line away.
+	Quiet bool
 }
 
 type Screen struct {
@@ -37,7 +46,12 @@ type Screen struct {
 	AltScreen bool `json:"alt_screen"`
 	MouseAny  bool `json:"mouse"`
 	Dead      bool `json:"dead"`
-	History   int  `json:"history"` // lines scrolled off the top (for the unread line)
+	// ExitStatus is the exit status of a dead pane's process (-1: unknown,
+	// or killed by Signal).
+	ExitStatus int `json:"exit_status"`
+	// Signal names the signal that killed a dead pane's process ("SIGINT").
+	Signal  string `json:"signal,omitempty"`
+	History int    `json:"history"` // lines scrolled off the top (for the unread line)
 }
 
 // Output is a chunk produced by a pane.
@@ -70,4 +84,21 @@ type Engine interface {
 	// Only `boba daemon stop --kill-agents` uses it; a plain stop keeps the
 	// agents running for the next daemon.
 	KillServer() error
+}
+
+// SignalName turns tmux's pane_dead_signal ("int" in tmux 3.5, a number in
+// older ones) into "SIGINT". Empty stays empty.
+func SignalName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "0" {
+		return ""
+	}
+	if n, err := strconv.Atoi(raw); err == nil {
+		names := map[int]string{1: "HUP", 2: "INT", 3: "QUIT", 4: "ILL", 6: "ABRT", 9: "KILL", 13: "PIPE", 14: "ALRM", 15: "TERM"}
+		if name, ok := names[n]; ok {
+			return "SIG" + name
+		}
+		return "signal " + raw
+	}
+	return "SIG" + strings.TrimPrefix(strings.ToUpper(raw), "SIG")
 }
