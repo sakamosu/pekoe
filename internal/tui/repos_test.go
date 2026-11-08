@@ -174,7 +174,7 @@ func sessionsWidth(m *model) int {
 	if narrow(m.width) {
 		return m.width
 	}
-	return leftWidth(m.width)
+	return m.leftWidth()
 }
 
 func TestSessionsGroupedByRepo(t *testing.T) {

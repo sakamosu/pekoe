@@ -520,7 +520,7 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^"), "leave typing (back to Sessions)"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {m.prefixLabel(), "leave typing (back to Sessions)"}, {m.prefixLabel() + " h l", "focus left / main panel"}, {m.prefixLabel() + " z", "zoom the main panel (toggle)"}, {m.prefixLabel() + " < >", "narrow / widen the left panels"}, {m.prefixLabel() + " =", "default panel widths"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
 		g := g
 		h.items = append(h.items, helpItem{key: g[0], action: g[1], global: true})
 	}

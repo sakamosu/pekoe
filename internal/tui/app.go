@@ -21,6 +21,7 @@ import (
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
 	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -124,6 +125,11 @@ type model struct {
 	pickInput  *input
 	answers    map[string]string
 	prefix     bool
+	prefixType bool // the prefix also left typing: a layout key goes back to it
+	layout     Layout
+	layoutPath string // where layout changes are saved; "" in tests
+	layoutSeq  int    // bumped per layout change (debounce)
+	layoutDone int    // the layoutSeq the ptys and the file have caught up with
 	bracket    string // pending ] or [
 	bracketSeq int
 
@@ -160,20 +166,11 @@ func TermSizeOK() (int, int, bool) {
 	return w, h, true
 }
 
-// leftWidth: 40% of the terminal (between 34 and 56 columns).
-func leftWidth(total int) int {
-	return clampi(total*40/100, 34, 56)
-}
-
 func narrow(total int) bool { return total < 100 }
 
-// AgentWidth/Height compute the pty size of the main panel for a terminal.
-func AgentWidth(total int) int {
-	if narrow(total) {
-		return max(total-4, 20)
-	}
-	return max(total-leftWidth(total)-1-4, 20)
-}
+// AgentWidth/Height compute the pty size of the main panel for a terminal,
+// with the saved layout (LoadLayout).
+func AgentWidth(total int) int { return LoadLayout().agentWidth(total) }
 
 func AgentHeight(total int) int {
 	return max(total-1-2-narrowTop(total), 5)
@@ -213,6 +210,7 @@ func Run(cl *client.Client, cwd string) error {
 		return err
 	}
 	m := newModel(cl, cwd)
+	m.layout, m.layoutPath = LoadLayout(), paths.LayoutFile()
 	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
 		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
@@ -353,6 +351,9 @@ func (m *model) resizeAll() tea.Cmd {
 // agent wraps narrower than the pane, or paints past its border.
 func (m *model) fitScreen(slug, window string, sc *engine.Screen) tea.Cmd {
 	aw, ah := m.agentSize()
+	if m.layoutPending() {
+		return nil // layoutSettled resizes them all
+	}
 	if sc == nil || sc.Dead || sc.Width <= 0 || sc.Height <= 0 || (sc.Width == aw && sc.Height == ah) {
 		return nil
 	}
@@ -374,7 +375,7 @@ func (m *model) agentSize() (int, int) {
 	if narrow(m.width) {
 		return max(m.width-4, 20), max(m.height-1-m.narrowTopH()-2, 5)
 	}
-	return AgentWidth(m.width), max(m.height-1-2, 5)
+	return m.layout.agentWidth(m.width), max(m.height-1-2, 5)
 }
 
 func (m *model) act(method string, params any, okMsg string, then ...tea.Cmd) tea.Cmd {
@@ -522,7 +523,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		_, cmd = m.route(msg)
 	}
-	return m, tea.Batch(cmd, m.previewSync(), m.repoSync())
+	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
 }
 
 func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
@@ -735,6 +736,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case evMsg:
 		return m, m.onEvent(client.Event(msg))
+
+	case layoutSettledMsg:
+		return m, m.layoutSettled(msg.seq)
 
 	case prefixTimeoutMsg:
 		if msg.seq == m.bracketSeq && m.bracket != "" {
@@ -987,7 +991,10 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	if m.typing {
 		if m.prefixKey(k) {
 			m.typing = false
-			m.focus = pSessions
+			if !m.layout.Zoom || narrow(m.width) { // zoomed, the left column is hidden
+				m.focus = pSessions
+			}
+			m.prefix, m.prefixType = true, true
 			return nil
 		}
 		if m.screen != nil && m.screen.Dead {
@@ -1026,6 +1033,28 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		return m.forward(k)
+	}
+	if m.prefix {
+		m.prefix = false
+		fromTyping := m.prefixType
+		m.prefixType = false
+		if cmd, ok := m.layoutKey(k.String()); ok {
+			if fromTyping && !narrow(m.width) { // straight back to the agent
+				m.focus, m.typing = pAgent, true
+			}
+			return cmd
+		}
+		// after ^q left typing, any other key is a plain key: l still lands
+		if !fromTyping {
+			switch k.String() {
+			case "l", "right":
+				m.focus = pAgent
+				return nil
+			case "h", "left":
+				m.focus = pSessions
+				return nil
+			}
+		}
 	}
 	if m.filterOn {
 		switch k.Type {
@@ -1116,17 +1145,6 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	if m.prefixKey(k) {
 		m.prefix = true
 		return nil
-	}
-	if m.prefix {
-		m.prefix = false
-		switch key {
-		case "l", "right":
-			m.focus = pAgent
-			return nil
-		case "h", "left":
-			m.focus = pSessions
-			return nil
-		}
 	}
 	switch m.focus {
 	case pSessions:
@@ -1615,7 +1633,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if inAgent {
 			m.focus = pAgent
-		} else if ev.X < x0 || ev.Y < y0 {
+		} else if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
 			m.typing = false
 		}
