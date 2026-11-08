@@ -76,10 +76,27 @@ func (m Mascot) LightPalette() bool {
 	return p == "light" || p == "e"
 }
 
+// Web is [web]: the phone UI that bobad serves on the tailnet through an
+// embedded tsnet node (docs/web.md). Off by default; while off, tsnet is
+// never started.
+type Web struct {
+	Enable   bool   `toml:"enable"`
+	Hostname string `toml:"hostname"` // tailnet machine name, default "boba"
+	// AllowUsers are Tailscale login names (WhoIs UserProfile.LoginName,
+	// e.g. "you@github"). Empty refuses to start: nobody would get in.
+	AllowUsers []string `toml:"allow_users"`
+	// AllowDevices optionally narrows to these machine names (as in the
+	// admin console, e.g. "iphone-15"). Empty: any device of AllowUsers.
+	AllowDevices []string `toml:"allow_devices"`
+	StateDir     string   `toml:"state_dir"` // tsnet state, default <data>/tsnet
+	AuthKey      string   `toml:"auth_key"`  // first join only; TS_AUTHKEY works too
+}
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
 	} `toml:"http"`
+	Web  Web `toml:"web"`
 	Keys struct {
 		Prefix string            `toml:"prefix"`
 		Map    map[string]string `toml:"map"`
@@ -131,6 +148,12 @@ func LoadGlobal() (*Global, error) {
 	}
 	if g.HTTP.Port == 0 {
 		g.HTTP.Port = 47777
+	}
+	if g.Web.Hostname == "" {
+		g.Web.Hostname = "boba"
+	}
+	if g.Web.StateDir == "" {
+		g.Web.StateDir = paths.WebStateDir()
 	}
 	if g.Ports.Base == 0 {
 		g.Ports.Base = 3001
