@@ -55,7 +55,7 @@ make install-launchd    # 任意: ログイン時に pekoed を起動
 
 ### リリースから(ビルド済みバイナリ)
 
-GitHub Release に darwin / linux × arm64 / amd64 の既定ビルド(Web UI なし)を置いている。repo は private なので `gh` で落とす:
+GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。repo は private なので `gh` で落とす(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す):
 
 ```sh
 ver=0.2.0                                 # 入れるバージョン(gh release list で確認)
@@ -397,7 +397,7 @@ WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
 
 ### リリースの切り方
 
-`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォームをクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
+`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォーム × 既定 / `-tags web` をクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で既定と `-tags web` の govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
 
 ```sh
 git tag v0.2.0 && git push origin v0.2.0

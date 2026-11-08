@@ -1,9 +1,12 @@
 # pekoe のリリースビルド。v* タグの push で .github/workflows/release.yml が回す。
 # 手元で試すには: goreleaser release --snapshot --clean(dist/ にアーカイブができる)
 #
-# 配るのは既定ビルドだけ(-tags web の Web UI は含めない)。アーカイブを展開すると
+# 配るのは 2 種類: 既定ビルド(Tailscale のコードなし)の pekoe_<ver>_<os>_<arch>.tar.gz と、
+# -tags web(Web UI 入り。tsnet をリンクする)の pekoe_<ver>_<os>_<arch>_web.tar.gz。
+# どちらも展開すると
 #   bin/pekoe, bin/pekoed(→ pekoe), share/pekoe/nvim/, share/pekoe/extension/, contrib/launchd/
 # の配置になり、bin/pekoe が ../share/pekoe/nvim を見つける(internal/tui/review.go の NvimPluginDir)。
+# pekoe update(internal/selfupdate)はこの名前と配置を前提に、今の pekoe が web 入りなら _web の方を取る。
 version: 2
 
 project_name: pekoe
@@ -20,13 +23,26 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X pekoe/internal/daemon.Version={{.Version}}
+  - id: pekoe-web
+    main: ./cmd/pekoe
+    binary: bin/pekoe
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [arm64, amd64]
+    flags:
+      - -trimpath
+    tags: [web]
+    ldflags:
+      - -s -w -X pekoe/internal/daemon.Version={{.Version}}
 
 archives:
   - id: pekoe
+    ids: [pekoe]
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: true
-    files:
+    files: &files
       - README.md
       - src: contrib/release/pekoed
         dst: bin
@@ -40,6 +56,12 @@ archives:
         dst: share/pekoe/extension
       - src: contrib/launchd/*
         dst: contrib/launchd
+  - id: pekoe-web
+    ids: [pekoe-web]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_web"
+    wrap_in_directory: true
+    files: *files
 
 checksum:
   name_template: checksums.txt
