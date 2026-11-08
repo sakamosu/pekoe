@@ -3,17 +3,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const LOOK = {
-  running: ["●", "run", "s-run"],
-  waiting: ["●", "wait", "s-wait"],
-  idle: ["○", "idle", "s-idle"],
-  creating: ["◌", "creating", "s-idle"],
-  done: ["✓", "done", "s-done"],
-  reviewing: ["●", "review", "s-run"],
-  approved: ["✓", "approved", "s-run"],
-  landed: ["✓", "landed", "s-idle"],
-  failed: ["✗", "fail", "s-fail"],
-};
+const ROLES = new Set(["ok", "warn", "err", "primary", "secondary", "dim", "text"]);
 
 let sessions = [];
 let current = null; // slug shown in the detail view
@@ -28,6 +18,11 @@ function el(tag, cls, text) {
   if (cls) e.className = cls;
   if (text != null) e.textContent = text;
   return e;
+}
+
+// colored: text in a theme role (a class, never a style from the wire)
+function colored(role, text, cls) {
+  return el("span", (cls ? cls + " " : "") + "r-" + (ROLES.has(role) ? role : "dim"), text);
 }
 
 async function api(path, body) {
@@ -50,39 +45,75 @@ async function api(path, body) {
 
 function toast(text, ok) {
   const t = $("toast");
-  t.textContent = text;
+  t.replaceChildren(el("span", "ic", ok ? "✓" : "✗"), document.createTextNode(text));
   t.className = "toast" + (ok ? " ok" : "");
   t.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => (t.hidden = true), ok ? 1800 : 4000);
 }
 
+// ago is theme.Ago: hours up to two days
 function ago(iso) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return Math.floor(s) + "s";
   if (s < 3600) return Math.floor(s / 60) + "m";
-  if (s < 86400) return Math.floor(s / 3600) + "h";
+  if (s < 48 * 3600) return Math.floor(s / 3600) + "h";
   return Math.floor(s / 86400) + "d";
 }
 
+// look is the TUI's (theme.Look, sent by bobad): symbol, role, word
 function look(s) {
-  return LOOK[s.state] || ["○", s.state, "s-idle"];
+  return s.look || { icon: "○", role: "dim", word: s.state };
+}
+
+const sep = () => el("span", "sep", "·");
+
+// details: the dim second line, with the colored bits the TUI colors
+function details(s, withRepo) {
+  const out = [];
+  const add = (...nodes) => {
+    if (out.length) out.push(sep());
+    out.push(...nodes);
+  };
+  if (withRepo) add(document.createTextNode(s.repo));
+  if (s.slug !== s.branch) add(document.createTextNode(s.slug));
+  const d = s.diffstat;
+  if (d && d.added + d.deleted > 0) add(colored("ok", "+" + d.added), document.createTextNode(" "), colored("err", "-" + d.deleted));
+  if (s.test === "pass") add(colored("ok", "✓"), document.createTextNode("test"));
+  else if (s.test === "fail") add(colored("err", "✗"), document.createTextNode("test"));
+  else if (s.test === "running") add(document.createTextNode("…test"));
+  if (s.pr) {
+    const n = [document.createTextNode("#" + s.pr)];
+    if (s.pr_look) n.push(document.createTextNode(" "), colored(s.pr_look.role, s.pr_look.icon));
+    add(...n);
+  }
+  if (s.error) add(colored("err", "err"), document.createTextNode(" " + s.error.split("\n")[0]));
+  else if (s.state === "running" && s.last_tool) add(colored("ok", "●"), document.createTextNode(" " + s.last_tool));
+  return out;
+}
+
+// line1 is the TUI's sessionLine: icon  name  state  age (no age when idle)
+function line1(s) {
+  const lk = look(s);
+  const dimName = s.state === "idle" || s.state === "creating" || s.state === "landed";
+  const l1 = el("div", "line1");
+  l1.append(
+    colored(lk.role, lk.icon, "ic"),
+    el("span", "name " + (dimName ? "r-dim" : "r-text"), s.branch || s.slug),
+    colored(lk.role, lk.word, "word"),
+    el("span", "age", s.state === "idle" ? "" : ago(s.state_since)),
+  );
+  return l1;
 }
 
 // ---- list ----
 
 function sessionRow(s) {
-  const [ic, word, cls] = look(s);
-  const b = el("button", "row-s " + cls);
+  const b = el("button", "row-s");
   b.type = "button";
-  const l1 = el("div", "line1");
-  l1.append(el("span", "ic", ic), el("span", "slug", s.slug), el("span", "st", word + " " + ago(s.state_since)));
-  const bits = [s.repo, s.branch !== s.slug ? s.branch : ""];
-  if (s.diffstat && s.diffstat.files) bits.push(`+${s.diffstat.added} -${s.diffstat.deleted}`);
-  if (s.pr) bits.push("#" + s.pr);
-  if (s.error) bits.push(s.error);
-  else if (s.state !== "waiting" && s.last_tool) bits.push(s.last_tool);
-  b.append(l1, el("div", "line2", bits.filter(Boolean).join(" · ")));
+  const l2 = el("div", "line2");
+  l2.append(...details(s, true));
+  b.append(line1(s), l2);
   b.addEventListener("click", () => go(s.slug));
   return b;
 }
@@ -92,15 +123,21 @@ function sessionRow(s) {
 function waitBody(s, box) {
   const t = s.pending_tool;
   if (t) {
-    box.append(el("div", "tool", t.name));
+    const tool = el("div", "tool");
+    tool.append(el("span", "ic", "?"), document.createTextNode(t.name));
+    box.append(tool);
     if (t.input) box.append(el("pre", "input", t.input));
-    if (t.also_in && t.also_in.length) box.append(el("div", "also", "⚠ " + t.touches + " also changed in " + t.also_in.join(", ")));
+    if (t.also_in && t.also_in.length) {
+      const also = el("div", "also");
+      also.append(el("span", "ic", "⚠"), document.createTextNode(" " + t.touches + " also changed in " + t.also_in.join(", ")));
+      box.append(also);
+    }
   }
   if (s.last_message) box.append(el("div", "msg", s.last_message));
   if (s.answerable) {
     const row = el("div", "row");
-    const deny = el("button", "btn deny", "deny");
-    const allow = el("button", "btn allow", "allow");
+    const deny = el("button", "btn deny", "✗ deny");
+    const allow = el("button", "btn allow", "✓ allow");
     deny.type = allow.type = "button";
     deny.addEventListener("click", () => confirmAnswer(s, "deny"));
     allow.addEventListener("click", () => confirmAnswer(s, "allow"));
@@ -113,32 +150,54 @@ function waitBody(s, box) {
 
 function renderList() {
   if (touching) return; // redrawn on release
-  const list = $("list");
-  list.replaceChildren();
+  const rows = $("l-rows");
+  rows.replaceChildren();
+  $("l-count").textContent = sessions.length ? String(sessions.length) : "";
   if (!sessions.length) {
-    list.append(el("div", "empty", "no sessions"));
+    rows.append(el("div", "empty", "no sessions"));
     return;
   }
   for (const s of sessions) {
     if (s.state === "waiting") {
-      const card = el("div", "wait-card");
-      card.append(sessionRow(s));
-      waitBody(s, card);
-      list.append(card);
+      const card = el("div", "card");
+      const body = el("div", "body");
+      waitBody(s, body);
+      card.append(sessionRow(s), body);
+      rows.append(card);
     } else {
-      list.append(sessionRow(s));
+      rows.append(sessionRow(s));
     }
   }
 }
 
+// renderSummary: the Sessions footer (TUI: icon in its state color, words
+// dim) and the count in the status line.
 function renderSummary() {
-  const n = (st) => sessions.filter((s) => s.state === st).length;
-  const parts = [];
-  if (n("waiting")) parts.push(n("waiting") + " wait");
-  if (n("running")) parts.push(n("running") + " run");
-  if (n("done")) parts.push(n("done") + " done");
-  $("sum").textContent = parts.join(" · ");
-  document.title = n("waiting") ? `(${n("waiting")}) boba` : "boba";
+  const waiting = sessions.filter((s) => s.state === "waiting");
+  const done = sessions.filter((s) => s.state === "done").length;
+  const running = sessions.filter((s) => s.state === "running").length;
+  const foot = $("l-foot");
+  foot.replaceChildren();
+  if (waiting.length) {
+    const oldest = waiting.reduce((a, s) => (s.state_since < a ? s.state_since : a), waiting[0].state_since);
+    foot.append(colored("warn", "●"), document.createTextNode(` ${waiting.length} waiting · oldest ${ago(oldest)}`));
+  }
+  if (done) {
+    if (foot.childNodes.length) foot.append(el("span", "gap"));
+    foot.append(colored("secondary", "✓"), document.createTextNode(` ${done} to review`));
+  }
+  foot.hidden = !foot.childNodes.length;
+  const sum = $("sum");
+  sum.replaceChildren();
+  const bit = (role, icon, n, word) => {
+    if (!n) return;
+    if (sum.childNodes.length) sum.append(document.createTextNode("  "));
+    sum.append(colored(role, icon), document.createTextNode(` ${n} ${word}`));
+  };
+  bit("warn", "●", waiting.length, "wait");
+  bit("ok", "●", running, "run");
+  bit("secondary", "✓", done, "done");
+  document.title = waiting.length ? `(${waiting.length}) boba` : "boba";
 }
 
 async function refresh() {
@@ -159,23 +218,24 @@ function renderDetailHead() {
   const s = sessions.find((x) => x.slug === current);
   const head = $("d-head"), ask = $("d-ask");
   head.replaceChildren();
+  $("d-name").textContent = current || "";
   renderTarget(s);
   if (!s) {
     head.append(el("div", "empty", current + " is gone"));
     if (!busy) ask.hidden = true;
     return;
   }
-  const [ic, word, cls] = look(s);
-  const l1 = el("div", "line1 " + cls);
-  l1.append(el("span", "ic", ic), el("span", "slug", s.slug), el("span", "st", word + " " + ago(s.state_since)));
-  const bits = [s.repo + " · " + s.branch, s.agent];
-  if (s.diffstat && s.diffstat.files) bits.push(`${s.diffstat.files} files +${s.diffstat.added} -${s.diffstat.deleted}`);
-  if (s.error) bits.push(s.error);
-  head.append(l1, el("div", "line2", bits.filter(Boolean).join(" · ")));
+  const l2 = el("div", "line2");
+  l2.append(document.createTextNode(s.repo), sep(), document.createTextNode(s.agent), ...(details(s, false).length ? [sep(), ...details(s, false)] : []));
+  head.append(line1(s), l2);
   if (busy) return; // the confirm sheet is open: keep what it was opened from
   ask.replaceChildren();
   ask.hidden = s.state !== "waiting";
-  if (!ask.hidden) waitBody(s, ask);
+  if (!ask.hidden) {
+    const body = el("div", "body");
+    waitBody(s, body);
+    ask.append(body);
+  }
 }
 
 // renderTarget: the session send goes to, next to the box. It is the same
@@ -299,7 +359,6 @@ function route() {
   $("list").hidden = !!current;
   $("detail").hidden = !current;
   $("back").hidden = !current;
-  $("title").hidden = !!current;
   if (current) {
     $("d-screen").textContent = "";
     renderDetailHead();

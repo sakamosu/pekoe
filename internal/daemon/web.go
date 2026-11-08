@@ -35,6 +35,7 @@ import (
 	"boba/internal/config"
 	"boba/internal/engine"
 	"boba/internal/state"
+	"boba/internal/theme"
 )
 
 //go:embed webui
@@ -86,6 +87,7 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 		w.Header().Set("Content-Type", "application/manifest+json")
 		w.Write(b)
 	})
+	mux.HandleFunc("GET /theme.css", d.webThemeCSS)
 	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, peerFrom(r))
 	})
@@ -237,6 +239,21 @@ type webSession struct {
 	PR          int         `json:"pr,omitempty"`
 	Stopped     bool        `json:"stopped,omitempty"`
 	Error       string      `json:"error,omitempty"`
+	Test        string      `json:"test,omitempty"` // pass | fail | running
+	// Look and PRLook are the TUI's Sessions-panel symbol, color role and
+	// word (theme.Look / theme.PRLook, unicode icons): one table for both.
+	Look   webLook  `json:"look"`
+	PRLook *webLook `json:"pr_look,omitempty"`
+}
+
+type webLook struct {
+	Icon string `json:"icon"`
+	Role string `json:"role"`
+	Word string `json:"word"`
+}
+
+func toWebLook(l theme.StateLook) webLook {
+	return webLook{Icon: l.Icon, Role: string(l.Role), Word: l.Word}
 }
 
 // webAnswerable: a permission prompt the agent's allow/deny keys answer.
@@ -246,13 +263,42 @@ func webAnswerable(s *state.Session) bool {
 }
 
 func toWebSession(s *state.Session) webSession {
-	return webSession{
+	ws := webSession{
 		Slug: s.Slug, Repo: s.Repo, Branch: s.Branch, Agent: s.Agent,
 		State: s.State, WaitKind: s.WaitKind, StateSince: s.StateSince,
 		Answerable: webAnswerable(s), PendingTool: s.PendingTool,
 		LastTool: s.LastTool, LastMessage: s.LastMessage, Diffstat: s.Diffstat,
 		PR: s.PR, Stopped: s.Stopped, Error: s.Error,
+		Test: s.Test.Status, Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
 	}
+	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {
+		wl := toWebLook(l)
+		ws.PRLook = &wl
+	}
+	return ws
+}
+
+// webThemeCSS is the TUI's palette as CSS variables, so the phone shows
+// the same colors (and the user's [theme.colors]) as the terminal.
+func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
+	var cfg *config.Theme
+	if d.Global != nil {
+		cfg = &d.Global.Theme
+	}
+	p := theme.WebPalette(cfg)
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, role := range theme.WebRoles {
+		fmt.Fprintf(&b, "  --%s: %s;\n", role, p[string(role)])
+	}
+	end := p[theme.PrimaryEndKey]
+	if end == "" {
+		end = p[string(theme.Primary)] // solid focus border, as in the TUI
+	}
+	fmt.Fprintf(&b, "  --primary-end: %s;\n}\n", end)
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Write([]byte(b.String()))
 }
 
 // webRank orders the list: waiting first (oldest wait on top), then
