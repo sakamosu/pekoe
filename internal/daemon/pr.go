@@ -59,6 +59,7 @@ type PRThread struct {
 type PRView struct {
 	Number         int         `json:"number"`
 	Title          string      `json:"title"`
+	Body           string      `json:"body,omitempty"`
 	URL            string      `json:"url"`
 	State          string      `json:"state"` // OPEN | MERGED | CLOSED
 	IsDraft        bool        `json:"is_draft"`
@@ -77,7 +78,7 @@ type PRView struct {
 const prQuery = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      number title url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName
+      number title body url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt databaseId
@@ -117,6 +118,7 @@ func login(a *gqlAuthor) string {
 type gqlPR struct {
 	Number           int    `json:"number"`
 	Title            string `json:"title"`
+	Body             string `json:"body"`
 	URL              string `json:"url"`
 	State            string `json:"state"`
 	IsDraft          bool   `json:"isDraft"`
@@ -206,7 +208,7 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 	}
 	g := res.Data.Repository.PullRequest
 	v := &PRView{
-		Number: g.Number, Title: g.Title, URL: g.URL, State: g.State, IsDraft: g.IsDraft,
+		Number: g.Number, Title: g.Title, Body: g.Body, URL: g.URL, State: g.State, IsDraft: g.IsDraft,
 		Mergeable: g.Mergeable, MergeState: g.MergeStateStatus, ReviewDecision: g.ReviewDecision,
 		Base: g.BaseRefName, Head: g.HeadRefName, FetchedAt: now,
 		Checks: []PRCheck{}, Reviews: []PRReview{}, Threads: []PRThread{}, Comments: []PRComment{},

@@ -46,7 +46,7 @@ func (f prFixture) write(t *testing.T, ghDir string) {
 		rollup = map[string]any{"contexts": map[string]any{"nodes": f.Checks}}
 	}
 	pr := map[string]any{
-		"number": 42, "title": "Add CSV export", "url": "https://github.com/me/app/pull/42",
+		"number": 42, "title": "Add CSV export", "body": "## Summary", "url": "https://github.com/me/app/pull/42",
 		"state": f.State, "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": f.Merge,
 		"reviewDecision": decision, "baseRefName": "main", "headRefName": "feat/csv",
 		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
@@ -138,7 +138,7 @@ func TestPRViewParses(t *testing.T) {
 	}.write(t, ghd)
 
 	v := call[PRView](t, d, "pr.view", map[string]any{"slug": slug})
-	if v.Number != 42 || v.State != "OPEN" || v.MergeState != "BLOCKED" || v.ReviewDecision != "CHANGES_REQUESTED" || v.Base != "main" || v.Head != "feat/csv" {
+	if v.Number != 42 || v.State != "OPEN" || v.MergeState != "BLOCKED" || v.ReviewDecision != "CHANGES_REQUESTED" || v.Base != "main" || v.Head != "feat/csv" || v.Body != "## Summary" {
 		t.Fatalf("header: %+v", v)
 	}
 	if len(v.Checks) != 4 {
