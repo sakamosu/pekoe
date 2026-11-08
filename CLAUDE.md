@@ -21,3 +21,9 @@ make test   # go vet + go test ./...(既定と -tags web の両方)+ nvim のヘ
 Web UI(`internal/daemon/webts.go`)は `-tags web` のビルドにだけ入る。既定のビルドに Tailscale のコードを持ち込まない(`webts.go` 以外から `tailscale.com` を import しない)。
 
 daemon のテストは偽エンジン(`internal/daemon/daemon_test.go` の `fakeEngine`)で動く。`engine.Engine` にメソッドを足したら偽エンジンにも足す。
+
+## TIPS(機能を足したら tip も足す)
+
+- 機能(キー・サブコマンド・config.toml の節)を足したら `internal/tips/tips.toml` に tip を足す。文面は日本語(TIPS だけの例外。キー名・コマンド・設定名はそのまま)、id は一度決めたら変えない(見せた記録 `tips.json` に残る)、書いたキー・コマンドは実装と照らして確かめる
+- 網羅テスト(`internal/tui/tipcover_test.go`・`cmd/pekoe/tipcover_test.go`・`internal/config` の `TestTipsCoverSections`)が、ヘルプのキー一覧(`helpSets` / `globalHelpKeys`)・サブコマンド(`specs`)・設定の節(`config.Sections`)と tip の keys を両方向で突き合わせる。落ちたら tip を足すか、`internal/tips/cover.go` の `NoTip` に理由を添えて入れる。キーを消したら、それを書いた tip の keys も直す
+- キーやコマンドを伴わない表示だけの機能(バッジ・表示の変化など)はテストで拾えないので、紹介する価値があれば自分で tip を足す

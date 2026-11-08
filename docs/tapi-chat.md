@@ -63,8 +63,18 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 `paths.TapiDir()` = `~/.local/share/pekoe/tapi/`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/tapi/`)。
 
 - `$HOME` にはしない: cwd の前方一致で、ホーム以下で動く無関係な Claude Code の hook を拾ってしまう
-- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、人物像と口調・振る舞いのルール・顔の目の表(docs/mascot.md「tapi の人物像」。キャラは返事の頭の顔と最初か最後の 1 文だけで、中身は正確さ優先)、今日マージされた PR の数え方、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
+- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、人物像と口調・振る舞いのルール・顔の目の表(docs/mascot.md「tapi の人物像」。キャラは返事の頭の顔と最初か最後の 1 文だけで、中身は正確さ優先)、今日マージされた PR の数え方、TIPS の紹介の仕方(下記)、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
 - 初回は Claude Code のフォルダ信頼ダイアログが出る。開いた時点で入力モードなので、そのまま答えればよい(pekoe からは `~/.claude.json` を書き換えない)
+
+### TIPS の紹介
+
+最初の返事のあいさつに続けて、pekoe の機能を 1 つ紹介する(README「TIPS」)。どれを紹介するかは tapi が選ばず、`pekoe tip` に任せる。`pekoe tip` は `internal/tips/tips.toml` の一覧から、TUI の空き表示と共通の記録(`tips.json`)でまだ見せていないものを 1 つ選び、記録して出す。だから TUI で見せた tip を tapi が繰り返すことはなく、一巡するまで同じものは出ない。
+
+- 紹介は顔の後ろのあいさつに続く 1 文に収める(キャラの部分)。キー・コマンドは `pekoe tip` の出力をそのまま写し、出力に無いものを作らない。`^q` はユーザーの `[keys] prefix` に置き換えて出てくる
+- 「なんか tip ちょうだい」と頼まれたら `pekoe tip` で次の 1 つ。`--list` で一覧、`pekoe tip <id>` で特定の 1 つ(記録しない)
+- 「もっと詳しく」と聞かれたら、tip の docs 行のパスを `pekoe tip --doc <path>` で読んで普通の文で説明する。docs(README と docs/*.md、nvim/ と extension/ の README)はバイナリに同梱しているので、pekoe のリポジトリが手元に無くても読める
+- `[tips] enable = false` のとき `pekoe tip` は `tips are off` と出すだけで、tapi は頼まれない限り tip に触れない。CLAUDE.md の文面は設定によらず同じ(書き出す関数は設定を見ない)
+- `pekoe tip` は pekoed につながらず、`tips.json` を書くだけ。sandbox などで書けないときは tip を出して記録だけ諦める(stderr に一言)。Claude Code の許可リストを使っているなら `Bash(pekoe tip)` と `Bash(pekoe tip *)` を足すと、あいさつのたびに聞かれない
 
 ## 起動するコマンド
 
