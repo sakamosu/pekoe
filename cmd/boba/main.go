@@ -110,6 +110,10 @@ func main() {
 		if _, _, err = parseCmd("ext", args); err == nil {
 			err = cmdExt()
 		}
+	case "web":
+		if _, _, err = parseCmd("web", args); err == nil {
+			err = cmdWeb()
+		}
 	case "mcp":
 		if _, _, err = parseCmd("mcp", args); err == nil {
 			err = mcp.Serve(os.Stdin, os.Stdout)
@@ -173,6 +177,7 @@ func usage() {
   boba answer <slug> allow|deny|always
   boba hooks install|uninstall|status
   boba ext                     port + token for the Chrome extension
+  boba web                     phone web UI on the tailnet: state, URL, login link ([web])
   boba mcp                     MCP server for agents (claude mcp add boba -- boba mcp)
   boba daemon start|stop|status
   boba daemon stop --kill-agents [--yes]
@@ -1086,6 +1091,43 @@ func cmdExt() error {
 		extDir = alt
 	}
 	fmt.Printf("port   %d\ntoken  %s\n\nChrome: chrome://extensions → Developer mode → Load unpacked\n        (choose extension/ in the boba repository%s) → enter port and token in the extension's options\n", info.Port, info.Token, hintDir(extDir))
+	return nil
+}
+
+// cmdWeb shows the phone web UI's state ([web], docs/web.md): its URL once
+// the tsnet node is up, or the login URL for the first join.
+func cmdWeb() error {
+	cl := connect()
+	defer cl.Close()
+	var st struct {
+		Enabled bool     `json:"enabled"`
+		State   string   `json:"state"`
+		AuthURL string   `json:"auth_url"`
+		URLs    []string `json:"urls"`
+		Error   string   `json:"error"`
+	}
+	if err := cl.Call("web.status", nil, &st); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(st)
+		return nil
+	}
+	if !st.Enabled {
+		fmt.Printf("web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart bobad (boba daemon stop; boba daemon start). See docs/web.md.\n", paths.GlobalConfig())
+		return nil
+	}
+	fmt.Println("state ", st.State)
+	for _, u := range st.URLs {
+		fmt.Println("url   ", u)
+	}
+	if st.AuthURL != "" {
+		fmt.Println("login ", st.AuthURL)
+		fmt.Println("\nOpen the login URL to add this machine to your tailnet (once), or restart bobad with TS_AUTHKEY.")
+	}
+	if st.Error != "" {
+		fmt.Println("error ", st.Error)
+	}
 	return nil
 }
 
