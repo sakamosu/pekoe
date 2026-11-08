@@ -297,7 +297,7 @@ diff の A / M / D は全モードで文字のまま（git の慣習を崩さな
 | スクロールバー | │（トラック）＋ ┃（サム） | メインパネル右端 | border / dim |
 | ガターマーク | ▎ | diff の追加・削除行 | ok / err |
 | 枠線 | ╭ ╮ ╰ ╯ ─ │ | 全パネルとモーダル | primary → primary\_end（フォーカス・モーダル）/ border / err |
-| 紙吹雪 | nerd: nf-fa-star（F005）・nf-fa-star\_o（F006）・✦ ⁺ / unicode: ✦ ✧ ⋆ ⁺ / ascii: * + ' . | PR がマージされたときの tapi のトーストの枠線上だけ（`docs/mascot.md`「PR と CI への反応」） | secondary |
+| 紙吹雪 | unicode・nerd: ✦ ✧ ⋆ ⋅ / * ∗ ⁺ ⋅ / ⁺ ∙ ⋅（中立幅のみ）/ ascii: * + . / + ' . | PR がマージされたときの tapi のトーストの枠線上だけ（`docs/mascot.md`「PR と CI への反応」） | secondary 主体に warn・primary を少し |
 
 - 動きはスピナーだけ。点滅やマーキーは使わない。フォーカス枠のグラデーションも静止している。`animate = false` でスピナーも静止アイコンになる。例外は tapi（`docs/mascot.md` のタイミング規則に従う。紙吹雪の瞬きもここ）で、`animate = false` なら tapi も止まり、紙吹雪は出さない。
 - 空のメインパネルには dim の ASCII アートロゴ（6行以内）を置いてよい。アクセントは primary の文字1つまで。
