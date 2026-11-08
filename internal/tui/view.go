@@ -990,11 +990,11 @@ func (m *model) viewBar() string {
 		}
 		name := ""
 		if repo != nil {
-			name = th.FG(theme.Dim, repo.Name+" ")
+			name = th.FG(theme.Dim, m.repoName(repo)+" ")
 		}
 		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+name+s.Branch+port, theme.Select, theme.Text, false))
 	} else if repo != nil {
-		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+repo.Name, theme.Select, theme.Text, false))
+		segs = append(segs, m.pill(theme.Prefix(m.ic.Worktrees)+m.repoName(repo), theme.Select, theme.Text, false))
 	}
 	// session counts are tapi's speech now (barTapi); picks stay here
 	var counts []string

@@ -277,7 +277,7 @@ func (n *newModal) view() []string {
 	th := m.th
 	repo := "no repository · esc, then w"
 	if n.repo != nil {
-		repo = n.repo.Name
+		repo = m.repoName(n.repo)
 	}
 	title := theme.Prefix(m.ic.Worktrees) + th.Bold(theme.Primary, "New session") + " " + th.FG(theme.Dim, "· "+repo)
 	col := func(icon, label, value string) string {

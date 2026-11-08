@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"boba/internal/client"
 	"boba/internal/daemon"
@@ -525,5 +526,117 @@ func TestStartUpFollowsStartRepo(t *testing.T) {
 		if m.current().Slug != "api-1" {
 			t.Fatalf("reload moved the selection: %s", m.current().Slug)
 		}
+	}
+}
+
+func TestRepoLabels(t *testing.T) {
+	kr := func(id, name, dir string) daemon.KnownRepo { return daemon.KnownRepo{ID: id, Name: name, Dir: dir} }
+	cases := []struct {
+		name string
+		in   []daemon.KnownRepo
+		want map[string]string
+	}{
+		{"no overlap: short names as before",
+			[]daemon.KnownRepo{appA, appB, kr("path_src_tool", "tool", "/src/tool")},
+			map[string]string{appA.ID: "api", appB.ID: "web", "path_src_tool": "tool"}},
+		{"the owner tells them apart",
+			[]daemon.KnownRepo{kr("github.com_a_api", "api", ""), kr("github.com_b_api", "api", ""), appB},
+			map[string]string{"github.com_a_api": "a/api", "github.com_b_api": "b/api", appB.ID: "web"}},
+		{"same owner on two hosts: up to the host",
+			[]daemon.KnownRepo{kr("github.com_a_api", "api", ""), kr("gitlab.com_a_api", "api", ""), kr("github.com_b_api", "api", "")},
+			map[string]string{"github.com_a_api": "github.com/a/api", "gitlab.com_a_api": "gitlab.com/a/api", "github.com_b_api": "github.com/b/api"}},
+		{"a path id adds its parent directory",
+			[]daemon.KnownRepo{kr("github.com_sakamosu_boba", "boba", "/Users/me/repos/boba"), kr("path_Users_me_my_repos_boba", "boba", "/Users/me/my_repos/boba")},
+			map[string]string{"github.com_sakamosu_boba": "sakamosu/boba", "path_Users_me_my_repos_boba": "my_repos/boba"}},
+		{"two paths: parents until they differ",
+			[]daemon.KnownRepo{kr("path_x_src_app", "app", "/x/src/app"), kr("path_y_src_app", "app", "/y/src/app")},
+			map[string]string{"path_x_src_app": "x/src/app", "path_y_src_app": "y/src/app"}},
+	}
+	for _, c := range cases {
+		got := repoLabels(c.in)
+		for id, want := range c.want {
+			if got[id] != want {
+				t.Errorf("%s: %s = %q, want %q", c.name, id, got[id], want)
+			}
+		}
+	}
+}
+
+// Two repositories named api: the headings, the w modal, the bar, the [2]
+// title and the window title all show the same longer name, and every line
+// keeps the terminal width in every mode.
+func TestSameShortNameIsDisambiguated(t *testing.T) {
+	a := daemon.KnownRepo{ID: "github.com_a_api", Name: "api", Dir: "/src/a/api", Sessions: 1}
+	b := daemon.KnownRepo{ID: "github.com_b_api", Name: "api", Dir: "/src/b/api", Sessions: 1}
+	for _, color := range []string{"truecolor", "ansi", "none"} {
+		for _, icons := range []string{"nerd", "unicode", "ascii"} {
+			for _, width := range []int{180, 90} {
+				label := fmt.Sprintf("%s/%s/%d", color, icons, width)
+				m := repoModel(t, color, width)
+				m.ic = theme.Icons(icons)
+				now := time.Now()
+				m.sessions = []*state.Session{sess("x-1", a, state.Running, now.Add(-2*time.Minute)), sess("y-1", b, state.Idle, now.Add(-time.Minute))}
+				m.sortSessions()
+				m.repos = []daemon.KnownRepo{a, b}
+				m.sel = 0
+				out := checkSize(t, m, label)
+				lines := strings.Split(out, "\n")
+				lw := sessionsWidth(m)
+				if lineIndex(lines, " a/api ─", lw) < 0 || lineIndex(lines, " b/api ─", lw) < 0 {
+					t.Fatalf("%s: headings:\n%s", label, out)
+				}
+				if bar := lines[m.height-1]; !strings.Contains(bar, "a/api x-1") {
+					t.Fatalf("%s: bar %q", label, bar)
+				}
+				if m.repoScope() != "a/api" {
+					t.Fatalf("%s: scope %q", label, m.repoScope())
+				}
+				m.repoSynced = false
+				m.repoSync()
+				if m.repoTitle != "a/api" {
+					t.Fatalf("%s: window title %q", label, m.repoTitle)
+				}
+				m.onKey(key("w"))
+				if _, ok := m.modal.(*repoPicker); !ok {
+					t.Fatalf("%s: w: %T", label, m.modal)
+				}
+				out = checkSize(t, m, label+" picker")
+				if !strings.Contains(out, "a/api") || !strings.Contains(out, "b/api") {
+					t.Fatalf("%s: picker:\n%s", label, out)
+				}
+				m.modal = nil
+			}
+		}
+	}
+	// a repository with no twin keeps its short name, also in the title
+	m := repoModel(t, "none", 180)
+	m.repoSynced = false
+	m.repoSync()
+	if m.repoTitle != "api" || m.repoScope() != "api" {
+		t.Fatalf("no twin: %q %q", m.repoTitle, m.repoScope())
+	}
+	// a twin appearing later (repo.list) retitles the window without reloading
+	m.repoSync()
+	m.repos = append(m.repos, daemon.KnownRepo{ID: "github.com_other_api", Name: "api", Dir: "/other/api"})
+	if cmd := m.repoSync(); cmd == nil || m.repoTitle != "me/api" || m.repoKey != appA.Dir {
+		t.Fatalf("twin later: %q", m.repoTitle)
+	}
+}
+
+// A heading name too long for the column gives way with … and the line
+// keeps its width.
+func TestLongRepoHeadingFits(t *testing.T) {
+	name := strings.Repeat("very-long-repository-name-", 8)
+	long := daemon.KnownRepo{ID: "github.com_me_" + name, Name: name, Dir: "/src/" + name}
+	for _, width := range []int{180, 90} {
+		m := repoModel(t, "truecolor", width)
+		m.sessions = append(m.sessions, sess("z-1", long, state.Idle, time.Now()))
+		m.repos = append(m.repos, long)
+		m.sortSessions()
+		cw := sessionsWidth(m) - 4
+		if h := m.repoHeading(m.sessions[len(m.sessions)-1], cw); ansi.StringWidth(h) != cw || !strings.Contains(ansi.Strip(h), "…") {
+			t.Fatalf("%d: heading %q (%d)", width, ansi.Strip(h), ansi.StringWidth(h))
+		}
+		checkSize(t, m, fmt.Sprintf("long %d", width))
 	}
 }

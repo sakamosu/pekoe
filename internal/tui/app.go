@@ -82,10 +82,11 @@ type model struct {
 	repos       []daemon.KnownRepo // repo.list: repositories boba knows (repos.go)
 	reposLoaded bool
 	chosen      *daemon.KnownRepo // picked with w; wins over the selection's repository
-	repoKey     string           // Dir of the repository Worktrees / Issues were loaded for
+	repoKey     string            // Dir of the repository Worktrees / Issues were loaded for
 	repoSynced  bool
-	sessionsIn  bool // the first session.list answered
-	homePicked  bool // the start-up selection followed the repository boba was started in
+	repoTitle   string // the repository name in the window title (repoSync)
+	sessionsIn  bool   // the first session.list answered
+	homePicked  bool   // the start-up selection followed the repository boba was started in
 	filter      string
 	filterOn    bool
 

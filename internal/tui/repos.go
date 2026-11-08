@@ -103,26 +103,35 @@ func (m *model) pickHome() {
 	m.chosen = &h
 }
 
-// repoSync reloads what belongs to the current repository when it changes.
+// repoSync reloads what belongs to the current repository when it changes,
+// and retitles the window when its name does (a repository with the same
+// short name may show up later and make it longer).
 func (m *model) repoSync() tea.Cmd {
 	r := m.curRepo()
 	key, name := "", ""
 	if r != nil {
-		key, name = r.Dir, r.Name
+		key, name = r.Dir, m.repoName(r)
 	}
-	if m.repoSynced && key == m.repoKey {
+	var cmds []tea.Cmd
+	if !m.repoSynced || name != m.repoTitle {
+		m.repoTitle = name
+		title := "boba"
+		if name != "" {
+			title += " · " + name
+		}
+		cmds = append(cmds, tea.SetWindowTitle(title))
+	}
+	if !m.repoSynced || key != m.repoKey {
+		m.repoSynced, m.repoKey = true, key
+		m.worktrees, m.wsel = nil, 0
+		m.iss.resetRepo()
+		cmds = append(cmds, m.loadWorktrees())
+		if m.sub2 == subIssues {
+			cmds = append(cmds, m.loadIssues(false))
+		}
+	}
+	if len(cmds) == 0 {
 		return nil
-	}
-	m.repoSynced, m.repoKey = true, key
-	m.worktrees, m.wsel = nil, 0
-	m.iss.resetRepo()
-	title := "boba"
-	if name != "" {
-		title += " · " + name
-	}
-	cmds := []tea.Cmd{m.loadWorktrees(), tea.SetWindowTitle(title)}
-	if m.sub2 == subIssues {
-		cmds = append(cmds, m.loadIssues(false))
 	}
 	return tea.Batch(cmds...)
 }
@@ -131,9 +140,124 @@ func (m *model) repoSync() tea.Cmd {
 // ([2] Worktrees, [2] Issues): its name.
 func (m *model) repoScope() string {
 	if r := m.curRepo(); r != nil {
-		return r.Name
+		return m.repoName(r)
 	}
 	return ""
+}
+
+// ---- display names ----
+
+// repoName is how the TUI names a repository everywhere (headings, the w
+// modal, the bar, [2] titles, the window title): its short name, made
+// longer only as far as needed when another known repository has the same
+// short name (see repoLabels).
+func (m *model) repoName(r *daemon.KnownRepo) string {
+	if r == nil {
+		return ""
+	}
+	if r.ID != "" {
+		if l, ok := repoLabels(m.pickableRepos())[r.ID]; ok {
+			return l
+		}
+	}
+	return shortRepoName(r.Name, r.Dir)
+}
+
+func shortRepoName(name, dir string) string {
+	if name == "" && dir != "" {
+		return filepath.Base(dir)
+	}
+	return name
+}
+
+// repoLabels gives each repository (by id) a name that tells it apart from
+// the others. A short name nobody else has stays as is (api); repositories
+// sharing one get the upper elements of their id added, one level at a
+// time until they differ: the owner (a/api, b/api), then the host
+// (github.com/a/api, gitlab.com/a/api). A path_ id (no origin) adds its
+// parent directories instead (src/api).
+func repoLabels(rs []daemon.KnownRepo) map[string]string {
+	type item struct {
+		id   string
+		toks []string // outermost first, the short name last
+	}
+	groups := map[string][]item{}
+	var order []string
+	seen := map[string]bool{}
+	for _, r := range rs {
+		if r.ID == "" || seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
+		name := shortRepoName(r.Name, r.Dir)
+		if _, ok := groups[name]; !ok {
+			order = append(order, name)
+		}
+		groups[name] = append(groups[name], item{r.ID, repoTokens(r.ID, name, r.Dir)})
+	}
+	out := map[string]string{}
+	for _, name := range order {
+		g := groups[name]
+		if len(g) == 1 {
+			out[g[0].id] = name
+			continue
+		}
+		deepest := 1
+		for _, it := range g {
+			deepest = max(deepest, len(it.toks))
+		}
+		label := func(it item, k int) string {
+			return strings.Join(it.toks[max(len(it.toks)-k, 0):], "/")
+		}
+		k := 2
+		for ; k < deepest; k++ {
+			distinct := map[string]bool{}
+			for _, it := range g {
+				distinct[label(it, k)] = true
+			}
+			if len(distinct) == len(g) {
+				break
+			}
+		}
+		for _, it := range g {
+			out[it.id] = label(it, k)
+		}
+		// still the same at full depth (cannot happen for distinct ids
+		// unless they only differ in ways the elements hide): use the id
+		count := map[string]int{}
+		for _, it := range g {
+			count[out[it.id]]++
+		}
+		for _, it := range g {
+			if count[out[it.id]] > 1 {
+				out[it.id] = it.id
+			}
+		}
+	}
+	return out
+}
+
+// repoTokens splits a repository's id into its elements, outermost first:
+// host_owner_name → [host owner name] (gitlab subgroups give more), and a
+// path_ id → the directories of its path (taken from dir when known, since
+// "_" in the id is ambiguous). The short name is always the last element.
+func repoTokens(id, name, dir string) []string {
+	var toks []string
+	if rest, ok := strings.CutPrefix(id, "path_"); ok {
+		if dir != "" {
+			toks = strings.Split(strings.Trim(filepath.ToSlash(filepath.Clean(dir)), "/"), "/")
+		} else {
+			toks = strings.Split(rest, "_")
+		}
+	} else if pre, ok := strings.CutSuffix(id, "_"+name); ok && name != "" {
+		toks = append(strings.Split(pre, "_"), name)
+	} else {
+		toks = strings.Split(id, "_")
+	}
+	if len(toks) == 0 || toks[len(toks)-1] != name {
+		toks = append(toks, name)
+	}
+	return toks
 }
 
 // ---- grouping ----
@@ -186,9 +310,13 @@ func (m *model) repoHeading(s *state.Session, cw int) string {
 	if cur := m.curRepo(); cur != nil && repoKeyOf(s) != "" && (cur.ID == s.RepoID || cur.Dir == s.RepoDir) {
 		mark, role = th.FG(theme.Secondary, fit(m.ic.Current, 1)), theme.Text
 	}
-	name := s.Repo
-	if name == "" {
-		name = filepath.Base(s.RepoDir)
+	name := shortRepoName(s.Repo, s.RepoDir)
+	if r := m.sessionRepo(s); r != nil {
+		name = m.repoName(r)
+	}
+	// a long name gives way, keeping the marker and at least one rule cell
+	if w(name) > cw-4 {
+		name = fit(name, max(cw-4, 1))
 	}
 	head := mark + " " + th.FG(role, name) + " "
 	return head + th.FG(theme.Border, strings.Repeat("─", max(cw-w(head), 0)))
@@ -213,12 +341,12 @@ func (m *model) chooseRepo(r daemon.KnownRepo) tea.Cmd {
 	for _, s := range m.sessions {
 		if s.RepoID == r.ID && s.State != state.Landed {
 			m.focus = pSessions
-			return tea.Batch(m.selectSlug(s.Slug), infoMsgCmd("repository "+r.Name))
+			return tea.Batch(m.selectSlug(s.Slug), infoMsgCmd("repository "+m.repoName(&r)))
 		}
 	}
 	rr := r
 	m.chosen = &rr
-	return infoMsgCmd("repository " + r.Name + " · n new session")
+	return infoMsgCmd("repository " + m.repoName(&r) + " · n new session")
 }
 
 func infoMsgCmd(s string) tea.Cmd { return func() tea.Msg { return infoMsg(s) } }
@@ -320,7 +448,7 @@ func (p *repoPicker) view() []string {
 		}
 		nameW := clampi(cw/3, 8, 24)
 		countW := 12
-		l := mark + " " + th.FG(nameRole, fit(r.Name, nameW)) + " " + th.FG(theme.Dim, fit(count, countW)) + " " + th.FG(theme.Dim, fit(where, max(cw-nameW-countW-4, 1)))
+		l := mark + " " + th.FG(nameRole, fit(m.repoName(&r), nameW)) + " " + th.FG(theme.Dim, fit(count, countW)) + " " + th.FG(theme.Dim, fit(where, max(cw-nameW-countW-4, 1)))
 		if i == p.sel {
 			l = th.SelectStyle().Render(fit(l, cw))
 		}
@@ -347,7 +475,7 @@ func (p *repoPicker) key(k tea.KeyMsg) tea.Cmd {
 		}
 		r := rs[p.sel]
 		if r.Dir == "" {
-			m.setMsg(r.Name+": path unknown · run boba inside it once", true)
+			m.setMsg(m.repoName(&r)+": path unknown · run boba inside it once", true)
 			return nil
 		}
 		cmd := m.chooseRepo(r)
