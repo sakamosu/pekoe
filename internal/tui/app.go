@@ -146,6 +146,7 @@ type model struct {
 	sentImages map[int64]bool // pick screenshots already transmitted
 
 	tapi     *tapiState // the mascot (tapi.go)
+	order    ptyOrder   // keys reach the ptys in the order typed (order.go)
 	spinning bool       // the 80 ms spinner tick is scheduled
 }
 
@@ -784,12 +785,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.typing && m.modal == nil {
 			if s := m.current(); s != nil {
 				slug, win, name := s.Slug, m.window, msg.name
-				return m, func() tea.Msg {
-					if err := m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{name}}, nil); err != nil {
-						return errMsg{err}
-					}
-					return nil
-				}
+				return m, m.inOrder(func() error {
+					return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{name}}, nil)
+				})
 			}
 		}
 		return m, nil
@@ -1553,21 +1551,17 @@ func (m *model) forward(k tea.KeyMsg) tea.Cmd {
 	}
 	f := toTmux(k)
 	slug, win := s.Slug, m.window
-	return func() tea.Msg {
-		var err error
+	return m.inOrder(func() error { // keys reach the pty in the order typed (order.go)
 		switch {
 		case f.paste != "":
-			err = m.cl.Call("session.send", map[string]any{"slug": slug, "window": win, "text": f.paste}, nil)
+			return m.cl.Call("session.send", map[string]any{"slug": slug, "window": win, "text": f.paste}, nil)
 		case f.literal != "":
-			err = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "literal": f.literal}, nil)
+			return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "literal": f.literal}, nil)
 		case len(f.keys) > 0:
-			err = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": f.keys}, nil)
-		}
-		if err != nil {
-			return errMsg{err}
+			return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": f.keys}, nil)
 		}
 		return nil
-	}
+	})
 }
 
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
@@ -1647,10 +1641,10 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			s := m.current()
 			if s != nil && m.screen.AltScreen {
 				slug := s.Slug
-				return func() tea.Msg {
+				return m.inOrder(func() error {
 					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "keys": []string{k}}, nil)
 					return nil
-				}
+				})
 			}
 		}
 		return nil
@@ -1661,10 +1655,10 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	slug, win := s.Slug, m.window
-	return func() tea.Msg {
+	return m.inOrder(func() error {
 		_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "hex": hex}, nil)
 		return nil
-	}
+	})
 }
 
 // ---- attention queue / review queue ----
