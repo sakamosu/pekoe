@@ -249,7 +249,7 @@ function renderTarget(s) {
 }
 
 // ---- the agent screen, with its colors ----
-// bobad sends each line as runs {t, fg, bg, b, d, i, u, s} (webscreen.go).
+// bobad sends each line as runs {t, fg, bg, b, d, i, u, s} (internal/termstyle).
 // The text goes in with textContent; a color is a theme role (a class from
 // this fixed list) or #rrggbb, checked here and set through CSSOM.
 

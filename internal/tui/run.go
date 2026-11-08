@@ -4,12 +4,12 @@ package tui
 // run, run in the session's worktree in a pty of its own — so a confirmation
 // prompt or a password can be answered — then back to the agent, optionally
 // telling it how the command ended. Not a resident shell: one command, then
-// the window is closed.
+// the window is closed. The daemon keeps the command and its exit (RunState,
+// Session.Run); the TUI keeps nothing of it.
 
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,6 +17,7 @@ import (
 
 	"boba/internal/daemon"
 	"boba/internal/engine"
+	"boba/internal/termstyle"
 	"boba/internal/theme"
 )
 
@@ -31,6 +32,14 @@ type runPromptMsg struct {
 type runStartedMsg struct {
 	slug string
 	st   daemon.RunState
+}
+
+// runClosedMsg: run.close answered; ask is set when closed with ↵ (tell
+// the agent?), not with x / Esc.
+type runClosedMsg struct {
+	slug string
+	st   daemon.RunState
+	ask  bool
 }
 
 // openRun is `!`: show the session's run window when one is open, otherwise
@@ -70,10 +79,6 @@ func (m *model) onRunPrompt(msg runPromptMsg) tea.Cmd {
 }
 
 func (m *model) startRun(slug, command string) tea.Cmd {
-	if m.runs == nil {
-		m.runs = map[string]string{}
-	}
-	m.runs[slug] = command
 	aw, ah := m.agentSize()
 	return func() tea.Msg {
 		var st daemon.RunState
@@ -90,6 +95,9 @@ func (m *model) onRunStarted(msg runStartedMsg) tea.Cmd {
 	}
 	if !msg.st.Started && !msg.st.Running && !msg.st.Finished {
 		return nil
+	}
+	if !msg.st.Started { // someone else's run was open: that one is shown
+		m.setMsg("a run is already open: "+oneLine(msg.st.Command), false)
 	}
 	return m.showRun()
 }
@@ -115,78 +123,83 @@ func (m *model) runDone() bool {
 // finishRun closes a finished run window (↵): back to the agent, which is
 // asked whether to tell the agent how the command ended.
 func (m *model) finishRun() tea.Cmd {
+	m.focus = pAgent
+	return m.closeRun(true)
+}
+
+// closeRun closes the run window and shows the agent again. Its dead screen
+// must not stay as the agent's: ↵ on it would restart the agent.
+func (m *model) closeRun(ask bool) tea.Cmd {
 	s := m.current()
 	if s == nil {
 		return nil
 	}
 	slug := s.Slug
-	cmd := m.runs[slug]
-	code := -1
-	if m.screen != nil {
-		code = m.screen.ExitStatus
-		if cmd == "" {
-			cmd = runCommandOnScreen(m.screen)
-		}
-	}
-	delete(m.runs, slug)
 	m.window = engine.WinAgent
 	m.screen = nil
-	m.focus = pAgent
 	m.typing = false
-	m.modal = &runReportModal{m: m, slug: slug, text: runReport(cmd, code)}
-	return tea.Batch(m.act("window.kill", map[string]any{"slug": slug, "window": engine.WinRun}, ""), m.fetchScreen())
+	return tea.Batch(func() tea.Msg {
+		var st daemon.RunState
+		if err := m.cl.Call("run.close", map[string]any{"slug": slug}, &st); err != nil {
+			return errMsg{err}
+		}
+		return runClosedMsg{slug: slug, st: st, ask: ask}
+	}, m.fetchScreen())
+}
+
+func (m *model) onRunClosed(msg runClosedMsg) tea.Cmd {
+	if !msg.ask || m.modal != nil {
+		return nil
+	}
+	if s := m.current(); s == nil || s.Slug != msg.slug {
+		return nil
+	}
+	m.modal = &runReportModal{m: m, slug: msg.slug, text: runReport(msg.st)}
+	return nil
+}
+
+// oneLine shows a (pasted, multi-line) command on one line.
+func oneLine(cmd string) string {
+	return strings.ReplaceAll(strings.TrimSpace(cmd), "\n", " ⏎ ")
 }
 
 // runReport is the line sent to the agent after a run.
-func runReport(cmd string, code int) string {
+func runReport(st daemon.RunState) string {
 	what := "頼まれたコマンド"
-	if cmd != "" {
-		what = "`" + cmd + "`"
+	if st.Command != "" {
+		what = "`" + oneLine(st.Command) + "`"
 	}
-	if code < 0 {
-		return what + " を実行しました"
+	switch {
+	case st.Signal != "":
+		return fmt.Sprintf("%s を実行しましたが、中断されました(%s)", what, st.Signal)
+	case st.Running:
+		return what + " を実行中に閉じました"
+	case st.ExitStatus >= 0:
+		return fmt.Sprintf("%s を実行しました(exit %d)", what, st.ExitStatus)
 	}
-	return fmt.Sprintf("%s を実行しました(exit %d)", what, code)
-}
-
-// runCommandOnScreen recovers the command from the "$ cmd" line the run
-// window starts with (the TUI was restarted meanwhile).
-func runCommandOnScreen(sc *engine.Screen) string {
-	if sc.History > 0 {
-		return ""
-	}
-	for _, l := range sc.Lines {
-		l = strings.TrimSpace(ansi.Strip(l))
-		if l == "" {
-			continue
-		}
-		if c, ok := strings.CutPrefix(l, "$ "); ok {
-			return strings.TrimSpace(c)
-		}
-		return ""
-	}
-	return ""
+	return what + " を実行しました(終了コード不明)"
 }
 
 // runExitLine is drawn under a finished run's output.
 func (m *model) runExitLine() string {
 	th := m.th
-	code := -1
-	if m.screen != nil {
-		code = m.screen.ExitStatus
-	}
 	status := th.FG(theme.Dim, "exited")
-	switch {
-	case code == 0:
-		status = th.FG(theme.Ok, "exit 0")
-	case code > 0:
-		status = th.FG(theme.Err, "exit "+strconv.Itoa(code))
+	if sc := m.screen; sc != nil {
+		switch {
+		case sc.Signal != "":
+			status = th.FG(theme.Warn, "interrupted ("+sc.Signal+")")
+		case sc.ExitStatus == 0:
+			status = th.FG(theme.Ok, "exit 0")
+		case sc.ExitStatus > 0:
+			status = th.FG(theme.Err, fmt.Sprintf("exit %d", sc.ExitStatus))
+		}
 	}
 	return status + th.FG(theme.Dim, " · ") + th.Bold(theme.Secondary, "↵") + th.FG(theme.Dim, " back to the agent  ") + th.Bold(theme.Secondary, "x") + th.FG(theme.Dim, " close")
 }
 
 // dropPaneDead removes tmux's "Pane is dead (status N, <date>)" line (and
 // the blank rows before it): the run window says how it ended itself.
+// (bobad turns the line off; tmux before 3.3 still writes it.)
 func dropPaneDead(lines []string) []string {
 	for i := len(lines) - 1; i >= 0; i-- {
 		l := strings.TrimSpace(ansi.Strip(lines[i]))
@@ -210,6 +223,7 @@ type runModal struct {
 	m    *model
 	slug string
 	in   *input
+	sent bool // ↵ pressed: a second ↵ before the modal closes runs nothing
 }
 
 func newRunModal(m *model, slug, suggest string) *runModal {
@@ -224,12 +238,17 @@ func (r *runModal) hints() [][2]string {
 
 func (r *runModal) view() []string {
 	th := r.m.th
-	lines := []string{"", th.FG(theme.Secondary, "$ ") + r.in.render(th, true), "",
+	// a pasted multi-line command keeps its newlines; ⏎ marks them here
+	field := strings.ReplaceAll(r.in.render(th, true), "\n", "⏎")
+	lines := []string{"", th.FG(theme.Secondary, "$ ") + field, "",
 		th.FG(theme.Dim, "runs once in the worktree with the dev server's env; answer prompts in the window")}
 	return r.m.modalFrame(r.m.modalWidth(min(r.m.width*70/100, 100)), th.Bold(theme.Primary, "Run "+r.slug), lines, r.hints(), false)
 }
 
 func (r *runModal) key(k tea.KeyMsg) tea.Cmd {
+	if r.sent {
+		return nil
+	}
 	switch k.String() {
 	case "esc":
 		return done(nil)
@@ -238,10 +257,14 @@ func (r *runModal) key(k tea.KeyMsg) tea.Cmd {
 		if cmd == "" {
 			return done(nil)
 		}
+		r.sent = true
 		return done(r.m.startRun(r.slug, cmd))
 	}
-	if k.Paste { // one line: a pasted newline would run half of it
-		k.Runes = []rune(strings.Join(strings.Fields(strings.ReplaceAll(string(k.Runes), "\n", " ")), " "))
+	if k.Paste {
+		// the shell gets the lines as pasted (continuations, quoting and
+		// all); only the line ending is normalised and a final one dropped
+		t := strings.ReplaceAll(string(k.Runes), "\r\n", "\n")
+		k.Runes = []rune(strings.TrimRight(strings.ReplaceAll(t, "\r", "\n"), "\n"))
 	}
 	r.in.key(k)
 	return nil
@@ -249,6 +272,8 @@ func (r *runModal) key(k tea.KeyMsg) tea.Cmd {
 
 // ---- "tell the agent?" after a run ----
 
+// runReportModal takes y / n only: ↵ answering the command's last prompt
+// must not also send the report.
 type runReportModal struct {
 	m    *model
 	slug string
@@ -269,7 +294,7 @@ func (r *runReportModal) view() []string {
 func (r *runReportModal) key(k tea.KeyMsg) tea.Cmd {
 	m := r.m
 	switch k.String() {
-	case "y", "enter":
+	case "y":
 		m.typing = true
 		return done(m.act("session.send", map[string]any{"slug": r.slug, "text": r.text, "submit": true}, "told the agent"))
 	case "n", "esc":
@@ -282,24 +307,29 @@ func (r *runReportModal) key(k tea.KeyMsg) tea.Cmd {
 // ---- the suggestion ----
 
 var (
-	// "! cmd": Claude Code's way of handing the user a command for its shell mode
-	bangRe = regexp.MustCompile("(?:^|[\\s`(「:：])! ?([^\\s!`」][^`」]*)")
+	// "! cmd" (Claude Code's way of handing the user a command for its shell
+	// mode) or "`!cmd`". The space keeps != and !ok out.
+	bangRe = regexp.MustCompile("(?:^|[\\s(「:：])! ([^`」]+)|`! ?([^`\\s][^`]*)`")
 	tickRe = regexp.MustCompile("`([^`]+)`")
 	// what a command line starts with (not a bullet, box line or prose symbol)
 	cmdStartRe = regexp.MustCompile(`^[A-Za-z0-9_./~$-]`)
+	urlRe      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://`)
 )
 
 // runSuggest picks the command the agent's screen most likely asks the user
-// to run: the last "! cmd", else the last inline code or code-block line.
-// Loose on purpose; the user edits it before it runs.
+// to run: the last "! cmd", else the bottom-most inline code with arguments,
+// code-block line or "$ " line. Loose on purpose; the user edits it before
+// it runs.
 func runSuggest(lines []string) string {
 	plain := make([]string, len(lines))
 	for i, l := range lines {
 		plain[i] = ansi.Strip(l)
 	}
 	for i := len(plain) - 1; i >= 0; i-- {
-		if ms := bangRe.FindAllStringSubmatch(plain[i], -1); ms != nil {
-			if c := cleanCmd(ms[len(ms)-1][1]); c != "" {
+		ms := bangRe.FindAllStringSubmatch(plain[i], -1)
+		for k := len(ms) - 1; k >= 0; k-- {
+			c := cleanCmd(ms[k][1] + ms[k][2])
+			if cmdStartRe.MatchString(c) && !urlRe.MatchString(c) && !strings.HasPrefix(c, "for bash mode") {
 				return c
 			}
 		}
@@ -307,18 +337,21 @@ func runSuggest(lines []string) string {
 	fence := fencedLines(plain)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if fence[i] {
-			if c := cleanCmd(plain[i]); c != "" && cmdStartRe.MatchString(c) {
+			if c := cleanCmd(plain[i]); cmdStartRe.MatchString(c) && !urlRe.MatchString(c) {
 				return c
 			}
 			continue
 		}
-		if ms := tickRe.FindAllStringSubmatch(plain[i], -1); ms != nil {
-			if c := cleanCmd(ms[len(ms)-1][1]); c != "" {
+		ms := tickRe.FindAllStringSubmatch(plain[i], -1)
+		for k := len(ms) - 1; k >= 0; k-- {
+			if c := cleanCmd(ms[k][1]); commandLike(c) {
 				return c
 			}
 		}
-		if c, ok := strings.CutPrefix(strings.TrimSpace(plain[i]), "$ "); ok && cleanCmd(c) != "" {
-			return cleanCmd(c)
+		if c, ok := strings.CutPrefix(strings.TrimSpace(plain[i]), "$ "); ok {
+			if c = cleanCmd(c); cmdStartRe.MatchString(c) {
+				return c
+			}
 		}
 		if c := codeSpan(lines[i]); c != "" {
 			return c
@@ -327,9 +360,23 @@ func runSuggest(lines []string) string {
 	return ""
 }
 
-// fencedLines marks the lines between ``` fences.
+// commandLike: a command with arguments (one word is more often a file
+// name than a command), not a bare URL (a URL argument is fine).
+func commandLike(c string) bool {
+	return strings.Contains(c, " ") && cmdStartRe.MatchString(c) && !urlRe.MatchString(c)
+}
+
+// fencedLines marks the lines between ``` fences. With an odd number of
+// fences on screen the opening one has scrolled off the top, so the screen
+// starts inside a block.
 func fencedLines(plain []string) []bool {
-	in := false
+	n := 0
+	for _, l := range plain {
+		if strings.HasPrefix(strings.TrimSpace(l), "```") {
+			n++
+		}
+	}
+	in := n%2 == 1
 	out := make([]bool, len(plain))
 	for i, l := range plain {
 		if strings.HasPrefix(strings.TrimSpace(l), "```") {
@@ -352,130 +399,46 @@ func cleanCmd(s string) string {
 // line drawn entirely in colour (a code block). It keeps the last one that
 // reads like a command with arguments.
 func codeSpan(line string) string {
-	segs := sgrSegments(line)
+	segs := termstyle.Line(line)
 	plainText := false
 	for _, sg := range segs {
-		if sg.fg == "" && strings.TrimSpace(sg.text) != "" {
+		if sg.Fg == "" && strings.TrimSpace(sg.Text) != "" {
 			plainText = true
 		}
 	}
-	// merge neighbouring coloured segments (syntax highlighting splits a command)
-	var runs []string
+	if !plainText {
+		// a whole coloured line: only an indented code-block line counts;
+		// its text is whole (the spaces between highlighted tokens are
+		// uncoloured)
+		full := ansi.Strip(line)
+		if len(segs) == 0 || !strings.HasPrefix(full, "  ") {
+			return ""
+		}
+		if c := cleanCmd(full); commandLike(c) {
+			return c
+		}
+		return ""
+	}
+	// neighbouring coloured runs make one span (syntax highlighting)
+	var spans []string
 	cur := ""
 	for _, sg := range segs {
-		if sg.fg == "" {
+		if sg.Fg == "" {
 			if cur != "" {
-				runs = append(runs, cur)
+				spans = append(spans, cur)
 				cur = ""
 			}
 			continue
 		}
-		cur += sg.text
+		cur += sg.Text
 	}
 	if cur != "" {
-		runs = append(runs, cur)
+		spans = append(spans, cur)
 	}
-	if !plainText {
-		// a whole coloured line: only an indented code-block line counts
-		full := ansi.Strip(line)
-		if !strings.HasPrefix(full, "  ") || len(runs) == 0 {
-			return ""
-		}
-		runs = []string{full} // spaces between highlighted tokens are uncoloured
-	}
-	for i := len(runs) - 1; i >= 0; i-- {
-		c := cleanCmd(runs[i])
-		if strings.Contains(c, " ") && cmdStartRe.MatchString(c) && !strings.Contains(c, "://") {
+	for i := len(spans) - 1; i >= 0; i-- {
+		if c := cleanCmd(spans[i]); commandLike(c) {
 			return c
 		}
 	}
 	return ""
-}
-
-type sgrSeg struct {
-	fg   string // "" = default foreground
-	text string
-}
-
-// sgrSegments splits an ANSI line into runs of one foreground colour.
-func sgrSegments(line string) []sgrSeg {
-	var out []sgrSeg
-	fg := ""
-	var b strings.Builder
-	flush := func() {
-		if b.Len() > 0 {
-			out = append(out, sgrSeg{fg: fg, text: b.String()})
-			b.Reset()
-		}
-	}
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		if c != 0x1b || i+1 >= len(line) {
-			b.WriteByte(c)
-			continue
-		}
-		switch line[i+1] {
-		case '[':
-			j := i + 2
-			for j < len(line) && (line[j] < 0x40 || line[j] > 0x7e) {
-				j++
-			}
-			if j >= len(line) {
-				i = len(line)
-				continue
-			}
-			if line[j] == 'm' {
-				nfg := applySGR(fg, line[i+2:j])
-				if nfg != fg {
-					flush()
-					fg = nfg
-				}
-			}
-			i = j
-		case ']': // OSC (hyperlinks): up to BEL or ST
-			j := i + 2
-			for j < len(line) && line[j] != 0x07 && !(line[j] == 0x1b && j+1 < len(line) && line[j+1] == '\\') {
-				j++
-			}
-			if j < len(line) && line[j] == 0x1b {
-				j++
-			}
-			i = j
-		default:
-			i++
-		}
-	}
-	flush()
-	return out
-}
-
-func applySGR(fg, params string) string {
-	if params == "" {
-		return ""
-	}
-	ps := strings.Split(params, ";")
-	for k := 0; k < len(ps); k++ {
-		n, _ := strconv.Atoi(ps[k])
-		switch {
-		case n == 0 || n == 39:
-			fg = ""
-		case n >= 30 && n <= 37, n >= 90 && n <= 97:
-			fg = ps[k]
-		case n == 38 && k+1 < len(ps):
-			if ps[k+1] == "5" && k+2 < len(ps) {
-				fg = "5;" + ps[k+2]
-				k += 2
-			} else if ps[k+1] == "2" && k+4 < len(ps) {
-				fg = "2;" + strings.Join(ps[k+2:k+5], ";")
-				k += 4
-			}
-		case n == 48 && k+1 < len(ps): // background: skip its arguments
-			if ps[k+1] == "5" {
-				k += 2
-			} else if ps[k+1] == "2" {
-				k += 4
-			}
-		}
-	}
-	return fg
 }

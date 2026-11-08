@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"boba/internal/daemon"
 	"boba/internal/engine"
 	"boba/internal/state"
 )
@@ -48,15 +49,18 @@ func TestRunSuggest(t *testing.T) {
 }
 
 func TestRunReport(t *testing.T) {
-	if got := runReport("make install", 2); got != "`make install` を実行しました(exit 2)" {
-		t.Fatal(got)
-	}
-	if got := runReport("", -1); got != "頼まれたコマンド を実行しました" {
-		t.Fatal(got)
-	}
-	sc := &engine.Screen{Lines: []string{"\x1b[2m$ gh auth login\x1b[0m", "? Where do you use GitHub?"}}
-	if got := runCommandOnScreen(sc); got != "gh auth login" {
-		t.Fatalf("command from the screen: %q", got)
+	for _, c := range []struct {
+		st   daemon.RunState
+		want string
+	}{
+		{daemon.RunState{Finished: true, Command: "make install", ExitStatus: 2}, "`make install` を実行しました(exit 2)"},
+		{daemon.RunState{Finished: true, Command: "sleep 100", ExitStatus: -1, Signal: "SIGINT"}, "`sleep 100` を実行しましたが、中断されました(SIGINT)"},
+		{daemon.RunState{Finished: true, Command: "npm login\nnpm publish", ExitStatus: 0}, "`npm login ⏎ npm publish` を実行しました(exit 0)"},
+		{daemon.RunState{ExitStatus: -1}, "頼まれたコマンド を実行しました(終了コード不明)"},
+	} {
+		if got := runReport(c.st); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.st, got, c.want)
+		}
 	}
 }
 
@@ -79,6 +83,7 @@ func runModel(t *testing.T) (*model, *fakeBobad, *runReplies) {
 type runReplies struct {
 	mu    sync.Mutex
 	run   map[string]any // run.start answer
+	close map[string]any // run.close answer
 	agent []string       // the agent's screen
 	runSc *engine.Screen // the run window's screen
 }
@@ -89,6 +94,8 @@ func (r *runReplies) reply(method string) any {
 	switch method {
 	case "run.start":
 		return r.run
+	case "run.close":
+		return r.close
 	case "session.screen":
 		if r.runSc != nil {
 			return r.runSc
@@ -130,7 +137,8 @@ func TestRunWindowFlow(t *testing.T) {
 		m.onKey(key(string(r)))
 	}
 	rr.mu.Lock()
-	rr.run = map[string]any{"running": true, "started": true}
+	rr.run = map[string]any{"running": true, "started": true, "command": "read -p ok x", "exit_status": -1}
+	m.sessions[0].Run = "read -p ok x" // session.updated from bobad
 	rr.runSc = &engine.Screen{Lines: []string{"$ read -p ok x", "ok"}, Width: 100, Height: 30}
 	rr.mu.Unlock()
 	runCmd(m, m.onKey(key("enter")))
@@ -158,10 +166,11 @@ func TestRunWindowFlow(t *testing.T) {
 	}
 	rr.mu.Lock()
 	rr.runSc = nil
+	rr.close = map[string]any{"finished": true, "command": "read -p ok x", "exit_status": 3}
 	rr.mu.Unlock()
 	runCmd(m, m.onKey(key("enter")))
-	if wk := f.find("window.kill"); len(wk) != 1 || wk[0]["window"] != engine.WinRun {
-		t.Fatalf("window.kill: %v", wk)
+	if rc := f.find("run.close"); len(rc) != 1 || rc[0]["slug"] != "api-1" {
+		t.Fatalf("run.close: %v", rc)
 	}
 	if m.window != engine.WinAgent {
 		t.Fatalf("back to %s", m.window)
@@ -186,8 +195,8 @@ func TestRunWindowFlow(t *testing.T) {
 }
 
 func TestRunDeclineReport(t *testing.T) {
-	m, f, _ := runModel(t)
-	m.runs = map[string]string{"api-1": "ls"}
+	m, f, rr := runModel(t)
+	rr.close = map[string]any{"finished": true, "command": "ls", "exit_status": 0}
 	m.window, m.focus, m.typing = engine.WinRun, pAgent, true
 	m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ ls"}, Dead: true, ExitStatus: 0, Width: 100, Height: 30}, "api-1"
 	runCmd(m, m.onKey(key("enter")))
@@ -215,5 +224,139 @@ func TestRunBangShowsExisting(t *testing.T) {
 		if m.window != engine.WinAgent {
 			t.Fatalf("v: %s", m.window)
 		}
+	}
+}
+
+// review #52: closing a finished run with x / Esc must not leave its dead
+// screen as the agent's (Enter would then restart the running agent).
+func TestRunEscDoesNotRestartAgent(t *testing.T) {
+	for _, k := range []string{"esc", "x"} {
+		m, f, _ := runModel(t)
+		m.window, m.focus, m.typing = engine.WinRun, pAgent, true
+		m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ ls"}, Dead: true, Width: 100, Height: 30}, "api-1"
+		runCmd(m, m.onKey(key(k)))
+		if m.window != engine.WinAgent || (m.screen != nil && m.screen.Dead) {
+			t.Fatalf("%s: window %s, dead screen kept %v", k, m.window, m.screen)
+		}
+		m.focus = pAgent
+		runCmd(m, m.onKey(key("enter")))
+		if r := f.find("session.restart"); len(r) != 0 {
+			t.Fatalf("%s then enter restarted the agent: %v", k, r)
+		}
+	}
+}
+
+// review #52: "x close" on a finished run closes the run, not the session.
+func TestRunXClosesRunNotSession(t *testing.T) {
+	for _, focus := range []int{pAgent, pSessions} {
+		m, f, _ := runModel(t)
+		m.window, m.focus, m.typing = engine.WinRun, focus, false
+		m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ ls"}, Dead: true, Width: 100, Height: 30}, "api-1"
+		runCmd(m, m.onKey(key("x")))
+		if k := f.find("session.kill"); len(k) != 0 || m.modal != nil {
+			t.Fatalf("focus %d: x ended the session: %v %T", focus, k, m.modal)
+		}
+		if m.window != engine.WinAgent {
+			t.Fatalf("focus %d: run not closed: %s", focus, m.window)
+		}
+	}
+}
+
+// review #52: Enter answering the command's prompts must not also send the
+// report: the report modal takes y / n only.
+func TestRunEnterDoesNotSendReport(t *testing.T) {
+	m, f, _ := runModel(t)
+	m.window, m.focus, m.typing = engine.WinRun, pAgent, true
+	m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ ls"}, Dead: true, Width: 100, Height: 30}, "api-1"
+	runCmd(m, m.onKey(key("enter")))
+	runCmd(m, m.onKey(key("enter")))
+	runCmd(m, m.onKey(key("enter")))
+	if s := f.find("session.send"); len(s) != 0 {
+		t.Fatalf("sent without y: %v", s)
+	}
+}
+
+// review #52: a failed session's finished run is still the run window.
+func TestRunOnFailedSessionShowsRun(t *testing.T) {
+	m, _, _ := runModel(t)
+	m.sessions[0].State = state.Failed
+	m.sessions[0].Error = "setup failed: exit 1"
+	m.window, m.focus, m.typing = engine.WinRun, pAgent, true
+	m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ make setup", "done"}, Dead: true, Width: 100, Height: 30}, "api-1"
+	if out := ansi.Strip(m.View()); strings.Contains(out, "setup failed") || !strings.Contains(out, "back to the agent") {
+		t.Fatalf("failed session's run:\n%s", out)
+	}
+}
+
+// review #52: what the suggestion must not pick, and must not miss.
+func TestRunSuggestReview(t *testing.T) {
+	cases := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"!= is not a bang", []string{"  if err != nil {", "`sudo make install` を実行してください"}, "sudo make install"},
+		{"!ok is not a bang", []string{"  return !ok", "run `make test`"}, "make test"},
+		{"Claude Code's shortcut list", []string{"  ! for bash mode    / for commands", "> "}, ""},
+		{"one-word inline code is a file", []string{"`gh auth login` を実行して", "`main.go` を直しました"}, "gh auth login"},
+		{"fence opened off screen", []string{"$ brew install tmux", "```", "done", "> "}, "brew install tmux"},
+		{"url argument", []string{"⏺ Run " + "\x1b[38;2;177;185;249m" + "curl -fsSL https://example.com/install.sh | sh" + "\x1b[39m" + " to install."}, "curl -fsSL https://example.com/install.sh | sh"},
+		{"url argument in backticks", []string{"then `git clone https://github.com/a/b` please"}, "git clone https://github.com/a/b"},
+		{"a bare url is not a command", []string{"open `https://example.com/x y`"}, ""},
+		{"underline colour is not a text colour", []string{"please \x1b[58;2;0;0;35mrun this now\x1b[59m ok"}, ""},
+		{"colon-form underline keeps the code span", []string{"⏺ Run \x1b[4:3m\x1b[38;2;177;185;249mgh auth refresh -s repo\x1b[39m\x1b[4:0m to fix it."}, "gh auth refresh -s repo"},
+	}
+	for _, c := range cases {
+		if got := runSuggest(c.lines); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// review #52: a pasted multi-line command reaches the shell as pasted.
+func TestRunPasteKeepsLines(t *testing.T) {
+	m, f, rr := runModel(t)
+	rr.run = map[string]any{}
+	runCmd(m, m.onKey(key("!")))
+	m.onKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	paste := "docker run \\\r\n  -it ubuntu \\\r\n  sh -c 'echo  a'\r\nnpm publish\n"
+	m.onKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(paste), Paste: true})
+	if out := checkSize(t, m, "pasted"); !strings.Contains(out, "⏎") {
+		t.Fatalf("newlines not marked:\n%s", out)
+	}
+	runCmd(m, m.onKey(key("enter")))
+	runCmd(m, m.onKey(key("enter"))) // twice, before the modal is gone
+	rs := f.find("run.start")
+	want := "docker run \\\n  -it ubuntu \\\n  sh -c 'echo  a'\nnpm publish"
+	if len(rs) != 2 || rs[1]["command"] != want {
+		t.Fatalf("run.start: %q", rs)
+	}
+}
+
+// review #52: another TUI's run is open: show it, named as bobad names it.
+func TestRunShowsOtherRunsCommand(t *testing.T) {
+	m, _, rr := runModel(t)
+	rr.run = map[string]any{}
+	runCmd(m, m.onKey(key("!")))
+	rr.mu.Lock()
+	rr.run = map[string]any{"running": true, "command": "make deploy", "exit_status": -1}
+	rr.mu.Unlock()
+	m.sessions[0].Run = "make deploy"
+	runCmd(m, m.onKey(key("enter")))
+	out := ansi.Strip(m.View())
+	if m.window != engine.WinRun || !strings.Contains(out, "$ make deploy") || strings.Contains(out, "$ gh auth login ·") {
+		t.Fatalf("header:\n%s", out)
+	}
+	if !strings.Contains(m.msg, "make deploy") {
+		t.Fatalf("msg: %q", m.msg)
+	}
+}
+
+func TestRunInterruptedLine(t *testing.T) {
+	m, _, _ := runModel(t)
+	m.window, m.focus, m.typing = engine.WinRun, pAgent, true
+	m.screen, m.screenOf = &engine.Screen{Lines: []string{"$ sleep 100", "^C"}, Dead: true, ExitStatus: -1, Signal: "SIGINT", Width: 100, Height: 30}, "api-1"
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "interrupted (SIGINT) · ↵ back to the agent") {
+		t.Fatalf("interrupted:\n%s", out)
 	}
 }

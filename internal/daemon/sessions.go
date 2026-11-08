@@ -1283,7 +1283,7 @@ func (d *Daemon) restore() {
 			})
 			continue
 		}
-		hasAgent := false
+		hasAgent, hasRun := false, false
 		for _, w := range alive[s.Slug] {
 			if w == engine.WinAgent {
 				hasAgent = true
@@ -1291,6 +1291,12 @@ func (d *Daemon) restore() {
 			if w == engine.WinDev {
 				s.Dev = true
 			}
+			if w == engine.WinRun {
+				hasRun = true
+			}
+		}
+		if s.Run != "" && !hasRun { // the tmux server went away with it
+			d.update(s.Slug, func(x *state.Session) { x.Run = "" })
 		}
 		if hasAgent || s.Stopped {
 			continue

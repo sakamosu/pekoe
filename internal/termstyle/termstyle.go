@@ -1,10 +1,10 @@
-package daemon
-
-// The agent screen for the phone, with its colors: capture-pane -e lines
-// parsed into runs of text and style. Nothing here is HTML: the page puts
-// each run's text in with textContent and its colors through classes (a
-// theme role) or a CSSOM color (#rrggbb, built here from numbers), so the
-// agent's output cannot become markup.
+// Package termstyle parses capture-pane -e lines into runs of text and
+// style. bobad uses it for the phone's agent screen (web.go): nothing here
+// is HTML, the page puts each run's text in with textContent and its colors
+// through classes (a theme role) or a CSSOM color (#rrggbb, built here from
+// numbers), so the agent's output cannot become markup. The TUI uses it to
+// find code drawn in a colour of its own (run.go).
+package termstyle
 
 import (
 	"fmt"
@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 )
 
-// webRun is a stretch of one line in one style. Fg and Bg are a theme role
+// Run is a stretch of one line in one style. Fg and Bg are a theme role
 // ("err", "ok", …: the page's CSS variables, so the user's theme applies)
 // or "#rrggbb" (256-color and truecolor); empty is the default.
-type webRun struct {
+type Run struct {
 	Text      string `json:"t"`
 	Fg        string `json:"fg,omitempty"`
 	Bg        string `json:"bg,omitempty"`
@@ -36,15 +36,15 @@ var ansiRoles = [16]string{
 	"dim", "err", "ok", "warn", "primary-end", "primary", "secondary", "text",
 }
 
-// webColorRoles are the role names a run may carry (the page allows only
+// ColorRoles are the role names a run may carry (the web page allows only
 // these as classes: app.js TERM_ROLES).
-var webColorRoles = map[string]bool{}
+var ColorRoles = map[string]bool{}
 
 func init() {
 	for _, r := range ansiRoles {
-		webColorRoles[r] = true
+		ColorRoles[r] = true
 	}
-	webColorRoles["bg"] = true
+	ColorRoles["bg"] = true
 }
 
 type sgrState struct {
@@ -52,7 +52,7 @@ type sgrState struct {
 	bold, faint, italic, under, strike, rever bool
 }
 
-func (s sgrState) run(text string) webRun {
+func (s sgrState) run(text string) Run {
 	fg, bg := s.fg, s.bg
 	if s.rever {
 		fg, bg = bg, fg
@@ -63,7 +63,7 @@ func (s sgrState) run(text string) webRun {
 			bg = "text"
 		}
 	}
-	return webRun{Text: text, Fg: fg, Bg: bg, Bold: s.bold, Faint: s.faint, Italic: s.italic, Underline: s.under, Strike: s.strike}
+	return Run{Text: text, Fg: fg, Bg: bg, Bold: s.bold, Faint: s.faint, Italic: s.italic, Underline: s.under, Strike: s.strike}
 }
 
 func color256(n int) string {
@@ -177,6 +177,11 @@ func (s *sgrState) apply(params string) {
 			s.fg = ""
 		case n == 49:
 			s.bg = ""
+		case n == 58: // underline colour: not drawn, but its arguments are not SGR codes
+			if sub == nil {
+				_, used := extColor(fields[i+1:])
+				i += used
+			}
 		case n == 38 || n == 48:
 			var c string
 			if sub != nil {
@@ -195,14 +200,14 @@ func (s *sgrState) apply(params string) {
 	}
 }
 
-// styledLine parses one capture-pane -e line. Each line starts from the
+// Line parses one capture-pane -e line. Each line starts from the
 // default style, as the TUI draws them (it closes the SGR at every line end).
 // Other escapes (OSC 8 links, cursor moves) and control characters are
 // dropped; trailing blanks too, background or not, so a full-width bar does
 // not wrap into empty colored rows on a narrow screen.
-func styledLine(line string) []webRun {
+func Line(line string) []Run {
 	var st sgrState
-	var runs []webRun
+	var runs []Run
 	var buf strings.Builder
 	flush := func() {
 		if buf.Len() == 0 {
@@ -284,17 +289,16 @@ func styledLine(line string) []webRun {
 		runs = runs[:len(runs)-1]
 	}
 	if runs == nil {
-		runs = []webRun{}
+		runs = []Run{}
 	}
 	return runs
 }
 
-// styledTail is plainTail with colors: the last n lines as runs, trailing
-// blank lines dropped (the same lines plainTail keeps).
-func styledTail(lines []string, n int) [][]webRun {
-	out := make([][]webRun, 0, len(lines))
+// Tail is the last n lines as runs, trailing blank lines dropped.
+func Tail(lines []string, n int) [][]Run {
+	out := make([][]Run, 0, len(lines))
 	for _, l := range lines {
-		out = append(out, styledLine(l))
+		out = append(out, Line(l))
 	}
 	for len(out) > 0 && len(out[len(out)-1]) == 0 {
 		out = out[:len(out)-1]
@@ -305,8 +309,8 @@ func styledTail(lines []string, n int) [][]webRun {
 	return out
 }
 
-// runsText is a styled line as plain text.
-func runsText(runs []webRun) string {
+// Text is a styled line as plain text.
+func Text(runs []Run) string {
 	var b strings.Builder
 	for _, r := range runs {
 		b.WriteString(r.Text)

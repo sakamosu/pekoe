@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,17 +25,20 @@ type fakeEngine struct {
 	wins  map[string]bool
 	sizes map[string][2]int // window -> pty size: spawn, then resizes
 	out   chan engine.Output
-	lines []string        // what Capture returns (nil: "x")
-	dead  map[string]bool // window -> its process exited (Capture says Dead)
+	lines []string          // what Capture returns (nil: "x")
+	dead  map[string]bool   // window -> its process exited (Capture says Dead)
+	exits map[string][2]int // window -> exit status, signal (after exit)
+	delay time.Duration     // Spawn takes this long (races)
 	spawn map[string]engine.Spawn
 }
 
 func newFake() *fakeEngine {
-	return &fakeEngine{wins: map[string]bool{}, sizes: map[string][2]int{}, dead: map[string]bool{}, spawn: map[string]engine.Spawn{}, out: make(chan engine.Output, 16)}
+	return &fakeEngine{wins: map[string]bool{}, sizes: map[string][2]int{}, dead: map[string]bool{}, exits: map[string][2]int{}, spawn: map[string]engine.Spawn{}, out: make(chan engine.Output, 16)}
 }
 
 func (f *fakeEngine) Start() error { return nil }
 func (f *fakeEngine) Spawn(s engine.Spawn) error {
+	time.Sleep(f.delay)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wins[s.Slug+"~"+s.Window] = true
@@ -76,7 +80,11 @@ func (f *fakeEngine) Capture(slug, w string) (*engine.Screen, error) {
 	if lines == nil {
 		lines = []string{"x"}
 	}
-	return &engine.Screen{Lines: append([]string(nil), lines...), Width: 80, Height: 24, Dead: f.dead[slug+"~"+w]}, nil
+	sc := &engine.Screen{Lines: append([]string(nil), lines...), Width: 80, Height: 24, Dead: f.dead[slug+"~"+w], ExitStatus: -1}
+	if e, ok := f.exits[slug+"~"+w]; ok {
+		sc.ExitStatus, sc.Signal = e[0], engine.SignalName(strconv.Itoa(e[1]))
+	}
+	return sc, nil
 }
 func (f *fakeEngine) Resize(slug, win string, w, h int) error {
 	f.mu.Lock()
@@ -484,11 +492,15 @@ func TestSpawnSizeFollowsTUIPane(t *testing.T) {
 }
 
 // exit makes a window's process exit (tmux keeps the pane: remain-on-exit).
-func (f *fakeEngine) exit(slug, w string) {
+func (f *fakeEngine) exit(slug, w string) { f.exitWith(slug, w, 0, 0) }
+
+// exitWith: status -1 with a signal number is how tmux reports a kill.
+func (f *fakeEngine) exitWith(slug, w string, status, signal int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.wins, slug+"~"+w)
 	f.dead[slug+"~"+w] = true
+	f.exits[slug+"~"+w] = [2]int{status, signal}
 }
 
 // `!` in the TUI: one command in the worktree with the dev server's
@@ -498,7 +510,7 @@ func TestRunWindow(t *testing.T) {
 	t.Setenv("SHELL", "/bin/zsh")
 	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
 
-	if st := call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug}); st != (RunState{}) {
+	if st := call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug}); st.Running || st.Finished || st.Started || st.Command != "" {
 		t.Fatalf("nothing running yet: %+v", st)
 	}
 	st := call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug, "command": "read -p 'ok? ' x; echo $x", "width": 100, "height": 30})
@@ -537,5 +549,84 @@ func TestRunWindow(t *testing.T) {
 	}
 	if _, err := d.Call("run.start", []byte(`{"slug":"nope","command":"ls"}`)); err == nil {
 		t.Fatal("unknown session must fail")
+	}
+}
+
+// review #52: the daemon keeps the command and how it ended, so every TUI
+// (and one restarted meanwhile) names the same command and status.
+func TestRunStateCarriesCommandAndExit(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug, "command": "make deploy"})
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.Run != "make deploy" {
+		t.Fatalf("session.run: %q", got.Run)
+	}
+	// another TUI asks to run ls meanwhile: it gets make deploy back
+	st := call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug, "command": "ls"})
+	if st.Started || !st.Running || st.Command != "make deploy" || st.ExitStatus != -1 {
+		t.Fatalf("running: %+v", st)
+	}
+	fe.exitWith(s.Slug, engine.WinRun, 3, 0)
+	if st = call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug}); !st.Finished || st.Command != "make deploy" || st.ExitStatus != 3 || st.Signal != "" {
+		t.Fatalf("finished: %+v", st)
+	}
+	st = call[RunState](t, d, "run.close", map[string]any{"slug": s.Slug})
+	if !st.Finished || st.Command != "make deploy" || st.ExitStatus != 3 || fe.Alive(s.Slug, engine.WinRun) {
+		t.Fatalf("close: %+v", st)
+	}
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.Run != "" {
+		t.Fatalf("closed run still recorded: %q", got.Run)
+	}
+	// Ctrl-C: tmux has no exit status, a signal instead
+	call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug, "command": "sleep 100"})
+	fe.exitWith(s.Slug, engine.WinRun, -1, 2)
+	if st = call[RunState](t, d, "run.close", map[string]any{"slug": s.Slug}); st.Signal != "SIGINT" || st.ExitStatus != -1 || st.Command != "sleep 100" {
+		t.Fatalf("interrupted: %+v", st)
+	}
+	// window.kill of the run window forgets it too
+	call[RunState](t, d, "run.start", map[string]any{"slug": s.Slug, "command": "top"})
+	call[any](t, d, "window.kill", map[string]any{"slug": s.Slug, "window": engine.WinRun})
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.Run != "" {
+		t.Fatalf("window.kill kept %q", got.Run)
+	}
+}
+
+// review #52: never run outside the worktree (tmux starts in $HOME when
+// the directory is gone).
+func TestRunRefusesWithoutWorktree(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	for _, st := range []state.State{state.Creating, state.Landed} {
+		d.update(s.Slug, func(x *state.Session) { x.State = st })
+		if _, err := d.Call("run.start", []byte(`{"slug":"`+s.Slug+`","command":"rm -rf build"}`)); err == nil {
+			t.Fatalf("%s: run.start accepted", st)
+		}
+	}
+	d.update(s.Slug, func(x *state.Session) { x.State = state.Failed; x.Path = filepath.Join(repo, "gone") })
+	if _, err := d.Call("run.start", []byte(`{"slug":"`+s.Slug+`","command":"rm -rf build"}`)); err == nil {
+		t.Fatal("missing worktree: run.start accepted")
+	}
+	if strings.Contains(fe.last(), "spawn:run") {
+		t.Fatalf("spawned: %s", fe.last())
+	}
+}
+
+// review #52: two run.start at once (Enter twice) start one run; the
+// second must not kill the first and run the command again.
+func TestRunStartSerialized(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	fe.delay = 50 * time.Millisecond
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d.Call("run.start", []byte(`{"slug":"`+s.Slug+`","command":"make install"}`))
+		}()
+	}
+	wg.Wait()
+	if n := strings.Count(fe.last(), "spawn:run:"); n != 1 {
+		t.Fatalf("%d run windows spawned", n)
 	}
 }

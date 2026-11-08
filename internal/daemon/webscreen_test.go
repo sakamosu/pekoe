@@ -3,44 +3,12 @@ package daemon
 import (
 	"encoding/json"
 	"net/http"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
-)
 
-func TestStyledLine(t *testing.T) {
-	cases := []struct {
-		name, in string
-		want     []webRun
-	}{
-		{"plain", "hello  ", []webRun{{Text: "hello"}}},
-		{"16 colors to roles", "\x1b[31mERR\x1b[0m ok \x1b[92mpass\x1b[39m.",
-			[]webRun{{Text: "ERR", Fg: "err"}, {Text: " ok "}, {Text: "pass", Fg: "ok"}, {Text: "."}}},
-		{"256 and truecolor", "\x1b[38;5;208ma\x1b[38;2;215;119;87mb\x1b[48;5;237mc",
-			[]webRun{{Text: "a", Fg: "#ff8700"}, {Text: "b", Fg: "#d77757"}, {Text: "c", Fg: "#d77757", Bg: "#3a3a3a"}}},
-		{"colon form", "\x1b[38:2::1:2:3mx\x1b[4:3my\x1b[4:0mz",
-			[]webRun{{Text: "x", Fg: "#010203"}, {Text: "y", Fg: "#010203", Underline: true}, {Text: "z", Fg: "#010203"}}},
-		{"attributes", "\x1b[1;3mB\x1b[22;23;2mf\x1b[0m\x1b[9ms",
-			[]webRun{{Text: "B", Bold: true, Italic: true}, {Text: "f", Faint: true}, {Text: "s", Strike: true}}},
-		{"reverse with defaults", "\x1b[7m cursor \x1b[27m",
-			[]webRun{{Text: " cursor", Fg: "bg", Bg: "text"}}},
-		{"same style merges", "\x1b[32ma\x1b[32mb", []webRun{{Text: "ab", Fg: "ok"}}},
-		{"links, other escapes and controls dropped", "\x1b]8;;https://x\x07link\x1b]8;;\x1b\\\x1b[2K\x1b[?25l\r\x00tab\there",
-			[]webRun{{Text: "linktab\there"}}},
-		{"open bg at the end (erase line) adds nothing", "  \x1b[1mHead\x1b[0m\x1b[48;5;237m   ",
-			[]webRun{{Text: "  "}, {Text: "Head", Bold: true}}},
-		{"cut escape", "abc\x1b[3", []webRun{{Text: "abc"}}},
-		{"bad truecolor", "\x1b[38;2;999;0;0mx", []webRun{{Text: "x"}}},
-		{"markup is text", "<img src=x onerror=alert(1)>&amp;", []webRun{{Text: "<img src=x onerror=alert(1)>&amp;"}}},
-		{"empty", "\x1b[0m   ", []webRun{}},
-	}
-	for _, c := range cases {
-		if got := styledLine(c.in); !reflect.DeepEqual(got, c.want) {
-			t.Errorf("%s:\n got %+v\nwant %+v", c.name, got, c.want)
-		}
-	}
-}
+	"boba/internal/termstyle"
+)
 
 // What the agent prints reaches the page only as run text. Colors are a
 // known role or #rrggbb, whatever bytes the agent sends, so nothing from
@@ -87,7 +55,7 @@ func TestWebScreenColors(t *testing.T) {
 				}
 				if k == "fg" || k == "bg" {
 					c, _ := v.(string)
-					if !webColorRoles[c] && !hex.MatchString(c) {
+					if !termstyle.ColorRoles[c] && !hex.MatchString(c) {
 						t.Errorf("color %q is neither a role nor #rrggbb", c)
 					}
 				}

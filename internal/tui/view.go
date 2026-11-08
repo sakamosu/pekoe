@@ -517,8 +517,8 @@ func (m *model) viewAgent(width, height int) []string {
 		winLabel = "Run"
 	}
 	extra := "· " + s.Agent
-	if m.window == engine.WinRun && m.runs[s.Slug] != "" {
-		extra = "· $ " + m.runs[s.Slug]
+	if m.window == engine.WinRun && s.Run != "" {
+		extra = "· $ " + oneLine(s.Run)
 	}
 	if s.Port > 0 {
 		extra += fmt.Sprintf(" · :%d", s.Port)
@@ -542,7 +542,7 @@ func (m *model) viewAgent(width, height int) []string {
 	if s.State == state.Creating {
 		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Work, "creating worktree "+s.Branch, creatingSub(m.progress[s.Slug])), focused: f})
 	}
-	if s.State == state.Failed && (m.screen == nil || m.screen.Dead) {
+	if s.State == state.Failed && m.window == engine.WinAgent && (m.screen == nil || m.screen.Dead) {
 		rows := m.bigRows(cw, ch-4, mascot.Error, "setup failed", "")
 		for _, l := range strings.Split(s.Error, "\n") {
 			rows = append(rows, row{Text: th.FG(theme.Err, l)})

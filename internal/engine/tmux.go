@@ -389,7 +389,7 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 	// 別プロセスで順に取ると、その間に pane が書き換わり(Backspace 長押しなど)
 	// カーソル位置と文字列が食い違って、描いたカーソルが揺れる。
 	all, err := t.run("display-message", "-p", "-t", tg,
-		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size} #{pane_dead_status}",
+		"#{cursor_x} #{cursor_y} #{cursor_flag} #{pane_width} #{pane_height} #{alternate_on} #{mouse_any_flag} #{pane_dead} #{history_size} #{pane_dead_status}:#{pane_dead_signal}",
 		";", "capture-pane", "-p", "-e", "-t", tg)
 	if err != nil {
 		return nil, err
@@ -410,10 +410,12 @@ func (t *Tmux) Capture(slug, window string) (*Screen, error) {
 	sc.Dead = f[7] == "1"
 	sc.History, _ = strconv.Atoi(f[8])
 	sc.ExitStatus = -1
-	if len(f) > 9 { // empty while the process runs
-		if n, err := strconv.Atoi(f[9]); err == nil {
+	if len(f) > 9 { // "status:signal", both empty while the process runs
+		st, sig, _ := strings.Cut(f[9], ":")
+		if n, err := strconv.Atoi(st); err == nil {
 			sc.ExitStatus = n
 		}
+		sc.Signal = SignalName(sig)
 	}
 	sc.Lines = strings.Split(out, "\n")
 	for len(sc.Lines) < sc.Height {

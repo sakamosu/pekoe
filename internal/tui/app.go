@@ -133,8 +133,6 @@ type model struct {
 	msgAt    time.Time
 	quitting bool
 
-	runs map[string]string // slug -> the command its run window was started with (run.go)
-
 	review *reviewModel // built-in review surface when active
 	iss    issuesState  // [2] Issues and the issue shown in the main panel (issues.go)
 
@@ -769,6 +767,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runStartedMsg:
 		return m, m.onRunStarted(msg)
 
+	case runClosedMsg:
+		return m, m.onRunClosed(msg)
+
 	case reviewOpenMsg:
 		rm := newReviewModel(m.cl, msg.slug, m.th, m.ic, m.width, m.height, m.square)
 		m.review = rm
@@ -1007,13 +1008,16 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 				}
 			case "x", "esc":
 				m.typing = false
+				if s != nil && m.window == engine.WinRun {
+					return m.closeRun(false) // without telling the agent
+				}
 				if s != nil && m.window != engine.WinAgent {
+					// the dead screen goes with the window: left as the
+					// agent's, ↵ would restart the running agent
 					w := m.window
-					if w == engine.WinRun {
-						delete(m.runs, s.Slug) // closed without telling the agent
-					}
 					m.window = engine.WinAgent
-					return m.act("window.kill", map[string]any{"slug": s.Slug, "window": w}, "")
+					m.screen = nil
+					return tea.Batch(m.act("window.kill", map[string]any{"slug": s.Slug, "window": w}, ""), m.fetchScreen())
 				}
 				if s != nil {
 					return m.act("session.kill", map[string]any{"slug": s.Slug}, "ended "+s.Slug)
@@ -1274,6 +1278,10 @@ func (m *model) keySessions(key string) tea.Cmd {
 		return nil
 	case "!": // run one command in the worktree (run.go)
 		return m.openRun()
+	case "x":
+		if m.runDone() { // the panel's "x close": the run, not the session
+			return m.closeRun(false)
+		}
 	case "/":
 		m.filterOn = true
 		m.filter = ""
@@ -1490,6 +1498,10 @@ func (m *model) keyAgent(key string) tea.Cmd {
 	case "h", "left", "esc":
 		m.focus = pSessions
 		return nil
+	case "x":
+		if m.runDone() { // the panel's "x close": the run, not the session
+			return m.closeRun(false)
+		}
 	case "r", "n":
 		cmd, _ := m.common(key)
 		return cmd
