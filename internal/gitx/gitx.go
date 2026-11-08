@@ -186,6 +186,17 @@ func DefaultBase(dir string) string {
 			return b
 		}
 	}
+	return CurrentBranch(dir)
+}
+
+// CurrentBranch returns the checked-out branch name. symbolic-ref is tried
+// first because it also works on an unborn branch (a repository with no
+// commits yet), where `rev-parse --abbrev-ref HEAD` prints "HEAD" and fails.
+// On a detached HEAD it falls back to rev-parse, which yields "HEAD".
+func CurrentBranch(dir string) string {
+	if b, err := Run(dir, "symbolic-ref", "--quiet", "--short", "HEAD"); err == nil && b != "" {
+		return b
+	}
 	h, _ := Run(dir, "rev-parse", "--abbrev-ref", "HEAD")
 	return h
 }
