@@ -1,13 +1,24 @@
 ---
 name: pekoe
-description: pekoe で別の worktree とエージェントセッションを作り、作業を並行して任せる。「別ブランチで並行して」「これは別エージェントに任せて」「issue #N をやらせて」「worktree 切ってやって」など、今の会話とは別の場所で作業を進めたいときに使う。git worktree add を直接叩く代わりにこれを使う。
+description: pekoe で worktree とエージェントセッションを作り、変更作業を任せる。pekoe を使っているリポジトリの main 側(環境変数 $PEKOE_SESSION が空)でコードやドキュメントの変更を頼まれたら(「〜を直して」「〜を足して」「〜を変えて」「issue #N をやって」など)、ユーザーが pekoe や別ブランチに触れていなくても、直接編集せずにこれを使う。「別ブランチで並行して」「別エージェントに任せて」「worktree 切って」のときも。git worktree add の代わりに使う。
 ---
 
-# pekoe で並行セッションを作る
+# pekoe でセッションを作って任せる
 
 pekoe は worktree ごとに Claude Code(や codex)を走らせるツール。`pekoe new` 1 回で
 worktree 作成 → ファイルのコピー → setup → ポート割り当て → エージェント起動まで済む。
 `git worktree add` を自分で叩かず、必ず `pekoe new` を使う(setup や env、ポート台帳が pekoe 側にあるため)。
+
+## 考え方
+
+人間が入力する箇所はできるだけ絞る。人間が worktree を渡り歩いてそれぞれのエージェントに打ち込むのではなく、main のチェックアウトで動くエージェント(ハブ)がセッションを作り、指示も main から出す。
+
+- main では直接編集しない。変更は `pekoe new` でセッションを作って任せる。小さな変更やドキュメントでも同じ。ユーザーが「pekoe で」「新しいセッションで」と言わなくてもそうする
+- 追加の指示・修正依頼は main から `pekoe send <slug> -` で送る。ユーザーに worktree へ移動して打ち込むよう勧めない
+- 調査(ファイルを読む・grep・ls・状態確認)は main で自分でやってよい。調べた結果をプロンプトに込める
+- 進捗は main から見る(`pekoe --json ls`、worktree の `git log` / `git diff`)。land・マージ・rm はユーザーに頼まれてから
+- 例外: `$PEKOE_SESSION` が設定されているとき(= 自分がセッション内のエージェント)は、そのセッションの worktree で直接作業する。さらに `pekoe new` で孫セッションを作らない(並行させたい明確な理由があるときを除く)
+- ユーザーが「ここで直接やって」と言ったときはそれに従う
 
 ## 前提の確認
 
@@ -25,7 +36,7 @@ EOF
 ```
 
 - `--json` を付ける。付けないと setup 完了まで進捗を追い続けて戻ってこない。`--json` なら作成を受け付けた時点でセッション情報(`slug` `path` `port` など)を返す
-- ブランチ名は `feat/` `fix/` `chore/` などで始めた kebab-case。slug はブランチ名の `/` を `-` にしたもの(`feat/csv-export` → `feat-csv-export`)
+- ブランチ名は `feat/` `fix/` `chore/` `docs/` などで始めた kebab-case。slug はブランチ名の `/` を `-` にしたもの(`feat/csv-export` → `feat-csv-export`)
 - GitHub issue から始めるときは `--from gh#128`。issue 本文が初期プロンプトになる(`--prompt` を足せば追加指示になる)
 - codex など別エージェントに任せるときは `--agent codex`
 - 派生元ブランチを変えたいときは `--base <branch>`
@@ -35,21 +46,22 @@ EOF
 新しいエージェントにはこの会話の文脈がない。`--prompt` だけで仕事が完結するように書く:
 
 - 何をするか、なぜするか(背景)
-- 関係するファイルや、ここまでに分かっていること・試して駄目だったこと
-- 完了条件(テストが通る、どのコマンドで確認するか など)
+- 関係するファイルや、ここまでに分かっていること・試して駄目だったこと(main で調べた結果をここに込める)
+- 完了条件(テストが通る、どのコマンドで確認するか、コミットまでするか など)
 - やらないこと(範囲外の変更、push しない など)
 
-## 作った後
+## 作った後(main から操作する)
 
+- ユーザーには slug・ブランチ・何を頼んだかを伝える。worktree のパスやポートは必要なときだけでよい。TUI(`pekoe`)で様子を見られると添えてもよい
 - 状態の確認: `pekoe --json ls`。`state` は `creating` → `running` → `waiting`(許可待ち・入力待ち)/ `idle` / `done` → `reviewing` → `approved` → `landed`、失敗は `failed`(`error` に理由)
-- 追加の指示: `pekoe send <slug> -` に stdin で本文を渡す(長文や改行を含むときは必ず stdin で)
-- ユーザーには slug・ブランチ・worktree のパス・ポートを伝え、TUI(`pekoe`)で様子を見られると添える
+- 中身の確認: `ls` の `path` を使って `git -C <path> log` / `git -C <path> diff main...` などを main から読む
+- 追加の指示・修正依頼: `pekoe send <slug> -` に stdin で本文を渡す(長文や改行を含むときは必ず stdin で)。ユーザーから修正の要望が来たら、それをまとめて送る
 
 ## やらないこと
 
-- `pekoe land`(push と PR 作成)、`pekoe rm` / worktree 削除、`pekoe answer`(他セッションの許可に代わりに答える)は、ユーザーに明示的に頼まれたときだけ
+- `pekoe land`(push と PR 作成)、マージ、`pekoe rm` / worktree 削除、`pekoe answer`(他セッションの許可に代わりに答える)は、ユーザーに明示的に頼まれたときだけ
 - 自分自身のセッション(環境変数 `$PEKOE_SESSION` の slug)に `pekoe send` しない
-- 同じ作業のために何個もセッションを作らない。並行させる理由がある単位でだけ分ける
+- 同じ作業のために何個もセッションを作らない。並行させる理由がある単位でだけ分ける。既存セッションの続きなら `pekoe send` で足す
 - 本物のデーモンを止めたり壊したりしない。引数なしの `pekoe daemon stop` は、ユーザーに頼まれたときだけ実行する。`tmux -L pekoe kill-server` や、`PEKOE_TMUX_SOCKET` を空や `pekoe` にしたままの `pekoe daemon stop --kill-agents` は使わない(全エージェントが止まる)
 
 ## 隔離した環境で動作確認するとき
