@@ -6,7 +6,6 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -719,101 +718,27 @@ func (m *model) issueMouse(ev tea.MouseMsg) (tea.Cmd, bool) {
 		m.iss.scroll += 3
 	case ev.Button == tea.MouseButtonWheelUp:
 		m.iss.scroll = max(m.iss.scroll-3, 0)
-	case ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft:
-		m.focus = pAgent
+	case ev.Button == tea.MouseButtonLeft:
+		if ev.Action == tea.MouseActionPress {
+			m.focus = pAgent
+		}
+		return m.linkClick(ev, m.issueLinkAt(x, y)), true
 	}
 	return nil, true
 }
 
-// ---- light markdown: headings, lists, quotes, code blocks ----
-
-var (
-	mdHeading = regexp.MustCompile(`^(#{1,6})\s+(.*?)\s*#*\s*$`)
-	mdList    = regexp.MustCompile(`^(\s*)([-*+]|\d+[.)])\s+(.*)$`)
-	mdRule    = regexp.MustCompile(`^\s*([-*_])(\s*[-*_]){2,}\s*$`)
-	mdComment = regexp.MustCompile(`(?s)<!--.*?-->`)
-)
-
-// renderMarkdown lays out an issue body for a cw-wide panel. Inline markup
-// stays as written; only the block structure is drawn.
-func renderMarkdown(th *theme.Theme, ic theme.IconSet, body string, cw int) []string {
-	body = mdComment.ReplaceAllString(sanitize(body), "")
-	bullet := "•"
-	if ic.Name == "ascii" {
-		bullet = "-"
+// issueLinkAt returns the URL drawn at (x, y) of the issue view's body.
+func (m *model) issueLinkAt(x, y int) string {
+	cur := m.curIssue()
+	if cur == nil || x < 0 || y < 0 {
+		return ""
 	}
-	var out []string
-	blank := func() {
-		if len(out) > 0 && out[len(out)-1] != "" {
-			out = append(out, "")
-		}
+	aw, _ := m.agentSize()
+	rows := m.issueDetailRows(cur, m.iss.details[cur.Number], aw)
+	if i := m.iss.scroll + y; i < len(rows) {
+		return linkAt(rows[i].Text, x)
 	}
-	wrap := func(text string, width int) []string {
-		return strings.Split(ansi.Wrap(text, max(width, 1), ""), "\n")
-	}
-	inCode := false
-	for _, ln := range strings.Split(body, "\n") {
-		ln = strings.TrimRight(strings.ReplaceAll(ln, "\t", "    "), " \r")
-		trim := strings.TrimSpace(ln)
-		if strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~") {
-			if !inCode {
-				blank()
-			}
-			inCode = !inCode
-			if lang := strings.Trim(trim, "`~ "); inCode && lang != "" {
-				out = append(out, th.FG(theme.Border, "│ ")+th.FG(theme.Dim, lang))
-			}
-			continue
-		}
-		if inCode {
-			out = append(out, th.FG(theme.Border, "│ ")+th.FG(theme.Text, clip(ln, max(cw-2, 1))))
-			continue
-		}
-		switch {
-		case trim == "":
-			blank()
-		case mdHeading.MatchString(trim):
-			g := mdHeading.FindStringSubmatch(trim)
-			blank()
-			for i, l := range wrap(g[2], cw-len(g[1])-1) {
-				mark := strings.Repeat(" ", len(g[1])+1)
-				if i == 0 {
-					mark = g[1] + " "
-				}
-				out = append(out, th.FG(theme.Dim, mark)+th.FG(theme.Text, l))
-			}
-		case mdRule.MatchString(trim):
-			out = append(out, th.FG(theme.Border, strings.Repeat("─", max(cw, 1))))
-		case strings.HasPrefix(trim, ">"):
-			text := strings.TrimSpace(strings.TrimPrefix(trim, ">"))
-			for _, l := range wrap(text, cw-2) {
-				out = append(out, th.FG(theme.Border, "▎ ")+th.FG(theme.Dim, l))
-			}
-		case mdList.MatchString(ln):
-			g := mdList.FindStringSubmatch(ln)
-			indent := min(len(g[1]), 8)
-			mark := g[2]
-			if strings.ContainsAny(mark, "-*+") {
-				mark = bullet
-			}
-			pre := strings.Repeat(" ", indent) + mark + " "
-			for i, l := range wrap(g[3], cw-w(pre)) {
-				if i == 0 {
-					out = append(out, strings.Repeat(" ", indent)+th.FG(theme.Dim, mark)+" "+th.FG(theme.Text, l))
-				} else {
-					out = append(out, strings.Repeat(" ", w(pre))+th.FG(theme.Text, l))
-				}
-			}
-		default:
-			for _, l := range wrap(trim, cw) {
-				out = append(out, th.FG(theme.Text, l))
-			}
-		}
-	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	return out
+	return ""
 }
 
 // sanitize drops escape sequences and control characters from text that came
