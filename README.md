@@ -52,6 +52,24 @@ pekoe hooks install     # ~/.claude/settings.json に hooks を追加(バック�
 make install-launchd    # 任意: ログイン時に pekoed を起動
 ```
 
+### リリースから(ビルド済みバイナリ)
+
+GitHub Release に darwin / linux × arm64 / amd64 の既定ビルド(Web UI なし)を置いている。repo は private なので `gh` で落とす:
+
+```sh
+ver=0.2.0                                 # 入れるバージョン(gh release list で確認)
+gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt
+shasum -a 256 --ignore-missing -c checksums.txt
+mkdir -p ~/.local/opt ~/.local/bin
+tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
+ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
+ln -sf ~/.local/opt/pekoe/bin/pekoe ~/.local/bin/pekoe
+ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
+pekoe version
+```
+
+アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/`。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
+
 既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon stop; pekoe daemon start` で pekoed を新しいバイナリに替える。
 
 hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけ。プロジェクト側の `.claude/` は触らない。`pekoe hooks status` で確認、`pekoe hooks uninstall` で pekoe の分だけ外す。
@@ -301,6 +319,15 @@ WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
 ```
 
 一時ディレクトリに 4 つを切り、今のソースをビルドした `pekoe` でデーモンを立てる(`PEKOE_BIN` で既製のバイナリも指定できる)。終わると、失敗や Ctrl-C で抜けたときも含めて `pekoe daemon stop --kill-agents --yes` で tmux サーバーごと止め、一時ディレクトリを消す。手で隔離環境を立てたときも、最後に同じ環境変数のまま `pekoe daemon stop --kill-agents --yes` で片付ける(`pekoe daemon stop` だけでは tmux サーバーと偽エージェントが残る)。tmux サーバーの pid は起動時に `$PEKOE_HOME/share/tmux-<socket>.pid` に記録するので、`TMUX_TMPDIR` が違うなどで `kill-server` が届かなくても止められる。
+
+### リリースの切り方
+
+`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォームをクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作る。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+goreleaser release --snapshot --clean   # 手元で試す(dist/ にできる。公開はしない)
+```
 
 ### 現状の制約
 

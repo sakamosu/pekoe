@@ -7,11 +7,14 @@ BIN     := bin/pekoe
 # (tsnet). The default build has no Tailscale code at all.
 WEB     ?=
 TAGS    := $(if $(WEB),-tags web)
+# the version shown by `pekoe version`; releases get it from GoReleaser
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+LDFLAGS := -X pekoe/internal/daemon.Version=$(or $(VERSION),dev)
 
 .PHONY: build test vet install install-launchd uninstall-launchd nvim-test clean
 
 build:
-	$(GO) build $(TAGS) -o $(BIN) ./cmd/pekoe
+	$(GO) build $(TAGS) -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pekoe
 	ln -sf pekoe bin/pekoed
 
 # both builds: the default (no Tailscale) and -tags web
@@ -53,3 +56,4 @@ uninstall-launchd:
 
 clean:
 	rm -f bin/pekoe bin/pekoed
+	rm -rf dist
