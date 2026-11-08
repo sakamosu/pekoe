@@ -84,11 +84,15 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 
 | コマンド | すること |
 | --- | --- |
-| `boba new <branch> [--from gh#123]` | `~/worktrees/<repo>/<slug>` に worktree を作り、setup を走らせてセッション起動。issue 指定時は本文を初期プロンプトに |
+| `boba new <branch> [--repo R] [--from gh#123]` | `~/worktrees/<repo>/<slug>` に worktree を作り、setup を走らせてセッション起動。issue 指定時は本文を初期プロンプトに。対象は今いるリポジトリ(worktree の中ならそのメイン)か `--repo` |
 | `boba open <worktree>` | 既存 worktree(boba 製でなくてもよい)でセッションを起動。過去の Claude Code セッションがあれば `--resume` か新規かを選ぶ |
 | `boba adopt` | 別タブで手動起動しているエージェントを boba 管理下に入れる(tmux エンジン時は既存 tmux セッションも拾う) |
 | `boba land` | rebase → test → `gh pr create`。マージ検出後に teardown を走らせて worktree を削除 |
 | `boba rm <slug>` | teardown → worktree 削除。`~/worktrees` 配下以外は消さない |
+
+**複数リポジトリ** — デーモンは 1 つで全リポジトリのセッションを扱う。CLI の対象リポジトリは今いるディレクトリから決まり、`--repo R` で明示できる。`R` は repo-id・短い名前(`~/worktrees/<repo>` の `<repo>`)・パスのどれでもよく、解決はデーモンの 1 か所(`repo.resolve`)でする。短い名前で引けるのは既知のリポジトリ(セッションがあるもの + `~/.config/boba/repos/*.toml` があるもの)で、同じ名前が複数あれば候補の repo-id を出してエラーにする。
+
+**slug** — slug は全リポジトリで 1 つの名前空間。ブランチ名から作った slug が別リポジトリのセッションと衝突したら `<repo>-<slug>`(`web-feat-x`)にし、それも埋まっていれば `-2` `-3` を付ける。同じリポジトリの同じブランチは同じ slug のまま(「already exists」)。既存セッションの slug は変えない。slug を取るコマンドは `<repo>/<slug>` でも指定でき、`<repo>` は repo-id か短い名前、`<slug>` は本物の slug でもリポジトリ名を前に付ける前の形でもよい(`web/feat-x` → `web-feat-x`)。
 
 **Issue インボックス** — 左パネル [2] のサブタブ Issues に `gh issue list` の結果(既定は自分担当の open)を出し、選んだ issue の本文とコメントをメインパネルで読む。`n` で `fix/`(bug ラベル)か `feat/` + タイトルの kebab-case を提案して `boba new --from gh#N` と同じ流れでセッションを作る。セッションは issue 番号を覚えるので(ブランチ名に番号があればそれでも)、行にそのセッションの状態が出て Enter で飛べる。issue → 実装 → PR → CI → マージを boba の中で一周するための入口。gh が無い・未認証・GitHub リモートが無いときは 1 行の案内だけを出す。
 
@@ -283,14 +287,14 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | --- | --- |
 | `boba` | TUI を開く(デーモンがなければ起動) |
 | `boba init` | 今のリポジトリの設定を検出して下書き |
-| `boba new <branch> [--from gh#N] [--agent codex]` | worktree + セッション作成 |
+| `boba new <branch> [--repo R] [--from gh#N] [--agent codex]` | worktree + セッション作成 |
 | `boba open <worktree>` / `boba adopt` | 既存を開く / 管理下に入れる |
-| `boba ls` | セッション一覧と状態 |
-| `boba issues [--all \| --label L] [--refresh]` / `boba issues <N>` | GitHub の open issue(既定は自分担当)と、すでにあるセッション / issue の本文とコメント |
-| `boba conflicts` | 衝突予報。同じファイルを触っている open なセッションのペアと、コミット済みの内容が衝突するか(`git merge-tree`)。`--repo <repo-id>` で絞り込み |
-| `boba send <slug> <text>` | pty に文字を送る |
+| `boba ls [--all \| --repo R]` | セッション一覧と状態。リポジトリの中では既定でそのリポジトリだけ、`--all` で全部。リポジトリの外では全部をリポジトリごとの見出しでまとめる(1 つなら見出しなし)。slug がブランチ名どおりでないときは `slug <slug>` を添える。`--json` は絞り込みだけ反映した配列 |
+| `boba issues [--repo R] [--all \| --label L] [--refresh]` / `boba issues <N>` | GitHub の open issue(既定は自分担当)と、すでにあるセッション / issue の本文とコメント |
+| `boba conflicts [--repo R]` | 衝突予報。同じファイルを触っている open なセッションのペアと、コミット済みの内容が衝突するか(`git merge-tree`)。`--repo` で絞り込み |
+| `boba send <slug> <text>` | pty に文字を送る。slug を取るコマンド(`send` `review` `land` `rm` `dev` `undo` `answer`)は `<repo>/<slug>` でも指定できる |
 | `boba event` | hooks から呼ばれる。stdin の JSON(session\_id, cwd, hook 名)をデーモンに渡す |
-| `boba review [<slug> \| gh#N]` | レビュー面を開く |
+| `boba review [<slug> \| gh#N [--repo R]]` | レビュー面を開く |
 | `boba land <slug>` / `boba rm <slug>` | 取り込む / 消す |
 | `boba dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
 | `boba daemon start\|stop\|status` | デーモン操作 |

@@ -2,10 +2,10 @@
 //
 //	boba                      open the TUI (starts bobad if needed)
 //	boba init                 draft this repository's config
-//	boba new <branch> [--from gh#N] [--agent codex] [--prompt text]
+//	boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt text]
 //	boba open <worktree> [--resume|--new]
 //	boba adopt                bring agents started by hand under boba
-//	boba ls                   sessions and states
+//	boba ls [--all|--repo R]  sessions and states (default: this repository)
 //	boba send <slug> <text>   write to the agent's pty (Enter appended)
 //	boba event <Hook>         called by Claude Code hooks (stdin JSON)
 //	boba review [<slug>|gh#N] open the review surface
@@ -84,7 +84,7 @@ func main() {
 	case "adopt":
 		err = cmdAdopt(args)
 	case "ls", "list":
-		err = cmdLs()
+		err = cmdLs(args)
 	case "issues":
 		err = cmdIssues(args)
 	case "conflicts":
@@ -156,15 +156,15 @@ func usage() {
 
   boba                         open the TUI
   boba init                    draft ~/.config/boba/repos/<repo-id>.toml
-  boba new <branch> [--from gh#N] [--agent codex] [--prompt TEXT]
+  boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]
   boba open <worktree> [--resume|--new]
   boba adopt [--yes]           take over agents started by hand
-  boba ls [--json]
-  boba issues [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
-  boba issues <N> [--json]     an issue's body and comments
-  boba conflicts [--repo ID] [--json]  sessions touching the same files (conflict forecast)
-  boba send <slug> <text>
-  boba review [<slug> | gh#N]
+  boba ls [--all|--repo R] [--json]   sessions (default: this repository; outside one, all)
+  boba issues [--repo R] [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
+  boba issues <N> [--repo R] [--json]  an issue's body and comments
+  boba conflicts [--repo R] [--json]  sessions touching the same files (conflict forecast)
+  boba send <slug> <text>      <slug> may also be <repo>/<slug>
+  boba review [<slug> | gh#N [--repo R]]
   boba land <slug>             rebase → test → gh pr create (teardown after merge)
   boba rm <slug> [--force]     teardown → delete worktree
   boba dev <slug>              toggle the dev server on the session's port
@@ -174,6 +174,8 @@ func usage() {
   boba ext                     port + token for the Chrome extension
   boba mcp                     MCP server for agents (claude mcp add boba -- boba mcp)
   boba daemon start|stop|status
+
+  R is a repo-id, a short name (as in ~/worktrees/<name>) or a path.
 `)
 }
 
@@ -351,10 +353,14 @@ func confirm(q string) bool {
 func cmdNew(args []string) error {
 	f, pos := flags(args, "wait")
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: boba new <branch> [--from gh#N] [--agent codex] [--prompt TEXT]")
+		return fmt.Errorf("usage: boba new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]")
 	}
 	cl := connect()
 	defer cl.Close()
+	dir, err := repoDir(cl, f)
+	if err != nil {
+		return err
+	}
 	cl.Subscribe("session.progress", "session.updated")
 	w, h := agentPaneSize()
 	var s state.Session
@@ -363,7 +369,7 @@ func cmdNew(args []string) error {
 		prompt = strings.Join(pos[1:], " ")
 	}
 	if err := cl.Call("session.new", map[string]any{
-		"repo": cwd(), "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
+		"repo": dir, "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
 		"base": f["base"], "width": w, "height": h,
 	}, &s); err != nil {
 		return err
@@ -538,11 +544,23 @@ func cmdAdopt(args []string) error {
 	return nil
 }
 
-func cmdLs() error {
+// cmdLs lists sessions. Inside a repository (or a worktree of one) it shows
+// only that repository's sessions; --all shows every repository and
+// --repo another one. Outside a repository it shows everything.
+func cmdLs(args []string) error {
+	f, _ := flags(args, "all")
 	cl := connect()
 	defer cl.Close()
+	scope, err := lsScope(f, func(q string) (*daemon.KnownRepo, error) { return resolveRepoFlag(cl, q) }, func() *daemon.KnownRepo { return hereRepo(cl) })
+	if err != nil {
+		return err
+	}
+	params := map[string]any{}
+	if scope != nil {
+		params["repo_id"] = scope.ID
+	}
 	var ss []*state.Session
-	if err := cl.Call("session.list", nil, &ss); err != nil {
+	if err := cl.Call("session.list", params, &ss); err != nil {
 		return err
 	}
 	if jsonOut {
@@ -550,31 +568,151 @@ func cmdLs() error {
 		return nil
 	}
 	if len(ss) == 0 {
+		if scope != nil {
+			fmt.Printf("no sessions in %s · `boba ls --all` for every repository · start one with `boba new <branch>`\n", scope.Name)
+			return nil
+		}
 		fmt.Println("no sessions · start one with `boba new <branch>`")
 		return nil
 	}
 	ic := theme.Icons(theme.IconsFromEnv())
 	th := theme.Load(nil)
-	sort.SliceStable(ss, func(i, j int) bool { return ss[i].CreatedAt.Before(ss[j].CreatedAt) })
-	for _, s := range ss {
-		fmt.Println(theme.SessionLine(th, ic, s, time.Now(), 0))
+	for _, l := range lsLines(th, ic, ss, scope == nil, time.Now()) {
+		fmt.Println(l)
 	}
 	return nil
+}
+
+// lsScope is the repository `boba ls` is limited to, nil for every one:
+// --repo wins, --all shows everything, else the current directory's
+// repository (nil outside one).
+func lsScope(f map[string]string, resolve func(string) (*daemon.KnownRepo, error), here func() *daemon.KnownRepo) (*daemon.KnownRepo, error) {
+	switch {
+	case f["repo"] != "":
+		return resolve(f["repo"])
+	case f["all"] != "":
+		return nil, nil
+	}
+	return here(), nil
+}
+
+// lsLines renders `boba ls`: sessions in creation order, grouped under a
+// heading per repository when grouped and there is more than one. A slug
+// that is not just the branch (a collision put the repository name in
+// front) is shown, since send / land / rm take the slug.
+func lsLines(th *theme.Theme, ic theme.IconSet, ss []*state.Session, grouped bool, now time.Time) []string {
+	ss = append([]*state.Session(nil), ss...)
+	sort.SliceStable(ss, func(i, j int) bool { return ss[i].CreatedAt.Before(ss[j].CreatedAt) })
+	line := func(s *state.Session) string {
+		l := theme.SessionLine(th, ic, s, now, 0)
+		if s.Slug != paths.Slug(s.Branch) {
+			l += "  " + th.FG(theme.Dim, "slug "+s.Slug)
+		}
+		return l
+	}
+	type group struct {
+		id, name string
+		ss       []*state.Session
+	}
+	var gs []*group
+	by := map[string]*group{}
+	for _, s := range ss {
+		g := by[s.RepoID]
+		if g == nil {
+			g = &group{id: s.RepoID, name: s.Repo}
+			by[s.RepoID] = g
+			gs = append(gs, g)
+		}
+		g.ss = append(g.ss, s)
+	}
+	var out []string
+	if !grouped || len(gs) < 2 {
+		for _, s := range ss {
+			out = append(out, line(s))
+		}
+		return out
+	}
+	sort.SliceStable(gs, func(i, j int) bool {
+		if gs[i].name != gs[j].name {
+			return gs[i].name < gs[j].name
+		}
+		return gs[i].id < gs[j].id
+	})
+	names := map[string]int{}
+	for _, g := range gs {
+		names[g.name]++
+	}
+	for i, g := range gs {
+		if i > 0 {
+			out = append(out, "")
+		}
+		h := th.Bold(theme.Primary, g.name)
+		if names[g.name] > 1 || g.name == "" {
+			h += "  " + th.FG(theme.Dim, g.id)
+		}
+		out = append(out, h)
+		for _, s := range g.ss {
+			out = append(out, line(s))
+		}
+	}
+	return out
+}
+
+// resolveRepoFlag asks bobad which repository a --repo value (repo-id,
+// short name or path) means.
+func resolveRepoFlag(cl *client.Client, q string) (*daemon.KnownRepo, error) {
+	if q == "true" { // --repo with no value
+		return nil, fmt.Errorf("--repo needs a repo-id, a short name or a path")
+	}
+	var r daemon.KnownRepo
+	if err := cl.Call("repo.resolve", map[string]any{"repo": q, "cwd": cwd()}, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// hereRepo is the repository of the current directory, nil outside one.
+func hereRepo(cl *client.Client) *daemon.KnownRepo {
+	var r daemon.KnownRepo
+	if err := cl.Call("repo.resolve", map[string]any{"repo": cwd(), "cwd": cwd()}, &r); err != nil {
+		return nil
+	}
+	return &r
+}
+
+// repoDir is the repository a command acts on: --repo when given, else the
+// current directory. bobad resolves worktrees to their main repository.
+func repoDir(cl *client.Client, f map[string]string) (string, error) {
+	if f["repo"] == "" {
+		return cwd(), nil
+	}
+	r, err := resolveRepoFlag(cl, f["repo"])
+	if err != nil {
+		return "", err
+	}
+	if r.Dir == "" {
+		return "", fmt.Errorf("%s is known only by its config (%s); pass its path to --repo", r.Name, r.ID)
+	}
+	return r.Dir, nil
 }
 
 func cmdIssues(args []string) error {
 	f, pos := flags(args, "all", "mine", "refresh")
 	cl := connect()
 	defer cl.Close()
+	dir, err := repoDir(cl, f)
+	if err != nil {
+		return err
+	}
 	ic := theme.Icons(theme.IconsFromEnv())
 	th := theme.Load(nil)
 	if len(pos) > 0 {
 		n, err := strconv.Atoi(strings.TrimPrefix(pos[0], "#"))
 		if err != nil {
-			return fmt.Errorf("usage: boba issues [<N>] [--all|--label L] [--refresh]")
+			return fmt.Errorf("usage: boba issues [<N>] [--repo R] [--all|--label L] [--refresh]")
 		}
 		var det daemon.IssueDetail
-		if err := cl.Call("issues.view", map[string]any{"repo": cwd(), "number": n, "refresh": f["refresh"] == "true"}, &det); err != nil {
+		if err := cl.Call("issues.view", map[string]any{"repo": dir, "number": n, "refresh": f["refresh"] == "true"}, &det); err != nil {
 			return err
 		}
 		if jsonOut {
@@ -607,7 +745,7 @@ func cmdIssues(args []string) error {
 		filter = "open"
 	}
 	var l daemon.IssueList
-	if err := cl.Call("issues.list", map[string]any{"repo": cwd(), "filter": filter, "label": f["label"], "refresh": f["refresh"] == "true"}, &l); err != nil {
+	if err := cl.Call("issues.list", map[string]any{"repo": dir, "filter": filter, "label": f["label"], "refresh": f["refresh"] == "true"}, &l); err != nil {
 		return err
 	}
 	if jsonOut {
@@ -649,8 +787,16 @@ func cmdConflicts(args []string) error {
 	f, _ := flags(args)
 	cl := connect()
 	defer cl.Close()
+	id := ""
+	if f["repo"] != "" {
+		r, err := resolveRepoFlag(cl, f["repo"])
+		if err != nil {
+			return err
+		}
+		id = r.ID
+	}
 	var ps []daemon.ConflictPair
-	if err := cl.Call("conflicts.list", map[string]any{"repo_id": f["repo"]}, &ps); err != nil {
+	if err := cl.Call("conflicts.list", map[string]any{"repo_id": id}, &ps); err != nil {
 		return err
 	}
 	if jsonOut {
@@ -721,22 +867,32 @@ func cmdEvent(args []string) {
 }
 
 func cmdReview(args []string) error {
+	f, pos := flags(args)
 	cl := connect()
 	defer cl.Close()
-	if len(args) > 0 && strings.HasPrefix(args[0], "gh#") {
-		n, err := strconv.Atoi(strings.TrimPrefix(args[0], "gh#"))
+	if len(pos) > 0 && strings.HasPrefix(pos[0], "gh#") {
+		n, err := strconv.Atoi(strings.TrimPrefix(pos[0], "gh#"))
 		if err != nil {
-			return fmt.Errorf("bad PR number: %s", args[0])
+			return fmt.Errorf("bad PR number: %s", pos[0])
+		}
+		dir, err := repoDir(cl, f)
+		if err != nil {
+			return err
 		}
 		var s state.Session
-		if err := cl.Call("review.pr", map[string]any{"repo": cwd(), "number": n}, &s); err != nil {
+		if err := cl.Call("review.pr", map[string]any{"repo": dir, "number": n}, &s); err != nil {
 			return err
 		}
 		return tui.RunReview(cl, s.Slug)
 	}
 	slug := ""
-	if len(args) > 0 {
-		slug = args[0]
+	if len(pos) > 0 {
+		// <repo>/<slug> → the slug the review surface keys everything on
+		var s state.Session
+		if err := cl.Call("session.get", map[string]any{"slug": pos[0]}, &s); err != nil {
+			return err
+		}
+		slug = s.Slug
 	} else {
 		var s *state.Session
 		if err := cl.Call("review.next", nil, &s); err != nil {

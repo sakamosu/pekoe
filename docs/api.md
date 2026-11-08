@@ -22,7 +22,7 @@
 
 ```jsonc
 {
-  "slug": "feat-csv",              // worktree・セッションの識別子(branch の / を - に)
+  "slug": "feat-csv",              // worktree・セッションの識別子(branch の / を - に。全リポジトリで一意で、別リポジトリと衝突したら <repo>-<slug>)
   "branch": "feat/csv",
   "repo": "app",                   // リポジトリ名
   "repo_id": "github.com_me_app",
@@ -67,11 +67,15 @@
 
 ### メソッド
 
+`{slug}` を取るメソッドはすべて `<repo>/<slug>` も受け付ける(`<repo>` は repo-id か短い名前。`<slug>` は本物の slug か、別リポジトリとの衝突でリポジトリ名が前に付く前の形)。デーモンが受け取った時点で slug に直す。当たらなければ `no such session: <repo>/<slug>`、複数のリポジトリに当たれば候補を並べたエラー。
+
 | method | params | result |
 | --- | --- | --- |
 | `daemon.status` | — | `{pid, version, sessions, http_port}` |
 | `daemon.stop` | — | `null` |
 | `subscribe` | `{events: [prefix]}` | `null` |
+| `repo.list` | — | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + `~/.config/boba/repos/*.toml` があるもの。名前順 |
+| `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
 | `session.new` | `{repo, branch, from?, agent?, prompt?}` | `Session`(state = creating。進捗は `session.progress` イベント) |
@@ -132,6 +136,18 @@
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
+
+### KnownRepo オブジェクト
+
+```jsonc
+{
+  "repo_id": "github.com_me_app",
+  "name": "app",                 // 短い名前(~/worktrees/<name>)。設定ファイルしかないときは repo-id から推測
+  "dir": "/Users/me/src/app",    // メインの worktree。設定ファイルしか知らないときは省略
+  "sessions": 2,                 // landed でないセッションの数
+  "config": true                 // ~/.config/boba/repos/<repo-id>.toml がある
+}
+```
 
 ### Preview オブジェクト
 

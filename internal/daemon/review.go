@@ -500,7 +500,7 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 			return nil, err
 		}
 	}
-	slug := d.uniqueSlug(local, repo.ID)
+	slug := d.uniqueSlug(local, repo.ID, repo.Name)
 	path := paths.Worktree(repo.Name, slug)
 	if err := gitx.AddWorktree(repo.Dir, path, local, ""); err != nil && !strings.Contains(err.Error(), "already") {
 		return nil, err
