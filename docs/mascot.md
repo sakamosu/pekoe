@@ -127,15 +127,15 @@ CLOSED は何もしない。MERGED と同時に CI が通っても merged だけ
 
 | イベント | セリフ |
 | --- | --- |
-| merged | `fix-ci #42 マージされた` / `fix-ci #42 入った、おめでとう` / `fix-ci #42 おつかれさま、マージ` |
-| ci\_failed | `fix-ci #42 の CI 落ちちゃった` / `fix-ci #42 の check が 2 件こけた` / `fix-ci #42 の CI だめだった` |
-| changes\_requested | `fix-ci #42 に修正依頼きた` / `fix-ci #42 直してほしいって` / `fix-ci #42 changes requested` |
-| new\_comment | `fix-ci #42 にコメントきてる` / `fix-ci #42 未解決が 3 件` / `fix-ci #42 誰かが何か言ってる` |
-| approved | `fix-ci #42 approve もらえた` / `fix-ci #42 承認された、うれしい` / `fix-ci #42 レビュー通った` |
-| ci\_passed | `fix-ci #42 の CI 通った` / `fix-ci #42 全部 green` / `fix-ci #42 の check ぜんぶ通過` |
-| ci\_running | `fix-ci #42 の CI 見守り中` / `fix-ci #42 の check 走ってる` / `fix-ci #42 の CI どうかな` |
+| merged | `fix-ci #42 merged` / `fix-ci #42 is in, congrats` / `fix-ci #42 merged, nice work` |
+| ci\_failed | `fix-ci #42 CI fell over` / `fix-ci #42 failing checks: 2` / `fix-ci #42 CI didn't make it` |
+| changes\_requested | `fix-ci #42 got change requests` / `fix-ci #42 they want some fixes` / `fix-ci #42 changes requested` |
+| new\_comment | `fix-ci #42 has new comments` / `fix-ci #42 unresolved: 3` / `fix-ci #42 someone said something` |
+| approved | `fix-ci #42 got approved` / `fix-ci #42 approved, feels good` / `fix-ci #42 passed review` |
+| ci\_passed | `fix-ci #42 CI passed` / `fix-ci #42 all green` / `fix-ci #42 every check passed` |
+| ci\_running | `fix-ci #42 watching CI` / `fix-ci #42 checks are running` / `fix-ci #42 CI, fingers crossed` |
 
-文頭は必ず `<ブランチ名> #<PR 番号>`。日本語の短い話し言葉で、感嘆符は付けない（バーの台詞と同じ規則）。プレースホルダは `{name} {pr} {pass} {fail} {pending} {unresolved}`。
+文頭は必ず `<ブランチ名> #<PR 番号>`。英語の短い口語で（直訳ではなく）、感嘆符は付けない（バーの台詞と同じ規則）。プレースホルダは `{name} {pr} {pass} {fail} {pending} {unresolved}`。
 
 優先順位と頻度：
 

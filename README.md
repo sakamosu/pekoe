@@ -90,7 +90,7 @@ boba                         # TUI
 - `done` になったセッションはレビュー待ちに入り、Stop hook で `test` が自動で走る
 - 承認は hunk 単位(パス + 変更内容のハッシュで識別するので行番号がずれても残る)
 - `S`(nvim では `:BobaSend`)で未送信コメントを 1 通にまとめて送り、レビュー地点 `refs/boba/<slug>/review-<n>` を記録。次のレビューはそこからの差分だけ
-- 各 hunk には「どのプロンプトから生まれたか」(`← 指示 #3: …`)が付く
+- 各 hunk には「どのプロンプトから生まれたか」(`← prompt #3: …`)が付く
 - `?` で hunk の意図をエージェントに聞くと、返事が Stop hook で切り出されて表示される
 - `boba review gh#123` で人の PR も同じ画面で。コメントは `gh api` で GitHub review に送られる
 - `[review] gatekeeper` に読み取り専用エージェントのコマンドを書くと、危ない箇所の一覧が Comments パネルと nvim の `:BobaRisks`(quickfix)に出る

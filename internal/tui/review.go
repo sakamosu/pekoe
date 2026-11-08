@@ -614,7 +614,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 			if h.Approved && !r.showApprove {
 				label += th.FG(theme.Dim, "  approved · hidden (A to show)")
 			} else if h.Prompt != nil {
-				label += th.FG(theme.Dim, fmt.Sprintf("  ← 指示 #%d: ", h.Prompt.N)) + th.FG(theme.Text, h.Prompt.Text)
+				label += th.FG(theme.Dim, fmt.Sprintf("  ← prompt #%d: ", h.Prompt.N)) + th.FG(theme.Text, h.Prompt.Text)
 			}
 			t = mark + " " + label
 		case "line":
@@ -644,7 +644,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 	// pinned bottom area: input / answer
 	var tail []row
 	if r.input != nil {
-		label := map[string]string{"comment": "comment", "reject": "send back (why?)", "ask": "ask the agent (empty: ここの意図は?)"}[r.inputKind]
+		label := map[string]string{"comment": "comment", "reject": "send back (why?)", "ask": "ask the agent (empty: asks what this is for)"}[r.inputKind]
 		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat("─", cw))}, row{Text: th.FG(theme.Dim, label)}, row{Text: th.FG(theme.Secondary, "› ") + r.input.render(th, true)}, row{Text: m.keyHints([][2]string{{"↵", "save"}, {"esc", "cancel"}}, cw)})
 	} else if r.answer != "" || r.asking {
 		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat("─", cw))})

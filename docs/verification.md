@@ -92,7 +92,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | レビュー待ち行列 `]r` | `review.next` |
 | 差分の差分(`review-<n>` からの差分だけ) | e2e、`TestSessionLifecycleAndReview` |
 | hunk 単位の承認(パス + 内容ハッシュ) | `TestHunkIDSurvivesLineShift` |
-| hunk とプロンプトの対応(`← 指示 #3`) | e2e、TUI(モック 02) |
+| hunk とプロンプトの対応(`← prompt #3`) | e2e、TUI(モック 02) |
 | 門番(テスト + 読み取り専用エージェント) | Stop で `test` を実行、`[review] gatekeeper` の結果を Comments と quickfix へ |
 | その場で聞く `?` | `TestReviewAsk`(返事を Stop で切り出し、レビュー中のまま保つ) |
 | 人の PR にも同じ UI(`gh api` で GitHub review へ) | `TestReviewSomeoneElsesPR` |
@@ -140,7 +140,7 @@ TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、pr
 | | ステータスライン: モードのピル(primary の塗り)・ブランチ(select の塗り)・集計(surface の塗り)、右にキーヒント 6 個 | ✓ |
 | 02 Review | `[1] Files`(● 未承認 / ✓ 承認済み、`n hunks m`)、`since review #2 · 9 hunks · 5 approved`、`+120 -8 · ✓ test` | ✓ |
 | | `[2] Comments`(`path:line` は dim)、`[3] Session`(`hunk 2 ← prompt #6 "…"`) | ✓ |
-| | `[4] Diff`: ✓ 承認済み(非表示)/ ▶ 現在 / ○ 未着手、ガター ▎、旧・新の行番号、インラインのコメント(secondary の `— you, unsent`)、`A show approved` | ✓(hunk の見出しに `← 指示 #n` を追加。設計書の hunk ↔ プロンプト対応) |
+| | `[4] Diff`: ✓ 承認済み(非表示)/ ▶ 現在 / ○ 未着手、ガター ▎、旧・新の行番号、インラインのコメント(secondary の `— you, unsent`)、`A show approved` | ✓(hunk の見出しに `← prompt #n` を追加。設計書の hunk ↔ プロンプト対応) |
 | | 最下行のスクロールバー(│ と ┃)+ `hunk 2 of 3 · 1 unsent comment on this hunk` | ✓ |
 | | ステータスライン `REVIEW` / `since #2` / `5/9 approved 2 comments` / `a approve x revert c comment ? ask ]h next S send` | ✓ |
 | 03 Permission | 中央モーダル(primary の枠、surface の塗り、背後のパネルは border に落ちる) | ✓ |
