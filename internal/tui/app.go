@@ -1234,6 +1234,15 @@ func (m *model) move(idx *int, n int, delta int) {
 	*idx = clampi(*idx+delta, 0, n-1)
 }
 
+// moveWrap is move that wraps around at the ends (bottom → top, top → bottom).
+func (m *model) moveWrap(idx *int, n int, delta int) {
+	if n == 0 {
+		*idx = 0
+		return
+	}
+	*idx = ((*idx+delta)%n + n) % n
+}
+
 func (m *model) keySessions(key string) tea.Cmd {
 	s := m.current()
 	if cmd, ok := m.common(key); ok {
@@ -1241,10 +1250,10 @@ func (m *model) keySessions(key string) tea.Cmd {
 	}
 	switch key {
 	case "j", "down":
-		m.move(&m.sel, len(m.visible()), 1)
+		m.moveWrap(&m.sel, len(m.visible()), 1)
 		return m.onSelChange()
 	case "k", "up":
-		m.move(&m.sel, len(m.visible()), -1)
+		m.moveWrap(&m.sel, len(m.visible()), -1)
 		return m.onSelChange()
 	case "g", "home":
 		m.sel = 0

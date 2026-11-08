@@ -229,7 +229,7 @@ func TestSelectionSkipsHeadings(t *testing.T) {
 	if got := m.current().Slug; got != "api-1" {
 		t.Fatalf("start: %s", got)
 	}
-	want := []string{"api-2", "web-1", "web-1"}
+	want := []string{"api-2", "web-1", "api-1"} // wraps from the bottom to the top
 	for _, w := range want {
 		m.onKey(key("j"))
 		if got := m.current().Slug; got != w {
@@ -239,6 +239,10 @@ func TestSelectionSkipsHeadings(t *testing.T) {
 		if i := selRow(rows); i < 0 || !strings.Contains(rows[i].Text, w) {
 			t.Fatalf("selected row is not %s: %d", w, i)
 		}
+	}
+	m.onKey(key("k"))
+	if got := m.current().Slug; got != "web-1" {
+		t.Fatalf("k wraps from the top to the bottom: %s", got)
 	}
 	m.onKey(key("k"))
 	if got := m.current().Slug; got != "api-2" {
