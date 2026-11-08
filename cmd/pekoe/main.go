@@ -20,6 +20,7 @@
 //	pekoe daemon start|stop|restart|status|run
 //	pekoe tapi [reset]         tapi chat (TUI: t): state, or forget the conversation
 //	pekoe migrate [--dry-run] [--prune-old]   move a boba installation to pekoe
+//	pekoe update [--check] [--version vX.Y.Z]  replace pekoe with a GitHub release
 package main
 
 import (
@@ -125,6 +126,8 @@ func main() {
 		err = cmdDaemon(args)
 	case "migrate":
 		err = cmdMigrate(args)
+	case "update":
+		err = cmdUpdate(args)
 	case "tapi":
 		err = cmdTapi(args)
 	case "tip", "tips":
@@ -201,6 +204,9 @@ func usage() {
                                socket "pekoe" this kills every real agent
   pekoe migrate [--dry-run] [--prune-old]
                                move a boba installation (the old name) to pekoe
+  pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]
+                               replace pekoe with the latest GitHub release
+                               (--check: only tell whether there is a newer one)
 
   R is a repo-id, a short name (as in ~/worktrees/<name>) or a path.
 `)
