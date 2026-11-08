@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>boba 設定</title>
+  <title>boba options</title>
   <style>
     body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 420px; }
     label { display: block; margin: 12px 0 4px; font-weight: 600; }
@@ -15,14 +15,14 @@
 </head>
 <body>
   <h2>boba</h2>
-  <p>port と token は <code>boba ext</code> で表示できます。</p>
+  <p>Run <code>boba ext</code> to show the port and token.</p>
   <label for="port">Port</label>
   <input id="port" type="number" min="1" max="65535" placeholder="47777">
   <label for="token">Token</label>
   <input id="token" type="password" autocomplete="off">
   <div class="row">
-    <button id="save">保存</button>
-    <button id="test">接続テスト</button>
+    <button id="save">Save</button>
+    <button id="test">Test connection</button>
   </div>
   <div id="status"></div>
   <script src="options.js"></script>

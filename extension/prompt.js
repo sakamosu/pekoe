@@ -5,7 +5,7 @@
   const params = new URLSearchParams(location.hash.slice(1));
   const nonce = params.get('n') || '';
   const input = document.getElementById('in');
-  document.getElementById('hint').textContent = `${params.get('label') || ''} — Enter で送信 / Esc で中止`;
+  document.getElementById('hint').textContent = `${params.get('label') || ''} — Enter to send / Esc to cancel`;
   const post = (type, value) => parent.postMessage({ boba: 'prompt', nonce, type, value }, '*');
   let composing = false;
   input.addEventListener('compositionstart', () => { composing = true; });

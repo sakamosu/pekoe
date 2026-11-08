@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "boba",
   "version": "0.1.0",
-  "description": "ページ上の要素を選んで boba のセッションへ送る",
+  "description": "Pick an element on the page and send it to a boba session",
   "permissions": [
     "activeTab",
     "scripting",
@@ -18,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "boba: 要素を選択 (⌘⇧E)"
+    "default_title": "boba: Pick element (⌘⇧E)"
   },
   "options_page": "options.html",
   "commands": {
@@ -27,7 +27,7 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "要素選択モードを切り替える"
+      "description": "Toggle element picker"
     }
   },
   "content_scripts": [
