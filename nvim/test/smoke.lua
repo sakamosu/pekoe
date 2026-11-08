@@ -83,6 +83,13 @@ local ok, err = xpcall(function()
     check(wait(1000, function()
       return logged("session.answer", function(p) return p.slug == "fix-y" and p.answer == "allow" end) ~= nil
     end), "y sends session.answer allow")
+    local tok
+    for _, e in ipairs(daemon_log()) do
+      if e.method == "session.answer" then
+        tok = e.token
+      end
+    end
+    check(tok == "test-human-token", "session.answer carries the human token (got " .. tostring(tok) .. ")")
     check(approval.current() == nil, "approval float closed after answer")
   end
 

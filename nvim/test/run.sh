@@ -22,8 +22,13 @@ start_daemon() {
 }
 
 echo "== smoke"
+# 人間用トークン: session.answer に付けて送られることを smoke.lua が確かめる
+HOMED="$TMPD/pekoe-test-home-$$"
+mkdir -p "$HOMED/share"
+printf 'test-human-token\n' >"$HOMED/share/human-token"
+trap 'kill $PID 2>/dev/null || true; rm -f "$SOCK" "$HOMED/share/human-token"; rmdir "$HOMED/share" "$HOMED" 2>/dev/null || true' EXIT
 start_daemon
-PEKOE_SOCK="$SOCK" nvim --headless -u NONE -i NONE -n \
+PEKOE_HOME="$HOMED" PEKOE_SOCK="$SOCK" nvim --headless -u NONE -i NONE -n \
   --cmd "set rtp+=$ROOT" \
   -c "luafile $HERE/smoke.lua"
 kill $PID; wait $PID 2>/dev/null || true; rm -f "$SOCK"

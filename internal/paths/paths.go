@@ -66,6 +66,11 @@ func TokenFile() string { return filepath.Join(DataDir(), "http-token") }
 func DaemonLog() string { return filepath.Join(DataDir(), "pekoed.log") }
 func PidFile() string   { return filepath.Join(DataDir(), "pekoed.pid") }
 
+// HumanTokenFile holds the token that unlocks the human-only API methods
+// (answering permission prompts, pressing keys, running commands). The TUI,
+// the CLI and Neovim read it; agents must not (docs/web.md の脅威モデル).
+func HumanTokenFile() string { return filepath.Join(DataDir(), "human-token") }
+
 // LayoutFile keeps the TUI's panel widths (<prefix> z < > =).
 func LayoutFile() string { return filepath.Join(DataDir(), "layout.json") }
 

@@ -7,7 +7,7 @@
 - subscribe した接続には 0.3 秒後に session.waiting(permission)を流す
 - review.approve で状態を変えて review.updated を流す
 - editor.open は購読者に editor.open イベントとして流す
-- test.log で受け取ったリクエスト一覧を返す(テスト用の拡張)
+- test.log で受け取ったリクエスト一覧(人間用トークンも)を返す(テスト用の拡張)
 """
 import asyncio
 import copy
@@ -90,8 +90,8 @@ async def broadcast(event, data):
                 pass
 
 
-async def handle_req(method, params, writer):
-    state["log"].append({"method": method, "params": params})
+async def handle_req(method, params, writer, token=None):
+    state["log"].append({"method": method, "params": params, "token": token})
     if method == "subscribe":
         state["subs"].append((writer, params.get("events", ["*"])))
 
@@ -167,7 +167,7 @@ async def client(reader, writer):
                 continue
             rid = msg.get("id")
             try:
-                res = await handle_req(msg.get("method"), msg.get("params") or {}, writer)
+                res = await handle_req(msg.get("method"), msg.get("params") or {}, writer, msg.get("token"))
                 out = {"id": rid, "result": res}
             except KeyError as e:
                 out = {"id": rid, "error": str(e.args[0])}

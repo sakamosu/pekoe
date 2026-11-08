@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,9 +38,28 @@ type Client struct {
 	Events  chan Event
 	done    chan struct{}
 	err     atomic.Value
+	human   bool   // Dial: send the human token
+	token   string // the human token, sent with every request (empty: none)
 }
 
+// Dial connects as the person at the keyboard: it reads the human token
+// (paths.HumanTokenFile), which the human-only methods (answering
+// permission prompts, pressing keys, running commands) require. Without the
+// file, those methods are refused and everything else works.
 func Dial() (*Client, error) {
+	cl, err := dial()
+	if err != nil {
+		return nil, err
+	}
+	cl.human = true // the token is read at the first call
+	return cl, nil
+}
+
+// DialAgent connects without the human token, for code that serves an
+// agent (the MCP server).
+func DialAgent() (*Client, error) { return dial() }
+
+func dial() (*Client, error) {
 	c, err := net.DialTimeout("unix", paths.Socket(), 2*time.Second)
 	if err != nil {
 		return nil, err
@@ -47,6 +67,15 @@ func Dial() (*Client, error) {
 	cl := &Client{c: c, pending: map[int64]chan msg{}, Events: make(chan Event, 512), done: make(chan struct{})}
 	go cl.read()
 	return cl, nil
+}
+
+// ReadHumanToken returns the human token, or "" when the file cannot be read.
+func ReadHumanToken() string {
+	b, err := os.ReadFile(paths.HumanTokenFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // Connect dials the daemon, starting it in the background when absent.
@@ -188,7 +217,19 @@ func (cl *Client) CallTimeout(method string, params any, out any, timeout time.D
 	if params == nil {
 		params = map[string]any{}
 	}
-	b, err := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
+	req := map[string]any{"id": id, "method": method, "params": params}
+	cl.mu.Lock()
+	if cl.human && cl.token == "" {
+		// read once it exists (a pekoed from before the token may have
+		// been restarted since this client connected)
+		cl.token = ReadHumanToken()
+	}
+	tok := cl.token
+	cl.mu.Unlock()
+	if tok != "" {
+		req["token"] = tok
+	}
+	b, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}

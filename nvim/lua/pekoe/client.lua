@@ -35,6 +35,35 @@ function M.socket_path()
   return vim.fn.expand("~/.local/share/pekoe/pekoed.sock")
 end
 
+--- pekoed のデータディレクトリ(Go の paths.DataDir と同じ規則)
+---@return string
+function M.data_dir()
+  local home = vim.env.PEKOE_HOME
+  if home and home ~= "" then
+    return home .. "/share"
+  end
+  local xdg = vim.env.XDG_DATA_HOME
+  if xdg and xdg ~= "" then
+    return xdg .. "/pekoe"
+  end
+  return vim.fn.expand("~/.local/share/pekoe")
+end
+
+--- 人間用トークン。許可待ちへの回答など人間だけの操作に要る(なければ nil)
+---@return string|nil
+function M.human_token()
+  local f = io.open(M.data_dir() .. "/human-token", "r")
+  if not f then
+    return nil
+  end
+  local t = f:read("*l")
+  f:close()
+  if t and t ~= "" then
+    return vim.trim(t)
+  end
+  return nil
+end
+
 function M.is_connected()
   return st.connected
 end
@@ -237,7 +266,11 @@ function M.request(method, params, cb)
   if params == nil or (type(params) == "table" and next(params) == nil) then
     params = vim.empty_dict()
   end
-  local line = vim.json.encode({ id = id, method = method, params = params }) .. "\n"
+  local req = { id = id, method = method, params = params }
+  if method ~= "subscribe" then
+    req.token = M.human_token()
+  end
+  local line = vim.json.encode(req) .. "\n"
   local wrapped = cb and function(err, res)
     local ok, e = pcall(cb, err, res)
     if not ok then
