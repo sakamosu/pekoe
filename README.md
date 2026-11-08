@@ -125,6 +125,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `daemon status`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
+- `answer`・`dev`・`init` の書き込み・`daemon stop` は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手が許可待ちの間は断る
 
 ## TUI
 
@@ -215,6 +216,42 @@ pekoe                                                 # TUI
 
 [skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。main のチェックアウトで動く Claude Code をハブにして、変更依頼を `pekoe new` で別 worktree・別エージェントに任せ、追加の指示も main から `pekoe send` で送るためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
 
+### エージェントに pekoe を使わせるときの権限
+
+エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed は「人間がその場で判断・実行する操作」(許可待ちへの回答、生キー、tapi chat への入力、設定の書き込み、`dev` や run 窓でのコマンド実行、デーモンの停止)を、`human-token` を付けた呼び出しにだけ許す。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。対象のメソッドは [docs/api.md](docs/api.md) の「人間だけの操作」。
+
+ただし同じユーザーのエージェントはファイルを読めてしまう。次の 2 つを合わせて使う。
+
+1. **token のファイルをエージェントから読めなくする。** Claude Code なら `~/.claude/settings.json` で sandbox を有効にし、`sandbox.filesystem.denyRead`(Bash のコマンドとその子プロセスに OS レベルで効く)と `permissions.deny` の `Read(...)`(Read ツールに効く)の両方に入れる。`$PEKOE_HOME` や `$XDG_DATA_HOME` を変えているならそのパスにする
+
+   ```json
+   {
+     "permissions": {
+       "deny": ["Read(~/.local/share/pekoe/human-token)"]
+     },
+     "sandbox": {
+       "enabled": true,
+       "filesystem": {
+         "denyRead": ["~/.local/share/pekoe/human-token"]
+       }
+     }
+   }
+   ```
+
+   設定したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。キーの名前や挙動は Claude Code の版で変わりうるので、[sandbox](https://code.claude.com/docs/en/sandboxing) と [permissions](https://code.claude.com/docs/en/permissions) のドキュメントも見る。sandbox の中から pekoe がソケットにつながらないときは、sandbox の unix ソケットの設定を見直す
+
+2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`land`、`daemon` は入れない
+
+   ```json
+   {
+     "permissions": {
+       "allow": ["Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)"]
+     }
+   }
+   ```
+
+Web UI と Chrome 拡張はソケットを通らない人間の入口なので、それぞれの認証だけで使える。脅威モデルは [docs/web.md](docs/web.md#脅威モデル)。
+
 ### iPhone から(Web UI)
 
 `make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
@@ -304,6 +341,7 @@ agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir 
 | 状態 DB・socket・ログ・picks | `~/.local/share/pekoe/` |
 | TUI のペイン幅・ズーム | `~/.local/share/pekoe/layout.json`(`^q` `<` `>` `=` `z` で書き換わる) |
 | tapi chat の稼働ディレクトリ | `~/.local/share/pekoe/tapi/`(会話の記録は Claude Code の `~/.claude/projects/` 側。`pekoe tapi reset` で消える) |
+| 人間用トークン(許可待ちへの回答などに要る。エージェントに読ませない) | `~/.local/share/pekoe/human-token` |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
