@@ -1,11 +1,11 @@
 -- セッション一覧・ピッカー・送信先(target)の管理。
-local client = require("boba.client")
-local ui = require("boba.ui")
+local client = require("pekoe.client")
+local ui = require("pekoe.ui")
 
 local M = {}
 
 M.cache = {} -- slug -> Session(イベントで更新)
-M.target = nil -- :BobaSessions で選んだ送信先
+M.target = nil -- :PekoeSessions で選んだ送信先
 
 function M.update(s)
   if type(s) == "table" and s.slug then
@@ -19,12 +19,12 @@ function M.remove(s)
   end
 end
 
---- 既定の送信先: :BobaSessions の選択 > $BOBA_SESSION
+--- 既定の送信先: :PekoeSessions の選択 > $PEKOE_SESSION
 function M.default_slug()
   if M.target and M.target ~= "" then
     return M.target
   end
-  local env = vim.env.BOBA_SESSION
+  local env = vim.env.PEKOE_SESSION
   if env and env ~= "" then
     return env
   end
@@ -58,9 +58,9 @@ function M.pick(cb, prompt)
       return
     end
     vim.ui.select(list, {
-      prompt = prompt or "boba session",
+      prompt = prompt or "pekoe session",
       format_item = M.format,
-      kind = "boba_session",
+      kind = "pekoe_session",
     }, function(choice)
       if choice then
         cb(choice)
@@ -69,7 +69,7 @@ function M.pick(cb, prompt)
   end)
 end
 
---- slug を解決する(引数 > target/$BOBA_SESSION > ピッカー)。cb(slug)。
+--- slug を解決する(引数 > target/$PEKOE_SESSION > ピッカー)。cb(slug)。
 function M.resolve(slug, cb, prompt)
   if slug and slug ~= "" then
     return cb(slug)
@@ -114,7 +114,7 @@ function M.relpath(abs, root)
   return abs
 end
 
--- :BobaSessions のクイックリスト
+-- :PekoeSessions のクイックリスト
 function M.open_list()
   M.list(function(list)
     local rows = {}
@@ -122,19 +122,19 @@ function M.open_list()
       local sym, hl, word = ui.state(s.state)
       local cur = (s.slug == M.default_slug()) and "*" or " "
       table.insert(rows, {
-        { cur .. " ", "BobaSecondary" },
+        { cur .. " ", "PekoeSecondary" },
         { sym .. " ", hl },
         { string.format("%-28s", s.slug) },
         { word, hl },
-        { s.last_tool and ("  " .. s.last_tool) or "", "BobaDim" },
+        { s.last_tool and ("  " .. s.last_tool) or "", "PekoeDim" },
       })
     end
     if #rows == 0 then
-      rows = { { { "  no sessions", "BobaDim" } } }
+      rows = { { { "  no sessions", "PekoeDim" } } }
     end
     local buf, win = ui.float(rows, { title = "◆ Sessions", enter = true, min_width = 50 })
     vim.wo[win].cursorline = true
-    vim.wo[win].winhighlight = vim.wo[win].winhighlight .. ",CursorLine:BobaSelect"
+    vim.wo[win].winhighlight = vim.wo[win].winhighlight .. ",CursorLine:PekoeSelect"
     local o = { buffer = buf, nowait = true, silent = true }
     vim.keymap.set("n", "<CR>", function()
       local s = list[vim.api.nvim_win_get_cursor(win)[1]]
@@ -148,7 +148,7 @@ function M.open_list()
       local s = list[vim.api.nvim_win_get_cursor(win)[1]]
       ui.close_win(win)
       if s then
-        require("boba.review").open(s.slug)
+        require("pekoe.review").open(s.slug)
       end
     end, o)
     for _, k in ipairs({ "q", "<Esc>" }) do

@@ -1,7 +1,7 @@
 -- C. 許可待ちの承認フロート(右下)。y / n / A / g / Esc。
-local client = require("boba.client")
-local ui = require("boba.ui")
-local sessions = require("boba.sessions")
+local client = require("pekoe.client")
+local ui = require("pekoe.ui")
+local sessions = require("pekoe.sessions")
 
 local M = {}
 
@@ -9,7 +9,7 @@ M.queue = {} -- 許可待ちの Session(古い順)
 local cur = nil -- {slug, buf, win, prev}
 
 local function cfg()
-  return require("boba").config
+  return require("pekoe").config
 end
 
 local function tool_input_str(input)
@@ -75,10 +75,10 @@ function M.go(slug)
     return
   end
   sessions.target = slug
-  if vim.env.BOBA_SESSION and vim.env.BOBA_SESSION ~= "" then
-    ui.notify(slug .. ": go back to the boba TUI and open the session (:BobaSend takes you back)")
+  if vim.env.PEKOE_SESSION and vim.env.PEKOE_SESSION ~= "" then
+    ui.notify(slug .. ": go back to the pekoe TUI and open the session (:PekoeSend takes you back)")
   else
-    ui.notify(slug .. ": run `boba` in a terminal to answer this session (set as send target)")
+    ui.notify(slug .. ": run `pekoe` in a terminal to answer this session (set as send target)")
   end
 end
 
@@ -87,11 +87,11 @@ show = function(s)
   local km = cfg().keymaps.approval
   local pt = s.pending_tool or {}
   local rows = {
-    { { "● ", "BobaWarn" }, { "Permission", "BobaWarn" }, { " · ", "BobaDim" }, { s.slug, "BobaTitle" } },
+    { { "● ", "PekoeWarn" }, { "Permission", "PekoeWarn" }, { " · ", "PekoeDim" }, { s.slug, "PekoeTitle" } },
     "",
   }
   if pt.name then
-    table.insert(rows, { { "  " .. pt.name, "BobaSecondary" } })
+    table.insert(rows, { { "  " .. pt.name, "PekoeSecondary" } })
   end
   for _, l in ipairs(vim.split(tool_input_str(pt.input), "\n")) do
     if l ~= "" then
@@ -102,13 +102,13 @@ show = function(s)
   local hint = {}
   for _, p in ipairs({ { km.allow, "allow" }, { km.deny, "deny" }, { km.always, "always" }, { km.go, "go" }, { km.close, "close" } }) do
     if p[1] then
-      table.insert(hint, { p[1] .. " ", "BobaKey" })
-      table.insert(hint, { p[2] .. "  ", "BobaDim" })
+      table.insert(hint, { p[1] .. " ", "PekoeKey" })
+      table.insert(hint, { p[2] .. "  ", "PekoeDim" })
     end
   end
   table.insert(rows, hint)
   if #M.queue > 1 then
-    table.insert(rows, { { string.format("  (%d more waiting)", #M.queue - 1), "BobaDim" } })
+    table.insert(rows, { { string.format("  (%d more waiting)", #M.queue - 1), "PekoeDim" } })
   end
 
   local prev = vim.api.nvim_get_current_win()
@@ -121,7 +121,7 @@ show = function(s)
   local buf, win = ui.float(rows, {
     anchor = "bottom-right",
     enter = enter,
-    border_hl = "BobaWarn",
+    border_hl = "PekoeWarn",
     min_width = 36,
     width = math.min(70, math.max(36, (function()
       local w = 0

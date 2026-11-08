@@ -1,4 +1,4 @@
--- bobad の unix socket クライアント(JSON Lines)。
+-- pekoed の unix socket クライアント(JSON Lines)。
 -- すべてのコールバックとイベントハンドラは vim.schedule 経由でメインループから呼ばれる。
 local uv = vim.uv or vim.loop
 
@@ -24,15 +24,15 @@ local st = {
 
 ---@return string
 function M.socket_path()
-  local sock = vim.env.BOBA_SOCK
+  local sock = vim.env.PEKOE_SOCK
   if sock and sock ~= "" then
     return sock
   end
-  local home = vim.env.BOBA_HOME
+  local home = vim.env.PEKOE_HOME
   if home and home ~= "" then
-    return home .. "/share/bobad.sock"
+    return home .. "/share/pekoed.sock"
   end
-  return vim.fn.expand("~/.local/share/boba/bobad.sock")
+  return vim.fn.expand("~/.local/share/pekoe/pekoed.sock")
 end
 
 function M.is_connected()
@@ -59,7 +59,7 @@ local function dispatch_event(name, data)
     if event_matches(h.pattern, name) then
       local ok, err = pcall(h.fn, data, name)
       if not ok then
-        vim.notify("boba: event handler error (" .. name .. "): " .. tostring(err), vim.log.levels.ERROR)
+        vim.notify("pekoe: event handler error (" .. name .. "): " .. tostring(err), vim.log.levels.ERROR)
       end
     end
   end
@@ -128,9 +128,9 @@ local function on_disconnect(reason)
   st.connected = false
   st.connecting = false
   st.rbuf = ""
-  fail_all(reason or "boba: disconnected")
+  fail_all(reason or "pekoe: disconnected")
   if was then
-    dispatch_event("boba.disconnected", {})
+    dispatch_event("pekoe.disconnected", {})
   end
   schedule_reconnect()
 end
@@ -149,7 +149,7 @@ local function on_connected()
   st.pipe:read_start(function(err, chunk)
     if err or not chunk then
       vim.schedule(function()
-        on_disconnect(err and ("boba: read error: " .. err) or "boba: daemon closed connection")
+        on_disconnect(err and ("pekoe: read error: " .. err) or "pekoe: daemon closed connection")
       end)
       return
     end
@@ -167,7 +167,7 @@ local function on_connected()
     end
     raw_write(q.line)
   end
-  dispatch_event("boba.connected", {})
+  dispatch_event("pekoe.connected", {})
 end
 
 function M.connect()
@@ -187,9 +187,9 @@ function M.connect()
       if err then
         if not st.warned and #st.queue > 0 then
           st.warned = true
-          vim.notify("boba: cannot connect to bobad (" .. path .. "): " .. err, vim.log.levels.WARN)
+          vim.notify("pekoe: cannot connect to pekoed (" .. path .. "): " .. err, vim.log.levels.WARN)
         end
-        on_disconnect("boba: not connected (" .. err .. ")")
+        on_disconnect("pekoe: not connected (" .. err .. ")")
         return
       end
       on_connected()
@@ -223,7 +223,7 @@ function M.disconnect()
     st.timer = nil
   end
   if st.pipe then
-    on_disconnect("boba: disconnected by client")
+    on_disconnect("pekoe: disconnected by client")
   end
 end
 
@@ -241,7 +241,7 @@ function M.request(method, params, cb)
   local wrapped = cb and function(err, res)
     local ok, e = pcall(cb, err, res)
     if not ok then
-      vim.notify("boba: callback error (" .. method .. "): " .. tostring(e), vim.log.levels.ERROR)
+      vim.notify("pekoe: callback error (" .. method .. "): " .. tostring(e), vim.log.levels.ERROR)
     end
   end or nil
   if st.connected then
@@ -260,7 +260,7 @@ end
 function M.call(method, params, on_ok)
   return M.request(method, params, function(err, res)
     if err then
-      vim.notify("boba: " .. method .. ": " .. err, vim.log.levels.ERROR)
+      vim.notify("pekoe: " .. method .. ": " .. err, vim.log.levels.ERROR)
       return
     end
     if on_ok then

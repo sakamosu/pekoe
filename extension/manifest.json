@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "boba",
+  "name": "pekoe",
   "version": "0.1.0",
-  "description": "Pick an element on the page and send it to a boba session",
+  "description": "Pick an element on the page and send it to a pekoe session",
   "permissions": [
     "activeTab",
     "scripting",
@@ -18,7 +18,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "boba: Pick element (⌘⇧E)"
+    "default_title": "pekoe: Pick element (⌘⇧E)"
   },
   "options_page": "options.html",
   "commands": {

@@ -1,4 +1,4 @@
-// boba options: port + token in chrome.storage.local, and a /health check.
+// pekoe options: port + token in chrome.storage.local, and a /health check.
 const $ = (id) => document.getElementById(id);
 const DEFAULT_PORT = 47777;
 
@@ -37,6 +37,6 @@ $('test').addEventListener('click', async () => {
     else if (res.status === 401) status('Invalid token (401)', false);
     else status(`Error: HTTP ${res.status}`, false);
   } catch (e) {
-    status(`Cannot connect to bobad: ${e.message}`, false);
+    status(`Cannot connect to pekoed: ${e.message}`, false);
   }
 });

@@ -1,4 +1,4 @@
--- boba.nvim: bobad に繋がるレビュー面と日常の小技。
+-- pekoe.nvim: pekoed に繋がるレビュー面と日常の小技。
 local M = {}
 
 M.defaults = {
@@ -29,8 +29,8 @@ M.defaults = {
     },
   },
   approval = true, -- 許可待ちフロートを出す
-  editor_open = true, -- true: 自分宛て(BOBA_SESSION / cwd 配下)だけ、"all": すべて、false: 無視
-  auto_review = true, -- BOBA_REVIEW=1 かつ BOBA_SESSION があれば起動時に :BobaReview
+  editor_open = true, -- true: 自分宛て(PEKOE_SESSION / cwd 配下)だけ、"all": すべて、false: 無視
+  auto_review = true, -- PEKOE_REVIEW=1 かつ PEKOE_SESSION があれば起動時に :PekoeReview
   list_width = 40,
 }
 
@@ -47,14 +47,14 @@ local function setup_keymaps()
   local km = M.config.keymaps
   if km.send_range then
     vim.keymap.set("x", km.send_range, function()
-      require("boba.send").range()
-    end, { desc = "boba: send the selection to a session" })
+      require("pekoe.send").range()
+    end, { desc = "pekoe: send the selection to a session" })
     table.insert(global_maps, { "x", km.send_range })
   end
   if km.new_session then
     vim.keymap.set("x", km.new_session, function()
-      require("boba.send").new_session()
-    end, { desc = "boba: new session from the selection" })
+      require("pekoe.send").new_session()
+    end, { desc = "pekoe: new session from the selection" })
     table.insert(global_maps, { "x", km.new_session })
   end
 end
@@ -64,29 +64,29 @@ local function setup_events()
     return
   end
   events_done = true
-  local client = require("boba.client")
-  local sessions = require("boba.sessions")
+  local client = require("pekoe.client")
+  local sessions = require("pekoe.sessions")
   client.on("session.created", sessions.update)
   client.on("session.updated", sessions.update)
   client.on("session.done", sessions.update)
   client.on("session.removed", sessions.remove)
-  require("boba.review").setup_events()
-  require("boba.approval").setup_events()
-  require("boba.editor").setup_events()
+  require("pekoe.review").setup_events()
+  require("pekoe.approval").setup_events()
+  require("pekoe.editor").setup_events()
 end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
   M._setup_done = true
-  local ui = require("boba.ui")
+  local ui = require("pekoe.ui")
   ui.setup_highlights()
   vim.api.nvim_create_autocmd("ColorScheme", {
-    group = vim.api.nvim_create_augroup("BobaHighlights", { clear = true }),
+    group = vim.api.nvim_create_augroup("PekoeHighlights", { clear = true }),
     callback = ui.setup_highlights,
   })
   setup_keymaps()
   setup_events()
-  require("boba.client").connect()
+  require("pekoe.client").connect()
 end
 
 --- setup() が呼ばれていなければ既定値で初期化する。
@@ -99,25 +99,25 @@ end
 -- 公開 API
 function M.review(slug)
   M.ensure()
-  require("boba.review").open(slug)
+  require("pekoe.review").open(slug)
 end
 
 function M.request(method, params, cb)
   M.ensure()
-  return require("boba.client").request(method, params, cb)
+  return require("pekoe.client").request(method, params, cb)
 end
 
 function M.on(pattern, fn)
-  return require("boba.client").on(pattern, fn)
+  return require("pekoe.client").on(pattern, fn)
 end
 
 function M.target()
-  return require("boba.sessions").default_slug()
+  return require("pekoe.sessions").default_slug()
 end
 
 function M.maybe_auto_review()
-  if M.config.auto_review and vim.env.BOBA_REVIEW == "1" and vim.env.BOBA_SESSION and vim.env.BOBA_SESSION ~= "" then
-    require("boba.review").open(vim.env.BOBA_SESSION)
+  if M.config.auto_review and vim.env.PEKOE_REVIEW == "1" and vim.env.PEKOE_SESSION and vim.env.PEKOE_SESSION ~= "" then
+    require("pekoe.review").open(vim.env.PEKOE_SESSION)
   end
 end
 

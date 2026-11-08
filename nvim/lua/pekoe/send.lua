@@ -1,7 +1,7 @@
 -- B. 範囲送信 / 新セッション、E. 診断送信。
-local client = require("boba.client")
-local ui = require("boba.ui")
-local sessions = require("boba.sessions")
+local client = require("pekoe.client")
+local ui = require("pekoe.ui")
+local sessions = require("pekoe.sessions")
 
 local M = {}
 
@@ -136,7 +136,7 @@ function M.format_diagnostics(diags, root)
   return out
 end
 
---- :BobaFixDiagnostics[!]
+--- :PekoeFixDiagnostics[!]
 function M.fix_diagnostics(workspace, slug)
   local diags = vim.diagnostic.get(not workspace and vim.api.nvim_get_current_buf() or nil)
   if #diags == 0 then

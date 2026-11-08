@@ -1,7 +1,7 @@
 -- 配色・状態記号・フロートの共通部品。
 local M = {}
 
-M.ns = vim.api.nvim_create_namespace("boba")
+M.ns = vim.api.nvim_create_namespace("pekoe")
 
 -- docs/ui-guidelines.md のカラートークン。default = true なのでユーザーが上書きできる。
 function M.setup_highlights()
@@ -9,45 +9,45 @@ function M.setup_highlights()
     val.default = true
     vim.api.nvim_set_hl(0, name, val)
   end
-  set("BobaPrimary", { fg = "#ff87da", ctermfg = 5 })
-  set("BobaSecondary", { fg = "#11cded", ctermfg = 6 })
-  set("BobaWarn", { fg = "#edc812", ctermfg = 3 })
-  set("BobaOk", { fg = "#51d75e", ctermfg = 2 })
-  set("BobaErr", { fg = "#ff7172", ctermfg = 1 })
-  set("BobaDim", { fg = "#848495", ctermfg = 8 })
-  set("BobaBorder", { fg = "#3b3b4d", ctermfg = 8 })
-  set("BobaSelect", { bg = "#441e39", cterm = { reverse = true } })
-  set("BobaKey", { fg = "#11cded", bold = true, ctermfg = 6 })
+  set("PekoePrimary", { fg = "#ff87da", ctermfg = 5 })
+  set("PekoeSecondary", { fg = "#11cded", ctermfg = 6 })
+  set("PekoeWarn", { fg = "#edc812", ctermfg = 3 })
+  set("PekoeOk", { fg = "#51d75e", ctermfg = 2 })
+  set("PekoeErr", { fg = "#ff7172", ctermfg = 1 })
+  set("PekoeDim", { fg = "#848495", ctermfg = 8 })
+  set("PekoeBorder", { fg = "#3b3b4d", ctermfg = 8 })
+  set("PekoeSelect", { bg = "#441e39", cterm = { reverse = true } })
+  set("PekoeKey", { fg = "#11cded", bold = true, ctermfg = 6 })
   -- 派生(役割へのリンク)
-  set("BobaTitle", { fg = "#ff87da", bold = true, ctermfg = 5 })
-  set("BobaFloatBorder", { link = "BobaPrimary" })
-  set("BobaDiffAdd", { link = "BobaOk" })
-  set("BobaDiffDelete", { link = "BobaErr" })
-  set("BobaHunkHeader", { link = "BobaSecondary" })
-  set("BobaPromptNote", { link = "BobaDim" })
-  set("BobaComment", { link = "BobaSecondary" })
-  set("BobaCommentSent", { link = "BobaDim" })
-  set("BobaLineNr", { link = "BobaDim" })
+  set("PekoeTitle", { fg = "#ff87da", bold = true, ctermfg = 5 })
+  set("PekoeFloatBorder", { link = "PekoePrimary" })
+  set("PekoeDiffAdd", { link = "PekoeOk" })
+  set("PekoeDiffDelete", { link = "PekoeErr" })
+  set("PekoeHunkHeader", { link = "PekoeSecondary" })
+  set("PekoePromptNote", { link = "PekoeDim" })
+  set("PekoeComment", { link = "PekoeSecondary" })
+  set("PekoeCommentSent", { link = "PekoeDim" })
+  set("PekoeLineNr", { link = "PekoeDim" })
 end
 
 -- state -> {symbol, hl, word}
 local STATES = {
-  creating = { "◌", "BobaDim", "creating" },
-  running = { "●", "BobaOk", "run" },
-  waiting = { "●", "BobaWarn", "wait" },
-  idle = { "○", "BobaDim", "idle" },
-  done = { "✓", "BobaSecondary", "done" },
-  reviewing = { "●", "BobaSecondary", "review" },
-  approved = { "✓", "BobaOk", "approved" },
-  landed = { "✓", "BobaDim", "landed" },
-  failed = { "✗", "BobaErr", "fail" },
+  creating = { "◌", "PekoeDim", "creating" },
+  running = { "●", "PekoeOk", "run" },
+  waiting = { "●", "PekoeWarn", "wait" },
+  idle = { "○", "PekoeDim", "idle" },
+  done = { "✓", "PekoeSecondary", "done" },
+  reviewing = { "●", "PekoeSecondary", "review" },
+  approved = { "✓", "PekoeOk", "approved" },
+  landed = { "✓", "PekoeDim", "landed" },
+  failed = { "✗", "PekoeErr", "fail" },
 }
 
 ---@return string symbol, string hl, string word
 function M.state(state)
   local s = STATES[state or ""]
   if not s then
-    return "○", "BobaDim", tostring(state or "?")
+    return "○", "PekoeDim", tostring(state or "?")
   end
   return s[1], s[2], s[3]
 end
@@ -119,7 +119,7 @@ function M.float(rows, opts)
     zindex = opts.zindex or 60,
   }
   if opts.title then
-    cfg.title = { { " " .. opts.title .. " ", opts.title_hl or "BobaTitle" } }
+    cfg.title = { { " " .. opts.title .. " ", opts.title_hl or "PekoeTitle" } }
     cfg.title_pos = "left"
   end
   local anchor = opts.anchor or "center"
@@ -138,7 +138,7 @@ function M.float(rows, opts)
     cfg.col = math.floor((vim.o.columns - width) / 2)
   end
   local win = vim.api.nvim_open_win(buf, opts.enter == true, cfg)
-  vim.wo[win].winhighlight = "FloatBorder:" .. (opts.border_hl or "BobaFloatBorder") .. ",NormalFloat:Normal"
+  vim.wo[win].winhighlight = "FloatBorder:" .. (opts.border_hl or "PekoeFloatBorder") .. ",NormalFloat:Normal"
   vim.wo[win].wrap = true
   return buf, win
 end
@@ -165,13 +165,13 @@ function M.input(opts, cb)
     height = opts.height or 3,
     style = "minimal",
     border = "rounded",
-    title = { { " " .. (opts.title or "boba") .. " ", "BobaTitle" } },
+    title = { { " " .. (opts.title or "pekoe") .. " ", "PekoeTitle" } },
     title_pos = "left",
-    footer = { { " ⏎ ", "BobaKey" }, { "send ", "BobaDim" }, { " ^j ", "BobaKey" }, { "newline ", "BobaDim" }, { " esc ", "BobaKey" }, { "cancel ", "BobaDim" } },
+    footer = { { " ⏎ ", "PekoeKey" }, { "send ", "PekoeDim" }, { " ^j ", "PekoeKey" }, { "newline ", "PekoeDim" }, { " esc ", "PekoeKey" }, { "cancel ", "PekoeDim" } },
     footer_pos = "right",
     zindex = 70,
   })
-  vim.wo[win].winhighlight = "FloatBorder:BobaFloatBorder,NormalFloat:Normal"
+  vim.wo[win].winhighlight = "FloatBorder:PekoeFloatBorder,NormalFloat:Normal"
   vim.wo[win].wrap = true
   if opts.default and opts.default ~= "" then
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(opts.default, "\n"))
@@ -213,7 +213,7 @@ function M.input(opts, cb)
 end
 
 function M.notify(msg, level)
-  vim.notify("boba: " .. msg, level or vim.log.levels.INFO)
+  vim.notify("pekoe: " .. msg, level or vim.log.levels.INFO)
 end
 
 return M

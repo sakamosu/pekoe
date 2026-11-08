@@ -1,5 +1,5 @@
-/* boba web — the TUI's look on a phone (docs/ui-guidelines.md).
-   Colors come from /theme.css (bobad writes the TUI's palette, with the
+/* pekoe web — the TUI's look on a phone (docs/ui-guidelines.md).
+   Colors come from /theme.css (pekoed writes the TUI's palette, with the
    user's [theme.colors], as variables): here only role names.
    - color means something, always paired with a symbol; neon stays small
    - one focus: the gradient border (primary → primary-end), title in primary

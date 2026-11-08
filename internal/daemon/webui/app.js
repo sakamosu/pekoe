@@ -1,4 +1,4 @@
-// boba web: a display layer over bobad's /api/. Everything the page shows is
+// pekoe web: a display layer over pekoed's /api/. Everything the page shows is
 // put into the DOM with textContent (agent output is untrusted text).
 "use strict";
 
@@ -30,7 +30,7 @@ async function api(path, body) {
   if (body !== undefined) {
     opt.method = "POST";
     opt.headers["Content-Type"] = "application/json";
-    opt.headers["X-Boba-Web"] = "1";
+    opt.headers["X-Pekoe-Web"] = "1";
     opt.body = JSON.stringify(body);
   }
   const r = await fetch(path, opt);
@@ -61,7 +61,7 @@ function ago(iso) {
   return Math.floor(s / 86400) + "d";
 }
 
-// look is the TUI's (theme.Look, sent by bobad): symbol, role, word
+// look is the TUI's (theme.Look, sent by pekoed): symbol, role, word
 function look(s) {
   return s.look || { icon: "○", role: "dim", word: s.state };
 }
@@ -197,7 +197,7 @@ function renderSummary() {
   bit("warn", "●", waiting.length, "wait");
   bit("ok", "●", running, "run");
   bit("secondary", "✓", done, "done");
-  document.title = waiting.length ? `(${waiting.length}) boba` : "boba";
+  document.title = waiting.length ? `(${waiting.length}) pekoe` : "pekoe";
 }
 
 async function refresh() {
@@ -249,7 +249,7 @@ function renderTarget(s) {
 }
 
 // ---- the agent screen, with its colors ----
-// bobad sends each line as runs {t, fg, bg, b, d, i, u, s} (internal/termstyle).
+// pekoed sends each line as runs {t, fg, bg, b, d, i, u, s} (internal/termstyle).
 // The text goes in with textContent; a color is a theme role (a class from
 // this fixed list) or #rrggbb, checked here and set through CSSOM.
 
@@ -288,7 +288,7 @@ function termLines(rows) {
   return frag;
 }
 
-// screenRows: rows from the API, or the plain lines from an older bobad
+// screenRows: rows from the API, or the plain lines from an older pekoed
 function screenRows(r) {
   if (Array.isArray(r.rows)) return r.rows;
   return (r.lines || []).map((l) => [{ t: l }]);
@@ -377,7 +377,7 @@ function togglePause() {
 }
 
 // ---- answer: always through a confirmation that shows what is allowed ----
-// pending_tool is boba's one-line summary of the last tool the agent asked
+// pending_tool is pekoe's one-line summary of the last tool the agent asked
 // for (cut at 200 bytes); the sheet also shows the bottom of the screen,
 // where the agent's own permission dialog says exactly what it will run.
 

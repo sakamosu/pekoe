@@ -1,8 +1,8 @@
-// boba isolated-world content script: selection UI, element info, toasts,
+// pekoe isolated-world content script: selection UI, element info, toasts,
 // and relaying console batches from page.js to the service worker.
 (() => {
-  if (globalThis.__bobaContent) return;
-  globalThis.__bobaContent = true;
+  if (globalThis.__pekoeContent) return;
+  globalThis.__pekoeContent = true;
 
   const STYLE_PROPS = ['margin', 'padding', 'font', 'color', 'background-color', 'width', 'height', 'border-radius'];
   const MAX_DEPTH = 3;
@@ -12,7 +12,7 @@
   let host, root, overlay, label;
   function ensureUI() {
     if (host?.isConnected) return;
-    host = document.createElement('boba-ui');
+    host = document.createElement('pekoe-ui');
     host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
     root = host.attachShadow({ mode: 'closed' });
     root.innerHTML = `<style>
@@ -89,16 +89,16 @@
   function inspect(el) {
     return new Promise((resolve) => {
       const nonce = crypto.randomUUID();
-      const done = (v) => { window.removeEventListener('boba:inspect-result', onRes); resolve(v); };
+      const done = (v) => { window.removeEventListener('pekoe:inspect-result', onRes); resolve(v); };
       const onRes = (e) => {
         try {
           const d = JSON.parse(e.detail);
           if (d.nonce === nonce) done(d);
         } catch {}
       };
-      window.addEventListener('boba:inspect-result', onRes);
+      window.addEventListener('pekoe:inspect-result', onRes);
       setTimeout(() => done(null), 300);
-      el.dispatchEvent(new CustomEvent('boba:inspect', { detail: nonce, bubbles: true, composed: true }));
+      el.dispatchEvent(new CustomEvent('pekoe:inspect', { detail: nonce, bubbles: true, composed: true }));
     });
   }
 
@@ -184,7 +184,7 @@
     };
     const onMsg = async (e) => {
       const d = e.data;
-      if (e.source !== frame.contentWindow || !d || d.boba !== 'prompt' || d.nonce !== nonce) return;
+      if (e.source !== frame.contentWindow || !d || d.pekoe !== 'prompt' || d.nonce !== nonce) return;
       if (d.type === 'cancel') { close(); return; }
       if (d.type !== 'submit') return;
       close();
@@ -193,7 +193,7 @@
       const pick = { ...base, instruction: String(d.value || ''), rect: rectOf(el) };
       try {
         const res = await chrome.runtime.sendMessage({ type: 'pick', pick, viewportWidth: innerWidth });
-        toast(res?.ok ? 'Sent to boba' : `Send failed: ${res?.error || 'unknown'}`, !!res?.ok);
+        toast(res?.ok ? 'Sent to pekoe' : `Send failed: ${res?.error || 'unknown'}`, !!res?.ok);
       } catch (err) {
         toast(`Send failed: ${err.message}`, false);
       }
@@ -206,7 +206,7 @@
   });
 
   // ---- console relay (page.js only emits on localhost) -----------------
-  window.addEventListener('boba:console', (e) => {
+  window.addEventListener('pekoe:console', (e) => {
     try {
       const { url, errors } = JSON.parse(e.detail);
       if (Array.isArray(errors) && errors.length) chrome.runtime.sendMessage({ type: 'console', url, errors }).catch(() => {});

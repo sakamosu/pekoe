@@ -1,4 +1,4 @@
--- ヘッドレスのスモークテスト。test/run.sh から呼ばれる(BOBA_SOCK は偽デーモンを指す)。
+-- ヘッドレスのスモークテスト。test/run.sh から呼ばれる(PEKOE_SOCK は偽デーモンを指す)。
 local failures = 0
 local function log(...)
   io.stdout:write(table.concat(vim.tbl_map(tostring, { ... }), " ") .. "\n")
@@ -22,7 +22,7 @@ local function find(hay, needle)
   return hay:find(needle, 1, true) ~= nil
 end
 local function daemon_log()
-  local res = require("boba.client").request_sync("test.log", {})
+  local res = require("pekoe.client").request_sync("test.log", {})
   return res or {}
 end
 local function logged(method, pred)
@@ -50,12 +50,12 @@ end
 
 local ok, err = xpcall(function()
   vim.o.columns, vim.o.lines = 160, 50
-  vim.env.BOBA_SESSION = nil
-  vim.cmd("runtime plugin/boba.lua")
-  require("boba").setup({})
-  local client = require("boba.client")
-  local review = require("boba.review")
-  local approval = require("boba.approval")
+  vim.env.PEKOE_SESSION = nil
+  vim.cmd("runtime plugin/pekoe.lua")
+  require("pekoe").setup({})
+  local client = require("pekoe.client")
+  local review = require("pekoe.review")
+  local approval = require("pekoe.approval")
 
   -- 接続と session.list
   local list, e = client.request_sync("session.list", {})
@@ -87,11 +87,11 @@ local ok, err = xpcall(function()
   end
 
   -- A. レビュー
-  vim.cmd("BobaReview feat-x")
+  vim.cmd("PekoeReview feat-x")
   check(wait(2000, function()
     local R = review.state()
     return R and R.data ~= nil and vim.api.nvim_buf_line_count(R.list_buf) == 2
-  end), "BobaReview opened")
+  end), "PekoeReview opened")
   local R = review.state()
   local lt = buf_text(R.list_buf)
   check(find(lt, "● M src/api.ts  2 hunks 1✓"), "file list line for src/api.ts: " .. vim.split(lt, "\n")[1])
@@ -187,11 +187,11 @@ local ok, err = xpcall(function()
     return vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(tmp)
   end), "editor.open edits path")
   check(vim.api.nvim_win_get_cursor(0)[1] == 7, "editor.open jumps to line (" .. vim.api.nvim_win_get_cursor(0)[1] .. ")")
-  local nw = require("boba.editor").note_win()
+  local nw = require("pekoe.editor").note_win()
   check(nw and vim.api.nvim_win_is_valid(nw) and find(buf_text(vim.api.nvim_win_get_buf(nw)), "ここを見て"), "editor.open note float")
 
   -- B. 範囲送信のテキスト
-  local send = require("boba.send")
+  local send = require("pekoe.send")
   vim.bo.filetype = "text"
   local text = send.build_text({ buf = 0, l1 = 2, l2 = 3 }, vim.fn.fnamemodify(tmp, ":h"), "直して")
   local base = vim.fn.fnamemodify(tmp, ":t")
@@ -203,30 +203,30 @@ local ok, err = xpcall(function()
   end), "session.send {slug,text,submit}")
 
   -- E. 診断の整形
-  local dns = vim.api.nvim_create_namespace("boba_test")
+  local dns = vim.api.nvim_create_namespace("pekoe_test")
   vim.diagnostic.set(dns, 0, { { lnum = 4, col = 0, severity = vim.diagnostic.severity.ERROR, message = "bad thing", source = "ts" } })
   local dl = send.format_diagnostics(vim.diagnostic.get(0), vim.fn.fnamemodify(tmp, ":h"))
   check(dl[1] == base .. ":5: error: bad thing [ts]", "diagnostic format: " .. tostring(dl[1]))
 
   -- D. follow の補助
-  local follow = require("boba.follow")
+  local follow = require("pekoe.follow")
   check(follow.parse_tool("Edit src/api.ts") == "src/api.ts" and follow.parse_tool("Bash ls") == nil, "follow parses last_tool")
   check(follow.first_changed_line({ "a", "b", "c" }, { "a", "B", "c" }) == 2, "follow first changed line")
 
-  -- :BobaSessions
-  vim.cmd("BobaSessions")
+  -- :PekoeSessions
+  vim.cmd("PekoeSessions")
   check(wait(1000, function()
     local w = vim.api.nvim_get_current_win()
     return vim.api.nvim_win_get_config(w).relative ~= "" and find(buf_text(0), "fix-y") and find(buf_text(0), "wait")
-  end), ":BobaSessions lists sessions with state word")
+  end), ":PekoeSessions lists sessions with state word")
   vim.api.nvim_win_set_cursor(0, { 2, 0 })
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
-  check(require("boba.sessions").target == "fix-y", "<CR> in :BobaSessions sets target")
+  check(require("pekoe.sessions").target == "fix-y", "<CR> in :PekoeSessions sets target")
 
-  -- D. :BobaFollow(イベントで編集を追う)
+  -- D. :PekoeFollow(イベントで編集を追う)
   local ftmp = vim.fn.tempname() .. ".lua"
   vim.fn.writefile({ "a", "b", "c", "d" }, ftmp)
-  vim.cmd("BobaFollow feat-x")
+  vim.cmd("PekoeFollow feat-x")
   client.request_sync("test.emit", { event = "session.updated", data = { slug = "feat-x", state = "running", last_tool = "Edit " .. ftmp } })
   wait(200, function() return false end)
   vim.fn.writefile({ "a", "b", "C", "d" }, ftmp)
@@ -239,17 +239,17 @@ local ok, err = xpcall(function()
         return true
       end
     end
-  end), ":BobaFollow opens edited file in split")
-  check(fwin and vim.api.nvim_win_get_cursor(fwin)[1] == 3, ":BobaFollow jumps to first changed line")
-  vim.cmd("BobaFollow!")
-  check(follow.active() == nil, ":BobaFollow! stops")
+  end), ":PekoeFollow opens edited file in split")
+  check(fwin and vim.api.nvim_win_get_cursor(fwin)[1] == 3, ":PekoeFollow jumps to first changed line")
+  vim.cmd("PekoeFollow!")
+  check(follow.active() == nil, ":PekoeFollow! stops")
 
-  -- S / :BobaSend: flush → BOBA_SESSION があれば終了
+  -- S / :PekoeSend: flush → PEKOE_SESSION があれば終了
   local quit = false
   review._quit = function() quit = true end
-  vim.env.BOBA_SESSION = "feat-x"
-  vim.cmd("BobaSend")
-  check(wait(1000, function() return quit end), ":BobaSend flushes then quits when BOBA_SESSION set")
+  vim.env.PEKOE_SESSION = "feat-x"
+  vim.cmd("PekoeSend")
+  check(wait(1000, function() return quit end), ":PekoeSend flushes then quits when PEKOE_SESSION set")
   check(logged("review.flush", function(p) return p.slug == "feat-x" end) ~= nil, "review.flush sent")
 end, debug.traceback)
 

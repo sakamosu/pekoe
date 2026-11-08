@@ -1,9 +1,9 @@
-// boba MAIN-world script: framework component detection + console capture.
+// pekoe MAIN-world script: framework component detection + console capture.
 // Talks to the isolated content script (content.js) only through CustomEvents
 // carrying JSON strings; requests are correlated with a per-request nonce.
 (() => {
-  if (window.__bobaPage) return;
-  window.__bobaPage = true;
+  if (window.__pekoePage) return;
+  window.__pekoePage = true;
 
   // ---- component detection ---------------------------------------------
 
@@ -88,7 +88,7 @@
     return out;
   }
 
-  window.addEventListener('boba:inspect', (e) => {
+  window.addEventListener('pekoe:inspect', (e) => {
     const nonce = e.detail;
     const el = e.target;
     if (typeof nonce !== 'string' || !(el instanceof Element)) return;
@@ -98,7 +98,7 @@
     } catch (err) {
       result = { nonce, component: null, labels: [] };
     }
-    window.dispatchEvent(new CustomEvent('boba:inspect-result', { detail: JSON.stringify(result) }));
+    window.dispatchEvent(new CustomEvent('pekoe:inspect-result', { detail: JSON.stringify(result) }));
   }, true);
 
   // ---- console capture (localhost only) ---------------------------------
@@ -115,7 +115,7 @@
     timer = setTimeout(() => {
       const errors = queue;
       queue = [];
-      window.dispatchEvent(new CustomEvent('boba:console', { detail: JSON.stringify({ url: location.href, errors }) }));
+      window.dispatchEvent(new CustomEvent('pekoe:console', { detail: JSON.stringify({ url: location.href, errors }) }));
     }, 1000);
   }
 
