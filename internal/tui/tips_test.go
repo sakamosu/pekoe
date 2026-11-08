@@ -21,6 +21,18 @@ func tipModel(t *testing.T, w, h int) *model {
 	return m
 }
 
+// pinTip shows a known tip: random ones could share words with the caption
+// ("pekoe …") and fool the checks below.
+func pinTip(t *testing.T, m *model) tips.Tip {
+	t.Helper()
+	tp, ok := tips.ByID("zoom")
+	if !ok {
+		t.Fatal("no zoom tip")
+	}
+	m.tip.cur = &tp
+	return tp
+}
+
 // keepsSize: every line of the view is exactly the terminal's width.
 func keepsSize(t *testing.T, m *model, out string) {
 	t.Helper()
@@ -48,7 +60,9 @@ func TestTipInEmptyPane(t *testing.T) {
 		}
 	}
 	// the detail is there too (its first few characters, before any wrap)
-	if d := []rune(m.tip.cur.Detail); !strings.Contains(out, string(d[:6])) {
+	tp := pinTip(t, m)
+	out = ansi.Strip(m.View())
+	if !strings.Contains(out, "左の列を隠し") || !strings.Contains(out, tp.Short) {
 		t.Errorf("detail missing")
 	}
 }
@@ -77,11 +91,11 @@ func TestTipWhileCreating(t *testing.T) {
 // and the caption stay as they are
 func TestTipFitsOrGoes(t *testing.T) {
 	full := tipModel(t, 120, 40)
-	cur := full.tip.cur
+	cur := pinTip(t, full)
 	var sawShortOnly, sawNone bool
 	for _, size := range [][2]int{{120, 40}, {120, 18}, {120, 16}, {120, 14}, {120, 12}, {100, 20}, {60, 30}, {40, 30}, {30, 20}} {
 		m := tipModel(t, size[0], size[1])
-		m.tip.cur = cur
+		m.tip.cur = &cur
 		raw := m.View()
 		keepsSize(t, m, raw)
 		out := ansi.Strip(raw)
@@ -89,7 +103,7 @@ func TestTipFitsOrGoes(t *testing.T) {
 			t.Errorf("%v: caption lost\n%s", size, out)
 		}
 		hasTip := strings.Contains(out, "tip  . next")
-		hasDetail := strings.Contains(out, string([]rune(cur.Detail)[:6]))
+		hasDetail := strings.Contains(out, "左の列を隠し")
 		if hasDetail && !hasTip {
 			t.Errorf("%v: detail without the tip", size)
 		}
