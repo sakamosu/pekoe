@@ -33,8 +33,15 @@
     <pre id="d-screen" tabindex="0"></pre>
   </section>
   <form class="send" id="d-send" autocomplete="off">
-    <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send"></textarea>
-    <button type="submit" class="btn key" id="d-send-btn">send</button>
+    <div class="to" id="d-to" aria-live="polite">
+      <span class="to-k">送り先</span>
+      <span class="to-slug" id="d-to-slug"></span>
+      <span class="to-repo" id="d-to-repo"></span>
+    </div>
+    <div class="send-row">
+      <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send" aria-describedby="d-to"></textarea>
+      <button type="submit" class="btn key" id="d-send-btn">send</button>
+    </div>
   </form>
 </main>
 

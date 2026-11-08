@@ -19,6 +19,9 @@ let sessions = [];
 let current = null; // slug shown in the detail view
 let listTimer = 0, screenTimer = 0;
 let busy = false;
+let sending = false; // a send is in flight
+let touching = false; // a finger is on the list: do not move rows under it
+const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -109,6 +112,7 @@ function waitBody(s, box) {
 }
 
 function renderList() {
+  if (touching) return; // redrawn on release
   const list = $("list");
   list.replaceChildren();
   if (!sessions.length) {
@@ -155,6 +159,7 @@ function renderDetailHead() {
   const s = sessions.find((x) => x.slug === current);
   const head = $("d-head"), ask = $("d-ask");
   head.replaceChildren();
+  renderTarget(s);
   if (!s) {
     head.append(el("div", "empty", current + " is gone"));
     if (!busy) ask.hidden = true;
@@ -173,17 +178,29 @@ function renderDetailHead() {
   if (!ask.hidden) waitBody(s, ask);
 }
 
+// renderTarget: the session send goes to, next to the box. It is the same
+// `current` doSend posts to, so what is shown is what is hit.
+function renderTarget(s) {
+  const to = $("d-to");
+  $("d-to-slug").textContent = current || "";
+  $("d-to-repo").textContent = s ? [s.repo, s.branch !== s.slug ? s.branch : ""].filter(Boolean).join(" · ") : "is gone";
+  to.classList.toggle("gone", !s);
+  $("d-send-btn").disabled = !s || sending;
+}
+
 async function refreshScreen() {
   if (!current) return;
+  const slug = current;
   const pre = $("d-screen");
   try {
-    const r = await api("/api/sessions/" + encodeURIComponent(current) + "/screen");
+    const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/screen");
+    if (slug !== current) return; // answered after a switch: not this screen
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
     pre.textContent = (r.lines || []).join("\n") + (r.dead ? "\n[agent exited]" : "");
     if (atBottom) pre.scrollTop = pre.scrollHeight;
     $("d-at").textContent = new Date().toLocaleTimeString();
   } catch (e) {
-    pre.textContent = "(" + e.message + ")";
+    if (slug === current) pre.textContent = "(" + e.message + ")";
   }
 }
 
@@ -242,18 +259,26 @@ async function doSend(ev) {
   ev.preventDefault();
   const ta = $("d-text");
   const text = ta.value.trim();
-  if (!text || !current) return;
-  const btn = $("d-send-btn");
-  btn.disabled = true;
+  // the target is fixed here, from the same `current` the label shows
+  const slug = current;
+  if (!text || !slug || sending) return;
+  if (!sessions.some((x) => x.slug === slug)) {
+    toast(slug + " is gone");
+    return;
+  }
+  sending = true;
+  $("d-send-btn").disabled = true;
   try {
-    await api("/api/sessions/" + encodeURIComponent(current) + "/send", { text });
-    ta.value = "";
-    toast("sent", true);
+    await api("/api/sessions/" + encodeURIComponent(slug) + "/send", { text });
+    drafts.delete(slug);
+    if (current === slug && ta.value.trim() === text) ta.value = "";
+    toast("sent → " + slug, true);
     setTimeout(refreshScreen, 600);
   } catch (e) {
-    toast(e.message);
+    toast(slug + ": " + e.message);
   }
-  btn.disabled = false;
+  sending = false;
+  if (current) renderTarget(sessions.find((x) => x.slug === current));
 }
 
 // ---- routing & polling ----
@@ -264,7 +289,13 @@ function go(slug) {
 
 function route() {
   const m = location.hash.match(/^#\/s\/(.+)$/);
+  const ta = $("d-text");
+  if (current) {
+    if (ta.value) drafts.set(current, ta.value);
+    else drafts.delete(current);
+  }
   current = m ? decodeURIComponent(m[1]) : null;
+  ta.value = (current && drafts.get(current)) || "";
   $("list").hidden = !!current;
   $("detail").hidden = !current;
   $("back").hidden = !current;
@@ -300,6 +331,20 @@ $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
+// hold the list still while a finger is on it: a redraw between touch and
+// click could put another session's row under the finger
+const list = $("list");
+const release = () => {
+  if (!touching) return;
+  touching = false;
+  if (!current && !busy) renderList();
+};
+list.addEventListener("pointerdown", () => (touching = true));
+// released a bit later: the click that follows pointerup must still land on
+// the row the finger was on
+const releaseSoon = () => setTimeout(release, 400);
+document.addEventListener("pointerup", releaseSoon);
+document.addEventListener("pointercancel", releaseSoon);
 
 api("/api/me").then((me) => {
   if (me) $("who").textContent = me.login + (me.device ? " · " + me.device : "");

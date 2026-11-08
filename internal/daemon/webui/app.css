@@ -106,7 +106,22 @@ button, textarea { font: inherit; color: inherit; }
   white-space: pre-wrap; word-break: break-all;
   max-height: 55vh; overflow: auto;
 }
-.send { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; }
+.send { margin-top: 12px; }
+/* where send goes: the slug the button will hit, right above the box */
+.to {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  margin-bottom: 6px; padding: 8px 10px;
+  border: 1px solid var(--border); border-left: 3px solid var(--secondary); border-radius: 8px;
+  background: var(--surface);
+}
+.to-k { flex: none; font: 12px var(--mono); color: var(--dim); }
+.to-slug { flex: none; max-width: 60%; font: 600 16px var(--mono); color: var(--secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.to-repo { min-width: 0; font: 13px var(--mono); color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.to.gone { border-left-color: var(--err); }
+.to.gone .to-slug { color: var(--err); }
+.send-row { display: flex; gap: 8px; align-items: flex-end; }
 .send textarea {
   flex: 1; min-height: 44px; max-height: 30vh; resize: vertical;
   padding: 10px; border-radius: 8px;
