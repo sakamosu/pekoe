@@ -143,6 +143,8 @@ pekoe                                                 # TUI
 | `j` `k` / `↵` | セッション選択 / 右ペインに入って入力(`^q` 以外のキーはすべてエージェントへ) |
 | `^q` | 入力から抜けて Sessions に戻る(`[keys] prefix` で変更可)。左のパネルをクリックしても抜けられる |
 | `i` / `h` `Esc` | Agent パネルで入力を始める / 左に戻る |
+| `^q` `z` | 右ペイン(4)を全幅にして左ペインを隠す / もう一度で戻す。入力中に押せば入力に戻る |
+| `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に残り、再起動後の TUI と CLI から起動するエージェントの幅も同じになる。100 列未満(縦並び)では効かない |
 | `n` | 新しい worktree + セッション |
 | `w` | リポジトリを選ぶ |
 | `]a` `[a` | 次の待ちセッション(PR に動きがあったものも)/ 元の場所に戻る |
@@ -281,6 +283,7 @@ deny    = "n"
 | --- | --- |
 | 設定 | `~/.config/pekoe/` |
 | 状態 DB・socket・ログ・picks | `~/.local/share/pekoe/` |
+| TUI のペイン幅・ズーム | `~/.local/share/pekoe/layout.json`(`^q` `<` `>` `=` `z` で書き換わる) |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
