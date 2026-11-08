@@ -1094,19 +1094,22 @@ func cmdExt() error {
 	return nil
 }
 
+// webStatus is web.status as `boba web` reads it (--json prints it as is).
+type webStatus struct {
+	Built   bool     `json:"built"`
+	Enabled bool     `json:"enabled"`
+	State   string   `json:"state"`
+	AuthURL string   `json:"auth_url"`
+	URLs    []string `json:"urls"`
+	Error   string   `json:"error"`
+}
+
 // cmdWeb shows the phone web UI's state ([web], docs/web.md): its URL once
 // the tsnet node is up, or the login URL for the first join.
 func cmdWeb() error {
 	cl := connect()
 	defer cl.Close()
-	var st struct {
-		Built   bool     `json:"built"`
-		Enabled bool     `json:"enabled"`
-		State   string   `json:"state"`
-		AuthURL string   `json:"auth_url"`
-		URLs    []string `json:"urls"`
-		Error   string   `json:"error"`
-	}
+	var st webStatus
 	if err := cl.Call("web.status", nil, &st); err != nil {
 		return err
 	}
@@ -1114,31 +1117,43 @@ func cmdWeb() error {
 		printJSON(st)
 		return nil
 	}
+	printWebStatus(os.Stdout, st, paths.GlobalConfig())
+	return nil
+}
+
+// printWebStatus is the human view of `boba web`.
+func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 	if !st.Built {
-		// --json above still says so; here, say how to get it
-		fmt.Println("this boba is built without the web UI (no Tailscale code in it).")
+		// --json still says so; here, say how to get it
+		fmt.Fprintln(w, "this boba is built without the web UI (no Tailscale code in it).")
 		if st.Enabled {
-			fmt.Println("[web] enable = true in the config is ignored.")
+			fmt.Fprintln(w, "[web] enable = true in the config is ignored.")
 		}
-		fmt.Println("To use it, rebuild with: make install WEB=1 (docs/web.md).")
-		return nil
+		fmt.Fprintln(w, "To use it, rebuild with: make install WEB=1 (docs/web.md).")
+		return
 	}
 	if !st.Enabled {
-		fmt.Printf("web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart bobad (boba daemon stop; boba daemon start). See docs/web.md.\n", paths.GlobalConfig())
-		return nil
+		fmt.Fprintf(w, "web UI is off. To serve it on your tailnet, add to %s:\n\n  [web]\n  enable = true\n  allow_users = [\"you@github\"]   # your Tailscale login\n\nthen restart bobad (boba daemon stop; boba daemon start). See docs/web.md.\n", globalConfig)
+		return
 	}
-	fmt.Println("state ", st.State)
+	fmt.Fprintln(w, "state ", st.State)
 	for _, u := range st.URLs {
-		fmt.Println("url   ", u)
+		fmt.Fprintln(w, "url   ", u)
 	}
-	if st.AuthURL != "" {
-		fmt.Println("login ", st.AuthURL)
-		fmt.Println("\nOpen the login URL to add this machine to your tailnet (once), or restart bobad with TS_AUTHKEY.")
+	switch {
+	case st.AuthURL != "":
+		fmt.Fprintln(w, "login ", st.AuthURL)
+		fmt.Fprintln(w, "\nOpen the login URL to add this machine to your tailnet (once), or restart bobad with TS_AUTHKEY.")
+	case st.State == "needs-login":
+		// tsnet takes a few seconds after bobad starts to get the URL
+		// from the control server; until then there is nothing to open
+		fmt.Fprintln(w, "login  (getting the login URL…)")
+		fmt.Fprintln(w, "\nThe login URL is not ready yet. Run `boba web` again in a few seconds.")
+		fmt.Fprintln(w, "If it never shows up, the machine may be waiting for approval in the Tailscale admin console (see bobad.log).")
 	}
 	if st.Error != "" {
-		fmt.Println("error ", st.Error)
+		fmt.Fprintln(w, "error ", st.Error)
 	}
-	return nil
 }
 
 func hintDir(d string) string {

@@ -87,3 +87,44 @@ func TestLsLinesGroupsByRepo(t *testing.T) {
 		t.Fatalf("same name:\n%s", strings.Join(dup, "\n"))
 	}
 }
+
+func TestPrintWebStatus(t *testing.T) {
+	cases := []struct {
+		name string
+		st   webStatus
+		want []string
+		not  []string
+	}{
+		{"needs-login before the URL", webStatus{Built: true, Enabled: true, State: "needs-login"},
+			[]string{"state  needs-login", "getting the login URL", "Run `boba web` again in a few seconds"},
+			[]string{"Open the login URL"}},
+		{"needs-login with the URL", webStatus{Built: true, Enabled: true, State: "needs-login", AuthURL: "https://login.tailscale.com/a/x"},
+			[]string{"login  https://login.tailscale.com/a/x", "Open the login URL"},
+			[]string{"getting the login URL"}},
+		{"starting (auth key): no login hint", webStatus{Built: true, Enabled: true, State: "starting"},
+			[]string{"state  starting"},
+			[]string{"login"}},
+		{"running", webStatus{Built: true, Enabled: true, State: "running", URLs: []string{"https://boba.example.ts.net/"}},
+			[]string{"url    https://boba.example.ts.net/"},
+			[]string{"login"}},
+		{"not built", webStatus{Enabled: true},
+			[]string{"built without the web UI", "is ignored", "make install WEB=1"}, nil},
+		{"off", webStatus{Built: true},
+			[]string{"web UI is off", "/cfg/config.toml"}, nil},
+	}
+	for _, c := range cases {
+		var b strings.Builder
+		printWebStatus(&b, c.st, "/cfg/config.toml")
+		out := b.String()
+		for _, w := range c.want {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: missing %q in:\n%s", c.name, w, out)
+			}
+		}
+		for _, n := range c.not {
+			if strings.Contains(out, n) {
+				t.Errorf("%s: unexpected %q in:\n%s", c.name, n, out)
+			}
+		}
+	}
+}
