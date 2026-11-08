@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -586,6 +587,12 @@ func copyIgnored(from, to string, w config.Worktree) error {
 	return do(w.Clone, true)
 }
 
+// sessionIDRe is what an agent's session id may look like (Claude Code and
+// Codex use UUIDs). The id is put on the resume command line.
+var sessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+func validSessionID(id string) bool { return sessionIDRe.MatchString(id) }
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -599,6 +606,10 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	}
 	ag := d.Global.Agents[s.Agent]
 	cmd := ag.Command
+	if resume != "" && resume != "continue" && !validSessionID(resume) {
+		log.Printf("spawn %s: ignoring malformed session id to resume", slug)
+		resume = ""
+	}
 	if s.Agent == "claude" && resume != "" && resume != "continue" && !claudeConversationExists(s.Path, resume) {
 		// Claude Code only stores a conversation once a prompt was sent; an
 		// id from SessionStart alone cannot be resumed
@@ -611,7 +622,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	case resume == "continue" && s.Agent == "claude":
 		cmd = ag.Command + " --continue"
 	case resume != "" && ag.Resume != "":
-		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", resume)
+		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", shellQuote(resume))
 	}
 	pasteLater := ""
 	if prompt != "" {
@@ -724,6 +735,13 @@ func pastClaudeSessions(path string) []pastSession {
 }
 
 func (d *Daemon) hOpen(p openP) (any, error) {
+	switch p.Resume {
+	case "", "ask", "resume", "new", "continue":
+	default:
+		if !validSessionID(p.Resume) {
+			return nil, fmt.Errorf("invalid session id to resume: %q", p.Resume)
+		}
+	}
 	top, err := gitx.Toplevel(p.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%s is not a git worktree", p.Path)
@@ -786,7 +804,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if p.Resume == "resume" && len(past) > 0 {
 		resume = past[0].ID
 	} else if p.Resume != "" && p.Resume != "new" && p.Resume != "ask" && p.Resume != "resume" {
-		resume = p.Resume // explicit session id
+		resume = p.Resume // explicit session id (checked before anything is made)
 	}
 	if err := d.spawnAgent(slug, p.Prompt, resume, p.Width, p.Height); err != nil {
 		d.update(slug, func(x *state.Session) { x.State = state.Failed; x.Error = err.Error() })

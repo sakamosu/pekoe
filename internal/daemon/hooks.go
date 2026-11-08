@@ -144,6 +144,10 @@ func toolSummary(name string, input json.RawMessage) string {
 func (d *Daemon) hEvent(p eventP) (any, error) {
 	var hp hookPayload
 	_ = json.Unmarshal(p.Payload, &hp)
+	if !validSessionID(hp.SessionID) {
+		// it ends up on a command line (resume): keep only plain ids
+		hp.SessionID = ""
+	}
 	hook := p.Hook
 	if hook == "" {
 		hook = hp.HookEventName

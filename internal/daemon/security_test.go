@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"pekoe/internal/config"
 	"pekoe/internal/state"
 )
 
@@ -111,5 +113,29 @@ func TestSetupHookQuotesBranch(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(s.Path, "marker")); string(b) != branch {
 		t.Fatalf("marker = %q, want the branch name as is", b)
+	}
+}
+
+// A session id goes on the resume command line only when it is a plain id,
+// and then in quotes.
+func TestResumeSessionIDIsChecked(t *testing.T) {
+	d, fe, repo := setup(t)
+	d.Global.Agents["fake"] = config.Agent{Command: "fake", Resume: "fake --resume {{session_id}}"}
+	b, _ := json.Marshal(map[string]any{"path": repo, "resume": "x;touch pwned", "agent": "fake"})
+	if _, err := d.Call("session.open", b); err == nil {
+		t.Fatal("a malformed session id was accepted")
+	}
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "abc-123", "agent": "fake"})
+	if got := fe.spawn[s.Slug+"~agent"].Command; !strings.HasPrefix(got, "fake --resume 'abc-123';") {
+		t.Fatalf("resume command: %s", got)
+	}
+	// a hook payload cannot plant one either
+	event(t, d, "SessionStart", s.Slug, map[string]any{"session_id": "$(touch pwned)"})
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.ClaudeSessionID != "" {
+		t.Fatalf("stored %q", got.ClaudeSessionID)
+	}
+	event(t, d, "SessionStart", s.Slug, map[string]any{"session_id": "0b5c6e1a-2f3d-4e5f-8a9b-0c1d2e3f4a5b"})
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.ClaudeSessionID == "" {
+		t.Fatal("a uuid session id was dropped")
 	}
 }
