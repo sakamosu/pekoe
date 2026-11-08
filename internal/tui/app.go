@@ -1054,9 +1054,15 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.prefix = false
 		fromTyping := m.prefixType
 		m.prefixType = false
+		reopen := m.chat.reopen // the prefix left tapi chat (chat.go)
+		m.chat.reopen = false
 		if cmd, ok := m.layoutKey(k.String()); ok {
 			if fromTyping && !narrow(m.width) { // straight back to the agent
 				m.focus, m.typing = pAgent, true
+				if reopen { // … or to tapi
+					m.chat.open = true
+					cmd = tea.Batch(cmd, m.fetchChat())
+				}
 			}
 			return cmd
 		}

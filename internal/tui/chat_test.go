@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -50,8 +49,6 @@ func chatModel(t *testing.T) (*model, *fakePekoed, *chatReplies) {
 	m.lastSel = "api-1"
 	return m, f, cr
 }
-
-func ctrlQ() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlQ} }
 
 // t opens tapi chat from any panel and types into it; esc goes to the
 // agent (it interrupts Claude Code); the prefix leaves; t again continues.
@@ -95,7 +92,7 @@ func TestChatOpenTypeLeave(t *testing.T) {
 		t.Fatalf("tapi.open %d times", n)
 	}
 
-	runCmd(m, m.onKey(ctrlQ()))
+	runCmd(m, m.onKey(ctrlQ))
 	if m.chat.open || m.typing || m.focus != pSessions {
 		t.Fatalf("after prefix: open %v typing %v focus %d", m.chat.open, m.typing, m.focus)
 	}
@@ -181,7 +178,7 @@ func TestChatResetAndHelp(t *testing.T) {
 	if !m.chat.open {
 		t.Fatal("t from the help list opens tapi chat")
 	}
-	runCmd(m, m.onKey(ctrlQ()))
+	runCmd(m, m.onKey(ctrlQ))
 	m.focus = pAgent
 	runCmd(m, m.onKey(key("t")))
 	m.typing = false
@@ -208,5 +205,91 @@ func TestChatWaitsInBar(t *testing.T) {
 	}
 	if n := strings.Count(out, m.tapi.r.Line(m.tapi.r.Eyes("wait"))); n > 1 {
 		t.Fatalf("%d faces", n)
+	}
+}
+
+// The layout keys work around tapi chat as around an agent: t while zoomed
+// opens it full width at the zoomed pty size, <prefix> z / < from the chat
+// come back to it typing, and once the keys settle tapi's pty follows
+// m.agentSize(). The prefix alone leaves; zoomed, the left stays hidden.
+func TestChatLayout(t *testing.T) {
+	m, f, _ := chatModel(t)
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	m.layoutPath = paths.LayoutFile()
+	settle := func() {
+		t.Helper()
+		runCmd(m, m.layoutSettled(m.layoutSeq))
+	}
+
+	// zoom from Sessions, then t
+	m.onKey(ctrlQ)
+	runCmd(m, m.onKey(key("z")))
+	settle()
+	if !m.zoomed() {
+		t.Fatal("not zoomed")
+	}
+	runCmd(m, m.onKey(key("t")))
+	aw, ah := m.agentSize()
+	if aw != m.width-4 {
+		t.Fatalf("zoomed agent width %d", aw)
+	}
+	op := f.find("tapi.open")
+	if len(op) != 1 || op[0]["width"] != float64(aw) || op[0]["height"] != float64(ah) {
+		t.Fatalf("tapi.open %v, want %dx%d", op, aw, ah)
+	}
+	out := checkSize(t, m, "zoomed chat")
+	if !strings.Contains(out, "[4] tapi chat") || strings.Contains(out, "Sessions") || !strings.Contains(out, "zoom ^q z") {
+		t.Fatalf("zoomed chat:\n%s", out)
+	}
+	if !strings.Contains(out, "^q leave  ^q z unzoom  ^q < > width") {
+		t.Fatalf("hints:\n%s", out)
+	}
+	// the fake pty is 100 wide: it is fitted to the zoomed pane
+	if rs := f.find("tapi.resize"); len(rs) == 0 || rs[len(rs)-1]["width"] != float64(aw) {
+		t.Fatalf("tapi.resize %v, want width %d", rs, aw)
+	}
+
+	// ^q z from the chat: unzoomed, still typing into tapi
+	m.onKey(ctrlQ)
+	runCmd(m, m.onKey(key("z")))
+	if m.zoomed() || !m.chat.open || !m.typing || m.focus != pAgent {
+		t.Fatalf("after ^q z: zoom %v open %v typing %v focus %d", m.zoomed(), m.chat.open, m.typing, m.focus)
+	}
+	settle()
+	aw2, _ := m.agentSize()
+	if aw2 >= aw {
+		t.Fatalf("unzoomed width %d", aw2)
+	}
+	if rs := f.find("tapi.resize"); rs[len(rs)-1]["width"] != float64(aw2) {
+		t.Fatalf("tapi pty not refitted after unzoom: %v (want %d)", rs[len(rs)-1], aw2)
+	}
+	if out := checkSize(t, m, "unzoomed chat"); !strings.Contains(out, "Sessions") || !strings.Contains(out, "[4] tapi chat") {
+		t.Fatalf("unzoomed chat:\n%s", out)
+	}
+
+	// ^q < narrows the left column, back in the chat
+	m.onKey(ctrlQ)
+	runCmd(m, m.onKey(key("<")))
+	settle()
+	aw3, _ := m.agentSize()
+	if !m.chat.open || !m.typing || aw3 != aw2+leftStep {
+		t.Fatalf("after ^q <: open %v typing %v width %d (was %d)", m.chat.open, m.typing, aw3, aw2)
+	}
+	if rs := f.find("tapi.resize"); rs[len(rs)-1]["width"] != float64(aw3) {
+		t.Fatalf("tapi pty not refitted after <: %v", rs[len(rs)-1])
+	}
+	checkSize(t, m, "narrowed chat")
+
+	// zoomed, the prefix alone closes the chat and keeps the zoom
+	m.onKey(ctrlQ)
+	runCmd(m, m.onKey(key("z")))
+	settle()
+	runCmd(m, m.onKey(ctrlQ))
+	runCmd(m, m.onKey(key("j"))) // any other key: the chat stays closed
+	if m.chat.open || !m.zoomed() || m.focus != pAgent {
+		t.Fatalf("leave zoomed: open %v zoom %v focus %d", m.chat.open, m.zoomed(), m.focus)
+	}
+	if out := checkSize(t, m, "left zoomed"); strings.Contains(out, "tapi chat") {
+		t.Fatalf("left zoomed:\n%s", out)
 	}
 }

@@ -29,6 +29,9 @@ type chatState struct {
 	fetching bool
 	dirty    bool
 	fitReq   string
+	// reopen: the prefix just left the chat; a layout key (<prefix> z < > =)
+	// comes back to it, typing, as it does to an agent
+	reopen bool
 }
 
 type chatInfoMsg struct {
@@ -63,12 +66,14 @@ func (m *model) openChat() tea.Cmd {
 }
 
 // closeChat goes back to the selected session's window; the conversation
-// stays (t again continues it).
+// stays (t again continues it). Zoomed, the focus stays on the main panel
+// (the left column is hidden; focusing it would unzoom).
 func (m *model) closeChat() tea.Cmd {
 	m.chat.open = false
-	m.chat.screen = nil
 	m.typing = false
-	m.focus = pSessions
+	if !m.zoomed() {
+		m.focus = pSessions
+	}
 	return m.fetchScreen()
 }
 
@@ -91,6 +96,9 @@ func (m *model) fetchChat() tea.Cmd {
 // fitChat resizes tapi's pty to the pane, like fitScreen for sessions.
 func (m *model) fitChat(sc *engine.Screen) tea.Cmd {
 	aw, ah := m.agentSize()
+	if m.layoutPending() {
+		return nil // layoutSettled resizes every pty, tapi's too
+	}
 	if sc == nil || sc.Dead || sc.Width <= 0 || sc.Height <= 0 || (sc.Width == aw && sc.Height == ah) {
 		return nil
 	}
@@ -157,7 +165,10 @@ func (m *model) chatEvent(ev client.Event) (tea.Cmd, bool) {
 // (esc too: it interrupts Claude Code) except the prefix, which leaves.
 func (m *model) chatTypingKey(k tea.KeyMsg) tea.Cmd {
 	if m.prefixKey(k) {
-		return m.closeChat()
+		cmd := m.closeChat()
+		// like leaving an agent: the prefix stays armed for z < > =
+		m.prefix, m.prefixType, m.chat.reopen = true, true, true
+		return cmd
 	}
 	if m.chat.screen != nil && m.chat.screen.Dead {
 		switch k.String() {
@@ -363,6 +374,13 @@ func (m *model) chatHints() [][2]string {
 	if m.typing {
 		if dead {
 			return [][2]string{{"↵", "restart"}, {"x", "close"}, {p, "leave"}}
+		}
+		if !narrow(m.width) {
+			zoom := "zoom"
+			if m.zoomed() {
+				zoom = "unzoom"
+			}
+			return [][2]string{{p, "leave"}, {p + " z", zoom}, {p + " < >", "width"}}
 		}
 		return [][2]string{{p, "leave"}}
 	}
