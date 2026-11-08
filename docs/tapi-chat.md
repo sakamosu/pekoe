@@ -12,7 +12,7 @@ tapi chat は TUI からいつでも呼べる特別なエージェントで、�
 - リポジトリ横断の調査(例: 抱えているリポジトリ群の dependabot アラートの様子)
 - 振り分け役(調べた結果から `pekoe new --repo R` でセッションを作る、`pekoe send` で指示を足す)
 
-グローバルに 1 つだけで、pekoe 側には何も永続化しない一時的なもの。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。Web UI には出さない。
+グローバルに 1 つだけで、pekoe 側には何も永続化しない一時的なもの。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調・顔の使い方は docs/mascot.md「tapi の人物像」(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には出さない。
 
 ## 持ち方: セッションとは別の、メモリ上の 1 つ
 
@@ -63,7 +63,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 `paths.TapiDir()` = `~/.local/share/pekoe/tapi/`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/tapi/`)。
 
 - `$HOME` にはしない: cwd の前方一致で、ホーム以下で動く無関係な Claude Code の hook を拾ってしまう
-- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、口調(tapi 寄りだが正確さ優先)、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
+- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、人物像と口調・振る舞いのルール・顔の目の表(docs/mascot.md「tapi の人物像」。キャラは返事の頭の顔と最初か最後の 1 文だけで、中身は正確さ優先)、今日マージされた PR の数え方、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
 - 初回は Claude Code のフォルダ信頼ダイアログが出る。開いた時点で入力モードなので、そのまま答えればよい(pekoe からは `~/.claude.json` を書き換えない)
 
 ## 起動するコマンド
@@ -78,7 +78,7 @@ agent = "claude"   # 既定。[agents.claude-ask] などを定義していれば
 - 起動はエージェントの `command` を `$SHELL` で実行する(既存の `spawnAgent` と同じ形。終了後は `[pekoe] agent exited …` を残す)
 - `command` の先頭語が `claude` のとき(`claude-ask` のように引数を足した定義も含む)だけ次を足す
   - `--add-dir <各リポジトリのメイン worktree> <worktree のルート>`: 登録済みリポジトリ(`repo.list` と同じ `knownRepos` で、ディレクトリが見つかるもの)と `~/worktrees`。各リポジトリを読むたびに許可を求められないように。リポジトリの増減は次に tapi を起動したときに反映する
-  - `--append-system-prompt <人格>`: 「pekoe に住む相棒 tapi。口調は親しみやすく短めでよいが、調査結果の正確さと根拠を最優先する。役割とコマンドは CLAUDE.md」程度の 2〜3 文
+  - `--append-system-prompt <人格>`: 「pekoe に住むタピオカの粒の相棒 tapi。一人称ぼく・ユーザーはきみ・くだけた話し言葉。返事の頭に 1 行の顔。キャラは最初か最後の 1 文だけで、中身は正確に、確かめたことと推測を分ける。詳細は CLAUDE.md」の数文(人物像は docs/mascot.md「tapi の人物像」)
   - 会話の記録(`~/.claude/projects/<tapi の cwd を符号化したもの>/`)が残っていれば `--continue`(tmux サーバーごと落ちた後に開き直しても、リセットするまで同じ会話が続く)
 - codex など claude 以外は `--add-dir` 相当を付けない(cwd だけ)。人格は `AGENTS.md` で伝わる。再開もしない
 - 環境変数は通常のセッションと同じ(`PEKOE_SESSION=+tapi`、`PEKOE_SOCK`、`PEKOE=1`、`PEKOE_HOME`)
