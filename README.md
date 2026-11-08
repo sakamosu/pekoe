@@ -60,6 +60,7 @@ boba                         # TUI
 | `boba undo <slug> [n]` | プロンプト単位 undo |
 | `boba answer <slug> allow\|deny\|always` | 許可待ちに答える |
 | `boba ext` | Chrome 拡張に入れる port と token |
+| `boba web` | iPhone 用 Web UI の状態・URL・初回のログイン URL([docs/web.md](docs/web.md)) |
 | `boba mcp` | エージェント用 MCP サーバ(`claude mcp add boba -- boba mcp`) |
 | `boba daemon start\|stop\|status` | デーモン操作。`stop` はデーモンのプロセスが終わるまで待って戻る。`stop` してもエージェントは tmux の中で動き続ける |
 | `boba daemon stop --kill-agents [--yes]` | デーモンに加えて tmux サーバー(`$BOBA_TMUX_SOCKET`)も止める。**既定のソケット `boba` に使うと全エージェントが止まる**。隔離環境の片付け用。対話端末では確認を出し、それ以外では `--yes` が要る |
@@ -133,6 +134,10 @@ prefix = "ctrl+q"
 surface = "nvim"            # nvim | tui
 [notify]
 ntfy = "https://ntfy.sh/my-topic"   # 待ちが発生したら通知
+[web]                       # iPhone 用 Web UI(既定は無効、docs/web.md)
+enable      = true
+allow_users = ["you@github"]        # Tailscale のログイン名
+allow_devices = ["iphone-15"]       # 任意。この端末だけに絞る
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
@@ -156,12 +161,23 @@ deny  = "n"
 - 拡張: [extension/README.md](extension/README.md)。`chrome://extensions` → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → `boba ext` の port と token をオプションに入れる。⌘⇧E で要素を選ぶ
 - Neovim: [nvim/README.md](nvim/README.md)。`{ dir = "~/repos/boba/nvim" }` を lazy.nvim に足す(boba が起動する nvim には自動で読み込まれる)
 
+### iPhone から(Web UI)
+
+bobad に Tailscale の tsnet を埋め込み、bobad 自身が tailnet の 1 台(`https://boba.<tailnet>.ts.net/`)として HTTPS で待ち受ける。セッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・画面テキストの表示ができる。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
+
+1. tailnet で MagicDNS と HTTPS を有効にし、上の `[web]` を書いて bobad を再起動
+2. `boba web` に出るログイン URL を開いて tailnet に参加(`TS_AUTHKEY` でもよい)
+3. `boba web` の URL を iPhone の Safari で開き、ホーム画面に追加
+
+証明書のホスト名は Certificate Transparency ログに載る。設計・脅威モデルは [docs/web.md](docs/web.md)。
+
 ## データの置き場(リポジトリを汚さない)
 
 | データ | 置き場 |
 | --- | --- |
 | 設定 | `~/.config/boba/` |
 | 状態 DB・socket・ログ・picks | `~/.local/share/boba/` |
+| Web UI の tsnet ノードの鍵 | `~/.local/share/boba/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位スナップショット / レビュー地点 | `refs/boba/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(boba が消すのはこの配下だけ) |
 

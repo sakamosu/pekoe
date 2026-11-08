@@ -131,6 +131,7 @@
 | `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/boba/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`boba ext`) |
+| `web.status` | — | `{enabled, state, auth_url?, urls?, error?}`(`boba web`)。state は `off` `starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
@@ -295,6 +296,20 @@ Pick 入力:
 }
 ```
 
-## 3. MCP(エージェント → nvim)
+## 3. HTTPS(Web UI、tailnet 上)
+
+`[web] enable = true` のときだけ、bobad に埋め込んだ tsnet ノードが `https://<hostname>.<tailnet>.ts.net/` で待ち受ける。localhost には何も開かない。token は無く、接続ごとに Tailscale の WhoIs で `allow_users`(と `allow_devices`)に入っているかを確かめる。パスと認証・脅威モデルは [web.md](web.md)。
+
+| method / path | body | 処理 |
+| --- | --- | --- |
+| `GET /api/me` | — | `{login, device}` |
+| `GET /api/sessions` | — | `session.list` を待ち優先に並べ、表示用に絞ったもの |
+| `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行を色なしで |
+| `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400、待っていない・質問・プロンプトが変わったら 409 |
+| `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`) |
+
+POST には `X-Boba-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
+
+## 4. MCP(エージェント → nvim)
 
 `boba mcp` が stdio の MCP サーバとして動き、デーモンに中継する。`claude mcp add boba -- boba mcp` で登録する。ツールは `open_in_editor(path, line, note?)` と `session_list()`。

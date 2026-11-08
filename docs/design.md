@@ -45,6 +45,7 @@ boba は、Orca の開発体験(複数エージェントの並列運用・worktr
 
 - TUI・CLI・Neovim → bobad: `~/.local/share/boba/bobad.sock` 上の JSON Lines。コマンド(`session.send` など)とイベント(`session.waiting` など)の双方向
 - Chrome 拡張 → bobad: `127.0.0.1:<port>` への HTTP POST。トークン必須、一方向
+- iPhone(Web UI)→ bobad: bobad に埋め込んだ tsnet ノードの HTTPS(tailnet の中だけ)。認証は接続ごとの Tailscale WhoIs。既定は無効([docs/web.md](web.md))
 - bobad → エージェント: pty への書き込み。エージェント → bobad: pty の出力と hooks
 - bobad → nvim(逆方向): bobad が MCP サーバを兼ね、エージェントの `open_in_editor` 呼び出しを nvim へのイベントに変える
 
