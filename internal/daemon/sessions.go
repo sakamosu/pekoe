@@ -285,6 +285,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Branch == "" {
 		return nil, errors.New("branch required")
 	}
+	if err := gitx.CheckRefArg("branch", p.Branch); err != nil {
+		return nil, err
+	}
 	repo, err := resolveRepo(p.Repo)
 	if err != nil {
 		return nil, err
@@ -314,6 +317,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	}
 	if base == "" {
 		base = gitx.DefaultBase(repo.Dir)
+	}
+	if err := gitx.CheckRefArg("base", base); err != nil {
+		return nil, err
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {

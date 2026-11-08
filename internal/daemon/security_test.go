@@ -139,3 +139,17 @@ func TestResumeSessionIDIsChecked(t *testing.T) {
 		t.Fatal("a uuid session id was dropped")
 	}
 }
+
+// base and branch that look like options are refused before git sees them.
+func TestNewRefusesOptionLikeRefs(t *testing.T) {
+	d, _, repo := setup(t)
+	for _, p := range []map[string]any{
+		{"repo": repo, "branch": "feat/z", "base": "--upload-pack=touch pwned"},
+		{"repo": repo, "branch": "-b"},
+	} {
+		b, _ := json.Marshal(p)
+		if _, err := d.Call("session.new", b); err == nil || !strings.Contains(err.Error(), "must not start with '-'") {
+			t.Fatalf("%v: %v", p, err)
+		}
+	}
+}

@@ -307,15 +307,21 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	if base == "" {
 		base = gitx.DefaultBase(s.Path)
 	}
+	if err := gitx.CheckRefArg("base", base); err != nil {
+		return nil, err
+	}
+	if err := gitx.CheckRefArg("branch", s.Branch); err != nil {
+		return nil, err
+	}
 	hasOrigin := gitx.Origin(s.Path) != ""
 	steps := []string{}
 	onto := base
 	if hasOrigin {
-		if _, err := gitx.Run(s.Path, "fetch", "origin", base); err == nil {
+		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
 		}
 	}
-	if _, err := gitx.Run(s.Path, "rebase", onto); err != nil {
+	if _, err := gitx.Run(s.Path, "rebase", "--end-of-options", onto); err != nil {
 		_, _ = gitx.Run(s.Path, "rebase", "--abort")
 		return nil, fmt.Errorf("rebase onto %s failed (aborted): %v", onto, err)
 	}
@@ -338,10 +344,10 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 		// local-only repository: fast-forward the base branch in the main worktree
 		mainBranch := gitx.CurrentBranch(s.RepoDir)
 		if mainBranch == base {
-			if _, err := gitx.Run(s.RepoDir, "merge", "--ff-only", s.Branch); err != nil {
+			if _, err := gitx.Run(s.RepoDir, "merge", "--ff-only", "--end-of-options", s.Branch); err != nil {
 				return nil, err
 			}
-		} else if _, err := gitx.Run(s.RepoDir, "branch", "-f", base, s.Branch); err != nil {
+		} else if _, err := gitx.Run(s.RepoDir, "branch", "-f", "--end-of-options", base, s.Branch); err != nil {
 			return nil, err
 		}
 		steps = append(steps, "fast-forwarded "+base)
@@ -350,7 +356,7 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 		}
 		return map[string]any{"steps": steps, "landed": true}, nil
 	}
-	if _, err := gitx.Run(s.Path, "push", "-u", "origin", "HEAD:"+s.Branch, "--force-with-lease"); err != nil {
+	if _, err := gitx.Run(s.Path, "push", "-u", "--force-with-lease", "--end-of-options", "origin", "HEAD:"+s.Branch); err != nil {
 		return nil, err
 	}
 	steps = append(steps, "pushed "+s.Branch)

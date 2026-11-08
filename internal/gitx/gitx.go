@@ -114,6 +114,16 @@ func samePath(a, b string) bool {
 	return clean(a) == clean(b)
 }
 
+// CheckRefArg rejects a ref name that git would read as an option. Callers
+// also put --end-of-options before such arguments; this catches the value
+// early with a clear message.
+func CheckRefArg(what, name string) error {
+	if strings.HasPrefix(name, "-") {
+		return fmt.Errorf("invalid %s %q: must not start with '-'", what, name)
+	}
+	return nil
+}
+
 // MainWorktree returns the primary worktree path of the repository.
 func MainWorktree(dir string) (string, error) {
 	wts, err := Worktrees(dir)
@@ -251,10 +261,10 @@ func AddWorktree(repoDir, path, branch, base string) error {
 		return err
 	}
 	if BranchExists(repoDir, branch) {
-		_, err := Run(repoDir, "worktree", "add", path, branch)
+		_, err := Run(repoDir, "worktree", "add", "--end-of-options", path, branch)
 		return err
 	}
-	args := []string{"worktree", "add", "-b", branch, path}
+	args := []string{"worktree", "add", "-b", branch, "--end-of-options", path}
 	if base != "" {
 		args = append(args, base)
 	}
@@ -263,9 +273,9 @@ func AddWorktree(repoDir, path, branch, base string) error {
 }
 
 func RemoveWorktree(repoDir, path string, force bool) error {
-	args := []string{"worktree", "remove", path}
+	args := []string{"worktree", "remove", "--end-of-options", path}
 	if force {
-		args = []string{"worktree", "remove", "--force", path}
+		args = []string{"worktree", "remove", "--force", "--end-of-options", path}
 	}
 	_, err := Run(repoDir, args...)
 	if err == nil {
@@ -354,10 +364,12 @@ func DeleteRefs(dir, prefix string) {
 }
 
 func RevParse(dir, rev string) (string, error) {
-	return Run(dir, "rev-parse", "--verify", "--quiet", rev+"^{commit}")
+	return Run(dir, "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
 }
 
-func MergeBase(dir, a, b string) (string, error) { return Run(dir, "merge-base", a, b) }
+func MergeBase(dir, a, b string) (string, error) {
+	return Run(dir, "merge-base", "--end-of-options", a, b)
+}
 
 // RestoreSnapshot makes the working tree match commit (undo a prompt).
 // Files that exist now but not in the snapshot are deleted.

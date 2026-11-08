@@ -33,7 +33,7 @@ func (d *Daemon) hChanges(p slugP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := gitx.Run(s.Path, "diff", "--name-status", "--no-renames", base, tree)
+	out, err := gitx.Run(s.Path, "diff", "--name-status", "--no-renames", "--end-of-options", base, tree)
 	if err != nil {
 		return nil, err
 	}
@@ -496,7 +496,7 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 		return nil, err
 	}
 	local := fmt.Sprintf("pr-%d", p.Number)
-	if _, err := gitx.Run(repo.Dir, "fetch", "origin", fmt.Sprintf("pull/%d/head:%s", p.Number, local), pr.Base); err != nil {
+	if _, err := gitx.Run(repo.Dir, "fetch", "--end-of-options", "origin", fmt.Sprintf("pull/%d/head:%s", p.Number, local), pr.Base); err != nil {
 		if !gitx.BranchExists(repo.Dir, local) {
 			return nil, err
 		}

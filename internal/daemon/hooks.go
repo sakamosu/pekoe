@@ -601,7 +601,7 @@ func (d *Daemon) runGatekeeper(slug string) {
 	if err != nil {
 		return
 	}
-	diff, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--no-color", base, tree)
+	diff, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--no-color", "--end-of-options", base, tree)
 	if err != nil || len(diff) == 0 {
 		return
 	}

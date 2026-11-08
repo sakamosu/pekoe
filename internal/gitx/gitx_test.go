@@ -199,3 +199,21 @@ func TestCheckWorktreeOf(t *testing.T) {
 		t.Fatalf("plain directory: %v", err)
 	}
 }
+
+// A base that looks like an option is a ref to git, not an option.
+func TestAddWorktreeBaseIsNotAnOption(t *testing.T) {
+	r := newRepo(t, filepath.Join(t.TempDir(), "app"))
+	wt := filepath.Join(t.TempDir(), "wt")
+	if err := AddWorktree(r, wt, "nb", "--no-checkout"); err == nil {
+		t.Fatal("--no-checkout was taken as an option")
+	}
+	if _, err := MergeBase(r, "--octopus", "HEAD"); err == nil {
+		t.Fatal("merge-base took --octopus as an option")
+	}
+	if err := CheckRefArg("base", "--upload-pack=x"); err == nil {
+		t.Fatal("CheckRefArg accepted a leading '-'")
+	}
+	if err := CheckRefArg("base", "origin/main"); err != nil {
+		t.Fatal(err)
+	}
+}
