@@ -29,7 +29,7 @@
   "path": "/Users/me/worktrees/app/feat-csv",
   "agent": "claude",
   "state": "running",              // creating | running | waiting | idle | done | reviewing | approved | landed | failed
-  "wait_kind": "permission",       // waiting のときだけ: permission | question
+  "wait_kind": "permission",       // waiting のときだけ: permission | question(AskUserQuestion と elicitation。AskUserQuestion の直後に Claude Code が送る permission_prompt は、待ちの対象が AskUserQuestion のままなら question のまま)
   "state_since": "2026-11-07T10:00:00Z",
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
