@@ -181,17 +181,28 @@ func portBusy(p int) bool {
 	return false
 }
 
-func (d *Daemon) uniqueSlug(base, repoID string) string {
+// uniqueSlug picks the slug for a new session of a repository: base when it
+// is free or already this repository's; when another repository has it,
+// "<name>-<base>" (app-feat-x), and then -2, -3 … as before.
+func (d *Daemon) uniqueSlug(base, repoID, repoName string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	slug := base
-	for i := 2; ; i++ {
+	free := func(slug string) bool {
 		s, ok := d.sessions[slug]
-		if !ok || s.RepoID == repoID {
-			return slug
-		}
-		slug = fmt.Sprintf("%s-%d", base, i)
+		return !ok || s.RepoID == repoID
 	}
+	if free(base) {
+		return base
+	}
+	first := base
+	if repoName != "" {
+		first = paths.Slug(repoName) + "-" + base
+	}
+	slug := first
+	for i := 2; !free(slug); i++ {
+		slug = fmt.Sprintf("%s-%d", first, i)
+	}
+	return slug
 }
 
 // ---- new: worktree → copy → setup → port → start ----
@@ -244,7 +255,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
-	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID)
+	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
 	if s, err := d.get(slug); err == nil && s.State != state.Landed {
 		return nil, fmt.Errorf("session %s already exists", slug)
 	}
@@ -691,9 +702,9 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if name == "HEAD" || name == "" {
 		name = filepath.Base(top)
 	}
-	slug := d.uniqueSlug(paths.Slug(name), repo.ID)
+	slug := d.uniqueSlug(paths.Slug(name), repo.ID, repo.Name)
 	if _, err := d.get(slug); err == nil {
-		slug = d.uniqueSlug(paths.Slug(filepath.Base(top)), repo.ID+"#")
+		slug = d.uniqueSlug(paths.Slug(filepath.Base(top)), repo.ID+"#", repo.Name)
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {

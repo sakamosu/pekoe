@@ -282,6 +282,9 @@ func (d *Daemon) Call(method string, params json.RawMessage) (res any, err error
 	if len(params) == 0 {
 		params = json.RawMessage("{}")
 	}
+	if params, err = d.normalizeSlugParam(params); err != nil {
+		return nil, err
+	}
 	return h(params)
 }
 
@@ -333,6 +336,8 @@ func (d *Daemon) registerHandlers() {
 		"ext.info": func(json.RawMessage) (any, error) {
 			return map[string]any{"port": d.Global.HTTP.Port, "token": d.token}, nil
 		},
+		"repo.list":       bind(d.hRepoList),
+		"repo.resolve":    bind(d.hRepoResolve),
 		"session.list":    bind(d.hList),
 		"session.get":     bind(func(p slugP) (any, error) { return d.snapshot(p.Slug) }),
 		"session.new":     bind(d.hNew),
