@@ -243,14 +243,16 @@ func (r *Renderer) Color(m Mood) lipgloss.TerminalColor { return r.color(spec.St
 var asciiEyes = map[Mood]string{Idle: "o o", Work: "o o", Wait: "0 0", Done: "^ ^", Error: "x x", Sleep: "- -"}
 var asciiCell = map[Mood]string{Idle: ".", Work: "*", Wait: "?", Done: "*", Error: "x", Sleep: "."}
 
-// narrowGlyph swaps ● (East Asian Ambiguous) for ⬤ (Neutral) in narrow
-// mode. Fonts like Moralerspace JPDOC draw ambiguous glyphs two cells wide
-// while the terminal gives them one, so ● spills into the next cell; a CPR
-// can't see that, hence an explicit setting. ⬤ isn't the default because
-// Menlo / SF Mono lack it and the STIX fallback is about two cells wide.
+// narrowGlyph swaps ● (East Asian Ambiguous) for 🞄 (U+1F784 BLACK
+// SLIGHTLY SMALL CIRCLE, Neutral) in narrow mode. Fonts like Moralerspace
+// JPDOC draw ambiguous glyphs two cells wide while the terminal gives them
+// one, so ● spills into the next cell; a CPR can't see that, hence an
+// explicit setting. 🞄 rather than ⬤: ⬤ fills the cell and makes work's
+// eyes stare. 🞄 isn't the default because Menlo / SF Mono / Apple Symbols
+// lack it and the fallback glyph's size is up to the system.
 func (r *Renderer) narrowGlyph(s string) string {
 	if r.glyphs == "narrow" {
-		return strings.ReplaceAll(s, "●", "⬤")
+		return strings.ReplaceAll(s, "●", "🞄")
 	}
 	return s
 }
