@@ -353,6 +353,7 @@ func TestWebStatic(t *testing.T) {
 		"/manifest.webmanifest": "application/manifest+json",
 		"/theme.css":            "text/css",
 		"/icon.png":             "image/png",
+		"/icon-512.png":         "image/png",
 	} {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
 		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), ctype) {
