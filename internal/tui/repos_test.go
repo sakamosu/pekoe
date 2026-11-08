@@ -200,6 +200,13 @@ func TestSessionsGroupedByRepo(t *testing.T) {
 				if mark := m.ic.Current; !strings.Contains(lines[hA], mark+" api") || strings.Contains(lines[hB], mark+" web") {
 					t.Errorf("%s: current marker: %q / %q", label, lines[hA], lines[hB])
 				}
+				// it is not a state: text, never done's secondary in the same column
+				if color != "none" {
+					mark, head := fit(m.ic.Current, 1), m.repoHeading(m.sessions[0], 40)
+					if !strings.HasPrefix(head, m.th.FG(theme.Text, mark)) || strings.Contains(head, m.th.FG(theme.Secondary, mark)) {
+						t.Errorf("%s: current marker should be text, not secondary: %q", label, head)
+					}
+				}
 			}
 		}
 	}

@@ -57,10 +57,10 @@ Nov 7, 2026 · @Yuki Sakamoto
 | surface | #1e1d2c | 0.24 / 0.028 / 285 | 1.1:1 | 端末背景 | フォーカス中パネルの背景（任意） |
 | border | #3b3b4d | 0.36 / 0.030 / 285 | 1.7:1 | 8 bright black | 非フォーカスの枠線・区切り |
 | dim | #848495 | 0.62 / 0.025 / 285 | 5.0:1 | 8 bright black | 補助テキスト、ヒントの動作名、idle |
-| text | #e0e0eb | 0.91 / 0.015 / 285 | 13.9:1 | 端末前景 | 本文 |
+| text | #e0e0eb | 0.91 / 0.015 / 285 | 13.9:1 | 端末前景 | 本文、カレントマーカー |
 | primary | #ff87da | 0.78 / 0.174 / 340 | 8.4:1 | 5 magenta | フォーカス枠・フォーカスタイトル・モーダル枠 |
 | primary\_end | #9bb7f2 | 0.78 / 0.090 / 265 | 9.1:1 | —（primary 単色） | primary の派生。フォーカス枠・モーダル枠のグラデーション終点のみ |
-| secondary | #11cded | 0.78 / 0.136 / 215 | 9.5:1 | 6 cyan | キー文字・リンク・カレントマーカー・プロンプト |
+| secondary | #11cded | 0.78 / 0.136 / 215 | 9.5:1 | 6 cyan | キー文字・リンク・プロンプト、ユーザーの番を示す記号（done・未送信・未読・merged） |
 | warn | #edc812 | 0.84 / 0.170 / 95 | 11.2:1 | 3 yellow | 確認待ち・Modified・警告 |
 | ok | #51d75e | 0.78 / 0.200 / 145 | 9.7:1 | 2 green | 稼働中・Added・成功 |
 | err | #ff7172 | 0.72 / 0.174 / 22 | 6.8:1 | 1 red | 失敗・Deleted・破壊的操作の確認 |
@@ -204,7 +204,7 @@ Nov 7, 2026 · @Yuki Sakamoto
 | 追加 | A | ok | diff の新規ファイル・+ 行 |
 | 変更 | M | warn | diff の変更ファイル |
 | 削除 | D | err | diff の削除ファイル・- 行 |
-| カレント | \* | secondary | 今いる worktree ・ブランチ |
+| カレント | \* | text | 今いるリポジトリ・worktree ・ブランチ |
 | 重なり | ⚠ | warn | 他のセッションも同じファイルを触っている（自動マージ可）。一覧では `⚠2` のように相手の数と並べる |
 | 衝突 | ⚠ | err | コミット済みの内容が他のセッションと衝突する（git merge-tree）。詳細では状態語 conflict / overlap を添える |
 
@@ -213,6 +213,7 @@ Nov 7, 2026 · @Yuki Sakamoto
 - 「確認待ち」は warn に固定する。エージェント環境で最も気づいてほしい状態がこれなので、画面内で黄が別の意味で多用されないようにする。
 - 表の記号は icons = unicode のもの。nerd / ascii での対応は「アイコンとグラフィカル表現」の語彙表に従う。
 - unicode 段階で稼働中と確認待ちが同じ記号 ● なのは意図的。「今生きている」を記号で、「自分か相手か」を色で分ける。nerd 段階では pause\_circle、ascii では \* と ! で区別され、none モードでも状態語（run / wait）が必ず付くので別がつく。
+- カレントマーカーは状態ではないので、状態色を使わず text にする。Sessions のリポジトリ見出し行では状態アイコンと同じ列に並ぶため、done（secondary）と同じ色だと「完了」と読み違える。形（nf-fa-map\_marker / \*）と位置で「今ここ」を示す。
 - 同じ色は同じ種類の意味にだけ使う。warn が「待ち」と「変更」に跨っているのはどちらも「注意を向ける対象」だから。ok を「成功」と「稼働中」に使うのも同じ理由。
 - 状態の文字列は英小文字の短語（run / wait / idle / done / fail）。記号・色・語の3つが常に揃って出る。
 - 強調は色で行い、太字はフォーカス中のタイトルとキー文字にだけ使う。点滅・下線・イタリックは使わない。例外は GitHub から来たマークダウン本文の中だけで、書き手の `**太字**` / `*斜体*` / `~~取り消し~~` をそのまま太字・イタリック・取り消し線で描く(リンクは下線なしの secondary)。
@@ -243,7 +244,7 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 | creating | Braille スピナー | 2800–28FF | ◌ | . | dim |
 | done | nf-fa-check\_circle | F058 | ✓ | v | secondary |
 | fail | nf-fa-times\_circle | F057 | ✗ | x | err |
-| カレント worktree | nf-fa-map\_marker | F041 | \* | \* | secondary |
+| カレント worktree | nf-fa-map\_marker | F041 | \* | \* | text |
 | 警告（モーダル）・衝突予報 | nf-fa-exclamation\_triangle | F071 | ⚠ | ! | warn / err |
 | PR ビュー / open の PR | nf-dev-git\_pull\_request | E726 | ⇄ | なし | タイトル色（状態行では ok） |
 | PR の CI 実行中・待ち | nf-fa-clock\_o | F017 | … | ~ | dim |

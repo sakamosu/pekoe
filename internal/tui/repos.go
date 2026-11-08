@@ -303,12 +303,12 @@ func groupByRepo(ss []*state.Session) {
 }
 
 // repoHeading is the row above a repository's sessions in [1]: the current
-// marker (secondary) when it is the current repository, its name, a rule.
+// marker (text) when it is the current repository, its name, a rule.
 func (m *model) repoHeading(s *state.Session, cw int) string {
 	th := m.th
 	mark, role := " ", theme.Dim
 	if cur := m.curRepo(); cur != nil && repoKeyOf(s) != "" && (cur.ID == s.RepoID || cur.Dir == s.RepoDir) {
-		mark, role = th.FG(theme.Secondary, fit(m.ic.Current, 1)), theme.Text
+		mark, role = th.FG(theme.Text, fit(m.ic.Current, 1)), theme.Text
 	}
 	name := shortRepoName(s.Repo, s.RepoDir)
 	if r := m.sessionRepo(s); r != nil {
@@ -433,7 +433,7 @@ func (p *repoPicker) view() []string {
 	for i, r := range rs {
 		mark := " "
 		if cur != nil && cur.ID == r.ID {
-			mark = th.FG(theme.Secondary, fit(m.ic.Current, 1))
+			mark = th.FG(theme.Text, fit(m.ic.Current, 1))
 		}
 		count := "no sessions"
 		if r.Sessions == 1 {
