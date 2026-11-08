@@ -206,3 +206,21 @@ main { padding: 4px 10px 8px; }
 .toast .ic { margin-right: 6px; color: var(--err); }
 .toast.ok { border-color: var(--ok); }
 .toast.ok .ic { color: var(--ok); }
+
+/* ---- agent screen colors: the 16 terminal colors are theme roles ---- */
+.f-border { color: var(--border); } .k-border { background: var(--border); }
+.f-err { color: var(--err); } .k-err { background: var(--err); }
+.f-ok { color: var(--ok); } .k-ok { background: var(--ok); }
+.f-warn { color: var(--warn); } .k-warn { background: var(--warn); }
+.f-primary-end { color: var(--primary-end); } .k-primary-end { background: var(--primary-end); }
+.f-primary { color: var(--primary); } .k-primary { background: var(--primary); }
+.f-secondary { color: var(--secondary); } .k-secondary { background: var(--secondary); }
+.f-text { color: var(--text); } .k-text { background: var(--text); }
+.f-dim { color: var(--dim); } .k-dim { background: var(--dim); }
+.f-bg { color: var(--bg); } .k-bg { background: var(--bg); }
+.t-b { font-weight: 700; }
+.t-d { opacity: .6; }
+.t-i { font-style: italic; }
+.t-u { text-decoration: underline; }
+.t-s { text-decoration: line-through; }
+.t-u.t-s { text-decoration: underline line-through; }

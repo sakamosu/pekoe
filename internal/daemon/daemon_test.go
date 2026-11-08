@@ -24,6 +24,7 @@ type fakeEngine struct {
 	wins  map[string]bool
 	sizes map[string][2]int // window -> pty size: spawn, then resizes
 	out   chan engine.Output
+	lines []string // what Capture returns (nil: "x")
 }
 
 func newFake() *fakeEngine {
@@ -65,7 +66,13 @@ func (f *fakeEngine) SendHex(slug, w string, h []string) error {
 	return f.rec("hex:" + string(b))
 }
 func (f *fakeEngine) Capture(slug, w string) (*engine.Screen, error) {
-	return &engine.Screen{Lines: []string{"x"}, Width: 80, Height: 24}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lines := f.lines
+	if lines == nil {
+		lines = []string{"x"}
+	}
+	return &engine.Screen{Lines: append([]string(nil), lines...), Width: 80, Height: 24}, nil
 }
 func (f *fakeEngine) Resize(slug, win string, w, h int) error {
 	f.mu.Lock()

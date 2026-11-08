@@ -5,7 +5,7 @@ Mac で bobad を動かしたまま、外出先の iPhone(Tailscale アプリが
 - セッション一覧(状態つき。許可待ちは一番上に、カードで)
 - 許可待ちへの allow / deny(ツールの要約と、エージェントが画面に出している許可ダイアログを見せ、押す前に確認を挟む。`always` は出さない)
 - `send`(一言の指示を送る。allow / deny で答える許可待ちの間は送れない)
-- エージェント画面の最新テキストを読むだけの表示(色・カーソルなし。ターミナルの再現はしない)
+- エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
 
 賢さは bobad にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send`)を同じ `Daemon.Call` 経由で呼ぶ。
 
@@ -124,10 +124,14 @@ allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニ�
 | --- | --- | --- |
 | `GET /api/me` | — | `{login, device}` |
 | `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中 → その他(新しい順) |
-| `GET /api/sessions/{slug}/screen` | — | `{slug, lines: [string], dead}`。agent 窓の最後 80 行、色を落としたテキスト |
+| `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。409: allow / deny で答える許可待ちの間 |
 
 WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test look pr_look`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
+
+Run は 1 行の中の同じ見た目の区間: `{t, fg?, bg?, b?, d?, i?, u?, s?}`(テキスト、文字色、背景色、太字・薄字・斜体・下線・取り消し線)。bobad が `capture-pane -e` の SGR を解析して作る(`internal/daemon/webscreen.go`)。色は 16 色なら TUI の役割名(`err ok warn primary secondary text dim border primary-end`、反転の既定色は `bg` / `text`)で、ユーザーのテーマがそのまま効く。256 色と truecolor は `#rrggbb`。OSC 8 のリンクやカーソル移動など、色以外のエスケープと制御文字は捨てる。行ごとに既定の見た目から始め(TUI と同じ)、行末の空白は背景色があっても落とす。
+
+画面の文字はエージェントの出力で、信用しない。Run には HTML を作らず、ページは `t` を `textContent` で入れ、色は決まった役割名のクラスか、`#rrggbb` を確かめてから CSSOM(`style.color`)で当てる。どちらでもない値は無視する。CSP(`style-src 'self'`)はそのまま。
 
 見た目は TUI と同じ規則(docs/ui-guidelines.md)に合わせる。色は `GET /theme.css` が TUI のパレット(`[theme.colors]` の上書きを含む。`#rrggbb` 以外は捨てる)を CSS 変数で返し、`app.css` は役割名だけを使う。

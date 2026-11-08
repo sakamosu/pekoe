@@ -353,20 +353,19 @@ func (d *Daemon) webScreen(w http.ResponseWriter, r *http.Request) {
 		webErr(w, errors.New("no screen"))
 		return
 	}
-	writeJSON(w, map[string]any{"slug": slug, "lines": plainTail(sc.Lines, webTailRows), "dead": sc.Dead})
+	// rows: the lines with their colors (webscreen.go); lines: the same
+	// lines as plain text (the confirm sheet, older pages)
+	rows := styledTail(sc.Lines, webTailRows)
+	writeJSON(w, map[string]any{"slug": slug, "rows": rows, "lines": plainOf(rows), "dead": sc.Dead})
 }
 
 // plainTail: the last n lines without colours, trailing blank lines dropped.
-func plainTail(lines []string, n int) []string {
-	out := make([]string, 0, len(lines))
-	for _, l := range lines {
-		out = append(out, strings.TrimRight(stripANSI(l), " "))
-	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	if len(out) > n {
-		out = out[len(out)-n:]
+func plainTail(lines []string, n int) []string { return plainOf(styledTail(lines, n)) }
+
+func plainOf(rows [][]webRun) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = runsText(r)
 	}
 	return out
 }

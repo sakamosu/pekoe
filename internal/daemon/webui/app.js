@@ -248,6 +248,52 @@ function renderTarget(s) {
   $("d-send-btn").disabled = !s || sending;
 }
 
+// ---- the agent screen, with its colors ----
+// bobad sends each line as runs {t, fg, bg, b, d, i, u, s} (webscreen.go).
+// The text goes in with textContent; a color is a theme role (a class from
+// this fixed list) or #rrggbb, checked here and set through CSSOM.
+
+const TERM_ROLES = new Set(["border", "err", "ok", "warn", "primary-end", "primary", "secondary", "text", "dim", "bg"]);
+const HEX = /^#[0-9a-f]{6}$/;
+
+function termRun(run) {
+  const sp = el("span", null, String(run.t ?? ""));
+  const cls = [];
+  for (const [key, prop, pre] of [["fg", "color", "f-"], ["bg", "backgroundColor", "k-"]]) {
+    const c = run[key];
+    if (typeof c !== "string" || !c) continue;
+    if (TERM_ROLES.has(c)) cls.push(pre + c);
+    else if (HEX.test(c)) sp.style[prop] = c;
+  }
+  if (run.b) cls.push("t-b");
+  if (run.d) cls.push("t-d");
+  if (run.i) cls.push("t-i");
+  if (run.u) cls.push("t-u");
+  if (run.s) cls.push("t-s");
+  if (cls.length) sp.className = cls.join(" ");
+  return sp;
+}
+
+// termLines builds the screen: one text node per plain run, a span per
+// styled one, a newline between lines.
+function termLines(rows) {
+  const frag = document.createDocumentFragment();
+  rows.forEach((runs, i) => {
+    if (i) frag.append("\n");
+    for (const run of Array.isArray(runs) ? runs : []) {
+      const plain = !run.fg && !run.bg && !run.b && !run.d && !run.i && !run.u && !run.s;
+      frag.append(plain ? document.createTextNode(String(run.t ?? "")) : termRun(run));
+    }
+  });
+  return frag;
+}
+
+// screenRows: rows from the API, or the plain lines from an older bobad
+function screenRows(r) {
+  if (Array.isArray(r.rows)) return r.rows;
+  return (r.lines || []).map((l) => [{ t: l }]);
+}
+
 async function refreshScreen() {
   if (!current) return;
   const slug = current;
@@ -256,7 +302,8 @@ async function refreshScreen() {
     const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/screen");
     if (slug !== current) return; // answered after a switch: not this screen
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 24;
-    pre.textContent = (r.lines || []).join("\n") + (r.dead ? "\n[agent exited]" : "");
+    pre.replaceChildren(termLines(screenRows(r)));
+    if (r.dead) pre.append("\n", el("span", "f-dim", "[agent exited]"));
     if (atBottom) pre.scrollTop = pre.scrollHeight;
     $("d-at").textContent = new Date().toLocaleTimeString();
   } catch (e) {
@@ -288,7 +335,7 @@ function confirmAnswer(s, answer) {
   $("sheet").hidden = false;
   api("/api/sessions/" + encodeURIComponent(s.slug) + "/screen").then((r) => {
     if (!pending || pending.slug !== s.slug) return;
-    scr.textContent = (r.lines || []).slice(-18).join("\n");
+    scr.replaceChildren(termLines(screenRows(r).slice(-18)));
     scr.scrollTop = scr.scrollHeight;
   }).catch((e) => { scr.textContent = "(" + e.message + ")"; });
 }
