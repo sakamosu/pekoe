@@ -272,12 +272,15 @@ deny    = "n"
 3. `pekoe migrate --dry-run` で何が変わるかを確かめてから `pekoe migrate` を実行する
    - `~/.config/boba` → `~/.config/pekoe`、`~/.local/share/boba` → `~/.local/share/pekoe` に移し、`bobad.sock` `bobad.log` などを `pekoed.*` に改名
    - `state.db` の中の旧パスと旧 ref を書き換え、各リポジトリの `refs/boba/*` を `refs/pekoe/*` にコピー(`--prune-old` で旧 `refs/boba/*` も消す)
+   - セッションに保存された環境変数の `BOBA_PORT=…` などを `PEKOE_PORT=…` に改名する(値やプロンプト本文は変えない)
    - `~/.claude/settings.json` の `boba event` の hooks を `pekoe event` に置き換える
    - 最後に手作業で残っているものを表示する
 4. MCP を登録し直す: `claude mcp remove boba && claude mcp add pekoe -- pekoe mcp`
 5. launchd を使っていたら `make uninstall-launchd && make install-launchd`
 6. nvim の設定の `require("boba")` を `require("pekoe")` に(lazy.nvim の `dir` / `name` も)替え、Chrome 拡張を `chrome://extensions` で再読み込みする
 7. 旧エージェントが残っていなければ `tmux -L boba kill-server` で旧 tmux サーバーを止める
+
+すでに移行を済ませたあとで dev 窓などに `BOBA_PORT` が渡っている(セッションの環境変数が旧名のまま残っている)ときは、`pekoe daemon stop` でデーモンを止めて `pekoe migrate --dry-run` で `env BOBA_* → PEKOE_*` の行を確かめ、`pekoe migrate` をもう一度実行する。旧ディレクトリが無ければ移動は飛ばして `state.db` だけを直す。デーモンを立て直したら、開いている dev 窓・run 窓は閉じて開き直す(すでに起動している窓の環境は変わらない)。
 
 ## 開発
 
