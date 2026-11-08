@@ -84,7 +84,7 @@
 | `session.adopt` | `{path?}` | `[Session]` |
 | `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter |
 | `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時) |
-| `session.answer` | `{slug, answer: "allow"\|"deny"\|"always"}` | 許可待ちに答える |
+| `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う) |
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height}` |
 | `session.resize` | `{slug, width, height}` | pty サイズ変更 |
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
@@ -306,7 +306,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/sessions` | — | `session.list` を待ち優先に並べ、表示用に絞ったもの |
 | `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行を色なしで |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400、待っていない・質問・プロンプトが変わったら 409 |
-| `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`) |
+| `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409 |
 
 POST には `X-Boba-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
 

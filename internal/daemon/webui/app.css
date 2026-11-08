@@ -130,7 +130,9 @@ button, textarea { font: inherit; color: inherit; }
 }
 .sheet h2 { margin: 0 0 10px; font: 600 16px var(--mono); }
 .sheet .target { font: 600 14px var(--mono); }
-.sheet .input { max-height: 40vh; }
+.sheet .input { max-height: 22vh; }
+.sheet-cap { margin-top: 10px; }
+.sheet-screen { font-size: 11px; max-height: 30vh; }
 .sheet.danger { border-top-color: var(--err); }
 
 .toast {

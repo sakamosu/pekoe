@@ -13,9 +13,11 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -45,18 +47,35 @@ func (d *Daemon) startWeb() {
 		fail(errors.New("[web] allow_users is empty: nobody could sign in"))
 		return
 	}
+	if !filepath.IsAbs(cfg.StateDir) {
+		// bobad's working directory is wherever boba was first run: a
+		// relative state_dir would put the node key inside some repository
+		fail(fmt.Errorf("[web] state_dir must be an absolute path: %q", cfg.StateDir))
+		return
+	}
 	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
 		fail(err)
 		return
 	}
+	key := cfg.AuthKey
+	if key == "" {
+		key = d.authKey // TS_AUTHKEY, already out of the environment
+	}
 	srv := &tsnet.Server{
 		Dir:      cfg.StateDir,
 		Hostname: cfg.Hostname,
-		AuthKey:  cfg.AuthKey, // empty: TS_AUTHKEY, else a login URL
-		UserLogf: func(format string, a ...any) { log.Printf("web: tsnet: "+format, a...) },
+		AuthKey:  key, // empty: a login URL (watchWeb logs it, once per URL)
+		UserLogf: func(format string, a ...any) {
+			// tsnet repeats the login URL every 5 s while it waits
+			if strings.HasPrefix(format, "To start this tsnet server") || strings.HasPrefix(format, "AuthLoop:") {
+				return
+			}
+			log.Printf("web: tsnet: "+format, a...)
+		},
 		// Logf (the backend's verbose log) stays nil: discarded.
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan error, 1) // srv.Start's result; Close must not run before it
 	var (
 		mu      sync.Mutex
 		httpSrv *http.Server
@@ -72,12 +91,22 @@ func (d *Daemon) startWeb() {
 			hs.Shutdown(sctx)
 			c()
 		}
-		srv.Close()
+		// tsnet: Close must not be called before or concurrently with Start
+		select {
+		case err := <-started:
+			if err == nil {
+				srv.Close()
+			}
+		case <-time.After(10 * time.Second):
+			log.Printf("web: tsnet did not finish starting; not closed")
+		}
 	}
 	d.web.mu.Unlock()
 
 	go func() {
-		if err := srv.Start(); err != nil {
+		err := srv.Start()
+		started <- err
+		if err != nil {
 			fail(err)
 			return
 		}
@@ -86,34 +115,70 @@ func (d *Daemon) startWeb() {
 			fail(err)
 			return
 		}
-		go d.watchWeb(ctx, lc)
-		// blocks until the node is up (after the login, on a first start)
-		ln, err := srv.ListenTLS("tcp", ":443")
-		if err != nil {
-			if ctx.Err() == nil {
+		go d.watchWeb(ctx, srv, lc)
+		self, _ := os.Hostname()
+		h := d.webHandler(webOpts{
+			cfg:   cfg,
+			who:   tsWhoIs(lc, self),
+			hosts: srv.CertDomains, // read per request: a renamed node keeps working
+		})
+		for ctx.Err() == nil {
+			if err := d.serveWeb(ctx, srv, lc, h, &mu, &httpSrv); err != nil && ctx.Err() == nil {
+				// e.g. HTTPS not enabled in the tailnet yet: try again later
 				fail(err)
+				select {
+				case <-ctx.Done():
+				case <-time.After(30 * time.Second):
+				}
+				continue
 			}
 			return
 		}
-		hosts := srv.CertDomains()
-		urls := make([]string, 0, len(hosts))
-		for _, h := range hosts {
-			urls = append(urls, "https://"+h+"/")
-		}
-		d.web.set(func(s *webStatus) { s.URLs = urls })
-		log.Printf("web: serving %s (allow_users %s)", strings.Join(urls, " "), strings.Join(cfg.AllowUsers, ", "))
-		h := d.webHandler(webOpts{cfg: cfg, who: tsWhoIs(lc), hosts: hosts})
-		hs := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
-		mu.Lock()
-		httpSrv = hs
-		mu.Unlock()
-		if ctx.Err() != nil {
-			return
-		}
-		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) && ctx.Err() == nil {
-			fail(err)
-		}
 	}()
+}
+
+// serveWeb listens on :443 (blocking until the node is up, i.e. after the
+// login on a first start) and serves until the server is shut down.
+func (d *Daemon) serveWeb(ctx context.Context, srv *tsnet.Server, lc *local.Client, h http.Handler, mu *sync.Mutex, out **http.Server) error {
+	ln, err := srv.ListenTLS("tcp", ":443")
+	if err != nil {
+		return err
+	}
+	d.web.set(func(s *webStatus) {
+		if s.State == "error" {
+			s.State, s.Error = "running", ""
+		}
+	})
+	// The first certificate comes from Let's Encrypt and can take longer
+	// than a handshake may: fetch it before the first phone asks.
+	for _, dom := range srv.CertDomains() {
+		cctx, c := context.WithTimeout(ctx, 2*time.Minute)
+		if _, _, err := lc.CertPair(cctx, dom); err != nil {
+			log.Printf("web: certificate for %s: %v", dom, err)
+		}
+		c()
+	}
+	log.Printf("web: serving %s (allow_users %s)", strings.Join(webURLs(srv.CertDomains()), " "), strings.Join(d.Global.Web.AllowUsers, ", "))
+	hs := &http.Server{Handler: h, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
+	mu.Lock()
+	*out = hs
+	mu.Unlock()
+	if ctx.Err() != nil {
+		ln.Close()
+		return nil
+	}
+	if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func webURLs(domains []string) []string {
+	urls := make([]string, 0, len(domains))
+	for _, h := range domains {
+		urls = append(urls, "https://"+h+"/")
+	}
+	return urls
 }
 
 func (d *Daemon) stopWeb() {
@@ -126,9 +191,9 @@ func (d *Daemon) stopWeb() {
 	}
 }
 
-// watchWeb keeps the status `boba web` shows: the backend state and, while
-// it needs a login, the URL to open.
-func (d *Daemon) watchWeb(ctx context.Context, lc *local.Client) {
+// watchWeb keeps the status `boba web` shows: the backend state, the URLs
+// and, while it needs a login, the URL to open (logged once per URL).
+func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Client) {
 	lastURL := ""
 	for {
 		st, err := lc.StatusWithoutPeers(ctx)
@@ -140,14 +205,16 @@ func (d *Daemon) watchWeb(ctx context.Context, lc *local.Client) {
 			case ipn.NeedsLogin.String(), ipn.NeedsMachineAuth.String():
 				state = "needs-login"
 			}
+			urls := webURLs(srv.CertDomains())
 			d.web.set(func(s *webStatus) {
 				if s.State != "error" {
 					s.State = state
 				}
 				s.AuthURL = st.AuthURL
+				s.URLs = urls
 			})
 			if st.AuthURL != "" && st.AuthURL != lastURL {
-				log.Printf("web: to join the tailnet, open %s (or run bobad with TS_AUTHKEY)", st.AuthURL)
+				log.Printf("web: to join the tailnet, open %s (or start bobad with TS_AUTHKEY)", st.AuthURL)
 			}
 			lastURL = st.AuthURL
 		}
@@ -163,8 +230,12 @@ func (d *Daemon) watchWeb(ctx context.Context, lc *local.Client) {
 	}
 }
 
-// tsWhoIs asks the node who owns a connection's source address.
-func tsWhoIs(lc *local.Client) whoIsFunc {
+// tsWhoIs asks the node who owns a connection's source address. self is
+// this machine's hostname: a peer reporting it is the Mac's own Tailscale
+// (e.g. in userspace-networking mode, where its 100.x address is on no
+// interface and isLocalAddr cannot see it).
+func tsWhoIs(lc *local.Client, self string) whoIsFunc {
+	self = shortHost(self)
 	return func(ctx context.Context, remoteAddr string) (*webPeer, error) {
 		res, err := lc.WhoIs(ctx, remoteAddr)
 		if err != nil {
@@ -177,6 +248,20 @@ func tsWhoIs(lc *local.Client) whoIsFunc {
 		if dev == "" {
 			dev, _, _ = strings.Cut(res.Node.Name, ".")
 		}
-		return &webPeer{Login: res.UserProfile.LoginName, Device: dev, Tagged: res.Node.IsTagged()}, nil
+		host := ""
+		if res.Node.Hostinfo.Valid() {
+			host = res.Node.Hostinfo.Hostname()
+		}
+		return &webPeer{
+			Login:  res.UserProfile.LoginName,
+			Device: dev,
+			Tagged: res.Node.IsTagged(),
+			Self:   self != "" && shortHost(host) == self,
+		}, nil
 	}
+}
+
+func shortHost(h string) string {
+	h, _, _ = strings.Cut(strings.ToLower(strings.TrimSpace(h)), ".")
+	return h
 }

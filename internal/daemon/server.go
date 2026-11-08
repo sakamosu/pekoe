@@ -89,6 +89,7 @@ type Daemon struct {
 	httpSrv *http.Server
 	token   string
 	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
+	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
 	mu         sync.Mutex
 	saveMu     sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
@@ -144,7 +145,7 @@ func New() (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{
-		DB: db, Global: g, lock: lock,
+		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(),
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},

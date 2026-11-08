@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -44,6 +45,7 @@ type webPeer struct {
 	Login  string `json:"login"`  // UserProfile.LoginName, e.g. you@github
 	Device string `json:"device"` // machine name, e.g. iphone-15
 	Tagged bool   `json:"-"`      // a tagged node (owned by tags, not a person)
+	Self   bool   `json:"-"`      // the node runs on this machine (its hostname)
 }
 
 // whoIsFunc resolves a connection's remote address ("100.x.y.z:port").
@@ -52,7 +54,7 @@ type whoIsFunc func(ctx context.Context, remoteAddr string) (*webPeer, error)
 type webOpts struct {
 	cfg   config.Web
 	who   whoIsFunc
-	hosts []string // the names this node answers to (tsnet CertDomains)
+	hosts func() []string // the names this node answers to (tsnet CertDomains)
 	// local reports whether ip belongs to this machine (default: an
 	// address of one of its network interfaces).
 	local func(ip netip.Addr) bool
@@ -104,9 +106,13 @@ func peerFrom(r *http.Request) *webPeer {
 func webGuard(o webOpts, next http.Handler) http.Handler {
 	users := lowerSet(o.cfg.AllowUsers)
 	devices := lowerSet(o.cfg.AllowDevices)
-	hosts := map[string]bool{}
-	for _, h := range o.hosts {
-		hosts[strings.ToLower(strings.TrimSuffix(h, "."))] = true
+	ownHost := func(host string) bool {
+		for _, h := range o.hosts() {
+			if strings.EqualFold(strings.TrimSuffix(h, "."), host) {
+				return true
+			}
+		}
+		return false
 	}
 	deny := func(w http.ResponseWriter, r *http.Request, code int, why string) {
 		log.Printf("web: %d %s %s from %s: %s", code, r.Method, r.URL.Path, r.RemoteAddr, why)
@@ -122,7 +128,7 @@ func webGuard(o webOpts, next http.Handler) http.Handler {
 		if hh, _, err := net.SplitHostPort(host); err == nil {
 			host = hh
 		}
-		if !hosts[host] {
+		if host == "" || !ownHost(host) {
 			deny(w, r, http.StatusMisdirectedRequest, "host "+r.Host)
 			return
 		}
@@ -144,6 +150,9 @@ func webGuard(o webOpts, next http.Handler) http.Handler {
 			return
 		case p.Tagged:
 			deny(w, r, http.StatusForbidden, "tagged node "+p.Device)
+			return
+		case p.Self:
+			deny(w, r, http.StatusForbidden, "node "+p.Device+" runs on this machine")
 			return
 		case !users[strings.ToLower(p.Login)]:
 			deny(w, r, http.StatusForbidden, "user "+p.Login+" not in allow_users")
@@ -208,7 +217,10 @@ func isLocalAddr(ip netip.Addr) bool {
 
 // ---- API ----
 
-// webSession is what the phone sees of a session: no paths, env or tokens.
+// webSession is what the phone sees of a session. Not the worktree and
+// repository paths, env or the Claude session id; paths inside a pending
+// tool's input, an error or the last message stay (they are what the user
+// judges by).
 type webSession struct {
 	Slug        string      `json:"slug"`
 	Repo        string      `json:"repo"`
@@ -343,13 +355,15 @@ func (d *Daemon) webAnswer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("%s is not waiting for allow/deny (state: %s)", slug, s.State), http.StatusConflict)
 		return
 	}
-	if !sameTool(s.PendingTool, in.Tool) {
-		http.Error(w, "the prompt changed; look again", http.StatusConflict)
-		return
-	}
 	p := peerFrom(r)
 	log.Printf("web: %s answers %s on %s (%s from %s)", p.Login, in.Answer, slug, toolLabel(s.PendingTool), p.Device)
-	res, err := d.Call("session.answer", mustJSON(answerP{Slug: slug, Answer: in.Answer}))
+	// the prompt check is inside session.answer (Expect), right before the
+	// keys go out, so a prompt that changes meanwhile is not answered
+	res, err := d.Call("session.answer", mustJSON(answerP{Slug: slug, Answer: in.Answer, Expect: &answerExpect{Tool: in.Tool}}))
+	if errors.Is(err, errPromptChanged) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if err != nil {
 		webErr(w, err)
 		return
@@ -393,6 +407,17 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("text must be at most %d characters", webMaxText), http.StatusBadRequest)
 		return
 	}
+	s, err := d.snapshot(slug)
+	if err != nil {
+		webErr(w, err)
+		return
+	}
+	// A permission menu takes the first character as its choice: "2…"
+	// would be "Yes, and don't ask again", the always the web never gives.
+	if webAnswerable(s) {
+		http.Error(w, slug+" is waiting for allow/deny: answer it first", http.StatusConflict)
+		return
+	}
 	p := peerFrom(r)
 	log.Printf("web: %s sends %d chars to %s (from %s)", p.Login, len(text), slug, p.Device)
 	if _, err := d.Call("session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
@@ -408,6 +433,22 @@ func webErr(w http.ResponseWriter, err error) {
 		code = http.StatusNotFound
 	}
 	http.Error(w, err.Error(), code)
+}
+
+// takeAuthKeyEnv removes the tailnet auth key from bobad's environment and
+// returns it. bobad's environment reaches tmux and so every agent pane: an
+// agent holding the key could join the tailnet as the user and call the
+// web UI from a node that is not "this machine". Called before the
+// terminal engine starts.
+func takeAuthKeyEnv() string {
+	key := ""
+	for _, k := range []string{"TS_AUTHKEY", "TS_AUTH_KEY"} {
+		if v := os.Getenv(k); v != "" && key == "" {
+			key = v
+		}
+		os.Unsetenv(k)
+	}
+	return key
 }
 
 // ---- status (boba web) ----

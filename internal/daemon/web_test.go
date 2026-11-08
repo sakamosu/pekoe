@@ -38,7 +38,8 @@ const (
 	ipLaptop = "100.64.0.3"
 	ipOther  = "100.64.0.4"
 	ipTagged = "100.64.0.5"
-	ipMac    = "100.64.0.9" // this machine's own tailnet address
+	ipMac    = "100.64.0.9"  // this machine's own tailnet address
+	ipMacUS  = "100.64.0.10" // this machine, userspace-networking (address on no interface)
 	ipNobody = "100.64.0.99"
 )
 
@@ -51,11 +52,12 @@ func webSetup(t *testing.T, devices ...string) (*Daemon, *fakeEngine, string, ht
 		ipOther:  {Login: "someone@github", Device: "their-phone"},
 		ipTagged: {Login: "tagged-devices", Device: "ci", Tagged: true},
 		ipMac:    {Login: "me@github", Device: "mac"},
+		ipMacUS:  {Login: "me@github", Device: "mac", Self: true},
 	}
 	h := d.webHandler(webOpts{
 		cfg:   config.Web{Enable: true, AllowUsers: []string{"me@github"}, AllowDevices: devices},
 		who:   net.whoIs,
-		hosts: []string{webHost + "."},
+		hosts: func() []string { return []string{webHost + "."} },
 		local: func(ip netip.Addr) bool { return ip.String() == ipMac || ip.IsLoopback() },
 	})
 	return d, fe, repo, h
@@ -127,11 +129,12 @@ func TestWebRejectsOthers(t *testing.T) {
 	tool := waitingSession(t, d, repo)
 	before := sentCount(fe)
 	for name, from := range map[string]string{
-		"other user":   ipOther,
-		"tagged node":  ipTagged,
-		"unknown peer": ipNobody,
-		"this machine": ipMac,
-		"loopback":     "127.0.0.1",
+		"other user":               ipOther,
+		"tagged node":              ipTagged,
+		"unknown peer":             ipNobody,
+		"this machine":             ipMac,
+		"this machine (userspace)": ipMacUS,
+		"loopback":                 "127.0.0.1",
 	} {
 		for _, q := range []webReq{
 			{path: "/", from: from},
@@ -427,5 +430,70 @@ func TestWebNotBuilt(t *testing.T) {
 	}
 	if _, err := os.Stat(d.Global.Web.StateDir); !os.IsNotExist(err) {
 		t.Fatalf("tsnet state dir exists: %v", err)
+	}
+}
+
+// While a permission menu is up, a sent "2…" would pick "Yes, and don't
+// ask again": send waits until the prompt is answered.
+func TestWebSendBlockedByPermissionPrompt(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	waitingSession(t, d, repo)
+	before := sentCount(fe)
+	w := doWeb(t, h, webReq{method: "POST", path: "/api/sessions/main/send", from: ipPhone, body: map[string]any{"text": "2つ目のファイルも直して"}})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("send during a permission prompt: %d", w.Code)
+	}
+	if sentCount(fe) != before {
+		t.Fatalf("typed into the permission menu: %s", fe.last())
+	}
+}
+
+// A long Japanese command is cut on a character boundary, so the summary
+// survives JSON and allow still matches the prompt.
+func TestWebAnswerLongMultibyte(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	cmd := `git commit -m "` + strings.Repeat("日本語のとても長いコミットメッセージ", 10) + `"`
+	event(t, d, "PreToolUse", "main", map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": cmd}})
+	event(t, d, "Notification", "main", map[string]any{"notification_type": "permission_prompt", "message": "needs permission"})
+	w := doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone})
+	var res struct{ Sessions []webSession }
+	json.Unmarshal(w.Body.Bytes(), &res)
+	tool := res.Sessions[0].PendingTool // what the phone got, after JSON
+	if tool == nil || strings.ContainsRune(tool.Input, '�') {
+		t.Fatalf("summary broken: %+v", tool)
+	}
+	if w := doWeb(t, h, answerReq(ipPhone, "allow", tool)); w.Code != 200 {
+		t.Fatalf("allow: %d %s", w.Code, w.Body)
+	}
+	if !strings.HasSuffix(fe.last(), "lit:1") {
+		t.Fatalf("allow not sent: %s", fe.last())
+	}
+}
+
+// session.answer itself checks the expected prompt, right before typing.
+func TestAnswerExpect(t *testing.T) {
+	d, fe, repo := setup(t)
+	waitingSession(t, d, repo)
+	before := sentCount(fe)
+	_, err := d.hAnswer(answerP{Slug: "main", Answer: "allow", Expect: &answerExpect{Tool: &state.Tool{Name: "Bash", Input: "other"}}})
+	if !errors.Is(err, errPromptChanged) || sentCount(fe) != before {
+		t.Fatalf("err = %v, sent: %s", err, fe.last())
+	}
+	// without Expect (CLI, TUI) it answers as before
+	if _, err := d.hAnswer(answerP{Slug: "main", Answer: "allow"}); err != nil || !strings.HasSuffix(fe.last(), "lit:1") {
+		t.Fatalf("err = %v, sent: %s", err, fe.last())
+	}
+}
+
+// The auth key never reaches tmux (and so the agents).
+func TestTakeAuthKeyEnv(t *testing.T) {
+	t.Setenv("TS_AUTHKEY", "tskey-auth-x")
+	t.Setenv("TS_AUTH_KEY", "tskey-auth-y")
+	if k := takeAuthKeyEnv(); k != "tskey-auth-x" {
+		t.Fatalf("key %q", k)
+	}
+	if os.Getenv("TS_AUTHKEY") != "" || os.Getenv("TS_AUTH_KEY") != "" {
+		t.Fatal("still in the environment")
 	}
 }

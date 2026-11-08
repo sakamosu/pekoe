@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -154,6 +155,10 @@ func LoadGlobal() (*Global, error) {
 	}
 	if g.Web.StateDir == "" {
 		g.Web.StateDir = paths.WebStateDir()
+	} else if rest, ok := strings.CutPrefix(g.Web.StateDir, "~/"); ok {
+		if h, err := os.UserHomeDir(); err == nil {
+			g.Web.StateDir = filepath.Join(h, rest)
+		}
 	}
 	if g.Ports.Base == 0 {
 		g.Ports.Base = 3001

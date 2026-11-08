@@ -155,10 +155,9 @@ function renderDetailHead() {
   const s = sessions.find((x) => x.slug === current);
   const head = $("d-head"), ask = $("d-ask");
   head.replaceChildren();
-  ask.replaceChildren();
   if (!s) {
     head.append(el("div", "empty", current + " is gone"));
-    ask.hidden = true;
+    if (!busy) ask.hidden = true;
     return;
   }
   const [ic, word, cls] = look(s);
@@ -168,8 +167,10 @@ function renderDetailHead() {
   if (s.diffstat && s.diffstat.files) bits.push(`${s.diffstat.files} files +${s.diffstat.added} -${s.diffstat.deleted}`);
   if (s.error) bits.push(s.error);
   head.append(l1, el("div", "line2", bits.filter(Boolean).join(" · ")));
+  if (busy) return; // the confirm sheet is open: keep what it was opened from
+  ask.replaceChildren();
   ask.hidden = s.state !== "waiting";
-  if (!ask.hidden && !busy) waitBody(s, ask);
+  if (!ask.hidden) waitBody(s, ask);
 }
 
 async function refreshScreen() {
@@ -187,6 +188,9 @@ async function refreshScreen() {
 }
 
 // ---- answer: always through a confirmation that shows what is allowed ----
+// pending_tool is boba's one-line summary of the last tool the agent asked
+// for (cut at 200 bytes); the sheet also shows the bottom of the screen,
+// where the agent's own permission dialog says exactly what it will run.
 
 let pending = null;
 
@@ -202,7 +206,14 @@ function confirmAnswer(s, answer) {
   ok.textContent = answer;
   ok.className = "btn " + answer;
   ok.disabled = false;
+  const scr = $("sheet-screen");
+  scr.textContent = "…";
   $("sheet").hidden = false;
+  api("/api/sessions/" + encodeURIComponent(s.slug) + "/screen").then((r) => {
+    if (!pending || pending.slug !== s.slug) return;
+    scr.textContent = (r.lines || []).slice(-18).join("\n");
+    scr.scrollTop = scr.scrollHeight;
+  }).catch((e) => { scr.textContent = "(" + e.message + ")"; });
 }
 
 function closeSheet() {

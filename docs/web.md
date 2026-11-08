@@ -3,8 +3,8 @@
 Mac で bobad を動かしたまま、外出先の iPhone(Tailscale アプリが ON)の Safari から開き、ホーム画面に追加して使う軽い Web UI。できるのは次の 4 つだけ。
 
 - セッション一覧(状態つき。許可待ちは一番上に、黄色の枠で)
-- 許可待ちへの allow / deny(ツール名と引数を見せ、押す前に確認を挟む。`always` は出さない)
-- `send`(一言の指示を送る)
+- 許可待ちへの allow / deny(ツールの要約と、エージェントが画面に出している許可ダイアログを見せ、押す前に確認を挟む。`always` は出さない)
+- `send`(一言の指示を送る。allow / deny で答える許可待ちの間は送れない)
 - エージェント画面の最新テキストを読むだけの表示(色・カーソルなし。ターミナルの再現はしない)
 
 賢さは bobad にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send`)を同じ `Daemon.Call` 経由で呼ぶ。
@@ -30,6 +30,7 @@ iPhone (Safari / ホーム画面)
 - 証明書は tsnet が Let's Encrypt から `boba.<tailnet>.ts.net` の分を取る(tailnet で MagicDNS と HTTPS を有効にしておく必要がある)
 - Funnel(インターネットへの公開)は使わない。`ListenFunnel` は呼ばず、tsnet は起動時に serve 設定を空にする
 - 静的ファイル(`internal/daemon/webui/`)は `go:embed`。外部 CDN・フォントは読まない。PWA の manifest とアイコン(PNG をその場で描く)つき。Service Worker と Web Push は入れない(通知は `[notify] ntfy` で足りる)
+- 証明書は待ち受けを始めるときに先に取っておく(初回の発行は時間がかかり、iPhone の最初の接続がタイムアウトしないように)。HTTPS が tailnet で無効などで待ち受けに失敗したら、30 秒ごとにやり直す(admin console で後から有効にしても再起動は要らない)。マシン名の変更にも追従する
 - 更新は 3 秒ごとのポーリング(画面を開いている間は画面テキストも 2.5 秒ごと)。アプリが裏に回ると止まる
 
 ### ビルド:既定は Tailscale なし
@@ -59,7 +60,7 @@ enable        = true
 hostname      = "boba"               # tailnet 上のマシン名 → https://boba.<tailnet>.ts.net/
 allow_users   = ["you@github"]       # Tailscale のログイン名(admin console の Users に出るもの)
 allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admin console の Machines の名前)
-# state_dir   = "~/.local/share/boba/tsnet"   # 既定。$BOBA_HOME があればその share/tsnet
+# state_dir   = "~/.local/share/boba/tsnet"   # 既定。$BOBA_HOME があればその share/tsnet。~ か絶対パスで
 # auth_key    = "tskey-auth-…"        # 初回参加用。環境変数 TS_AUTHKEY でもよい
 ```
 
@@ -75,14 +76,16 @@ allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admi
 4. `boba web` を実行する。`state needs-login` と `login https://login.tailscale.com/a/…` が出るので、そのリンクを開いて承認する(同じ URL は `bobad.log` にも出る)。auth key を使うなら `auth_key` か `TS_AUTHKEY` を設定して再起動すれば、URL は出ずに参加する
 5. `boba web` が `state running` と `url https://boba.<tailnet>.ts.net/` を出したら、iPhone の Safari でその URL を開き、共有メニューから「ホーム画面に追加」
 
-参加後の鍵は `state_dir`(既定 `~/.local/share/boba/tsnet`、パーミッション 700)に残るので、2 回目以降は何もしなくてよい。auth key を設定に書いた場合は、参加後に消してよい。admin console で `boba` マシンの key expiry を無効にしておくと、180 日ごとの再ログインが要らない。
+`TS_AUTHKEY` は bobad が起動時に自分の環境変数から取り除いてから tmux を立ち上げるので、エージェントのペインには渡らない(渡ると、エージェントがその鍵で自分のノードを tailnet に参加させ、ユーザー本人として Web UI を叩けてしまう)。`auth_key` を設定に書いた場合は、同じユーザーで動くエージェントには読めるので、参加したらすぐ消す。ログイン URL で参加するのがいちばん安全。
+
+参加後の鍵は `state_dir`(既定 `~/.local/share/boba/tsnet`、パーミッション 700)に残るので、2 回目以降は何もしなくてよい。admin console で `boba` マシンの key expiry を無効にしておくと、180 日ごとの再ログインが要らない。
 
 ## 認証の流れ
 
 token もパスワードも cookie も持たない。リクエストごとに、tailnet がその接続を誰のものと言うかだけを見る(`webGuard`)。
 
 1. **Host**: `Host` ヘッダがこのノードの名前(tsnet の `CertDomains`)でなければ 421。DNS rebinding で別の名前から来たものを落とす
-2. **このマシン自身**: 接続元の IP が Mac のネットワークインターフェイスのどれかのアドレス(Mac の Tailscale アプリの `100.x` など)かループバックなら 403
+2. **このマシン自身**: 接続元の IP が Mac のネットワークインターフェイスのどれかのアドレス(Mac の Tailscale アプリの `100.x` など)かループバックなら 403。Mac の Tailscale が userspace-networking(TUN なし)で 100.x がどのインターフェイスにも無い場合に備え、WhoIs で引いた相手ノードのホスト名が Mac のホスト名と同じでも 403
 3. **WhoIs**: tsnet の `LocalClient().WhoIs(remoteAddr)` で接続元のノードとユーザーを引く。引けない・タグつきノード・`allow_users` にないユーザー・(設定があれば)`allow_devices` にない端末は 403。比較は大文字小文字を区別しない
 4. **書き込み(POST)**: `X-Boba-Web: 1` ヘッダと `Content-Type: application/json` が必須。`Sec-Fetch-Site` があれば `same-origin`、`Origin` があれば自分の URL でなければ 403
 5. 応答には CSP(`default-src 'self'`、インライン script なし)・`X-Frame-Options: DENY`・`Referrer-Policy: no-referrer` を付け、API は `Cache-Control: no-store`
@@ -94,16 +97,23 @@ token もパスワードも cookie も持たない。リクエストごとに、
 - 受け付ける答えは `allow` と `deny` だけ。`always`(と CLI の別名 `a` `y` `yes` `n` など)は 400。恒久的な許可は端末の前で決める
 - `wait_kind` が `question`(AskUserQuestion など)のときは 409。数字キーで答えるものではないので、画面を見て `send` で答える
 - 押したときに画面に出ていたツール(名前と引数)を一緒に送り、bobad の今の `pending_tool` と違えば 409(「内容が変わりました」)。読んでいないプロンプトに allow が当たるのを防ぐ
-- 押す前に確認シート(ツール名と引数の全文)を挟む
+- 押す前に確認シートを挟む。シートには boba の要約(`pending_tool`:ツール名と主な引数 1 つ、200 バイトまで)と、画面の最後 18 行(エージェント自身の許可ダイアログ。実行するコマンドの全体が出る)を並べる。**判断は画面の方で行う**
+- 一致の確認は `session.answer` の中(`expect`)で、キーを送る直前に行う
+
+`pending_tool` は「最後に届いた PreToolUse」で、許可ダイアログが出ているツールそのものとは限らない(エージェントが複数のツールを並行に呼ぶと、後から来た方が残る)。また 200 バイトで切った要約なので、末尾だけ違うコマンドは区別できない。だから要約の一致は「読んでから状況が変わっていないか」の検出に使い、何を許可するかは画面で確かめる作りにしている。
+
+### send の扱い
+
+allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニューは最初の 1 文字を選択肢として受け取るので、「2つ目も…」のような文が「Yes, and don't ask again」(= always)になってしまう。質問(`wait_kind == question`)には send で答える。
 
 ## 脅威モデル
 
 | 脅威 | 対策 | 残る穴 |
 | --- | --- | --- |
-| **Mac 上のプロセス(エージェント自身を含む)がなりすます** | localhost に何も開かない。ヘッダ(`Tailscale-User-Login` など)を信じず、接続ごとに WhoIs。Mac 自身のアドレスからの接続は拒否するので、エージェントが Mac の Tailscale 経由で `https://boba…/` を叩いて自分の許可待ちに allow を返すことはできない | Mac 上で同じユーザーとして動くプロセスは、もともと `tmux -L boba send-keys` で自分の pty にキーを送れる。Web UI はその穴を広げないが、塞ぎもしない。また、エージェントが同じユーザーの**別の端末**(ssh できる Linux 機など)に入って叩くことはできる → `allow_devices` で iPhone だけに絞る |
+| **Mac 上のプロセス(エージェント自身を含む)がなりすます** | localhost に何も開かない。ヘッダ(`Tailscale-User-Login` など)を信じず、接続ごとに WhoIs。Mac 自身(アドレス、または WhoIs のホスト名)からの接続は拒否するので、エージェントが Mac の Tailscale 経由で `https://boba…/` を叩いて自分の許可待ちに allow を返すことはできない。`TS_AUTHKEY` はエージェントに渡さない | Mac 上で同じユーザーとして動くプロセスは、もともと `tmux -L boba send-keys` で自分の pty にキーを送れる。Web UI はその穴を広げないが、塞ぎもしない。また、エージェントが同じユーザーの**別の端末**(ssh できる Linux 機など)に入って叩くことはできる → `allow_devices` で iPhone だけに絞る |
 | **tailnet 上の他人・他の端末** | `allow_users` / `allow_devices`。タグつきノード(サーバー・CI)は常に拒否 | tailnet の ACL で他人から `boba:443` への到達自体を止めておくとなお良い |
 | **iPhone のブラウザで開いた悪意あるページ(CSRF・DNS rebinding)** | 書き込みにはカスタムヘッダと JSON が必須(クロスオリジンではプリフライトになり通らない)。`Origin` / `Sec-Fetch-Site` を確認。`Host` が自分の名前でなければ拒否 | — |
-| **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send ができる。`always` は出さないので、恒久的な許可までは与えられない |
+| **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send ができる。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
 | **Certificate Transparency ログ** | — | HTTPS 証明書を取ると、`boba.<tailnet>.ts.net` という名前が CT ログ(誰でも検索できる公開ログ)に載る。tailnet 名(`tail1234` のようなランダム名か、自分で付けた名前)とホスト名が世に出る。tailnet の外からは到達できないので中身は見えないが、名前に秘密を含めない。気になるなら `hostname` を目立たないものにし、tailnet 名はランダムのものを使う |
 | **Funnel での公開** | `ListenFunnel` を呼ばない。tsnet は起動時に serve 設定を空にする | — |
 | **Tailscale へのログ送信** | — | tsnet は通常の tailscaled と同じく、診断ログを Tailscale のログサーバーに送る(`state_dir/tailscaled.log.conf`)。中身は接続のメタデータで、boba の画面やプロンプトは含まない |
@@ -116,6 +126,6 @@ token もパスワードも cookie も持たない。リクエストごとに、
 | `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中 → その他(新しい順) |
 | `GET /api/sessions/{slug}/screen` | — | `{slug, lines: [string], dead}`。agent 窓の最後 80 行、色を落としたテキスト |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
-| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る |
+| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。409: allow / deny で答える許可待ちの間 |
 
-WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error`。パス・環境変数・Claude のセッション ID は出さない。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。
+WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。
