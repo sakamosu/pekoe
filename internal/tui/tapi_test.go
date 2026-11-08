@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/config"
+	"pekoe/internal/daemon"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -177,6 +178,10 @@ func TestSplashFillsScreen(t *testing.T) {
 
 // 幅に応じて「たぴちゃん＋文字」→「文字を…で省略」→「たぴちゃんだけ」→「文字だけ」と縮む。
 func TestSplashSnapshot(t *testing.T) {
+	// the version is injected at build time; pin it so the snapshot is stable
+	v := daemon.Version
+	daemon.Version = "0.1.0"
+	t.Cleanup(func() { daemon.Version = v })
 	cases := []struct {
 		glyphs string
 		width  int

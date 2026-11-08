@@ -1,0 +1,59 @@
+# pekoe のリリースビルド。v* タグの push で .github/workflows/release.yml が回す。
+# 手元で試すには: goreleaser release --snapshot --clean(dist/ にアーカイブができる)
+#
+# 配るのは既定ビルドだけ(-tags web の Web UI は含めない)。アーカイブを展開すると
+#   bin/pekoe, bin/pekoed(→ pekoe), share/pekoe/nvim/, share/pekoe/extension/, contrib/launchd/
+# の配置になり、bin/pekoe が ../share/pekoe/nvim を見つける(internal/tui/review.go の NvimPluginDir)。
+version: 2
+
+project_name: pekoe
+
+builds:
+  - id: pekoe
+    main: ./cmd/pekoe
+    binary: bin/pekoe
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [arm64, amd64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X pekoe/internal/daemon.Version={{.Version}}
+
+archives:
+  - id: pekoe
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: true
+    files:
+      - README.md
+      - src: contrib/release/pekoed
+        dst: bin
+      - src: nvim/lua/pekoe/*
+        dst: share/pekoe/nvim/lua/pekoe
+      - src: nvim/plugin/*
+        dst: share/pekoe/nvim/plugin
+      - src: nvim/README.md
+        dst: share/pekoe/nvim/README.md
+      - src: extension/*
+        dst: share/pekoe/extension
+      - src: contrib/launchd/*
+        dst: contrib/launchd
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge pull request"
+      - "^Merge branch"
+
+release:
+  draft: false
+  prerelease: auto

@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"pekoe/internal/client"
+	"pekoe/internal/daemon"
 )
 
 type rpc struct {
@@ -79,7 +80,7 @@ func Serve(in io.Reader, out io.Writer) error {
 			rep.Result = map[string]any{
 				"protocolVersion": p.ProtocolVersion,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": "pekoe", "version": "0.1.0"},
+				"serverInfo":      map[string]any{"name": "pekoe", "version": daemon.Version},
 			}
 		case "ping":
 			rep.Result = map[string]any{}

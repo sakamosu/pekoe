@@ -25,7 +25,9 @@ import (
 	"pekoe/internal/state"
 )
 
-const Version = "0.1.0"
+// Version is set at build time with -ldflags "-X pekoe/internal/daemon.Version=…"
+// (GoReleaser for releases, git describe in the Makefile); "dev" otherwise.
+var Version = "dev"
 
 type Request struct {
 	ID     json.RawMessage `json:"id,omitempty"`
