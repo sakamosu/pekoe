@@ -125,6 +125,7 @@ type Session struct {
 	PRReview        bool      `json:"pr_review,omitempty"` // reviewing someone else's PR
 	PRStatus        *PRStatus `json:"pr_status,omitempty"` // small summary of the PR, polled from GitHub
 	Managed         bool      `json:"managed"`             // worktree created by pekoe (under ~/worktrees)
+	OwnDir          bool      `json:"own_dir,omitempty"`   // this session made the worktree directory (rm may delete what is left of it)
 	Base            string    `json:"base"`
 	Issue           int       `json:"issue,omitempty"` // GitHub issue the session was started from (--from gh#N)
 	Error           string    `json:"error,omitempty"`

@@ -7,7 +7,7 @@ import (
 )
 
 func TestSlug(t *testing.T) {
-	for in, want := range map[string]string{"feat/csv": "feat-csv", "fix//login": "fix-login", "/x/": "x", "日本": "session", "a.b_c": "a.b_c"} {
+	for in, want := range map[string]string{"feat/csv": "feat-csv", "fix//login": "fix-login", "/x/": "x", "日本": "session", "a.b_c": "a-b_c", "release/1.2": "release-1-2", ".hidden.": "hidden"} {
 		if got := Slug(in); got != want {
 			t.Errorf("Slug(%q)=%q want %q", in, got, want)
 		}

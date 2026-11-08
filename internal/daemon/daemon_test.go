@@ -503,7 +503,7 @@ func TestRestartSkipsUnknownResumeID(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "saved-1.jsonl"), []byte("{}\n"), 0o644)
 	event(t, d, "SessionStart", "main", map[string]any{"session_id": "saved-1"})
 	call[state.Session](t, d, "session.restart", map[string]any{"slug": "main"})
-	if !strings.Contains(fe.last(), "--resume saved-1") {
+	if !strings.Contains(fe.last(), "--resume 'saved-1'") { // quoted: it goes through a shell
 		t.Fatalf("expected resume of the saved conversation: %s", fe.last())
 	}
 }

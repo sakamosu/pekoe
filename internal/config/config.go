@@ -232,20 +232,42 @@ type Vars struct {
 	Extra                    map[string]string
 }
 
-func (v Vars) Expand(s string) string {
+// Expand fills in the values as they are: for [env] values and display.
+// Commands that go to a shell use ExpandShell.
+func (v Vars) Expand(s string) string { return v.expand(s, func(x string) string { return x }) }
+
+// ExpandShell fills in the values for a command line run by sh -c. A branch
+// name may hold characters the shell treats specially ($, `, ;, spaces …),
+// so a value with any of them is put in single quotes. Plain values (the
+// usual feat/x, /Users/me/worktrees/app/feat-x) are left as they are, so
+// a command that already quotes them ("{{path}}", '{{branch}}') keeps working.
+func (v Vars) ExpandShell(s string) string { return v.expand(s, ShellQuoteIfNeeded) }
+
+func (v Vars) expand(s string, q func(string) string) string {
 	r := strings.NewReplacer(
-		"{{slug}}", v.Slug,
-		"{{branch}}", v.Branch,
+		"{{slug}}", q(v.Slug),
+		"{{branch}}", q(v.Branch),
 		"{{port}}", fmt.Sprint(v.Port),
-		"{{path}}", v.Path,
-		"{{repo}}", v.Repo,
+		"{{path}}", q(v.Path),
+		"{{repo}}", q(v.Repo),
 	)
 	s = r.Replace(s)
 	for k, val := range v.Extra {
-		s = strings.ReplaceAll(s, "{{"+k+"}}", val)
+		s = strings.ReplaceAll(s, "{{"+k+"}}", q(val))
 	}
 	return s
 }
+
+// ShellQuoteIfNeeded returns s unchanged when every byte is one the shell
+// reads literally, and s in single quotes otherwise.
+func ShellQuoteIfNeeded(s string) string {
+	if s != "" && strings.Trim(s, shellSafe) == "" {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+const shellSafe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-"
 
 // EnvList expands [env] into KEY=VALUE pairs, sorted for determinism.
 func (r *Repo) EnvList(v Vars) []string {

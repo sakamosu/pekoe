@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -284,6 +285,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Branch == "" {
 		return nil, errors.New("branch required")
 	}
+	if err := gitx.CheckRefArg("branch", p.Branch); err != nil {
+		return nil, err
+	}
 	repo, err := resolveRepo(p.Repo)
 	if err != nil {
 		return nil, err
@@ -314,6 +318,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if base == "" {
 		base = gitx.DefaultBase(repo.Dir)
 	}
+	if err := gitx.CheckRefArg("base", base); err != nil {
+		return nil, err
+	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {
 		return nil, err
@@ -332,7 +339,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	}
 	dv := config.Vars{Slug: slug, Branch: p.Branch, Path: s.Path, Repo: repo.Name, Port: port}
 	for i, c := range repo.Config.Hooks.Setup {
-		steps = append(steps, Step{Name: fmt.Sprintf("setup%d", i), Label: stepLabel(c), Detail: dv.Expand(c)})
+		steps = append(steps, Step{Name: fmt.Sprintf("setup%d", i), Label: stepLabel(c), Detail: dv.ExpandShell(c)})
 	}
 	steps = append(steps, Step{Name: "start", Label: "start", Detail: agent + " · new session · snapshot #0"})
 	for i := range steps {
@@ -437,13 +444,14 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		return true
 	}
 	if !run("worktree", func() error {
-		if fi, err := os.Stat(s.Path); err == nil && fi.IsDir() {
-			// an existing worktree for this branch: reuse it
-			if top, err := gitx.Toplevel(s.Path); err == nil && top != "" {
-				return nil
-			}
-			return fmt.Errorf("%s exists and is not a worktree", s.Path)
+		if _, err := os.Stat(s.Path); err == nil {
+			// an existing worktree for this branch: reuse it, but only when
+			// it is this repository's (a fork shares ~/worktrees/<name>)
+			return reusableWorktree(repo.Dir, s.Path)
 		}
+		// whatever is at s.Path from here on is ours, even if git stops
+		// half way: rm may delete it
+		d.update(slug, func(x *state.Session) { x.OwnDir = true })
 		return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 	}) {
 		return
@@ -456,7 +464,7 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	}
 	env := append(repo.Config.EnvList(vars), "PEKOE_SESSION="+slug, "PEKOE_PORT="+strconv.Itoa(s.Port))
 	for _, c := range repo.Config.Hooks.Setup {
-		cmd := vars.Expand(c)
+		cmd := vars.ExpandShell(c)
 		if !run("setup:"+c, func() error {
 			out, err := shell(ctx, s.Path, env, cmd, 30*time.Minute)
 			if err != nil {
@@ -488,6 +496,21 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		d.update(slug, func(x *state.Session) { x.Env = env })
 		return d.spawnAgent(slug, prompt, "", p.Width, p.Height)
 	})
+}
+
+// reusableWorktree accepts an existing directory as a session's worktree only
+// when it is a worktree of the repository at repoDir.
+func reusableWorktree(repoDir, path string) error {
+	switch err := gitx.CheckWorktreeOf(repoDir, path); {
+	case err == nil:
+		return nil
+	case errors.Is(err, gitx.ErrForeignWorktree):
+		return fmt.Errorf("%s already exists as a worktree of another repository; not reusing it", path)
+	case errors.Is(err, gitx.ErrNotWorktree):
+		return fmt.Errorf("%s exists and is not a worktree", path)
+	default:
+		return err
+	}
 }
 
 func tail(s string, n int) string {
@@ -570,6 +593,12 @@ func copyIgnored(from, to string, w config.Worktree) error {
 	return do(w.Clone, true)
 }
 
+// sessionIDRe is what an agent's session id may look like (Claude Code and
+// Codex use UUIDs). The id is put on the resume command line.
+var sessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+func validSessionID(id string) bool { return sessionIDRe.MatchString(id) }
+
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -583,6 +612,10 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	}
 	ag := d.Global.Agents[s.Agent]
 	cmd := ag.Command
+	if resume != "" && resume != "continue" && !validSessionID(resume) {
+		log.Printf("spawn %s: ignoring malformed session id to resume", slug)
+		resume = ""
+	}
 	if s.Agent == "claude" && resume != "" && resume != "continue" && !claudeConversationExists(s.Path, resume) {
 		// Claude Code only stores a conversation once a prompt was sent; an
 		// id from SessionStart alone cannot be resumed
@@ -595,7 +628,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	case resume == "continue" && s.Agent == "claude":
 		cmd = ag.Command + " --continue"
 	case resume != "" && ag.Resume != "":
-		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", resume)
+		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", shellQuote(resume))
 	}
 	pasteLater := ""
 	if prompt != "" {
@@ -708,6 +741,13 @@ func pastClaudeSessions(path string) []pastSession {
 }
 
 func (d *Daemon) hOpen(p openP) (any, error) {
+	switch p.Resume {
+	case "", "ask", "resume", "new", "continue":
+	default:
+		if !validSessionID(p.Resume) {
+			return nil, fmt.Errorf("invalid session id to resume: %q", p.Resume)
+		}
+	}
 	top, err := gitx.Toplevel(p.Path)
 	if err != nil {
 		return nil, fmt.Errorf("%s is not a git worktree", p.Path)
@@ -770,7 +810,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if p.Resume == "resume" && len(past) > 0 {
 		resume = past[0].ID
 	} else if p.Resume != "" && p.Resume != "new" && p.Resume != "ask" && p.Resume != "resume" {
-		resume = p.Resume // explicit session id
+		resume = p.Resume // explicit session id (checked before anything is made)
 	}
 	if err := d.spawnAgent(slug, p.Prompt, resume, p.Width, p.Height); err != nil {
 		d.update(slug, func(x *state.Session) { x.State = state.Failed; x.Error = err.Error() })

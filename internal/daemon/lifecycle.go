@@ -88,7 +88,7 @@ func (d *Daemon) teardown(s *state.Session) error {
 	cfg := d.repoConfig(s)
 	v := d.vars(s)
 	for _, c := range cfg.Hooks.Teardown {
-		cmd := v.Expand(c)
+		cmd := v.ExpandShell(c)
 		if out, err := shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
 			return fmt.Errorf("teardown %q: %v\n%s", cmd, err, tail(out, 10))
 		}
@@ -101,24 +101,39 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !p.Force && s.Managed {
+	_, statErr := os.Stat(s.Path)
+	exists := statErr == nil
+	// the directory may belong to another repository of the same name (a
+	// fork shares ~/worktrees/<name>): then it is not ours to run hooks in or
+	// to delete
+	owner := error(nil)
+	if exists {
+		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
+	}
+	foreign := errors.Is(owner, gitx.ErrForeignWorktree)
+	if !p.Force && s.Managed && !foreign {
 		if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
 			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
 		}
 	}
 	_ = d.Eng.KillSession(p.Slug)
-	if _, err := os.Stat(s.Path); err == nil {
+	deleted := false
+	if exists && foreign {
+		log.Printf("rm %s: %s is a worktree of another repository; left as is", p.Slug, s.Path)
+	} else if exists {
 		if err := d.teardown(s); err != nil && !p.Force {
 			return nil, err
 		}
 		gitx.DeleteRefs(s.Path, "refs/pekoe/"+p.Slug+"/")
 		if s.Managed && paths.UnderWorktrees(s.Path) {
-			if err := gitx.RemoveWorktree(s.RepoDir, s.Path, true); err != nil {
-				// not registered (half-created): delete the directory we made
-				if paths.UnderWorktrees(s.Path) {
-					os.RemoveAll(s.Path)
-					_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
-				}
+			if owner == nil {
+				deleted = gitx.RemoveWorktree(s.RepoDir, s.Path, true) == nil
+			}
+			if !deleted && s.OwnDir {
+				// not registered (half-created): delete the directory this
+				// session made, and nothing else
+				deleted = os.RemoveAll(s.Path) == nil
+				_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
 			}
 		}
 	}
@@ -140,7 +155,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	d.catch.Forget(p.Slug)
 	removeAttachments(s.RepoID, p.Slug)
 	d.emit("session.removed", s)
-	return map[string]any{"removed": p.Slug, "worktree_deleted": s.Managed}, nil
+	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
 }
 
 // ---- dev server ----
@@ -158,7 +173,7 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	if cfg.Hooks.Dev == "" {
 		return nil, fmt.Errorf("no [hooks] dev command in %s", paths.RepoConfig(s.RepoID))
 	}
-	cmd := d.vars(s).Expand(cfg.Hooks.Dev)
+	cmd := d.vars(s).ExpandShell(cfg.Hooks.Dev)
 	full := cmd + `; printf '\n[pekoe] dev server exited (%s)\n' "$?"`
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
 		return nil, err
@@ -292,22 +307,28 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	if base == "" {
 		base = gitx.DefaultBase(s.Path)
 	}
+	if err := gitx.CheckRefArg("base", base); err != nil {
+		return nil, err
+	}
+	if err := gitx.CheckRefArg("branch", s.Branch); err != nil {
+		return nil, err
+	}
 	hasOrigin := gitx.Origin(s.Path) != ""
 	steps := []string{}
 	onto := base
 	if hasOrigin {
-		if _, err := gitx.Run(s.Path, "fetch", "origin", base); err == nil {
+		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
 		}
 	}
-	if _, err := gitx.Run(s.Path, "rebase", onto); err != nil {
+	if _, err := gitx.Run(s.Path, "rebase", "--end-of-options", onto); err != nil {
 		_, _ = gitx.Run(s.Path, "rebase", "--abort")
 		return nil, fmt.Errorf("rebase onto %s failed (aborted): %v", onto, err)
 	}
 	steps = append(steps, "rebased onto "+onto)
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
-		cmd := d.vars(s).Expand(cfg.Hooks.Test)
+		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
 		out, err := shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
 		t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
 		if err != nil {
@@ -323,10 +344,10 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 		// local-only repository: fast-forward the base branch in the main worktree
 		mainBranch := gitx.CurrentBranch(s.RepoDir)
 		if mainBranch == base {
-			if _, err := gitx.Run(s.RepoDir, "merge", "--ff-only", s.Branch); err != nil {
+			if _, err := gitx.Run(s.RepoDir, "merge", "--ff-only", "--end-of-options", s.Branch); err != nil {
 				return nil, err
 			}
-		} else if _, err := gitx.Run(s.RepoDir, "branch", "-f", base, s.Branch); err != nil {
+		} else if _, err := gitx.Run(s.RepoDir, "branch", "-f", "--end-of-options", base, s.Branch); err != nil {
 			return nil, err
 		}
 		steps = append(steps, "fast-forwarded "+base)
@@ -335,7 +356,7 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 		}
 		return map[string]any{"steps": steps, "landed": true}, nil
 	}
-	if _, err := gitx.Run(s.Path, "push", "-u", "origin", "HEAD:"+s.Branch, "--force-with-lease"); err != nil {
+	if _, err := gitx.Run(s.Path, "push", "-u", "--force-with-lease", "--end-of-options", "origin", "HEAD:"+s.Branch); err != nil {
 		return nil, err
 	}
 	steps = append(steps, "pushed "+s.Branch)
@@ -387,10 +408,14 @@ func (d *Daemon) finishLanding(slug string) error {
 		return err
 	}
 	_ = d.Eng.KillSession(slug)
-	if err := d.teardown(s); err != nil {
-		log.Printf("teardown %s: %v", slug, err)
+	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {
+		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
+	} else {
+		if err := d.teardown(s); err != nil {
+			log.Printf("teardown %s: %v", slug, err)
+		}
+		gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
 	}
-	gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
 	if s.Managed && paths.UnderWorktrees(s.Path) {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
 			log.Printf("remove worktree %s: %v", s.Path, err)

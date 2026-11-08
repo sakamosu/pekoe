@@ -269,9 +269,9 @@ func (d *Daemon) resolveSessionRef(ref string) (string, error) {
 	if len(repos) == 0 {
 		return "", fmt.Errorf("no such session: %s (unknown repo %s)", ref, q)
 	}
-	ids := map[string]string{} // repo id -> "<name>-" prefix
+	ids := map[string]string{} // repo id -> slug of its name (the prefix before "-")
 	for _, r := range repos {
-		ids[r.ID] = paths.Slug(r.Name) + "-"
+		ids[r.ID] = paths.Slug(r.Name)
 	}
 	// per repository the exact slug wins over the prefixed one
 	exact, prefixed := map[string]string{}, map[string]string{}
@@ -282,7 +282,8 @@ func (d *Daemon) resolveSessionRef(ref string) (string, error) {
 		case !ok:
 		case k == slug:
 			exact[s.RepoID] = k
-		case k == pre+slug:
+		case strings.HasSuffix(k, "-"+slug) && paths.Slug(strings.TrimSuffix(k, "-"+slug)) == pre:
+			// also a slug made before '.' was dropped (my.app-feat)
 			prefixed[s.RepoID] = k
 		}
 	}

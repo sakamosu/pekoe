@@ -144,6 +144,10 @@ func toolSummary(name string, input json.RawMessage) string {
 func (d *Daemon) hEvent(p eventP) (any, error) {
 	var hp hookPayload
 	_ = json.Unmarshal(p.Payload, &hp)
+	if !validSessionID(hp.SessionID) {
+		// it ends up on a command line (resume): keep only plain ids
+		hp.SessionID = ""
+	}
 	hook := p.Hook
 	if hook == "" {
 		hook = hp.HookEventName
@@ -568,7 +572,7 @@ func (d *Daemon) runTest(slug string) {
 	if cfg.Hooks.Test == "" {
 		return
 	}
-	cmd := d.vars(s).Expand(cfg.Hooks.Test)
+	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
 	out, err := shell(context.Background(), s.Path, s.Env, cmd, 20*time.Minute)
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
@@ -597,7 +601,7 @@ func (d *Daemon) runGatekeeper(slug string) {
 	if err != nil {
 		return
 	}
-	diff, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--no-color", base, tree)
+	diff, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--no-color", "--end-of-options", base, tree)
 	if err != nil || len(diff) == 0 {
 		return
 	}
@@ -607,7 +611,7 @@ func (d *Daemon) runGatekeeper(slug string) {
 	if sh == "" {
 		sh = "/bin/sh"
 	}
-	c := execCommand(ctx, sh, "-c", d.vars(s).Expand(cfg.Review.Gatekeeper))
+	c := execCommand(ctx, sh, "-c", d.vars(s).ExpandShell(cfg.Review.Gatekeeper))
 	c.Dir = s.Path
 	c.Stdin = bytes.NewReader(diff)
 	out, err := c.Output()
