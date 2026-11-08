@@ -174,6 +174,10 @@ pekoe                                                 # TUI
 
 `claude mcp add pekoe -- pekoe mcp` で登録する。ツールは `open_in_editor(path, line, note?)`(nvim がその行に飛びメモを出す)と `session_list()`。
 
+### Claude Code スキル
+
+[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。Claude Code から pekoe で別 worktree・別エージェントに作業を任せるためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
+
 ### iPhone から(Web UI)
 
 `make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
