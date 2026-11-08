@@ -64,7 +64,30 @@ func (t *Tmux) run(args ...string) (string, error) {
 func winName(slug, window string) string { return slug + "~" + window }
 
 func (t *Tmux) target(slug, window string) string {
-	return t.Session + ":=" + winName(slug, window)
+	name := winName(slug, window)
+	if strings.ContainsAny(name, ".:") {
+		// tmux splits a target at '.' (pane) and ':' even after '=', so a
+		// session made when slugs could hold '.' (v1.2) is found by its
+		// window id instead
+		if id := t.windowID(name); id != "" {
+			return id
+		}
+	}
+	return t.Session + ":=" + name
+}
+
+// windowID looks a window up by its exact name: "@3", or "" when none.
+func (t *Tmux) windowID(name string) string {
+	out, err := t.run("list-windows", "-t", "="+t.Session, "-F", "#{window_id} #{window_name}")
+	if err != nil {
+		return ""
+	}
+	for _, ln := range strings.Split(out, "\n") {
+		if id, n, ok := strings.Cut(ln, " "); ok && n == name {
+			return id
+		}
+	}
+	return ""
 }
 
 func (t *Tmux) Start() error {

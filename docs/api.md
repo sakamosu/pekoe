@@ -22,7 +22,7 @@
 
 ```jsonc
 {
-  "slug": "feat-csv",              // worktree・セッションの識別子(branch の / を - に。全リポジトリで一意で、別リポジトリと衝突したら <repo>-<slug>)
+  "slug": "feat-csv",              // worktree・セッションの識別子(branch の / や . を - に。全リポジトリで一意で、別リポジトリと衝突したら <repo>-<slug>)
   "branch": "feat/csv",
   "repo": "app",                   // リポジトリ名
   "repo_id": "github.com_me_app",

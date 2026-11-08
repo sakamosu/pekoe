@@ -147,17 +147,19 @@ func UnderWorktrees(p string) bool {
 }
 
 // Slug turns a branch name into a filesystem/ref-safe slug: feat/csv -> feat-csv.
+// A '.' becomes '-' too (release/1.2 -> release-1-2): the slug names tmux
+// windows, and tmux reads what follows a '.' in a target as a pane.
 func Slug(branch string) string {
 	var b strings.Builder
 	for _, r := range branch {
 		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
 			b.WriteRune(r)
 		default:
 			b.WriteRune('-')
 		}
 	}
-	s := strings.Trim(b.String(), "-.")
+	s := strings.Trim(b.String(), "-")
 	for strings.Contains(s, "--") {
 		s = strings.ReplaceAll(s, "--", "-")
 	}

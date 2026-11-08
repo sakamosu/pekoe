@@ -108,3 +108,40 @@ func TestIsTmuxServerCmd(t *testing.T) {
 		}
 	}
 }
+
+// A session made when slugs could hold '.' (v1.2) is still reachable: tmux
+// would read "=v1.2~agent" as window "v1", pane "2~agent".
+func TestTargetWithDotInSlug(t *testing.T) {
+	d, err := os.MkdirTemp("/tmp", "bt") // a unix socket path must be short
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(d) })
+	t.Setenv("TMUX_TMPDIR", d)
+	tm := &Tmux{Socket: "pekoe-test-dot", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", "_keeper", "sleep 60"); err != nil {
+		t.Skip("tmux unavailable:", err)
+	}
+	tm.recordPid()
+	pid := tm.recordedPid()
+	t.Cleanup(func() { tm.KillServer(); killTmuxPid(pid, tm.Socket) })
+	if _, err := tm.run("new-window", "-d", "-t", "=t:", "-n", "v1.2~agent", "cat"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(tm.target("v1.2", "agent"), "@") {
+		t.Fatalf("target %q is not a window id", tm.target("v1.2", "agent"))
+	}
+	if err := tm.SendText("v1.2", "agent", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tm.Kill("v1.2", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	if tm.exists("v1.2", "agent") {
+		t.Fatal("window with '.' in its name was not killed")
+	}
+	// plain names keep the name target (no extra lookup)
+	if got := tm.target("feat-x", "agent"); got != "t:=feat-x~agent" {
+		t.Fatalf("target %q", got)
+	}
+}
