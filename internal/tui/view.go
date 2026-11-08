@@ -497,6 +497,9 @@ func (m *model) agentOrigin() (int, int) {
 }
 
 func (m *model) viewAgent(width, height int) []string {
+	if m.chat.open {
+		return m.viewChat(width, height)
+	}
 	if m.issueShown() {
 		return m.viewIssue(width, height)
 	}
@@ -920,6 +923,9 @@ func (m *model) modeName() (string, string) {
 			return n, ic
 		}
 	}
+	if m.chat.open && (m.typing || m.focus == pAgent) {
+		return "TAPI", m.ic.Agent
+	}
 	if m.typing {
 		if m.window == engine.WinReview {
 			return "REVIEW", m.ic.Vim
@@ -961,6 +967,9 @@ func (m *model) modeName() (string, string) {
 func (m *model) hints() [][2]string {
 	if m.modal != nil {
 		return m.modal.hints()
+	}
+	if m.chat.open && (m.typing || m.focus == pAgent) {
+		return m.chatHints()
 	}
 	if m.typing {
 		p := m.prefixLabel()

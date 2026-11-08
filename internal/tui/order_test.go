@@ -135,28 +135,34 @@ func burst(s string) []tea.KeyMsg {
 	return append(out, tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// Keys reach a session's pty in the order they were typed, even though
+// Keys reach the pty in the order they were typed, into a session's agent
+// and into tapi chat alike, even though
 // every key's call runs on its own goroutine and pekoed handles calls
 // concurrently.
 func TestTypingKeepsOrder(t *testing.T) {
 	const text = "reply with just: OK and keep the spaces where they are"
 	want := text + "<Enter>"
-	for i := 0; i < 20; i++ {
-		ps, cl := startPtyServer(t)
-		t.Setenv("PEKOE_COLOR", "none")
-		m := newModel(cl, "/src/api")
-		m.tapi.splash = false
-		m.width, m.height = 140, 40
-		m.sessions = []*state.Session{sess("api-1", appA, state.Idle, time.Now())}
-		m.lastSel = "api-1"
-		m.focus, m.typing = pAgent, true
-		typeLikeTea(m, burst(text))
-		ps.mu.Lock()
-		got := ps.pty.String()
-		ps.mu.Unlock()
-		if got != want {
-			t.Fatalf("try %d: the pty got %q", i, got)
+	for _, target := range []string{"session", "tapi"} {
+		for i := 0; i < 20; i++ {
+			ps, cl := startPtyServer(t)
+			t.Setenv("PEKOE_COLOR", "none")
+			m := newModel(cl, "/src/api")
+			m.tapi.splash = false
+			m.width, m.height = 140, 40
+			m.sessions = []*state.Session{sess("api-1", appA, state.Idle, time.Now())}
+			m.lastSel = "api-1"
+			m.focus, m.typing = pAgent, true
+			if target == "tapi" { // typing into tapi chat (tapi.keys, chat.go)
+				m.chat.open = true
+			}
+			typeLikeTea(m, burst(text))
+			ps.mu.Lock()
+			got := ps.pty.String()
+			ps.mu.Unlock()
+			if got != want {
+				t.Fatalf("%s, try %d: the pty got %q", target, i, got)
+			}
+			cl.Close()
 		}
-		cl.Close()
 	}
 }

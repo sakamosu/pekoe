@@ -308,12 +308,20 @@ func (m *model) speech(mood mascot.Mood, s string) string {
 // barTapi is the left end of the status bar: aggregated face + speech.
 func (m *model) barTapi(width int) string {
 	sum := m.summary()
+	text := sum.Speech()
+	if m.chatWaits() && mascot.Priority(sum.Mood) > mascot.Priority(mascot.Wait) {
+		// tapi chat waits behind its closed window: weaker than a session's wait
+		sum.Mood, sum.Since = mascot.Wait, m.chat.info.StateSince
+		text = "chat waits · t"
+	}
+	if m.chat.open { // tapi's face is in the chat window's title: one face at a time
+		return m.speech(sum.Mood, clip(text, max(width/2-6, 4)))
+	}
 	eyes := m.eyesFor(sum.Mood, false)
 	if sum.IsCloudy() && !m.blinking() {
 		eyes = m.tapi.r.CloudyEyes()
 	}
 	face := m.tapi.r.Line(eyes)
-	text := sum.Speech()
 	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= mascot.WaitBlinkAfter && m.animating() && m.tapi.frame%4 == 3 {
 		text = strings.Repeat(" ", w(text)) // 3 shown : 1 hidden, 1.6 s
 	}

@@ -70,6 +70,10 @@ func LayoutFile() string { return filepath.Join(DataDir(), "layout.json") }
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 
+// TapiDir is ~/.local/share/pekoe/tapi: the working directory of the tapi
+// chat agent (docs/tapi-chat.md). Not $HOME: hooks are matched to it by cwd.
+func TapiDir() string { return filepath.Join(DataDir(), "tapi") }
+
 // LockFile is held (flock) by the one pekoed serving this data directory.
 func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 

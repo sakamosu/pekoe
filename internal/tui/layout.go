@@ -161,7 +161,7 @@ func (m *model) layoutSettled(seq int) tea.Cmd {
 	if m.cl == nil {
 		return save
 	}
-	return tea.Batch(save, m.resizeAll(), m.fetchScreen())
+	return tea.Batch(save, m.resizeAll(), m.fetchScreen(), m.fetchChat())
 }
 
 // unzoomIfLeft: focusing a left panel (1-3, tab, <prefix> h, a finished

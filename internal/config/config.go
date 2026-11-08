@@ -93,6 +93,11 @@ type Web struct {
 	AuthKey      string   `toml:"auth_key"`  // first join only; TS_AUTHKEY works too
 }
 
+// Tapi is [tapi]: the tapi chat agent (docs/tapi-chat.md).
+type Tapi struct {
+	Agent string `toml:"agent"` // a name in [agents.*], default "claude"
+}
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
@@ -114,6 +119,7 @@ type Global struct {
 	Ports struct {
 		Base int `toml:"base"`
 	} `toml:"ports"`
+	Tapi    Tapi  `toml:"tapi"`
 	Animate *bool `toml:"animate"`
 	Picks   struct {
 		AutoSend *bool `toml:"auto_send"`
@@ -191,6 +197,9 @@ func LoadGlobal() (*Global, error) {
 		agents[k] = d
 	}
 	g.Agents = agents
+	if g.Tapi.Agent == "" {
+		g.Tapi.Agent = "claude"
+	}
 	if g.Review.Surface == "" {
 		g.Review.Surface = "nvim"
 	}

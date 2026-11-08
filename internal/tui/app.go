@@ -146,6 +146,7 @@ type model struct {
 	sentImages map[int64]bool // pick screenshots already transmitted
 
 	tapi     *tapiState // the mascot (tapi.go)
+	chat     chatState  // tapi chat in the main panel (chat.go)
 	order    ptyOrder   // keys reach the ptys in the order typed (order.go)
 	spinning bool       // the 80 ms spinner tick is scheduled
 }
@@ -540,6 +541,9 @@ func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
 }
 
 func (m *model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.chatUpdate(msg); ok {
+		return m, cmd
+	}
 	if cmd, ok := m.tapiUpdate(msg); ok {
 		return m, cmd
 	}
@@ -573,6 +577,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.focus = pSessions
 		m.typing = false
+		m.chat.open = false // the jump shows the session
 		cmd := m.selectSlug(msg.slug)
 		if msg.pr { // in the queue for its PR: show the PR
 			return m, tea.Batch(cmd, m.openPR())
@@ -580,6 +585,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.maybePermission())
 	case reviewSurfaceMsg:
 		if s := m.current(); s != nil && s.Slug == msg.slug {
+			m.chat.open = false
 			m.window = engine.WinReview
 			m.screen = nil
 			m.focus = pAgent
@@ -593,13 +599,16 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.review != nil {
 			m.review.width, m.review.height = msg.Width, msg.Height
 		}
-		return m, tea.Batch(m.resizeAll(), m.fetchScreen())
+		return m, tea.Batch(m.resizeAll(), m.fetchScreen(), m.fetchChat())
 
 	case tickMsg:
 		var cmds []tea.Cmd
 		cmds = append(cmds, tick())
 		if m.frame%5 == 0 || m.current() != nil && m.current().State == state.Running {
 			cmds = append(cmds, m.fetchScreen())
+		}
+		if m.chat.open && (m.frame%5 == 0 || m.chat.info != nil && m.chat.info.State == state.Running) {
+			cmds = append(cmds, m.fetchChat())
 		}
 		if time.Since(m.msgAt) > 6*time.Second {
 			m.msg = ""
@@ -782,6 +791,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case kittyKeyMsg:
 		// keys with no legacy encoding (Shift+Enter …) only matter to the pty
+		if m.typing && m.modal == nil && m.chat.open {
+			return m, m.chatKeys(map[string]any{"keys": []string{msg.name}})
+		}
 		if m.typing && m.modal == nil {
 			if s := m.current(); s != nil {
 				slug, win, name := s.Slug, m.window, msg.name
@@ -831,6 +843,9 @@ func (m *model) upsert(s *state.Session) {
 }
 
 func (m *model) onEvent(ev client.Event) tea.Cmd {
+	if cmd, ok := m.chatEvent(ev); ok {
+		return cmd
+	}
 	switch ev.Event {
 	case "session.created", "session.updated", "session.waiting", "session.done":
 		var s state.Session
@@ -986,6 +1001,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.modal.key(k)
 	}
 	// typing: everything goes to the pty except the prefix, which leaves
+	if m.typing && m.chat.open {
+		return m.chatTypingKey(k)
+	}
 	if m.typing {
 		if m.prefixKey(k) {
 			m.typing = false
@@ -1036,9 +1054,15 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		m.prefix = false
 		fromTyping := m.prefixType
 		m.prefixType = false
+		reopen := m.chat.reopen // the prefix left tapi chat (chat.go)
+		m.chat.reopen = false
 		if cmd, ok := m.layoutKey(k.String()); ok {
 			if fromTyping && !narrow(m.width) { // straight back to the agent
 				m.focus, m.typing = pAgent, true
+				if reopen { // … or to tapi
+					m.chat.open = true
+					cmd = tea.Batch(cmd, m.fetchChat())
+				}
 			}
 			return cmd
 		}
@@ -1078,12 +1102,12 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	if m.iss.queryOn {
 		return m.issueQueryKey(k)
 	}
-	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() {
+	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() && !m.chat.open {
 		if cmd, used := m.pickKey(k); used {
 			return cmd
 		}
 	}
-	if m.focus == pAgent && m.bracket == "" && !m.issueShown() {
+	if m.focus == pAgent && m.bracket == "" && !m.issueShown() && !m.chat.open {
 		if cmd, used := m.errorKey(k.String()); used {
 			return cmd
 		}
@@ -1139,6 +1163,10 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	case "w":
 		return m.openRepoPicker(nil)
+	case "t": // tapi chat, from any panel (chat.go)
+		return m.openChat()
+	case "T":
+		return m.confirmResetChat()
 	}
 	if m.prefixKey(k) {
 		m.prefix = true
@@ -1161,6 +1189,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		}
 		return m.keyChanges(key)
 	case pAgent:
+		if m.chat.open {
+			return m.chatKey(key)
+		}
 		if m.window == winPR && !m.issueShown() {
 			return m.keyPR(key)
 		}
@@ -1578,6 +1609,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	aw, ah := m.agentSize()
 	x, y := ev.X-x0, ev.Y-y0
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
+	if inAgent && m.chat.open {
+		return m.chatMouse(ev, x, y)
+	}
 	if inAgent && m.window == winPR {
 		switch {
 		case ev.Button == tea.MouseButtonWheelDown:

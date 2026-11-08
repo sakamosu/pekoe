@@ -51,7 +51,7 @@ func (f *fakeEngine) Spawn(s engine.Spawn) error {
 func (f *fakeEngine) Alive(slug, w string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.wins[slug+"~"+w]
+	return f.wins[slug+"~"+w] && !f.dead[slug+"~"+w]
 }
 func (f *fakeEngine) rec(s string) error {
 	f.mu.Lock()
@@ -116,10 +116,22 @@ func (f *fakeEngine) KillSession(slug string) error {
 	f.mu.Unlock()
 	return nil
 }
-func (f *fakeEngine) Sessions() (map[string][]string, error) { return map[string][]string{}, nil }
-func (f *fakeEngine) Output() <-chan engine.Output           { return f.out }
-func (f *fakeEngine) Close()                                 {}
-func (f *fakeEngine) KillServer() error                      { return f.rec("killserver") }
+
+// Sessions lists the windows that exist (dead ones too), like tmux.
+func (f *fakeEngine) Sessions() (map[string][]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m := map[string][]string{}
+	for k := range f.wins {
+		if slug, w, ok := strings.Cut(k, "~"); ok {
+			m[slug] = append(m[slug], w)
+		}
+	}
+	return m, nil
+}
+func (f *fakeEngine) Output() <-chan engine.Output { return f.out }
+func (f *fakeEngine) Close()                       {}
+func (f *fakeEngine) KillServer() error            { return f.rec("killserver") }
 func (f *fakeEngine) last() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

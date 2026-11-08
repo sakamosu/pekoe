@@ -310,6 +310,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe land <slug>` / `pekoe rm <slug>` | 取り込む / 消す |
 | `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
 | `pekoe daemon start\|stop\|status` | デーモン操作 |
+| `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
 | `pekoe migrate [--dry-run] [--prune-old]` | 旧名 boba の環境から一度だけ移す(下記) |
 
 **旧名 boba からの移行(`pekoe migrate`)** — 旧名を読み続ける互換処理は持たず、移行はこのコマンドで一度に済ませる。デーモンが動いていれば何もせずに中止する。手順は、`~/.config/boba` を `~/.config/pekoe` に、`~/.local/share/boba` を `~/.local/share/pekoe` に移して `bobad.sock` `bobad.log` `bobad.pid` `bobad.lock` を `pekoed.*` に改名 → state.db に残る旧パスと `refs/boba/…` の ref 名を書き換え、セッションの env(`sessions.data` の JSON の `env` 配列だけを解いて書き換える)の `BOBA_<NAME>=…` / `BOBA=…` をキーだけ `PEKOE_<NAME>=…` / `PEKOE=…` に改名(同じ新キーがすでにあれば旧キーの方を捨てる。プロンプト本文など利用者が書いた列は触らない)→ 各リポジトリの `refs/boba/*` を `refs/pekoe/*` にコピー(`--prune-old` のときだけ旧 ref を消す)→ `~/.claude/settings.json` の `boba event` の hooks を `pekoe event` に置き換え → 最後に手作業で残るもの(MCP の登録し直し、launchd、nvim の設定、Chrome 拡張の再読み込み、旧 tmux サーバー)を表示する。`--dry-run` は何も書かずにすることだけを出す。移すものが無い(旧ディレクトリが残っていない)ときも state.db 以降の手順は新しい `~/.local/share/pekoe` に対して行うので、env の改名が入る前に移行を済ませた環境は、デーモンを止めてもう一度 `pekoe migrate` を実行すれば直る(専用のオプションは設けない)。
@@ -320,6 +321,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | --- | --- |
 | `j` `k` / Enter | セッション選択(リポジトリの見出しは飛ばす) / 右ペインにフォーカス |
 | `n` | 今のリポジトリに新しい worktree + セッション(リポジトリの外で起動して今のリポジトリがなければ、先にリポジトリを選ぶ) |
+| `t` / `T` | tapi chat(どのセッションにも属さない窓口のエージェント。docs/tapi-chat.md)を [4] に開いてそのまま入力 / リセット(確認あり)。どのパネルからでも効き、prefix で閉じる |
 | `w` | リポジトリを選ぶ(知っているリポジトリの一覧モーダル)。セッションがあればその先頭を選び、なければそのリポジトリだけを今のリポジトリにする |
 | `]a` `[a` | 次の待ちセッション(PR に動きがあったセッションも含む) / 元の場所に戻る |
 | `]r` | 次のレビュー待ち |

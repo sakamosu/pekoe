@@ -77,6 +77,8 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 | 主ペイン | 3行 | 空のときだけ | セッション未選択、worktree 作成中、依存インストール中。中央に顔と短いキャプション。泡アニメはここ専用 |
 | pekoe 自身のプロンプト | 1行 | pekoe が尋ねるとき | `▐◕ ◕▌ delete worktree fix-ci? [y/n]` のように文頭に置く。puppy＝「pekoe が聞いている」を一貫させる |
 | トースト（右下、2行） | 1行 | 見ていないセッションが wait / error になったとき | `▐◕ ◕▌ fix-ci needs you`。数秒で消える。任意キーでも消える。表示中のセッションについては出さない |
+| tapi chat のタイトル | 1行 | `t` で tapi chat(docs/tapi-chat.md)を開いている間 | `▐● ●▌ [4] tapi chat · claude · thinking`。目は tapi chat のエージェントの状態(running → work、waiting → wait、idle → idle、未起動 → sleep、終了 → error)。この間ステータスバーは顔を出さず台詞だけにする(顔は1か所) |
+| ステータスバーの台詞(tapi chat) | — | tapi chat を閉じている間に許可待ち・質問待ちになり、セッションの wait / error が無いとき | `▐◕ ◕▌ chat waits · t`。セッションの wait より弱い。トーストや通知は出さない |
 | スプラッシュ | 3行＋文字 | 起動時 | 集約状態の顔の右に名前・バージョン・生きているセッション数。1秒かキー入力で消える |
 | CLI / README | 3行＋文字 | `pekoe --help`、README の頭 | 静止画 |
 | Neovim statusline / tmux | 1セル | プラグインが入っているとき | 集約状態の点。pekoed から状態を受け取る |

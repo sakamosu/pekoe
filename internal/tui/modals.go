@@ -520,9 +520,14 @@ func newHelpModal(m *model) *helpModal {
 	for _, p := range m.panelKeysFull() {
 		h.items = append(h.items, helpItem{key: p[0], action: p[1], run: send(p[2])})
 	}
-	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {m.prefixLabel(), "leave typing (back to Sessions)"}, {m.prefixLabel() + " h l", "focus left / main panel"}, {m.prefixLabel() + " z", "zoom the main panel (toggle)"}, {m.prefixLabel() + " < >", "narrow / widen the left panels"}, {m.prefixLabel() + " =", "default panel widths"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
+	for _, g := range [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {m.prefixLabel(), "leave typing (back to Sessions)"}, {m.prefixLabel() + " h l", "focus left / main panel"}, {m.prefixLabel() + " z", "zoom the main panel (toggle)"}, {m.prefixLabel() + " < >", "narrow / widen the left panels"}, {m.prefixLabel() + " =", "default panel widths"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}} {
 		g := g
-		h.items = append(h.items, helpItem{key: g[0], action: g[1], global: true})
+		it := helpItem{key: g[0], action: g[1], global: true}
+		switch g[0] {
+		case "t", "T":
+			it.run = send(g[0])
+		}
+		h.items = append(h.items, it)
 	}
 	return h
 }
@@ -549,6 +554,9 @@ func (m *model) panelKeysFull() [][3]string {
 			return [][3]string{{"j/k", "move", "j"}, {"↵", "edit & send", "\r"}, {"s", "send to other session", "s"}, {"n", "new session from pick", "n"}, {"d", "discard", "d"}}
 		}
 		return [][3]string{{"j/k", "move", "j"}, {"↵", "review", "\r"}, {"r", "review", "r"}}
+	}
+	if m.chat.open {
+		return chatKeysFull()
 	}
 	if m.issueShown() {
 		return [][3]string{{"j/k", "scroll", "j"}, {"↵", "jump to its session", "\r"}, {"n", "new session from the issue", "n"},
