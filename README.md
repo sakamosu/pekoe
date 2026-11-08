@@ -44,7 +44,7 @@ Orca の開発体験(複数エージェントの並列運用・worktree 分離�
 
 ## インストール
 
-必要なもの: Go 1.25+、tmux 3.3+、git。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)。
+必要なもの: Go 1.26.10+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使うので、古ければ Go を上げる)、tmux 3.3+、git。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)。
 
 ```sh
 make install            # ~/.local/bin/pekoe (+ pekoed), nvim/ と extension/ を ~/.local/share/pekoe に link
