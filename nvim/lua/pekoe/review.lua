@@ -1,14 +1,14 @@
 -- A. レビュー面: 左にファイル一覧、右に差分。hunk 単位で承認・差し戻し・コメント・質問。
-local client = require("boba.client")
-local ui = require("boba.ui")
-local sessions = require("boba.sessions")
+local client = require("pekoe.client")
+local ui = require("pekoe.ui")
+local sessions = require("pekoe.sessions")
 
 local M = {}
 
-local ns_cur = vim.api.nvim_create_namespace("boba_review_cursor")
-local ns_virt = vim.api.nvim_create_namespace("boba_review_virt")
+local ns_cur = vim.api.nvim_create_namespace("pekoe_review_cursor")
+local ns_virt = vim.api.nvim_create_namespace("pekoe_review_virt")
 
----@class BobaReviewState
+---@class PekoeReviewState
 ---@field slug string
 ---@field data table|nil Review オブジェクト
 ---@field file_idx integer
@@ -19,7 +19,7 @@ local R = nil
 M._asked = {} -- hunk_id -> true(review.ask を投げたもの)
 
 local function cfg()
-  return require("boba").config
+  return require("pekoe").config
 end
 
 local function valid_win(w)
@@ -64,7 +64,7 @@ end
 
 -- ---------------------------------------------------------------- 描画
 
-local STATUS_HL = { A = "BobaOk", M = "BobaWarn", D = "BobaErr", R = "BobaWarn" }
+local STATUS_HL = { A = "PekoeOk", M = "PekoeWarn", D = "PekoeErr", R = "PekoeWarn" }
 
 local function render_list()
   if not valid_buf(R.list_buf) then
@@ -76,25 +76,25 @@ local function render_list()
     local m = count_approved(f)
     local all = n > 0 and m == n
     table.insert(rows, {
-      { all and "✓ " or "● ", all and "BobaOk" or "BobaWarn" },
-      { (f.status or "M") .. " ", STATUS_HL[f.status or "M"] or "BobaWarn" },
-      { f.path, all and "BobaDim" or nil },
-      { string.format("  %d hunks %d✓", n, m), "BobaDim" },
+      { all and "✓ " or "● ", all and "PekoeOk" or "PekoeWarn" },
+      { (f.status or "M") .. " ", STATUS_HL[f.status or "M"] or "PekoeWarn" },
+      { f.path, all and "PekoeDim" or nil },
+      { string.format("  %d hunks %d✓", n, m), "PekoeDim" },
     })
   end
   if #rows == 0 then
-    rows = { { { "  no changes", "BobaDim" } } }
+    rows = { { { "  no changes", "PekoeDim" } } }
   end
   ui.render_chunks(R.list_buf, rows)
   if valid_win(R.list_win) then
     local d = R.data or {}
     local test = ""
     if type(d.test) == "table" and d.test.status and d.test.status ~= "none" then
-      test = d.test.status == "pass" and " %#BobaOk#✓test" or (d.test.status == "fail" and " %#BobaErr#✗test" or " %#BobaDim#…test")
+      test = d.test.status == "pass" and " %#PekoeOk#✓test" or (d.test.status == "fail" and " %#PekoeErr#✗test" or " %#PekoeDim#…test")
     end
     -- 幅が足りないときは slug から先に切り、右端のキーヒントを残す(%<)
     vim.wo[R.list_win].winbar = string.format(
-      "%%#BobaTitle# ± %%<%s %%#BobaDim#%s  %s/%s✓%s%%=%%#BobaKey#l %%#BobaDim#diff ",
+      "%%#PekoeTitle# ± %%<%s %%#PekoeDim#%s  %s/%s✓%s%%=%%#PekoeKey#l %%#PekoeDim#diff ",
       R.slug,
       (d.base_label or ""):gsub("%%", "%%%%"),
       tostring(d.approved or 0),
@@ -155,11 +155,11 @@ local function render_diff(restore)
       local ln = #lines
       R.line_info[ln] = { hunk = h, line = nil, hunk_idx = hi }
       table.insert(R.hunk_lnums, ln)
-      table.insert(hls, { ln, 0, #(h.header or "@@"), "BobaHunkHeader" })
+      table.insert(hls, { ln, 0, #(h.header or "@@"), "PekoeHunkHeader" })
       if h.approved then
-        table.insert(hls, { ln, #(h.header or "@@"), -1, "BobaOk" })
+        table.insert(hls, { ln, #(h.header or "@@"), -1, "PekoeOk" })
       elseif h.rejected then
-        table.insert(hls, { ln, #(h.header or "@@"), -1, "BobaErr" })
+        table.insert(hls, { ln, #(h.header or "@@"), -1, "PekoeErr" })
       end
       if type(h.prompt) == "table" and h.prompt.n then
         table.insert(notes, { ln, string.format("prompt #%s: %s", h.prompt.n, h.prompt.text or "") })
@@ -170,13 +170,13 @@ local function render_diff(restore)
         table.insert(lines, prefix .. kind .. (l.text or ""))
         local lnum = #lines
         R.line_info[lnum] = { hunk = h, line = l, hunk_idx = hi }
-        table.insert(hls, { lnum, 0, #prefix, "BobaLineNr" })
+        table.insert(hls, { lnum, 0, #prefix, "PekoeLineNr" })
         if kind == "+" then
-          table.insert(hls, { lnum, #prefix, -1, "BobaDiffAdd" })
-          table.insert(signs, { lnum, "BobaOk" })
+          table.insert(hls, { lnum, #prefix, -1, "PekoeDiffAdd" })
+          table.insert(signs, { lnum, "PekoeOk" })
         elseif kind == "-" then
-          table.insert(hls, { lnum, #prefix, -1, "BobaDiffDelete" })
-          table.insert(signs, { lnum, "BobaErr" })
+          table.insert(hls, { lnum, #prefix, -1, "PekoeDiffDelete" })
+          table.insert(signs, { lnum, "PekoeErr" })
         end
       end
       table.insert(lines, "")
@@ -208,7 +208,7 @@ local function render_diff(restore)
   end
   for _, n in ipairs(notes) do
     vim.api.nvim_buf_set_extmark(buf, ns_virt, n[1] - 1, 0, {
-      virt_text = { { "  " .. n[2], "BobaPromptNote" } },
+      virt_text = { { "  " .. n[2], "PekoePromptNote" } },
       virt_text_pos = "eol",
     })
   end
@@ -219,7 +219,7 @@ local function render_diff(restore)
         local lnum = comment_target_lnum(c, file)
         if lnum <= #lines then
           local sent = c.sent == true
-          local hl = sent and "BobaCommentSent" or "BobaComment"
+          local hl = sent and "PekoeCommentSent" or "PekoeComment"
           local vl = {}
           for i, t in ipairs(vim.split(c.text or "", "\n")) do
             table.insert(vl, {
@@ -236,11 +236,11 @@ local function render_diff(restore)
   if valid_win(R.diff_win) then
     local km = cfg().keymaps.review
     local hint = function(k, w)
-      return k and string.format("%%#BobaKey#%s %%#BobaDim#%s ", k, w) or ""
+      return k and string.format("%%#PekoeKey#%s %%#PekoeDim#%s ", k, w) or ""
     end
     -- h は先頭に固定し、幅が足りないときはパスから先に切る(%<)
     vim.wo[R.diff_win].winbar = string.format(
-      " %s%%#BobaTitle#%%<%s %%=%s%s%s%s%s%s%s",
+      " %s%%#PekoeTitle#%%<%s %%=%s%s%s%s%s%s%s",
       hint("h", "files"),
       file and file.path:gsub("%%", "%%%%") or "",
       hint(km.next_hunk, "next"),
@@ -281,7 +281,7 @@ function M.update_cursor_mark()
   vim.api.nvim_buf_clear_namespace(R.diff_buf, ns_cur, 0, -1)
   local _, _, ln = M.current_hunk()
   if ln then
-    vim.api.nvim_buf_set_extmark(R.diff_buf, ns_cur, ln - 1, 0, { sign_text = "▶", sign_hl_group = "BobaPrimary", priority = 20 })
+    vim.api.nvim_buf_set_extmark(R.diff_buf, ns_cur, ln - 1, 0, { sign_text = "▶", sign_hl_group = "PekoePrimary", priority = 20 })
   end
 end
 
@@ -294,7 +294,7 @@ local function fetch(cb)
       return
     end
     if err then
-      -- 未接続なら繋がった時点(boba.connected)で取り直すので黙る
+      -- 未接続なら繋がった時点(pekoe.connected)で取り直すので黙る
       if not err:find("not connected", 1, true) then
         ui.notify("review.files: " .. err, vim.log.levels.ERROR)
       end
@@ -581,7 +581,7 @@ function M.send(slug)
   end
   client.call("review.flush", { slug = slug }, function()
     ui.notify("comments sent → " .. slug)
-    if vim.env.BOBA_SESSION and vim.env.BOBA_SESSION ~= "" then
+    if vim.env.PEKOE_SESSION and vim.env.PEKOE_SESSION ~= "" then
       M._quit()
     elseif R and R.slug == slug then
       M.refresh()
@@ -643,12 +643,12 @@ end
 
 local function common_maps(buf)
   local km = cfg().keymaps.review
-  map(buf, km.toggle_approved, M.toggle_approved, "boba: show/hide approved hunks")
-  map(buf, km.send, function() M.send() end, "boba: send comments")
-  map(buf, km.refresh, function() M.refresh() end, "boba: refresh")
-  map(buf, km.close, M.close, "boba: close the review")
-  map(buf, km.next_hunk, function() M.move_hunk(1) end, "boba: next hunk")
-  map(buf, km.prev_hunk, function() M.move_hunk(-1) end, "boba: previous hunk")
+  map(buf, km.toggle_approved, M.toggle_approved, "pekoe: show/hide approved hunks")
+  map(buf, km.send, function() M.send() end, "pekoe: send comments")
+  map(buf, km.refresh, function() M.refresh() end, "pekoe: refresh")
+  map(buf, km.close, M.close, "pekoe: close the review")
+  map(buf, km.next_hunk, function() M.move_hunk(1) end, "pekoe: next hunk")
+  map(buf, km.prev_hunk, function() M.move_hunk(-1) end, "pekoe: previous hunk")
 end
 
 local function set_name(buf, name)
@@ -676,8 +676,8 @@ local function create_layout(slug)
   vim.bo[R.diff_buf].buftype = "nofile"
   vim.bo[R.diff_buf].bufhidden = "hide"
   vim.bo[R.diff_buf].swapfile = false
-  vim.bo[R.diff_buf].filetype = "boba-review"
-  set_name(R.diff_buf, "boba://review/" .. slug .. "/diff")
+  vim.bo[R.diff_buf].filetype = "pekoe-review"
+  set_name(R.diff_buf, "pekoe://review/" .. slug .. "/diff")
   vim.api.nvim_win_set_buf(R.diff_win, R.diff_buf)
 
   vim.cmd("topleft vsplit")
@@ -686,8 +686,8 @@ local function create_layout(slug)
   vim.bo[R.list_buf].buftype = "nofile"
   vim.bo[R.list_buf].bufhidden = "hide"
   vim.bo[R.list_buf].swapfile = false
-  vim.bo[R.list_buf].filetype = "boba-review-files"
-  set_name(R.list_buf, "boba://review/" .. slug .. "/files")
+  vim.bo[R.list_buf].filetype = "pekoe-review-files"
+  set_name(R.list_buf, "pekoe://review/" .. slug .. "/files")
   vim.api.nvim_win_set_buf(R.list_win, R.list_buf)
   vim.api.nvim_win_set_width(R.list_win, cfg().list_width)
 
@@ -698,7 +698,7 @@ local function create_layout(slug)
     vim.wo[w].cursorline = true
     vim.wo[w].foldenable = false
     vim.wo[w].list = false
-    vim.wo[w].winhighlight = "CursorLine:BobaSelect"
+    vim.wo[w].winhighlight = "CursorLine:PekoeSelect"
   end
   vim.wo[R.list_win].signcolumn = "no"
   vim.wo[R.list_win].winfixwidth = true
@@ -708,26 +708,26 @@ local function create_layout(slug)
   local km = cfg().keymaps.review
   map(R.list_buf, km.select or "<CR>", function()
     M.select_file(vim.api.nvim_win_get_cursor(R.list_win)[1], { focus = true })
-  end, "boba: open the file")
+  end, "pekoe: open the file")
   map(R.list_buf, "l", function()
     M.select_file(vim.api.nvim_win_get_cursor(R.list_win)[1], { focus = true })
-  end, "boba: open the file")
+  end, "pekoe: open the file")
   common_maps(R.list_buf)
 
   -- 差分のキー
-  map(R.diff_buf, km.approve, M.approve, "boba: approve the hunk")
-  map(R.diff_buf, km.reject, M.reject, "boba: send back the hunk")
-  map(R.diff_buf, km.comment, M.comment, "boba: comment on the line")
-  map(R.diff_buf, km.ask, M.ask, "boba: ask the agent")
-  map(R.diff_buf, km.open_file, M.open_file, "boba: open the real file")
+  map(R.diff_buf, km.approve, M.approve, "pekoe: approve the hunk")
+  map(R.diff_buf, km.reject, M.reject, "pekoe: send back the hunk")
+  map(R.diff_buf, km.comment, M.comment, "pekoe: comment on the line")
+  map(R.diff_buf, km.ask, M.ask, "pekoe: ask the agent")
+  map(R.diff_buf, km.open_file, M.open_file, "pekoe: open the real file")
   map(R.diff_buf, "h", function()
     if valid_win(R.list_win) then
       vim.api.nvim_set_current_win(R.list_win)
     end
-  end, "boba: go to the file list")
+  end, "pekoe: go to the file list")
   common_maps(R.diff_buf)
 
-  local group = vim.api.nvim_create_augroup("BobaReviewLayout", { clear = true })
+  local group = vim.api.nvim_create_augroup("PekoeReviewLayout", { clear = true })
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = group,
     buffer = R.list_buf,
@@ -751,7 +751,7 @@ local function create_layout(slug)
   })
 end
 
---- :BobaReview [slug]
+--- :PekoeReview [slug]
 function M.open(slug, cb)
   sessions.resolve(slug, function(s)
     if R and valid_win(R.list_win) and valid_win(R.diff_win) then
@@ -785,7 +785,7 @@ end
 function M.setup_events()
   -- レビューを開いたまま nvim を終了した場合も reviewing を抜ける
   vim.api.nvim_create_autocmd("VimLeavePre", {
-    group = vim.api.nvim_create_augroup("BobaReviewLeave", { clear = true }),
+    group = vim.api.nvim_create_augroup("PekoeReviewLeave", { clear = true }),
     callback = function()
       if R and R.slug then
         client.request_sync("review.end", { slug = R.slug }, 500)
@@ -799,7 +799,7 @@ function M.setup_events()
   end)
   client.on("review.answer", M.show_answer)
   -- デーモン再起動・起動前に開いた場合は繋がった時点で取り直す
-  client.on("boba.connected", function()
+  client.on("pekoe.connected", function()
     if R then
       M.refresh()
     end

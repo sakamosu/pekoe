@@ -1,6 +1,6 @@
 {
-  "name": "boba",
-  "short_name": "boba",
+  "name": "pekoe",
+  "short_name": "pekoe",
   "description": "agents in worktrees — sessions, permission prompts, send",
   "start_url": "/",
   "scope": "/",

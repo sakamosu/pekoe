@@ -1,7 +1,7 @@
--- D. :BobaFollow <slug> — エージェントが編集したファイルを split に開き、変更箇所へ飛ぶ。
-local client = require("boba.client")
-local ui = require("boba.ui")
-local sessions = require("boba.sessions")
+-- D. :PekoeFollow <slug> — エージェントが編集したファイルを split に開き、変更箇所へ飛ぶ。
+local client = require("pekoe.client")
+local ui = require("pekoe.ui")
+local sessions = require("pekoe.sessions")
 
 local M = {}
 
@@ -144,7 +144,7 @@ function M.start(slug)
       end
     end)
     F.unsub = client.on("session.updated", on_updated)
-    ui.notify("follow: " .. s .. " (:BobaFollow! to stop)")
+    ui.notify("follow: " .. s .. " (:PekoeFollow! to stop)")
   end, "session to follow")
 end
 

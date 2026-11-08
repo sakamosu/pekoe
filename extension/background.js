@@ -1,4 +1,4 @@
-// boba service worker (ES module).
+// pekoe service worker (ES module).
 // Everything is fire-and-forget HTTP: the MV3 SW may be killed at any time,
 // so no long-lived connections and no state that matters beyond one event.
 
@@ -28,7 +28,7 @@ async function post(path, body) {
     });
     return res.ok ? { ok: true } : { ok: false, error: `HTTP ${res.status}` };
   } catch (e) {
-    return { ok: false, error: `Cannot connect to bobad (${e.message})` };
+    return { ok: false, error: `Cannot connect to pekoed (${e.message})` };
   }
 }
 
@@ -47,7 +47,7 @@ async function togglePick(tab) {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
     await chrome.tabs.sendMessage(tab.id, { type: 'toggle' });
   } catch (e) {
-    console.warn('boba: cannot inject into this tab', e);
+    console.warn('pekoe: cannot inject into this tab', e);
     flashBadge(tab.id, false);
   }
 }
@@ -94,7 +94,7 @@ async function handlePick(msg, sender) {
   try {
     pick.screenshot = await captureCrop(sender.tab.windowId, pick.rect, msg.viewportWidth);
   } catch (e) {
-    console.warn('boba: screenshot failed', e);
+    console.warn('pekoe: screenshot failed', e);
   }
   const res = await post('/pick', pick);
   flashBadge(sender.tab.id, res.ok);

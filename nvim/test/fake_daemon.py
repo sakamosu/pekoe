@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bobad の偽物。docs/api.md の unix socket (JSON Lines) を最小限だけ喋る。
+"""pekoed の偽物。docs/api.md の unix socket (JSON Lines) を最小限だけ喋る。
 
 使い方: fake_daemon.py <socket path>
 
@@ -18,12 +18,12 @@ import sys
 SESSIONS = [
     {
         "slug": "feat-x", "branch": "feat/x", "repo": "app", "repo_id": "local_app",
-        "path": "/tmp/boba-fake/feat-x", "agent": "claude", "state": "done",
+        "path": "/tmp/pekoe-fake/feat-x", "agent": "claude", "state": "done",
         "last_tool": "Edit src/api.ts",
     },
     {
         "slug": "fix-y", "branch": "fix/y", "repo": "app", "repo_id": "local_app",
-        "path": "/tmp/boba-fake/fix-y", "agent": "claude", "state": "waiting",
+        "path": "/tmp/pekoe-fake/fix-y", "agent": "claude", "state": "waiting",
         "wait_kind": "permission",
         "pending_tool": {"name": "Bash", "input": "pnpm prisma migrate dev"},
     },

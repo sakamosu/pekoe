@@ -1,6 +1,6 @@
 -- F. 逆方向: editor.open イベント({path, line, note, slug})でその行に飛び、メモをフロートに出す。
-local ui = require("boba.ui")
-local sessions = require("boba.sessions")
+local ui = require("pekoe.ui")
+local sessions = require("pekoe.sessions")
 
 local M = {}
 
@@ -16,17 +16,17 @@ local function under(path, root)
 end
 
 --- このイベントをこの nvim が扱うべきか。
---- $BOBA_SESSION がある(boba が起動した nvim)ならその slug のものだけ、
+--- $PEKOE_SESSION がある(pekoe が起動した nvim)ならその slug のものだけ、
 --- それ以外は path が cwd 配下か slug なしのもの。
 function M.should_handle(d, abs)
-  local mode = require("boba").config.editor_open
+  local mode = require("pekoe").config.editor_open
   if mode == false then
     return false
   end
   if mode == "all" then
     return true
   end
-  local env = vim.env.BOBA_SESSION
+  local env = vim.env.PEKOE_SESSION
   if env and env ~= "" and d.slug and d.slug ~= "" then
     return d.slug == env
   end
@@ -67,7 +67,7 @@ function M.show_note(note)
       end
       return w + 1
     end)())),
-    border_hl = "BobaSecondary",
+    border_hl = "PekoeSecondary",
   })
   note_win = win
   -- カーソルが動いたら閉じる(開いた直後の移動は無視)
@@ -107,7 +107,7 @@ function M.open(d)
 end
 
 function M.setup_events()
-  require("boba.client").on("editor.open", M.open)
+  require("pekoe.client").on("editor.open", M.open)
 end
 
 return M
