@@ -150,7 +150,7 @@ tapi chat を閉じている間に tapi が許可待ち・質問待ちになっ�
 
 ## スキル(skills/pekoe/SKILL.md)
 
-今は「`$PEKOE_SESSION` があれば自分はセッション内なので直接作業し、`pekoe new` しない」とある。`$PEKOE_SESSION` が `+tapi` のときは窓口側なので例外で、変更作業は `pekoe new <branch> --repo <R>` でセッションを作って任せる(cwd はリポジトリではないので `--repo` が要る)、と書き足す。
+「cwd が linked worktree なら自分はセッション内なので直接作業し、`pekoe new` しない」とある(リポジトリ本体のチェックアウトでも `$PEKOE_SESSION` は入るので、`$PEKOE_SESSION` の有無では判定しない)。`$PEKOE_SESSION` が `+tapi` のときは窓口側なので例外で、変更作業は `pekoe new <branch> --repo <R>` でセッションを作って任せる(cwd はリポジトリではないので `--repo` が要る)、と書き足す。
 
 ## 触るファイル
 
