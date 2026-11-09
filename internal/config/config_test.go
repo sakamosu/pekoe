@@ -109,3 +109,15 @@ func TestTipsCoverSections(t *testing.T) {
 		t.Error(e)
 	}
 }
+
+// A config.toml from before the [notify] section was removed still loads:
+// unknown sections are ignored, not an error.
+func TestLegacyNotifyIgnored(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PEKOE_HOME", root)
+	os.MkdirAll(filepath.Join(root, "config"), 0o755)
+	os.WriteFile(filepath.Join(root, "config", "config.toml"), []byte("[notify]\nurl = \"https://example.invalid/topic\"\n"), 0o644)
+	if _, err := LoadGlobal(); err != nil {
+		t.Fatal(err)
+	}
+}

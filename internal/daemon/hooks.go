@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -655,29 +654,4 @@ func (d *Daemon) runGatekeeper(slug string) {
 	}
 	_ = d.DB.SetRisks(slug, risks)
 	d.emit("review.updated", map[string]any{"slug": slug})
-}
-
-// ---- notifications (ntfy) ----
-
-func (d *Daemon) notify(s *state.Session) {
-	url := d.Global.Notify.Ntfy
-	if url == "" {
-		return
-	}
-	body := s.Slug + " is waiting"
-	if s.PendingTool != nil {
-		body += ": " + s.PendingTool.Name + " " + s.PendingTool.Input
-	} else if s.LastMessage != "" {
-		body += ": " + truncate(s.LastMessage, 200)
-	}
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Title", "pekoe · "+s.WaitKind)
-	req.Header.Set("Tags", "hourglass")
-	cl := &http.Client{Timeout: 5 * time.Second}
-	if resp, err := cl.Do(req); err == nil {
-		resp.Body.Close()
-	}
 }

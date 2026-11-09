@@ -334,8 +334,6 @@ base = 3001                 # ポート台帳の開始番号
 prefix = "ctrl+q"           # 入力から抜けるキー
 [review]
 surface = "nvim"            # nvim | tui
-[notify]
-ntfy = "https://ntfy.sh/my-topic"   # 待ちが発生したら通知
 [picks]
 auto_send = true            # 指示つきのピックを、ページのポートを持つセッションへすぐ送る
 [web]                       # Web UI(make install WEB=1 のビルドのみ、docs/web.md)

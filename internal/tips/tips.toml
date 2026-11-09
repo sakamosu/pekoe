@@ -209,13 +209,6 @@ keys = ["x", "R", "D"]
 docs = ["README.md#tui"]
 
 [[tip]]
-id = "ntfy"
-short = "[notify] ntfy で待ちをスマホに通知する"
-detail = "config.toml の [notify] に ntfy の URL を書くと、セッションが入力や許可を待ち始めたときに ntfy で通知が届く。"
-keys = ["[notify]"]
-docs = ["README.md#設定"]
-
-[[tip]]
 id = "mcp"
 short = "pekoe mcp でエージェントが nvim にファイルを開ける"
 detail = "claude mcp add pekoe -- pekoe mcp で登録すると、エージェントが open_in_editor でファイルの行を nvim に開いてメモを添えられる。session_list でセッションの一覧も読める。"

@@ -393,7 +393,6 @@ Phase 2(レビュー面)を越えた時点で日常利用に切り替え、そ�
 | Chrome 拡張 | TypeScript, WXT, MV3 |
 | Neovim | Lua。`vim.uv` で socket に接続 |
 | MCP サーバ(逆方向) | pekoed 内に同居。`open_in_editor` と `session.list` を公開 |
-| 通知 | ntfy(curl 一発) |
 | パッケージング | 当面 `cargo install` と launchd の plist。拡張は unpacked |
 
 **Phase 0 の最初の一歩** — `pekoe new` を shell script で書いて 1 日使う。worktree 作成と setup の設計が合っているかは、デーモンを書く前に分かる。

@@ -100,7 +100,7 @@ func (d *Daemon) tapiUpdate(f func(t *tapiState)) {
 }
 
 // tapiEvent moves tapi's state from a hook. Nothing else runs: no prompt
-// snapshots, diffstat, tests, gatekeeper or ntfy (those are for sessions).
+// snapshots, diffstat, tests or gatekeeper (those are for sessions).
 func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 	switch hook {
 	case "SessionStart":

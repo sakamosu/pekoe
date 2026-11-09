@@ -116,7 +116,6 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 		switch c.State {
 		case state.Waiting:
 			d.emit("session.waiting", c)
-			go d.notify(c)
 		case state.Done:
 			d.emit("session.done", c)
 		}
