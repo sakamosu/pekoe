@@ -4,12 +4,21 @@
 # 配るのは 2 種類: 既定ビルド(Tailscale のコードなし)の pekoe_<ver>_<os>_<arch>.tar.gz と、
 # -tags web(Web UI 入り。tsnet をリンクする)の pekoe_<ver>_<os>_<arch>_web.tar.gz。
 # どちらも展開すると
+#   README.md, LICENSE, THIRD_PARTY_LICENSES,
 #   bin/pekoe, bin/pekoed(→ pekoe), share/pekoe/nvim/, share/pekoe/extension/, contrib/launchd/
 # の配置になり、bin/pekoe が ../share/pekoe/nvim を見つける(internal/tui/review.go の NvimPluginDir)。
 # pekoe update(internal/selfupdate)はこの名前と配置を前提に、今の pekoe が web 入りなら _web の方を取る。
+# THIRD_PARTY_LICENSES はバイナリが静的リンクする依存(と Go)の著作権表示とライセンス文。
+# 既定と web で依存が違うので、before.hooks で build/third-party/{default,web}/ にビルドごとに作り、
+# 同じ名前でそれぞれのアーカイブに入れる(scripts/third-party-licenses.sh。build/ はコミットしない)。
 version: 2
 
 project_name: pekoe
+
+before:
+  hooks:
+    - scripts/third-party-licenses.sh "" build/third-party/default/THIRD_PARTY_LICENSES
+    - scripts/third-party-licenses.sh web build/third-party/web/THIRD_PARTY_LICENSES
 
 builds:
   - id: pekoe
@@ -42,8 +51,12 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     wrap_in_directory: true
-    files: &files
+    # 2 つのアーカイブで THIRD_PARTY_LICENSES 以外は同じ。足すときは両方に
+    files:
+      - src: build/third-party/default/THIRD_PARTY_LICENSES
+        strip_parent: true
       - README.md
+      - LICENSE
       - src: contrib/release/pekoed
         dst: bin
       - src: nvim/lua/pekoe/*
@@ -61,7 +74,24 @@ archives:
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_web"
     wrap_in_directory: true
-    files: *files
+    # 2 つのアーカイブで THIRD_PARTY_LICENSES 以外は同じ。足すときは両方に
+    files:
+      - src: build/third-party/web/THIRD_PARTY_LICENSES
+        strip_parent: true
+      - README.md
+      - LICENSE
+      - src: contrib/release/pekoed
+        dst: bin
+      - src: nvim/lua/pekoe/*
+        dst: share/pekoe/nvim/lua/pekoe
+      - src: nvim/plugin/*
+        dst: share/pekoe/nvim/plugin
+      - src: nvim/README.md
+        dst: share/pekoe/nvim/README.md
+      - src: extension/*
+        dst: share/pekoe/extension
+      - src: contrib/launchd/*
+        dst: contrib/launchd
 
 checksum:
   name_template: checksums.txt
