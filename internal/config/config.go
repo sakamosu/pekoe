@@ -117,9 +117,6 @@ type Global struct {
 	Theme  Theme            `toml:"theme"`
 	Mascot Mascot           `toml:"mascot"`
 	Agents map[string]Agent `toml:"agents"`
-	Notify struct {
-		Ntfy string `toml:"ntfy"` // e.g. https://ntfy.sh/my-topic
-	} `toml:"notify"`
 	Review struct {
 		Surface string `toml:"surface"` // nvim | tui
 	} `toml:"review"`
