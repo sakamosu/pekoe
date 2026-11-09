@@ -31,6 +31,10 @@ If you set up an isolated environment by hand, clean it up at the end with `peko
 - Never use `--kill-agents` with `PEKOE_TMUX_SOCKET` empty or set to `pekoe`: that stops every real agent
 - Unix socket paths are limited to about 104 bytes on macOS, so put the isolated directory somewhere short, such as directly under `/tmp`
 
+### Re-taking the README screenshot
+
+`scripts/screenshot/run.sh` rebuilds `docs/images/screenshot.png` in a sandbox with a fictional repository and a fake agent (macOS and Google Chrome; `PEKOE_CHROME` overrides the Chrome path).
+
 ## Cutting a release
 
 Pushing a `v*` tag makes GitHub Actions (`.github/workflows/release.yml`) cross-build 4 platforms × default / `-tags web` with GoReleaser (`.goreleaser.yaml`), create a release with the archives, `checksums.txt` and a changelog since the previous tag, and attach build provenance (an attestation) to each archive.
