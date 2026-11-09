@@ -1,7 +1,5 @@
 # pekoe マスコット設計書
 
-Nov 7, 2026 · @Yuki Sakamoto
-
 ## 概要とコンセプト
 
 pekoeのマスコットは**タピオカの粒**。粒の名前は **tapi**（たぴちゃん。コード上の識別子も `tapi`）。描くのは粒だけで、カップ・ストロー・ミルクティーの背景は描かない。
@@ -105,7 +103,23 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 | スプラッシュ | 1 秒かキー入力で消える |
 | wait のエスカレーション | 0 秒：顔と台詞 → 30 秒：台詞を点滅 → 2 分：OS 通知（OSC 777 または OSC 9。Ghostty 非フォーカス時のみ） |
 
-&#91;embedded content: セッション状態の遷移 · 6状態\]
+```mermaid
+stateDiagram-v2
+  idle --> work: エージェントが動き出す
+  work --> wait: 入力・許可を待つ
+  wait --> work: 答える
+  work --> done: ターンが終わる
+  wait --> done: ターンが終わる
+  done --> work: 次のプロンプト
+  done --> idle: 表示する・10 秒(バー)
+  work --> error: 異常終了・失敗
+  wait --> error: 異常終了・失敗
+  error --> idle: 表示する
+  idle --> sleep: 全セッションが 3 分以上 idle(集約だけ)
+  sleep --> idle: キー入力・pekoed のイベント
+```
+
+セッションの状態(`internal/state`)からの対応は `internal/mascot/session.go` の `RowMood`: running・creating → work、waiting → wait、done → done(見たあとは idle)、failed → error、それ以外(idle・reviewing・approved・landed)→ idle。
 
 wait と work の往復が日常のループで、done と error は「ユーザーが見た」を契機に idle へ戻る。
 

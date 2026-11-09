@@ -1,28 +1,25 @@
 # pekoe 設計書
 
-Nov 7, 2026 · @Yuki Sakamoto
-
 ## 概要
 
-pekoe は、Orca の開発体験(複数エージェントの並列運用・worktree 分離・ブラウザ連携・差分レビュー)を、Ghostty の中で完結するターミナルツールとして作り直す個人開発プロジェクト。普段の Claude Code の使い方は一切変えず、その周辺作業(切り替え・待ち・worktree・ブラウザ・レビュー)だけを引き受ける。
+pekoe は、ターミナルの中で複数のコーディングエージェントを worktree ごとに並行して走らせ、その周辺作業(切り替え・待ち・worktree・ブラウザ連携・差分レビュー・PR)を引き受ける個人開発のツール。普段の Claude Code の使い方は一切変えない。
 
 **作る理由**
 
-- Orca は良かったが、ターミナルから離れたくない
-- cmux は合わなかった
-- 既存の TUI(claude-tmux、cctl、ccmanager 等)はセッション管理で止まっており、ブラウザ連携とレビューまで一体化したものがない
+- エージェントを並行させるほど、詰まるのはエージェントではなく人間の側(どれが待っているか、どこまで読んだか、どの worktree で何が動いているか)になる
+- ターミナルから離れずに、worktree の用意からブラウザでの確認・差分レビュー・PR までを一つの流れで扱いたい
 
 **スコープ**
 
 - 第一対象は Claude Code。Codex や OpenCode など他の CLI エージェントも同じ仕組み(pty + hooks)で扱う
-- 利用者は当面自分一人。対象リポジトリに痕跡を残さない
+- 作者が毎日使うための個人のツール(MIT で公開)。対象リポジトリに痕跡を残さない
 - worktree 作成 → 実装 → レビュー → 取り込み、までの一連のワークフローを焼き込んだ「意見のあるツール」にする
 
 **非目標**
 
 - GUI ターミナルの新規開発(ロードマップ最終フェーズに任意項目として残すのみ)
 - エージェント自体の賢さ(タスク分割、自動オーケストレーション)には踏み込まない
-- チーム配布・ストア公開は考えない(設計上は後から足せる形にはしておく)
+- チームでの運用や拡張のストア公開は考えない(設計上は後から足せる形にはしておく)
 
 ## 設計原則
 
@@ -37,9 +34,40 @@ pekoe は、Orca の開発体験(複数エージェントの並列運用・workt
 
 ## 全体構成
 
-&#91;embedded content: 全体構成 · pekoed と 4 つのクライアント\]
+```mermaid
+flowchart LR
+  subgraph clients["クライアント(表示と入力だけ)"]
+    tui["TUI(pekoe)"]
+    cli["CLI"]
+    nvim["Neovim"]
+    mcp["MCP(pekoe mcp)"]
+    ext["Chrome 拡張"]
+    web["Web UI(iPhone など)"]
+  end
+  sock["unix socket<br/>JSON Lines"]
+  http["HTTP 127.0.0.1<br/>+ token"]
+  tsnet["HTTPS(tailnet 内)<br/>tsnet・-tags web のビルドだけ"]
+  tui --> sock
+  cli --> sock
+  nvim --> sock
+  mcp --> sock
+  ext --> http
+  web --> tsnet
+  sock --> pekoed
+  http --> pekoed
+  tsnet --> pekoed
+  pekoed["pekoed(デーモン)"] --> engine["engine"]
+  engine --> tmux["tmux -L pekoe の窓<br/>agent / review / dev / run・+tapi"]
+  tmux --> agent["claude / codex など"]
+  agent -- "hooks" --> event["pekoe event"]
+  event -- "unix socket" --> pekoed
+  pekoed --> db[("state.db")]
+  pekoed --> git["git<br/>worktrees・refs/pekoe/*"]
+  pekoed --> gh["GitHub(gh)"]
+  pekoed --> chrome["headless Chrome<br/>(preview)"]
+```
 
-4 つのクライアントはすべて同じコマンド群を叩く表示層で、エージェントは worktree ごとの pty の中で素のまま動く。pekoed が pty への書き込みと出力の受け取りを一手に担い、Claude Code の hooks は `pekoe event` を通じて pekoed に状態を知らせる。
+クライアントはすべて同じコマンド群を叩く表示層で、エージェントは worktree ごとの pty の中で素のまま動く。pekoed が pty への書き込みと出力の受け取りを一手に担い、Claude Code の hooks は `pekoe event` を通じて pekoed に状態を知らせる。
 
 **通信**
 
@@ -53,7 +81,34 @@ pekoe は、Orca の開発体験(複数エージェントの並列運用・workt
 
 状態は画面を読んで推測せず、Claude Code の hooks から受け取る。「待ち」は許可待ちと質問を区別し、「完了」の後にレビューの状態を置く。
 
-&#91;embedded content: セッションの状態遷移 · 8 状態\]
+```mermaid
+stateDiagram-v2
+  [*] --> creating: pekoe new
+  creating --> idle: エージェント起動(プロンプトなし)・SessionStart
+  creating --> running: エージェント起動(初期プロンプトあり)
+  creating --> failed: setup の失敗・起動中のデーモン再起動
+  failed --> running: 起動し直す
+  idle --> running: UserPromptSubmit・PreToolUse
+  running --> waiting: Notification(許可・質問)・AskUserQuestion
+  waiting --> running: PostToolUse・許可する
+  waiting --> idle: 拒否する・SessionEnd
+  running --> idle: Notification(idle_prompt)・SessionEnd
+  running --> done: Stop
+  waiting --> done: Stop
+  done --> running: UserPromptSubmit・PreToolUse
+  done --> reviewing: レビューを開く
+  idle --> reviewing: レビューを開く
+  reviewing --> done: 閉じる(未送信コメントなし)
+  reviewing --> running: コメントをエージェントに送る
+  reviewing --> approved: 全 hunk を承認
+  done --> approved: 全 hunk を承認
+  approved --> running: UserPromptSubmit
+  approved --> landed: pekoe land(マージを検出して片付け)
+  done --> landed: pekoe land
+  landed --> [*]
+```
+
+状態は 9 つ(`internal/state`)。遷移の大半は hooks(`internal/daemon/hooks.go`)で起き、reviewing・approved はレビュー面(`internal/daemon/review.go`)、landed は land の後片付けで決まる。レビュー中(reviewing)は UserPromptSubmit が来ても reviewing のまま。hooks のないエージェントは画面(OSC 9 / 99 / 777、BEL、`[y/n]`)から running・waiting・idle だけを推し量る。
 
 **hooks と状態の対応**(`~/.claude/settings.json` に書き、すべて `pekoe event` を呼ぶ。hooks は stdin の JSON で session\_id と cwd を渡すので、cwd → worktree → セッションの解決ができる)
 
@@ -61,7 +116,7 @@ pekoe は、Orca の開発体験(複数エージェントの並列運用・workt
 | --- | --- |
 | SessionStart | running。session\_id を保存して `--resume` に使う |
 | UserPromptSubmit | running。`refs/pekoe/<slug>/prompt-<n>` にスナップショット |
-| Notification | waiting。許可待ちか質問かを入力 JSON から判別(要確認) |
+| Notification | waiting。入力 JSON の `notification_type` で判別する(`permission_prompt` → 許可待ち、`elicitation_dialog` → 質問、`idle_prompt` → idle)。AskUserQuestion の PreToolUse の直後の許可待ちは質問として扱う |
 | Stop | done。`test` を自動実行して結果を左ペインに |
 | PreToolUse(任意) | 直近のツール名を左ペインに表示(「今何をしているか」) |
 | OSC 9 / 99 / 777、タイトル変更 | hooks のないエージェント用のフォールバック。VT エンジンがイベントとして出す |
@@ -223,7 +278,7 @@ pekoe は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 
 **逆方向(エージェントがブラウザを操作)** は自作しない。Chrome DevTools MCP や Playwright MCP を各セッションに繋ぐ。
 
-**実装** — TypeScript。WXT か素の MV3。デベロッパーモードで「パッケージ化されていない拡張機能を読み込む」でストア不要。拡張は数百行に抑え、賢さはデーモン側に置いて拡張の更新頻度を下げる。
+**実装** — 素の JavaScript の MV3(ビルドなし。`extension/`)。デベロッパーモードで「パッケージ化されていない拡張機能を読み込む」でストア不要。拡張は数百行に抑え、賢さはデーモン側に置いて拡張の更新頻度を下げる。
 
 ## ブラウザプレビュー(TUI 内)
 
@@ -374,41 +429,45 @@ PR の状態はデーモンが 60 秒ごとに `gh api graphql` で要約を取�
 
 ## 実装ロードマップ
 
-Phase 2(レビュー面)を越えた時点で日常利用に切り替え、その後は使いながら足す。自前 mux は最後で、やらない選択もある。
+フェーズ 2(レビュー面)を越えた時点で日常利用に切り替え、その後は使いながら足してきた。自前 mux は最後で、やらない選択もある。下の表は、今の実装に合わせてフェーズを整理したもの。
 
-&#91;embedded content: 実装ロードマップ · 7 フェーズと 6 つの gate\]
+| フェーズ | 中身 | 状態 |
+| --- | --- | --- |
+| 0 | `pekoe new` を shell script で書いて使い、worktree 作成と setup の設計を確かめる | 済み(Go の実装に置き換え) |
+| 1 | pekoed・tmux エンジン・TUI。hooks による状態、Attention queue、永続性 | 済み |
+| 2 | レビュー面。前回レビューからの差分、hunk の承認、コメントの送信、`pekoe land` | 済み。ここで日常利用に切り替えた |
+| 3 | ブラウザ連携。ポート台帳、Chrome 拡張のピック、エラーの拾い上げ、TUI 内のプレビュー | 済み |
+| 4 | 周辺の連携。Neovim、MCP、Issue インボックスと PR ビュー、衝突予報、Web UI、tapi chat | 済み(使いながら足している) |
+| 5 | libghostty-vt による自前 mux(tmux エンジンの置き換え) | 未着手。やらない選択もある |
+| 6 | GUI ターミナル | 任意。予定なし |
 
-各 gate は「次に進む条件」であり、満たさないまま次のフェーズに手を出さない。
-
-**技術選定**(実装言語を Rust とした場合。未決事項参照)
+**技術選定**
 
 | 部品 | 技術 |
 | --- | --- |
-| pekoed | Rust(tokio, serde)。git は CLI 呼び出しで済ませ libgit2 は使わない。状態は rusqlite |
-| TUI | ratatui + crossterm。Phase 0–4 は tmux control mode を子プロセスで持つ |
-| VT(Phase 5) | libghostty-vt を C API 経由で FFI |
-| Chrome 拡張 | TypeScript, WXT, MV3 |
+| pekoed・CLI・TUI | Go。1 つのバイナリ `pekoe`(`pekoed` はそのシンボリックリンク) |
+| TUI | Bubble Tea + lipgloss |
+| ターミナルエンジン | `internal/engine` の `Engine`。今は tmux だけで、専用サーバー(`tmux -L pekoe`)に control mode(`tmux -C`)でつないで出力を受け取る |
+| 状態 | SQLite(`modernc.org/sqlite`。cgo なし) |
+| git | CLI 呼び出し。libgit2 は使わない |
+| Chrome 拡張 | 素の JavaScript、MV3。ビルドなし |
 | Neovim | Lua。`vim.uv` で socket に接続 |
-| MCP サーバ(逆方向) | pekoed 内に同居。`open_in_editor` と `session.list` を公開 |
-| パッケージング | 当面 `cargo install` と launchd の plist。拡張は unpacked |
-
-**Phase 0 の最初の一歩** — `pekoe new` を shell script で書いて 1 日使う。worktree 作成と setup の設計が合っているかは、デーモンを書く前に分かる。
+| MCP サーバ(逆方向) | `pekoe mcp`(stdio)。pekoed に socket でつなぐ |
+| Web UI | `-tags web` のビルドだけ。tsnet(`tailscale.com`)を pekoed に埋め込む |
+| パッケージング | `make install`、GitHub Releases(goreleaser)と `pekoe update`、launchd の plist(`make install-launchd`)。拡張は unpacked |
 
 ## 未決事項とリスク
 
-最大の未決は実装言語で、フェーズ 5(自前 mux)を本気でやるかで決まる。
+実装言語は Go に決めた(tmux エンジンの段階を最速で使える形にすることを優先した)。待ちの種別は Notification の `notification_type` で判別でき、prefix キーは `[keys] prefix` で変えられる(既定は Claude Code が使わない ctrl+q)。残る大きな未決はフェーズ 5(自前 mux)をやるかどうか。
 
 **未決事項**
 
 | 項目 | 選択肢 | 当面の考え |
 | --- | --- | --- |
-| 実装言語 | Rust(ratatui + libghostty-vt へ FFI。cmux-linux の先例) / Go(Bubble Tea。tmux エンジン段階が最速だが cgo が重い) / Zig(libghostty に最も近いが TUI エコシステムが薄い) | フェーズ 5 をやるなら Rust。やらないと決めるなら Go |
-| 待ちの種別 | Claude Code の Notification hook が「許可待ち」と「idle」を入力 JSON で区別できるか | 要確認。できなければ仮想画面の `[y/n]` 検知を併用 |
-| Claude Code 以外の状態検知 | Codex / OpenCode に hooks 相当があるか | なければ OSC と画面検知のフォールバックのみ |
-| libghostty-vt C API | フェーズ 5 着手時点の安定度 | 着手前に再確認。不安定なら tmux エンジンを継続 |
+| Claude Code 以外の状態検知 | Codex / OpenCode に hooks 相当があるか | 今は `[agents.*]` の `hooks = false` のエージェントを OSC・BEL・`[y/n]` の画面検知だけで扱う |
+| libghostty-vt C API | フェーズ 5 着手時点の安定度。Go から使うなら cgo が要る | 着手前に再確認。不安定なら tmux エンジンを継続 |
 | hunk の同一性 | 内容ハッシュは周辺行の変更で別 hunk 扱いになる | 許容して始め、実用で気になったら類似度マッチを足す |
 | 拡張の配布 | unpacked のまま / 自己署名 | unpacked のまま |
-| キー衝突 | tmux エンジン段階で prefix キーが Ghostty / claude と衝突しないか | prefix を設定可能にしておく |
 
 **リスク**
 
