@@ -1,6 +1,6 @@
 ---
 name: pekoe
-description: pekoe で worktree とエージェントセッションを作り、変更作業を任せる。pekoe を使っているリポジトリの main 側(環境変数 $PEKOE_SESSION が空)や tapi chat($PEKOE_SESSION が +tapi)でコードやドキュメントの変更を頼まれたら(「〜を直して」「〜を足して」「〜を変えて」「issue #N をやって」など)、ユーザーが pekoe や別ブランチに触れていなくても、直接編集せずにこれを使う。「別ブランチで並行して」「別エージェントに任せて」「worktree 切って」のときも。git worktree add の代わりに使う。
+description: pekoe で worktree とエージェントセッションを作り、変更作業を任せる。pekoe を使っているリポジトリの main 側(cwd がリポジトリ本体のチェックアウトで、linked worktree ではない)や tapi chat($PEKOE_SESSION が +tapi)でコードやドキュメントの変更を頼まれたら(「〜を直して」「〜を足して」「〜を変えて」「issue #N をやって」など)、ユーザーが pekoe や別ブランチに触れていなくても、直接編集せずにこれを使う。「別ブランチで並行して」「別エージェントに任せて」「worktree 切って」のときも。git worktree add の代わりに使う。
 ---
 
 # pekoe でセッションを作って任せる
@@ -17,7 +17,9 @@ worktree 作成 → ファイルのコピー → setup → ポート割り当て
 - 追加の指示・修正依頼は main から `pekoe send <slug> -` で送る。ユーザーに worktree へ移動して打ち込むよう勧めない
 - 調査(ファイルを読む・grep・ls・状態確認)は main で自分でやってよい。調べた結果をプロンプトに込める
 - 進捗は main から見る(`pekoe --json ls`、worktree の `git log` / `git diff`)。land・マージ・rm はユーザーに頼まれてから
-- 例外: `$PEKOE_SESSION` が設定されているとき(= 自分がセッション内のエージェント)は、そのセッションの worktree で直接作業する。さらに `pekoe new` で孫セッションを作らない(並行させたい明確な理由があるときを除く)
+- 例外: cwd が linked worktree(`git worktree add` / `pekoe new` で作られた側)のとき(= 自分がセッション内のエージェント)は、その worktree で直接作業する。さらに `pekoe new` で孫セッションを作らない(並行させたい明確な理由があるときを除く)
+  - 判定は `git rev-parse --path-format=absolute --git-dir --git-common-dir` の 2 行を比べる。同じ(= リポジトリ本体)なら main 側、違えば linked worktree。`--path-format=absolute` を付けないとサブディレクトリでは片方が相対パスになり、本体でも食い違って見える
+  - `$PEKOE_SESSION` の有無や値では判定しない。main のチェックアウトを取り込んだセッションにも `$PEKOE_SESSION` は入る(値も `main` とは限らず、`pekoe-site-main` のようになることもある)。`$PEKOE_SESSION` が空(pekoe の外で起動した)でリポジトリ本体にいるなら、もちろん main 側
 - 例外の例外: `$PEKOE_SESSION` が `+tapi` のときは tapi chat(TUI の `t` で呼ぶ、どのリポジトリにも属さない窓口)。セッションの中ではなく main と同じ窓口側なので、直接編集せずに `pekoe new` でセッションを作って任せる。cwd はリポジトリではないので、必ず `--repo <リポジトリ名かパス>` を付ける(下の「tapi chat から作るとき」)
 - ユーザーが「ここで直接やって」と言ったときはそれに従う
 
