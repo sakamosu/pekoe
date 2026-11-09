@@ -236,7 +236,8 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `u` `R` | Undo the last prompt / restart the agent (resume) |
 | `s` `i` `↵` | Send / ignore / show details of an error card (errors pekoed found in the dev server or browser). While a card is shown, typing is `a` |
 | `x` `D` | End the session (keep the worktree) / delete the worktree (asks first) |
-| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `review` `ext` `q`) |
+| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `review` `ext` `tutorial` `q`) |
+| `H` | Tutorial again (also `:tutorial`, see [Tutorial](#tutorial)) |
 | `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |
 | `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs |
 | `q` | Quit |
@@ -261,6 +262,10 @@ Press `t` in any panel and [4] switches to a conversation with the mascot tapi (
 - `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. pekoe itself saves nothing. It doesn't appear in the Web UI
 - Change the agent with `[tapi] agent` ([Configuration](#configuration))
 
+### Tutorial
+
+The first time the TUI starts, a short tour walks through the screen: one part at a time is put in focus (Sessions, the state column, the agent, the new-session dialog, Changes and review, the PR view, land, Issues, tapi chat, the key list) with a card in which tapi explains it (the card text is in Japanese, like the tips); the rest of the screen dims. `↵` / `→` / `l` next, `←` / `h` back, `esc` / `q` skip. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped) is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
+
 ### Tips
 
 pekoe introduces its features one at a time ("this is handy when…"). They appear in two places:
@@ -268,7 +273,7 @@ pekoe introduces its features one at a time ("this is handy when…"). They appe
 - 4's empty view (no session selected, or a worktree being created). Under tapi's face and caption, it shows a `tip` heading, a one-line summary and a longer explanation. `.` shows the next tip. If there isn't enough height or width, the longer explanation goes first, and if it still doesn't fit nothing is shown
 - tapi chat's greeting in its first reply. Ask "give me a tip" for the next one, or "tell me more" and tapi reads the doc the tip points to and explains (tapi uses `pekoe tip` and `pekoe tip --doc`)
 
-Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts are in Japanese (everything else in the UI is in English).
+Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts and the tutorial's cards are in Japanese (everything else in the UI is in English).
 
 ## Review
 
@@ -423,6 +428,7 @@ enable = true               # false hides both
 | State DB, socket, logs, picks | `~/.local/share/pekoe/` |
 | TUI pane width and zoom | `~/.local/share/pekoe/layout.json` (changed by `^q` `<` `>` `=` `z`) |
 | Record of shown tips | `~/.local/share/pekoe/tips.json` (starts over after a full round) |
+| Tutorial seen | `~/.local/share/pekoe/tutorial.json` (delete it to get the tour on the next start) |
 | tapi chat's working directory | `~/.local/share/pekoe/tapi/` (the conversation record is on Claude Code's side, in `~/.claude/projects/`; `pekoe tapi reset` deletes it) |
 | Human token (needed to answer permission prompts and the like; keep it from agents) | `~/.local/share/pekoe/human-token` |
 | Keys of the Web UI's tsnet node | `~/.local/share/pekoe/tsnet/` (only when `[web]` is enabled) |

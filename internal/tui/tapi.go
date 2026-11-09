@@ -315,7 +315,7 @@ func (m *model) barTapi(width int) string {
 		sum.Mood, sum.Since = mascot.Wait, m.chat.info.StateSince
 		text = "chat waits · t"
 	}
-	if m.chat.open { // tapi's face is in the chat window's title: one face at a time
+	if m.chat.open || m.tour != nil { // tapi's face is in the chat window's title or the tutorial's card: one face at a time
 		return m.speech(sum.Mood, clip(text, max(width/2-6, 4)))
 	}
 	eyes := m.eyesFor(sum.Mood, false)

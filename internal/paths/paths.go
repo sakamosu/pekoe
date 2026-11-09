@@ -78,6 +78,10 @@ func LayoutFile() string { return filepath.Join(DataDir(), "layout.json") }
 // and `pekoe tip`.
 func TipsFile() string { return filepath.Join(DataDir(), "tips.json") }
 
+// TutorialFile records that the TUI's tutorial was seen (or skipped), so it
+// starts by itself only the first time.
+func TutorialFile() string { return filepath.Join(DataDir(), "tutorial.json") }
+
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 

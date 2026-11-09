@@ -145,11 +145,16 @@ type model struct {
 	graphics   bool           // outer terminal draws Kitty graphics
 	sentImages map[int64]bool // pick screenshots already transmitted
 
-	tapi     *tapiState // the mascot (tapi.go)
-	chat     chatState  // tapi chat in the main panel (chat.go)
-	order    ptyOrder   // keys reach the ptys in the order typed (order.go)
-	spinning bool       // the 80 ms spinner tick is scheduled
-	tip      tipState   // the tip in the empty main pane (tips.go)
+	tapi  *tapiState // the mascot (tapi.go)
+	chat  chatState  // tapi chat in the main panel (chat.go)
+	order *ptyOrder  // keys reach the ptys in the order typed (order.go); a pointer so the tour can copy the model
+
+	spinning bool     // the 80 ms spinner tick is scheduled
+	tip      tipState // the tip in the empty main pane (tips.go)
+
+	tour     *tourState // the tutorial, while it runs (tour.go)
+	tourPath string     // where seeing the tutorial is recorded; "" in tests
+	tourAuto bool       // start the tutorial once the screen is up (first run)
 }
 
 func TermSize() (int, int) {
@@ -206,6 +211,7 @@ func newModel(cl *client.Client, cwd string) *model {
 	m.width, m.height = TermSize()
 	m.newTapi()
 	m.initTips("") // Run keeps them in paths.TipsFile()
+	m.initTour("") // Run records it in paths.TutorialFile()
 	return m
 }
 
@@ -216,6 +222,7 @@ func Run(cl *client.Client, cwd string) error {
 	m := newModel(cl, cwd)
 	m.layout, m.layoutPath = LoadLayout(), paths.LayoutFile()
 	m.initTips(paths.TipsFile())
+	m.initTour(paths.TutorialFile())
 	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
 		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
@@ -512,6 +519,17 @@ const (
 // ---- update ----
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.tour != nil { // the tutorial owns the screen and the keys (tour.go)
+		cmd := m.tourUpdate(msg)
+		if m.tour != nil {
+			return m, cmd
+		}
+		// it just ended: the real model catches up like after any update
+		m.issueSync()
+		m.tipSync()
+		return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
+	}
+	defer m.maybeAutoTour()
 	defer m.markSeen()
 	defer m.issueSync()
 	var cmd tea.Cmd
@@ -1171,6 +1189,8 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		return m.openChat()
 	case "T":
 		return m.confirmResetChat()
+	case tourKey: // replay the tutorial (tour.go)
+		return m.startTour()
 	case tipKey: // the next tip, while the empty main pane shows one (tips.go)
 		if m.tipSpot() {
 			m.nextTip()

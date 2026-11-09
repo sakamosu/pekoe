@@ -35,6 +35,9 @@ func (o *ptyOrder) take() (prev, done chan struct{}) {
 // inOrder returns a command running call after every pty write queued
 // before it. Call it from Update (not from inside another command).
 func (m *model) inOrder(call func() error) tea.Cmd {
+	if m.order == nil {
+		m.order = &ptyOrder{}
+	}
 	prev, done := m.order.take()
 	return func() tea.Msg {
 		if prev != nil {

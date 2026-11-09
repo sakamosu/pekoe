@@ -54,7 +54,9 @@ func (m *model) View() string {
 	} else if m.modal != nil {
 		body = overlay(body, m.modal.view(), m.width)
 	}
-	if tb := m.toastBlock(); len(tb) > 0 && len(body) > len(tb)+1 {
+	if m.tour != nil {
+		body = m.tourView(body) // the tutorial's card over the sample (tour.go)
+	} else if tb := m.toastBlock(); len(tb) > 0 && len(body) > len(tb)+1 {
 		body = placeAt(body, len(body)-len(tb)-2, max(m.width-w(tb[0])-3, 0), tb)
 	}
 	body = append(body, m.viewBar())
@@ -93,16 +95,32 @@ func (m *model) viewLeft(width, height int) []string {
 	type panel struct {
 		n     int
 		build func(h int, focused bool) []string
-		min   int
 	}
 	sessionsRows, sessionsFooter := m.sessionRows(width - 4)
 	panels := []panel{
 		{pSessions, func(h int, f bool) []string {
 			return m.box(width, h, boxOpt{title: m.sessionsTitle(f), rows: sessionsRows, footer: sessionsFooter, focused: f})
-		}, len(sessionsRows)},
-		{pSecond, func(h int, f bool) []string { return m.secondPanel(width, h, f) }, m.secondCount()},
-		{pThird, func(h int, f bool) []string { return m.thirdPanel(width, h, f) }, m.thirdCount()},
+		}},
+		{pSecond, func(h int, f bool) []string { return m.secondPanel(width, h, f) }},
+		{pThird, func(h int, f bool) []string { return m.thirdPanel(width, h, f) }},
 	}
+	heights := m.leftHeights(width, height)
+	var out []string
+	for i, p := range panels {
+		f := m.focus == p.n && !m.typing
+		out = append(out, p.build(heights[i], f)...)
+	}
+	for len(out) < height {
+		out = append(out, strings.Repeat(" ", width))
+	}
+	return out[:height]
+}
+
+// leftHeights are the heights of [1] [2] [3] in a left column width×height.
+func (m *model) leftHeights(width, height int) []int {
+	type panel struct{ n, min int }
+	sessionsRows, _ := m.sessionRows(width - 4)
+	panels := []panel{{pSessions, len(sessionsRows)}, {pSecond, m.secondCount()}, {pThird, m.thirdCount()}}
 	exp := m.leftFocus()
 	// accordion: collapsed panels show title + up to 2 rows (more if space allows)
 	heights := make([]int, len(panels))
@@ -134,15 +152,7 @@ func (m *model) viewLeft(width, height int) []string {
 			}
 		}
 	}
-	var out []string
-	for i, p := range panels {
-		f := m.focus == p.n && !m.typing
-		out = append(out, p.build(heights[i], f)...)
-	}
-	for len(out) < height {
-		out = append(out, strings.Repeat(" ", width))
-	}
-	return out[:height]
+	return heights
 }
 
 func (m *model) sessionsTitle(f bool) string {
@@ -216,13 +226,31 @@ func truncRunes(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
+// Columns of a session line: the state word is stateW wide, the age ageW.
+const (
+	stateW = 8
+	ageW   = 4
+)
+
+// sessionCols are the widths of the name and diff columns of a session line
+// cw wide (diffW 0: no diff and test columns). The state icon is column 0,
+// the state word starts at nameW+3.
+func sessionCols(cw int) (nameW, diffW int) {
+	diffW = 11
+	// icon+sp + name + sp + state + sp + age + sp + diff + sp + test
+	nameW = cw - 2 - 1 - stateW - 1 - ageW - 1 - diffW - 2
+	if nameW < 8 {
+		diffW = 0
+		nameW = cw - 2 - stateW - 1 - ageW
+	}
+	return nameW, diffW
+}
+
 func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	th := m.th
 	lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
 	icon := th.FG(lk.Role, fit(lk.Icon, 1))
-	word := th.FG(lk.Role, fit(lk.Word, 8))
-	stateW := 8
-	ageW := 4
+	word := th.FG(lk.Role, fit(lk.Word, stateW))
 	diff := ""
 	if s.Diffstat.Added+s.Diffstat.Deleted > 0 {
 		diff = th.FG(theme.Ok, fmt.Sprintf("+%d", s.Diffstat.Added)) + " " + th.FG(theme.Err, fmt.Sprintf("-%d", s.Diffstat.Deleted))
@@ -236,12 +264,9 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	case "running":
 		test = th.FG(theme.Dim, "…")
 	}
-	diffW := 11
-	// icon+sp + name + sp + state + sp + age + sp + diff + sp + test
-	nameW := cw - 2 - 1 - stateW - 1 - ageW - 1 - diffW - 2
-	if nameW < 8 {
-		diffW, test = 0, ""
-		nameW = cw - 2 - stateW - 1 - ageW
+	nameW, diffW := sessionCols(cw)
+	if diffW == 0 {
+		test = ""
 	}
 	nameRole := theme.Text
 	if s.State == state.Idle || s.State == state.Creating || s.State == state.Landed {
@@ -918,6 +943,9 @@ func stripTags(s string) string {
 // ---- bottom bar (powerline) ----
 
 func (m *model) modeName() (string, string) {
+	if m.tour != nil {
+		return "TUTORIAL", ""
+	}
 	if m.modal != nil {
 		if n, ic := m.modal.mode(); n != "" {
 			return n, ic
@@ -965,6 +993,9 @@ func (m *model) modeName() (string, string) {
 }
 
 func (m *model) hints() [][2]string {
+	if m.tour != nil {
+		return m.tourHints()
+	}
 	if m.modal != nil {
 		return m.modal.hints()
 	}
