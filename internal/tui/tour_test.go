@@ -433,3 +433,38 @@ func uniq(ss []string) []string {
 	}
 	return out
 }
+
+// from 80×24 up, every card fits whole: no text row dropped, inside the screen
+func TestTourCardsFit(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {90, 30}, {100, 26}, {120, 40}, {150, 45}} {
+		m := tourModel(t, "none", size[0], size[1])
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		bodyH := size[1] - 1
+		for step, st := range tourSteps {
+			m.tourGo(step)
+			tgt, ok := rect{}, false
+			if st.target != nil {
+				tgt, ok = st.target(m)
+			}
+			x, y, card := m.tourPlace(tgt, ok, bodyH)
+			cw := ansi.StringWidth(card[0])
+			body := st.body
+			if narrow(m.width) && st.narrow != "" {
+				body = st.narrow
+			}
+			text := m.tourText(strings.ReplaceAll(body, "^q", m.prefixLabel()), cw-4)
+			where := fmt.Sprintf("%dx%d %q", size[0], size[1], st.title)
+			if want := len(text) + 6; len(card) != want {
+				t.Errorf("%s: card has %d rows, the text needs %d", where, len(card), want)
+			}
+			if x < 0 || y < 0 || x+cw > size[0] || y+len(card) > bodyH {
+				t.Errorf("%s: card at %d,%d %dx%d leaves the screen", where, x, y, cw, len(card))
+			}
+			for _, l := range text {
+				if ansi.StringWidth(l) > cw-4 {
+					t.Errorf("%s: %q is wider than the card", where, ansi.Strip(l))
+				}
+			}
+		}
+	}
+}
