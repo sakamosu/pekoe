@@ -1,70 +1,118 @@
 <p align="center"><img src="docs/images/pekoe-logo.webp" alt="pekoe" width="320"></p>
 
+<p align="center">English | <a href="README.ja.md">日本語</a></p>
+
 # pekoe
 
 A cozy home for your coding agents. — with tapi, your little companion
 
-pekoe — 読みは「ペコー」(PEK-oh)。orange pekoe から。pekoe はエージェントたちの家で、最下行にいるマスコット tapi はそこにいる相棒。
+[![License: MIT](https://img.shields.io/github/license/sakamosu/pekoe)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/sakamosu/pekoe)](https://github.com/sakamosu/pekoe/releases/latest)
+[![govulncheck](https://github.com/sakamosu/pekoe/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/sakamosu/pekoe/actions/workflows/govulncheck.yml)
 
-Orca の開発体験(複数エージェントの並列運用・worktree 分離・ブラウザ連携・差分レビュー)を、Ghostty の中で完結させるターミナルツール。Claude Code の使い方は変えず、その周辺作業(切り替え・待ち・worktree・ブラウザ・レビュー・PR)だけを引き受ける。
+A terminal tool for running several coding agents in parallel, one per git worktree. pekoe takes care of the work around them: setting up worktrees, keeping track of which agent is waiting for you, reviewing their diffs, and getting them to a PR. It doesn't change how you use Claude Code: agents run as they are inside tmux, and pekoe learns their state from hooks.
 
-- 1 タスク = 1 worktree = 1 エージェント。`pekoe new` で worktree を切り、設定ファイルのコピー・setup・ポート割り当てまで済ませてから claude(や codex)を起動する
-- TUI でセッションを一覧し、待ち・許可待ち・レビュー待ちに順に飛ぶ。最下行のマスコット tapi が全体の状態を表す
-- 変更は hunk 単位でレビューして、コメントを 1 通にまとめてエージェントに返す(Neovim か組み込み)
-- Chrome 拡張で画面の要素を選んで指示と一緒に送る。dev server のスクショは TUI の中に出せる
-- iPhone から Tailscale 経由で許可待ちに答えたり一言送ったりできる(任意のビルド)
+- One task = one worktree = one agent. `pekoe new` creates the worktree, copies your config files, runs setup and assigns a port, then starts claude (or codex)
+- The TUI lists your sessions and jumps to the next one that is waiting, asking for permission or ready for review. tapi, the mascot on the bottom line, shows the overall state
+- Review changes hunk by hunk and send all your comments back to the agent as one message (in Neovim or the built-in review)
+- Pick an element on a page with the Chrome extension and send it with an instruction. Screenshots of your dev server can be shown inside the TUI
+- Answer permission prompts or send a quick message from an iPhone over Tailscale (optional build)
 
-## 構成
+<p align="center"><img src="docs/images/screenshot.png" alt="pekoe TUI: sessions, worktrees and changes on the left, the agent on the right" width="900"></p>
 
+> [!WARNING]
+> pekoe runs coding agents, and those agents execute commands and read and write files with your user's permissions. `pekoe hooks install` modifies `~/.claude/settings.json` (it keeps a backup; `pekoe hooks uninstall` removes only pekoe's hooks). If you let agents use pekoe itself, read [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions) first. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Status and requirements
+
+- **A personal tool.** It is built for the author's daily use; configuration, API and commands may still change (no compatibility promises)
+- **Developed and tested on macOS** (in Ghostty). Linux builds are published too, but parts of them are untested. Things that assume macOS:
+  - APFS clones (`cp -c`) for `[worktree] clone`. On other file systems it falls back to a plain copy
+  - `make install-launchd`, and `pekoe daemon restart` for a pekoed run by launchd (`launchctl`)
+  - The default path of headless Chrome for the in-TUI preview, `/Applications/Google Chrome.app` (override with `PEKOE_CHROME`)
+  - `b` in the TUI (open the port in Chrome) uses `open -a "Google Chrome"`
+  - `pekoe adopt` looks up a process's cwd with `lsof`
+- **Claude Code is the main target** (state comes from its hooks). codex, opencode and others work through `[agents.*]`, but their state is only inferred from the screen
+- **Requirements:** tmux 3.3+, git. To build from source, Go 1.26.10+ (`make` uses only your local Go, via `GOTOOLCHAIN=local`). Optional: gh (issues, land, PR view, PR review), Neovim 0.10+ (review surface), Chrome (extension, in-TUI preview), Tailscale (Web UI)
+- **The terminal layer is tmux.** A custom mux on libghostty-vt (phase 5 in [docs/design.md](docs/design.md)) has not been started and may never be. Kitty graphics passthrough can't work with the tmux engine, which redraws the right pane as text (the in-TUI preview images are drawn by pekoe itself with Kitty graphics)
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph clients["Clients (display and input only)"]
+    tui["TUI (pekoe)"]
+    cli["CLI"]
+    nvim["Neovim"]
+    mcp["MCP (pekoe mcp)"]
+    ext["Chrome extension"]
+    web["Web UI (iPhone etc.)"]
+  end
+  sock["unix socket<br/>JSON Lines"]
+  http["HTTP 127.0.0.1<br/>+ token"]
+  tsnet["HTTPS on tailnet<br/>tsnet, -tags web builds only"]
+  tui --> sock
+  cli --> sock
+  nvim --> sock
+  mcp --> sock
+  ext --> http
+  web --> tsnet
+  sock --> pekoed
+  http --> pekoed
+  tsnet --> pekoed
+  pekoed["pekoed (daemon)"] --> engine["engine"]
+  engine --> tmux["tmux -L pekoe windows<br/>agent / review / dev / run, +tapi"]
+  tmux --> agent["claude / codex / ..."]
+  agent -- "hooks" --> event["pekoe event"]
+  event -- "unix socket" --> pekoed
+  pekoed --> db[("state.db")]
+  pekoed --> git["git<br/>worktrees, refs/pekoe/*"]
+  pekoed --> gh["GitHub (gh)"]
+  pekoed --> chrome["headless Chrome<br/>(preview)"]
 ```
- TUI (pekoe) ─────┐
- CLI ─────────────┤ unix socket                        tmux -L pekoe
- Neovim ──────────┤ (JSON Lines)                 ┌── claude / codex / …
- MCP (pekoe mcp) ─┼──────────────── pekoed ──────┤   (worktree ごとの pty)
- Chrome 拡張 ─────┤ HTTP 127.0.0.1 + token       └──────────┬──────────
- Web UI (iPhone) ─┘ HTTPS on tailnet (tsnet)                │ hooks → `pekoe event`
-                                   │                        │
-                       state.db / refs/pekoe/*  ◀───────────┘
-```
 
-賢さはすべて pekoed にあり、TUI・CLI・Neovim・Chrome 拡張・MCP・Web UI は同じ API を叩く表示層。pekoed を止めてもエージェントは tmux の中で動き続け、次に起動したときに拾い直す。
+All the smarts live in pekoed; the TUI, CLI, Neovim, Chrome extension, MCP and Web UI are display layers over the same API. Stopping pekoed doesn't stop the agents: they keep running inside tmux, and the next pekoed picks them up again.
 
-## ドキュメント
+## Documentation
+
+Design docs are in Japanese.
 
 | | |
 | --- | --- |
-| [docs/design.md](docs/design.md) | 設計書(状態モデル・worktree フロー・ターミナル層・レビュー・CLI とキー) |
-| [docs/api.md](docs/api.md) | pekoed の API(unix socket・HTTP・HTTPS・MCP) |
-| [docs/web.md](docs/web.md) | iPhone 用 Web UI の構成・設定・脅威モデル |
-| [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
-| [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける窓口エージェント)の設計 |
-| [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
-| [docs/verification.md](docs/verification.md) | 設計書・デザイン原則・モックと実装の対応表 |
-| [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim プラグイン / Chrome 拡張 |
+| [docs/design.md](docs/design.md) | Design (state model, worktree flow, terminal layer, review, CLI and keys) |
+| [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
+| [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
+| [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
+| [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the front-desk agent you talk to with `t` in the TUI) |
+| [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
+| [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
 
-## インストール
+For developers: [CONTRIBUTING.md](CONTRIBUTING.md) (tests, sandbox, cutting a release) and [docs/verification.md](docs/verification.md) (how the implementation maps to the design, guidelines and mock).
 
-必要なもの: Go 1.26.10+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使うので、古ければ Go を上げる)、tmux 3.3+、git。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)。
+## Install
+
+See [Status and requirements](#status-and-requirements) for what you need. From source:
 
 ```sh
-make install            # ~/.local/bin/pekoe (+ pekoed), nvim/ と extension/ を ~/.local/share/pekoe に link
-make install WEB=1      # iPhone 用 Web UI も入れる(-tags web、Tailscale の tsnet をリンク)
-pekoe hooks install     # ~/.claude/settings.json に hooks を追加(バックアップを残す)
-make install-launchd    # 任意: ログイン時に pekoed を起動
+make install            # ~/.local/bin/pekoe (+ pekoed); links nvim/ and extension/ into ~/.local/share/pekoe
+make install WEB=1      # also build in the iPhone Web UI (-tags web, links Tailscale's tsnet)
+pekoe hooks install     # add hooks to ~/.claude/settings.json (asks first, keeps a backup)
+make install-launchd    # optional: start pekoed at login
 ```
 
-### リリースから(ビルド済みバイナリ)
+### From a release (prebuilt binaries)
 
-GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。リポジトリは公開しているので、トークンなしで `gh` でも curl でも落とせる(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す):
+GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. The repository is public, so you can download them with `gh` or curl without a token (for the Web UI build, add `_web` before `.tar.gz`):
 
 ```sh
-ver=0.2.0                                 # 入れるバージョン(Releases のページか gh release list -R sakamosu/pekoe で確認)
-gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt
-# gh がなければ curl で:
+ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest version (or ver=<version>)
+gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # use your <os>_<arch>
+# without gh, with curl:
+#   ver=$(curl -fsSL https://api.github.com/repos/sakamosu/pekoe/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
-gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # このリポジトリのワークフローがビルドしたか
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # built by this repository's workflow?
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -73,191 +121,190 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴は公開しているリポジトリで `release.yml` が作るリリースに付く。公開前(private だったころ)のリリースには付いていないので、その版では `gh attestation verify` が通らない。
+`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached to releases made by `release.yml` while the repository is public; releases from before it went public don't have it, so `gh attestation verify` fails for those versions.
 
-アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
+An archive contains `bin/pekoe`, `bin/pekoed` (→ pekoe), `share/pekoe/nvim/`, `share/pekoe/extension/`, `contrib/launchd/`, plus `README.md`, `README.ja.md`, `LICENSE` and `THIRD_PARTY_LICENSES` (licenses of the dependencies, see [License](#license)). `bin/pekoe` looks for `../share/pekoe/nvim` relative to its real location, so with the symlinks above the nvim plugin is found as is. To start it with launchd, run `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` and then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`.
 
-既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon restart` で pekoed を新しいバイナリに替える(エージェントは tmux の中で動き続ける。launchd で動かしているときは launchd から起動し直す)。
+The default build contains no Tailscale code at all. After reinstalling, run `pekoe daemon restart` to switch pekoed to the new binary (agents keep running inside tmux; if launchd runs pekoed, it is restarted through launchd).
 
-### 更新
+### Updating
 
 ```sh
-pekoe update --check    # 新しいリリースがあるか見るだけ(誰でも使える)
-pekoe update            # 最新のリリースに入れ替える
-pekoe update --version v0.2.0 --force   # 特定の版に(古くなるときは --force)
+pekoe update --check    # only check whether there is a newer release (anyone can run it)
+pekoe update            # replace pekoe with the latest release
+pekoe update --version vX.Y.Z --force   # a specific version (--force to go back)
 ```
 
-`pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
+`pekoe update` takes the latest GitHub release (`releases/latest`, excluding drafts and prereleases) and picks the archive for the current OS, architecture and build (the `_web` archive if the current pekoe has the Web UI).
 
-- 今の版が最新以上なら何もしない。`make install` の版(`git describe` の `0.1.0-59-g3761d74`)は「0.1.0 より 59 コミット先」として比べる。`dev` など比べられない版のときは確認する
-- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめる(来歴のない、公開前の古いリリースでは警告だけ出す)
-- 入れ替えるのは、今動いている pekoe の実体(シンボリックリンクをたどった先)、隣の `pekoed`、`<prefix>/share/pekoe/nvim` と `extension` だけ。`~/.local/share/pekoe` の他のもの(`state.db` など)には触らない。バイナリは隣に書いてから rename し、途中で失敗したら入れ替えた分を戻す
-- `make install` で入れたときの `nvim` / `extension` はリポジトリへのリンクなので、リンクをリリースの中身のディレクトリに置き換える(リポジトリには書き込まない。確認を出す。`make install` し直せばリンクに戻る)
-- Web UI 入りの pekoe で、リリースに `_web` のアーカイブがないときは断る(`--no-web` で既定のビルドを入れるか、`make install WEB=1` でソースから入れる)
-- 書き込めない場所や Homebrew などのパッケージマネージャーが入れたものは断る
-- 終わると新旧の版を出し、pekoed が動いていれば `pekoe daemon restart` するか聞く。Chrome 拡張を入れ替えたら `chrome://extensions` で再読み込みする
-- トークンは要らない。`$GITHUB_TOKEN` / `$GH_TOKEN`、なければ `gh auth token` があれば付けて呼び、GitHub API のレート制限が緩くなる(トークンなしは 1 時間に 60 回まで。超えたらしばらく待つか `gh auth login` する)
-- 入れ替えは人間だけの操作。エージェントのセッションの中(`$PEKOE_SESSION` がある)や `human-token` を読めないところからは `only a person can do this` で断る。`--check` は誰でも使える
+- Nothing happens if the current version is the latest or newer. A `make install` version (`git describe`, e.g. `0.1.0-59-g3761d74`) counts as "59 commits after 0.1.0". Versions that can't be compared, such as `dev`, ask first
+- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. If the release has provenance (an attestation), it is also checked with `gh attestation verify` (for old releases from before the repository went public, which have none, it only warns)
+- Only the real file of the running pekoe (after following symlinks), the `pekoed` next to it, and `<prefix>/share/pekoe/nvim` and `extension` are replaced. Nothing else in `~/.local/share/pekoe` (such as `state.db`) is touched. Binaries are written next to the old ones and renamed; if something fails halfway, what was replaced is restored
+- With a `make install`, `nvim` / `extension` are links into the repository, so they are replaced by directories with the release's contents (the repository isn't written to; it asks first; `make install` again brings the links back)
+- If the current pekoe has the Web UI and the release has no `_web` archive, it refuses (install the default build with `--no-web`, or build from source with `make install WEB=1`)
+- It refuses locations it can't write to and installs made by a package manager such as Homebrew
+- At the end it prints the old and new versions and, if pekoed is running, asks whether to `pekoe daemon restart`. If the Chrome extension was replaced, reload it in `chrome://extensions`
+- No token is needed. If `$GITHUB_TOKEN` / `$GH_TOKEN`, or else `gh auth token`, is available it is sent, which raises the GitHub API rate limit (without a token, 60 requests per hour; if you hit it, wait a while or `gh auth login`)
+- Replacing is for humans only. Inside an agent's session (`$PEKOE_SESSION` is set) or where `human-token` can't be read, it refuses with `only a person can do this`. `--check` works for anyone
 
-hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけ。プロジェクト側の `.claude/` は触らない。`pekoe hooks status` で確認、`pekoe hooks uninstall` で pekoe の分だけ外す。
+The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`. The project's own `.claude/` is never touched. Check with `pekoe hooks status`; remove only pekoe's hooks with `pekoe hooks uninstall`.
 
-## クイックスタート
+## Quick start
 
 ```sh
 cd ~/src/app
-pekoe init                                            # ~/.config/pekoe/repos/<repo-id>.toml を下書き
-pekoe new feat/csv --prompt "CSV エクスポートを追加"   # worktree → copy → setup → port → claude 起動
-pekoe new feat/invoice --from gh#128                  # issue 本文を初期プロンプトに
+pekoe init                                            # draft ~/.config/pekoe/repos/<repo-id>.toml
+pekoe new feat/csv --prompt "Add CSV export"          # worktree → copy → setup → port → start claude
+pekoe new feat/invoice --from gh#128                  # the issue body becomes the first prompt
 pekoe                                                 # TUI
 ```
 
-`pekoe init` は lockfile・`.envrc`・git の無視ファイルから setup や copy を推測し、コピーする無視ファイルを番号で選ばせてから書く。手で始めたエージェントは `pekoe adopt` で、既存の worktree は `pekoe open` で取り込める。
+`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files, lets you pick by number which ignored files to copy, and then writes the file. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
 
-## コマンド
+## Commands
 
-| コマンド | すること |
+| Command | What it does |
 | --- | --- |
-| `pekoe` | TUI(デーモンがなければ起動) |
-| `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | リポジトリの設定を検出して下書き。`--print` は書かずに出すだけ |
-| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]` | worktree + セッション作成。setup の進み具合を出し、エージェントが起動したら戻る |
-| `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | 既存 worktree で起動。過去の Claude Code セッションを resume するか選ぶ(`--resume` で resume、`--new` で新規) |
-| `pekoe adopt [<path>] [--yes]` | pekoe の外で動いているエージェントを止め、同じセッションを pekoe の中で resume する |
-| `pekoe ls [--all\|--repo R]` | セッション一覧と状態。リポジトリの中ではそのリポジトリだけ、外では全部 |
-| `pekoe issues [--repo R] [--all\|--label L] [--refresh]` | GitHub の open issue(既定は自分担当)。セッションがあれば状態とブランチを添える |
-| `pekoe issues <N> [--repo R]` | issue の本文とコメント |
-| `pekoe conflicts [--repo R]` | 衝突予報。同じファイルを触っているセッションのペアと、衝突するか(`git merge-tree`) |
-| `pekoe send <slug> <text> [--no-enter]` | pty に文字を送る(既定で Enter を足す。`-` で stdin) |
-| `pekoe review [<slug> \| gh#N [--repo R]]` | レビュー面。引数なしなら次のレビュー待ち。`gh#N` で人の PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`。マージ検出後に teardown と worktree 削除 |
-| `pekoe rm <slug> [--force] [--yes]` | teardown → worktree 削除(`~/worktrees` 配下のみ。外のものはセッションを忘れるだけ) |
-| `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止 |
-| `pekoe undo <slug> [n]` | 最後(か n 番目)のプロンプトの変更を取り消す |
-| `pekoe answer <slug> allow\|deny\|always` | 許可待ちに答える |
-| `pekoe attach <slug> [agent\|review\|dev]` | tmux の窓に直接 attach(デバッグ用) |
-| `pekoe hooks install\|uninstall\|status [--yes]` | Claude Code の hooks を足す / 外す / 確認 |
-| `pekoe ext` | Chrome 拡張に入れる port と token |
-| `pekoe web` | Web UI の状態・URL・初回のログイン URL |
-| `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
-| `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける |
-| `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
-| `pekoe tapi [reset [--yes]]` | tapi chat の状態 / 終了して会話を忘れる(TUI の `T` と同じ) |
-| `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
-| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
-| `pekoe migrate [--dry-run] [--prune-old]` | boba からの移行(設定・状態・refs・hooks を一度に書き換える。[boba からの移行](#boba-からの移行)) |
-| `pekoe version` | バージョン |
+| `pekoe` | TUI (starts the daemon if needed) |
+| `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | Detect the repository's settings and write a draft. `--print` only prints it |
+| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]` | Create a worktree + session. Shows setup progress and returns once the agent has started |
+| `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start in an existing worktree. Choose whether to resume a past Claude Code session (`--resume` to resume, `--new` for a new one) |
+| `pekoe adopt [<path>] [--yes]` | Stop an agent running outside pekoe and resume the same session inside pekoe |
+| `pekoe ls [--all\|--repo R]` | Sessions and their state. Inside a repository only that repository's, outside all of them |
+| `pekoe issues [--repo R] [--all\|--label L] [--refresh]` | Open GitHub issues (assigned to you by default), with the state and branch of their session if there is one |
+| `pekoe issues <N> [--repo R]` | An issue's body and comments |
+| `pekoe conflicts [--repo R]` | Conflict forecast: pairs of sessions touching the same files, and whether they conflict (`git merge-tree`) |
+| `pekoe send <slug> <text> [--no-enter]` | Type text into the pty (adds Enter by default; `-` reads stdin) |
+| `pekoe review [<slug> \| gh#N [--repo R]]` | Review surface. Without arguments, the next session waiting for review. `gh#N` for someone else's PR |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected, teardown and remove the worktree |
+| `pekoe rm <slug> [--force] [--yes]` | teardown → remove the worktree (only under `~/worktrees`; for others pekoe only forgets the session) |
+| `pekoe dev <slug>` | Start / stop `dev` on the session's port |
+| `pekoe undo <slug> [n]` | Undo the changes of the last (or n-th) prompt |
+| `pekoe answer <slug> allow\|deny\|always` | Answer a permission prompt |
+| `pekoe attach <slug> [agent\|review\|dev]` | Attach to the tmux window directly (for debugging) |
+| `pekoe hooks install\|uninstall\|status [--yes]` | Add / remove / check the Claude Code hooks |
+| `pekoe ext` | The port and token for the Chrome extension |
+| `pekoe web` | Web UI status, URL and first-time login URL |
+| `pekoe mcp` | MCP server (stdio) for agents |
+| `pekoe daemon start\|stop\|restart\|status` | Daemon control. `stop` waits until the process exits. `restart` waits for it to stop, starts it again and prints the versions before and after (use it after `make install`; if it isn't running, it just starts). Agents keep running inside tmux |
+| `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server (`$PEKOE_TMUX_SOCKET`). **On the default socket `pekoe` this stops every agent.** For cleaning up sandboxes |
+| `pekoe tapi [reset [--yes]]` | tapi chat's state / stop it and forget the conversation (same as `T` in the TUI) |
+| `pekoe tip [<id>] [--list] [--doc PATH]` | Introduce one pekoe feature (a tip not shown yet, see [Tips](#tips)). `<id>` for that tip, `--list` for all, `--doc` prints the doc a tip points to (bundled in the binary) |
+| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | Replace pekoe with the latest GitHub release ([Updating](#updating)). `--check` only looks for a newer version. Humans only |
+| `pekoe version` | Version |
 
-- `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
-- `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
-- `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- `answer`・`dev`・`init` の書き込み・`daemon stop` / `daemon restart`・`update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- `R` can be a repo-id, a short name (the name in `~/worktrees/<name>`) or a path. Commands that take a slug also accept `<repo>/<slug>`
+- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
+- `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
+- `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
+- `answer`, `dev`, writing with `init`, `daemon stop` / `daemon restart` and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
 
 ## TUI
 
-左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser ⇄ Issues、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの。preview・dev・run・PR の窓に切り替わる)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。複数リポジトリのセッションはリポジトリごとの見出しでまとめる。
+Numbered panels on the left ([1] Sessions, [2] Worktrees ⇄ Browser ⇄ Issues, [3] Changes ⇄ Picks), [4] Agent on the right (the agent's screen itself; it switches to the preview, dev, run and PR windows), and a powerline status with key hints on the bottom line. Below 100 columns the left column becomes a single tab. Sessions from several repositories are grouped under a heading per repository.
 
-セッションの状態はアイコンと色で出す(配色は [docs/ui-guidelines.md](docs/ui-guidelines.md) のトークン)。最下行左端のマスコット tapi は全セッションの最優先の状態を顔で表し、隣の 1 行で誰が何をしているかを言う:
+Session state is shown with icons and colors (tokens in [docs/ui-guidelines.md](docs/ui-guidelines.md)). The mascot tapi at the left of the bottom line shows the most urgent state of all sessions with its face, and the line next to it says who is doing what:
 
-| 顔 | 状態 | 意味 |
+| Face | State | Meaning |
 | --- | --- | --- |
-| `⨯ ⨯` | error | エージェントの異常終了・コマンド失敗 |
-| `◕ ◕` | wait | 入力・許可を待っている |
-| `● ●` | work | 出力中・コマンド実行中 |
-| `^ ^` | done | ターンが終わり、まだ見ていない |
-| `• •` | idle | プロンプトで待機 |
-| `- -` | sleep | 全セッションが 3 分以上 idle |
+| `⨯ ⨯` | error | The agent exited abnormally or a command failed |
+| `◕ ◕` | wait | Waiting for input or permission |
+| `● ●` | work | Producing output or running a command |
+| `^ ^` | done | The turn ended and you haven't looked yet |
+| `• •` | idle | Idle at the prompt |
+| `- -` | sleep | Every session has been idle for 3 minutes or more |
 
-見ていないセッションが wait / error になるとトーストが出る。PR のマージ・CI の失敗・レビューにも一度だけ反応する(詳細は [docs/mascot.md](docs/mascot.md))。
+A toast appears when a session you aren't looking at goes to wait / error. tapi also reacts once to a PR being merged, CI failing and reviews (details in [docs/mascot.md](docs/mascot.md)).
 
-| キー | 動作 |
+| Key | Action |
 | --- | --- |
-| `j` `k` / `↵` | セッション選択 / 右ペインに入って入力(`^q` 以外のキーはすべてエージェントへ) |
-| `^q` | 入力から抜けて Sessions に戻る(`[keys] prefix` で変更可)。左のパネルをクリックしても抜けられる |
-| `i` / `h` `Esc` | Agent パネルで入力を始める / 左に戻る |
-| `^q` `z` | 右ペイン(4)を全幅にして左ペインを隠す / もう一度で戻す。入力中に押せば入力に戻る |
-| `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に残り、再起動後の TUI と CLI から起動するエージェントの幅も同じになる。100 列未満(縦並び)では効かない |
-| `n` | 新しい worktree + セッション |
-| `t` / `T` | tapi chat を開いて話しかける([tapi chat](#tapi-chat))/ tapi chat をリセット(確認あり) |
-| `w` | リポジトリを選ぶ |
-| `]a` `[a` | 次の待ちセッション(PR に動きがあったものも)/ 元の場所に戻る |
-| `]r` | 次のレビュー待ち |
-| `r` | レビュー面(右ペインが nvim に入れ替わる。エージェントは裏で動き続ける) |
-| `p` | PR ビュー(checks・レビュー・スレッド。`space` で選んで `s` でエージェントに送る) |
-| `v` | preview 窓(dev server のスクショを TUI 内に表示。`m` モバイル幅・`c` before/after)→ dev 窓 → agent |
-| `b` `l` `d` | ポートを Chrome で開く / land(衝突予報つきの確認)/ dev server |
-| `!` | その worktree でコマンドを 1 回実行(run 窓)。エージェントの画面の `! <cmd>` やコードを初期値に入れる。確認やパスワードにもそのまま答えられ、終わったら `↵` で agent に戻り、`y` で結果(終了コード、Ctrl-C なら中断)をエージェントに伝える。`x` は聞かずに閉じる |
-| `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
-| `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
-| `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `ext` `q`) |
-| `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
-| `1`–`4` `Tab` `[` `]` | パネル移動 / サブタブ切替 |
-| `q` | 終了 |
+| `j` `k` / `↵` | Select a session / enter the right pane and type (every key except `^q` goes to the agent) |
+| `^q` | Leave input and go back to Sessions (change with `[keys] prefix`). Clicking a panel on the left also leaves |
+| `i` / `h` `Esc` | Start typing in the Agent panel / go back left |
+| `^q` `z` | Make the right pane (4) full width and hide the left / again to restore. Pressed while typing, you return to typing |
+| `^q` `<` `>` / `^q` `=` | Narrow / widen the left pane by 4 columns / reset to the default (40%). Width and zoom are kept in `~/.local/share/pekoe/layout.json`, so the TUI after a restart and agents started from the CLI get the same width. Has no effect below 100 columns (stacked layout) |
+| `n` | New worktree + session |
+| `t` / `T` | Open tapi chat and talk to it ([tapi chat](#tapi-chat)) / reset tapi chat (asks first) |
+| `w` | Choose a repository |
+| `]a` `[a` | Next waiting session (including PRs with activity) / back to where you were |
+| `]r` | Next session waiting for review |
+| `r` | Review surface (the right pane becomes nvim; the agent keeps running behind it) |
+| `p` | PR view (checks, reviews, threads; select with `space`, send to the agent with `s`) |
+| `v` | Preview window (screenshots of the dev server inside the TUI; `m` mobile width, `c` before/after) → dev window → agent |
+| `b` `l` `d` | Open the port in Chrome / land (confirmation with conflict forecast) / dev server |
+| `!` | Run a command once in that worktree (run window). A `! <cmd>` or code on the agent's screen becomes the initial value. You can answer prompts and passwords directly; when it ends, `↵` goes back to the agent and `y` tells the agent the result (exit code, or interrupted on Ctrl-C). `x` closes without asking |
+| `u` `R` | Undo the last prompt / restart the agent (resume) |
+| `s` `i` `↵` | Send / ignore / show details of an error card (errors pekoed found in the dev server or browser). While a card is shown, typing is `a` |
+| `x` `D` | End the session (keep the worktree) / delete the worktree (asks first) |
+| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `review` `ext` `q`) |
+| `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |
+| `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs |
+| `q` | Quit |
 
-- 許可待ちになったセッションを選ぶと Permission モーダルが出る(`y` 許可・`n` 拒否・`A` 常に許可・`g` そのセッションへ・`esc` 後で)
-- [2] Issues では `f` で自分担当 → 全 open → ラベル指定を切り替え、`n` で issue からセッションを作る
-- [2] Browser は Chrome で開いている localhost のタブをポートでセッションに結びつける。`E` でコンソールのエラーを送る
-- Chrome から要素が届くと Agent ペインにカードが出る(`↵` 送信・`^s` 別セッション・`^n` 新セッション・`esc` 破棄)。指示つきのピックは、ページのポートを持つセッションにそのまま送る(`[picks] auto_send`)
-- 同じファイルを触っているセッションには一覧に `⚠N` が付く
-- エージェントへのパススルーは OSC 52(クリップボード)・OSC 8(リンク)・OSC 9/99/777(通知)・マウス(SGR)・Kitty keyboard protocol(Shift+Enter などが届く。`PEKOE_KITTY=0` で無効)
+- Selecting a session waiting for permission opens the Permission modal (`y` allow, `n` deny, `A` always allow, `g` go to that session, `esc` later)
+- In [2] Issues, `f` cycles assigned to me → all open → by label, and `n` creates a session from the issue
+- [2] Browser ties localhost tabs open in Chrome to sessions by port. `E` sends the console errors
+- When an element arrives from Chrome, a card appears in the Agent pane (`↵` send, `^s` another session, `^n` new session, `esc` discard). A pick with an instruction is sent right away to the session that owns the page's port (`[picks] auto_send`)
+- Sessions touching the same files get `⚠N` in the list
+- Passed through to the agent: OSC 52 (clipboard), OSC 8 (links), OSC 9/99/777 (notifications), mouse (SGR), Kitty keyboard protocol (so Shift+Enter and friends arrive; disable with `PEKOE_KITTY=0`)
 
-すべてのキーは [docs/design.md](docs/design.md#cli-コマンドとキーバインド) にある。
+All keys are listed in [docs/design.md](docs/design.md#cli-コマンドとキーバインド).
 
 ### tapi chat
 
-どのパネルからでも `t` を押すと、[4] がマスコット tapi との会話(tapi chat)に切り替わり、そのまま入力できる。特定のセッションに属さない窓口のエージェントで、単発の調査や質問、リポジトリ横断の調査(「抱えているリポジトリの dependabot アラートは?」)、作業の振り分け(`pekoe new --repo R` でセッションを作って任せる、`pekoe send` で指示を足す)に使う。main セッションが作業中でも気軽に話せる。
+Press `t` in any panel and [4] switches to a conversation with the mascot tapi (tapi chat), ready for typing. It is a front-desk agent that doesn't belong to any session: use it for one-off investigations and questions, research across repositories ("any dependabot alerts in my repositories?"), and handing out work (create a session with `pekoe new --repo R` and delegate, add instructions with `pekoe send`). You can talk to it while the main session is busy.
 
-- `^q`(prefix)で閉じる。会話は残り、もう一度 `t` で続きから。`Esc` はエージェントに届く(Claude Code の中断)。`^q` `z` / `^q` `<` `>` `=` はエージェントのときと同じく効き、そのまま tapi chat の入力に戻る(ズーム中に開けば全幅で、pty の大きさもペインに合わせる)
-- 初めて開いたときにエージェントが起動する(pekoed の起動時には起動しない)。稼働ディレクトリは `~/.local/share/pekoe/tapi/` で、pekoed が役割と使うコマンドを書いた `CLAUDE.md` を置く。初回は Claude Code のフォルダ信頼の確認が出る
-- Claude Code なら pekoe が知っているリポジトリと `~/worktrees` を `--add-dir` で渡すので、横断で読むたびに許可を求められない(リポジトリの増減は次の起動から)
-- tapi の顔はタイトルに出て、考え中・許可待ちで表情が変わる。閉じている間に許可待ち・質問待ちになると、最下行の声が `chat waits · t` になる
-- `T`(または `pekoe tapi reset`)で終了し、Claude Code の会話の記録も消す。pekoe 側には何も保存しない。Web UI には出ない
-- エージェントは `[tapi] agent` で変えられる([設定](#設定))
+- `^q` (the prefix) closes it. The conversation stays; `t` again continues it. `Esc` goes to the agent (Claude Code's interrupt). `^q` `z` / `^q` `<` `>` `=` work as they do for agents and return you to typing in tapi chat (opened while zoomed it is full width, and the pty is sized to the pane)
+- The agent starts the first time you open it (not when pekoed starts). It runs in `~/.local/share/pekoe/tapi/`, where pekoed puts a `CLAUDE.md` describing its role and the commands it uses. The first time, Claude Code asks you to trust the folder
+- With Claude Code, the repositories pekoe knows and `~/worktrees` are passed with `--add-dir`, so reading across them doesn't ask for permission each time (added or removed repositories apply from the next start)
+- tapi's face is in the title and changes while it thinks or waits for permission. If it starts waiting for permission or an answer while closed, the bottom line says `chat waits · t`
+- `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. pekoe itself saves nothing. It doesn't appear in the Web UI
+- Change the agent with `[tapi] agent` ([Configuration](#configuration))
 
-### TIPS
+### Tips
 
-pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出るのは 2 か所:
+pekoe introduces its features one at a time ("this is handy when…"). They appear in two places:
 
-- [4] の空き表示(セッションを選んでいないとき、worktree の作成中)。tapi の顔とキャプションの下に `tip` の見出しと 1 行の説明、詳しい説明を出す。`.` で次の tip。高さや幅が足りなければ詳しい説明から省き、それでも入らなければ出さない
-- tapi chat の最初の返事のあいさつ。「なんか tip ちょうだい」と頼めば次の 1 つ、「もっと詳しく」と聞けば tip が指す docs を読んで説明する(tapi は `pekoe tip` と `pekoe tip --doc` を使う)
+- 4's empty view (no session selected, or a worktree being created). Under tapi's face and caption, it shows a `tip` heading, a one-line summary and a longer explanation. `.` shows the next tip. If there isn't enough height or width, the longer explanation goes first, and if it still doesn't fit nothing is shown
+- tapi chat's greeting in its first reply. Ask "give me a tip" for the next one, or "tell me more" and tapi reads the doc the tip points to and explains (tapi uses `pekoe tip` and `pekoe tip --doc`)
 
-見せた tip は `~/.local/share/pekoe/tips.json` に記録し、全部を一巡するまで同じものは出さない(TUI と tapi chat で共通)。`[tips] enable = false` で両方とも止まる。一覧は `pekoe tip --list`、中身は `internal/tips/tips.toml`。TIPS の文面だけは日本語(ほかの表示は英語)。
+Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts are in Japanese (everything else in the UI is in English).
 
-## レビュー
+## Review
 
-- `done` になったセッションはレビュー待ちに入り、Stop hook で `test` が自動で走る
-- 承認は hunk 単位(パス + 変更内容のハッシュで識別するので行番号がずれても残る)
-- `S`(nvim では `:PekoeSend`)で未送信コメントを 1 通にまとめて送り、レビュー地点 `refs/pekoe/<slug>/review-<n>` を記録。次のレビューはそこからの差分だけ
-- 各 hunk には「どのプロンプトから生まれたか」(`← prompt #3: …`)が付く
-- `?` で hunk の意図をエージェントに聞くと、返事が Stop hook で切り出されて表示される
-- `pekoe review gh#123` で人の PR も同じ画面で。コメントは `gh api` で GitHub review に送られる
-- `[review] gatekeeper` に読み取り専用エージェントのコマンドを書くと、危ない箇所の一覧が Comments パネルと nvim の `:PekoeRisks`(quickfix)に出る
+- A session that becomes `done` enters the review queue, and the Stop hook runs `test` automatically
+- Approval is per hunk (identified by path + a hash of the change, so it survives shifted line numbers)
+- `S` (`:PekoeSend` in nvim) sends all unsent comments as one message and records a review point `refs/pekoe/<slug>/review-<n>`. The next review shows only the diff from there
+- Each hunk shows which prompt it came from (`← prompt #3: …`)
+- `?` asks the agent about a hunk's intent; the answer is cut out by the Stop hook and shown
+- `pekoe review gh#123` reviews someone else's PR in the same view. Comments go to a GitHub review through `gh api`
+- Put a read-only agent command in `[review] gatekeeper`, and a list of risky spots shows up in the Comments panel and in nvim's `:PekoeRisks` (quickfix)
 
-## 連携
+## Integrations
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md)。`{ dir = "~/repos/pekoe/nvim" }` を lazy.nvim に足す(pekoe が起動する nvim には自動で読み込まれる)。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
+[nvim/README.md](nvim/README.md). Add `{ dir = "~/.local/share/pekoe/nvim" }` to lazy.nvim (the link `make install` creates; if you installed a release with the steps above, use `~/.local/opt/pekoe/share/pekoe/nvim`). The nvim that pekoe starts loads it automatically. Besides the review surface (`:PekoeReview` `:PekoeSend`): `<leader>bs` sends the selection, `<leader>bn` starts a new session from the selection, a floating window for permission prompts, and `:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`.
 
-### Chrome 拡張
+### Chrome extension
 
-[extension/README.md](extension/README.md)。`chrome://extensions` → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → `pekoe ext` の port と token をオプションに入れる。⌘⇧E で要素を選び、指示と切り抜きスクショを送る。localhost のページのエラーと開いているタブも pekoed に届く。
+[extension/README.md](extension/README.md). `chrome://extensions` → Developer mode → Load unpacked → enter the port and token from `pekoe ext` in the options. Pick an element with ⌘⇧E (Ctrl+Shift+E elsewhere) and send it with an instruction and a cropped screenshot. Errors from localhost pages and the open tabs also reach pekoed.
 
 ### MCP
 
-`claude mcp add pekoe -- pekoe mcp` で登録する。ツールは `open_in_editor(path, line, note?)`(nvim がその行に飛びメモを出す)と `session_list()`。
+Register with `claude mcp add pekoe -- pekoe mcp`. The tools are `open_in_editor(path, line, note?)` (nvim jumps to the line and shows the note) and `session_list()`.
 
-### Claude Code スキル
+### Claude Code skill
 
-[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。main のチェックアウトで動く Claude Code をハブにして、変更依頼を `pekoe new` で別 worktree・別エージェントに任せ、追加の指示も main から `pekoe send` で送るためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
+[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md). A skill that makes the Claude Code running in your main checkout a hub: it hands change requests to another worktree and agent with `pekoe new`, and sends follow-up instructions from main with `pekoe send`. Install it from the repository root with `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` (move or delete `~/.claude/skills/pekoe` first if it exists).
 
-### エージェントに pekoe を使わせるときの権限
+### Letting agents use pekoe: permissions
 
-エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed は「人間がその場で判断・実行する操作」(許可待ちへの回答、生キー、tapi chat への入力、設定の書き込み、`dev` や run 窓でのコマンド実行、デーモンの停止)を、`human-token` を付けた呼び出しにだけ許す。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。対象のメソッドは [docs/api.md](docs/api.md) の「人間だけの操作」。
+Agents run as the same user, so they can connect to pekoed's socket. pekoed allows "operations a human decides and performs on the spot" (answering permission prompts, raw keys, typing into tapi chat, writing settings, running commands with `dev` or in the run window, stopping the daemon) only for calls that carry the `human-token`. The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. The methods are listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
 
-ただし同じユーザーのエージェントはファイルを読めてしまう。次の 2 つを合わせて使う。
+But an agent running as the same user can read files. Use these two together:
 
-1. **token のファイルをエージェントから読めなくする。** Claude Code なら `~/.claude/settings.json` で sandbox を有効にし、`sandbox.filesystem.denyRead`(Bash のコマンドとその子プロセスに OS レベルで効く)と `permissions.deny` の `Read(...)`(Read ツールに効く)の両方に入れる。`$PEKOE_HOME` や `$XDG_DATA_HOME` を変えているならそのパスにする
+1. **Make the token file unreadable to agents.** For Claude Code, enable the sandbox in `~/.claude/settings.json` and add the file to both `sandbox.filesystem.denyRead` (enforced at the OS level for Bash commands and their children) and a `Read(...)` rule in `permissions.deny` (for the Read tool). If you changed `$PEKOE_HOME` or `$XDG_DATA_HOME`, use that path
 
    ```json
    {
@@ -273,9 +320,9 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
    }
    ```
 
-   設定したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。キーの名前や挙動は Claude Code の版で変わりうるので、[sandbox](https://code.claude.com/docs/en/sandboxing) と [permissions](https://code.claude.com/docs/en/permissions) のドキュメントも見る。sandbox の中から pekoe がソケットにつながらないときは、sandbox の unix ソケットの設定を見直す
+   Then have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first can't read the file and the second is refused with `only a person can do this` (not `no such session`). Key names and behavior can change between Claude Code versions, so also see the [sandbox](https://code.claude.com/docs/en/sandboxing) and [permissions](https://code.claude.com/docs/en/permissions) docs. If pekoe can't reach the socket from inside the sandbox, review the sandbox's unix socket settings
 
-2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`land`、`daemon` は入れない
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the skill) uses `ls`, `new` and `send`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm`, `land` or `daemon`
 
    ```json
    {
@@ -285,29 +332,29 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
    }
    ```
 
-Web UI と Chrome 拡張はソケットを通らない人間の入口なので、それぞれの認証だけで使える。脅威モデルは [docs/web.md](docs/web.md#脅威モデル)。
+The Web UI and the Chrome extension are human entry points that don't go through the socket, so each works with its own authentication. Threat model: [docs/web.md](docs/web.md#脅威モデル).
 
-### iPhone から(Web UI)
+### From an iPhone (Web UI)
 
-`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
+Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens over HTTPS as a node of its own on your tailnet (`https://pekoe.<tailnet>.ts.net/`). All it can do is list sessions, allow / deny permission prompts (with confirmation; `always` isn't offered), `send`, and show the agent's screen (in color). No port is opened on localhost, and every connection is checked against `allow_users` with Tailscale's WhoIs.
 
-1. tailnet で MagicDNS と HTTPS を有効にし、`[web]` を書いて pekoed を再起動
-2. `pekoe web` に出るログイン URL を開いて tailnet に参加(`TS_AUTHKEY` でもよい)
-3. `pekoe web` の URL を iPhone の Safari で開き、ホーム画面に追加
+1. Enable MagicDNS and HTTPS on your tailnet, write `[web]`, and restart pekoed
+2. Open the login URL shown by `pekoe web` to join the tailnet (or use `TS_AUTHKEY`)
+3. Open the URL from `pekoe web` in Safari on the iPhone and add it to the home screen
 
-証明書のホスト名は Certificate Transparency ログに載る。設計・脅威モデルは [docs/web.md](docs/web.md)。
+The certificate's hostname appears in Certificate Transparency logs. Design and threat model: [docs/web.md](docs/web.md).
 
-## 設定
+## Configuration
 
-`~/.config/pekoe/repos/<repo-id>.toml`(repo-id は origin URL の正規化。clone し直しても同じ設定が当たる。`pekoe init` で下書きできる):
+`~/.config/pekoe/repos/<repo-id>.toml` (the repo-id is the normalized origin URL, so the same settings apply after a fresh clone; `pekoe init` can draft it):
 
 ```toml
-agent = "claude"                  # 既定のエージェント
+agent = "claude"                  # default agent
 
 [worktree]
 copy  = [".env*", ".envrc"]
-clone = ["node_modules"]          # APFS クローン(cp -c)
-base  = "main"                    # 既定: origin の HEAD か main
+clone = ["node_modules"]          # APFS clone (cp -c)
+base  = "main"                    # default: origin's HEAD or main
 
 [hooks]
 setup    = ["mise install", "pnpm install --offline", "createdb app_{{slug}}"]
@@ -320,126 +367,84 @@ PORT = "{{port}}"
 DATABASE_URL = "postgres:///app_{{slug}}"
 
 [review]
-gatekeeper = "claude -p '危ない箇所を path:line: text で挙げて'"   # diff を stdin で受ける
+gatekeeper = "claude -p 'list risky spots as path:line: text'"   # gets the diff on stdin
 ```
 
-変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`。setup は順に実行し、失敗したら止めて左ペインに赤で出す。`[hooks]` のコマンドに埋めるとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は単引用符で囲んで 1 語として渡す(`feat/x` のような普通の値はそのまま)。`[env]` の値には引用符を付けない。
+Variables are `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`. setup runs in order and stops at the first failure, shown in red in the left pane. When a value is put into a `[hooks]` command, values containing characters the shell treats specially (spaces, `$`, `` ` ``, `;` and so on) are single-quoted and passed as one word (ordinary values like `feat/x` are left as they are). Values in `[env]` are never quoted.
 
-`~/.config/pekoe/config.toml`(全体):
+`~/.config/pekoe/config.toml` (global):
 
 ```toml
-animate = true              # 状態アイコンのアニメーション
+animate = true              # animate state icons
 [http]
-port = 47777                # Chrome 拡張用(127.0.0.1)
+port = 47777                # for the Chrome extension (127.0.0.1)
 [ports]
-base = 3001                 # ポート台帳の開始番号
+base = 3001                 # first port of the port ledger
 [keys]
-prefix = "ctrl+q"           # 入力から抜けるキー
+prefix = "ctrl+q"           # key to leave input
 [review]
 surface = "nvim"            # nvim | tui
 [picks]
-auto_send = true            # 指示つきのピックを、ページのポートを持つセッションへすぐ送る
-[web]                       # Web UI(make install WEB=1 のビルドのみ、docs/web.md)
+auto_send = true            # send picks with an instruction right away to the session that owns the page's port
+[web]                       # Web UI (make install WEB=1 builds only, docs/web.md)
 enable        = true
-allow_users   = ["you@github"]      # Tailscale のログイン名
-allow_devices = ["iphone-15"]       # 任意。この端末だけに絞る
-hostname      = "pekoe"             # tailnet のマシン名
+allow_users   = ["you@github"]      # Tailscale login names
+allow_devices = ["iphone-15"]       # optional: only these devices
+hostname      = "pekoe"             # machine name on the tailnet
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
-[theme.colors]              # 役割単位で上書き(docs/ui-guidelines.md のトークン)
+[theme.colors]              # override by role (tokens in docs/ui-guidelines.md)
 primary = "#ff87da"
-[mascot]                    # マスコット tapi(docs/mascot.md)
-shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
-glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
-palette = "dark"            # dark(D ミルキー＋影) | light(E キャラメル)
-splash  = true              # 起動時のスプラッシュ
-[mascot.colors]             # hi / bd / sh / eye を上書き
+[mascot]                    # the mascot tapi (docs/mascot.md)
+shape   = "auto"            # auto | round (sextant blocks) | block (quadrant blocks)
+glyphs  = "auto"            # auto (measures the width of ●) | unicode | narrow (● as 🞄) | ascii
+palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
+splash  = true              # splash screen at startup
+[mascot.colors]             # override hi / bd / sh / eye
 bd = "#e4c49a"
-[agents.codex]              # Claude Code 以外のエージェント
+[agents.codex]              # agents other than Claude Code
 command = "codex"
 allow   = "y"
 deny    = "n"
-[tapi]                      # tapi chat(TUI の t)
-agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
-[tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
-enable = true               # false で両方とも出さない
+[tapi]                      # tapi chat (t in the TUI)
+agent = "claude"            # a name from [agents.*]; agents other than claude get no --add-dir (cwd only)
+[tips]                      # tips (4's empty view and tapi chat's greeting)
+enable = true               # false hides both
 ```
 
-`[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` を書ける。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
+`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 
-## データの置き場(リポジトリを汚さない)
+## Where data lives (your repositories stay clean)
 
-| データ | 置き場 |
+| Data | Location |
 | --- | --- |
-| 設定 | `~/.config/pekoe/` |
-| 状態 DB・socket・ログ・picks | `~/.local/share/pekoe/` |
-| TUI のペイン幅・ズーム | `~/.local/share/pekoe/layout.json`(`^q` `<` `>` `=` `z` で書き換わる) |
-| 見せた tip の記録 | `~/.local/share/pekoe/tips.json`(一巡すると空からやり直す) |
-| tapi chat の稼働ディレクトリ | `~/.local/share/pekoe/tapi/`(会話の記録は Claude Code の `~/.claude/projects/` 側。`pekoe tapi reset` で消える) |
-| 人間用トークン(許可待ちへの回答などに要る。エージェントに読ませない) | `~/.local/share/pekoe/human-token` |
-| Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
-| プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
-| worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
+| Settings | `~/.config/pekoe/` |
+| State DB, socket, logs, picks | `~/.local/share/pekoe/` |
+| TUI pane width and zoom | `~/.local/share/pekoe/layout.json` (changed by `^q` `<` `>` `=` `z`) |
+| Record of shown tips | `~/.local/share/pekoe/tips.json` (starts over after a full round) |
+| tapi chat's working directory | `~/.local/share/pekoe/tapi/` (the conversation record is on Claude Code's side, in `~/.claude/projects/`; `pekoe tapi reset` deletes it) |
+| Human token (needed to answer permission prompts and the like; keep it from agents) | `~/.local/share/pekoe/human-token` |
+| Keys of the Web UI's tsnet node | `~/.local/share/pekoe/tsnet/` (only when `[web]` is enabled) |
+| Per-prompt snapshots / review points | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>` (never pushed, not in `git log`) |
+| Worktrees | `~/worktrees/<repo>/<slug>` (pekoe only deletes under here) |
 
-## boba からの移行
-
-旧名 boba で使っていた環境は `pekoe migrate` で一度に移す。旧名を読み続ける互換処理は無いので、以下を順に行う。
-
-1. 旧エージェントを終わらせ、`boba daemon stop` でデーモンを止める(`pekoe migrate` はデーモンが動いていると中止する)
-2. `make install` で pekoe を入れ、旧 `~/.local/bin/boba` と `~/.local/bin/bobad` を消す
-3. `pekoe migrate --dry-run` で何が変わるかを確かめてから `pekoe migrate` を実行する
-   - `~/.config/boba` → `~/.config/pekoe`、`~/.local/share/boba` → `~/.local/share/pekoe` に移し、`bobad.sock` `bobad.log` などを `pekoed.*` に改名
-   - `state.db` の中の旧パスと旧 ref を書き換え、各リポジトリの `refs/boba/*` を `refs/pekoe/*` にコピー(`--prune-old` で旧 `refs/boba/*` も消す)
-   - セッションに保存された環境変数の `BOBA_PORT=…` などを `PEKOE_PORT=…` に改名する(値やプロンプト本文は変えない)
-   - `~/.claude/settings.json` の `boba event` の hooks を `pekoe event` に置き換える
-   - 最後に手作業で残っているものを表示する
-4. MCP を登録し直す: `claude mcp remove boba && claude mcp add pekoe -- pekoe mcp`
-5. launchd を使っていたら `make uninstall-launchd && make install-launchd`
-6. nvim の設定の `require("boba")` を `require("pekoe")` に(lazy.nvim の `dir` / `name` も)替え、Chrome 拡張を `chrome://extensions` で再読み込みする
-7. 旧エージェントが残っていなければ `tmux -L boba kill-server` で旧 tmux サーバーを止める
-
-すでに移行を済ませたあとで dev 窓などに `BOBA_PORT` が渡っている(セッションの環境変数が旧名のまま残っている)ときは、`pekoe daemon stop` でデーモンを止めて `pekoe migrate --dry-run` で `env BOBA_* → PEKOE_*` の行を確かめ、`pekoe migrate` をもう一度実行する。旧ディレクトリが無ければ移動は飛ばして `state.db` だけを直す。デーモンを立て直したら、開いている dev 窓・run 窓は閉じて開き直す(すでに起動している窓の環境は変わらない)。
-
-## 開発
+## Development
 
 ```sh
-make build && make test     # go vet + go test(既定と -tags web の両方)+ nvim のヘッドレステスト
+make test               # go vet + go test (default and -tags web) + headless nvim tests
+scripts/sandbox.sh      # start an isolated pekoed built from the current source in a subshell; cleaned up on exit
 ```
 
-テストや試用で本物の環境を汚したくないときは `PEKOE_HOME`(設定・状態の置き場)、`PEKOE_SOCK`、`PEKOE_TMUX_SOCKET`、`PEKOE_WORKTREES` で隔離できる。まとめて切るには `scripts/sandbox.sh` を使う:
+This lets you try things without touching your real pekoed or tmux server. More in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```sh
-scripts/sandbox.sh                    # 隔離したデーモンを立ててサブシェルへ。抜けると片付く
-scripts/sandbox.sh pekoe new feat/x   # コマンドを 1 つだけ
-WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
-```
+## License
 
-一時ディレクトリに 4 つを切り、今のソースをビルドした `pekoe` でデーモンを立てる(`PEKOE_BIN` で既製のバイナリも指定できる)。終わると、失敗や Ctrl-C で抜けたときも含めて `pekoe daemon stop --kill-agents --yes` で tmux サーバーごと止め、一時ディレクトリを消す。手で隔離環境を立てたときも、最後に同じ環境変数のまま `pekoe daemon stop --kill-agents --yes` で片付ける(`pekoe daemon stop` だけでは tmux サーバーと偽エージェントが残る)。tmux サーバーの pid は起動時に `$PEKOE_HOME/share/tmux-<socket>.pid` に記録するので、`TMUX_TMPDIR` が違うなどで `kill-server` が届かなくても止められる。
+- The code (Go, the Neovim plugin, the Chrome extension, the Web UI, scripts) is [MIT](LICENSE)
+- The logo image `docs/images/pekoe-logo.webp` was generated with ChatGPT (AI) and is not covered by the MIT license
+- The JetBrains Mono font bundled in `docs/mock.html` is under the SIL Open Font License 1.1; the license text is in the file
+- Release binaries statically link their dependencies (and Go's standard library). Their copyright notices and license texts are collected in `THIRD_PARTY_LICENSES` in each archive (the default and Web UI builds have different dependencies, so the contents differ)
 
-### リリースの切り方
+## Contributing
 
-`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォーム × 既定 / `-tags web` をクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。アーカイブに入れる `THIRD_PARTY_LICENSES` は、GoReleaser の `before.hooks` が `scripts/third-party-licenses.sh` で既定と `-tags web` のそれぞれについて作る(`go list -deps` で拾ったモジュールと Go 自体のライセンス文を連結する。ライセンスファイルのないモジュールがあれば止まる。出力先の `build/` はコミットしない)。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で既定と `-tags web` の govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-goreleaser release --snapshot --clean   # 手元で試す(dist/ にできる。公開はしない)
-```
-
-goreleaser はワークフローでも手元でも Go のモジュールプロキシから入れる(GitHub Release のアセット配信が落ちることがあるため)。版はワークフローの `GORELEASER_VERSION` に合わせる。
-
-```sh
-GOTOOLCHAIN=auto go install github.com/goreleaser/goreleaser/v2@v2.20.0
-```
-
-### 現状の制約
-
-- ターミナル層は設計書の段階 1(tmux エンジン)。段階 2(libghostty-vt の自前 mux)は未着手で、設計どおり任意
-- Kitty graphics のパススルーは、右ペインを文字として描き直す tmux エンジンでは通せないため段階 2 の課題(TUI 内プレビューの画像は pekoe 自身が Kitty graphics で描く)
-
-## ライセンス
-
-- コード(Go・Neovim プラグイン・Chrome 拡張・Web UI・スクリプト)は [MIT](LICENSE)
-- ロゴ画像 `docs/images/pekoe-logo.webp` は ChatGPT(AI)で生成したもので、MIT の対象外
-- `docs/mock.html` に同梱しているフォント JetBrains Mono は SIL Open Font License 1.1。ライセンス文はファイル内にある
-- リリースのバイナリは依存ライブラリ(と Go の標準ライブラリ)を静的リンクしている。それらの著作権表示とライセンス文は、アーカイブの `THIRD_PARTY_LICENSES` にまとめてある(既定ビルドと Web UI 入りで依存が違うので中身も違う)
+Pull requests are not accepted. Please report bugs and send requests through [issues](https://github.com/sakamosu/pekoe/issues). For vulnerabilities, report privately as described in [SECURITY.md](SECURITY.md).

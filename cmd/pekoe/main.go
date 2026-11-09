@@ -1,4 +1,4 @@
-// pekoe — Orca-style multi-agent workflow inside Ghostty.
+// pekoe — run coding agents in parallel, one per git worktree, from your terminal.
 //
 //	pekoe                      open the TUI (starts pekoed if needed)
 //	pekoe init                 draft this repository's config
@@ -19,7 +19,6 @@
 //	pekoe mcp                  MCP server (stdio) for agents
 //	pekoe daemon start|stop|restart|status|run
 //	pekoe tapi [reset]         tapi chat (TUI: t): state, or forget the conversation
-//	pekoe migrate [--dry-run] [--prune-old]   move a boba installation to pekoe
 //	pekoe update [--check] [--version vX.Y.Z]  replace pekoe with a GitHub release
 package main
 
@@ -49,7 +48,6 @@ import (
 	"pekoe/internal/hooks"
 	"pekoe/internal/mascot"
 	"pekoe/internal/mcp"
-	"pekoe/internal/migrate"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -124,8 +122,6 @@ func main() {
 		}
 	case "daemon":
 		err = cmdDaemon(args)
-	case "migrate":
-		err = cmdMigrate(args)
 	case "update":
 		err = cmdUpdate(args)
 	case "tapi":
@@ -202,8 +198,6 @@ func usage() {
                                also stop the tmux server ($PEKOE_TMUX_SOCKET) and
                                ALL its agents · for sandboxes; on the default
                                socket "pekoe" this kills every real agent
-  pekoe migrate [--dry-run] [--prune-old]
-                               move a boba installation (the old name) to pekoe
   pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]
                                replace pekoe with the latest GitHub release
                                (--check: only tell whether there is a newer one)
@@ -1061,8 +1055,6 @@ func cmdHooks(args []string) error {
 	case "status":
 		if hooks.Installed() {
 			fmt.Println("installed in", hooks.SettingsPath())
-		} else if hooks.HasLegacy() {
-			fmt.Println("old boba hooks found in", hooks.SettingsPath(), "· run `pekoe migrate` (or `pekoe hooks install`)")
 		} else {
 			fmt.Println("not installed · run `pekoe hooks install`")
 		}
@@ -1091,27 +1083,6 @@ func cmdHooks(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("usage: pekoe hooks install|uninstall|status")
-}
-
-// cmdMigrate moves a boba installation (pekoe's old name) to pekoe's names.
-func cmdMigrate(args []string) error {
-	f, pos, err := parseCmd("migrate", args)
-	if err != nil {
-		return err
-	}
-	if len(pos) > 0 {
-		return &usageError{use: specs["migrate"].use, msg: "unexpected argument " + pos[0]}
-	}
-	bin, _ := os.Executable()
-	if b, err := filepath.EvalSymlinks(bin); err == nil {
-		bin = b
-	}
-	return migrate.Run(migrate.DefaultLayout(), migrate.Options{
-		DryRun:   f["dry-run"] != "",
-		PruneOld: f["prune-old"] != "",
-		Bin:      bin,
-		Out:      os.Stdout,
-	})
 }
 
 func cmdExt() error {

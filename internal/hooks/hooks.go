@@ -17,11 +17,6 @@ var Events = []string{"SessionStart", "UserPromptSubmit", "Notification", "Stop"
 
 const marker = "pekoe event"
 
-// legacyMarker finds the hooks of boba, pekoe's old name. Install and
-// uninstall drop them, so `pekoe hooks install` (and `pekoe migrate`)
-// replaces them instead of running both.
-const legacyMarker = "boba event"
-
 func SettingsPath() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
 		return filepath.Join(d, "settings.json")
@@ -43,7 +38,7 @@ func shq(s string) string {
 
 func isOurs(h map[string]any) bool {
 	c, _ := h["command"].(string)
-	return strings.Contains(c, marker) || strings.Contains(c, legacyMarker)
+	return strings.Contains(c, marker)
 }
 
 // Plan returns the new settings content (and whether anything changes).
@@ -150,11 +145,4 @@ func Installed() bool {
 		}
 	}
 	return bytes.Contains(b, []byte(marker))
-}
-
-// HasLegacy reports whether settings.json still has boba's (pekoe's old
-// name) hooks.
-func HasLegacy() bool {
-	b, err := os.ReadFile(SettingsPath())
-	return err == nil && bytes.Contains(b, []byte(legacyMarker))
 }

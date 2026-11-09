@@ -168,8 +168,6 @@ var specs = map[string]spec{
 	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
 
 	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web"}, vals: []string{"version"}},
-
-	"migrate": {use: "pekoe migrate [--dry-run] [--prune-old]   move a boba installation (the old name) to pekoe", bools: []string{"dry-run", "prune-old"}},
 }
 
 // parseCmd parses args against the named spec.
