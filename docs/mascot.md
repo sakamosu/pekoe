@@ -18,7 +18,7 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 4. **体色はテーマトークン** — 配色を固定せず、highlight / body / shadow / eye の4色をテーマから解決する
 5. **フォントに頼らない** — 輪郭はブロック文字（Ghostty が内蔵描画する）で作り、表情だけをグリフで乗せる
 
-検証用のモック：[boba mascot lab](https://claude.ai/artifact/CKrFE5DMJnSLYr7zsUfX7c)（配色・形・状態の切り替え、Ghostty で貼れる printf、スプライト JSON を出力できる）
+仕様は検証用のモック（配色・形・状態を切り替えられ、Ghostty で貼れる printf とスプライト JSON を出力できるもの。公開していない）で詰めた。
 
 ## キャラクター仕様
 
@@ -283,7 +283,7 @@ pekoed のセッション状態との対応：
 
 ## 画面モックと未決事項
 
-画面モックは [boba mascot lab](https://claude.ai/artifact/CKrFE5DMJnSLYr7zsUfX7c) の Screens に6場面ある。左ペイン（セッション一覧）＋主ペイン＋最下行のステータスバーの lazygit 風レイアウトで、テーマ・配色・形を切り替えて見られる。
+画面モック（公開していない）では次の6場面を作った。左ペイン（セッション一覧）＋主ペイン＋最下行のステータスバーの lazygit 風レイアウトで、テーマ・配色・形を切り替えて見た。
 
 | 場面 | 見せていること |
 | --- | --- |
