@@ -264,7 +264,7 @@ Press `t` in any panel and [4] switches to a conversation with the mascot tapi (
 
 ### Tutorial
 
-The first time the TUI starts, a short tour walks through the screen: one part at a time is put in focus (Sessions, the state column, the agent, the new-session dialog, Changes and review, the PR view, land, Issues, tapi chat, the key list) with a card explaining it. `↵` / `→` / `l` next, `←` / `h` back, `esc` / `q` skip. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped) is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
+The first time the TUI starts, a short tour walks through the screen: one part at a time is put in focus (Sessions, the state column, the agent, the new-session dialog, Changes and review, the PR view, land, Issues, tapi chat, the key list) with a card in which tapi explains it (the card text is in Japanese, like the tips). `↵` / `→` / `l` next, `←` / `h` back, `esc` / `q` skip. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped) is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
 
 ### Tips
 
@@ -273,7 +273,7 @@ pekoe introduces its features one at a time ("this is handy when…"). They appe
 - 4's empty view (no session selected, or a worktree being created). Under tapi's face and caption, it shows a `tip` heading, a one-line summary and a longer explanation. `.` shows the next tip. If there isn't enough height or width, the longer explanation goes first, and if it still doesn't fit nothing is shown
 - tapi chat's greeting in its first reply. Ask "give me a tip" for the next one, or "tell me more" and tapi reads the doc the tip points to and explains (tapi uses `pekoe tip` and `pekoe tip --doc`)
 
-Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts are in Japanese (everything else in the UI is in English).
+Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts and the tutorial's cards are in Japanese (everything else in the UI is in English).
 
 ## Review
 

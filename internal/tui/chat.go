@@ -316,6 +316,9 @@ func (m *model) viewChat(width, height int) []string {
 		extra += " · " + th.FG(theme.Secondary, "typing")
 	}
 	title := face + " " + m.panelTitle(4, "", "tapi chat", extra, f)
+	if m.tour != nil { // the tutorial's card has tapi's face (one face at a time)
+		title = m.panelTitle(4, "", "tapi chat", extra, f)
+	}
 	cw, ch := width-4, height-2
 	var rows []row
 	switch {

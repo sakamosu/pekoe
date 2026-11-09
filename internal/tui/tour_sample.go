@@ -5,6 +5,11 @@ package tui
 // with five sessions in different states, their changes, a PR, issues, an
 // agent's screen and a tapi chat. Every claim in a step's text is about a
 // key or a view that exists; check them against the code when keys move.
+//
+// The text is Japanese, the second exception to English UI text after the
+// tips (docs/ui-guidelines.md): long explanations everyone reads on the
+// first run. Keys, commands and the names shown on screen (Sessions, New
+// session …) stay as they are; put spaces around them, as in tips.toml.
 
 import (
 	"fmt"
@@ -13,6 +18,7 @@ import (
 
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -30,22 +36,23 @@ var tourRepo = daemon.KnownRepo{ID: "github.com_acme_webapp", Name: "webapp", Di
 
 var tourSteps = []tourStep{
 	{
-		title: "Welcome to pekoe",
-		body:  "pekoe runs coding agents side by side, each in its own git worktree. This tour shows the screen on sample sessions; nothing you press reaches your real ones.",
+		mood:  mascot.Done,
+		title: "pekoe へようこそ",
+		body:  "pekoe はコーディングエージェントを並べて動かす。セッション 1 つに git worktree が 1 つ付く。このツアーはサンプルのセッションで画面を案内する。ここで押したキーは本物のセッションには届かない。",
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Sessions },
+		mood:  mascot.Idle,
 		title: "[1] Sessions",
-		body:  "Every agent session, grouped by repository. {j}/{k} moves the selection; the main panel follows it.",
+		body:  "エージェントのセッションの一覧。リポジトリごとにまとまる。{j}/{k} で選ぶと、[4] の画面がそのセッションに切り替わる。",
 		setup: func(m *model) { m.focus = pSessions },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pSessions), true
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Wait },
-		title: "State at a glance",
-		body:  "{@running} run: the agent works. {@waiting} wait: it needs you. {@done} done: ready for review. {@idle} idle. Then come the time in that state, the diff size and the test result. {]a} jumps to the next session waiting for you.",
+		mood:  mascot.Wait,
+		title: "状態の見かた",
+		body:  "{@running} run は作業中、{@waiting} wait はあなた待ち、{@done} done はレビュー待ち、{@idle} idle は待機。続く列は、その状態になってからの時間・diff の大きさ・テストの結果。{]a} で次の待ちセッションへ飛ぶ。",
 		setup: func(m *model) { m.focus = pSessions },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pSessions), true
@@ -64,18 +71,18 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Agent },
+		mood:  mascot.Work,
 		title: "[4] Agent",
-		body:  "The selected agent's own terminal, live. {↵} or {i} types into it; every key goes to the agent until {^q} brings you back. {v} switches to the preview and the dev server.",
+		body:  "選んだエージェントの端末そのもの。{↵} か {i} で打ち込める。{^q} で戻るまで、キーはすべてエージェントに届く。{v} で preview と dev サーバーの画面に切り替わる。",
 		setup: func(m *model) { m.focus = pAgent },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pAgent), true
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Worktrees },
+		mood:  mascot.Idle,
 		title: "New session",
-		body:  "{n} asks for a branch, an issue to start from (gh#123, optional) and the first prompt. pekoe creates the worktree and starts the agent in it.",
+		body:  "{n} で開く。branch・始める issue(gh#123、なくてもよい)・最初のプロンプトを入れると、pekoe が worktree を作ってエージェントを起動する。",
 		setup: func(m *model) {
 			nm := newNewModal(m, "feat/csv-export")
 			p := "Add a CSV export button to the orders page"
@@ -86,10 +93,10 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		icon:   func(ic theme.IconSet) string { return ic.Changes },
+		mood:   mascot.Idle,
 		title:  "[3] Changes",
-		body:   "The files the selected session changed. {@overlap} marks a file another session touches too. {r} (or {↵} here) opens the review: approve hunks, comment, and send the comments back to the agent. {[ ]} switches to Picks, elements you pick in Chrome.",
-		narrow: "The files the selected session changed. {@overlap} marks a file another session touches too. {r} (or {↵} here) opens the review: approve hunks, comment, and send the comments back to the agent.",
+		body:   "選んだセッションが変えたファイル。{@overlap} はほかのセッションも触っているファイル。{r}(ここでは {↵} でも)でレビューを開き、hunk の承認やコメントをしてエージェントに送り返す。{[ ]} で Picks(Chrome で拾った要素)に切り替わる。",
+		narrow: "選んだセッションが変えたファイル。{@overlap} はほかのセッションも触っているファイル。{r}(ここでは {↵} でも)でレビューを開き、hunk の承認やコメントをしてエージェントに送り返す。",
 		setup: func(m *model) {
 			m.focus = pThird
 			m.narrowTab = 3
@@ -99,9 +106,9 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.PR },
+		mood:  mascot.Idle,
 		title: "PR view",
-		body:  "{p} shows the session's GitHub PR in the main panel: checks, reviews, unresolved threads. Select items with {space} and {s} sends them to the agent to fix.",
+		body:  "{p} で [4] にセッションの GitHub PR を出す。checks・レビュー・未解決のスレッドが並ぶ。{space} で選んで {s} で、直してほしい項目をエージェントに送る。",
 		setup: func(m *model) {
 			m.tourSelect(tourDone)
 			m.window = winPR
@@ -112,9 +119,9 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Done },
-		title: "Land",
-		body:  "When a session is done, {l} lands it: rebase, test, push and open the PR. The worktree is removed once the PR is merged. pekoe asks first, with a conflict forecast.",
+		mood:  mascot.Done,
+		title: "land",
+		body:  "done になったら {l} で land する。rebase・テスト・push・PR 作成までを流し、PR がマージされたら worktree を消す。実行の前に、衝突の予報を添えて確認する。",
 		setup: func(m *model) {
 			m.tourSelect(tourDone)
 			m.focus = pSessions
@@ -129,10 +136,10 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		icon:   func(ic theme.IconSet) string { return ic.Issues },
+		mood:   mascot.Idle,
 		title:  "[2] Worktrees · Browser · Issues",
-		body:   "{[ ]} cycles through them. Issues lists your GitHub issues; {n} on one starts a session from it. Browser links your Chrome tabs to sessions by port.",
-		narrow: "{[ ]} cycles the tabs: Sessions, Worktrees, Issues, Changes. Issues lists your GitHub issues; {n} on one starts a session from it.",
+		body:   "{[ ]} で切り替わる。Issues は GitHub の issue の一覧で、{n} でその issue からセッションを始められる。Browser は Chrome のタブをポートでセッションに結びつける。",
+		narrow: "{[ ]} で Sessions・Worktrees・Issues・Changes のタブを巡る。Issues は GitHub の issue の一覧で、{n} でその issue からセッションを始められる。",
 		setup: func(m *model) {
 			m.focus = pSecond
 			m.sub2 = subIssues
@@ -143,9 +150,9 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		icon:  func(ic theme.IconSet) string { return ic.Agent },
+		mood:  mascot.Done,
 		title: "tapi chat",
-		body:  "{t}, from any panel, turns the main panel into a chat with tapi, the mascot: ask it questions, or have it start sessions and hand out work. {T} starts over.",
+		body:  "どのパネルからでも {t} で、[4] がわたし(tapi)との会話になる。調べものを頼んだり、セッションを作って仕事を任せたりできる。{T} で最初からやり直す。",
 		setup: func(m *model) {
 			m.focus = pAgent
 			m.chat = chatState{open: true, info: tourTapi(), screen: m.tourChatScreen()}
@@ -155,8 +162,9 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "Keys and commands",
-		body:  "{?} lists every key of the panel in focus; pick one and {↵} runs it. {:} runs a command by name: new, send, land, review, tutorial …",
+		mood:  mascot.Idle,
+		title: "キーとコマンド",
+		body:  "{?} で今のパネルのキーが全部並び、選んで {↵} でそのまま実行できる。{:} はコマンドを名前で打つ。new・send・land・review・tutorial など。",
 		setup: func(m *model) {
 			m.focus = pThird
 			m.narrowTab = 3
@@ -165,8 +173,9 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		title: "That's the tour",
-		body:  "Press {" + tourKey + "} or run {:tutorial} to see it again. Your own sessions are back when you close it.",
+		mood:  mascot.Done,
+		title: "ツアーはここまで",
+		body:  "{" + tourKey + "} か {:tutorial} でもう一度見られる。閉じると自分のセッションに戻る。",
 	},
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 )
 
@@ -57,11 +59,11 @@ func TestTourStartsOnFirstRun(t *testing.T) {
 	if m.tour == nil {
 		t.Fatal("the tour did not start on the first update")
 	}
-	if got := tourStepTitle(m); got != "Welcome to pekoe" {
+	if got := tourStepTitle(m); got != "pekoe へようこそ" {
 		t.Errorf("first step %q", got)
 	}
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"Welcome to pekoe", "sample · 1/", "TUTORIAL", "fix/login-redirect"} {
+	for _, want := range []string{"pekoe へようこそ", "sample · 1/", "TUTORIAL", "fix/login-redirect"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in\n%s", want, out)
 		}
@@ -328,4 +330,106 @@ func TestTourInHelp(t *testing.T) {
 	if !found {
 		t.Errorf("%s is not in the help", tourKey)
 	}
+}
+
+// the card's text wraps to its width with full-width characters counted as
+// two, loses nothing, and no line starts with closing punctuation
+func TestTourTextWrapsJapanese(t *testing.T) {
+	m := tourModel(t, "none", 120, 40)
+	strip := func(s string) string { return strings.ReplaceAll(ansi.Strip(s), " ", "") }
+	for _, st := range tourSteps {
+		for _, body := range []string{st.body, st.narrow} {
+			if body == "" {
+				continue
+			}
+			src := strings.ReplaceAll(body, "^q", m.prefixLabel())
+			want := strip(m.tourText(src, 1000)[0])
+			for width := 16; width <= 60; width++ {
+				lines := m.tourText(src, width)
+				got := ""
+				for _, l := range lines {
+					got += strip(l)
+					if lw := ansi.StringWidth(l); lw > width && !strings.Contains(l, "{") {
+						// only a single piece longer than the line may stick out
+						if len(strings.Fields(ansi.Strip(l))) > 1 && lw > width {
+							t.Errorf("%q at %d: line %q is %d wide", st.title, width, ansi.Strip(l), lw)
+						}
+					}
+					if r := []rune(ansi.Strip(l)); len(r) > 0 && strings.ContainsRune(noLineStart, r[0]) {
+						t.Errorf("%q at %d: line starts with %q: %q", st.title, width, r[0], ansi.Strip(l))
+					}
+				}
+				if got != want {
+					t.Errorf("%q at %d: text changed:\n%s\n%s", st.title, width, got, want)
+				}
+			}
+		}
+	}
+	// a key and the punctuation after it stay together
+	lines := m.tourText("あいうえお {↵}、かきくけこ", 13)
+	if r := []rune(ansi.Strip(lines[1])); r[0] != '↵' {
+		t.Errorf("「、」 left its key: %q", ansi.Strip(strings.Join(lines, "|")))
+	}
+}
+
+// tapi tells the tour: one face on screen, in the card, whatever the glyphs,
+// shape, palette or colors
+func TestTourOneFace(t *testing.T) {
+	for _, color := range []string{"truecolor", "ansi", "none"} {
+		for _, mc := range []config.Mascot{
+			{Shape: "round", Glyphs: "unicode"}, {Shape: "block", Glyphs: "narrow"}, {Glyphs: "ascii"},
+			{Shape: "round", Glyphs: "unicode", Palette: "light"},
+		} {
+			m := tapiModel(t, color, mc)
+			m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
+			for _, size := range [][2]int{{150, 45}, {90, 30}, {60, 16}} {
+				m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+				r := m.tapi.r
+				var faces []string
+				for _, mood := range mascot.Moods {
+					faces = append(faces, ansi.Strip(r.Line(r.Eyes(mood))))
+				}
+				faces = append(faces, ansi.Strip(r.Line(r.Blink())), ansi.Strip(r.Line(r.Peek())), ansi.Strip(r.Line(r.CloudyEyes())))
+				for step := range tourSteps {
+					m.tourGo(step)
+					out := m.View()
+					keepsSize(t, m, out)
+					plain := ansi.Strip(out)
+					n := 0
+					for _, f := range uniq(faces) {
+						n += strings.Count(plain, f)
+					}
+					where := fmt.Sprintf("%s %+v %dx%d step %d", color, mc, size[0], size[1], step)
+					if n != 1 {
+						t.Errorf("%s: %d faces:\n%s", where, n, plain)
+					}
+					face := ansi.Strip(r.Line(r.Eyes(tourMood(step))))
+					if n == 1 && size[1] >= 30 {
+						if line := lineWith(t, plain, face); !strings.Contains(line, tourSteps[step].title) {
+							t.Errorf("%s: the face is not on the title line: %q", where, line)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func tourMood(step int) mascot.Mood {
+	if md := tourSteps[step].mood; md != "" {
+		return md
+	}
+	return mascot.Idle
+}
+
+func uniq(ss []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range ss {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }

@@ -14,7 +14,8 @@ package tui
 //
 // Focus follows the guidelines: the element in focus gets the focus frame
 // (the panel itself, or the dialog), cells inside a panel get the select
-// fill, the card is framed like the in-pane cards (border, secondary icon).
+// fill, the card is framed like the in-pane cards (border color), headed by
+// tapi's one-line face instead of an icon: tapi tells the tour.
 // The rest of the screen is not darkened (docs/ui-guidelines.md: no dimming
 // behind modals); the other borders are already plain border.
 
@@ -31,6 +32,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/client"
+	"pekoe/internal/mascot"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -60,7 +62,7 @@ type rect struct{ x, y, w, h int }
 
 // tourStep is one coach mark.
 type tourStep struct {
-	icon  func(ic theme.IconSet) string
+	mood  mascot.Mood // tapi's face at the head of the card
 	title string
 	// body: {k} is a key (secondary, bold), {@running} a state's icon in
 	// its color, ^q the prefix as configured
@@ -322,17 +324,19 @@ func (m *model) tourPlace(t rect, has bool, bodyH int) (x, y int, card []string)
 }
 
 // tourCard draws the card width cells wide and at most maxH rows tall:
-// icon and title with the position, the text, the keys.
+// tapi's face and the title with the position, the text, the keys.
 func (m *model) tourCard(width, maxH int) []string {
 	th := m.th
 	st := tourSteps[m.tour.step]
 	inner := max(width-4, 1)
 	right := th.FG(theme.Dim, fmt.Sprintf("sample · %d/%d", m.tour.step+1, len(tourSteps)))
-	icon := ""
-	if st.icon != nil {
-		icon = theme.Prefix(st.icon(m.ic))
+	// tapi tells the tour: its face heads the card (the bar keeps only its
+	// speech meanwhile, docs/mascot.md: one face at a time)
+	mood := st.mood
+	if mood == "" {
+		mood = mascot.Idle
 	}
-	head := th.FG(theme.Secondary, icon) + th.FG(theme.Text, st.title)
+	head := m.tapi.r.Line(m.tapi.r.Eyes(mood)) + " " + th.FG(theme.Text, st.title)
 	if gap := inner - w(head) - w(right); gap >= 1 {
 		head += strings.Repeat(" ", gap) + right
 	}
@@ -431,21 +435,53 @@ func (m *model) tourWordRender(wd tourWord) string {
 	return b.String()
 }
 
-// tourText wraps the body to width cells; "\n" starts a new paragraph
-// (an empty row between).
+// tourTok is a piece of the card's text that a line may break before: an
+// ASCII word (with the keys and icons glued to it), a single full-width
+// character, a key. sp: a space precedes it.
+type tourTok struct {
+	wd tourWord
+	sp bool
+}
+
+// tourWide: a character that stands alone in wrapping (Japanese has no
+// spaces: a line may break between any two full-width characters), as in
+// wrapTip.
+func tourWide(r rune) bool { return ansi.StringWidth(string(r)) > 1 || r > 0x2000 }
+
+// tourStartsClosing: the piece begins with a character that must not
+// begin a line (noLineStart).
+func (m *model) tourStartsClosing(t tourTok) bool {
+	if len(t.wd) == 0 || t.wd[0].kind != 0 || t.wd[0].text == "" {
+		return false
+	}
+	return strings.ContainsRune(noLineStart, []rune(t.wd[0].text)[0])
+}
+
+// tourText wraps the body to width cells, counting full-width characters as
+// two; "\n" starts a new paragraph (an empty row between). A line breaks at
+// spaces and between full-width characters, never inside an ASCII word or a
+// key, and never before closing punctuation (noLineStart, as wrapTip).
 func (m *model) tourText(body string, width int) []string {
 	var out []string
 	for pi, para := range strings.Split(body, "\n") {
 		if pi > 0 {
 			out = append(out, "")
 		}
-		var words []tourWord
+		var toks []tourTok
 		var cur tourWord
 		var plain strings.Builder
+		sp := false
 		flushText := func() {
 			if plain.Len() > 0 {
 				cur = append(cur, tourSeg{text: plain.String()})
 				plain.Reset()
+			}
+		}
+		flush := func() {
+			flushText()
+			if len(cur) > 0 {
+				toks = append(toks, tourTok{wd: cur, sp: sp})
+				cur, sp = nil, false
 			}
 		}
 		rs := []rune(para)
@@ -466,36 +502,61 @@ func (m *model) tourText(body string, width int) []string {
 				}
 				i = j
 			case r == ' ':
-				flushText()
-				if len(cur) > 0 {
-					words = append(words, cur)
-					cur = nil
-				}
+				flush()
+				sp = true
+			case tourWide(r):
+				flush()
+				toks = append(toks, tourTok{wd: tourWord{{text: string(r)}}, sp: sp})
+				sp = false
 			default:
 				plain.WriteRune(r)
 			}
 		}
-		flushText()
-		if len(cur) > 0 {
-			words = append(words, cur)
-		}
-		line, lw := "", 0
-		for _, wd := range words {
-			ww := m.tourWordW(wd)
-			if lw > 0 && lw+1+ww > width {
-				out = append(out, line)
-				line, lw = "", 0
+		flush()
+		var line []tourTok
+		lw := 0
+		tokW := func(i int, t tourTok) int { // with its space, unless it starts the line
+			n := m.tourWordW(t.wd)
+			if i > 0 && t.sp {
+				n++
 			}
-			if lw > 0 {
-				line += " "
-				lw++
+			return n
+		}
+		emit := func() {
+			var b strings.Builder
+			for i, t := range line {
+				if i > 0 && t.sp {
+					b.WriteString(" ")
+				}
+				b.WriteString(m.tourWordRender(t.wd))
 			}
-			line += m.tourWordRender(wd)
-			lw += ww
+			if len(line) > 0 {
+				out = append(out, b.String())
+			}
+			line, lw = nil, 0
 		}
-		if lw > 0 {
-			out = append(out, line)
+		for _, t := range toks {
+			if len(line) > 0 && lw+tokW(len(line), t) > width {
+				// closing punctuation does not start a line: it takes the
+				// pieces glued before it along, as many as it takes
+				// (ビ ュ ー → all three)
+				var carry []tourTok
+				head := t
+				for len(line) > 1 && !head.sp && m.tourStartsClosing(head) {
+					head = line[len(line)-1]
+					carry = append([]tourTok{head}, carry...)
+					line = line[:len(line)-1]
+				}
+				emit()
+				for _, c := range carry {
+					lw += tokW(len(line), c)
+					line = append(line, c)
+				}
+			}
+			lw += tokW(len(line), t)
+			line = append(line, t)
 		}
+		emit()
 	}
 	return out
 }

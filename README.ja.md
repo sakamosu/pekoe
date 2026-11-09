@@ -262,7 +262,7 @@ pekoe                                                 # TUI
 
 ### チュートリアル
 
-TUI を初めて起動すると、画面を一巡するツアーが始まる。Sessions・状態の列・エージェント・新規セッションのダイアログ・Changes とレビュー・PR view・land・Issues・tapi chat・キー一覧を 1 つずつフォーカスし、横に説明のカードを出す。`↵` / `→` / `l` で次、`←` / `h` で戻る、`esc` / `q` でやめる。中身は TUI の中だけのサンプルのセッションで、pekoed には何も作らず、ツアー中のキーはエージェントに届かない。終わると自分のセッションに戻る(ツアー中の変化も反映される)。見た(やめた)ことは `~/.local/share/pekoe/tutorial.json` に記録し、`H` か `:tutorial` でもう一度見られる。
+TUI を初めて起動すると、画面を一巡するツアーが始まる。Sessions・状態の列・エージェント・新規セッションのダイアログ・Changes とレビュー・PR view・land・Issues・tapi chat・キー一覧を 1 つずつフォーカスし、横に tapi が説明するカードを出す(文面は TIPS と同じく日本語)。`↵` / `→` / `l` で次、`←` / `h` で戻る、`esc` / `q` でやめる。中身は TUI の中だけのサンプルのセッションで、pekoed には何も作らず、ツアー中のキーはエージェントに届かない。終わると自分のセッションに戻る(ツアー中の変化も反映される)。見た(やめた)ことは `~/.local/share/pekoe/tutorial.json` に記録し、`H` か `:tutorial` でもう一度見られる。
 
 ### TIPS
 
@@ -271,7 +271,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 - [4] の空き表示(セッションを選んでいないとき、worktree の作成中)。tapi の顔とキャプションの下に `tip` の見出しと 1 行の説明、詳しい説明を出す。`.` で次の tip。高さや幅が足りなければ詳しい説明から省き、それでも入らなければ出さない
 - tapi chat の最初の返事のあいさつ。「なんか tip ちょうだい」と頼めば次の 1 つ、「もっと詳しく」と聞けば tip が指す docs を読んで説明する(tapi は `pekoe tip` と `pekoe tip --doc` を使う)
 
-見せた tip は `~/.local/share/pekoe/tips.json` に記録し、全部を一巡するまで同じものは出さない(TUI と tapi chat で共通)。`[tips] enable = false` で両方とも止まる。一覧は `pekoe tip --list`、中身は `internal/tips/tips.toml`。TIPS の文面だけは日本語(ほかの表示は英語)。
+見せた tip は `~/.local/share/pekoe/tips.json` に記録し、全部を一巡するまで同じものは出さない(TUI と tapi chat で共通)。`[tips] enable = false` で両方とも止まる。一覧は `pekoe tip --list`、中身は `internal/tips/tips.toml`。TIPS とチュートリアルのカードの文面だけは日本語(ほかの表示は英語)。
 
 ## レビュー
 
