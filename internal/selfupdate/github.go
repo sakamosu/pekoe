@@ -32,8 +32,9 @@ type Release struct {
 }
 
 // Asset is a file attached to a release. URL is the API's URL for it: the
-// file itself comes with Accept: application/octet-stream, which works for
-// a private repository too (browser_download_url does not, with a token).
+// file itself comes with Accept: application/octet-stream, which also works
+// for a private repository (a fork, say) with a token, where
+// browser_download_url does not.
 type Asset struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
@@ -52,7 +53,8 @@ func (r *Release) Asset(name string) *Asset {
 }
 
 // GitHub reads releases of Repo through the REST API at API. Token may be
-// empty (a public repository needs none).
+// empty: the repository is public and needs none. With one, GitHub allows
+// more requests per hour, and a private repository can be read too.
 type GitHub struct {
 	API, Repo, Token string
 	HTTP             *http.Client
@@ -117,8 +119,9 @@ func (g *GitHub) get(ctx context.Context, u, accept string) (*http.Response, err
 	return g.client().Do(req)
 }
 
-// statusError explains a failed request: without a token a private
-// repository looks like a missing one (404), so say so.
+// statusError explains a failed request. Without a token GitHub allows
+// few requests per hour (a 403 or 429 saying "rate limit"), and a private
+// repository looks like a missing one (404), so say what a token would do.
 func (g *GitHub) statusError(resp *http.Response, what string) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var m struct {
@@ -131,9 +134,16 @@ func (g *GitHub) statusError(resp *http.Response, what string) error {
 	}
 	code := resp.StatusCode
 	e := &StatusError{Status: code, URL: resp.Request.URL.String()}
+	rateLimited := (code == 403 || code == 429) && strings.Contains(strings.ToLower(m.Message), "rate limit")
 	switch {
-	case g.Token == "" && (code == 404 || code == 401 || code == 403):
-		e.Msg = fmt.Sprintf("cannot read %s of %s (HTTP %d%s) without a GitHub token: the repository may be private. Run `gh auth login` (or set GITHUB_TOKEN) and try again", what, g.Repo, code, detail)
+	case rateLimited && g.Token == "":
+		e.Msg = fmt.Sprintf("GitHub's rate limit for requests without a token is used up (HTTP %d%s): try again later, or run `gh auth login` (or set GITHUB_TOKEN) for a higher limit", code, detail)
+	case rateLimited:
+		e.Msg = fmt.Sprintf("GitHub's rate limit is used up (HTTP %d%s): try again later", code, detail)
+	case g.Token == "" && code == 404:
+		e.Msg = fmt.Sprintf("%s of %s not found (HTTP 404%s); if the repository is private, run `gh auth login` (or set GITHUB_TOKEN) and try again", what, g.Repo, detail)
+	case g.Token == "" && (code == 401 || code == 403):
+		e.Msg = fmt.Sprintf("cannot read %s of %s without a GitHub token (HTTP %d%s): run `gh auth login` (or set GITHUB_TOKEN) and try again", what, g.Repo, code, detail)
 	case code == 401:
 		e.Msg = fmt.Sprintf("GitHub refused the token (HTTP 401%s): run `gh auth login` again, or check GITHUB_TOKEN / GH_TOKEN", detail)
 	case code == 404:
@@ -212,8 +222,9 @@ func (g *GitHub) Download(ctx context.Context, a *Asset, w io.Writer, limit int6
 }
 
 // HasAttestation reports whether GitHub keeps a build provenance for the
-// file with this SHA-256 (hex) in Repo. Releases of a private repository
-// have none (release.yml attests only while it is public).
+// file with this SHA-256 (hex) in Repo. release.yml attests every release
+// of the public repository; older releases, made while it was private, have
+// none.
 func (g *GitHub) HasAttestation(ctx context.Context, sha256hex string) (bool, error) {
 	resp, err := g.get(ctx, strings.TrimSuffix(g.API, "/")+"/repos/"+g.Repo+"/attestations/sha256:"+sha256hex, "application/vnd.github+json")
 	if err != nil {

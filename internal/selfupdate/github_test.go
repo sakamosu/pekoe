@@ -90,13 +90,42 @@ func TestLatestPrivateWithoutToken(t *testing.T) {
 	if !errors.As(err, &se) || se.Status != 404 {
 		t.Fatalf("err %v", err)
 	}
-	for _, want := range []string{"may be private", "gh auth login", "GITHUB_TOKEN"} {
+	for _, want := range []string{"not found", "if the repository is private", "gh auth login", "GITHUB_TOKEN"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q not in %q", want, err)
 		}
 	}
 	if f.auth[0] != "" {
 		t.Errorf("sent Authorization %q without a token", f.auth[0])
+	}
+}
+
+func TestLatestRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"message":"API rate limit exceeded for 192.0.2.1."}`, 403)
+	}))
+	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		token string
+		want  []string
+	}{
+		{"", []string{"rate limit", "without a token", "gh auth login", "GITHUB_TOKEN"}},
+		{"tok", []string{"rate limit", "try again later"}},
+	} {
+		g := &GitHub{API: srv.URL, Repo: "owner/repo", Token: tc.token, HTTP: srv.Client()}
+		_, err := g.Latest(context.Background())
+		var se *StatusError
+		if !errors.As(err, &se) || se.Status != 403 {
+			t.Fatalf("token %q: err %v", tc.token, err)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("token %q: %q not in %q", tc.token, want, err)
+			}
+		}
+		if tc.token != "" && strings.Contains(err.Error(), "gh auth login") {
+			t.Errorf("token %q: asks to log in again: %q", tc.token, err)
+		}
 	}
 }
 
