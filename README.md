@@ -18,9 +18,7 @@ A terminal tool for running several coding agents in parallel, one per git workt
 - Pick an element on a page with the Chrome extension and send it with an instruction. Screenshots of your dev server can be shown inside the TUI
 - Answer permission prompts or send a quick message from an iPhone over Tailscale (optional build)
 
-<!-- Screenshot (to be added):
-<p align="center"><img src="docs/images/screenshot.png" alt="pekoe TUI" width="800"></p>
--->
+<p align="center"><img src="docs/images/screenshot.png" alt="pekoe TUI: sessions, worktrees and changes on the left, the agent on the right" width="900"></p>
 
 > [!WARNING]
 > pekoe runs coding agents, and those agents execute commands and read and write files with your user's permissions. `pekoe hooks install` modifies `~/.claude/settings.json` (it keeps a backup; `pekoe hooks uninstall` removes only pekoe's hooks). If you let agents use pekoe itself, read [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions) first. To report a vulnerability, see [SECURITY.md](SECURITY.md).

@@ -18,9 +18,7 @@ A cozy home for your coding agents. — with tapi, your little companion
 - Chrome 拡張で画面の要素を選んで指示と一緒に送る。dev server のスクショは TUI の中に出せる
 - iPhone から Tailscale 経由で許可待ちに答えたり一言送ったりできる(任意のビルド)
 
-<!-- スクリーンショット(後で撮る):
-<p align="center"><img src="docs/images/screenshot.png" alt="pekoe の TUI" width="800"></p>
--->
+<p align="center"><img src="docs/images/screenshot.png" alt="pekoe の TUI: 左にセッション・worktree・変更、右にエージェント" width="900"></p>
 
 > [!WARNING]
 > pekoe はコーディングエージェントを動かすツールで、エージェントはあなたのユーザー権限でコマンドを実行し、ファイルを読み書きする。`pekoe hooks install` は `~/.claude/settings.json` を書き換える(バックアップを残す。`pekoe hooks uninstall` で pekoe の分だけ外せる)。エージェントに pekoe 自体を使わせるなら、先に[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限)を読む。脆弱性の報告は [SECURITY.md](SECURITY.md) へ。
