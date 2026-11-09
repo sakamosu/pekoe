@@ -146,6 +146,13 @@ keys = [":"]
 docs = ["README.ja.md#tui"]
 
 [[tip]]
+id = "tutorial"
+short = "H でチュートリアルをもう一度見る"
+detail = "画面の各部分を 1 つずつ照らして説明するツアー。サンプルのセッションで動くので本物には触れない。:tutorial でも始まる。↵ で次、← で戻る、esc でやめる。"
+keys = ["H"]
+docs = ["README.ja.md#チュートリアル"]
+
+[[tip]]
 id = "help"
 short = "? のキー一覧は選んで ↵ でそのまま実行できる"
 detail = "上に今のパネルのキー、下にどこでも効くキーが並ぶ。j / k で選んで ↵ で実行する。"

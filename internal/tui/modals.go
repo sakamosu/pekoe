@@ -524,7 +524,7 @@ func newHelpModal(m *model) *helpModal {
 		g := g
 		it := helpItem{key: g[0], action: g[1], global: true}
 		switch g[0] {
-		case "t", "T":
+		case "t", "T", tourKey:
 			it.run = send(g[0])
 		}
 		h.items = append(h.items, it)
@@ -543,7 +543,7 @@ var tipHelpKey = [2]string{tipKey, "next tip"}
 // of the help).
 func (m *model) globalHelpKeys() [][2]string {
 	p := m.prefixLabel()
-	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {"q", "quit"}}
+	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {tourKey, "tutorial (replay)"}, {"q", "quit"}}
 }
 
 // Names of the panel key lists in helpSets.
@@ -704,7 +704,7 @@ func (c *commandModal) view() []string {
 	if c.err != "" {
 		lines = append(lines, "", th.FG(theme.Err, c.err))
 	}
-	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · ext · q"))
+	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · ext · tutorial · q"))
 	return c.m.modalFrame(c.m.modalWidth(80), th.Bold(theme.Primary, "Command"), lines, c.hints(), false)
 }
 
@@ -757,6 +757,9 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 				}
 				return m.sessionAction(key, s)
 			}
+		case "tutorial":
+			m.modal = nil
+			return m.startTour()
 		case "ext":
 			return done(func() tea.Msg {
 				var info map[string]any
