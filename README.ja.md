@@ -1,12 +1,16 @@
 <p align="center"><img src="docs/images/pekoe-logo.webp" alt="pekoe" width="320"></p>
 
+<p align="center"><a href="README.md">English</a> | 日本語</p>
+
 # pekoe
 
 A cozy home for your coding agents. — with tapi, your little companion
 
-pekoe — 読みは「ペコー」(PEK-oh)。orange pekoe から。pekoe はエージェントたちの家で、最下行にいるマスコット tapi はそこにいる相棒。
+[![License: MIT](https://img.shields.io/github/license/sakamosu/pekoe)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/sakamosu/pekoe)](https://github.com/sakamosu/pekoe/releases/latest)
+[![govulncheck](https://github.com/sakamosu/pekoe/actions/workflows/govulncheck.yml/badge.svg)](https://github.com/sakamosu/pekoe/actions/workflows/govulncheck.yml)
 
-Orca の開発体験(複数エージェントの並列運用・worktree 分離・ブラウザ連携・差分レビュー)を、Ghostty の中で完結させるターミナルツール。Claude Code の使い方は変えず、その周辺作業(切り替え・待ち・worktree・ブラウザ・レビュー・PR)だけを引き受ける。
+ターミナルの中で、複数のコーディングエージェントを worktree ごとに並行して走らせるためのツール。worktree の用意、どのエージェントが待っているかの把握、差分のレビュー、PR までを pekoe が引き受ける。Claude Code の使い方は変えない(エージェントはそのまま tmux の中で動き、状態は hooks で受け取る)。
 
 - 1 タスク = 1 worktree = 1 エージェント。`pekoe new` で worktree を切り、設定ファイルのコピー・setup・ポート割り当てまで済ませてから claude(や codex)を起動する
 - TUI でセッションを一覧し、待ち・許可待ち・レビュー待ちに順に飛ぶ。最下行のマスコット tapi が全体の状態を表す
@@ -14,17 +18,59 @@ Orca の開発体験(複数エージェントの並列運用・worktree 分離�
 - Chrome 拡張で画面の要素を選んで指示と一緒に送る。dev server のスクショは TUI の中に出せる
 - iPhone から Tailscale 経由で許可待ちに答えたり一言送ったりできる(任意のビルド)
 
+<!-- スクリーンショット(後で撮る):
+<p align="center"><img src="docs/images/screenshot.png" alt="pekoe の TUI" width="800"></p>
+-->
+
+> [!WARNING]
+> pekoe はコーディングエージェントを動かすツールで、エージェントはあなたのユーザー権限でコマンドを実行し、ファイルを読み書きする。`pekoe hooks install` は `~/.claude/settings.json` を書き換える(バックアップを残す。`pekoe hooks uninstall` で pekoe の分だけ外せる)。エージェントに pekoe 自体を使わせるなら、先に[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限)を読む。脆弱性の報告は [SECURITY.md](SECURITY.md) へ。
+
+## 状況と動作環境
+
+- **個人のツール。** 作者が毎日使うために作っていて、設定・API・コマンドはまだ変わりうる(互換は約束しない)
+- **macOS で開発・確認している**(ターミナルは Ghostty)。Linux 向けのビルドも配っているが、確かめていない部分がある。macOS 前提の箇所:
+  - `[worktree] clone` の APFS クローン(`cp -c`)。ほかのファイルシステムでは普通のコピーになる
+  - `make install-launchd` と、launchd で動いている pekoed の `pekoe daemon restart`(`launchctl`)
+  - TUI 内プレビューの headless Chrome の既定のパス `/Applications/Google Chrome.app`(`PEKOE_CHROME` で変えられる)
+  - TUI の `b`(ポートを Chrome で開く)は `open -a "Google Chrome"`
+  - `pekoe adopt` はプロセスの cwd を `lsof` で調べる
+- **主な対象は Claude Code**(hooks で状態を受け取る)。codex・opencode なども `[agents.*]` で使えるが、状態は画面から推し量るだけ
+- **必要なもの:** tmux 3.3+、git。ソースから入れるなら Go 1.26.10+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使う)。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)
+- **ターミナル層は tmux。** libghostty-vt の自前 mux([docs/design.md](docs/design.md) のフェーズ 5)は未着手で、やらない選択もある。Kitty graphics のパススルーは、右ペインを文字として描き直す tmux エンジンでは通せない(TUI 内プレビューの画像は pekoe 自身が Kitty graphics で描く)
+
 ## 構成
 
-```
- TUI (pekoe) ─────┐
- CLI ─────────────┤ unix socket                        tmux -L pekoe
- Neovim ──────────┤ (JSON Lines)                 ┌── claude / codex / …
- MCP (pekoe mcp) ─┼──────────────── pekoed ──────┤   (worktree ごとの pty)
- Chrome 拡張 ─────┤ HTTP 127.0.0.1 + token       └──────────┬──────────
- Web UI (iPhone) ─┘ HTTPS on tailnet (tsnet)                │ hooks → `pekoe event`
-                                   │                        │
-                       state.db / refs/pekoe/*  ◀───────────┘
+```mermaid
+flowchart LR
+  subgraph clients["クライアント(表示と入力だけ)"]
+    tui["TUI(pekoe)"]
+    cli["CLI"]
+    nvim["Neovim"]
+    mcp["MCP(pekoe mcp)"]
+    ext["Chrome 拡張"]
+    web["Web UI(iPhone など)"]
+  end
+  sock["unix socket<br/>JSON Lines"]
+  http["HTTP 127.0.0.1<br/>+ token"]
+  tsnet["HTTPS(tailnet 内)<br/>tsnet・-tags web のビルドだけ"]
+  tui --> sock
+  cli --> sock
+  nvim --> sock
+  mcp --> sock
+  ext --> http
+  web --> tsnet
+  sock --> pekoed
+  http --> pekoed
+  tsnet --> pekoed
+  pekoed["pekoed(デーモン)"] --> engine["engine"]
+  engine --> tmux["tmux -L pekoe の窓<br/>agent / review / dev / run・+tapi"]
+  tmux --> agent["claude / codex など"]
+  agent -- "hooks" --> event["pekoe event"]
+  event -- "unix socket" --> pekoed
+  pekoed --> db[("state.db")]
+  pekoed --> git["git<br/>worktrees・refs/pekoe/*"]
+  pekoed --> gh["GitHub(gh)"]
+  pekoed --> chrome["headless Chrome<br/>(preview)"]
 ```
 
 賢さはすべて pekoed にあり、TUI・CLI・Neovim・Chrome 拡張・MCP・Web UI は同じ API を叩く表示層。pekoed を止めてもエージェントは tmux の中で動き続け、次に起動したときに拾い直す。
@@ -39,17 +85,18 @@ Orca の開発体験(複数エージェントの並列運用・worktree 分離�
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける窓口エージェント)の設計 |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
-| [docs/verification.md](docs/verification.md) | 設計書・デザイン原則・モックと実装の対応表 |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim プラグイン / Chrome 拡張 |
+
+開発者向け: [CONTRIBUTING.md](CONTRIBUTING.md)(テスト・隔離環境・リリースの切り方。英語)、[docs/verification.md](docs/verification.md)(設計書・デザイン原則・モックと実装の対応表)
 
 ## インストール
 
-必要なもの: Go 1.26.10+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使うので、古ければ Go を上げる)、tmux 3.3+、git。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)。
+必要なものは[状況と動作環境](#状況と動作環境)。ソースから:
 
 ```sh
 make install            # ~/.local/bin/pekoe (+ pekoed), nvim/ と extension/ を ~/.local/share/pekoe に link
 make install WEB=1      # iPhone 用 Web UI も入れる(-tags web、Tailscale の tsnet をリンク)
-pekoe hooks install     # ~/.claude/settings.json に hooks を追加(バックアップを残す)
+pekoe hooks install     # ~/.claude/settings.json に hooks を追加(書く前に確認し、バックアップを残す)
 make install-launchd    # 任意: ログイン時に pekoed を起動
 ```
 
@@ -58,9 +105,10 @@ make install-launchd    # 任意: ログイン時に pekoed を起動
 GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。リポジトリは公開しているので、トークンなしで `gh` でも curl でも落とせる(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す):
 
 ```sh
-ver=0.2.0                                 # 入れるバージョン(Releases のページか gh release list -R sakamosu/pekoe で確認)
-gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt
+ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # 最新の版(特定の版なら ver=<version>)
+gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # darwin_arm64 は手元の <os>_<arch> に
 # gh がなければ curl で:
+#   ver=$(curl -fsSL https://api.github.com/repos/sakamosu/pekoe/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
@@ -75,7 +123,7 @@ pekoe version
 
 `checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴は公開しているリポジトリで `release.yml` が作るリリースに付く。公開前(private だったころ)のリリースには付いていないので、その版では `gh attestation verify` が通らない。
 
-アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
+アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`README.ja.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
 既定のビルドには Tailscale のコードを一切含めない。入れ直したあとは `pekoe daemon restart` で pekoed を新しいバイナリに替える(エージェントは tmux の中で動き続ける。launchd で動かしているときは launchd から起動し直す)。
 
@@ -84,7 +132,7 @@ pekoe version
 ```sh
 pekoe update --check    # 新しいリリースがあるか見るだけ(誰でも使える)
 pekoe update            # 最新のリリースに入れ替える
-pekoe update --version v0.2.0 --force   # 特定の版に(古くなるときは --force)
+pekoe update --version vX.Y.Z --force   # 特定の版に(古くなるときは --force)
 ```
 
 `pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
@@ -236,11 +284,11 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md)。`{ dir = "~/repos/pekoe/nvim" }` を lazy.nvim に足す(pekoe が起動する nvim には自動で読み込まれる)。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
+[nvim/README.md](nvim/README.md)。`{ dir = "~/.local/share/pekoe/nvim" }` を lazy.nvim に足す(`make install` が置くリンク。リリースを上の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim`)。pekoe が起動する nvim には自動で読み込まれる。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
 
 ### Chrome 拡張
 
-[extension/README.md](extension/README.md)。`chrome://extensions` → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → `pekoe ext` の port と token をオプションに入れる。⌘⇧E で要素を選び、指示と切り抜きスクショを送る。localhost のページのエラーと開いているタブも pekoed に届く。
+[extension/README.md](extension/README.md)。`chrome://extensions` → デベロッパーモード → パッケージ化されていない拡張機能を読み込む → `pekoe ext` の port と token をオプションに入れる。⌘⇧E(macOS 以外は Ctrl+Shift+E)で要素を選び、指示と切り抜きスクショを送る。localhost のページのエラーと開いているタブも pekoed に届く。
 
 ### MCP
 
@@ -351,7 +399,7 @@ primary = "#ff87da"
 [mascot]                    # マスコット tapi(docs/mascot.md)
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
 glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
-palette = "dark"            # dark(D ミルキー＋影) | light(E キャラメル)
+palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
 [mascot.colors]             # hi / bd / sh / eye を上書き
 bd = "#e4c49a"
@@ -384,38 +432,11 @@ enable = true               # false で両方とも出さない
 ## 開発
 
 ```sh
-make build && make test     # go vet + go test(既定と -tags web の両方)+ nvim のヘッドレステスト
+make test               # go vet + go test(既定と -tags web の両方)+ nvim のヘッドレステスト
+scripts/sandbox.sh      # 今のソースで隔離した pekoed を立ててサブシェルへ。抜けると片付く
 ```
 
-テストや試用で本物の環境を汚したくないときは `PEKOE_HOME`(設定・状態の置き場)、`PEKOE_SOCK`、`PEKOE_TMUX_SOCKET`、`PEKOE_WORKTREES` で隔離できる。まとめて切るには `scripts/sandbox.sh` を使う:
-
-```sh
-scripts/sandbox.sh                    # 隔離したデーモンを立ててサブシェルへ。抜けると片付く
-scripts/sandbox.sh pekoe new feat/x   # コマンドを 1 つだけ
-WEB=1 scripts/sandbox.sh              # Web UI 入りのビルドで
-```
-
-一時ディレクトリに 4 つを切り、今のソースをビルドした `pekoe` でデーモンを立てる(`PEKOE_BIN` で既製のバイナリも指定できる)。終わると、失敗や Ctrl-C で抜けたときも含めて `pekoe daemon stop --kill-agents --yes` で tmux サーバーごと止め、一時ディレクトリを消す。手で隔離環境を立てたときも、最後に同じ環境変数のまま `pekoe daemon stop --kill-agents --yes` で片付ける(`pekoe daemon stop` だけでは tmux サーバーと偽エージェントが残る)。tmux サーバーの pid は起動時に `$PEKOE_HOME/share/tmux-<socket>.pid` に記録するので、`TMUX_TMPDIR` が違うなどで `kill-server` が届かなくても止められる。
-
-### リリースの切り方
-
-`v*` のタグを push すると GitHub Actions(`.github/workflows/release.yml`)が GoReleaser(`.goreleaser.yaml`)で 4 プラットフォーム × 既定 / `-tags web` をクロスビルドし、アーカイブ・`checksums.txt`・前のタグからの changelog を付けて Release を作り、アーカイブごとにビルド来歴(attestation)を付ける。アーカイブに入れる `THIRD_PARTY_LICENSES` は、GoReleaser の `before.hooks` が `scripts/third-party-licenses.sh` で既定と `-tags web` のそれぞれについて作る(`go list -deps` で拾ったモジュールと Go 自体のライセンス文を連結する。ライセンスファイルのないモジュールがあれば止まる。出力先の `build/` はコミットしない)。ビルドは go.mod の `go` 行の Go だけで行い(`GOTOOLCHAIN=local`)、その前に同じ Go で既定と `-tags web` の govulncheck を回して、既知の脆弱性に届くなら止める。既定ビルドと `-tags web` の govulncheck は `.github/workflows/govulncheck.yml` が push・PR・毎週回す。手元では `make vulncheck`。ワークフローのアクションはコミット SHA で固定し、Dependabot(`.github/dependabot.yml`)が上げる。バージョンはタグから ldflags で `pekoe version` に入る(手元の `make build` は `git describe`、`go build` だけなら `dev`)。
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-goreleaser release --snapshot --clean   # 手元で試す(dist/ にできる。公開はしない)
-```
-
-goreleaser はワークフローでも手元でも Go のモジュールプロキシから入れる(GitHub Release のアセット配信が落ちることがあるため)。版はワークフローの `GORELEASER_VERSION` に合わせる。
-
-```sh
-GOTOOLCHAIN=auto go install github.com/goreleaser/goreleaser/v2@v2.20.0
-```
-
-### 現状の制約
-
-- ターミナル層は設計書の段階 1(tmux エンジン)。段階 2(libghostty-vt の自前 mux)は未着手で、設計どおり任意
-- Kitty graphics のパススルーは、右ペインを文字として描き直す tmux エンジンでは通せないため段階 2 の課題(TUI 内プレビューの画像は pekoe 自身が Kitty graphics で描く)
+本物の pekoed や tmux サーバーには触らずに試せる。詳しくは [CONTRIBUTING.md](CONTRIBUTING.md)(英語)。
 
 ## ライセンス
 
@@ -423,3 +444,7 @@ GOTOOLCHAIN=auto go install github.com/goreleaser/goreleaser/v2@v2.20.0
 - ロゴ画像 `docs/images/pekoe-logo.webp` は ChatGPT(AI)で生成したもので、MIT の対象外
 - `docs/mock.html` に同梱しているフォント JetBrains Mono は SIL Open Font License 1.1。ライセンス文はファイル内にある
 - リリースのバイナリは依存ライブラリ(と Go の標準ライブラリ)を静的リンクしている。それらの著作権表示とライセンス文は、アーカイブの `THIRD_PARTY_LICENSES` にまとめてある(既定ビルドと Web UI 入りで依存が違うので中身も違う)
+
+## 貢献
+
+PR は受け付けていない。バグ報告・要望は [issue](https://github.com/sakamosu/pekoe/issues) へ。脆弱性は [SECURITY.md](SECURITY.md) の手順で非公開で報告してほしい。

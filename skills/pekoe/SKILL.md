@@ -75,7 +75,7 @@ EOF
 pekoed は、許可待ちへの回答(`pekoe answer`)・生キー・設定の書き込み(`pekoe init` の書き込み)・`pekoe dev`・run 窓でのコマンド実行・`pekoe daemon stop`(`restart` も)を、人間用トークン(`human-token`)を付けた呼び出しにしか許さない。エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
-- ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code の sandbox でトークンのファイルを読めなくすることを勧める(設定例は pekoe の README「エージェントに pekoe を使わせるときの権限」)
+- ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code の sandbox でトークンのファイルを読めなくすることを勧める(設定例は pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)
 
 ## やらないこと
 

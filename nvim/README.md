@@ -9,17 +9,19 @@ pekoe のデーモン(pekoed)に unix socket で繋がる Neovim プラグイン
 
 ```lua
 {
-  dir = "~/repos/pekoe/nvim",
+  dir = "~/.local/share/pekoe/nvim",
   name = "pekoe.nvim",
   opts = {},
 }
 ```
 
+`~/.local/share/pekoe/nvim` は `make install` が置くリンク。リリースを README の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim` にする。pekoe が起動する nvim(レビュー面)には自動で読み込まれる。
+
 設定を変える場合:
 
 ```lua
 {
-  dir = "~/repos/pekoe/nvim",
+  dir = "~/.local/share/pekoe/nvim",
   name = "pekoe.nvim",
   opts = {
     keymaps = {

@@ -84,7 +84,7 @@ func (p Plan) Check() error {
 	for _, d := range dirs {
 		f, err := os.CreateTemp(d, ".pekoe-update-check-")
 		if err != nil {
-			return fmt.Errorf("cannot write to %s (%v): reinstall pekoe where you can write (README「リリースから」), or run pekoe update as the user that owns it", d, err)
+			return fmt.Errorf("cannot write to %s (%v): reinstall pekoe where you can write (README: From a release), or run pekoe update as the user that owns it", d, err)
 		}
 		f.Close()
 		os.Remove(f.Name())

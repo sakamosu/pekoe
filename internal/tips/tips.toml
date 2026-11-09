@@ -17,140 +17,140 @@ id = "zoom"
 short = "^q z で右のペイン(4)を全幅に広げる"
 detail = "入力中でも ^q z で左の列を隠し、エージェントの画面を全幅にする。もう一度押すと戻る。ズーム中は最下行に zoom と出る。"
 keys = ["^q z"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "pane-width"
 short = "^q < > で左の列の幅を 4 列ずつ変える"
 detail = "^q = で既定(40%)に戻る。幅とズームは layout.json に残り、再起動後の TUI や CLI から起動するエージェントの幅もそろう。"
 keys = ["^q <", "^q >", "^q ="]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "tapi-chat"
 short = "t で tapi に話しかけられる(tapi chat)"
 detail = "どのパネルからでも t で 4 が tapi との会話に変わる。調べものやセッションを作って任せるのを頼める。^q で閉じても会話は残り、T でリセット。"
 keys = ["t", "T", "pekoe tapi", "[tapi]"]
-docs = ["docs/tapi-chat.md", "README.md#tapi-chat"]
+docs = ["docs/tapi-chat.md", "README.ja.md#tapi-chat"]
 
 [[tip]]
 id = "panel-focus"
 short = "1〜4 と Tab でパネルを直接移る"
 detail = "1 Sessions・2 Worktrees / Browser / Issues・3 Changes / Picks・4 Agent。Tab と Shift+Tab で順に移り、[ ] でパネルの中のサブタブを切り替える。"
 keys = ["1", "2", "3", "4", "Tab", "[", "]"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "next-wait"
 short = "]a で次の待ちセッションへ飛ぶ"
 detail = "許可待ち・入力待ちのセッション(PR に動きがあったものも)へ順に飛ぶ。[a で飛ぶ前の場所に戻る。"
 keys = ["]a", "[a"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "next-review"
 short = "]r で次のレビュー待ちへ"
 detail = "ターンを終えて done になったセッションはレビュー待ちに入る。]r で順に回り、r でレビュー面を開く。"
 keys = ["]r", "r"]
-docs = ["README.md#レビュー"]
+docs = ["README.ja.md#レビュー"]
 
 [[tip]]
 id = "run-window"
 short = "! で worktree の中でコマンドを 1 回だけ実行する"
 detail = "Sessions で ! を押すと run 窓が開く。終わったら ↵ で agent に戻り、y で結果(終了コード)をエージェントに伝えられる。x は伝えずに閉じる。"
 keys = ["!"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "preview"
 short = "v で dev server のスクショを TUI の中に出す"
 detail = "v を押すたびに preview → dev → agent と窓が変わる。preview では m でモバイル幅、c で before / after を見比べ、g で別のパスを撮る。"
 keys = ["v", "m", "c", "g"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "conflicts"
 short = "同じファイルを触るセッションには ⚠N が付く"
 detail = "衝突予報。pekoe conflicts で、同じファイルを触っているセッションのペアと、git merge-tree で実際に衝突するかが分かる。l の land の確認にも出る。"
 keys = ["pekoe conflicts", "l"]
-docs = ["README.md#コマンド"]
+docs = ["README.ja.md#コマンド"]
 
 [[tip]]
 id = "issues"
 short = "[2] Issues の issue からそのままセッションを作る"
 detail = "2 のサブタブ Issues で f を押すと 自分担当 → 全 open → ラベル指定 と切り替わる。n でその issue から新しいセッションを作る。CLI では pekoe issues。"
 keys = ["2", "f", "n", "pekoe issues"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "pr-view"
 short = "p で PR ビュー(checks・レビュー・スレッド)を開く"
 detail = "失敗した check の log やレビューのスレッドを ↵ で開ける。space で選んで s を押すと、まとめてエージェントに送れる。"
 keys = ["p", "space", "s"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "web-ui"
 short = "iPhone から許可待ちに答えられる(Web UI)"
 detail = "make install WEB=1 で入れて [web] を書くと、tailnet 経由で一覧・allow / deny・send・画面が見られる。質問のメニューにはキーパッドで答える。URL は pekoe web。"
 keys = ["pekoe web", "[web]"]
-docs = ["docs/web.md", "README.md#iphone-からweb-ui"]
+docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
 
 [[tip]]
 id = "new-from-issue"
 short = "pekoe new <branch> --from gh#N で issue から始める"
 detail = "GitHub の issue の本文を初期プロンプトにしてセッションを作る。--prompt なら指示を直接渡せる。"
 keys = ["pekoe new --from gh#N", "pekoe new --prompt"]
-docs = ["README.md#クイックスタート"]
+docs = ["README.ja.md#クイックスタート"]
 
 [[tip]]
 id = "send"
 short = "pekoe send <slug> で外からエージェントに一言送る"
 detail = "既定で Enter まで送る。- を渡すと stdin から読むので、長い指示はヒアドキュメントで渡せる。--no-enter なら Enter を足さない。"
 keys = ["pekoe send <slug> <text>", "pekoe send <slug> -", "--no-enter"]
-docs = ["README.md#コマンド"]
+docs = ["README.ja.md#コマンド"]
 
 [[tip]]
 id = "land"
 short = "l(pekoe land)で rebase → test → PR 作成まで進める"
 detail = "push して gh pr create まで進める。確認には衝突予報が出る。マージを見つけたら teardown と worktree の削除まで pekoe がやる。"
 keys = ["l", "pekoe land <slug>"]
-docs = ["README.md#コマンド"]
+docs = ["README.ja.md#コマンド"]
 
 [[tip]]
 id = "review"
 short = "r のレビュー面で hunk ごとに承認・コメントする"
 detail = "a で承認、c でコメント、]h で次の hunk。S でコメントを 1 通にまとめて送る。pekoe review gh#N で人の PR も。[review] surface = \"tui\" なら nvim なしの組み込み面。"
 keys = ["r", "a", "c", "]h", "S", "pekoe review gh#N", "[review]"]
-docs = ["README.md#レビュー"]
+docs = ["README.ja.md#レビュー"]
 
 [[tip]]
 id = "error-cards"
 short = "dev server やブラウザのエラーは 4 にカードで出る"
 detail = "pekoed が見つけたエラーは s でエージェントに送る、i で無視、↵ で詳細。カードがある間、入力を始めるのは a。[2] Browser の E でコンソールのエラーも送れる。"
 keys = ["s", "i", "↵", "a", "E"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "repo-switch"
 short = "w で今のリポジトリを選び直す"
 detail = "複数のリポジトリで使っているとき、w で 1 つを選ぶ。n の新しいセッション・Issues・Worktrees はそのリポジトリに向く。"
 keys = ["w"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "command-line"
 short = ": でコマンドを名前で打つ"
 detail = "new・send・land・rm・dev・undo・review・restart・ext・q を、キーを覚えていなくても名前で実行できる。"
 keys = [":"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "help"
 short = "? のキー一覧は選んで ↵ でそのまま実行できる"
 detail = "上に今のパネルのキー、下にどこでも効くキーが並ぶ。j / k で選んで ↵ で実行する。"
 keys = ["?"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "nvim"
@@ -164,67 +164,67 @@ id = "chrome-pick"
 short = "Chrome 拡張で画面の要素を選んで送る"
 detail = "⌘⇧E で要素を選び、指示と切り抜きスクショを送る。4 に出るカードで ↵ 送信、^s 別セッション、^n 新しいセッション。port と token は pekoe ext。"
 keys = ["⌘⇧E", "pekoe ext", "[picks]"]
-docs = ["extension/README.md", "README.md#chrome-拡張"]
+docs = ["extension/README.md", "README.ja.md#chrome-拡張"]
 
 [[tip]]
 id = "undo"
 short = "u で最後のプロンプトの変更を取り消す"
 detail = "pekoe はプロンプトごとに変更のスナップショットを取っている。pekoe undo <slug> n なら n 番目のプロンプトを送った時点まで戻す。"
 keys = ["u", "pekoe undo <slug> [n]"]
-docs = ["README.md#コマンド"]
+docs = ["README.ja.md#コマンド"]
 
 [[tip]]
 id = "filter"
 short = "/ でセッション一覧を絞り込む"
 detail = "Sessions で / を押して文字を打つと一覧が絞られる。↵ で確定、Esc で解除。"
 keys = ["/"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "adopt"
 short = "pekoe adopt で手で始めたエージェントを取り込む"
 detail = "pekoe の外で動いている Claude Code を止め、同じ会話を pekoe の中で resume する。既存の worktree は pekoe open で取り込める。"
 keys = ["pekoe adopt", "pekoe open"]
-docs = ["README.md#クイックスタート"]
+docs = ["README.ja.md#クイックスタート"]
 
 [[tip]]
 id = "prefix"
 short = "^q で入力から抜けて Sessions に戻る"
 detail = "入力中はキーがすべてエージェントに届き、抜けるのは ^q だけ。^q h / ^q l で左右のパネルへ移る。prefix は config.toml の [keys] prefix で変えられる。"
 keys = ["^q", "^q h", "^q l", "[keys]"]
-docs = ["README.md#tui", "README.md#設定"]
+docs = ["README.ja.md#tui", "README.ja.md#設定"]
 
 [[tip]]
 id = "dev-server"
 short = "d でそのセッションのポートに dev server を立てる"
 detail = "リポジトリの設定の [hooks] dev を、セッションごとのポートで起動・停止する。b でそのポートを Chrome で開き、v を押していくと dev 窓でログが見られる。CLI は pekoe dev <slug>。"
 keys = ["d", "b", "pekoe dev <slug>"]
-docs = ["README.md#設定"]
+docs = ["README.ja.md#設定"]
 
 [[tip]]
 id = "end-and-resume"
 short = "x でセッションを終えても worktree は残る"
 detail = "x はエージェントを止めるだけで、worktree と変更は残る。R で Claude Code の同じ会話を resume して起動し直せる。worktree ごと消すのは D(確認あり)。"
 keys = ["x", "R", "D"]
-docs = ["README.md#tui"]
+docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "mcp"
 short = "pekoe mcp でエージェントが nvim にファイルを開ける"
 detail = "claude mcp add pekoe -- pekoe mcp で登録すると、エージェントが open_in_editor でファイルの行を nvim に開いてメモを添えられる。session_list でセッションの一覧も読める。"
 keys = ["pekoe mcp"]
-docs = ["README.md#mcp"]
+docs = ["README.ja.md#mcp"]
 
 [[tip]]
 id = "init"
 short = "pekoe init でリポジトリの設定を下書きする"
 detail = "lockfile・.envrc・git の無視ファイルから setup や copy を推測し、コピーするファイルを番号で選ばせてから書く。--print なら書かずに出すだけ。"
 keys = ["pekoe init", "--print"]
-docs = ["README.md#クイックスタート"]
+docs = ["README.ja.md#クイックスタート"]
 
 [[tip]]
 id = "update"
 short = "pekoe update で最新のリリースに入れ替える"
 detail = "GitHub の最新リリースを取って checksums.txt と照らし、pekoe と nvim・Chrome 拡張を入れ替える。Web UI 入りなら _web の版を取る。--check は新しい版があるか見るだけ。"
 keys = ["pekoe update", "--check"]
-docs = ["README.md#更新"]
+docs = ["README.ja.md#更新"]
