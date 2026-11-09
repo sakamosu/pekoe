@@ -1,4 +1,4 @@
-// pekoe — Orca-style multi-agent workflow inside Ghostty.
+// pekoe — run coding agents in parallel, one per git worktree, from your terminal.
 //
 //	pekoe                      open the TUI (starts pekoed if needed)
 //	pekoe init                 draft this repository's config
