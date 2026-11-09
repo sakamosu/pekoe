@@ -30,7 +30,7 @@ tapi chat は TUI からいつでも呼べる特別なエージェントで、�
 | `claude_session_id` | hook の session_id(表示用。再開には使わない。後述) |
 | `state_since` | 状態が変わった時刻 |
 
-`d.sessions` に入らないので、セッションを回る既存の処理(`session.list`・diffstat・PR・衝突予測・land・review・dev・run・tests・門番・ntfy・Web UI・`attention.next`・`daemon.status` の sessions 数・`state.db`)には何もしなくても流れ込まない。
+`d.sessions` に入らないので、セッションを回る既存の処理(`session.list`・diffstat・PR・衝突予測・land・review・dev・run・tests・門番・Web UI・`attention.next`・`daemon.status` の sessions 数・`state.db`)には何もしなくても流れ込まない。
 
 ### 予約名 `+tapi`
 
@@ -44,7 +44,7 @@ tmux のウィンドウ名と hook の振り分けには、セッションの sl
 tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook を使う(`pekoe hooks install` 済みの設定がそのまま効く)。
 
 - `resolveSession`(internal/daemon/hooks.go): `$PEKOE_SESSION` が `+tapi` なら tapi。`$PEKOE_SESSION` が無いときは、cwd が tapi の稼働ディレクトリの中なら tapi。それ以外は従来どおり
-- `hEvent`: tapi に振り分けられた hook は `tapiEvent` が受け、状態だけを動かす。プロンプトのスナップショット(`refs/pekoe/…`)、diffstat、テスト、門番、ntfy は動かさない
+- `hEvent`: tapi に振り分けられた hook は `tapiEvent` が受け、状態だけを動かす。プロンプトのスナップショット(`refs/pekoe/…`)、diffstat、テスト、門番は動かさない
 
 | hook | tapi の状態 |
 | --- | --- |
@@ -178,7 +178,7 @@ engine.Engine にはメソッドを足さない(ウィンドウ名が `+tapi~age
 | 事項 | 今回の決め | 見直す条件 |
 | --- | --- | --- |
 | tapi の状態を `session.*` と同じ型で返すか | 別の型 `Tapi`(リポジトリ前提の項目を持たない) | Neovim などからも tapi を扱いたくなったら共通部分を切り出す |
-| 許可待ちの通知 | バーの声だけ。ntfy・トースト・OSC 通知は出さない | 長い横断調査を投げて離席する使い方が多ければ ntfy を足す |
+| 許可待ちの通知 | バーの声だけ。トースト・OSC 通知は出さない | — |
 | リポジトリの増減の反映 | 次回起動時(リセットか再起動) | 不便なら、増えたときに「再起動で反映」と声で知らせる |
 | codex などの横断読み取り | cwd だけ(`--add-dir` 相当なし) | 各エージェントに相当のオプションができたら `[agents.*]` に `add_dir` のような書式を足す |
 | 会話の記録の場所 | Claude Code の既定(`~/.claude/projects/…`)。`CLAUDE_CONFIG_DIR` があればそちら | — |
