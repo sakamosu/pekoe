@@ -405,7 +405,7 @@ func TestTourOneFace(t *testing.T) {
 					if n != 1 {
 						t.Errorf("%s: %d faces:\n%s", where, n, plain)
 					}
-					face := ansi.Strip(r.Line(r.Eyes(tourMood(step))))
+					face := ansi.Strip(r.Line(r.Eyes(mascot.Done)))
 					if n == 1 && size[1] >= 30 {
 						if line := lineWith(t, plain, face); !strings.Contains(line, tourSteps[step].title) {
 							t.Errorf("%s: the face is not on the title line: %q", where, line)
@@ -415,13 +415,6 @@ func TestTourOneFace(t *testing.T) {
 			}
 		}
 	}
-}
-
-func tourMood(step int) mascot.Mood {
-	if md := tourSteps[step].mood; md != "" {
-		return md
-	}
-	return mascot.Idle
 }
 
 func uniq(ss []string) []string {
@@ -573,6 +566,28 @@ func TestTourDimsOutside(t *testing.T) {
 		m.tourGo(0)
 		if out := m.View(); mode != "none" && strings.Contains(strings.Split(out, "\n")[1], sgr(m, theme.Ok)) {
 			t.Errorf("%s: welcome keeps colors behind the card", mode)
+		}
+	}
+}
+
+// the card's face is ^ ^ in every glyph setting: no East Asian Ambiguous
+// character (● •) that a font may draw two cells wide
+func TestTourFaceIsNarrowEverywhere(t *testing.T) {
+	for _, g := range []string{"unicode", "narrow", "ascii", "auto"} {
+		m := tapiModel(t, "truecolor", config.Mascot{Glyphs: g})
+		m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
+		m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		for step := range tourSteps {
+			m.tourGo(step)
+			card := ansi.Strip(strings.Join(m.tourCard(56, 39), "\n"))
+			if face := ansi.Strip(m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done))); !strings.Contains(card, face) || !strings.Contains(face, "^") {
+				t.Errorf("%s step %d: no ^ ^ face in the card:\n%s", g, step, card)
+			}
+			for _, amb := range []string{"●", "•", "🞄"} {
+				if strings.Contains(strings.SplitN(card, "\n", 3)[1], amb) {
+					t.Errorf("%s step %d: %s in the face line", g, step, amb)
+				}
+			}
 		}
 	}
 }

@@ -65,7 +65,6 @@ type rect struct{ x, y, w, h int }
 
 // tourStep is one coach mark.
 type tourStep struct {
-	mood  mascot.Mood // tapi's face at the head of the card
 	title string
 	// body: {k} is a key (secondary, bold), {@running} a state's icon in
 	// its color, ^q the prefix as configured
@@ -369,12 +368,12 @@ func (m *model) tourCard(width, maxH int) []string {
 	inner := max(width-4, 1)
 	right := th.FG(theme.Dim, fmt.Sprintf("sample · %d/%d", m.tour.step+1, len(tourSteps)))
 	// tapi tells the tour: its face heads the card (the bar keeps only its
-	// speech meanwhile, docs/mascot.md: one face at a time)
-	mood := st.mood
-	if mood == "" {
-		mood = mascot.Idle
-	}
-	head := m.tapi.r.Line(m.tapi.r.Eyes(mood)) + " " + th.Bold(theme.Primary, st.title)
+	// speech meanwhile, docs/mascot.md: one face at a time). Always the
+	// done eyes, ^ ^: plain ASCII, one cell in every font and glyph setting.
+	// The tour is the first screen a new user sees, before any [mascot]
+	// glyphs is set, and ● (work) or • (idle) are East Asian Ambiguous:
+	// fonts like Moralerspace draw them two cells wide and the face breaks.
+	head := m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done)) + " " + th.Bold(theme.Primary, st.title)
 	if gap := inner - w(head) - w(right); gap >= 1 {
 		head += strings.Repeat(" ", gap) + right
 	}

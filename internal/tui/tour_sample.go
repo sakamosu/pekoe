@@ -19,7 +19,6 @@ import (
 
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
-	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -37,12 +36,10 @@ var tourRepo = daemon.KnownRepo{ID: "github.com_acme_webapp", Name: "webapp", Di
 
 var tourSteps = []tourStep{
 	{
-		mood:  mascot.Done,
 		title: "pekoe へようこそ",
 		body:  "pekoe はコーディングエージェントを並べて動かします。セッション 1 つに git worktree が 1 つ付きます。このツアーではサンプルのセッションで画面を案内します。ここで押したキーは本物のセッションには届きません。",
 	},
 	{
-		mood:  mascot.Idle,
 		title: "[1] Sessions",
 		body:  "エージェントのセッションの一覧です。リポジトリごとにまとまります。{j}/{k} で選ぶと、[4] の画面がそのセッションに切り替わります。",
 		setup: func(m *model) { m.focus = pSessions },
@@ -51,7 +48,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Wait,
 		title: "状態の見かた",
 		body:  "{@running} run は作業中、{@waiting} wait はあなた待ち、{@done} done はレビュー待ち、{@idle} idle は待機中です。続く列は、その状態になってからの時間・diff の大きさ・テストの結果です。{]a} で次の待ちセッションへ飛べます。",
 		setup: func(m *model) { m.focus = pSessions },
@@ -72,7 +68,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Work,
 		title: "[4] Agent",
 		body:  "選んだエージェントの端末そのものです。{↵} か {i} で打ち込めます。{^q} で戻るまで、キーはすべてエージェントに届きます。{v} で preview と dev サーバーの画面に切り替わります。",
 		setup: func(m *model) { m.focus = pAgent },
@@ -81,7 +76,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Idle,
 		title: "New session",
 		body:  "{n} で開きます。branch・始める issue(gh#123、なくても構いません)・最初のプロンプトを入れると、pekoe が worktree を作ってエージェントを起動します。",
 		setup: func(m *model) {
@@ -94,7 +88,6 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		mood:   mascot.Idle,
 		title:  "[3] Changes",
 		body:   "選んだセッションが変えたファイルです。{@overlap} はほかのセッションも触っているファイルです。{r}(ここでは {↵} でも)でレビューを開き、hunk の承認やコメントをしてエージェントに送り返せます。{[ ]} で Picks(Chrome で拾った要素)に切り替わります。",
 		narrow: "選んだセッションが変えたファイルです。{@overlap} はほかのセッションも触っているファイルです。{r}(ここでは {↵} でも)でレビューを開き、hunk の承認やコメントをしてエージェントに送り返せます。",
@@ -107,7 +100,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Idle,
 		title: "PR view",
 		body:  "{p} で [4] にセッションの GitHub PR を出します。checks・レビュー・未解決のスレッドが並びます。{space} で選んで {s} を押すと、直してほしい項目をエージェントに送れます。",
 		setup: func(m *model) {
@@ -120,7 +112,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Done,
 		title: "land",
 		body:  "done になったら {l} で land します。rebase・テスト・push・PR 作成までを流し、PR がマージされたら worktree を消します。実行の前に、衝突の予報を添えて確認します。",
 		setup: func(m *model) {
@@ -137,7 +128,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:   mascot.Idle,
 		title:  "[2] Worktrees · Browser · Issues",
 		body:   "{[ ]} で切り替わります。Issues は GitHub の issue の一覧で、{n} でその issue からセッションを始められます。Browser は Chrome のタブをポートでセッションに結びつけます。",
 		narrow: "{[ ]} で Sessions・Worktrees・Issues・Changes のタブを巡ります。Issues は GitHub の issue の一覧で、{n} でその issue からセッションを始められます。",
@@ -151,7 +141,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Done,
 		title: "tapi chat",
 		body:  "どのパネルからでも {t} で、[4] がわたし(tapi)との会話になります。調べものを頼んだり、セッションを作って仕事を任せたりできます。{T} で最初からやり直せます。",
 		setup: func(m *model) {
@@ -163,7 +152,6 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		mood:  mascot.Idle,
 		title: "キーとコマンド",
 		body:  "{?} で今のパネルのキーが全部並び、選んで {↵} でそのまま実行できます。{:} ではコマンドを名前で打てます。new・send・land・review・tutorial などです。",
 		setup: func(m *model) {
@@ -174,7 +162,6 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		mood:  mascot.Done,
 		title: "ツアーはここまで",
 		body:  "{" + tourKey + "} か {:tutorial} でもう一度見られます。閉じると自分のセッションに戻ります。",
 	},
