@@ -234,7 +234,8 @@ pekoe                                                 # TUI
 | `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `ext` `q`) |
+| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `ext` `tutorial` `q`) |
+| `H` | チュートリアルをもう一度(`:tutorial` でも。[チュートリアル](#チュートリアル)) |
 | `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
 | `1`–`4` `Tab` `[` `]` | パネル移動 / サブタブ切替 |
 | `q` | 終了 |
@@ -258,6 +259,10 @@ pekoe                                                 # TUI
 - tapi の顔はタイトルに出て、考え中・許可待ちで表情が変わる。閉じている間に許可待ち・質問待ちになると、最下行の声が `chat waits · t` になる
 - `T`(または `pekoe tapi reset`)で終了し、Claude Code の会話の記録も消す。pekoe 側には何も保存しない。Web UI には出ない
 - エージェントは `[tapi] agent` で変えられる([設定](#設定))
+
+### チュートリアル
+
+TUI を初めて起動すると、画面を一巡するツアーが始まる。Sessions・状態の列・エージェント・新規セッションのダイアログ・Changes とレビュー・PR view・land・Issues・tapi chat・キー一覧を 1 つずつフォーカスし、横に説明のカードを出す。`↵` / `→` / `l` で次、`←` / `h` で戻る、`esc` / `q` でやめる。中身は TUI の中だけのサンプルのセッションで、pekoed には何も作らず、ツアー中のキーはエージェントに届かない。終わると自分のセッションに戻る(ツアー中の変化も反映される)。見た(やめた)ことは `~/.local/share/pekoe/tutorial.json` に記録し、`H` か `:tutorial` でもう一度見られる。
 
 ### TIPS
 
@@ -421,6 +426,7 @@ enable = true               # false で両方とも出さない
 | 状態 DB・socket・ログ・picks | `~/.local/share/pekoe/` |
 | TUI のペイン幅・ズーム | `~/.local/share/pekoe/layout.json`(`^q` `<` `>` `=` `z` で書き換わる) |
 | 見せた tip の記録 | `~/.local/share/pekoe/tips.json`(一巡すると空からやり直す) |
+| チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json`(消すと次の起動でまた出る) |
 | tapi chat の稼働ディレクトリ | `~/.local/share/pekoe/tapi/`(会話の記録は Claude Code の `~/.claude/projects/` 側。`pekoe tapi reset` で消える) |
 | 人間用トークン(許可待ちへの回答などに要る。エージェントに読ませない) | `~/.local/share/pekoe/human-token` |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
