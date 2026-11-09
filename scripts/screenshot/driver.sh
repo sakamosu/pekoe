@@ -51,6 +51,9 @@ base = "main"
 [hooks]
 test = "echo 'Tests  14 passed (14)'"
 EOF
+# the first-run tutorial (internal/tui/tour.go) would cover the screenshot
+mkdir -p "$PEKOE_HOME/share"
+printf '{"seen_at":"2026-01-01T00:00:00Z"}\n' >"$PEKOE_HOME/share/tutorial.json"
 FAKEHOME=$(cd "$(dirname "$PEKOE_HOME")" && pwd -P)   # shown as ~ in the TUI
 export PEKOE_WORKTREES="$FAKEHOME/worktrees"
 pekoe daemon restart >&2
