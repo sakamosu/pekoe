@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"pekoe/internal/daemon"
 	"pekoe/internal/mascot"
 	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // tourModel is a model whose tutorial record lives in a temp dir (none yet).
@@ -465,6 +467,112 @@ func TestTourCardsFit(t *testing.T) {
 					t.Errorf("%s: %q is wider than the card", where, ansi.Strip(l))
 				}
 			}
+		}
+	}
+}
+
+// the card is framed with the focus ramp in truecolor, solid primary in
+// ansi, no color in none; the title is solid primary
+func TestTourCardFrame(t *testing.T) {
+	for _, mode := range []string{"truecolor", "ansi", "none"} {
+		m := borderModel(t, mode)
+		m.tapi.splash = false
+		m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
+		m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		for step := range tourSteps {
+			m.tourGo(step)
+			card := m.tourCard(50, 39)
+			h := len(card)
+			switch mode {
+			case "truecolor":
+				ramp := m.th.FocusRamp(focusRampLen(50, h))
+				if got := firstSGRBefore(card[0], "┏"); got != ramp[0] {
+					t.Errorf("step %d: top-left %q, want primary %q", step, got, ramp[0])
+				}
+				if got := firstSGRBefore(card[h-1], "┛"); got != ramp[len(ramp)-1] {
+					t.Errorf("step %d: bottom-right %q, want primary_end %q", step, got, ramp[len(ramp)-1])
+				}
+			case "ansi":
+				// solid primary: one color sequence, the primary's, for the whole run
+				seq := strings.TrimSuffix(m.th.FG(theme.Primary, "x"), "x\x1b[0m")
+				for _, l := range []string{card[0], card[h-1]} {
+					if !strings.HasPrefix(l, seq) || strings.Count(l, "\x1b[3") != 1 {
+						t.Errorf("step %d: ansi frame is not solid primary %q: %q", step, seq, l)
+					}
+				}
+			case "none":
+				for _, l := range []string{card[0], card[h-1]} {
+					if strings.Contains(l, "\x1b[3") {
+						t.Errorf("step %d: colors in none: %q", step, l)
+					}
+				}
+			}
+			if mode != "none" && !strings.Contains(card[1], m.th.Bold(theme.Primary, tourSteps[step].title)) {
+				t.Errorf("%s step %d: the title is not bold primary: %q", mode, step, card[1])
+			}
+		}
+	}
+}
+
+// outside the target (and the card) everything recedes to one dim color;
+// the target keeps its colors
+func TestTourDimsOutside(t *testing.T) {
+	sgr := func(m *model, r theme.Role) string { // "" when the role draws no color here
+		c := m.th.FG(r, "x")
+		if !strings.HasPrefix(c, "\x1b[") {
+			return ""
+		}
+		return strings.TrimSuffix(c, "x\x1b[0m")
+	}
+	// the colors in effect where text is drawn: the last sequence of each run
+	// (Cut keeps sequences that color nothing)
+	shown := func(s string) string {
+		return regexp.MustCompile(`(\x1b\[[0-9;]*m)+`).ReplaceAllStringFunc(s, func(run string) string {
+			i := strings.LastIndex(run, "\x1b[")
+			return run[i:]
+		})
+	}
+	for _, mode := range []string{"truecolor", "ansi", "none"} {
+		m := borderModel(t, mode)
+		m.tapi.splash = false
+		m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
+		m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		m.tourGo(1) // [1] Sessions: the agent panel is outside
+		lines := strings.Split(m.View(), "\n")
+		tgt := m.panelRect(pSessions)
+		agent := m.panelRect(pAgent)
+		for y := agent.y; y < agent.y+agent.h; y++ {
+			outside := shown(ansi.Cut(lines[y], agent.x, agent.x+agent.w))
+			plain := ansi.Strip(outside)
+			if strings.Contains(plain, "┃") || strings.Contains(plain, "┏") || strings.Contains(plain, "┗") || strings.TrimSpace(plain) == "" {
+				continue // the card, or nothing to dim
+			}
+			switch mode {
+			case "none":
+				if !strings.Contains(outside, "\x1b[2m") {
+					t.Errorf("none: row %d is not faint: %q", y, outside)
+				}
+			default:
+				for _, r := range []theme.Role{theme.Ok, theme.Secondary, theme.Primary, theme.Text, theme.Warn} {
+					if c := sgr(m, r); c != "" && strings.Contains(outside, c) {
+						t.Errorf("%s: row %d keeps %s outside the target: %q", mode, y, r, plain)
+					}
+				}
+				if !strings.Contains(outside, sgr(m, theme.Border)) {
+					t.Errorf("%s: row %d is not dimmed: %q", mode, y, outside)
+				}
+			}
+		}
+		if mode == "truecolor" {
+			inside := ansi.Cut(lines[tgt.y], tgt.x, tgt.x+tgt.w)
+			if ramp := m.th.FocusRamp(focusRampLen(tgt.w, tgt.h)); firstSGRBefore(inside, "╭") != ramp[0] {
+				t.Errorf("the target lost its focus frame: %q", inside)
+			}
+		}
+		// Welcome has no target: all but the card recedes
+		m.tourGo(0)
+		if out := m.View(); mode != "none" && strings.Contains(strings.Split(out, "\n")[1], sgr(m, theme.Ok)) {
+			t.Errorf("%s: welcome keeps colors behind the card", mode)
 		}
 	}
 }

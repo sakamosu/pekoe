@@ -12,12 +12,15 @@ package tui
 // meanwhile (session lists, events, screens) are kept and replayed onto the
 // real model when the tour ends, followed by a fresh load of everything.
 //
-// Focus follows the guidelines: the element in focus gets the focus frame
-// (the panel itself, or the dialog), cells inside a panel get the select
-// fill, the card is framed like the in-pane cards (border color), headed by
-// tapi's one-line face instead of an icon: tapi tells the tour.
-// The rest of the screen is not darkened (docs/ui-guidelines.md: no dimming
-// behind modals); the other borders are already plain border.
+// What is shown follows the guidelines' tutorial exceptions
+// (docs/ui-guidelines.md「チュートリアル」): the element explained keeps its
+// focus frame (the panel itself, or the dialog), cells inside a panel get the
+// select fill, and everything else recedes — colors stripped, redrawn in the
+// border role (faint without colors), the background left alone. The card
+// has a heavy frame with the focus ramp (primary → primary_end, solid primary
+// below truecolor), so the weight of the line tells it from the target's
+// frame, and a primary title headed by tapi's one-line face: tapi tells the
+// tour. Nothing moves.
 
 import (
 	"encoding/json"
@@ -272,8 +275,43 @@ func (m *model) tourView(body []string) []string {
 	if st.target != nil {
 		tgt, ok = st.target(m)
 	}
+	// everything but the target recedes (the card is drawn over it next)
+	for y := range body {
+		if ok && y >= tgt.y && y < tgt.y+tgt.h {
+			body[y] = m.dimCells(body[y], 0, tgt.x) + "\x1b[0m" + cutCells(body[y], tgt.x, tgt.x+tgt.w) + "\x1b[0m" + m.dimCells(body[y], tgt.x+tgt.w, m.width)
+		} else {
+			body[y] = m.dimCells(body[y], 0, m.width)
+		}
+	}
 	x, y, card := m.tourPlace(tgt, ok, len(body))
 	return placeAt(body, y, x, card)
+}
+
+// cutCells is the cells [a, b) of line with their colors, padded to b-a.
+func cutCells(line string, a, b int) string {
+	if b <= a {
+		return ""
+	}
+	s := ansi.Cut(line, a, b)
+	if d := b - a - w(s); d > 0 {
+		s += strings.Repeat(" ", d)
+	}
+	return s
+}
+
+// dimCells is the cells [a, b) of line receded: the text without its colors,
+// in the border role (bright black without truecolor), or faint without
+// colors. The background is left alone (the terminal's own, or bg), so the
+// dimming looks the same everywhere.
+func (m *model) dimCells(line string, a, b int) string {
+	s := ansi.Strip(cutCells(line, a, b))
+	if strings.TrimSpace(s) == "" {
+		return s
+	}
+	if m.th.Mode == theme.None {
+		return "\x1b[2m" + s + "\x1b[22m"
+	}
+	return m.th.FG(theme.Border, s)
 }
 
 // tourPlace picks where the card goes: beside the target when the card
@@ -336,7 +374,7 @@ func (m *model) tourCard(width, maxH int) []string {
 	if mood == "" {
 		mood = mascot.Idle
 	}
-	head := m.tapi.r.Line(m.tapi.r.Eyes(mood)) + " " + th.FG(theme.Text, st.title)
+	head := m.tapi.r.Line(m.tapi.r.Eyes(mood)) + " " + th.Bold(theme.Primary, st.title)
 	if gap := inner - w(head) - w(right); gap >= 1 {
 		head += strings.Repeat(" ", gap) + right
 	}
@@ -359,12 +397,15 @@ func (m *model) tourCard(width, maxH int) []string {
 			}
 		}
 	}
-	b := func(s string) string { return th.FG(theme.Border, s) }
-	tl, tr, bl, br := "╭", "╮", "╰", "╯"
-	if m.square {
-		tl, tr, bl, br = "┌", "┐", "└", "┘"
-	}
-	hz := strings.Repeat("─", max(width-2, 0))
+	// the frame is the focus ramp (primary → primary_end along the
+	// diagonal, solid primary without truecolor), so the eye finds the card
+	// at once; static, like every focus frame
+	height := len(lines) + 2
+	b := m.borderPainter(theme.Primary, width, height)
+	// a heavy frame: the target's focus frame has the same ramp, so the
+	// weight of the line is what tells the card from it
+	tl, tr, bl, br, vt := "┏", "┓", "┗", "┛", "┃"
+	hz := strings.Repeat("━", max(width-2, 0))
 	surf := func(s string) string {
 		s = " " + fit(s, inner) + " "
 		if th.Mode == theme.Truecolor {
@@ -372,11 +413,11 @@ func (m *model) tourCard(width, maxH int) []string {
 		}
 		return s
 	}
-	out := []string{b(tl + hz + tr)}
-	for _, l := range lines {
-		out = append(out, b("│")+surf(l)+b("│"))
+	out := []string{b(0, 0, tl+hz+tr)}
+	for i, l := range lines {
+		out = append(out, b(0, i+1, vt)+surf(l)+b(width-1, i+1, vt))
 	}
-	out = append(out, b(bl+hz+br))
+	out = append(out, b(0, height-1, bl+hz+br))
 	if len(out) > maxH {
 		out = out[:max(maxH, 0)]
 	}

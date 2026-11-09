@@ -264,7 +264,7 @@ Press `t` in any panel and [4] switches to a conversation with the mascot tapi (
 
 ### Tutorial
 
-The first time the TUI starts, a short tour walks through the screen: one part at a time is put in focus (Sessions, the state column, the agent, the new-session dialog, Changes and review, the PR view, land, Issues, tapi chat, the key list) with a card in which tapi explains it (the card text is in Japanese, like the tips). `↵` / `→` / `l` next, `←` / `h` back, `esc` / `q` skip. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped) is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
+The first time the TUI starts, a short tour walks through the screen: one part at a time is put in focus (Sessions, the state column, the agent, the new-session dialog, Changes and review, the PR view, land, Issues, tapi chat, the key list) with a card in which tapi explains it (the card text is in Japanese, like the tips); the rest of the screen dims. `↵` / `→` / `l` next, `←` / `h` back, `esc` / `q` skip. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped) is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
 
 ### Tips
 
