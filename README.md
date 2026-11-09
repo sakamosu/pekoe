@@ -143,7 +143,6 @@ pekoe                                                 # TUI
 | `pekoe tapi [reset [--yes]]` | tapi chat の状態 / 終了して会話を忘れる(TUI の `T` と同じ) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
-| `pekoe migrate [--dry-run] [--prune-old]` | boba からの移行(設定・状態・refs・hooks を一度に書き換える。[boba からの移行](#boba-からの移行)) |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
@@ -381,25 +380,6 @@ enable = true               # false で両方とも出さない
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
-
-## boba からの移行
-
-旧名 boba で使っていた環境は `pekoe migrate` で一度に移す。旧名を読み続ける互換処理は無いので、以下を順に行う。
-
-1. 旧エージェントを終わらせ、`boba daemon stop` でデーモンを止める(`pekoe migrate` はデーモンが動いていると中止する)
-2. `make install` で pekoe を入れ、旧 `~/.local/bin/boba` と `~/.local/bin/bobad` を消す
-3. `pekoe migrate --dry-run` で何が変わるかを確かめてから `pekoe migrate` を実行する
-   - `~/.config/boba` → `~/.config/pekoe`、`~/.local/share/boba` → `~/.local/share/pekoe` に移し、`bobad.sock` `bobad.log` などを `pekoed.*` に改名
-   - `state.db` の中の旧パスと旧 ref を書き換え、各リポジトリの `refs/boba/*` を `refs/pekoe/*` にコピー(`--prune-old` で旧 `refs/boba/*` も消す)
-   - セッションに保存された環境変数の `BOBA_PORT=…` などを `PEKOE_PORT=…` に改名する(値やプロンプト本文は変えない)
-   - `~/.claude/settings.json` の `boba event` の hooks を `pekoe event` に置き換える
-   - 最後に手作業で残っているものを表示する
-4. MCP を登録し直す: `claude mcp remove boba && claude mcp add pekoe -- pekoe mcp`
-5. launchd を使っていたら `make uninstall-launchd && make install-launchd`
-6. nvim の設定の `require("boba")` を `require("pekoe")` に(lazy.nvim の `dir` / `name` も)替え、Chrome 拡張を `chrome://extensions` で再読み込みする
-7. 旧エージェントが残っていなければ `tmux -L boba kill-server` で旧 tmux サーバーを止める
-
-すでに移行を済ませたあとで dev 窓などに `BOBA_PORT` が渡っている(セッションの環境変数が旧名のまま残っている)ときは、`pekoe daemon stop` でデーモンを止めて `pekoe migrate --dry-run` で `env BOBA_* → PEKOE_*` の行を確かめ、`pekoe migrate` をもう一度実行する。旧ディレクトリが無ければ移動は飛ばして `state.db` だけを直す。デーモンを立て直したら、開いている dev 窓・run 窓は閉じて開き直す(すでに起動している窓の環境は変わらない)。
 
 ## 開発
 

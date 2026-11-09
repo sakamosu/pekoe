@@ -40,15 +40,14 @@ var NoTip = map[string]string{
 	".":   "TIPS 自身の送りキー。tip の見出しに常に出ている",
 
 	// subcommands
-	"pekoe ls":      "基本の一覧。README の最初に出てくる",
-	"pekoe rm":      "後片付け。TUI の D と同じで、tip にするほどの発見がない",
-	"pekoe answer":  "許可待ちには TUI の Permission モーダルか Web UI で答えるのが主で、CLI はスクリプト用",
-	"pekoe attach":  "デバッグ用(tmux の窓に直接 attach)",
-	"pekoe hooks":   "インストール時に一度だけ使う",
-	"pekoe event":   "hooks から呼ばれる内部用",
-	"pekoe daemon":  "デーモンの操作。ふだんは TUI が起動する",
-	"pekoe migrate": "旧名 boba からの一度きりの移行",
-	"pekoe tip":     "TIPS 自身。tapi chat が使う",
+	"pekoe ls":     "基本の一覧。README の最初に出てくる",
+	"pekoe rm":     "後片付け。TUI の D と同じで、tip にするほどの発見がない",
+	"pekoe answer": "許可待ちには TUI の Permission モーダルか Web UI で答えるのが主で、CLI はスクリプト用",
+	"pekoe attach": "デバッグ用(tmux の窓に直接 attach)",
+	"pekoe hooks":  "インストール時に一度だけ使う",
+	"pekoe event":  "hooks から呼ばれる内部用",
+	"pekoe daemon": "デーモンの操作。ふだんは TUI が起動する",
+	"pekoe tip":    "TIPS 自身。tapi chat が使う",
 
 	// config.toml
 	"[http]":    "Chrome 拡張の port。pekoe ext の tip で足りる",
