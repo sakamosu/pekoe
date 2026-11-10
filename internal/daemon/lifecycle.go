@@ -526,6 +526,7 @@ func (d *Daemon) finishLanding(slug string) error {
 	}
 	d.update(slug, func(x *state.Session) {
 		x.State, x.Landing, x.Dev, x.Stopped = state.Landed, false, false, true
+		landedPRMerged(x)
 	})
 	return nil
 }

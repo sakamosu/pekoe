@@ -472,7 +472,30 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 	if prev.Same(next) {
 		return
 	}
-	d.update(slug, func(x *state.Session) { x.PRStatus = next })
+	d.update(slug, func(x *state.Session) {
+		x.PRStatus = next
+		landedPRMerged(x) // a fetch from before the merge that finished after it
+	})
+}
+
+// landedPRMerged marks a landed session's PR as merged. A session lands
+// only when watchMerges saw its PR merged (or, without origin, with no PR
+// at all), and polling stops at landed, so the summary would otherwise stay
+// at what it was last fetched before the merge: CI running, CI passed.
+// It reports whether it changed anything. Called under the session's lock
+// (update).
+func landedPRMerged(x *state.Session) bool {
+	if x.State != state.Landed || x.PR == 0 || (x.PRStatus != nil && x.PRStatus.State == "MERGED") {
+		return false
+	}
+	c := state.PRStatus{}
+	if x.PRStatus != nil {
+		c = *x.PRStatus
+	}
+	c.State = "MERGED"
+	c.Attention, c.AttentionAt = nil, time.Time{} // nothing left to act on
+	x.PRStatus = &c
+	return true
 }
 
 // hPRSeen clears PR attention without fetching (the PR view was opened on

@@ -1610,6 +1610,11 @@ func (d *Daemon) restore() {
 	d.realignRepoIDs()
 	for _, s := range list {
 		if s.State == state.Landed {
+			// landed before landedPRMerged existed: the summary still
+			// shows the last fetch before the merge
+			if s.PR > 0 && (s.PRStatus == nil || s.PRStatus.State != "MERGED") {
+				d.update(s.Slug, func(x *state.Session) { landedPRMerged(x) })
+			}
 			continue
 		}
 		if s.State == state.Creating {
