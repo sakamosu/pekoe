@@ -58,6 +58,20 @@ func waitServing(t *testing.T) {
 	t.Fatal("daemon never served its socket")
 }
 
+// waitPidFile waits until the pid file holds want and returns what it last
+// held. Run writes it after it starts listening (and after it notes its
+// socket's identity), so the socket can answer before it is there: reading
+// it right after waitServing races with that write.
+func waitPidFile(want string) string {
+	var b []byte
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if b, _ = os.ReadFile(paths.PidFile()); string(b) == want {
+			break
+		}
+	}
+	return string(b)
+}
+
 func stopAndWait(t *testing.T, d *Daemon, done chan error) {
 	t.Helper()
 	d.Stop()
@@ -122,6 +136,12 @@ func TestShutdownKeepsNewerSocket(t *testing.T) {
 	}
 	done := runBG(d)
 	waitServing(t)
+	// let Run finish starting first: it notes its socket's identity and
+	// then writes the pid file, which would otherwise land on the newer
+	// daemon's socket and pid file below
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q", got)
+	}
 
 	// another daemon took over the path (e.g. one sharing $PEKOE_SOCK)
 	sock := paths.Socket()
@@ -166,8 +186,8 @@ func TestShutdownRemovesOwnSocket(t *testing.T) {
 	}
 	done := runBG(d)
 	waitServing(t)
-	if b, _ := os.ReadFile(paths.PidFile()); string(b) != fmt.Sprint(os.Getpid()) {
-		t.Fatalf("pid file = %q", b)
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q", got)
 	}
 	stopAndWait(t, d, done)
 	if _, err := os.Lstat(paths.Socket()); !os.IsNotExist(err) {
@@ -249,8 +269,8 @@ func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
 	if got, ok := statID(paths.Socket()); !ok || got == old.sockID {
 		t.Fatalf("socket missing or still the old daemon's (exists=%v)", ok)
 	}
-	if b, _ := os.ReadFile(paths.PidFile()); string(b) != fmt.Sprint(os.Getpid()) {
-		t.Fatalf("pid file = %q, want the new daemon's", b)
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q, want the new daemon's", got)
 	}
 	stopAndWait(t, winner, winDone)
 }
