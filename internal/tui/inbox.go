@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -79,7 +80,12 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		}
 		if !m.inboxToasted[it.ID] {
 			m.inboxToasted[it.ID] = true
-			m.setMsg("✉ "+it.From+" asks: "+clip(inboxText(firstLine(it.Question)), 40)+" · ]a", false)
+			text := "✉ " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + " · ]a"
+			if inboxHoldsUp(it) && !m.quietNotify() {
+				m.waitToast("", mascot.Wait, text) // an agent waits on it (notify.go)
+			} else {
+				m.setMsg(text, false)
+			}
 		}
 	} else if i >= 0 {
 		m.inbox = append(m.inbox[:i], m.inbox[i+1:]...)

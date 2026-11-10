@@ -215,11 +215,7 @@ func (m *model) tapiOnSession(prev state.State, s *state.Session, curSlug string
 		return
 	}
 	t.toasted[key] = true
-	if c := t.toast; c != nil && c.react != nil && time.Now().Before(c.until) {
-		// a PR toast steps aside for wait / error and comes back later
-		m.queueReaction(queuedReaction{r: *c.react, at: time.Now(), dur: time.Until(c.until)})
-	}
-	t.toast = &toast{slug: s.Slug, mood: mood, text: mascot.SessionSpeech(s), until: time.Now().Add(toastFor)}
+	m.waitToast(s.Slug, mood, mascot.SessionSpeech(s))
 }
 
 // escalate: a wait left alone for 2 minutes becomes an OS notification,
@@ -240,6 +236,9 @@ func (m *model) escalate() tea.Cmd {
 		}
 		m.tapi.notified[key] = true
 		b.WriteString(notifySeq("pekoe", mascot.SessionSpeech(s)))
+	}
+	for _, body := range m.orchNotify(now) { // tapi and the inbox (notify.go)
+		b.WriteString(notifySeq("pekoe", body))
 	}
 	if b.Len() == 0 {
 		return nil
@@ -310,10 +309,10 @@ func (m *model) speech(mood mascot.Mood, s string) string {
 func (m *model) barTapi(width int) string {
 	sum := m.summary()
 	text := sum.Speech()
-	if m.chatWaits() && mascot.Priority(sum.Mood) > mascot.Priority(mascot.Wait) {
-		// tapi chat waits behind its closed window: weaker than a session's wait
-		sum.Mood, sum.Since = mascot.Wait, m.chat.info.StateSince
-		text = "chat waits · t"
+	if txt, since, ok := m.orchWait(); ok && mascot.Priority(sum.Mood) > mascot.Priority(mascot.Wait) {
+		// tapi behind its closed chat, or an agent's question (notify.go):
+		// a session's wait or error keeps the bar
+		sum.Mood, sum.Since, text = mascot.Wait, since, txt
 	}
 	if m.chat.open || m.tour != nil { // tapi's face is in the chat window's title or the tutorial's card: one face at a time
 		return m.speech(sum.Mood, clip(text, max(width/2-6, 4)))

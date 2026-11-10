@@ -192,9 +192,11 @@ func TestChatResetAndHelp(t *testing.T) {
 }
 
 // tapi waiting behind a closed window shows in the bar; while the chat is
-// open the bar leaves its face to the window's title.
+// open the bar leaves its face to the window's title. (notify = "quiet":
+// the old word. The default is in notify_test.go.)
 func TestChatWaitsInBar(t *testing.T) {
 	m, _, _ := chatModel(t)
+	m.g.Orchestrator.Notify = "quiet"
 	data, _ := json.Marshal(daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Waiting, WaitKind: "permission", StateSince: time.Now()})
 	runCmd(m, m.onEvent(client.Event{Event: "tapi.updated", Data: data}))
 	if out := checkSize(t, m, "waits"); !strings.Contains(out, "chat waits · t") {

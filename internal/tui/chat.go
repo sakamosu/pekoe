@@ -165,6 +165,7 @@ func (m *model) chatEvent(ev client.Event) (tea.Cmd, bool) {
 		var v daemon.Tapi
 		if json.Unmarshal(ev.Data, &v) == nil {
 			m.chat.info = &v
+			m.tapiOnChat()
 		}
 		return nil, true
 	case "tapi.output":
