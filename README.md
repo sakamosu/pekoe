@@ -289,7 +289,7 @@ Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats un
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md). Add `{ dir = "~/.local/share/pekoe/nvim" }` to lazy.nvim (the link `make install` creates; if you installed a release with the steps above, use `~/.local/opt/pekoe/share/pekoe/nvim`). The nvim that pekoe starts loads it automatically. Besides the review surface (`:PekoeReview` `:PekoeSend`): `<leader>bs` sends the selection, `<leader>bn` starts a new session from the selection, a floating window for permission prompts, and `:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`.
+[nvim/README.md](nvim/README.md). Add `{ dir = "~/.local/share/pekoe/nvim" }` to lazy.nvim (the link `make install` creates; if you installed a release with the steps above, use `~/.local/opt/pekoe/share/pekoe/nvim`). The nvim that pekoe starts loads it automatically. Besides the review surface (`:PekoeReview` `:PekoeSend`): `<leader>bs` sends the selection, `<leader>bn` starts a new session from the selection, a floating window for permission prompts (it does not take the focus: `<leader>ba` enters it, and you answer from the agent's screen shown in it), and `:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`.
 
 ### Chrome extension
 

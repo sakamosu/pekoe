@@ -287,7 +287,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md)。`{ dir = "~/.local/share/pekoe/nvim" }` を lazy.nvim に足す(`make install` が置くリンク。リリースを上の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim`)。pekoe が起動する nvim には自動で読み込まれる。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
+[nvim/README.md](nvim/README.md)。`{ dir = "~/.local/share/pekoe/nvim" }` を lazy.nvim に足す(`make install` が置くリンク。リリースを上の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim`)。pekoe が起動する nvim には自動で読み込まれる。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート(フォーカスは奪わず、`<leader>ba` で入って画面を見て答える)、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
 
 ### Chrome 拡張
 

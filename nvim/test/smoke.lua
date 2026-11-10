@@ -72,25 +72,61 @@ local ok, err = xpcall(function()
   check(e2 and find(e2, "no such session"), "error responses are surfaced")
 
   -- C. 許可待ちフロート(subscribe 後 0.3 秒で session.waiting が来る)
+  local function answers()
+    local out = {}
+    for _, e in ipairs(daemon_log()) do
+      if e.method == "session.answer" then
+        table.insert(out, e)
+      end
+    end
+    return out
+  end
+  local home_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "some text", "more" })
   check(wait(2000, function() return approval.current() ~= nil end), "approval float shown on session.waiting")
   local c = approval.current()
   if c then
+    check(vim.api.nvim_get_current_win() == home_win, "approval float does not take the focus")
+    check(wait(1000, function() return find(buf_text(c.buf), "Do you want to proceed?") end), "approval float shows the agent's screen")
     local t = buf_text(c.buf)
     check(find(t, "Permission · fix-y"), "approval float title")
     check(find(t, "Bash") and find(t, "pnpm prisma migrate dev"), "approval float shows pending tool")
-    check(vim.api.nvim_get_current_win() == c.win, "approval float is focused")
+    check(not find(t, "\27"), "screen is shown without escape sequences")
+    -- 打鍵中の yy は自分のバッファの yank のまま
+    vim.api.nvim_feedkeys("yy", "x", false)
+    vim.wait(200)
+    check(#answers() == 0, "yy in the editor does not answer the prompt")
+    check(approval.current() ~= nil, "float stays after typing elsewhere")
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<leader>ba", true, false, true), "x", false)
+    check(vim.api.nvim_get_current_win() == c.win, "<leader>ba focuses the float")
     vim.api.nvim_feedkeys("y", "x", false)
-    check(wait(1000, function()
-      return logged("session.answer", function(p) return p.slug == "fix-y" and p.answer == "allow" end) ~= nil
-    end), "y sends session.answer allow")
-    local tok
-    for _, e in ipairs(daemon_log()) do
-      if e.method == "session.answer" then
-        tok = e.token
-      end
-    end
-    check(tok == "test-human-token", "session.answer carries the human token (got " .. tostring(tok) .. ")")
+    check(wait(1000, function() return #answers() == 1 end), "y sends session.answer")
+    local a = answers()[1] or {}
+    local p = a.params or {}
+    check(p.slug == "fix-y" and p.answer == "allow", "session.answer allow for fix-y")
+    check(type(p.expect) == "table" and type(p.expect.tool) == "table" and p.expect.tool.name == "Bash"
+      and p.expect.tool.input == "pnpm prisma migrate dev", "session.answer carries the shown tool as expect")
+    check(a.token == "test-human-token", "session.answer carries the human token (got " .. tostring(a.token) .. ")")
     check(approval.current() == nil, "approval float closed after answer")
+    check(vim.api.nvim_get_current_win() == home_win, "focus goes back after answer")
+
+    -- 偽の pending_tool(フックは偽造できる): expect が合わず断られ、本物で出し直す
+    client.request_sync("test.emit", { event = "session.waiting", data = {
+      slug = "fix-y", state = "waiting", wait_kind = "permission",
+      pending_tool = { name = "Read", input = "README.md" } } })
+    check(wait(1000, function()
+      local x = approval.current()
+      return x and x.tool and x.tool.name == "Read" and find(buf_text(x.buf), "Do you want to proceed?")
+    end), "forged prompt shown alongside the real screen")
+    approval.focus()
+    vim.api.nvim_feedkeys("y", "x", false)
+    check(wait(1000, function() return #answers() == 2 end), "second answer sent")
+    check(wait(1000, function()
+      local x = approval.current()
+      return x and x.tool and x.tool.name == "Bash"
+    end), "a changed prompt is refused and the float shows the daemon's tool again")
+    check(vim.api.nvim_get_current_win() ~= (approval.current() or {}).win, "re-shown float is not focused")
+    approval.close()
   end
 
   -- A. レビュー
