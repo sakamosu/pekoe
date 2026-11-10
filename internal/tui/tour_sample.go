@@ -6,11 +6,13 @@ package tui
 // agent's screen and a tapi chat. Every claim in a step's text is about a
 // key or a view that exists; check them against the code when keys move.
 //
-// The text is Japanese, the second exception to English UI text after the
-// tips (docs/ui-guidelines.md): long explanations everyone reads on the
-// first run, in the polite form (です・ます; the tips are plain form). Keys,
-// commands and the names shown on screen (Sessions, New session …) stay as
-// they are; put spaces around them, as in tips.toml.
+// The text comes in English and Japanese (ja / en, tourLang picks one), the
+// second exception to English-only UI text after the tips
+// (docs/ui-guidelines.md): long explanations everyone reads on the first
+// run. Both say the same thing; change them together. The Japanese is in
+// the polite form (です・ます; the tips are plain form). Keys, commands and
+// the names shown on screen (Sessions, New session …) stay as they are in
+// both; in Japanese, put spaces around them, as in tips.toml.
 
 import (
 	"fmt"
@@ -36,20 +38,38 @@ var tourRepo = daemon.KnownRepo{ID: "github.com_acme_webapp", Name: "webapp", Di
 
 var tourSteps = []tourStep{
 	{
-		title: "pekoe へようこそ",
-		body:  "はじめまして、tapi です。pekoe は、コーディングエージェントを並列で動かすためのツールです。セッションごとに専用の git worktree が作られます。このツアーでは、サンプルのセッションを使って画面をご案内します。ツアー中に押したキーは実際のセッションには送られないので、気軽に触ってみてください。",
+		ja: tourCopy{
+			title: "pekoe へようこそ",
+			body:  "はじめまして、tapi です。pekoe は、コーディングエージェントを並列で動かすためのツールです。セッションごとに専用の git worktree が作られます。このツアーでは、サンプルのセッションを使って画面をご案内します。ツアー中に押したキーは実際のセッションには送られないので、気軽に触ってみてください。",
+		},
+		en: tourCopy{
+			title: "Welcome to pekoe",
+			body:  "Hi, I'm tapi. pekoe is a tool for running coding agents in parallel. Each session gets its own git worktree. In this tour, I'll show you around the screen with sample sessions. Keys you press during the tour never reach your real sessions, so feel free to try things out.",
+		},
 	},
 	{
-		title: "[1] Sessions",
-		body:  "ここには、エージェントのセッションがリポジトリごとにまとめて並びます。{j}/{k} でセッションを選ぶと、[4] の表示もそのセッションに切り替わります。",
+		ja: tourCopy{
+			title: "[1] Sessions",
+			body:  "ここには、エージェントのセッションがリポジトリごとにまとめて並びます。{j}/{k} でセッションを選ぶと、[4] の表示もそのセッションに切り替わります。",
+		},
+		en: tourCopy{
+			title: "[1] Sessions",
+			body:  "Your agent sessions are listed here, grouped by repository. Pick one with {j}/{k} and [4] switches to that session too.",
+		},
 		setup: func(m *model) { m.focus = pSessions },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pSessions), true
 		},
 	},
 	{
-		title: "状態の見かた",
-		body:  "{@running} run は作業中、{@waiting} wait は入力待ち、{@done} done はレビュー待ち、{@idle} idle は待機中です。右側には、その状態になってからの経過時間、diff の量、テスト結果が並びます。入力待ちのセッションがあれば、{]a} ですぐに移動できますよ。",
+		ja: tourCopy{
+			title: "状態の見かた",
+			body:  "{@running} run は作業中、{@waiting} wait は入力待ち、{@done} done はレビュー待ち、{@idle} idle は待機中です。右側には、その状態になってからの経過時間、diff の量、テスト結果が並びます。入力待ちのセッションがあれば、{]a} ですぐに移動できますよ。",
+		},
+		en: tourCopy{
+			title: "Reading states",
+			body:  "{@running} run is working, {@waiting} wait needs your input, {@done} done is ready for review, {@idle} idle is on standby. To the right are the time spent in that state, the size of the diff, and the test results. When a session is waiting for you, {]a} takes you straight there.",
+		},
 		setup: func(m *model) { m.focus = pSessions },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pSessions), true
@@ -68,16 +88,28 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "[4] Agent",
-		body:  "選んだエージェントの端末が、そのまま表示されます。{↵} か {i} で入力を始めると、{^q} で抜けるまで、キー入力はすべてエージェントに送られます。{v} を押すと、preview と dev サーバーの画面に切り替わります。",
+		ja: tourCopy{
+			title: "[4] Agent",
+			body:  "選んだエージェントの端末が、そのまま表示されます。{↵} か {i} で入力を始めると、{^q} で抜けるまで、キー入力はすべてエージェントに送られます。{v} を押すと、preview と dev サーバーの画面に切り替わります。",
+		},
+		en: tourCopy{
+			title: "[4] Agent",
+			body:  "This is the selected agent's terminal, shown as it is. Start typing with {↵} or {i}: every key goes to the agent until you leave with {^q}. {v} switches to the preview and dev server screens.",
+		},
 		setup: func(m *model) { m.focus = pAgent },
 		target: func(m *model) (rect, bool) {
 			return m.panelRect(pAgent), true
 		},
 	},
 	{
-		title: "New session",
-		body:  "{n} で新しいセッションを作れます。ブランチ名、元にする issue(gh#123 など。省略可)、最初のプロンプトを入力してください。worktree の作成とエージェントの起動は、pekoe がやっておきます。",
+		ja: tourCopy{
+			title: "New session",
+			body:  "{n} で新しいセッションを作れます。ブランチ名、元にする issue(gh#123 など。省略可)、最初のプロンプトを入力してください。worktree の作成とエージェントの起動は、pekoe がやっておきます。",
+		},
+		en: tourCopy{
+			title: "New session",
+			body:  "{n} creates a new session. Enter a branch name, an issue to start from (like gh#123; optional) and a first prompt. pekoe takes care of creating the worktree and starting the agent.",
+		},
 		setup: func(m *model) {
 			nm := newNewModal(m, "feat/csv-export")
 			p := "Add a CSV export button to the orders page"
@@ -88,9 +120,16 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		title:  "[3] Changes",
-		body:   "選んだセッションが変更したファイルの一覧です。{@overlap} が付いたファイルは、ほかのセッションも変更しているので注意してください。{r} または {↵} でレビュー画面を開くと、hunk ごとに承認したりコメントを付けたりして、エージェントに差し戻せます。{[ ]} で Picks(Chrome で選んだ要素)に切り替わります。",
-		narrow: "選んだセッションが変更したファイルの一覧です。{@overlap} が付いたファイルは、ほかのセッションも変更しているので注意してください。{r} または {↵} でレビュー画面を開くと、hunk ごとに承認したりコメントを付けたりして、エージェントに差し戻せます。",
+		ja: tourCopy{
+			title:  "[3] Changes",
+			body:   "選んだセッションが変更したファイルの一覧です。{@overlap} が付いたファイルは、ほかのセッションも変更しているので注意してください。{r} または {↵} でレビュー画面を開くと、hunk ごとに承認したりコメントを付けたりして、エージェントに差し戻せます。{[ ]} で Picks(Chrome で選んだ要素)に切り替わります。",
+			narrow: "選んだセッションが変更したファイルの一覧です。{@overlap} が付いたファイルは、ほかのセッションも変更しているので注意してください。{r} または {↵} でレビュー画面を開くと、hunk ごとに承認したりコメントを付けたりして、エージェントに差し戻せます。",
+		},
+		en: tourCopy{
+			title:  "[3] Changes",
+			body:   "The files the selected session has changed. A file marked {@overlap} is being changed by another session too, so take care. {r} or {↵} opens the review, where you can approve hunks or add comments and send them back to the agent. {[ ]} switches to Picks (elements picked in Chrome).",
+			narrow: "The files the selected session has changed. A file marked {@overlap} is being changed by another session too, so take care. {r} or {↵} opens the review, where you can approve hunks or add comments and send them back to the agent.",
+		},
 		setup: func(m *model) {
 			m.focus = pThird
 			m.narrowTab = 3
@@ -100,8 +139,14 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "PR view",
-		body:  "{p} を押すと、[4] にこのセッションの GitHub PR が表示されます。checks、レビュー、未解決のスレッドが一覧になります。直してほしい項目を {space} で選んで {s} を押せば、エージェントに伝えられます。",
+		ja: tourCopy{
+			title: "PR view",
+			body:  "{p} を押すと、[4] にこのセッションの GitHub PR が表示されます。checks、レビュー、未解決のスレッドが一覧になります。直してほしい項目を {space} で選んで {s} を押せば、エージェントに伝えられます。",
+		},
+		en: tourCopy{
+			title: "PR view",
+			body:  "{p} shows this session's GitHub PR in [4]: checks, reviews and unresolved threads. Select what needs fixing with {space}, then press {s} to pass it on to the agent.",
+		},
 		setup: func(m *model) {
 			m.tourSelect(tourDone)
 			m.window = winPR
@@ -112,8 +157,14 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "land",
-		body:  "セッションが done になったら、{l} で land(取り込み)しましょう。rebase、テスト、push、PR の作成までをまとめて実行し、PR がマージされたら worktree を片付けます。実行前に、コンフリクトが起きそうな箇所をお知らせしてから確認しますね。",
+		ja: tourCopy{
+			title: "land",
+			body:  "セッションが done になったら、{l} で land(取り込み)しましょう。rebase、テスト、push、PR の作成までをまとめて実行し、PR がマージされたら worktree を片付けます。実行前に、コンフリクトが起きそうな箇所をお知らせしてから確認しますね。",
+		},
+		en: tourCopy{
+			title: "land",
+			body:  "Once a session is done, land it with {l}. It runs rebase, tests, push and PR creation in one go, and cleans up the worktree once the PR is merged. Before it starts, it shows where conflicts look likely and asks you to confirm.",
+		},
 		setup: func(m *model) {
 			m.tourSelect(tourDone)
 			m.focus = pSessions
@@ -128,9 +179,16 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title:  "[2] Worktrees · Browser · Issues",
-		body:   "{[ ]} で表示を切り替えられます。Issues には GitHub の issue が並び、{n} でその issue からセッションを始められます。Browser では、Chrome のタブをポート番号でセッションに紐づけます。",
-		narrow: "{[ ]} で Sessions・Worktrees・Issues・Changes のタブを順に切り替えられます。Issues には GitHub の issue が並び、{n} でその issue からセッションを始められます。",
+		ja: tourCopy{
+			title:  "[2] Worktrees · Browser · Issues",
+			body:   "{[ ]} で表示を切り替えられます。Issues には GitHub の issue が並び、{n} でその issue からセッションを始められます。Browser では、Chrome のタブをポート番号でセッションに紐づけます。",
+			narrow: "{[ ]} で Sessions・Worktrees・Issues・Changes のタブを順に切り替えられます。Issues には GitHub の issue が並び、{n} でその issue からセッションを始められます。",
+		},
+		en: tourCopy{
+			title:  "[2] Worktrees · Browser · Issues",
+			body:   "{[ ]} switches between them. Issues lists GitHub issues; {n} starts a session from one. Browser ties Chrome tabs to sessions by port number.",
+			narrow: "{[ ]} cycles through the Sessions, Worktrees, Issues and Changes tabs. Issues lists GitHub issues; {n} starts a session from one.",
+		},
 		setup: func(m *model) {
 			m.focus = pSecond
 			m.sub2 = subIssues
@@ -141,8 +199,14 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "tapi chat",
-		body:  "どのパネルからでも、{t} を押すと [4] がわたしとのチャットになります。調べものを頼んだり、セッションを作って作業を任せたりしてください。{T} で会話を最初からやり直せます。",
+		ja: tourCopy{
+			title: "tapi chat",
+			body:  "どのパネルからでも、{t} を押すと [4] がわたしとのチャットになります。調べものを頼んだり、セッションを作って作業を任せたりしてください。{T} で会話を最初からやり直せます。",
+		},
+		en: tourCopy{
+			title: "tapi chat",
+			body:  "From any panel, {t} turns [4] into a chat with me. Ask me to look things up, or to create a session and hand off work. {T} starts the conversation over.",
+		},
 		setup: func(m *model) {
 			m.focus = pAgent
 			m.chat = chatState{open: true, info: tourTapi(), screen: m.tourChatScreen()}
@@ -152,8 +216,14 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
-		title: "キーとコマンド",
-		body:  "キーを忘れたら {?} を押してください。今いるパネルで使えるキーが一覧になり、選んで {↵} を押せばそのまま実行できます。{:} ではコマンド名を入力して実行できます(new、send、land、review、tutorial など)。",
+		ja: tourCopy{
+			title: "キーとコマンド",
+			body:  "キーを忘れたら {?} を押してください。今いるパネルで使えるキーが一覧になり、選んで {↵} を押せばそのまま実行できます。{:} ではコマンド名を入力して実行できます(new、send、land、review、tutorial など)。",
+		},
+		en: tourCopy{
+			title: "Keys and commands",
+			body:  "Forgot a key? Press {?}. It lists every key for the current panel; pick one and press {↵} to run it. {:} runs a command by name (new, send, land, review, tutorial, and more).",
+		},
 		setup: func(m *model) {
 			m.focus = pThird
 			m.narrowTab = 3
@@ -162,8 +232,14 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
-		title: "ツアーはここまで",
-		body:  "おつかれさまでした。{" + tourKey + "} か {:tutorial} で、いつでももう一度ご案内します。ツアーを閉じると、自分のセッションに戻ります。",
+		ja: tourCopy{
+			title: "ツアーはここまで",
+			body:  "おつかれさまでした。{" + tourKey + "} か {:tutorial} で、いつでももう一度ご案内します。ツアーを閉じると、自分のセッションに戻ります。",
+		},
+		en: tourCopy{
+			title: "That's the tour",
+			body:  "Nice work! I can show you around again any time with {" + tourKey + "} or {:tutorial}. Close the tour to return to your sessions.",
+		},
 	},
 }
 

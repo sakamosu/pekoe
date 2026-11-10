@@ -21,9 +21,19 @@ import (
 	"pekoe/internal/theme"
 )
 
-// tourModel is a model whose tutorial record lives in a temp dir (none yet).
+// tourLocale sets the locale variables the tour's language goes by.
+func tourLocale(t *testing.T, all, messages, lang string) {
+	t.Helper()
+	t.Setenv("LC_ALL", all)
+	t.Setenv("LC_MESSAGES", messages)
+	t.Setenv("LANG", lang)
+}
+
+// tourModel is a model whose tutorial record lives in a temp dir (none
+// yet), in a Japanese locale.
 func tourModel(t *testing.T, color string, width, height int) *model {
 	t.Helper()
+	tourLocale(t, "", "", "ja_JP.UTF-8")
 	m := tapiModel(t, color, config.Mascot{Glyphs: "ascii"})
 	m.width, m.height = width, height
 	m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
@@ -49,7 +59,7 @@ func tourStepTitle(m *model) string {
 	if m.tour == nil {
 		return ""
 	}
-	return tourSteps[m.tour.step].title
+	return m.tourCopy().title
 }
 
 func TestTourStartsOnFirstRun(t *testing.T) {
@@ -170,20 +180,23 @@ func TestTourReplayKeyAndCommand(t *testing.T) {
 func TestTourWalksEveryStep(t *testing.T) {
 	for _, size := range [][2]int{{150, 45}, {120, 40}, {100, 30}, {80, 24}, {60, 18}, {40, 12}} {
 		for _, color := range []string{"truecolor", "ansi", "none"} {
-			m := tourModel(t, color, size[0], size[1])
-			m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-			seen := 0
-			for m.tour != nil && seen < 50 {
-				seen++
-				out := m.View()
-				keepsSize(t, m, out)
-				if !strings.Contains(ansi.Strip(out), tourSteps[m.tour.step].title) && size[1] >= 18 {
-					t.Errorf("%dx%d %s: step %q has no card:\n%s", size[0], size[1], color, tourSteps[m.tour.step].title, ansi.Strip(out))
+			for _, lang := range []string{tourJa, tourEn} {
+				m := tourModel(t, color, size[0], size[1])
+				m.tourLang = lang
+				m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+				seen := 0
+				for m.tour != nil && seen < 50 {
+					seen++
+					out := m.View()
+					keepsSize(t, m, out)
+					if !strings.Contains(ansi.Strip(out), tourStepTitle(m)) && size[1] >= 18 {
+						t.Errorf("%dx%d %s %s: step %q has no card:\n%s", size[0], size[1], color, lang, tourStepTitle(m), ansi.Strip(out))
+					}
+					m.Update(key("enter"))
 				}
-				m.Update(key("enter"))
-			}
-			if m.tour != nil {
-				t.Fatalf("%dx%d: the tour never ended", size[0], size[1])
+				if m.tour != nil {
+					t.Fatalf("%dx%d: the tour never ended", size[0], size[1])
+				}
 			}
 		}
 	}
@@ -339,30 +352,32 @@ func TestTourInHelp(t *testing.T) {
 func TestTourTextWrapsJapanese(t *testing.T) {
 	m := tourModel(t, "none", 120, 40)
 	strip := func(s string) string { return strings.ReplaceAll(ansi.Strip(s), " ", "") }
-	for _, st := range tourSteps {
-		for _, body := range []string{st.body, st.narrow} {
-			if body == "" {
-				continue
-			}
-			src := strings.ReplaceAll(body, "^q", m.prefixLabel())
-			want := strip(m.tourText(src, 1000)[0])
-			for width := 16; width <= 60; width++ {
-				lines := m.tourText(src, width)
-				got := ""
-				for _, l := range lines {
-					got += strip(l)
-					if lw := ansi.StringWidth(l); lw > width && !strings.Contains(l, "{") {
-						// only a single piece longer than the line may stick out
-						if len(strings.Fields(ansi.Strip(l))) > 1 && lw > width {
-							t.Errorf("%q at %d: line %q is %d wide", st.title, width, ansi.Strip(l), lw)
+	for _, step := range tourSteps {
+		for _, st := range []tourCopy{step.ja, step.en} {
+			for _, body := range []string{st.body, st.narrow} {
+				if body == "" {
+					continue
+				}
+				src := strings.ReplaceAll(body, "^q", m.prefixLabel())
+				want := strip(m.tourText(src, 1000)[0])
+				for width := 16; width <= 60; width++ {
+					lines := m.tourText(src, width)
+					got := ""
+					for _, l := range lines {
+						got += strip(l)
+						if lw := ansi.StringWidth(l); lw > width && !strings.Contains(l, "{") {
+							// only a single piece longer than the line may stick out
+							if len(strings.Fields(ansi.Strip(l))) > 1 && lw > width {
+								t.Errorf("%q at %d: line %q is %d wide", st.title, width, ansi.Strip(l), lw)
+							}
+						}
+						if r := []rune(ansi.Strip(l)); len(r) > 0 && strings.ContainsRune(noLineStart, r[0]) {
+							t.Errorf("%q at %d: line starts with %q: %q", st.title, width, r[0], ansi.Strip(l))
 						}
 					}
-					if r := []rune(ansi.Strip(l)); len(r) > 0 && strings.ContainsRune(noLineStart, r[0]) {
-						t.Errorf("%q at %d: line starts with %q: %q", st.title, width, r[0], ansi.Strip(l))
+					if got != want {
+						t.Errorf("%q at %d: text changed:\n%s\n%s", st.title, width, got, want)
 					}
-				}
-				if got != want {
-					t.Errorf("%q at %d: text changed:\n%s\n%s", st.title, width, got, want)
 				}
 			}
 		}
@@ -407,7 +422,7 @@ func TestTourOneFace(t *testing.T) {
 					}
 					face := ansi.Strip(r.Line(r.Eyes(mascot.Done)))
 					if n == 1 && size[1] >= 30 {
-						if line := lineWith(t, plain, face); !strings.Contains(line, tourSteps[step].title) {
+						if line := lineWith(t, plain, face); !strings.Contains(line, m.tourCopy().title) {
 							t.Errorf("%s: the face is not on the title line: %q", where, line)
 						}
 					}
@@ -432,32 +447,31 @@ func uniq(ss []string) []string {
 // from 80×24 up, every card fits whole: no text row dropped, inside the screen
 func TestTourCardsFit(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {90, 30}, {100, 26}, {120, 40}, {150, 45}} {
-		m := tourModel(t, "none", size[0], size[1])
-		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		bodyH := size[1] - 1
-		for step, st := range tourSteps {
-			m.tourGo(step)
-			tgt, ok := rect{}, false
-			if st.target != nil {
-				tgt, ok = st.target(m)
-			}
-			x, y, card := m.tourPlace(tgt, ok, bodyH)
-			cw := ansi.StringWidth(card[0])
-			body := st.body
-			if narrow(m.width) && st.narrow != "" {
-				body = st.narrow
-			}
-			text := m.tourText(strings.ReplaceAll(body, "^q", m.prefixLabel()), cw-4)
-			where := fmt.Sprintf("%dx%d %q", size[0], size[1], st.title)
-			if want := len(text) + 6; len(card) != want {
-				t.Errorf("%s: card has %d rows, the text needs %d", where, len(card), want)
-			}
-			if x < 0 || y < 0 || x+cw > size[0] || y+len(card) > bodyH {
-				t.Errorf("%s: card at %d,%d %dx%d leaves the screen", where, x, y, cw, len(card))
-			}
-			for _, l := range text {
-				if ansi.StringWidth(l) > cw-4 {
-					t.Errorf("%s: %q is wider than the card", where, ansi.Strip(l))
+		for _, lang := range []string{tourJa, tourEn} {
+			m := tourModel(t, "none", size[0], size[1])
+			m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m.tour.lang = lang
+			bodyH := size[1] - 1
+			for step, st := range tourSteps {
+				m.tourGo(step)
+				tgt, ok := rect{}, false
+				if st.target != nil {
+					tgt, ok = st.target(m)
+				}
+				x, y, card := m.tourPlace(tgt, ok, bodyH)
+				cw := ansi.StringWidth(card[0])
+				text := m.tourText(m.tourBody(), cw-4)
+				where := fmt.Sprintf("%dx%d %q", size[0], size[1], m.tourCopy().title)
+				if want := len(text) + 6; len(card) != want {
+					t.Errorf("%s: card has %d rows, the text needs %d", where, len(card), want)
+				}
+				if x < 0 || y < 0 || x+cw > size[0] || y+len(card) > bodyH {
+					t.Errorf("%s: card at %d,%d %dx%d leaves the screen", where, x, y, cw, len(card))
+				}
+				for _, l := range text {
+					if ansi.StringWidth(l) > cw-4 {
+						t.Errorf("%s: %q is wider than the card", where, ansi.Strip(l))
+					}
 				}
 			}
 		}
@@ -500,7 +514,7 @@ func TestTourCardFrame(t *testing.T) {
 					}
 				}
 			}
-			if mode != "none" && !strings.Contains(card[1], m.th.Bold(theme.Primary, tourSteps[step].title)) {
+			if mode != "none" && !strings.Contains(card[1], m.th.Bold(theme.Primary, m.tourCopy().title)) {
 				t.Errorf("%s step %d: the title is not bold primary: %q", mode, step, card[1])
 			}
 		}
@@ -586,6 +600,154 @@ func TestTourFaceIsNarrowEverywhere(t *testing.T) {
 			for _, amb := range []string{"●", "•", "🞄"} {
 				if strings.Contains(strings.SplitN(card, "\n", 3)[1], amb) {
 					t.Errorf("%s step %d: %s in the face line", g, step, amb)
+				}
+			}
+		}
+	}
+}
+
+// the environment picks the first language: the first of LC_ALL,
+// LC_MESSAGES and LANG that is set; ja… is Japanese, anything else English
+func TestTourLangFromEnv(t *testing.T) {
+	for _, c := range []struct{ all, messages, lang, want string }{
+		{"", "", "", tourEn},
+		{"", "", "ja_JP.UTF-8", tourJa},
+		{"", "", "ja", tourJa},
+		{"", "", "en_US.UTF-8", tourEn},
+		{"", "", "C", tourEn},
+		{"ja_JP.UTF-8", "", "en_US.UTF-8", tourJa},
+		{"C", "", "ja_JP.UTF-8", tourEn},
+		{"", "en_US.UTF-8", "ja_JP.UTF-8", tourEn},
+		{"", "ja_JP.UTF-8", "en_US.UTF-8", tourJa},
+	} {
+		env := map[string]string{"LC_ALL": c.all, "LC_MESSAGES": c.messages, "LANG": c.lang}
+		if got := tourEnvLang(func(k string) string { return env[k] }); got != c.want {
+			t.Errorf("LC_ALL=%q LC_MESSAGES=%q LANG=%q: %s, want %s", c.all, c.messages, c.lang, got, c.want)
+		}
+	}
+	// the first run goes by it
+	for _, c := range []struct{ lang, title string }{{"en_US.UTF-8", "Welcome to pekoe"}, {"ja_JP.UTF-8", "pekoe へようこそ"}, {"", "Welcome to pekoe"}} {
+		tourLocale(t, "", "", c.lang)
+		m := tapiModel(t, "none", config.Mascot{})
+		m.width, m.height = 120, 40
+		m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
+		m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+		if got := tourStepTitle(m); got != c.title {
+			t.Errorf("LANG=%q: first step %q, want %q", c.lang, got, c.title)
+		}
+	}
+}
+
+// a record's language wins over the environment; a record without one
+// (older pekoe) goes by the environment
+func TestTourLangFromRecord(t *testing.T) {
+	for _, c := range []struct{ record, env, title string }{
+		{`{"seen_at":"2026-01-01T00:00:00Z","lang":"ja"}`, "en_US.UTF-8", "pekoe へようこそ"},
+		{`{"seen_at":"2026-01-01T00:00:00Z","lang":"en"}`, "ja_JP.UTF-8", "Welcome to pekoe"},
+		{`{"seen_at":"2026-01-01T00:00:00Z"}`, "ja_JP.UTF-8", "pekoe へようこそ"},
+		{`{"seen_at":"2026-01-01T00:00:00Z"}`, "en_US.UTF-8", "Welcome to pekoe"},
+		{`{"seen_at":"2026-01-01T00:00:00Z","lang":"fr"}`, "ja_JP.UTF-8", "pekoe へようこそ"},
+	} {
+		tourLocale(t, "", "", c.env)
+		path := filepath.Join(t.TempDir(), "tutorial.json")
+		if err := os.WriteFile(path, []byte(c.record), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m := tapiModel(t, "none", config.Mascot{})
+		m.width, m.height = 120, 40
+		m.initTour(path)
+		if m.tourAuto {
+			t.Fatalf("%s: seen, but due again", c.record)
+		}
+		m.Update(key(tourKey))
+		if got := tourStepTitle(m); got != c.title {
+			t.Errorf("%s with LANG=%s: %q, want %q", c.record, c.env, got, c.title)
+		}
+	}
+}
+
+// L switches the language and stays on the step; the card's keys name the
+// language it switches to; the language is recorded and the next tour
+// starts in it
+func TestTourLangKey(t *testing.T) {
+	m := tourModel(t, "none", 120, 40) // Japanese locale
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m.Update(key("enter"))
+	m.Update(key("enter"))
+	if got := tourStepTitle(m); got != "状態の見かた" {
+		t.Fatalf("step %q", got)
+	}
+	if out := ansi.Strip(m.View()); !strings.Contains(out, tourLangKey+" English") {
+		t.Errorf("no %q in the card:\n%s", tourLangKey+" English", out)
+	}
+	press(m, tourLangKey)
+	if m.tour == nil || m.tour.step != 2 {
+		t.Fatalf("%s left the step", tourLangKey)
+	}
+	out := ansi.Strip(m.View())
+	for _, want := range []string{"Reading states", tourLangKey + " 日本語", "sample · 3/", "next"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q after %s:\n%s", want, tourLangKey, out)
+		}
+	}
+	if strings.Contains(out, "状態の見かた") {
+		t.Error("the Japanese title is still shown")
+	}
+	keepsSize(t, m, m.View())
+	// the narrow layout swaps the text too
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	if !strings.Contains(ansi.Strip(m.View()), "Reading states") {
+		t.Error("the narrow card is not in English")
+	}
+	press(m, tourLangKey)
+	press(m, tourLangKey)
+	press(m, "esc")
+	if m.tour != nil {
+		t.Fatal("esc did not end the tour")
+	}
+	b, err := os.ReadFile(m.tourPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r tourRecord
+	if json.Unmarshal(b, &r) != nil || r.Lang != tourEn || r.SeenAt.IsZero() {
+		t.Errorf("record %s", b)
+	}
+	// H in the same run, and the next run (whatever the locale)
+	m.Update(key(tourKey))
+	if got := tourStepTitle(m); got != "Welcome to pekoe" {
+		t.Errorf("H starts in %q", got)
+	}
+	m2 := tapiModel(t, "none", config.Mascot{})
+	m2.width, m2.height = 120, 40
+	m2.initTour(m.tourPath)
+	m2.Update(key(tourKey))
+	if got := tourStepTitle(m2); got != "Welcome to pekoe" {
+		t.Errorf("the next run starts in %q", got)
+	}
+}
+
+// the language key is in the card's keys on every step, in both languages,
+// at the card's full width; narrower, the key line still fits the card
+func TestTourLangHint(t *testing.T) {
+	m := tourModel(t, "none", 120, 40)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	for _, lang := range []string{tourJa, tourEn} {
+		m.tour.lang = lang
+		want := tourLangKey + " English"
+		if lang == tourEn {
+			want = tourLangKey + " 日本語"
+		}
+		for step := range tourSteps {
+			m.tourGo(step)
+			card := m.tourCard(tourCardW, 39)
+			keys := ansi.Strip(card[len(card)-2])
+			if !strings.Contains(keys, want) {
+				t.Errorf("%s step %d: keys %q lack %q", lang, step, keys, want)
+			}
+			for cw := tourSideMin; cw <= tourCardW; cw++ {
+				if l := m.keyHints(m.tourHints(), cw-4); ansi.StringWidth(l) > cw-4 {
+					t.Errorf("%s step %d width %d: keys %q do not fit", lang, step, cw, ansi.Strip(l))
 				}
 			}
 		}

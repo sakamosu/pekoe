@@ -155,6 +155,7 @@ type model struct {
 	tour     *tourState // the tutorial, while it runs (tour.go)
 	tourPath string     // where seeing the tutorial is recorded; "" in tests
 	tourAuto bool       // start the tutorial once the screen is up (first run)
+	tourLang string     // the language the next tour starts in (tourJa, tourEn); "" goes by the environment
 }
 
 func TermSize() (int, int) {
