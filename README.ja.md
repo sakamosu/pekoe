@@ -195,7 +195,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- `answer`・`dev`・`init` の書き込み・`daemon stop` / `daemon restart`・`update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`(と hooks 用の `event`)だけ。ほか(`answer`・`dev`・`init`・`open`・`review`・`rm`・`land`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -303,7 +303,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### エージェントに pekoe を使わせるときの権限
 
-エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed は「人間がその場で判断・実行する操作」(許可待ちへの回答、生キー、tapi chat への入力、設定の書き込み、`dev` や run 窓でのコマンド実行、デーモンの停止)を、`human-token` を付けた呼び出しにだけ許す。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。対象のメソッドは [docs/api.md](docs/api.md) の「人間だけの操作」。
+エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、`dev` や run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
 
 ただし同じユーザーのエージェントはファイルを読めてしまう。次の 2 つを合わせて使う。
 

@@ -320,8 +320,8 @@ pekoe の機能を 1 つずつ紹介する tip の一覧が pekoe に入って�
 
 - このディレクトリはリポジトリではない。ここでもリポジトリでも、ファイルを直接変更しない。変更が要る作業はセッションを作って任せる
 - 下のリポジトリは読むだけ(Read / Grep / git log / gh など)。読むのに許可は要らないように起動してある
-- %pekoe land%(push と PR 作成)、マージ、%pekoe rm%、%pekoe answer%(他セッションの許可に代わりに答える)は、ユーザーに明示的に頼まれたときだけ
-- 許可待ちへの回答・%pekoe dev%・%pekoe init% の書き込み・%pekoe daemon stop% / %pekoe daemon restart% は人間だけの操作で、ここからは %only a person can do this% で断られる。回避しようとせず(トークンのファイルを読む、tmux で直接キーを送る、など)、ユーザーに TUI か端末でやってもらう。相手が許可待ちの間は %pekoe send% も断られる
+- マージは、ユーザーに明示的に頼まれたときだけ
+- pekoe のコマンドでここから使えるのは %pekoe ls%・%pekoe new%・%pekoe send%・%pekoe tip% だけ。許可待ちへの回答(%pekoe answer%)・%pekoe dev%・%pekoe init%・%pekoe rm%・%pekoe land%・%pekoe issues%・%pekoe daemon% などは人間だけの操作で、ここからは %only a person can do this% で断られる。回避しようとせず(トークンのファイルを読む、tmux で直接キーを送る、など)、ユーザーに TUI か端末でやってもらう。相手が許可待ちの間は %pekoe send% も断られる
 - 本物のデーモンを止めない(引数なしの %pekoe daemon stop%・%pekoe daemon restart%・%tmux -L pekoe kill-server% は使わない)
 
 ## 使うコマンド

@@ -20,17 +20,28 @@
 
 ### 人間だけの操作(human token)
 
-ソケットは 0600 だが、同じユーザーで動くエージェントもつなげる。そこで「人間がその場で判断・実行する操作」は、リクエストの最上位に `token` が要る。
+ソケットは 0600 だが、同じユーザーで動くエージェントもつなげる。pekoed はエージェントの sandbox の外で動くので、エージェントが pekoed に「代わりに」コマンドを実行させたりファイルを読ませたりできると、sandbox が意味をなくす。そこで、下の「token なしで呼べるメソッド」以外は、リクエストの最上位に `token` が要る(許可リスト。後から足したメソッドは、エージェントに要ると決めるまで token 必須)。
 
 ```jsonc
 {"id": 3, "method": "session.answer", "params": {"slug": "feat-x", "answer": "allow"}, "token": "<human-token の中身>"}
 ```
 
 - token は pekoed が起動時に `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)に作る。再起動しても変わらない
-- TUI・CLI・Neovim はこのファイルを読んで毎回付ける。MCP サーバー(`pekoe mcp`)は付けない。エージェントのペインの環境には token もそのパスも渡さない
-- token が要るメソッド: `session.answer`、`session.keys`、`tapi.send`、`tapi.keys`、`init.write`、`run.start`、`dev.toggle`、`daemon.stop`。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない
+- TUI・CLI・Neovim はこのファイルを読んで毎回付ける(`subscribe` にも)。MCP サーバー(`pekoe mcp`)は付けない。エージェントのペインの環境には token もそのパスも渡さない
+- token なしで呼べるメソッド(エージェントのフック・ハブのエージェント・MCP サーバーが使うもの):
+
+  | メソッド | 使うところ |
+  | --- | --- |
+  | `session.event` | エージェントのフック(`pekoe event`) |
+  | `session.list` / `session.get` | `pekoe ls`、MCP の `session_list` |
+  | `session.new` | ハブのエージェントの `pekoe new` |
+  | `session.send` | ハブのエージェントの `pekoe send`(制限つき。下) |
+  | `repo.resolve` | `pekoe ls` / `pekoe new --repo` がリポジトリを決める |
+  | `editor.open` | MCP の `open_in_editor`(nvim へのイベントを出すだけ) |
+
+- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`land`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
-- ほかのメソッドは token なしで使える
+- `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` だけ。ほかのイベント(他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
 - 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。エージェントからファイルを読めなくする設定は README の「エージェントに pekoe を使わせるときの権限」
 
@@ -101,7 +112,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | method | params | result |
 | --- | --- | --- |
 | `daemon.status` | — | `{pid, version, sessions, http_port}` |
-| `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている)。人間だけ(human token が要る) |
+| `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
 | `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
@@ -112,8 +123,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
 | `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」) |
-| `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時)。人間だけ(human token が要る) |
-| `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う)。人間だけ(human token が要る) |
+| `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時) |
+| `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う) |
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"\|"run"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height, dead, exit_status, signal?}`(`exit_status` は終わった窓の終了コード。動いている間やシグナルで終わったときは -1。`signal` は `"SIGINT"` など) |
 | `session.resize` | `{slug, width, height}` | pty サイズ変更 |
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
@@ -125,8 +136,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
 | `worktree.rm` | `{slug}` | teardown → worktree 削除(`~/worktrees` 配下のみ) |
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
-| `dev.toggle` | `{slug}` | dev server の起動/停止。人間だけ(human token が要る) |
-| `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する。人間だけ(human token が要る) |
+| `dev.toggle` | `{slug}` | dev server の起動/停止 |
+| `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
 | `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`pekoe conflicts`) |
@@ -147,10 +158,10 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `browser.tabs` | — | `[{url, port, slug, title, errors}]` |
 | `editor.open` | `{path, line, note?, slug?}` | nvim へ `editor.open` イベントを流す(MCP から) |
 | `init.detect` | `{path}` | `{repo_id, config_path, toml, ignored: [path]}` |
-| `init.write` | `{path, toml, overwrite?}` | `{path}`。人間だけ(human token が要る) |
+| `init.write` | `{path, toml, overwrite?}` | `{path}` |
 | `session.restart` | `{slug, width?, height?}` | エージェントを再起動(Claude Code セッションを resume) |
 | `session.progress` | `{slug}` | 作成中の手順 `{slug, steps}` |
-| `review.surface` | `{slug, width, height}` | 右ペインを nvim(pekoe.nvim のレビュー面)に入れ替える。claude は裏で動き続ける |
+| `review.surface` | `{slug, width, height}` | 右ペインを nvim(pekoe.nvim のレビュー面)に入れ替える。claude は裏で動き続ける。読み込むプラグインは pekoed 自身のもの(`PEKOE_NVIM_RTP` か実行ファイルの隣の `nvim/`)だけで、呼び出し元からは指定できない |
 | `review.pr` | `{repo, number}` | `pekoe review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
@@ -169,8 +180,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `tapi.restart` | `{width?, height?}` | `Tapi`。窓を作り直す(エージェントが終了した後の ↵。Claude Code は `--continue` で同じ会話を続ける) |
 | `tapi.reset` | — | `Tapi`。窓を閉じ、Claude Code の会話の記録(`~/.claude/projects/<tapi の cwd>/`)を消す。次の `tapi.open` は新しい会話 |
 | `tapi.screen` | — | `session.screen` と同じ形(起動前はエラー) |
-| `tapi.send` | `{text, submit?}` | `session.send` と同じ。人間だけ(human token が要る) |
-| `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ。人間だけ(human token が要る) |
+| `tapi.send` | `{text, submit?}` | `session.send` と同じ |
+| `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
 | `tapi.resize` | `{width, height}` | pty サイズ変更(`session.resize "*"` でも合わせる) |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
