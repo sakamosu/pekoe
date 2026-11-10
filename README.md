@@ -202,7 +202,7 @@ pekoe                                                 # TUI
 
 ## TUI
 
-Numbered panels on the left ([1] Sessions, [2] Worktrees ⇄ Browser ⇄ Issues, [3] Changes ⇄ Picks), [4] Agent on the right (the agent's screen itself; it switches to the preview, dev, run and PR windows), and a powerline status with key hints on the bottom line. Below 100 columns the left column becomes a single tab. Sessions from several repositories are grouped under a heading per repository.
+Numbered panels on the left ([1] Sessions, [2] Worktrees ⇄ Browser ⇄ Issues, [3] Changes ⇄ Picks), [4] Agent on the right (the agent's screen itself; it switches to the preview, dev, run and PR windows), and a powerline status with key hints on the bottom line. Below 100 columns the left column becomes a single tab. Sessions from several repositories are grouped under a heading per repository. The first row of [1], above the headings, is always tapi (the [tapi row](#tapi-chat)). Click a row to select it.
 
 Session state is shown with icons and colors (tokens in [docs/ui-guidelines.md](docs/ui-guidelines.md)). The mascot tapi at the left of the bottom line shows the most urgent state of all sessions with its face, and the line next to it says who is doing what:
 
@@ -219,7 +219,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 
 | Key | Action |
 | --- | --- |
-| `j` `k` / `↵` | Select a session / enter the right pane and type (every key except `^q` goes to the agent) |
+| `j` `k` / `↵` | Select a session or the tapi row (wraps at the ends; `g` goes to the tapi row at the top) / enter the right pane and type (every key except `^q` goes to the agent). `↵` on the tapi row opens tapi chat |
 | `^q` | Leave input and go back to Sessions (change with `[keys] prefix`). Clicking a panel on the left also leaves |
 | `i` / `h` `Esc` | Start typing in the Agent panel / go back left |
 | `^q` `z` | Make the right pane (4) full width and hide the left / again to restore. Pressed while typing, you return to typing |
@@ -227,7 +227,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `n` | New worktree + session |
 | `t` / `T` | Open tapi chat and talk to it ([tapi chat](#tapi-chat)) / reset tapi chat (asks first) |
 | `w` | Choose a repository |
-| `]a` `[a` | Next waiting session (including PRs with activity) / back to where you were |
+| `]a` `[a` | Next waiting session (including PRs with activity, and tapi when it waits for permission or an answer; the longest waiting first) / back to where you were |
 | `]r` | Next session waiting for review |
 | `r` | Review surface (the right pane becomes nvim; the agent keeps running behind it) |
 | `p` | PR view (checks, reviews, threads; select with `space`, send to the agent with `s`) |
@@ -259,6 +259,7 @@ Press `t` in any panel and [4] switches to a conversation with the mascot tapi (
 - `^q` (the prefix) closes it. The conversation stays; `t` again continues it. `Esc` goes to the agent (Claude Code's interrupt). `^q` `z` / `^q` `<` `>` `=` work as they do for agents and return you to typing in tapi chat (opened while zoomed it is full width, and the pty is sized to the pane)
 - The agent starts the first time you open it (not when pekoed starts). It runs in `~/.local/share/pekoe/tapi/`, where pekoed puts a `CLAUDE.md` describing its role and the commands it uses. The first time, Claude Code asks you to trust the folder
 - With Claude Code, the repositories pekoe knows and `~/worktrees` are passed with `--add-dir`, so reading across them doesn't ask for permission each time (added or removed repositories apply from the next start)
+- The first row of Sessions is tapi's: its state icon, `tapi`, how long it has been in that state, and the first line of its last reply (e.g. `◉ tapi  wait 2m  Start a session for #198?`). It is always there, above the repository headings, and a `/` filter leaves it in place. Select it with `j` `k` (or `g`) and `↵` opens tapi chat. Session keys (`/` `x` `D` `l` `r` `p` `d` `!` `v` …) do nothing on it; the bottom line shows `↵ open tapi` `T reset tapi` instead
 - tapi's face is in the title and changes while it thinks or waits for permission. If it starts waiting for permission or an answer while closed, the bottom line says `chat waits · t`
 - `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. pekoe itself saves nothing. It doesn't appear in the Web UI
 - Change the agent with `[tapi] agent` ([Configuration](#configuration))
