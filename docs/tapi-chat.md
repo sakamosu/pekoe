@@ -10,7 +10,7 @@ tapi chat は TUI からいつでも呼べる特別なエージェントで、pe
 - 特定のセッションとは関係ない単発の調査・質問、リポジトリ横断の調査(例: 抱えているリポジトリ群の dependabot アラートの様子)は、読むだけなので自分で答える
 - 自分で作業しすぎないように、リポジトリと worktree には書けない(下の「起動するコマンド」)
 
-グローバルに 1 つだけ。tapi 自身(状態・会話)は pekoe 側に永続化しないが、人が tapi に頼んだことは依頼の台帳(`ledger`、state.db)に残り、`tapi.reset` でも消えない。受信箱・報告・送信の記録も state.db にある。だから会話をリセットした tapi も、台帳と受信箱を読んで続きから始められる。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には出さない(iPhone から tapi に送る・受信箱に答えるのは段階 3。[orchestration.md](orchestration.md)「Web UI」)。
+グローバルに 1 つだけ。tapi 自身(状態・会話)は pekoe 側に永続化しないが、人が tapi に頼んだことは依頼の台帳(`ledger`、state.db)に残り、`tapi.reset` でも消えない。受信箱・報告・送信の記録も state.db にある。だから会話をリセットした tapi も、台帳と受信箱を読んで続きから始められる。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には状態・待ち時間・最後の返事・件数だけを出す(Overview タブ。iPhone から受信箱に答えられる。tapi に送るのはまだ。[orchestration.md](orchestration.md)「Web UI」)。
 
 ## 持ち方: セッションとは別の、メモリ上の 1 つ
 
@@ -201,5 +201,5 @@ engine.Engine にはメソッドを足さない(ウィンドウ名が `+tapi~age
 | リポジトリの増減の反映 | 次回起動時(リセットか再起動) | 不便なら、増えたときに「再起動で反映」と声で知らせる |
 | codex などの横断読み取り | cwd だけ(`--add-dir` 相当なし) | 各エージェントに相当のオプションができたら `[agents.*]` に `add_dir` のような書式を足す |
 | 会話の記録の場所 | Claude Code の既定(`~/.claude/projects/…`)。`CLAUDE_CONFIG_DIR` があればそちら | — |
-| Web UI | 出さない | [orchestration.md](orchestration.md) の段階 3(iPhone から tapi に送る・受信箱に答える) |
+| Web UI | 状態・最後の返事・件数だけ(Overview)。送る・画面・キーパッドは出さない | [orchestration.md](orchestration.md) の段階 3(iPhone から tapi に送るのはこれから) |
 | フォルダ信頼ダイアログ | ユーザーがその場で答える | 毎回のリセットで煩わしければ、信頼済みにする方法を検討する |

@@ -183,7 +183,7 @@ pekoe                                                 # TUI
 | `pekoe reports [<slug>] [--limit N]` | 報告を新しい順に(エージェントが書いた文は区切りで囲んで出す)。最新のものは `pekoe --json ls` の `report` にも出る |
 | `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | セッションに何か起きるまで待つ(報告・`done`・`waiting`・`idle`・`failed`・`pr`・`landed`・`removed`)。`--mine` は自分が `pekoe new` で作ったセッションだけ。返った `cursor` を次の `--since` に渡すと取りこぼさない。pekoed を再起動すると `reset` が返るので `pekoe --json ls` から読み直す。報告なしで done になったものは `(no report)` と出る |
 | `pekoe ask-human <question> [--option O]... [--recommend N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context -] [--wait]` | エージェントが人に判断・承認・手作業を頼む(判断の受信箱)。pekoed が問いの元のセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突)を自分で付ける。答えは `--wait`(や `pekoe wait --on inbox`)で待っていれば返り値で、待っていなければ手が空いたときに入力欄に `[pekoe inbox #N] 答え: …` と届く(許可ダイアログが出ている間は届けない) |
-| `pekoe inbox [<id>] [--all]` / `pekoe inbox answer <id> [<n>] [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは「マージした」「待つ」「差し戻す」(メモがセッションに届く)。pekoed はマージしない |
+| `pekoe inbox [<id>] [--all]` / `pekoe inbox answer <id> [<n>] [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは「マージした」「待つ」「差し戻す」(メモがセッションに届く)。pekoed はマージしない |
 | `pekoe ledger [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger reopen\|rm <id>` | 依頼の台帳。tapi chat に打った文は pekoed が open で記録し、tapi が `--request` でセッションと結び、`done --evidence <PR>`・`drop --note <理由>`・`close --as chat`(依頼ではなかった)で閉じる。`pekoe tapi reset` でも消えない。開き直す(`reopen`)・消す(`rm`)のは人だけ |
 | `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止 |
 | `pekoe undo <slug> [n]` | 最後(か n 番目)のプロンプトの変更を取り消す |
@@ -271,7 +271,7 @@ pekoe                                                 # TUI
 - tapi の顔はタイトルに出て、考え中・許可待ちで表情が変わる。閉じている間に許可待ち・質問待ちになると、セッションの wait と同じに知らせる: トースト、最下行の声 `tapi needs you · t`(30 秒で点滅)、ターミナルにフォーカスが無ければ 2 分で OS の通知。`[orchestrator] notify = "quiet"` で前の知らせ方(最下行の `chat waits · t` だけ。セッションの wait より弱い)に戻る
 - tapi に打った文は依頼の台帳(`pekoe ledger`)に記録され、tapi が任せたセッションと結んで、済んだら閉じる(雑談は「依頼ではなかった」で閉じる)
 - tapi はリポジトリと `~/worktrees` を読めるが書けない(Bash でも Edit / Write でも。下の「エージェントに pekoe を使わせるときの権限」)。書けるのは稼働ディレクトリだけ
-- `T`(または `pekoe tapi reset`)で終了し、Claude Code の会話の記録も消す。台帳と受信箱は pekoed に残り、次に開いた tapi はそれを読んで続きから始める。Web UI には出ない
+- `T`(または `pekoe tapi reset`)で終了し、Claude Code の会話の記録も消す。台帳と受信箱は pekoed に残り、次に開いた tapi はそれを読んで続きから始める。Web UI の Overview に状態と最後の返事が出る(Web UI から話しかけるのはまだできない)
 - エージェントは `[tapi] agent` で変えられる([設定](#設定))
 
 ### チュートリアル
@@ -398,7 +398,7 @@ Web UI と Chrome 拡張はソケットを通らない人間の入口なので�
 
 ### iPhone から(Web UI)
 
-`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
+`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)・受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に出す。推奨は「推奨(エージェント)」と書いて選んだ状態にしない。送る前に確認シートを挟み、見た後に内容が変わった項目は断られる)・Overview(件数・tapi の状態・セッションごとの工程 `実装 → PR → CI → レビュー → マージ` とマージに足りないもの。読むだけ)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
 
 1. tailnet で MagicDNS と HTTPS を有効にし、`[web]` を書いて pekoed を再起動
 2. `pekoe web` に出るログイン URL を開いて tailnet に参加(`TS_AUTHKEY` でもよい)
