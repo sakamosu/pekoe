@@ -819,7 +819,13 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	d.mu.Unlock()
 	agent := p.Agent
 	if agent == "" {
+		agent = repo.Config.Agent
+	}
+	if agent == "" {
 		agent = "claude"
+	}
+	if _, ok := d.Global.Agents[agent]; !ok {
+		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
 	past := []pastSession{}
 	if agent == "claude" {
