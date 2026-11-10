@@ -129,6 +129,11 @@ func (m *model) chatUpdate(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.chat.info = msg.v
 		return m.fetchChat(), true
+	case tapiInfoMsg:
+		if m.chat.info == nil { // tapi.updated may have come first
+			m.chat.info = msg.v
+		}
+		return nil, true
 	case chatResetMsg:
 		m.chat.info = msg.v
 		m.setMsg("tapi chat reset", false)

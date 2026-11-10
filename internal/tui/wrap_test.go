@@ -19,7 +19,18 @@ func wrapModel(t *testing.T, slugs ...string) *model {
 	return m
 }
 
-// j/k in the Sessions panel wrap around at the ends.
+// selName is the selected row: "tapi" or the session's slug ("" for none).
+func selName(m *model) string {
+	if m.onTapiRow() {
+		return "tapi"
+	}
+	if s := m.current(); s != nil {
+		return s.Slug
+	}
+	return ""
+}
+
+// j/k in the Sessions panel wrap around at the ends; the tapi row is the top.
 func TestSessionsCursorWraps(t *testing.T) {
 	m := wrapModel(t, "a", "b", "c")
 	m.sel = 0
@@ -27,12 +38,13 @@ func TestSessionsCursorWraps(t *testing.T) {
 		key  string
 		want string
 	}{
-		{"j", "b"}, {"down", "c"}, {"j", "a"}, // bottom → top
-		{"k", "c"}, {"up", "b"}, {"k", "a"}, {"up", "c"}, // top → bottom
+		{"j", "b"}, {"down", "c"}, {"j", "tapi"}, {"j", "a"}, // bottom → top
+		{"k", "tapi"}, {"up", "c"}, {"k", "b"}, {"up", "a"}, // top → bottom
+		{"G", "c"}, {"g", "tapi"}, {"g", "tapi"}, {"G", "c"},
 	} {
 		m.keySessions(step.key)
-		if s := m.current(); s == nil || s.Slug != step.want {
-			t.Fatalf("after %q: sel %d, want %s", step.key, m.sel, step.want)
+		if got := selName(m); got != step.want {
+			t.Fatalf("after %q: %q (sel %d), want %s", step.key, got, m.sel, step.want)
 		}
 	}
 }
@@ -43,24 +55,26 @@ func TestSessionsCursorWrapsFiltered(t *testing.T) {
 	m.filter = "api"
 	m.sel = 1 // api-2
 	m.keySessions("j")
+	m.keySessions("j")
 	if s := m.current(); s == nil || s.Slug != "api-1" {
 		t.Fatalf("sel %d, want api-1", m.sel)
 	}
 }
 
 func TestSessionsCursorWrapsTiny(t *testing.T) {
-	m := wrapModel(t)
-	for _, k := range []string{"j", "k", "down", "up"} {
+	m := wrapModel(t) // only the tapi row
+	for _, k := range []string{"j", "k", "down", "up", "G", "g"} {
 		m.keySessions(k)
-		if m.sel != 0 || m.current() != nil {
+		if !m.onTapiRow() || m.current() != nil {
 			t.Fatalf("empty list after %q: sel %d", k, m.sel)
 		}
 	}
 	m = wrapModel(t, "only")
-	for _, k := range []string{"j", "k", "down", "up"} {
+	for i, k := range []string{"j", "k", "down", "up"} {
 		m.keySessions(k)
-		if s := m.current(); m.sel != 0 || s == nil || s.Slug != "only" {
-			t.Fatalf("single session after %q: sel %d", k, m.sel)
+		want := []string{"tapi", "only", "tapi", "only"}[i]
+		if got := selName(m); got != want {
+			t.Fatalf("single session after %q: %q, want %s", k, got, want)
 		}
 	}
 }

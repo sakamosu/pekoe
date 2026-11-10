@@ -228,16 +228,25 @@ func TestSelectionSkipsHeadings(t *testing.T) {
 	if got := m.current().Slug; got != "api-1" {
 		t.Fatalf("start: %s", got)
 	}
-	want := []string{"api-2", "web-1", "api-1"} // wraps from the bottom to the top
+	// wraps from the bottom to the tapi row, then to the first session
+	want := []string{"api-2", "web-1", "tapi", "api-1"}
 	for _, w := range want {
 		m.onKey(key("j"))
-		if got := m.current().Slug; got != w {
+		got := "tapi"
+		if s := m.current(); s != nil {
+			got = s.Slug
+		}
+		if got != w || (w == "tapi") != m.onTapiRow() {
 			t.Fatalf("j: %s, want %s", got, w)
 		}
 		rows, _ := m.sessionRows(50)
 		if i := selRow(rows); i < 0 || !strings.Contains(rows[i].Text, w) {
 			t.Fatalf("selected row is not %s: %d", w, i)
 		}
+	}
+	m.onKey(key("k"))
+	if !m.onTapiRow() {
+		t.Fatalf("k from the first session: the tapi row, got %+v", m.current())
 	}
 	m.onKey(key("k"))
 	if got := m.current().Slug; got != "web-1" {

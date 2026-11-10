@@ -572,6 +572,7 @@ func (m *model) globalHelpKeys() [][2]string {
 // Names of the panel key lists in helpSets.
 const (
 	hsSessions  = "sessions"
+	hsTapiRow   = "sessions: the tapi row"
 	hsWorktrees = "worktrees"
 	hsBrowser   = "browser"
 	hsIssues    = "issues"
@@ -596,6 +597,7 @@ func (m *model) helpSets() map[string][][3]string {
 		{"o", "open in browser", "o"}, {"R", "refresh", "R"}, {"esc", "back to the agent", "esc"}, {"h", "back to Sessions", "h"}}
 	return map[string][][3]string{
 		hsSessions:  append([][3]string{{"j/k", "move (wraps at the ends)", "j"}, {"↵", "type into the agent", "\r"}, {"v", "preview", "v"}, {"!", "run a command in the worktree", "!"}, {"/", "filter", "/"}}, common...),
+		hsTapiRow:   tapiRowKeysFull(),
 		hsIssues:    issuePanelKeysFull(),
 		hsBrowser:   {{"j/k", "move", "j"}, {"↵", "select the tab's session", "\r"}, {"E", "send console errors", "E"}},
 		hsWorktrees: {{"j/k", "move", "j"}, {"↵", "open session in worktree", "\r"}, {"n", "new", "n"}, {"D", "delete", "D"}},
@@ -622,6 +624,9 @@ func (m *model) panelKeysFull() [][3]string {
 func (m *model) panelKeySet() string {
 	switch m.focus {
 	case pSessions:
+		if m.onTapiRow() {
+			return hsTapiRow
+		}
 		return hsSessions
 	case pSecond:
 		if m.sub2 == subIssues {
