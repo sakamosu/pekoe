@@ -132,6 +132,20 @@ keys = ["pekoe wait", "--mine", "--since", "--on"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 
 [[tip]]
+id = "ask-human"
+short = "エージェントは pekoe ask-human で人に判断を頼む"
+detail = "--option で選択肢、--recommend で推奨、--kind approve / login / fyi。--wait で答えまで待つ。待たなければ手が空いたときに答えが入力欄に届く。事実(HEAD・差分・PR・CI)は pekoed が付ける。"
+keys = ["pekoe ask-human", "--option", "--recommend", "--kind", "--wait"]
+docs = ["docs/api.md", "docs/orchestration.md"]
+
+[[tip]]
+id = "inbox"
+short = "pekoe inbox で受信箱を見て、inbox answer で答える"
+detail = "エージェントが人に頼んだことの一覧。pekoe inbox <id> で 1 件を詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ。エージェントからは断られる)。--all で答えたものも出る。"
+keys = ["pekoe inbox", "pekoe inbox answer <id>", "--all", "--note"]
+docs = ["docs/api.md"]
+
+[[tip]]
 id = "land"
 short = "l(pekoe land)で rebase → test → PR 作成まで進める"
 detail = "push して gh pr create まで進める。確認には衝突予報が出る。マージを見つけたら teardown と worktree の削除まで pekoe がやる。"
