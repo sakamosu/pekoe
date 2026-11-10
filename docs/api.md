@@ -41,16 +41,17 @@
   | --- | --- |
   | `session.event` | エージェントのフック(`pekoe event`) |
   | `session.list` / `session.get` | `pekoe ls`、MCP の `session_list` |
-  | `session.new` | ハブのエージェントの `pekoe new` |
+  | `session.new` | ハブのエージェントの `pekoe new`(既知のリポジトリだけ。下) |
   | `session.send` | ハブのエージェントの `pekoe send`(制限つき。下) |
   | `repo.resolve` | `pekoe ls` / `pekoe new --repo` がリポジトリを決める |
   | `editor.open` | MCP の `open_in_editor`(nvim へのイベントを出すだけ) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`land`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
+- `session.new` は token なしでは、pekoe が既に知っているリポジトリ(`repo.list` に出るもの)で、知っているディレクトリと同じ場所のときだけ受け付け、セッションはその知っているディレクトリから作る。repo-id は origin の URL から決まり、エージェントが作ったクローンでも同じ id になるので、ディレクトリも見る。新しいリポジトリの登録は人間だけの操作(pekoed はそこで git を動かし、エージェントが自作したリポジトリの設定の filter / merge ドライバは、sandbox が使えない環境では外で動く)
 - `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` だけ。ほかのイベント(他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
-- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。エージェントからファイルを読めなくする設定は README の「エージェントに pekoe を使わせるときの権限」
+- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
 
 ### hooks の sandbox
 

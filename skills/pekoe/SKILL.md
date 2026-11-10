@@ -74,10 +74,10 @@ EOF
 
 ## 人間だけの操作
 
-pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send` と hooks の `pekoe event` だけ。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・`pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `rm` / `land` / `issues` / `conflicts`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
+pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send` と hooks の `pekoe event` だけ。`pekoe new` は pekoe が既に知っているリポジトリ(セッションがある・あった、設定がある)でだけ通り、新しいリポジトリでは `a repository pekoe does not know yet` で断られる(最初のセッションはユーザーに TUI か端末で作ってもらう)。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・`pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `rm` / `land` / `issues` / `conflicts`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
-- ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code の sandbox でトークンのファイルを読めなくすることを勧める(設定例は pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)
+- ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code のエージェントは pekoe が渡す sandbox の設定でトークンのファイルを読めないこと(`[agents.claude] sandbox = false` にしていなければ)を伝える。sandbox の中ではビルドキャッシュへの書き込みや許していないドメインへの接続が断られる。断られたら回避せず、`~/.claude/settings.json` に `allowWrite` / `allowedDomains` を足す方法(pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)をユーザーに伝える
 
 ## やらないこと
 

@@ -342,6 +342,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | レビュー地点 | `refs/pekoe/<slug>/review-<n>` | 同上 |
 | hunk 承認・レビューコメント | 状態 DB | hunk はパス + 内容ハッシュで識別 |
 | Claude Code の hooks | `~/.claude/settings.json` | ユーザー側に書き、全リポジトリに一括で効く。プロジェクト側 `.claude/` は触らない |
+| Claude Code のエージェントの sandbox の設定 | `~/.local/share/pekoe/agent-settings/<slug>.json` | 起動のたびに書き、`--settings` で渡す(`[agents.*] sandbox`)。`~/.claude/settings.json` には書かない(pekoe の外の Claude Code に効かせない) |
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | pekoe が削除していい領域はこの配下だけ |
 | 見せた tip の記録 | `~/.local/share/pekoe/tips.json` | TUI と `pekoe tip`(tapi chat)で共通。一巡したら空からやり直す |
 | チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。ツアー中に切り替えて選んだ言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(選んでいなければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
