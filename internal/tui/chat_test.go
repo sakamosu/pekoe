@@ -293,3 +293,33 @@ func TestChatLayout(t *testing.T) {
 		t.Fatalf("left zoomed:\n%s", out)
 	}
 }
+
+// Another session going away keeps the selection and typing where they
+// are: a removed A must not move B's keystrokes onto C as commands.
+func TestRemovedOtherSessionKeepsTyping(t *testing.T) {
+	now := time.Now()
+	for _, gone := range []string{"api-a", "api-c"} {
+		m, _, _ := chatModel(t)
+		m.sessions = []*state.Session{
+			sess("api-a", appA, state.Idle, now),
+			sess("api-b", appA, state.Idle, now.Add(time.Second)),
+			sess("api-c", appA, state.Idle, now.Add(2*time.Second)),
+		}
+		m.sel, m.lastSel = 1, "api-b"
+		m.focus, m.typing = pAgent, true
+		data, _ := json.Marshal(state.Session{Slug: gone})
+		runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+		if s := m.current(); s == nil || s.Slug != "api-b" || !m.typing {
+			t.Fatalf("%s removed: current %v typing %v", gone, m.lastSel, m.typing)
+		}
+	}
+	// the current one going away moves on and stops typing
+	m, _, _ := chatModel(t)
+	m.sessions = []*state.Session{sess("api-a", appA, state.Idle, now), sess("api-b", appA, state.Idle, now.Add(time.Second))}
+	m.sel, m.lastSel, m.typing = 1, "api-b", true
+	data, _ := json.Marshal(state.Session{Slug: "api-b"})
+	runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+	if s := m.current(); s == nil || s.Slug != "api-a" || m.typing {
+		t.Fatalf("current removed: current %v typing %v", m.lastSel, m.typing)
+	}
+}

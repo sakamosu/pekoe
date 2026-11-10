@@ -918,11 +918,21 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		var s state.Session
 		json.Unmarshal(ev.Data, &s)
 		m.tapi.lastActive = time.Now()
+		curSlug := ""
+		if cur := m.current(); cur != nil {
+			curSlug = cur.Slug
+		}
 		for i, x := range m.sessions {
 			if x.Slug == s.Slug {
 				m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
 				break
 			}
+		}
+		// another session going away keeps the selection (and typing) on
+		// the current one; only losing the current one moves it
+		if i, _ := m.find(curSlug); curSlug != "" && i >= 0 {
+			m.sel = i
+			return tea.Batch(m.loadWorktrees(), m.loadRepos())
 		}
 		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
 		m.lastSel = "-"
