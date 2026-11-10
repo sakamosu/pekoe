@@ -222,6 +222,21 @@ func (d *Daemon) tapiAddDirs() ([]KnownRepo, []string) {
 	return repos, dirs
 }
 
+// tapiReadOnly are the directories tapi must not write: what it reads
+// (tapiAddDirs: the repositories' main worktrees and the worktrees root),
+// and the worktrees root even before it exists (the first session makes
+// it while tapi runs).
+func tapiReadOnly(addDirs []string) []string {
+	ro := append([]string{}, addDirs...)
+	wt := paths.WorktreesRoot()
+	for _, d := range ro {
+		if d == wt {
+			return ro
+		}
+	}
+	return append(ro, wt)
+}
+
 // tapiPersona is the system prompt Claude Code gets on top of its own: who
 // tapi is and the rules that keep the character out of the way of the work
 // (the details and examples are in tapiDoc). docs/mascot.md「tapi の人物像」.
@@ -388,7 +403,10 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	for _, r := range repos {
 		repoDirs = append(repoDirs, r.Dir)
 	}
-	cmd, err := d.withAgentSandbox(TapiSlug, cmd, ag.SandboxOn(), repoDirs)
+	// tapi hands work out and does none itself: it reads every repository
+	// and worktree (--add-dir) but writes none of them, by Bash or by the
+	// Edit / Write tools. Its own directory stays writable (notes, scratch).
+	cmd, err := d.withAgentSandbox(TapiSlug, cmd, ag.SandboxOn(), repoDirs, tapiReadOnly(addDirs))
 	if err != nil {
 		return err
 	}

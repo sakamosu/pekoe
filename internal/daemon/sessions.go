@@ -766,7 +766,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	}
 	// before the prompt's "--": every way an agent starts (new, open,
 	// restart, resume after a daemon restart) comes through here
-	if cmd, err = d.withAgentSandbox(slug, cmd, ag.SandboxOn(), []string{s.RepoDir}); err != nil {
+	if cmd, err = d.withAgentSandbox(slug, cmd, ag.SandboxOn(), []string{s.RepoDir}, nil); err != nil {
 		return err
 	}
 	pasteLater, promptFile := "", ""
