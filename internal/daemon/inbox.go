@@ -380,10 +380,17 @@ func (d *Daemon) inboxRead(who *Caller, it *state.InboxItem) {
 
 func inboxErr(id int64, err error) error {
 	if errors.Is(err, state.ErrNoInboxItem) {
-		return fmt.Errorf("no such inbox item: #%d", id)
+		return fmt.Errorf("%w: #%d", state.ErrNoInboxItem, id)
 	}
 	return err
 }
+
+// Errors the Web UI tells apart (409): the item is not open any more, or it
+// changed after the person looked at it.
+var (
+	errInboxClosed  = errors.New("already")
+	errInboxChanged = errors.New("the item changed; look again")
+)
 
 // closeInbox changes an open item under inboxMu with f, which may refuse;
 // the item's rev goes up.
@@ -395,7 +402,7 @@ func (d *Daemon) closeInbox(id int64, method string, f func(it *state.InboxItem)
 		return nil, inboxErr(id, err)
 	}
 	if it.Status != state.InboxOpen {
-		return nil, fmt.Errorf("%s: inbox #%d is %s already", method, id, it.Status)
+		return nil, fmt.Errorf("%s: inbox #%d is %s %w", method, id, it.Status, errInboxClosed)
 	}
 	if err := f(it); err != nil {
 		return nil, err
@@ -462,7 +469,7 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 	it, err := d.closeInbox(p.ID, "inbox.answer", func(it *state.InboxItem) error {
 		changed = d.refreshFactsLocked(it)
 		if p.Rev != it.Rev {
-			return fmt.Errorf("inbox.answer: inbox #%d changed (rev %d, you answered rev %d); the item changed; look again", it.ID, it.Rev, p.Rev)
+			return fmt.Errorf("inbox.answer: inbox #%d changed (rev %d, you answered rev %d); %w", it.ID, it.Rev, p.Rev, errInboxChanged)
 		}
 		switch {
 		case len(it.Options) > 0 && p.Choice == nil:
