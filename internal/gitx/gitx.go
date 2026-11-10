@@ -24,6 +24,8 @@ type Error struct {
 	Err    error
 }
 
+func (e *Error) Unwrap() error { return e.Err }
+
 func (e *Error) Error() string {
 	msg := strings.TrimSpace(e.Stderr)
 	if msg == "" {
@@ -42,23 +44,10 @@ func RunEnv(dir string, env []string, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), err
 }
 
+// RunRaw runs git in dir (see guard.go for what keeps it from running
+// commands an agent wrote) and returns its stdout.
 func RunRaw(ctx context.Context, dir string, env []string, stdin []byte, args ...string) ([]byte, error) {
-	// paths in git's output as they are (core.quotePath defaults to true:
-	// "\346\227\245..." for non-ASCII names), whatever the user's config
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false"}, args...)...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
-	cmd.Env = append(cmd.Env, env...)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return out, &Error{Args: args, Stderr: stderr.String(), Err: err}
-	}
-	return out, nil
+	return run(ctx, dir, env, stdin, true, args...)
 }
 
 // Toplevel returns the worktree root containing dir.
@@ -85,8 +74,15 @@ var ErrForeignWorktree = errors.New("a worktree of another repository")
 // their common git directories. Repositories that share a name (forks, or
 // clones without an origin) share ~/worktrees/<name>, so a directory found
 // there is not necessarily ours. nil = ours; ErrNotWorktree; ErrForeignWorktree.
+//
+// path is looked at as git finds it (its .git file followed, a pin ignored):
+// this is how a directory that is not ours yet, or no longer, is told apart.
 func CheckWorktreeOf(repoDir, path string) error {
-	top, err := Toplevel(path)
+	unpinned := func(args ...string) (string, error) {
+		out, err := run(context.Background(), path, nil, nil, false, args...)
+		return strings.TrimRight(string(out), "\n"), err
+	}
+	top, err := unpinned("rev-parse", "--show-toplevel")
 	if err != nil || !samePath(top, path) {
 		return ErrNotWorktree
 	}
@@ -94,7 +90,7 @@ func CheckWorktreeOf(repoDir, path string) error {
 	if err != nil {
 		return err
 	}
-	theirs, err := CommonDir(path)
+	theirs, err := unpinned("rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
 		return ErrNotWorktree
 	}
