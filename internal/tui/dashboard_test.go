@@ -13,6 +13,7 @@ import (
 
 	"pekoe/internal/client"
 	"pekoe/internal/config"
+	"pekoe/internal/daemon"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -43,6 +44,8 @@ func dashModel(t *testing.T) (*model, *fakePekoed) {
 					Answer: &state.InboxAnswer{Choice: &choice, By: "+tapi"}, CreatedAt: now},
 				{ID: 9, Kind: "decision", From: "feat-x", Status: state.InboxAnswered, Question: "answered, not fyi"},
 			}
+		case "stats":
+			return dashStatsReply(now)
 		case "merge.check":
 			return []state.MergeCheck{{Slug: "feat-csv", PR: 42, Conds: []state.MergeCond{
 				{Name: "land", OK: true, Detail: "pekoe land 済み(PR #42)"},
@@ -440,5 +443,153 @@ func TestDashStagesReview(t *testing.T) {
 		if why := stageWhy(got, c.mc, named); !strings.Contains(why, c.why) || (c.why == "" && why != "") {
 			t.Errorf("%s: why %q, want %q", c.name, why, c.why)
 		}
+	}
+}
+
+// dashStatsReply is a week of stats: today 2 merges in pekoe and tokens in
+// pekoe and tapi chat, 3 days ago 1 merge, older days nothing.
+func dashStatsReply(now time.Time) daemon.Stats {
+	day := func(back int) string { return now.AddDate(0, 0, -back).Format("2006-01-02") }
+	return daemon.Stats{From: day(6), To: day(0), Merged: 3, Rows: []daemon.StatsRow{
+		{Day: day(0), Repo: "pekoe", Merged: 2, Tokens: state.Usage{Input: 1000, Output: 80000, CacheCreation: 400000, CacheRead: 9_000_000}},
+		{Day: day(0), Repo: "", Tokens: state.Usage{Input: 200, Output: 5000, CacheCreation: 10000, CacheRead: 800_000}},
+		{Day: day(3), Repo: "pekoe", Merged: 1, Tokens: state.Usage{Output: 7}},
+	}}
+}
+
+// The overview shows today's merges and tokens by kind (cache read apart
+// from what the work wrote) and the week's merges as a bar in the stage
+// bar's words; the ascii set gets each day's count.
+func TestDashboardStats(t *testing.T) {
+	m, f := dashModel(t)
+	calls := f.find("stats")
+	if len(calls) == 0 {
+		t.Fatal("selecting the tapi row did not read stats")
+	}
+	if d, _ := calls[0]["days"].(float64); d != 7 {
+		t.Errorf("stats days: %v", calls[0]["days"])
+	}
+	dashLook(t, m, "truecolor", "unicode")
+	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	for _, want := range []string{
+		"📊 today  2 merged · out 85.0k · cache write 410.0k · cache read 9.80M · in 1.2k",
+		"📅 7 days  ▱▱ ▱▱ ▱▱ ▰▱ ▱▱ ▱▱ ▰▰  3 merged",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing:\n%s", want, out)
+		}
+	}
+	if i, j := strings.Index(out, "📅"), strings.Index(out, "📬 Inbox"); i < 0 || j < i {
+		t.Errorf("stats not in the overview:\n%s", out)
+	}
+	for _, r := range out {
+		if r >= 0x1F000 && width.LookupRune(r).Kind() != width.EastAsianWide {
+			t.Errorf("%q (U+%04X) is not East Asian Wide", r, r)
+		}
+	}
+
+	dashLook(t, m, "ansi", "ascii")
+	out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	for _, want := range []string{"today  2 merged · out 85.0k", "7 days  0 0 0 1 0 0 2  3 merged"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ascii: %q missing:\n%s", want, out)
+		}
+	}
+	for _, r := range out {
+		if r >= 0x1F000 || r == '▰' || r == '▱' {
+			t.Fatalf("ascii: %q drawn:\n%s", r, out)
+		}
+	}
+
+	// narrow: one cell a day, unspaced, and the overview flows onto lines
+	dashLook(t, m, "truecolor", "unicode")
+	out = ansi.Strip(strings.Join(m.viewAgent(44, 40), "\n"))
+	if !strings.Contains(out, "7 days  ▱▱▱▰▱▱▰  3 merged") {
+		t.Errorf("narrow week:\n%s", out)
+	}
+	if !strings.Contains(out, "cache read 9.80M") {
+		t.Errorf("narrow: tokens not flowed onto the next lines:\n%s", out)
+	}
+}
+
+// A busy day scales the bar down and keeps a ▰ for a day with one merge.
+func TestDashboardStatsScale(t *testing.T) {
+	m, _ := dashModel(t)
+	dashLook(t, m, "truecolor", "unicode")
+	now := time.Now()
+	day := func(back int) string { return now.AddDate(0, 0, -back).Format("2006-01-02") }
+	m.dash.stats = &daemon.Stats{From: day(6), To: day(0), Merged: 9, Rows: []daemon.StatsRow{
+		{Day: day(0), Repo: "a", Merged: 8}, {Day: day(1), Repo: "a", Merged: 1}}}
+	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	if !strings.Contains(out, "▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▰▱▱▱ ▰▰▰▰  9 merged") {
+		t.Errorf("scaled week:\n%s", out)
+	}
+	if !strings.Contains(out, "📊 today  8 merged · out 0") {
+		t.Errorf("today without tokens:\n%s", out)
+	}
+}
+
+// A failed read says stats are unavailable and why, with no numbers (not
+// even the last good ones); nothing recorded says so; neither breaks the
+// widths.
+func TestDashboardStatsFailAndEmpty(t *testing.T) {
+	m, f := dashModel(t)
+	base := f.reply
+	f.reply = func(method string) any {
+		if method == "stats" {
+			return fmt.Errorf("unknown method stats\x1b[2J")
+		}
+		return base(method)
+	}
+	m.dash.statsAt = time.Time{}
+	runCmd(m, m.loadDashStats(dashStatsOpen))
+	raw := strings.Join(m.viewAgent(120, 60), "\n")
+	if strings.Contains(raw, "\x1b[2J") {
+		t.Fatal("the error's escape was drawn")
+	}
+	out := ansi.Strip(raw)
+	if !strings.Contains(out, "today  stats unavailable · unknown method stats") || strings.Contains(out, "merged ·") || strings.Contains(out, "7 days") {
+		t.Errorf("failed stats:\n%s", out)
+	}
+	for _, size := range [][2]int{{120, 40}, {60, 20}, {40, 16}} {
+		m.width, m.height, m.focus = size[0], size[1], pAgent
+		checkSize(t, m, fmt.Sprintf("failed stats %dx%d", size[0], size[1]))
+	}
+
+	now := time.Now()
+	f.reply = func(method string) any {
+		if method == "stats" {
+			d := now.Format("2006-01-02")
+			return daemon.Stats{From: now.AddDate(0, 0, -6).Format("2006-01-02"), To: d, Rows: []daemon.StatsRow{}}
+		}
+		return base(method)
+	}
+	m.dash.statsAt = time.Time{}
+	runCmd(m, m.loadDashStats(dashStatsOpen))
+	out = ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
+	for _, want := range []string{"today  no merges · no tokens recorded yet", "7 days  ▱▱▱▱▱▱▱  0 merged"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("empty stats: %q missing:\n%s", want, out)
+		}
+	}
+}
+
+// Stats are read when the dashboard opens and then every
+// dashStatsRefresh, not every tick.
+func TestDashboardStatsRefresh(t *testing.T) {
+	m, f := dashModel(t)
+	n := len(f.find("stats"))
+	if m.loadDashStats(dashStatsOpen) != nil {
+		t.Error("stats read again right after opening")
+	}
+	m.dash.at = time.Now() // the rest is fresh too
+	runCmd(m, m.dashTick())
+	if got := len(f.find("stats")); got != n {
+		t.Errorf("a tick read stats again: %d → %d", n, got)
+	}
+	m.dash.statsAt = time.Now().Add(-dashStatsRefresh)
+	runCmd(m, m.dashTick())
+	if got := len(f.find("stats")); got != n+1 {
+		t.Errorf("stats not read after dashStatsRefresh: %d → %d", n, got)
 	}
 }

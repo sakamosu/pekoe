@@ -495,7 +495,7 @@ func (m *model) onSelChange() tea.Cmd {
 	}
 	cmds = append(cmds, m.fetchScreen(), m.loadChanges(cur))
 	if m.dashShown() {
-		cmds = append(cmds, m.loadDash()) // the dashboard reads pekoed now, not at the next tick
+		cmds = append(cmds, m.loadDash(), m.loadDashStats(dashStatsOpen)) // the dashboard reads pekoed now, not at the next tick
 	}
 	return tea.Batch(cmds...)
 }
@@ -709,6 +709,10 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dashMsg:
 		m.onDash(msg)
+		return m, nil
+
+	case dashStatsMsg:
+		m.onDashStats(msg)
 		return m, nil
 
 	case inboxAnswerMsg:
