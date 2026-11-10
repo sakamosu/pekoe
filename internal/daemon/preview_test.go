@@ -17,6 +17,7 @@ import (
 
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
+	"pekoe/internal/testenv"
 )
 
 // fakeCapturer writes a PNG of the viewport size and records the requests.
@@ -229,6 +230,7 @@ func TestChromeCaptureReal(t *testing.T) {
 	if _, err := chromeBinary(); err != nil {
 		t.Skip(err)
 	}
+	testenv.NeedTCP(t) // Chrome loads the page over a real port
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<html><head><meta name=viewport content="width=device-width"><style>body{margin:0;background:#00f}@media (max-width:500px){body{background:#f00}}</style></head><body></body></html>`)
 	}))

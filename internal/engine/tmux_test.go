@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"pekoe/internal/testenv"
 )
 
 func TestTerminalFeatureIndexes(t *testing.T) {
@@ -29,9 +31,11 @@ terminal-features[5] xterm-256color:RGB`
 // Against a real private tmux server: repeated starts keep one entry, and
 // copies left by older versions collapse to one.
 func TestEnsureTerminalFeature(t *testing.T) {
+	testenv.NeedTmux(t)
+	t.Setenv("TMUX_TMPDIR", testenv.ShortDir(t, "bt"))
 	tm := &Tmux{Socket: "pekoe-test-features", Session: "t"}
 	if _, err := tm.run("new-session", "-d", "-s", "t", "sleep 30"); err != nil {
-		t.Skip("tmux unavailable:", err)
+		t.Fatal(err)
 	}
 	defer tm.KillServer()
 	const f = "xterm-256color:RGB:hyperlinks"
@@ -56,20 +60,13 @@ func TestEnsureTerminalFeature(t *testing.T) {
 // KillServer stops a server whose socket it cannot reach (started under a
 // different TMUX_TMPDIR) through the pid recorded at start.
 func TestKillServerFallsBackToPidFile(t *testing.T) {
+	testenv.NeedTmux(t)
 	// short dirs: a unix socket path must fit in ~104 bytes
-	shortDir := func() string {
-		d, err := os.MkdirTemp("/tmp", "bt")
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { os.RemoveAll(d) })
-		return d
-	}
-	tmpA, tmpB := shortDir(), shortDir()
+	tmpA, tmpB := testenv.ShortDir(t, "bt"), testenv.ShortDir(t, "bt")
 	tm := &Tmux{Socket: "pekoe-test-kill", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
 	t.Setenv("TMUX_TMPDIR", tmpA)
 	if _, err := tm.run("new-session", "-d", "-s", "t", "sleep 60"); err != nil {
-		t.Skip("tmux unavailable:", err)
+		t.Fatal(err)
 	}
 	tm.recordPid()
 	pid := tm.recordedPid()
@@ -113,15 +110,12 @@ func TestIsTmuxServerCmd(t *testing.T) {
 // A session made when slugs could hold '.' (v1.2) is still reachable: tmux
 // would read "=v1.2~agent" as window "v1", pane "2~agent".
 func TestTargetWithDotInSlug(t *testing.T) {
-	d, err := os.MkdirTemp("/tmp", "bt") // a unix socket path must be short
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(d) })
+	testenv.NeedTmux(t)
+	d := testenv.ShortDir(t, "bt") // a unix socket path must be short
 	t.Setenv("TMUX_TMPDIR", d)
 	tm := &Tmux{Socket: "pekoe-test-dot", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
 	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", "_keeper", "sleep 60"); err != nil {
-		t.Skip("tmux unavailable:", err)
+		t.Fatal(err)
 	}
 	tm.recordPid()
 	pid := tm.recordedPid()
@@ -151,17 +145,14 @@ func TestTargetWithDotInSlug(t *testing.T) {
 // as nothing, on both paths (send-keys -l for one line, paste-buffer for
 // several), so text cannot end a paste or press Shift-Tab / ^C.
 func TestSendTextDropsControls(t *testing.T) {
-	d, err := os.MkdirTemp("/tmp", "bt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(d) })
+	testenv.NeedTmux(t)
+	d := testenv.ShortDir(t, "bt") // a unix socket path must be short
 	t.Setenv("TMUX_TMPDIR", d)
 	tm := &Tmux{Socket: "pekoe-test-sendtext", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
 	out := d + "/out"
 	// raw: ^C is a byte for cat, not a signal; cat writes what arrives
 	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", winName("s", "agent"), "stty raw -echo; exec cat > "+out); err != nil {
-		t.Skip("tmux unavailable:", err)
+		t.Fatal(err)
 	}
 	tm.recordPid()
 	pid := tm.recordedPid()
@@ -189,16 +180,13 @@ func TestSendTextDropsControls(t *testing.T) {
 // lone ';', as one keystroke from the TUI) reaches the pane, not tmux's
 // command parser.
 func TestSendLiteralSemicolon(t *testing.T) {
-	d, err := os.MkdirTemp("/tmp", "bt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(d) })
+	testenv.NeedTmux(t)
+	d := testenv.ShortDir(t, "bt") // a unix socket path must be short
 	t.Setenv("TMUX_TMPDIR", d)
 	tm := &Tmux{Socket: "pekoe-test-semicolon", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
 	out := d + "/out"
 	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", winName("s", "agent"), "stty raw -echo; exec cat > "+out); err != nil {
-		t.Skip("tmux unavailable:", err)
+		t.Fatal(err)
 	}
 	tm.recordPid()
 	pid := tm.recordedPid()

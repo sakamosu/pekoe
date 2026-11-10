@@ -5,15 +5,16 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"pekoe/internal/testenv"
 )
 
 // fakeAPI serves one release of owner/repo, its assets, and records the
 // headers it was asked with.
 type fakeAPI struct {
-	srv     *httptest.Server
+	srv     *testenv.Server
 	release string // JSON; "" answers 404
 	assets  map[string][]byte
 	private bool // without a token: 404, as GitHub answers for a private repository
@@ -23,7 +24,7 @@ type fakeAPI struct {
 
 func newFakeAPI(t *testing.T) *fakeAPI {
 	f := &fakeAPI{assets: map[string][]byte{}}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.srv = testenv.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.auth = append(f.auth, r.Header.Get("Authorization"))
 		f.accept = append(f.accept, r.Header.Get("Accept"))
 		if f.private && r.Header.Get("Authorization") == "" {
@@ -101,7 +102,7 @@ func TestLatestPrivateWithoutToken(t *testing.T) {
 }
 
 func TestLatestRateLimited(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := testenv.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"message":"API rate limit exceeded for 192.0.2.1."}`, 403)
 	}))
 	t.Cleanup(srv.Close)

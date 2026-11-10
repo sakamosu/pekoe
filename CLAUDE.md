@@ -18,6 +18,8 @@
 make test   # go vet + go test ./...(既定と -tags web の両方)+ nvim のヘッドレステスト
 ```
 
+エージェントの sandbox の中では unix ソケット・TCP ポートの bind が塞がれているので、本物のソケット・ポート・tmux・入れ子の sandbox(sandbox-exec / bwrap)が要る統合テストと nvim のヘッドレステストは理由を添えて飛ぶ(`make test` の最後に note が出る)。飛んだものは sandbox の外(人間の端末)で `make test` を回して確かめてもらう。新しいテストは `/tmp` を直書きせず、偽デーモン・HTTP はメモリ上でつなぎ(`internal/testenv` の `Listen` + `client.DialSocket`、`NewServer`)、本物が要るときだけ `testenv.NeedUnixSocket` / `NeedTCP` / `NeedTmux` で飛ばす。
+
 Web UI(`internal/daemon/webts.go`)は `-tags web` のビルドにだけ入る。既定のビルドに Tailscale のコードを持ち込まない(`webts.go` 以外から `tailscale.com` を import しない)。
 
 daemon のテストは偽エンジン(`internal/daemon/daemon_test.go` の `fakeEngine`)で動く。`engine.Engine` にメソッドを足したら偽エンジンにも足す。

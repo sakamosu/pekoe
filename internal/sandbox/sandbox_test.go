@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"pekoe/internal/testenv"
 )
 
 func TestOffRunsAsIs(t *testing.T) {
@@ -212,11 +214,8 @@ func TestRealSandboxDenies(t *testing.T) {
 	os.MkdirAll(wt, 0o755)
 	// the socket directory goes in a short path: unix socket paths are
 	// limited (~104 bytes on macOS)
-	sockDir, err := os.MkdirTemp("/tmp", "sbx")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	testenv.NeedUnixSocket(t)
+	sockDir := testenv.ShortDir(t, "sbx")
 	ln, err := net.Listen("unix", filepath.Join(sockDir, "s"))
 	if err != nil {
 		t.Fatal(err)

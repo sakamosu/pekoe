@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,6 +16,7 @@ import (
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
 	"pekoe/internal/state"
+	"pekoe/internal/testenv"
 	"pekoe/internal/theme"
 )
 
@@ -47,17 +46,13 @@ func (f *fakePekoed) find(method string) []map[string]any {
 
 func startFakePekoed(t *testing.T) (*fakePekoed, *client.Client) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "bb") // unix socket paths are short
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s")
-	l, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// in memory: an agent's sandbox refuses binding a unix socket
+	sock := filepath.Join(t.TempDir(), "s")
+	l := testenv.Listen(sock)
 	t.Cleanup(func() { l.Close() })
+	oldDial := client.DialSocket
+	client.DialSocket = l.Dial
+	t.Cleanup(func() { client.DialSocket = oldDial })
 	f := &fakePekoed{reply: func(string) any { return nil }}
 	go func() {
 		for {

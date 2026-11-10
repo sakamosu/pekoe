@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"pekoe/internal/testenv"
 )
 
 // `pekoe daemon stop` returns only once pekoed's process is gone, and says so
@@ -41,11 +43,7 @@ func TestWaitExit(t *testing.T) {
 // Dial sends the human token from the data directory with each request;
 // DialAgent (the MCP server) never does.
 func TestHumanToken(t *testing.T) {
-	home, err := os.MkdirTemp("/tmp", "pekoecl")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(home) })
+	home := t.TempDir()
 	t.Setenv("PEKOE_HOME", home)
 	sock := filepath.Join(home, "s")
 	t.Setenv("PEKOE_SOCK", sock)
@@ -53,11 +51,12 @@ func TestHumanToken(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "share", "human-token"), []byte("tok123\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// in memory: an agent's sandbox refuses binding a unix socket
+	ln := testenv.Listen(sock)
 	defer ln.Close()
+	old := DialSocket
+	DialSocket = ln.Dial
+	t.Cleanup(func() { DialSocket = old })
 	got := make(chan string, 4)
 	go func() {
 		for {

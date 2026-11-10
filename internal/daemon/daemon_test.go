@@ -186,6 +186,9 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	// hooks run bare here (the tests may themselves be in a sandbox, where
 	// another cannot start); sandbox_test.go sets a real one
 	d.sbx = &sandbox.Sandbox{}
+	// ports are free unless a test says otherwise: the real check binds
+	// them, which an agent's sandbox refuses
+	d.portBusy = func(int) bool { return false }
 	t.Cleanup(func() { d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
 }

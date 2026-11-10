@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"net"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+
+	"pekoe/internal/client"
+	"pekoe/internal/testenv"
 )
 
 // fakeDaemon answers every request on $PEKOE_SOCK with a null result and
@@ -45,18 +46,14 @@ func startFakeDaemon(t *testing.T) *fakeDaemon {
 	t.Helper()
 	t.Setenv("PEKOE_HOME", t.TempDir())
 	t.Setenv("PEKOE_TMUX_SOCKET", "pekoe-test-unused")
-	dir, err := os.MkdirTemp("/tmp", "pekoecli") // short: unix socket path limit
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s")
+	// in memory: an agent's sandbox refuses binding a unix socket
+	sock := filepath.Join(t.TempDir(), "s")
 	t.Setenv("PEKOE_SOCK", sock)
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
+	ln := testenv.Listen(sock)
 	t.Cleanup(func() { ln.Close() })
+	oldDial := client.DialSocket
+	client.DialSocket = ln.Dial
+	t.Cleanup(func() { client.DialSocket = oldDial })
 	fd := &fakeDaemon{}
 	go func() {
 		for {

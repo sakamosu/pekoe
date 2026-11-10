@@ -12,21 +12,18 @@ import (
 	"time"
 
 	"pekoe/internal/paths"
+	"pekoe/internal/testenv"
 )
 
 // lockEnv isolates a data directory and a socket (kept short: macOS caps
-// unix socket paths at ~104 bytes, too short for t.TempDir()).
+// unix socket paths at ~104 bytes, too short for t.TempDir()). The tests
+// that Run a daemon serve that real socket: they call testenv.NeedUnixSocket.
 func lockEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("PEKOE_HOME", t.TempDir())
 	t.Setenv("PEKOE_WORKTREES", filepath.Join(os.Getenv("PEKOE_HOME"), "wt"))
 	t.Setenv("PEKOE_TMUX_SOCKET", "pekoe-test-unused") // never started: fakeEngine
-	dir, err := os.MkdirTemp("/tmp", "pekoelk")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	t.Setenv("PEKOE_SOCK", filepath.Join(dir, "s"))
+	t.Setenv("PEKOE_SOCK", filepath.Join(testenv.ShortDir(t, "pekoelk"), "s"))
 	old := lockWait
 	lockWait = 3 * time.Second
 	t.Cleanup(func() { lockWait = old })
@@ -61,6 +58,20 @@ func waitServing(t *testing.T) {
 	t.Fatal("daemon never served its socket")
 }
 
+// waitPidFile waits until the pid file holds want and returns what it last
+// held. Run writes it after it starts listening (and after it notes its
+// socket's identity), so the socket can answer before it is there: reading
+// it right after waitServing races with that write.
+func waitPidFile(want string) string {
+	var b []byte
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if b, _ = os.ReadFile(paths.PidFile()); string(b) == want {
+			break
+		}
+	}
+	return string(b)
+}
+
 func stopAndWait(t *testing.T, d *Daemon, done chan error) {
 	t.Helper()
 	d.Stop()
@@ -89,6 +100,12 @@ func TestSecondDaemonRefused(t *testing.T) {
 	}
 	lockWait = 3 * time.Second
 
+	// from here on d1 serves its socket
+	if testenv.CanBindUnix() != nil {
+		d1.DB.Close()
+		d1.releaseLock()
+	}
+	testenv.NeedUnixSocket(t)
 	done := runBG(d1)
 	waitServing(t)
 	start := time.Now()
@@ -111,6 +128,7 @@ func TestSecondDaemonRefused(t *testing.T) {
 // The old daemon's late shutdown must leave alone a socket and pid file
 // that are no longer its own (issue #42: it unlinked the new daemon's).
 func TestShutdownKeepsNewerSocket(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	d, err := newServing(t)
 	if err != nil {
@@ -118,6 +136,12 @@ func TestShutdownKeepsNewerSocket(t *testing.T) {
 	}
 	done := runBG(d)
 	waitServing(t)
+	// let Run finish starting first: it notes its socket's identity and
+	// then writes the pid file, which would otherwise land on the newer
+	// daemon's socket and pid file below
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q", got)
+	}
 
 	// another daemon took over the path (e.g. one sharing $PEKOE_SOCK)
 	sock := paths.Socket()
@@ -154,6 +178,7 @@ func TestShutdownKeepsNewerSocket(t *testing.T) {
 
 // Its own socket and pid file are removed on the way out.
 func TestShutdownRemovesOwnSocket(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	d, err := newServing(t)
 	if err != nil {
@@ -161,8 +186,8 @@ func TestShutdownRemovesOwnSocket(t *testing.T) {
 	}
 	done := runBG(d)
 	waitServing(t)
-	if b, _ := os.ReadFile(paths.PidFile()); string(b) != fmt.Sprint(os.Getpid()) {
-		t.Fatalf("pid file = %q", b)
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q", got)
 	}
 	stopAndWait(t, d, done)
 	if _, err := os.Lstat(paths.Socket()); !os.IsNotExist(err) {
@@ -185,6 +210,7 @@ func (s slowClose) Close() { time.Sleep(s.delay) }
 // still shutting down — its listener closed, its exit delayed: exactly one
 // new daemon comes up, and the old one's late cleanup leaves its socket be.
 func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	old, err := newServing(t)
 	if err != nil {
@@ -243,8 +269,8 @@ func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
 	if got, ok := statID(paths.Socket()); !ok || got == old.sockID {
 		t.Fatalf("socket missing or still the old daemon's (exists=%v)", ok)
 	}
-	if b, _ := os.ReadFile(paths.PidFile()); string(b) != fmt.Sprint(os.Getpid()) {
-		t.Fatalf("pid file = %q, want the new daemon's", b)
+	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
+		t.Fatalf("pid file = %q, want the new daemon's", got)
 	}
 	stopAndWait(t, winner, winDone)
 }

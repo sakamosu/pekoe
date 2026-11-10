@@ -257,6 +257,13 @@ func TestOriginConfigRunsNothing(t *testing.T) {
 			armed(t, tr, repo, "fetch", "origin")
 		}},
 		{"ssh command", func(t *testing.T, tr *trap, repo string) {
+			// GIT_SSH_COMMAND / GIT_SSH win over core.sshCommand, and an
+			// agent's sandbox sets GIT_SSH_COMMAND (its ssh proxy): without
+			// them gone the trap never goes off and this case tests nothing
+			for _, k := range []string{"GIT_SSH_COMMAND", "GIT_SSH"} {
+				t.Setenv(k, "")
+				os.Unsetenv(k)
+			}
 			gitConfig(t, filepath.Join(repo, ".git", "config"),
 				"remote.origin.url", "ssh://git.example.invalid/app.git",
 				"core.sshCommand", tr.cmd("ssh"))
