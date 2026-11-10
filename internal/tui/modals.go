@@ -113,6 +113,13 @@ func (p *permissionModal) sess() *state.Session {
 	return nil
 }
 
+// stale: the wait was answered elsewhere (web UI, extension, the agent's
+// own window), ended, or the session is gone.
+func (p *permissionModal) stale() bool {
+	s := p.sess()
+	return s == nil || s.State != state.Waiting || s.WaitKind != "permission"
+}
+
 func (p *permissionModal) mode() (string, string) { return "PERMISSION", p.m.ic.Wait }
 
 func (p *permissionModal) hints() [][2]string {
@@ -152,7 +159,13 @@ func (p *permissionModal) view() []string {
 func (p *permissionModal) key(k tea.KeyMsg) tea.Cmd {
 	m := p.m
 	answer := func(a string) tea.Cmd {
-		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a}, ""))
+		// expect: the tool on screen; the daemon refuses the answer when the
+		// session has moved on to another prompt meanwhile (as the web UI)
+		var tool *state.Tool
+		if s := p.sess(); s != nil {
+			tool = s.PendingTool
+		}
+		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a, "expect": map[string]any{"tool": tool}}, ""))
 	}
 	switch k.String() {
 	case "y":

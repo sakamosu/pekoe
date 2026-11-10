@@ -889,6 +889,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		}
 		m.tapiOnSession(prev, &s, curSlug)
 		m.upsert(&s)
+		m.closeStalePermission()
 		if curSlug != "" {
 			if i, _ := m.find(curSlug); i >= 0 {
 				m.sel = i
@@ -929,6 +930,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 				break
 			}
 		}
+		m.closeStalePermission()
 		// another session going away keeps the selection (and typing) on
 		// the current one; only losing the current one moves it
 		if i, _ := m.find(curSlug); curSlug != "" && i >= 0 {
@@ -1006,6 +1008,14 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 
 // maybePermission opens the permission modal for the selected session when
 // it waits for a permission and the user is not typing elsewhere.
+// closeStalePermission closes the permission dialog once its session no
+// longer waits for a permission (or is gone): it would keep every key.
+func (m *model) closeStalePermission() {
+	if p, ok := m.modal.(*permissionModal); ok && p.stale() {
+		m.modal = nil
+	}
+}
+
 func (m *model) maybePermission() tea.Cmd {
 	if m.modal != nil || m.typing || m.review != nil {
 		return nil

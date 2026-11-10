@@ -346,3 +346,50 @@ func TestBrowserTabsShrink(t *testing.T) {
 		t.Fatalf("send_errors %v", got)
 	}
 }
+
+// The permission dialog closes once the wait ends elsewhere or the session
+// goes away, and y names the tool it showed (the daemon checks it).
+func TestPermissionModalFollowsSession(t *testing.T) {
+	waiting := func() *state.Session {
+		s := sess("api-1", appA, state.Waiting, time.Now())
+		s.WaitKind = "permission"
+		s.PendingTool = &state.Tool{Name: "Bash", Input: "rm -rf build"}
+		return s
+	}
+	open := func(t *testing.T) (*model, *fakePekoed) {
+		m, f, _ := chatModel(t)
+		m.sessions = []*state.Session{waiting()}
+		m.maybePermission()
+		if _, ok := m.modal.(*permissionModal); !ok {
+			t.Fatalf("modal %T", m.modal)
+		}
+		return m, f
+	}
+
+	m, _ := open(t)
+	answered := waiting()
+	answered.State, answered.WaitKind, answered.PendingTool = state.Running, "", nil
+	data, _ := json.Marshal(answered)
+	runCmd(m, m.onEvent(client.Event{Event: "session.updated", Data: data}))
+	if m.modal != nil {
+		t.Fatalf("answered elsewhere: modal %T still open", m.modal)
+	}
+
+	m, _ = open(t)
+	data, _ = json.Marshal(state.Session{Slug: "api-1"})
+	runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+	if m.modal != nil {
+		t.Fatalf("removed: modal %T still open", m.modal)
+	}
+
+	m, f := open(t)
+	runCmd(m, m.onKey(key("y")))
+	got := f.find("session.answer")
+	if len(got) != 1 {
+		t.Fatalf("session.answer %v", got)
+	}
+	tool, _ := got[0]["expect"].(map[string]any)["tool"].(map[string]any)
+	if got[0]["answer"] != "allow" || tool["name"] != "Bash" || tool["input"] != "rm -rf build" {
+		t.Fatalf("session.answer %v", got[0])
+	}
+}
