@@ -81,6 +81,11 @@ var agentMethods = map[string]string{
 	// each session's overlaps; git runs in pekoed (read-only: diff and
 	// merge-tree), at most every agentConflictsEvery (hAgentConflicts)
 	"conflicts.list": "the hub agent orders parallel work by the files sessions share (`pekoe conflicts`); the overlaps session.list shows, rescanned at most every 10 s",
+	// cleanup candidates: what session.list shows, sorted by why a session
+	// may go, plus the number of uncommitted files and unpushed commits
+	// (git status / rev-list in pekoed, read only, at most every 10 s per
+	// worktree: hAgentCleanup). Removing stays worktree.rm's line
+	"cleanup.list": "the hub agent lists what could be cleaned up (`pekoe cleanup`): landed, merged and long-stopped sessions with their uncommitted / unpushed counts; read only, git read at most every 10 s per worktree; removing is worktree.rm (an agent only landed ones)",
 	// merge evidence: a computation over session.list (pr_status, overlaps,
 	// after) and report.list, both open already; runs nothing
 	"merge.check": "the hub agent and the dashboards read what a session still lacks before it may be merged; read only, from what session.list and report.list show",

@@ -153,6 +153,7 @@ var specs = map[string]spec{
 	"ls":        {use: "pekoe ls [--all|--repo R] [--json]", bools: []string{"all"}, vals: []string{"repo"}},
 	"issues":    {use: "pekoe issues [<N>] [--repo R] [--all|--label L] [--refresh] [--json]", bools: []string{"all", "mine", "refresh"}, vals: []string{"repo", "label"}},
 	"conflicts": {use: "pekoe conflicts [--repo R] [--json]", vals: []string{"repo"}},
+	"cleanup":   {use: "pekoe cleanup [--all|--repo R] [--stale 72h] [--json]   what could be removed (landed, merged, stopped for long) · pekoe cleanup --rm <slug>... | --rm --landed [--force] [--yes]", bools: []string{"all", "rm", "landed", "force", "yes"}, vals: []string{"repo", "stale"}},
 	"send":      {use: "pekoe send <slug> <text> [--no-enter]   (text '-' reads stdin; -- before text that starts with -)", bools: []string{"no-enter"}},
 	"event":     {use: "pekoe event <Hook>   (called by Claude Code hooks, JSON on stdin)"},
 	"review":    {use: "pekoe review [<slug> | gh#N [--repo R]]", vals: []string{"repo"}},

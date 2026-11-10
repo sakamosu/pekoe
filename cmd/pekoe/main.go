@@ -90,6 +90,8 @@ func main() {
 		err = cmdIssues(args)
 	case "conflicts":
 		err = cmdConflicts(args)
+	case "cleanup":
+		err = cmdCleanup(args)
 	case "send":
 		err = cmdSend(args)
 	case "event":
@@ -196,6 +198,8 @@ func usage() {
   pekoe issues [--repo R] [--all|--label L] [--refresh] [--json]   open GitHub issues (default: assigned to you)
   pekoe issues <N> [--repo R] [--json]  an issue's body and comments
   pekoe conflicts [--repo R] [--json]  sessions touching the same files (conflict forecast)
+  pekoe cleanup [--all|--repo R] [--stale 72h]   landed, merged and long-stopped sessions, with uncommitted / unpushed work
+  pekoe cleanup --rm <slug>... | --rm --landed [--force] [--yes]   remove the ones you pick (agents: landed only)
   pekoe send <slug> <text>      <slug> may also be <repo>/<slug>
   pekoe review [<slug> | gh#N [--repo R]]
   pekoe land <slug>             rebase → test → gh pr create (teardown after merge)

@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -121,6 +122,28 @@ type Orchestrator struct {
 // QuietNotify: notify = "quiet".
 func (o Orchestrator) QuietNotify() bool { return strings.EqualFold(o.Notify, "quiet") }
 
+// Cleanup is [cleanup]: the candidates of `pekoe cleanup` (daemon/cleanup.go).
+// stale_after is how long a stopped session (done, idle, failed …) has not
+// moved before it is listed as stale: a Go duration ("72h", "36h30m").
+// Empty or unreadable: DefaultStaleAfter.
+type Cleanup struct {
+	StaleAfter string `toml:"stale_after"`
+}
+
+// DefaultStaleAfter: three days. A session left done on Friday evening and
+// picked up on Monday morning (about 63 hours) is not listed; one nobody
+// touched for a working week is.
+const DefaultStaleAfter = 72 * time.Hour
+
+// Stale is stale_after as a duration (DefaultStaleAfter when unset or not
+// a positive duration).
+func (c Cleanup) Stale() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(c.StaleAfter)); err == nil && d > 0 {
+		return d
+	}
+	return DefaultStaleAfter
+}
+
 // Tips is [tips]: one feature at a time in the TUI's empty main pane and
 // in tapi chat's greeting (internal/tips). On by default.
 type Tips struct {
@@ -166,6 +189,7 @@ type Global struct {
 	} `toml:"picks"`
 
 	Orchestrator Orchestrator `toml:"orchestrator"`
+	Cleanup      Cleanup      `toml:"cleanup"`
 }
 
 func DefaultAgents() map[string]Agent {

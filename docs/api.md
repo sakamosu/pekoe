@@ -57,6 +57,7 @@
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
+  | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
@@ -234,6 +235,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
 | `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`pekoe conflicts`)。token なしでは、前の計算(pekoed が裏で回す約 10 秒ごとの計算を含む)から 10 秒以内ならそのときの結果を返し、git を動かさない(どのエージェントも 10 秒に 1 回より多く worktree の git を走らせられない)。git は pekoed の git(下の「pekoed が動かす git」)で、diff と `merge-tree` だけ |
+| `cleanup.list` | `{repo_id?, stale_after?: "72h"}` | `{stale_after, items: [CleanupItem]}`。片付けの候補(`pekoe cleanup`、TUI の `:cleanup`)。読むだけで、何も消さない。`kind` は `landed`(マージを検知した pekoed が teardown と worktree の削除を済ませ、記録だけ残る)・`merged`(PR は GitHub でマージ済みだが pekoe land を通っていないので worktree が残る)・`stale`(running・waiting・creating 以外で、dev server が止まっていて、`stale_after`(既定は `[cleanup] stale_after`、それも無ければ 72h)より長く状態が変わっていない)の順、同じ種類の中は古い順。pekoe land が PR を作ってマージ待ちのセッション(`landing`)と、リポジトリ本体のチェックアウトのセッションは出さない。worktree が残っていれば、pekoed の git(`status --porcelain` と `rev-list --count HEAD --not --remotes <base との merge-base> [<マージした PR の head>]`)で `dirty` と `unpushed` を数え、`warnings` に言葉で書く(`2 uncommitted files`・`1 unpushed commit`・`PR #12 is still open` など)。読めなければ -1 と `unknown`。token なしでは git の読み取りを worktree ごとに 10 秒に 1 回までにし、それ以内は前の結果を返す。`human_only` は token なしの `worktree.rm` が断るもの(worktree の消えた landed 以外すべて) |
 | `review.start` | `{slug}` | state を reviewing に |
 | `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |
@@ -429,6 +431,38 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
 - **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)は、同じ HEAD で条件が戻ればもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
 - **答え**: `マージした`(0)と `待つ`(1)は記録だけ(マージの検知は今までどおり `watchMerges`)。`差し戻す`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+
+### 片付けの候補(cleanup)
+
+統括役でセッションを回すとたまる、landed・マージ済み・止まって長いセッションを一覧にする(`cleanup.list`、`pekoe cleanup`、TUI の `:cleanup`)。pekoed は一覧を出すだけで、消すのは人が選んだときの `worktree.rm`(`pekoe cleanup --rm <slug>…` / `--rm --landed`、TUI の `D`。どちらも確認を挟む)。安全の線は `pekoe rm` と同じで、token なしで消せるのは worktree の消えた landed だけ(上の「人間だけの操作」)。
+
+```jsonc
+// CleanupList(cleanup.list の結果)
+{
+  "stale_after": "72h0m0s",           // 使った閾値
+  "items": [
+    {
+      "kind": "stale",                // landed | merged | stale(この順に並ぶ)
+      "slug": "feat-csv", "repo": "app", "repo_id": "github.com/me/app",
+      "branch": "feat/csv", "state": "idle",
+      "since": "2026-11-06T09:12:00Z",  // 最後に状態が変わった時刻
+      "pr": 42,                       // 無ければ省く
+      "path": "/Users/me/worktrees/app/feat-csv",
+      "worktree": true,               // ディレクトリが残っている
+      "deletes_worktree": true,       // rm がそれを消す(~/worktrees 配下で pekoe が作ったもの)
+      "dirty": 2,                     // 未コミットのファイル数(読めなければ -1)
+      "unpushed": 1,                  // どのリモートにも base にもマージした PR にもないコミット数(読めなければ -1)
+      "unknown": "",                  // 読めなかった理由
+      "warnings": ["2 uncommitted files", "1 unpushed commit", "PR #42 is still open"],
+      "human_only": true              // token なしの worktree.rm は断る
+    }
+  ]
+}
+```
+
+- **閾値**: `[cleanup] stale_after`(Go の duration。既定 72h)。金曜の夕方に done にして月曜の朝に戻る(約 63 時間)セッションは出さず、まる 3 日だれも触っていないものを出す。`stale_after` の引数(`pekoe cleanup --stale 24h`)でその場だけ変えられる
+- **`unpushed` の数え方**: `HEAD` から届き、リモート追跡ブランチ(`--remotes`)にも base との merge-base にも無いコミット。GitHub で squash merge されてリモートのブランチが消えたあとでも、PR の head(`pr_status.head_sha`)まではマージ済みとして数えない。base が分からないときはリモートに無いコミットをすべて数える(少なく見せるより多く見せる)
+- 自動では何も消さない。pekoed がローカルのブランチ(`git branch`)を消すこともない(`pekoe rm` と同じ)
 
 ### 依頼の台帳(ledger)
 

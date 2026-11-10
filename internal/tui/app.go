@@ -700,6 +700,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setMsg(string(msg), false)
 		return m, nil
 
+	case cleanupMsg:
+		return m, m.onCleanup(msg)
+
 	case inboxMsg:
 		m.onInboxList(msg)
 		return m, nil
