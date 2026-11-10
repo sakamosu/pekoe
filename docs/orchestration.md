@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信を実装済み。段階 3 は tapi への配送(後回しに決めた)を除いて終わった。配送と段階 4 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信を実装済み。段階 3 は tapi への配送(後回しに決めた)を除いて終わった。段階 4 は G の後片付け(片付けの候補の一覧と、人が選んで消す `pekoe cleanup` / TUI の `:cleanup`)を実装し、E・F・G の負荷の制御・PR の集計・プロジェクトの層は後回しにして、ユーザーの判断で一旦完了とした。配送と後回しにしたものは設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -567,6 +567,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **E. 着地の自動化の残り**: 条件が揃ったら squash merge まで進める段階(リポジトリごとの設定で許す)は **v1 の範囲外**(決まったこと 1)。根拠の受信箱を使ってみて、独立レビューの限界(上の脅威モデル)への答えが出てから決め直す。独占レーン(`[land] exclusive = ["db/migrate/**"]` に触るセッションを 1 本ずつ最新の base の上で着地させる)、マージ後の main の CI の見届け、「マージ済みでまだリリースしていない」一覧(設定にコマンドを書く。設計原則 2「ただのシェル」)
 - **F. PR 監視を広げる**: 自分宛てのレビュー依頼(チーム経由・bot を除く)を受信箱に、`pekoe review gh#N` へつなぐ。自分の PR のレビュー待ちが長いものの一覧。事前チェックはモデルを使わずに pekoed がやり、変化があったときだけ tapi に知らせる
 - **G. 負荷の制御と後片付け**: load・メモリ・ディスクを測り、重い処理(setup・dev・E2E)を待ち行列に入れる。片付けの一覧(landed のまま、止めて長い、マージ済みのブランチ)を出し、選んで消す(消すのは人)
+  - 実装: 後片付けだけ(負荷の制御は後回し)。`cleanup.list`(token なしでも読める。git の読み取りは worktree ごとに 10 秒に 1 回まで)が候補を `landed`(記録だけ残る)・`merged`(`pekoe land` を通さずに GitHub でマージされ、worktree が残る)・`stale`(running・waiting 以外で `[cleanup] stale_after` より長く状態が変わらない。既定 72h は、金曜の夕方に止めて月曜の朝に戻る約 63 時間を拾わないため)に分け、未コミットのファイル数と、どのリモート・base・マージした PR の head にもないコミット数を警告として付ける。「マージ済みのブランチ」はセッションの単位で扱い、ローカルの git のブランチは消さない(`pekoe rm` と同じ)。消すのは既存の `worktree.rm` で、`pekoe cleanup --rm <slug>… | --rm --landed` と TUI の `:cleanup` の `D` が確認を挟んで呼ぶ。安全の線は変えない(token なしで消せるのは worktree の消えた landed だけ)。pekoe land が PR を作ってマージ待ちのセッションと、リポジトリ本体のチェックアウトのセッションは候補にしない。仕様は docs/api.md の「片付けの候補(cleanup)」
 - PR の集計、プロジェクト担当の層とプロジェクトのボード
 
 ## 未決事項
