@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -518,6 +519,9 @@ func (d *Daemon) refreshDiffstat(slug string) {
 	if err != nil {
 		return
 	}
+	if !d.checkGitDir(s) {
+		return
+	}
 	base, _ := d.baseCommit(s, 0)
 	tree, err := gitx.SnapshotTree(s.Path)
 	if err != nil {
@@ -531,6 +535,25 @@ func (d *Daemon) refreshDiffstat(slug string) {
 	d.update(slug, func(x *state.Session) {
 		x.Diffstat = state.Stat{Added: st.Added, Deleted: st.Deleted, Files: st.Files}
 	})
+}
+
+// checkGitDir looks at the session's worktree's .git file (gitx.CheckPin)
+// and keeps git_blocked in step: set while it points somewhere else than
+// the repository's entry for the worktree (pekoed runs no git there then),
+// cleared once it points back. It runs with every diffstat (each edit and
+// Stop) and on restore. false: git is blocked.
+func (d *Daemon) checkGitDir(s *state.Session) bool {
+	msg := ""
+	if err := gitx.CheckPin(s.Path); errors.Is(err, gitx.ErrTampered) {
+		msg = err.Error()
+	}
+	if msg != s.GitBlocked {
+		if msg != "" {
+			log.Printf("%s: %s", s.Slug, msg)
+		}
+		d.update(s.Slug, func(x *state.Session) { x.GitBlocked = msg })
+	}
+	return msg == ""
 }
 
 // refreshBranch re-reads the branch name of a session whose stored name is

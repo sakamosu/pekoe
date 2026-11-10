@@ -252,7 +252,8 @@ type webSession struct {
 	PR          int         `json:"pr,omitempty"`
 	Stopped     bool        `json:"stopped,omitempty"`
 	Error       string      `json:"error,omitempty"`
-	Test        string      `json:"test,omitempty"` // pass | fail | running
+	Test        string      `json:"test,omitempty"`        // pass | fail | running
+	GitBlocked  bool        `json:"git_blocked,omitempty"` // its .git was changed: pekoe runs no git there
 	// Look and PRLook are the TUI's Sessions-panel symbol, color role and
 	// word (theme.Look / theme.PRLook, unicode icons): one table for both.
 	Look   webLook  `json:"look"`
@@ -281,7 +282,7 @@ func toWebSession(s *state.Session) webSession {
 		State: s.State, WaitKind: s.WaitKind, StateSince: s.StateSince,
 		Answerable: webAnswerable(s), PendingTool: s.PendingTool,
 		LastTool: s.LastTool, LastMessage: s.LastMessage, Diffstat: s.Diffstat,
-		PR: s.PR, Stopped: s.Stopped, Error: s.Error,
+		PR: s.PR, Stopped: s.Stopped, Error: s.Error, GitBlocked: s.GitBlocked != "",
 		Test: s.Test.Status, Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
 	}
 	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {

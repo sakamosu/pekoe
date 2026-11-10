@@ -2,11 +2,11 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -494,8 +494,10 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := exec.Command("gh", "pr", "view", strconv.Itoa(p.Number), "--json", "headRefName,baseRefName,title")
-	c.Dir = repo.Dir
+	c, err := ghCommand(context.Background(), repo.Dir, "pr", "view", strconv.Itoa(p.Number), "--json", "headRefName,baseRefName,title")
+	if err != nil {
+		return nil, err
+	}
 	out, err := c.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh pr view %d failed: %v", p.Number, err)
@@ -620,8 +622,10 @@ func (d *Daemon) postGitHubReview(s *state.Session, cs []state.Comment) error {
 	body.Body = strings.Join(general, "\n\n")
 	b, _ := json.Marshal(body)
 	sort.Slice(body.Comments, func(i, j int) bool { return body.Comments[i].Path < body.Comments[j].Path })
-	c := exec.Command("gh", "api", "--method", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", s.PR), "--input", "-")
-	c.Dir = s.RepoDir
+	c, err := ghCommand(context.Background(), s.RepoDir, "api", "--method", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", s.PR), "--input", "-")
+	if err != nil {
+		return err
+	}
 	c.Stdin = bytes.NewReader(b)
 	if out, err := c.CombinedOutput(); err != nil {
 		return fmt.Errorf("gh api review: %s", strings.TrimSpace(string(out)))

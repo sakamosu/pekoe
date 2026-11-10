@@ -108,8 +108,9 @@ type Tips struct {
 // Sandbox is [sandbox]: pekoed runs the commands that come from a worktree
 // (an agent can write them: [hooks] test / setup / dev / teardown and the
 // gatekeeper) in a sandbox that cannot read pekoe's tokens
-// (internal/sandbox). On by default; where no sandbox works, those
-// commands are not run. enable = false runs them as they are.
+// (internal/sandbox), and every git pekoed runs (gitx.SetSandbox). On by
+// default; where no sandbox works, those commands are not run (git runs
+// without one). enable = false runs them as they are.
 type Sandbox struct {
 	Enable *bool `toml:"enable"`
 }

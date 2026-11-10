@@ -266,6 +266,9 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	case "blocked": // no sandbox: [hooks] test was not run
 		test = th.FG(theme.Warn, m.ic.Warning)
 	}
+	if s.GitBlocked != "" { // its .git was changed: pekoe runs no git there
+		test = th.FG(theme.Warn, m.ic.Warning)
+	}
 	nameW, diffW := sessionCols(cw)
 	if diffW == 0 {
 		test = ""
@@ -561,6 +564,9 @@ func (m *model) viewAgent(width, height int) []string {
 	}
 	if s.Test.Status == "blocked" {
 		extra += " · " + th.FG(theme.Warn, "test not run: no sandbox")
+	}
+	if s.GitBlocked != "" { // its .git was changed (gitx.TamperedError)
+		extra += " · " + th.FG(theme.Warn, ".git changed: git stopped")
 	}
 	if s.State == state.Creating {
 		extra = "· not started"

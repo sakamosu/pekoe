@@ -125,7 +125,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		if err := d.teardown(s); err != nil && !p.Force {
 			return nil, err
 		}
-		gitx.DeleteRefs(s.Path, "refs/pekoe/"+p.Slug+"/")
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/") // shared by all worktrees
 		if s.Managed && paths.UnderWorktrees(s.Path) {
 			if owner == nil {
 				deleted = gitx.RemoveWorktree(s.RepoDir, s.Path, true) == nil
@@ -315,7 +315,9 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	if s.PRReview {
 		return nil, errors.New("this is someone else's PR; nothing to land")
 	}
-	if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
+	if out, err := gitx.Run(s.Path, "status", "--porcelain"); err != nil {
+		return nil, err
+	} else if out != "" {
 		return nil, errors.New("uncommitted changes in the worktree: ask the agent to commit first")
 	}
 	base := s.Base
@@ -380,8 +382,10 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	steps = append(steps, "pushed "+s.Branch)
 	pr := s.PR
 	if pr == 0 {
-		c := exec.Command("gh", "pr", "create", "--fill", "--head", s.Branch, "--base", base)
-		c.Dir = s.Path
+		c, err := ghCommand(context.Background(), s.Path, "pr", "create", "--fill", "--head", s.Branch, "--base", base)
+		if err != nil {
+			return nil, err
+		}
 		out, err := c.CombinedOutput()
 		if err != nil && !strings.Contains(string(out), "already exists") {
 			return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
@@ -407,8 +411,10 @@ func prNumber(s string) int {
 }
 
 func prForBranch(dir, branch string) int {
-	c := exec.Command("gh", "pr", "view", branch, "--json", "number")
-	c.Dir = dir
+	c, err := ghCommand(context.Background(), dir, "pr", "view", branch, "--json", "number")
+	if err != nil {
+		return 0
+	}
 	out, err := c.Output()
 	if err != nil {
 		return 0
@@ -441,7 +447,7 @@ func (d *Daemon) finishLanding(slug string) error {
 		if err := d.teardown(s); err != nil {
 			log.Printf("teardown %s: %v", slug, err)
 		}
-		gitx.DeleteRefs(s.Path, "refs/pekoe/"+slug+"/")
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+slug+"/") // shared by all worktrees
 	}
 	if s.Managed && paths.UnderWorktrees(s.Path) {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
@@ -489,8 +495,10 @@ func (d *Daemon) watchMerges() {
 	}
 	d.mu.Unlock()
 	for _, s := range landing {
-		c := exec.Command("gh", "pr", "view", strconv.Itoa(s.PR), "--json", "state")
-		c.Dir = s.RepoDir
+		c, err := ghCommand(context.Background(), s.RepoDir, "pr", "view", strconv.Itoa(s.PR), "--json", "state")
+		if err != nil {
+			continue
+		}
 		out, err := c.Output()
 		if err != nil {
 			continue

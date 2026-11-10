@@ -134,6 +134,7 @@ type Session struct {
 	Base            string    `json:"base"`
 	Issue           int       `json:"issue,omitempty"` // GitHub issue the session was started from (--from gh#N)
 	Error           string    `json:"error,omitempty"`
+	GitBlocked      string    `json:"git_blocked,omitempty"` // why pekoed runs no git in the worktree (its .git was changed; gitx.TamperedError)
 	Landing         bool      `json:"landing,omitempty"`
 	LastMessage     string    `json:"last_message,omitempty"`
 	Stopped         bool      `json:"stopped,omitempty"`    // ended with x; do not auto-resume

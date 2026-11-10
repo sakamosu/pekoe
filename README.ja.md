@@ -337,6 +337,8 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 **worktree から来るコマンドは pekoe 自身の sandbox で動かす。** pekoed は、エージェントが書き換えられるコードを実行することがある: Stop のたびの `[hooks] test`、`[review] gatekeeper`、`pekoe new` の `setup`、`dev`、rm / land の `teardown`、`land` のテスト。Stop は誰でも報告できるので、そのままだとエージェントが Makefile に `cat ~/.local/share/pekoe/human-token` を混ぜ、エージェントの sandbox の外で pekoed に実行させられる。そこで pekoed はこれらを sandbox で動かす。macOS は `sandbox-exec`(Seatbelt)、Linux は bubblewrap(`bwrap`。ディストリのパッケージで入れる)。基本はすべて許し(ビルド・テスト・開発サーバーは今までどおり動く)、塞ぐのは次だけ: `human-token`・`http-token`・tsnet の state・`config.toml` を読むこと。pekoe のデータと設定のディレクトリ、あとで sandbox の外で実行されるファイル(シェルの起動ファイル、`~/.gitconfig`、`~/.claude/settings.json`、launch agent、`$PATH` のうち書き込めるディレクトリなど)に書くこと。tmux サーバーにつなぐこと。macOS ではアプリを開くことと Apple イベントを送ること。sandbox が使えない環境では動かさない: セッションに `test not run: no sandbox` と出し、門番は理由をリスクの欄に出し、setup・dev・teardown・land は理由を添えて失敗する。`config.toml` の `[sandbox] enable = false` で sandbox なしに戻せる。包まないもの: run 窓(`!`。自分で打つコマンド)とエージェント自身(それぞれの sandbox の役目)。塞ぐ範囲は秘密に絞っているので、ホームのほかの場所には書けてしまう。エージェントの変更を確かめる代わりにはならない。詳しくは [docs/api.md](docs/api.md) の「hooks の sandbox」。
 
+**pekoed 自身の git は、エージェントが git の設定に書いたものを動かさない。** git は設定に書かれたコマンドを動かす(`git status` のたびの `core.fsmonitor`、フック、credential helper、`.gitattributes` が選ぶ filter・merge ドライバ、`gpg.program`、`core.sshCommand` など)。pekoed は worktree で git を頻繁に動かす(diffstat・スナップショット・レビュー・undo・衝突予報・land・rm)。エージェントは worktree の `.git` ファイルを自前の git ディレクトリに向け直せるし、commit できるエージェントはたいていリポジトリの `.git` にも書ける。そこで pekoed(と pekoed が動かす `gh`)は、セッションの worktree では `.git` ファイルが何を言おうとリポジトリが持つその worktree の git ディレクトリを使う(書き換えられていたらそこでは git を動かさず、セッションに `.git changed: git stopped` と出す)。コマンドを名指しする設定は、自分の設定(system / global)か git の既定値で上書きする: fsmonitor なし、フックは一切なし(`land` の push でも pre-push は走らない)、credential helper と署名のプログラムは自分のものだけ、`ext::` の remote なし、`--no-ext-diff --no-textconv`、upload-pack / receive-pack は既定のもの。名前が決まっていないもの(filter・merge ドライバ、git-lfs の設定、ローカルのパスにある remote のフック)のために、git 自体も hooks と同じ sandbox で動かす。sandbox が使えない環境でも git は動かす(git なしでは pekoe が使えない)ので、その最後のものは閉じ込められない。自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン)は worktree を普通の git と同じに読む: 警告が出た worktree で git を使う前に `.git` を確かめること、エージェントに `<repo>/.git/config` や `.git/hooks` を書かせないこと(Claude Code なら `sandbox.filesystem.denyWrite`)。詳しくは [docs/api.md](docs/api.md) の「pekoed が動かす git」。
+
 Web UI と Chrome 拡張はソケットを通らない人間の入口なので、それぞれの認証だけで使える。脅威モデルは [docs/web.md](docs/web.md#脅威モデル)。
 
 ### iPhone から(Web UI)
@@ -416,8 +418,8 @@ deny    = "n"
 agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
 [tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
 enable = true               # false で両方とも出さない
-[sandbox]                   # worktree から来るコマンド([hooks]・門番)を sandbox で動かす
-enable = true               # false で sandbox なしに動かす(使えない環境では動かさない)
+[sandbox]                   # worktree から来るコマンド([hooks]・門番)と pekoed の git を sandbox で動かす
+enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
 
 `[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` を書ける。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。

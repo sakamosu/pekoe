@@ -49,7 +49,7 @@
 
 pekoed は sandbox の外で動くので、エージェントが書き換えられるコード(worktree の Makefile・package.json・テスト、エージェントのブランチを `--base` にした `pekoe new`)を pekoed が実行すると、そのコードは human-token を読めてしまう。`session.event` は token なしで受け付けるので、Stop を偽れば何度でも走らせられる。そこで、worktree から来るコマンドはすべて sandbox(`internal/sandbox`)で包む。
 
-- 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く
+- 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く。pekoed が動かす git もすべてこの sandbox で包む(下の「pekoed が動かす git」。git だけは sandbox が使えなくても動かす)
 - 包まないもの: `run.start`(run 窓。人間が打ったコマンドで、自分の端末で打つのと同じ)、エージェント自身の起動(Claude Code の sandbox の役目)、`review.surface` の nvim
 - macOS: `/usr/bin/sandbox-exec`。プロファイルは `(allow default)` に deny を足す。パスは `-D` の引数で渡し、プロファイルに埋めない。Seatbelt は解決後のパスで照合するので、各パスを書いたままのものと symlink を解いたもの(`/tmp` → `/private/tmp`)の両方で塞ぐ
   - 読めない: `human-token`、`http-token`、tsnet の state(`[web] state_dir` と既定の場所)、`config.toml`(`[web] auth_key`)
@@ -60,6 +60,22 @@ pekoed は sandbox の外で動くので、エージェントが書き換えら�
 - 使えるかどうかは、初めて使うときに `sh -c :` を包んで動かして確かめる。通れば覚え、だめならその都度確かめ直す(bwrap を入れたらそのまま使える)
 - 使えないとき(sandbox-exec が無い・動かない、bwrap が無い・ユーザー名前空間が使えない、sandbox の中で pekoed を動かしている、ほかの OS)は**動かさない**。Stop の test は `test.status` を `blocked`(`summary` に理由)にし、門番はリスクに理由を 1 件入れる(`path` は空)。setup・dev・teardown・land は理由を添えたエラーにする。人間が始めるものも止めるのは、`pekoe new` はエージェント(ハブ)も呼べて、`--base` にエージェントのブランチを渡せるから。dev は動き続ける。どうしても要るなら `config.toml` の `[sandbox] enable = false`(pekoed の再起動で効く。設定ディレクトリは sandbox から書けない)
 - 残る穴: 塞ぐのは秘密と、知られた「あとで外で実行される場所」だけで、ホームのほかの場所(キャッシュ、`~/go/pkg/mod`、Homebrew の Cellar など)には書ける。そこに置いたものを人間や pekoed があとで sandbox の外で実行すれば抜けられる。Linux では、まだ無いファイルと親ディレクトリの名前の変更は塞げない
+
+### pekoed が動かす git
+
+git は設定に書かれたコマンドを動かす(`git status` のたびの `core.fsmonitor`、フック、credential helper、`.gitattributes` が選ぶ filter・merge・diff のドライバ、`gpg.program`、`core.sshCommand` など)。pekoed は diffstat・スナップショット・changes・review・undo・衝突予報・land・rm・PR のレビューで worktree の git を頻繁に動かし、sandbox の外で動く。一方、worktree の `.git` は `gitdir: <パス>` と書かれたファイルでエージェントが書き換えられ、偽の git ディレクトリに向ければその設定はすべてエージェントのもの。commit できるエージェントは本体の `.git`(objects・refs・`worktrees/<id>`)にも書けることが多く、`.git/config` や `config.worktree` も書けると見なす。token なしの `pekoe new --repo <パス>` には、エージェントが自分で作ったリポジトリも渡せる。そこで、pekoed の git(`internal/gitx` の `RunRaw` を必ず通る。`exec` で git を直接呼ぶのはここだけ)には三つの層をかける(`internal/gitx/guard.go`)。
+
+1. **git ディレクトリの固定**: セッションの worktree(`session.new` / `session.open` / `review.pr` で登録、再起動時にも)では `.git` ファイルを信じない。本体の `.git/worktrees/*` のうち `gitdir` がその worktree を指し返すものを使い、`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR` を明示する。`.git` ファイルがそこを指していなければ(別の場所・symlink・ディレクトリ)、その worktree では git を動かさずにエラーを返し、セッションに `git_blocked`(理由)を立てる。TUI と Web UI は `.git changed: git stopped` と出す。diffstat のたび(編集・Stop)と再起動時に確かめ、元に戻れば消える。`gh` にも同じ環境を渡す(`gh pr create` は worktree で `git status` を動かす)
+2. **設定の上書き**: コマンドを名指しする設定のうち、名前が決まっているものは `GIT_CONFIG_COUNT`(どの設定ファイルより強い)と環境変数で上書きする
+   - 無効にする: `core.fsmonitor=false`、`core.hooksPath=/dev/null`(pekoed の git ではフックが一切走らない。land の push でも pre-push は走らない)、`core.alternateRefsCommand`、`protocol.ext.allow=never`(`ext::` の URL)
+   - 環境変数で決める(設定より強い): `GIT_EDITOR=:`・`GIT_SEQUENCE_EDITOR=:`・`GIT_PAGER=cat`、`GIT_ASKPASS` と `GIT_PROXY_COMMAND` は pekoed の環境に無ければ空(`core.askPass`・`core.gitProxy` を読ませない)、`GIT_SSH_COMMAND` は pekoed の環境、利用者の `core.sshCommand`、`GIT_SSH`、`ssh` の順
+   - 利用者自身の設定(system と global のスコープ。そこから include したものも含む。`git config --show-scope` で見分ける)か git の既定値: `gpg.program`・`gpg.<format>.program`・`gpg.ssh.defaultKeyCommand`・`gpg.format`・`commit.gpgSign`・`tag.gpgSign`・`push.gpgSign`・`merge.verifySignatures`・`log.showSignature`。credential helper は空の `credential.helper` でリポジトリのぶんまで空にしてから、利用者の helper(URL ごとのものも、順番どおり)を足し直す。利用者の設定はディレクトリごとに 10 秒覚える
+   - 引数で決める: `diff`・`show`・`log` に `--no-ext-diff --no-textconv`、`fetch`・`pull`・`ls-remote` に `--upload-pack=git-upload-pack`、`push` に `--receive-pack=git-receive-pack`(`remote.<name>.uploadpack` は最初の値が勝つので設定では上書きできない。origin がローカルのパスならこの機械で動く)
+3. **sandbox**: 名前で上書きできないもの(`.gitattributes` が選ぶ任意の名前の filter・merge ドライバ、git-lfs が読む `lfs.*`、origin がローカルのパスのときの相手側のフック(git は相手側に呼び出し側の設定を渡さない)、今後の git が足すコマンド)のために、git 自体を「hooks の sandbox」と同じ sandbox で動かす。ドライバは動くが、human-token などは読めず pekoe のファイルも書けない。git の起動が 1 回 10ms ほど遅くなる。git 設定の読み出し(`git config --show-scope`)は何も実行しないので包まない
+
+- sandbox が使えないとき(sandbox-exec や bwrap が無い・動かない、`[sandbox] enable = false`)は、hooks と違って git は**そのまま動かす**(git が止まると pekoe が使えない)。1 と 2 は効くが、3 で塞いでいるもの(filter・merge ドライバ、`lfs.*`、ローカルの origin の相手側のフック)は残る。エージェントがリポジトリの `.git/config` に書けるか、自分で作ったリポジトリを `pekoe new --repo` に渡せば、それらが sandbox の外で走る。pekoed のログに `git: running without a sandbox (…)` と出る
+- 対象外: 人間が自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン、本体のチェックアウトでの git)。エージェントが書いた `.git` ファイルや `.git/config` はそのまま読まれる。`git_blocked` が出たら、その worktree で git を動かす前に `.git` を確かめる。本体の `.git/config`・`.git/hooks` をエージェントに書かせない設定(Claude Code なら `sandbox.filesystem.denyWrite`)もあわせて使う
+- `gh auth token`(`pekoe update`)と `gh attestation verify -R` は git を動かさないので素のまま
 
 ### send と許可ダイアログ
 
@@ -114,6 +130,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
     "attention_at": "…", "at": "…"
   },
   "error": "setup failed: pnpm install",
+  "git_blocked": "…/.git points at …, not …",  // worktree の .git が書き換えられていて、pekoed がそこで git を動かさない理由(「pekoed が動かす git」)。戻れば消える
   "overlaps": [                    // 衝突予報(同じリポジトリの open なセッションのうち、同じファイルを触っている相手)
     {"slug": "feat-x", "files": ["src/api.ts", "README.md"], "conflict": true, "conflict_files": ["src/api.ts"]}
   ]
