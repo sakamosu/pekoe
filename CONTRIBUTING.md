@@ -12,6 +12,8 @@ The rest of this file describes how the project is developed and released, for r
 make build && make test     # go vet + go test (default and -tags web) + headless nvim tests
 ```
 
+Inside an agent's sandbox (Claude Code's, which pekoe starts agents in), binding a unix socket or a TCP port is refused, so the integration tests that need a real socket, port, tmux server or nested sandbox (`sandbox-exec` / bwrap), and the headless nvim tests, are skipped there with the reason; `make test` then ends with a note saying so. Run `make test` outside the sandbox (in your own terminal) to cover them. The other tests run everywhere: they reach stand-in daemons and HTTP servers in memory (`internal/testenv`).
+
 The Web UI (`internal/daemon/webts.go`) is only in `-tags web` builds. The default build must not pull in Tailscale: nothing but `webts.go` imports `tailscale.com`.
 
 ### Trying things in a sandbox
