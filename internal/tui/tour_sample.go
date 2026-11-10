@@ -90,11 +90,11 @@ var tourSteps = []tourStep{
 	{
 		ja: tourCopy{
 			title: "[4] Agent",
-			body:  "選んだエージェントの端末が、そのまま表示されます。{↵} か {i} で入力を始めると、{^q} で抜けるまで、キー入力はすべてエージェントに送られます。{v} を押すと、preview と dev サーバーの画面に切り替わります。",
+			body:  "選んだエージェントとのやりとりが、そのまま表示されます。{↵} か {i} で入力を始めると、{^q} で抜けるまで、キー入力はすべてエージェントに送られます。{v} を押すと、preview と dev サーバーの画面に切り替わります。",
 		},
 		en: tourCopy{
 			title: "[4] Agent",
-			body:  "This is the selected agent's terminal, shown as it is. Start typing with {↵} or {i}: every key goes to the agent until you leave with {^q}. {v} switches to the preview and dev server screens.",
+			body:  "Your conversation with the selected agent, shown as is. Start typing with {↵} or {i}: every key goes to the agent until you leave with {^q}. {v} switches to the preview and dev server screens.",
 		},
 		setup: func(m *model) { m.focus = pAgent },
 		target: func(m *model) (rect, bool) {
