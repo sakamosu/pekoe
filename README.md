@@ -84,6 +84,7 @@ Design docs are in Japanese.
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the front-desk agent you talk to with `t` in the TUI) |
+| [docs/orchestration.md](docs/orchestration.md) | Design draft: tapi as the orchestrator, so you don't manage sessions by hand |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
 
