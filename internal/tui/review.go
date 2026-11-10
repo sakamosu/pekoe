@@ -250,34 +250,58 @@ func (r *reviewModel) build() {
 		return
 	}
 	f := r.rv.Files[r.file]
-	comments := map[int][]state.Comment{}
+	var comments []state.Comment
 	for _, c := range r.rv.Comments {
 		if c.Path == f.Path {
-			comments[c.Line] = append(comments[c.Line], c)
+			comments = append(comments, c)
 		}
 	}
+	placed := map[int64]bool{}
 	for hi := range f.Hunks {
 		h := &f.Hunks[hi]
 		r.rows = append(r.rows, drow{kind: "header", file: r.file, hunk: hi, hunkID: h.ID})
 		if h.Approved && !r.showApprove {
 			continue
 		}
+		// a comment goes under one line of its own hunk (any hunk for one
+		// without a hunk id), and only once
+		at := map[int][]state.Comment{}
+		for _, c := range comments {
+			if placed[c.ID] || (c.HunkID != "" && c.HunkID != h.ID) {
+				continue
+			}
+			if li := commentLine(h.Lines, c.Line); li >= 0 {
+				at[li] = append(at[li], c)
+				placed[c.ID] = true
+			}
+		}
 		for li := range h.Lines {
 			l := &h.Lines[li]
 			r.rows = append(r.rows, drow{kind: "line", file: r.file, hunk: hi, line: l, hunkID: h.ID})
-			ln := l.New
-			if l.Kind == "-" {
-				ln = l.Old
+			for _, c := range at[li] {
+				r.rows = append(r.rows, drow{kind: "comment", file: r.file, hunk: hi, text: c.Text, cid: c.ID, hunkID: h.ID})
 			}
-			for _, c := range comments[ln] {
-				if c.HunkID == "" || c.HunkID == h.ID {
-					r.rows = append(r.rows, drow{kind: "comment", file: r.file, hunk: hi, text: c.Text, cid: c.ID, hunkID: h.ID})
-				}
-			}
-			delete(comments, ln)
 		}
 	}
 	r.cursor = clampi(r.cursor, 0, max(len(r.rows)-1, 0))
+}
+
+// commentLine is the line of a hunk a comment on line n belongs to. A
+// comment keeps only a number (curLine: Old for a '-' line, New for the
+// others), so the New side comes first: a '+' or context line with that
+// New, else a '-' line with that Old. -1: none in this hunk.
+func commentLine(lines []gitx.Line, n int) int {
+	for li, l := range lines {
+		if l.Kind != "-" && l.New == n {
+			return li
+		}
+	}
+	for li, l := range lines {
+		if l.Kind == "-" && l.Old == n {
+			return li
+		}
+	}
+	return -1
 }
 
 func (r *reviewModel) curHunk() *daemon.HunkView {
