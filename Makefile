@@ -17,11 +17,14 @@ build:
 	$(GO) build $(TAGS) -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pekoe
 	ln -sf pekoe bin/pekoed
 
-# both builds: the default (no Tailscale) and -tags web
+# both builds: the default (no Tailscale) and -tags web. In an agent's
+# sandbox the tests that need a real socket, port or tmux are skipped; the
+# last line says so (internal/testenv/probe)
 test: vet
 	$(GO) test ./...
 	$(GO) test -tags web ./internal/daemon/ ./cmd/...
 	sh nvim/test/run.sh
+	@$(GO) run ./internal/testenv/probe
 
 vet:
 	$(GO) vet ./...
