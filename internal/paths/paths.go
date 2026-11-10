@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 )
 
 func home() string {
@@ -21,42 +22,80 @@ func home() string {
 // root returns $PEKOE_HOME when set (used by tests and sandboxes).
 func root() string { return os.Getenv("PEKOE_HOME") }
 
+// realDirs are the user's real pekoe locations, taken when the process
+// starts (before a test can t.Setenv HOME or XDG_*). A test binary must never
+// resolve a path inside them: see notInTest.
+var realDirs = func() []string {
+	h := home()
+	ds := []string{
+		filepath.Join(h, ".config", "pekoe"),
+		filepath.Join(h, ".local", "share", "pekoe"),
+		filepath.Join(h, "worktrees"),
+	}
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		ds = append(ds, filepath.Join(x, "pekoe"))
+	}
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
+		ds = append(ds, filepath.Join(x, "pekoe"))
+	}
+	return ds
+}()
+
+// notInTest returns p, panicking when a test binary resolves p inside the
+// user's real pekoe locations (realDirs): a test that forgot to isolate
+// itself must fail, not write into ~/.local/share/pekoe or ~/.config/pekoe
+// or work under ~/worktrees. Tests isolate the whole package with
+// internal/testenv's Main.
+func notInTest(p string) string {
+	if !testing.Testing() {
+		return p
+	}
+	c := filepath.Clean(p)
+	for _, d := range realDirs {
+		d = filepath.Clean(d)
+		if c == d || strings.HasPrefix(c, d+string(filepath.Separator)) {
+			panic("paths: a test resolved the real " + c + " (call testenv.Main in TestMain, or t.Setenv PEKOE_HOME)")
+		}
+	}
+	return p
+}
+
 // ConfigDir is ~/.config/pekoe.
 func ConfigDir() string {
 	if r := root(); r != "" {
-		return filepath.Join(r, "config")
+		return notInTest(filepath.Join(r, "config"))
 	}
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "pekoe")
+		return notInTest(filepath.Join(x, "pekoe"))
 	}
-	return filepath.Join(home(), ".config", "pekoe")
+	return notInTest(filepath.Join(home(), ".config", "pekoe"))
 }
 
 // DataDir is ~/.local/share/pekoe.
 func DataDir() string {
 	if r := root(); r != "" {
-		return filepath.Join(r, "share")
+		return notInTest(filepath.Join(r, "share"))
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "pekoe")
+		return notInTest(filepath.Join(x, "pekoe"))
 	}
-	return filepath.Join(home(), ".local", "share", "pekoe")
+	return notInTest(filepath.Join(home(), ".local", "share", "pekoe"))
 }
 
 // WorktreesRoot is ~/worktrees. pekoe only ever deletes below this directory.
 func WorktreesRoot() string {
 	if w := os.Getenv("PEKOE_WORKTREES"); w != "" {
-		return w
+		return notInTest(w)
 	}
 	if r := root(); r != "" {
-		return filepath.Join(r, "worktrees")
+		return notInTest(filepath.Join(r, "worktrees"))
 	}
-	return filepath.Join(home(), "worktrees")
+	return notInTest(filepath.Join(home(), "worktrees"))
 }
 
 func Socket() string {
 	if s := os.Getenv("PEKOE_SOCK"); s != "" {
-		return s
+		return notInTest(s)
 	}
 	return filepath.Join(DataDir(), "pekoed.sock")
 }
@@ -96,7 +135,13 @@ func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 // default "pekoe").
 func TmuxSocketName() string {
 	if s := os.Getenv("PEKOE_TMUX_SOCKET"); s != "" {
+		if s == "pekoe" && testing.Testing() {
+			panic("paths: a test named the real tmux server -L pekoe")
+		}
 		return s
+	}
+	if testing.Testing() {
+		panic("paths: a test reached the real tmux server -L pekoe (call testenv.Main in TestMain, or t.Setenv PEKOE_TMUX_SOCKET)")
 	}
 	return "pekoe"
 }
