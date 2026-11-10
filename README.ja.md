@@ -204,7 +204,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `report` `reports` `wait` `inbox` `ledger` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・`report`・`reports`・`wait`(と hooks 用の `event`)だけで、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・`dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・`report`・`reports`・`wait`・`conflicts`(と hooks 用の `event`)だけで、`conflicts` は計算し直しが 10 秒に 1 回まで(それ以内は前の予報が返る)、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・`dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -372,7 +372,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
    入れ直したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が `Operation not permitted` で読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。
 
-2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(pekoe・pekoe-orchestrate スキル)が使うのは `ls`・`new`・`send`・`wait`・`reports`・`inbox`(tapi は `ledger` も)、作業セッション(pekoe-work・pekoe-review スキル)が使うのは `report`・`ask-human` なので、許可リストに入れるならそこだけに絞る。`pekoe inbox answer` と `pekoe ledger reopen` / `rm` は人だけの操作で、許可リストに入れても断られる。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`daemon` は入れない。`land` は token なしでも通るが、許可リストに入れなければ push のたびに Claude Code が確認する。`rm` も同じで、landed のセッションはエージェントが消せるが、Claude Code が先に確認する
+2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(pekoe・pekoe-orchestrate スキル)が使うのは `ls`・`new`・`send`・`wait`・`reports`・`inbox`・`conflicts`(tapi は `ledger` も)、作業セッション(pekoe-work・pekoe-review スキル)が使うのは `report`・`ask-human` なので、許可リストに入れるならそこだけに絞る。`pekoe inbox answer` と `pekoe ledger reopen` / `rm` は人だけの操作で、許可リストに入れても断られる。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`daemon` は入れない。`land` は token なしでも通るが、許可リストに入れなければ push のたびに Claude Code が確認する。`rm` も同じで、landed のセッションはエージェントが消せるが、Claude Code が先に確認する
 
    ```json
    {
@@ -381,7 +381,8 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
          "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
-         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)"
+         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)",
+         "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)"
        ]
      }
    }

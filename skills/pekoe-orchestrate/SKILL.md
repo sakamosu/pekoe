@@ -130,7 +130,7 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 ## 並行の約束
 
 - 共有ファイル(migration・スキーマ・lockfile・生成コード)を触る作業は 1 本ずつ。先のものが landed になってから次を作る
-- 同時に動かすか決める前に、触るファイルの重なりを見る: `pekoe conflicts --json`(10 秒以内に続けて呼ぶと前の結果が返る。古い pekoed で断られたら `pekoe --json ls` の各セッションの `overlaps`)。重なるものは順番にする
+- 同時に動かすか決める前に、触るファイルの重なりを見る: `pekoe --json conflicts`(10 秒以内に続けて呼ぶと前の結果が返る。古い pekoed で断られたら `pekoe --json ls` の各セッションの `overlaps`)。重なるものは順番にする
 - 依存は `--after <slug>` で記録する
 - 同じ作業に何本もセッションを作らない。続きは `pekoe send <slug> -` で足す
 
