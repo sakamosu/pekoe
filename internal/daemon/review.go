@@ -509,12 +509,32 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 		return nil, err
 	}
 	local := fmt.Sprintf("pr-%d", p.Number)
-	if _, err := gitx.Run(repo.Dir, "fetch", "--end-of-options", "origin", fmt.Sprintf("pull/%d/head:%s", p.Number, local), pr.Base); err != nil {
-		if !gitx.BranchExists(repo.Dir, local) {
+	// Into a ref of pekoe's own, forced (the author may have force-pushed):
+	// fetching straight into pr-N fails once a review has it checked out,
+	// and the old head was then reviewed without a word.
+	tmp := fmt.Sprintf("refs/pekoe/pr/%d", p.Number)
+	if _, err := gitx.Run(repo.Dir, "fetch", "--end-of-options", "origin", fmt.Sprintf("+pull/%d/head:%s", p.Number, tmp), pr.Base); err != nil {
+		return nil, fmt.Errorf("fetching PR #%d: %w", p.Number, err)
+	}
+	head, err := gitx.RevParse(repo.Dir, tmp)
+	_, _ = gitx.Run(repo.Dir, "update-ref", "-d", tmp)
+	if err != nil {
+		return nil, err
+	}
+	// this PR is under review already: bring that session to the new head
+	// (a new session would replace it and lose its review rounds)
+	if old := d.prReviewSession(repo.ID, p.Number); old != nil {
+		if err := checkoutHead(old.Path, local, head); err != nil {
 			return nil, err
 		}
+		d.update(old.Slug, func(x *state.Session) { x.LastMessage = pr.Title })
+		d.refreshDiffstat(old.Slug)
+		return d.hReviewStart(slugP{Slug: old.Slug})
 	}
 	slug := d.uniqueSlug(local, repo.ID, repo.Name)
+	if s, err := d.get(slug); err == nil && s.State != state.Landed {
+		return nil, fmt.Errorf("session %s already exists", slug)
+	}
 	path, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
@@ -524,8 +544,14 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 		if err := reusableWorktree(repo.Dir, path); err != nil {
 			return nil, err
 		}
+		if err := checkoutHead(path, local, head); err != nil {
+			return nil, err
+		}
 	} else {
 		own = true
+		if _, err := gitx.Run(repo.Dir, "branch", "-f", "--end-of-options", local, head); err != nil {
+			return nil, err
+		}
 		if err := gitx.AddWorktree(repo.Dir, path, local, ""); err != nil && !strings.Contains(err.Error(), "already") {
 			return nil, err
 		}
@@ -540,6 +566,30 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	d.add(s)
 	d.refreshDiffstat(slug)
 	return d.hReviewStart(slugP{Slug: slug})
+}
+
+// prReviewSession is the open review of a repository's PR, if any.
+func (d *Daemon) prReviewSession(repoID string, number int) *state.Session {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range d.sessions {
+		if s.PRReview && s.PR == number && s.RepoID == repoID && s.State != state.Landed {
+			return d.copyLocked(s)
+		}
+	}
+	return nil
+}
+
+// checkoutHead puts the PR's branch in a review worktree at head. Local
+// edits to tracked files are kept (and the update refused), not reset away.
+func checkoutHead(path, branch, head string) error {
+	if out, err := gitx.Run(path, "status", "--porcelain", "--untracked-files=no"); err != nil {
+		return err
+	} else if out != "" {
+		return fmt.Errorf("%s has uncommitted changes: commit or discard them to review the new head", path)
+	}
+	_, err := gitx.Run(path, "checkout", "-q", "-B", branch, head)
+	return err
 }
 
 func (d *Daemon) postGitHubReview(s *state.Session, cs []state.Comment) error {

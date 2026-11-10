@@ -163,3 +163,33 @@ func TestWatchPRsPicksUpExternalPR(t *testing.T) {
 		t.Fatalf("expected PR #42 from gh, got %d", s.PR)
 	}
 }
+
+// Opening the review of a PR again brings it to the PR's new head (even a
+// force-push) and keeps the session and its review rounds; the old head was
+// reviewed silently before.
+func TestReviewPRAgainTakesNewHead(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, repo, "git", "clone", "-q", bare, other)
+	os.WriteFile(filepath.Join(other, "a.txt"), []byte("1\n2\nthree\n"), 0o644)
+	run(t, other, "git", "commit", "-qam", "their change")
+	run(t, other, "git", "push", "-q", "origin", "HEAD:refs/pull/7/head")
+	fakeGH(t, "OPEN")
+
+	s := call[state.Session](t, d, "review.pr", map[string]any{"repo": repo, "number": 7})
+	call[map[string]any](t, d, "review.flush", map[string]any{"slug": s.Slug})
+	// the author rewrites the PR
+	os.WriteFile(filepath.Join(other, "a.txt"), []byte("1\n2\nTHREE\n"), 0o644)
+	run(t, other, "git", "commit", "-q", "--amend", "-am", "their change, again")
+	run(t, other, "git", "push", "-qf", "origin", "HEAD:refs/pull/7/head")
+
+	s2 := call[state.Session](t, d, "review.pr", map[string]any{"repo": repo, "number": 7})
+	if s2.Slug != s.Slug || s2.ReviewN != 1 {
+		t.Fatalf("review session replaced: %+v", s2)
+	}
+	b, _ := os.ReadFile(filepath.Join(s.Path, "a.txt"))
+	if string(b) != "1\n2\nTHREE\n" {
+		t.Fatalf("still the old head: %q", b)
+	}
+}
