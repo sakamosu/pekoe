@@ -108,8 +108,6 @@ func layoutModel(t *testing.T, width int) *model {
 
 var ctrlQ = tea.KeyMsg{Type: tea.KeyCtrlQ}
 
-
-
 func TestZoomToggle(t *testing.T) {
 	m := layoutModel(t, 150)
 	m.onKey(ctrlQ)

@@ -69,20 +69,20 @@ type InboxAnswer struct {
 // InboxFacts is what pekoed read itself about the session an item is
 // about; the agent cannot write any of it.
 type InboxFacts struct {
-	Slug       string         `json:"slug"`
-	State      State          `json:"state"`
-	Branch     string         `json:"branch,omitempty"`
-	Base       string         `json:"base,omitempty"`
-	Head       string         `json:"head,omitempty"`
-	Diffstat   Stat           `json:"diffstat"`
-	PR         int            `json:"pr,omitempty"`
-	PRURL      string         `json:"pr_url,omitempty"`
-	PRStatus   *InboxPR       `json:"pr_status,omitempty"`
-	Test       Test           `json:"test"`
-	Overlaps   []Overlap      `json:"overlaps,omitempty"`
-	Report     *InboxReport   `json:"report,omitempty"`
-	GitBlocked string         `json:"git_blocked,omitempty"`
-	Gone       bool           `json:"gone,omitempty"` // the session no longer exists
+	Slug       string       `json:"slug"`
+	State      State        `json:"state"`
+	Branch     string       `json:"branch,omitempty"`
+	Base       string       `json:"base,omitempty"`
+	Head       string       `json:"head,omitempty"`
+	Diffstat   Stat         `json:"diffstat"`
+	PR         int          `json:"pr,omitempty"`
+	PRURL      string       `json:"pr_url,omitempty"`
+	PRStatus   *InboxPR     `json:"pr_status,omitempty"`
+	Test       Test         `json:"test"`
+	Overlaps   []Overlap    `json:"overlaps,omitempty"`
+	Report     *InboxReport `json:"report,omitempty"`
+	GitBlocked string       `json:"git_blocked,omitempty"`
+	Gone       bool         `json:"gone,omitempty"` // the session no longer exists
 }
 
 // InboxReport is the session's latest report without its words (the
