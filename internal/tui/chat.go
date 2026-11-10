@@ -39,6 +39,9 @@ type chatInfoMsg struct {
 	err error
 }
 
+// chatResetMsg: tapi.reset answered (T); set in Update, not in the Cmd.
+type chatResetMsg struct{ v *daemon.Tapi }
+
 type chatScreenMsg struct {
 	sc  *engine.Screen
 	err error
@@ -126,6 +129,10 @@ func (m *model) chatUpdate(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		m.chat.info = msg.v
 		return m.fetchChat(), true
+	case chatResetMsg:
+		m.chat.info = msg.v
+		m.setMsg("tapi chat reset", false)
+		return nil, true
 	case chatScreenMsg:
 		m.chat.fetching = false
 		var cmd tea.Cmd
@@ -223,8 +230,7 @@ func (m *model) confirmResetChat() tea.Cmd {
 			if err := m.cl.Call("tapi.reset", nil, &v); err != nil {
 				return errMsg{err}
 			}
-			m.chat.info = &v
-			return infoMsg("tapi chat reset")
+			return chatResetMsg{v: &v}
 		})
 	})
 	return nil

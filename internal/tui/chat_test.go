@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -409,5 +410,70 @@ func TestAltScreenWheelGoesToShownWindow(t *testing.T) {
 	got := f.find("session.keys")
 	if len(got) != 1 || got[0]["window"] != engine.WinRun {
 		t.Fatalf("session.keys %v", got)
+	}
+}
+
+// msgsOf runs cmd (and batches inside it) without passing anything to
+// Update: what a Cmd's goroutine does on its own.
+func msgsOf(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		var out []tea.Msg
+		for _, c := range msg {
+			out = append(out, msgsOf(c)...)
+		}
+		return out
+	case modalDoneMsg:
+		return append([]tea.Msg{msg}, msgsOf(msg.cmd)...)
+	default:
+		return []tea.Msg{msg}
+	}
+}
+
+// Cmds hand their results to Update as messages; they never write the
+// model from their own goroutine (a data race with View).
+func TestCmdsDoNotWriteModel(t *testing.T) {
+	m, _, _ := chatModel(t)
+	runCmd(m, m.onKey(key("T")))
+	before := m.chat.info
+	var reset tea.Msg
+	for _, msg := range msgsOf(m.onKey(key("y"))) {
+		if _, ok := msg.(chatResetMsg); ok {
+			reset = msg
+		}
+	}
+	if reset == nil || m.chat.info != before {
+		t.Fatalf("tapi.reset: msg %v, info written in the Cmd: %v", reset, m.chat.info != before)
+	}
+	m.Update(reset)
+	if m.chat.info == before || m.chat.info == nil {
+		t.Fatal("chatResetMsg did not set the info")
+	}
+
+	m, f, _ := chatModel(t)
+	f.reply = func(method string) any {
+		if method == "session.new" {
+			return errors.New("branch exists")
+		}
+		return nil
+	}
+	runCmd(m, m.openNew(nil))
+	n, ok := m.modal.(*newModal)
+	if !ok {
+		t.Fatalf("modal %T", m.modal)
+	}
+	for _, r := range "feat/x" {
+		n.key(key(string(r)))
+	}
+	msgs := msgsOf(n.key(key("enter")))
+	if n.err != "" || len(msgs) != 1 {
+		t.Fatalf("session.new: err written in the Cmd %q, msgs %v", n.err, msgs)
+	}
+	m.Update(msgs[0])
+	if n.err != "branch exists" {
+		t.Fatalf("err %q", n.err)
 	}
 }

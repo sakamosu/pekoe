@@ -431,8 +431,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 			return func() tea.Msg {
 				var pk state.Pick
 				if err := m.cl.Call("pick.send", map[string]any{"id": id, "new_branch": branch, "text": text, "repo": dir}, &pk); err != nil {
-					n.err = err.Error()
-					return nil
+					return newErrMsg{n: n, err: err.Error()}
 				}
 				return newCreatedMsg{slug: pk.Slug}
 			}
@@ -441,8 +440,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 			var s state.Session
 			err := m.cl.Call("session.new", map[string]any{"repo": dir, "branch": branch, "from": from, "prompt": prompt, "width": aw, "height": ah}, &s)
 			if err != nil {
-				n.err = err.Error()
-				return nil
+				return newErrMsg{n: n, err: err.Error()}
 			}
 			return newCreatedMsg{slug: s.Slug}
 		}
@@ -454,10 +452,22 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 
 type newCreatedMsg struct{ slug string }
 
+// newErrMsg: creating failed; the dialog shows it (set in Update, not in
+// the Cmd's goroutine).
+type newErrMsg struct {
+	n   *newModal
+	err string
+}
+
 func (n *newModal) other(msg tea.Msg) tea.Cmd {
-	if c, ok := msg.(newCreatedMsg); ok {
+	switch c := msg.(type) {
+	case newCreatedMsg:
 		n.slug = c.slug
 		return tea.Batch(n.m.loadSessions(), n.m.loadWorktrees(), n.m.selectSlug(c.slug))
+	case newErrMsg:
+		if c.n == n {
+			n.err = c.err
+		}
 	}
 	return nil
 }

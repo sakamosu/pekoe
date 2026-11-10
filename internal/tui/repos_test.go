@@ -81,7 +81,11 @@ func startFakePekoed(t *testing.T) (*fakePekoed, *client.Client) {
 					f.calls = append(f.calls, fakeCall{req.Method, req.Params})
 					reply := f.reply
 					f.mu.Unlock()
-					b, _ := json.Marshal(map[string]any{"id": req.ID, "result": reply(req.Method)})
+					res := map[string]any{"id": req.ID, "result": reply(req.Method)}
+					if err, ok := res["result"].(error); ok {
+						res = map[string]any{"id": req.ID, "error": err.Error()}
+					}
+					b, _ := json.Marshal(res)
 					c.Write(append(b, '\n'))
 				}
 			}()
