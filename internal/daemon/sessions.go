@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"pekoe/internal/config"
@@ -1098,19 +1099,39 @@ func win(w string) string {
 	return w
 }
 
-func (d *Daemon) hSend(p sendP) (any, error) {
+func (d *Daemon) hSend(p sendP) (any, error) { return d.send(p, false) }
+
+// hAgentSend is session.send without the human token (call routes it
+// here, after authorizeSend). The prompt check is repeated right before
+// typing, under the session's send lock: authorizeSend's check ran before
+// the request was dispatched, and an agent can time its own permission
+// dialog to show up in between, where the text's first character would
+// pick a choice ("2" is "Yes, and don't ask again").
+func (d *Daemon) hAgentSend(p sendP) (any, error) { return d.send(p, true) }
+
+func (d *Daemon) send(p sendP, agent bool) (any, error) {
 	if _, err := d.get(p.Slug); err != nil {
 		return nil, err
 	}
+	// One send per session at a time, so each text is typed right after
+	// its own check, not after a check that a parallel send's wait made
+	// stale.
+	mu, _ := d.sendLocks.LoadOrStore(p.Slug, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
 	// An instruction (submit) never goes into a permission prompt: its
 	// first character could pick a choice, its Enter the highlighted "Yes".
 	// Checked before typing and again right before Enter. A plain paste
-	// (no submit: the TUI forwarding the user's own typing) is not held.
-	// Callers without the human token were already checked before typing,
-	// submit or not (authorizeSend in human.go, same promptUp test).
-	guard := p.Submit && win(p.Window) == engine.WinAgent
-	if guard {
-		if err := d.sendGuard(p.Slug, errPromptUp); err != nil {
+	// (no submit: the TUI forwarding the user's own typing) is not held,
+	// unless it comes without the human token (hAgentSend).
+	toAgent := win(p.Window) == engine.WinAgent
+	guard := p.Submit && toAgent
+	if guard || (agent && toAgent) {
+		why := errPromptUp
+		if agent {
+			why = errPromptUpTUI
+		}
+		if err := d.sendGuard(p.Slug, why); err != nil {
 			return nil, err
 		}
 	}

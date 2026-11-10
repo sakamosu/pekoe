@@ -198,8 +198,11 @@ func (d *Daemon) authorize(req Request) error {
 // to its sessions), but only into an agent's input box, and not while it
 // shows a permission menu, which would take the text's first character as
 // its choice: with or without submit, by the hooks' state or the screen
-// (promptUp, the test hSend applies to every submit). Other windows (dev,
-// run) are shells.
+// (promptUp, the test hSend applies to every submit). hAgentSend checks
+// the prompt again right before typing; a dialog can still come up in the
+// few milliseconds between that check and the keys, so text that starts
+// with a digit, which would pick a menu entry right away, is refused too.
+// Other windows (dev, run) are shells.
 func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		raw = json.RawMessage("{}")
@@ -222,5 +225,11 @@ func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 	if d.promptUp(p.Slug, s.State, s.WaitKind) {
 		return promptUpErr(p.Slug, errPromptUpTUI)
 	}
+	if t := strings.TrimLeft(engine.CleanText(p.Text), " \t\n"); t != "" && t[0] >= '0' && t[0] <= '9' {
+		return errDigitSend
+	}
 	return nil
 }
+
+// errDigitSend: see authorizeSend.
+var errDigitSend = errors.New("session.send without the human token: text may not start with a digit (in a permission menu it would pick a choice); start it with a word")

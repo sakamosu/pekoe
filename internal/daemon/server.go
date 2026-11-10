@@ -183,6 +183,7 @@ type Daemon struct {
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling atomic.Bool          // watchPRStatus is running
 	finishing sync.Map             // slug -> finishLanding is running for it
+	sendLocks sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
 	tests     testRuns             // [hooks] test runs (hooks.go)
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
@@ -387,7 +388,7 @@ func (d *Daemon) serve(nc net.Conn) {
 				c.send(Response{ID: req.ID, Error: err.Error()})
 				return
 			}
-			res, err := d.Call(req.Method, req.Params)
+			res, err := d.call(req.Method, req.Params, !d.isHuman(req.Token))
 			r := Response{ID: req.ID, Result: res}
 			if err != nil {
 				r.Error = err.Error()
@@ -399,7 +400,13 @@ func (d *Daemon) serve(nc net.Conn) {
 }
 
 // Call dispatches one API method (also used in-process by tests).
-func (d *Daemon) Call(method string, params json.RawMessage) (res any, err error) {
+func (d *Daemon) Call(method string, params json.RawMessage) (any, error) {
+	return d.call(method, params, false)
+}
+
+// call is Call for a request that came over the socket; agent is true
+// when it came without the human token (authorize let it through).
+func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in %s: %v", method, r)
@@ -409,6 +416,9 @@ func (d *Daemon) Call(method string, params json.RawMessage) (res any, err error
 	h, ok := d.handlers[method]
 	if !ok {
 		return nil, fmt.Errorf("unknown method: %s", method)
+	}
+	if agent && method == "session.send" {
+		h = bind(d.hAgentSend)
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")

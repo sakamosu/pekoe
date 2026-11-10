@@ -498,9 +498,10 @@ func webQuestion(s *state.Session) bool {
 }
 
 // webKeys presses a few keys in a question's menu (arrows, Tab, Space,
-// digits, Enter, Escape). Only while a question waits: in a permission
-// menu "2" or Down+Enter would pick "don't ask again", the always the web
-// never gives, so that menu stays allow/deny only.
+// digits, Enter, Escape). Only while a question waits and no permission
+// menu is on the screen: in a permission menu "2" or Down+Enter would pick
+// "don't ask again", the always the web never gives, so that menu stays
+// allow/deny only.
 func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	var in struct {
@@ -531,6 +532,14 @@ func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	if !webQuestion(s) {
 		http.Error(w, fmt.Sprintf("%s is not waiting on a question (state: %s)", slug, s.State), http.StatusConflict)
+		return
+	}
+	// The state comes from hooks, and an agent can send a fake
+	// AskUserQuestion PreToolUse (session.event needs no token) to turn its
+	// real permission prompt into a "question". The screen it cannot fake:
+	// with a permission menu on it, no keys.
+	if sc, err := d.Eng.Capture(slug, engine.WinAgent); err != nil || permissionOnScreen(sc.Lines) {
+		http.Error(w, slug+" shows a permission menu: answer it in the pekoe TUI", http.StatusConflict)
 		return
 	}
 	p := peerFrom(r)

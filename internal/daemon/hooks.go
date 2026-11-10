@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unicode/utf8"
 
@@ -413,25 +414,32 @@ func lastAssistantText(path string) string {
 	return ""
 }
 
+// tailFile reads the last n bytes of a transcript. The path comes from a
+// hook payload, which any process of the user can send (session.event
+// needs no token), so only a regular file is read, and at most n bytes:
+// /dev/zero would never end, and a FIFO would block the open (hence
+// O_NONBLOCK, which a regular file ignores).
 func tailFile(path string, n int64) []byte {
 	if path == "" {
 		return nil
 	}
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
 	fi, err := f.Stat()
-	if err != nil {
+	if err != nil || !fi.Mode().IsRegular() {
 		return nil
 	}
 	off := fi.Size() - n
 	if off < 0 {
 		off = 0
 	}
-	f.Seek(off, io.SeekStart)
-	b, _ := io.ReadAll(f)
+	if _, err := f.Seek(off, io.SeekStart); err != nil {
+		return nil
+	}
+	b, _ := io.ReadAll(io.LimitReader(f, n))
 	if off > 0 {
 		if i := bytes.IndexByte(b, '\n'); i >= 0 {
 			b = b[i+1:]

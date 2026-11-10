@@ -377,3 +377,32 @@ func TestParseDiffSpaceInName(t *testing.T) {
 		t.Fatalf("files = %+v", files)
 	}
 }
+
+// The agent swaps a directory for a symlink out of the worktree between
+// RestoreSnapshot's diff and its removes: the file outside stays.
+func TestRestoreSnapshotDoesNotFollowSwappedSymlink(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "k.txt"), []byte("k\n"), 0o644)
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+	sha, err := SnapshotCommit(dir, "snap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(outside, ".zshrc")
+	os.WriteFile(victim, []byte("keep me\n"), 0o644)
+	os.Mkdir(filepath.Join(dir, "a"), 0o755)
+	os.WriteFile(filepath.Join(dir, "a", ".zshrc"), []byte("added\n"), 0o644)
+	beforeRemove = func() {
+		os.RemoveAll(filepath.Join(dir, "a"))
+		if err := os.Symlink(outside, filepath.Join(dir, "a")); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeRemove = nil })
+	_ = RestoreSnapshot(dir, sha)
+	if b, err := os.ReadFile(victim); err != nil || string(b) != "keep me\n" {
+		t.Fatalf("file outside the worktree: %q, %v", b, err)
+	}
+}
