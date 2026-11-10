@@ -47,6 +47,7 @@
   | `editor.open` | MCP の `open_in_editor`(nvim へのイベントを出すだけ) |
   | `land` | ハブのエージェントの `pekoe land`(origin のあるリポジトリだけ。下) |
   | `worktree.rm` | ハブのエージェントの `pekoe rm`(landed のセッションだけ。下) |
+  | `dev.toggle` | 作業セッションの `pekoe dev <自分の slug>`(呼び出し元のセッションの dev server だけ。`unknown` は断る。下) |
   | `report.post` | 作業セッションの `pekoe report`(呼び出し元のセッションの分だけ。`unknown` は断る。長さと件数の上限。下の「報告」) |
   | `report.list` | ハブのエージェントの `pekoe reports`(エージェントが書いた要約で、`session.list` と同じ公開度) |
   | `wait` | ハブのエージェントの `pekoe wait`(呼び出し元ごとに 8 本、1 時間まで。下の「待ち合わせ」) |
@@ -58,9 +59,10 @@
   | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
-- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
+- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(`watchMerges`)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
+- `dev.toggle` は token なしでは、呼び出し元の窓のセッション(下の「呼び出し元の識別」)の dev server だけを起動・停止する(`hAgentDevToggle`)。エージェントの sandbox はポートを listen できないので、UI を確かめるには pekoed に dev server を立ててもらうしかない。動かすのはリポジトリの設定の `[hooks] dev` で、Stop のたびに誰でも走らせられる `[hooks] test` と同じく hooks の sandbox で動く(下の「hooks の sandbox」)ので、新しい実行の経路は増えない。別の slug は `dev.toggle: a session starts or stops only its own dev server (<自分>, not <相手>): only a person can do this`、窓に当たらない呼び出し(`unknown`)は `pekoe cannot tell which session is calling` で断る。tapi chat の窓からも断る。1 セッションに dev server は 1 つ(動いていれば止める)は token つきと同じ
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
 - `session.new` は token なしでは、pekoe が既に知っているリポジトリ(`repo.list` に出るもの)で、知っているディレクトリと同じ場所のときだけ受け付け、セッションはその知っているディレクトリから作る。repo-id は origin の URL から決まり、エージェントが作ったクローンでも同じ id になるので、ディレクトリも見る。新しいリポジトリの登録は人間だけの操作(pekoed はそこで git を動かし、エージェントが自作したリポジトリの設定の filter / merge ドライバは、sandbox が使えない環境では外で動く)
 - `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(人の答えを含む `inbox.updated`、他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
@@ -79,6 +81,7 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 
 - クライアントは `$PEKOE_SESSION` をリクエストの最上位の `session` に入れて送る(`internal/client`)。pekoed はこれを名乗り(`claimed`)として、識別したものと違うときだけ記録に残す。振り分けには使わない
 - `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
+- `dev.toggle` も token なしなら窓で決める(token つきは今までどおり `slug` の相手)
 - `report.post` と `inbox.*` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告と問いは自分の窓のセッションに付く)
 
 ### hooks の sandbox
@@ -226,7 +229,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
 | `worktree.rm` | `{slug, force}` | teardown → worktree 削除(`~/worktrees` 配下のみ)。token なしでは landed のセッションの記録を消すだけ(上) |
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
-| `dev.toggle` | `{slug}` | dev server の起動/停止 |
+| `dev.toggle` | `{slug}` | dev server の起動/停止。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
 | `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |

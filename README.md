@@ -376,7 +376,7 @@ But an agent running as the same user can read files. Two things keep the token 
 
    After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports`, `inbox` and `conflicts` (tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report` and `ask-human`, so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports`, `inbox` and `conflicts` (tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report`, `ask-human` and `dev` (to look at its UI), so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `init`, `rm` or `daemon`. Without the token, `dev` only starts or stops the dev server of the calling session (its own window) and refuses another session's slug (what runs is the repository's `[hooks] dev`, in pekoe's own sandbox like `[hooks] test`). `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
 
    ```json
    {
@@ -386,7 +386,7 @@ But an agent running as the same user can read files. Two things keep the token 
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
          "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
          "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)",
-         "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)"
+         "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)", "Bash(pekoe dev *)"
        ]
      }
    }

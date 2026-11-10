@@ -354,3 +354,10 @@ short = "Claude Code は pekoe が渡す sandbox の中で動く"
 detail = "--settings で human-token などを読めなくする。キャッシュやドメインは ~/.claude/settings.json に allowWrite / allowedDomains だけ書いて足す。[agents.claude] sandbox = false で外せる。"
 keys = ["[agents]"]
 docs = ["README.ja.md#エージェントに-pekoe-を使わせるときの権限"]
+
+[[tip]]
+id = "agent-dev"
+short = "エージェントも pekoe dev で自分の dev server を立てる"
+detail = "自分の sandbox ではポートを開けないエージェントが、UI を確かめるときに使う。効くのは呼び出し元のセッションの分だけで、ほかの slug は断られる。[hooks] dev は pekoe の sandbox で動く。"
+keys = ["pekoe dev <slug>"]
+docs = ["docs/api.md"]

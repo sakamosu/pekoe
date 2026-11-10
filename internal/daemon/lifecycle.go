@@ -250,6 +250,26 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
 }
 
+// hAgentDevToggle is dev.toggle without the human token (call routes it
+// here): an agent starts or stops the dev server of its own session only,
+// to look at its UI (its own sandbox cannot listen on a port). The command
+// is the repository's [hooks] dev, run in pekoed's hooks sandbox like
+// [hooks] test, which any Stop runs: no new way to run something. The
+// session is the caller's window (caller.go), never the agent's word; a
+// process pekoed cannot place, tapi chat and another session are refused.
+func (d *Daemon) hAgentDevToggle(who *Caller, p slugP) (any, error) {
+	pane := who.Pane()
+	switch {
+	case pane == "":
+		return nil, errUnknownCaller("dev.toggle")
+	case pane == TapiSlug:
+		return nil, fmt.Errorf("dev.toggle: tapi chat has no dev server; a session starts its own")
+	case p.Slug != "" && p.Slug != pane:
+		return nil, fmt.Errorf("dev.toggle: a session starts or stops only its own dev server (%s, not %s): %w", pane, p.Slug, ErrHumanOnly)
+	}
+	return d.hDevToggle(slugP{Slug: pane})
+}
+
 // ---- run: one command in the worktree (TUI `!`) ----
 
 type runP struct {
