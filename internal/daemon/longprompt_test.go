@@ -47,8 +47,8 @@ func TestLongPromptGoesThroughAFile(t *testing.T) {
 // A short prompt stays on the command line.
 func TestShortPromptStaysAnArgument(t *testing.T) {
 	d, fe, repo := setup(t)
-	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new", "prompt": "fix it"})
-	if !strings.Contains(fe.last(), "claude -- 'fix it'") {
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new", "prompt": "fix it"})
+	if !strings.Contains(fe.last(), "claude"+settingsFlag(s.Slug)+" -- 'fix it'") {
 		t.Fatalf("spawn: %s", fe.last())
 	}
 }

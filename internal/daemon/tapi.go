@@ -374,6 +374,14 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 		}
 	}
 	cmd := tapiCommand(ag.Command, addDirs, isClaude(ag.Command) && tapiConversationLeft(dir))
+	var repoDirs []string
+	for _, r := range repos {
+		repoDirs = append(repoDirs, r.Dir)
+	}
+	cmd, err := d.withAgentSandbox(TapiSlug, cmd, ag.SandboxOn(), repoDirs)
+	if err != nil {
+		return err
+	}
 	env := []string{"PEKOE_SESSION=" + TapiSlug, "PEKOE_SOCK=" + paths.Socket(), "PEKOE=1"}
 	if os.Getenv("PEKOE_HOME") != "" {
 		env = append(env, "PEKOE_HOME="+os.Getenv("PEKOE_HOME"))
