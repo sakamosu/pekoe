@@ -29,6 +29,7 @@ type fakeEngine struct {
 	dead   map[string]bool   // window -> its process exited (Capture says Dead)
 	exits  map[string][2]int // window -> exit status, signal (after exit)
 	onText func(text string) // called on every SendText (tests that act mid-send)
+	onCap  func()            // called on every Capture, before it reads lines
 	delay  time.Duration     // Spawn takes this long (races)
 	spawn  map[string]engine.Spawn
 }
@@ -83,6 +84,12 @@ func (f *fakeEngine) SendHex(slug, w string, h []string) error {
 	return f.rec("hex:" + string(b))
 }
 func (f *fakeEngine) Capture(slug, w string) (*engine.Screen, error) {
+	f.mu.Lock()
+	hook := f.onCap
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	lines := f.lines

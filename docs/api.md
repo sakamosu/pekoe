@@ -51,7 +51,8 @@
 
 | いつ | だれ | 結果 |
 | --- | --- | --- |
-| 打つ前 | token なし(agent 窓への送信すべて) | `<slug> is waiting for a permission answer: answer it in the pekoe TUI first, then send (nothing was sent)` |
+| 打つ前 | token なし(agent 窓への送信すべて) | `<slug> is waiting for a permission answer: answer it in the pekoe TUI first, then send (nothing was sent)`。受け付けた時と、セッションごとの送信ロックを取って打つ直前の 2 回確かめる |
+| 受け付けた時 | token なしで、先頭(空白・改行を除く)が数字の送信 | `session.send without the human token: text may not start with a digit …`。直前の確認と打鍵の間の数ミリ秒にダイアログが出ると、先頭の数字がそのまま選択肢になる(「2」は always)ため |
 | 打つ前 | token あり・Web UI・Chrome 拡張(`submit` つき) | `<slug> is waiting for a permission answer: answer it first, then send (nothing was sent)`。Web UI は 409 |
 | Enter の直前 | `submit` つきのすべて | `<slug> is waiting for a permission answer: the text was typed but not submitted (Enter would have answered it)`。文字は入力欄に残る。Web UI は 409 |
 

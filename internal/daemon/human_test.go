@@ -277,3 +277,60 @@ func TestSubscribeWithoutTokenGetsSessionEvents(t *testing.T) {
 		t.Error("human subscription misses events")
 	}
 }
+
+// An agent sends "2" while timing its own permission dialog: the dialog
+// comes up after authorizeSend looked at the screen. The send looks again
+// right before typing, and text starting with a digit is refused anyway.
+func TestAgentSendRechecksBeforeTyping(t *testing.T) {
+	d, fe, repo := setup(t)
+	call[any](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	c := dialPipe(t, d)
+	dialog := []string{"Do you want to proceed?", "❯ 1. Yes", "  2. Yes, and don't ask again", "  3. No"}
+	// the first look (authorizeSend) sees an idle box, every later one the dialog
+	arm := func() {
+		n := 0
+		fe.mu.Lock()
+		fe.lines = nil
+		fe.onCap = func() {
+			fe.mu.Lock()
+			defer fe.mu.Unlock()
+			if n++; n > 1 {
+				fe.lines = dialog
+			}
+		}
+		fe.mu.Unlock()
+	}
+	before := sentCount(fe)
+	for _, submit := range []bool{false, true} {
+		arm()
+		e := c.call("session.send", map[string]any{"slug": "main", "text": "ok go", "submit": submit}, "")
+		if !strings.Contains(e, "main is waiting for a permission answer") {
+			t.Fatalf("dialog after the first check (submit %v): error = %q", submit, e)
+		}
+	}
+	if got := sentSince(fe, before); len(got) != 0 {
+		t.Fatalf("typed into a dialog that came up after the first check: %v", got)
+	}
+
+	// no dialog at all: a leading digit is still refused without the token
+	fe.mu.Lock()
+	fe.onCap, fe.lines = nil, nil
+	fe.mu.Unlock()
+	for _, text := range []string{"2", " 2", "\n3. do it", "1 more thing"} {
+		for _, submit := range []bool{false, true} {
+			if e := c.call("session.send", map[string]any{"slug": "main", "text": text, "submit": submit}, ""); !strings.Contains(e, "may not start with a digit") {
+				t.Errorf("send %q (submit %v): error = %q", text, submit, e)
+			}
+		}
+	}
+	if got := sentSince(fe, before); len(got) != 0 {
+		t.Fatalf("a send starting with a digit reached the agent: %v", got)
+	}
+	// words are fine, and a person may type digits
+	if e := c.call("session.send", map[string]any{"slug": "main", "text": "step 2 next"}, ""); e != "" {
+		t.Fatalf("send of words: %s", e)
+	}
+	if e := c.call("session.send", map[string]any{"slug": "main", "text": "2"}, d.humanToken); e != "" {
+		t.Fatalf("send with the token: %s", e)
+	}
+}
