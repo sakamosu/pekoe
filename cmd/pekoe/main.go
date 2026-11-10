@@ -134,6 +134,8 @@ func main() {
 		err = cmdInbox(args)
 	case "ledger":
 		err = cmdLedger(args)
+	case "stats":
+		err = cmdStats(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -215,6 +217,9 @@ func usage() {
   pekoe inbox [<id>] [--all]    the questions agents asked; pekoe inbox answer <id> <n>
   pekoe ledger [--all] [--json] what you asked tapi chat for; tapi closes them with
                                pekoe ledger done|drop|close|link, you reopen|rm
+  pekoe stats [--days N] [--repo R] [--json]
+                               PRs merged and tokens used, by day and repository
+                               (removed sessions included; default: the last 7 days)
   pekoe dev <slug>              toggle the dev server on the session's port
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always

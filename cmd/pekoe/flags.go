@@ -186,6 +186,8 @@ var specs = map[string]spec{
 	"ledger reopen": {use: "pekoe ledger reopen <id>   open a closed request again (a person only)"},
 	"ledger rm":     {use: "pekoe ledger rm <id> [--yes]   delete a request (a person only)", bools: []string{"yes"}},
 
+	"stats": {use: "pekoe stats [--days N] [--repo R] [--json]   PRs merged and tokens used, by local date and repository (default: the last 7 days)", vals: []string{"days", "repo"}},
+
 	"daemon":         {use: "pekoe daemon start|stop|restart|status"},
 	"daemon start":   {use: "pekoe daemon start"},
 	"daemon restart": {use: "pekoe daemon restart   stop, wait, start again (e.g. after make install; agents keep running)"},
