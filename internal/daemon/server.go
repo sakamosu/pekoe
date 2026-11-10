@@ -183,6 +183,7 @@ type Daemon struct {
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling atomic.Bool          // watchPRStatus is running
 	finishing sync.Map             // slug -> finishLanding is running for it
+	tests     testRuns             // [hooks] test runs (hooks.go)
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)

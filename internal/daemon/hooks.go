@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -592,6 +593,42 @@ func (d *Daemon) vars(s *state.Session) config.Vars {
 	return config.Vars{Slug: s.Slug, Branch: s.Branch, Path: s.Path, Repo: s.Repo, Port: s.Port}
 }
 
+// testRuns tracks the [hooks] test run of each session.
+type testRuns struct {
+	mu sync.Mutex
+	m  map[string]*testRun
+}
+
+type testRun struct{ cancel context.CancelFunc }
+
+// start registers a new run for slug, cancelling the one before it.
+func (r *testRuns) start(slug string) (context.Context, *testRun) {
+	ctx, cancel := context.WithCancel(context.Background())
+	run := &testRun{cancel: cancel}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.m == nil {
+		r.m = map[string]*testRun{}
+	}
+	if old := r.m[slug]; old != nil {
+		old.cancel()
+	}
+	r.m[slug] = run
+	return ctx, run
+}
+
+// finish ends a run and reports whether it is still the newest one.
+func (r *testRuns) finish(slug string, run *testRun) bool {
+	run.cancel()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.m[slug] != run {
+		return false
+	}
+	delete(r.m, slug)
+	return true
+}
+
 func (d *Daemon) runTest(slug string) {
 	s, err := d.snapshot(slug)
 	if err != nil {
@@ -602,8 +639,14 @@ func (d *Daemon) runTest(slug string) {
 		return
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
+	// a newer Stop's run supersedes this one: stop the older run, and drop
+	// its result (it tested code that has changed since)
+	ctx, run := d.tests.start(slug)
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
-	out, err := shell(context.Background(), s.Path, s.Env, cmd, 20*time.Minute)
+	out, err := shell(ctx, s.Path, s.Env, cmd, 20*time.Minute)
+	if !d.tests.finish(slug, run) {
+		return
+	}
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
 	_ = os.MkdirAll(logDir, paths.DirPerm)
 	_ = os.WriteFile(filepath.Join(logDir, slug+"-test.log"), []byte(out), paths.FilePerm)
