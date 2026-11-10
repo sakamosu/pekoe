@@ -32,7 +32,7 @@ type outState struct {
 	lastOut   time.Time
 	lastEmit  time.Time
 	pending   bool
-	osc       []byte // partial escape sequence carried between chunks
+	osc       map[string][]byte // window -> partial escape sequence carried between its chunks
 	checkedAt time.Time
 }
 
@@ -118,8 +118,17 @@ func (d *Daemon) onOutput(o engine.Output) {
 		st.lastOut = now
 	}
 	st.pending = true
-	data, carry := splitCarry(append(st.osc, o.Data...))
-	st.osc = carry
+	// per window: another window's output in between must not be glued
+	// to the first half of a sequence
+	data, carry := splitCarry(append(st.osc[o.Window], o.Data...))
+	if len(carry) > 0 {
+		if st.osc == nil {
+			st.osc = map[string][]byte{}
+		}
+		st.osc[o.Window] = carry
+	} else {
+		delete(st.osc, o.Window)
+	}
 	agent := d.Global.Agents[s.Agent]
 	hooks := agent.Hooks
 	d.mu.Unlock()
