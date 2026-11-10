@@ -111,6 +111,20 @@ keys = ["pekoe send <slug> <text>", "pekoe send <slug> -", "--no-enter"]
 docs = ["README.ja.md#コマンド"]
 
 [[tip]]
+id = "report"
+short = "セッションのエージェントは pekoe report で結果を残す"
+detail = "pekoe report \"直した\" --status done --evidence <PR の URL>。どのセッションの報告かは pekoed がプロセスから決める。pekoe reports [<slug>] で読み、最新のものは ls の report にも出る。"
+keys = ["pekoe report", "pekoe reports", "--status", "--evidence"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
+id = "wait"
+short = "pekoe wait --mine で任せたセッションの知らせを待つ"
+detail = "報告・done・許可待ち・PR の変化が起きるまで止まる(ポーリングしない)。返った cursor を次の --since に渡せば取りこぼさない。--on report,done で絞る。reset が返ったら pekoe ls から読み直す。"
+keys = ["pekoe wait", "--mine", "--since", "--on"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
 id = "land"
 short = "l(pekoe land)で rebase → test → PR 作成まで進める"
 detail = "push して gh pr create まで進める。確認には衝突予報が出る。マージを見つけたら teardown と worktree の削除まで pekoe がやる。"

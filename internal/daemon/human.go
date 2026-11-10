@@ -54,6 +54,12 @@ var agentMethods = map[string]string{
 	// hAgentRm refuses every other state, force, and a landed session
 	// whose worktree is still there.
 	"worktree.rm": "the hub agent clears a landed session from the list (`pekoe rm`); hAgentRm refuses other states, force, and a worktree still on disk",
+	// orchestration (docs/orchestration.md): records only, nothing runs and
+	// pekoed reads no file for them
+	"report.post": "a session reports its own work (`pekoe report`); only for the caller's own session, unknown callers refused, sizes capped; evidence paths are kept as text, never read",
+	"report.list": "the hub agent reads the reports: summaries the agents wrote, as public as session.list",
+	"wait":        "the hub agent waits for its sessions (`pekoe wait`): one-line summaries of what session.list and the session events show; 8 waits per caller, an hour at most",
+	"send.log":    "the hub agent reads back what it asked for; without the token only records the caller sent or received",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -140,6 +146,7 @@ var humanMethods = map[string]string{
 var agentEvents = []string{
 	"session.created", "session.updated", "session.removed", "session.progress",
 	"session.waiting", "session.done", "session.output",
+	"report.posted", // the same as session.updated's report, in full
 }
 
 func agentEvent(ev string) bool {
@@ -187,7 +194,7 @@ func (d *Daemon) isHuman(token string) bool {
 }
 
 // authorize checks a request that came in over the unix socket.
-func (d *Daemon) authorize(req Request) error {
+func (d *Daemon) authorize(req Request, who *Caller) error {
 	if d.isHuman(req.Token) {
 		return nil
 	}
@@ -198,7 +205,10 @@ func (d *Daemon) authorize(req Request) error {
 		return fmt.Errorf("%s: %w", req.Method, ErrHumanOnly)
 	}
 	if req.Method == "session.send" {
-		return d.authorizeSend(req.Params)
+		if err := d.authorizeSend(req.Params); err != nil {
+			d.recordRefusedSend(who, req.Params, err)
+			return err
+		}
 	}
 	return nil
 }
@@ -234,7 +244,7 @@ func (d *Daemon) hAgentNew(p newP) (any, error) {
 // to its sessions), but only into an agent's input box, and not while it
 // shows a permission menu, which would take the text's first character as
 // its choice: with or without submit, by the hooks' state or the screen
-// (promptUp, the test hSend applies to every submit). hAgentSend checks
+// (promptUp, the test hSend applies to every submit). send(p, true) checks
 // the prompt again right before typing; a dialog can still come up in the
 // few milliseconds between that check and the keys, so text that starts
 // with a digit, which would pick a menu entry right away, is refused too.

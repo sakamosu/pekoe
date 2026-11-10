@@ -47,15 +47,33 @@
   | `editor.open` | MCP の `open_in_editor`(nvim へのイベントを出すだけ) |
   | `land` | ハブのエージェントの `pekoe land`(origin のあるリポジトリだけ。下) |
   | `worktree.rm` | ハブのエージェントの `pekoe rm`(landed のセッションだけ。下) |
+  | `report.post` | 作業セッションの `pekoe report`(呼び出し元のセッションの分だけ。`unknown` は断る。長さと件数の上限。下の「報告」) |
+  | `report.list` | ハブのエージェントの `pekoe reports`(エージェントが書いた要約で、`session.list` と同じ公開度) |
+  | `wait` | ハブのエージェントの `pekoe wait`(呼び出し元ごとに 8 本、1 時間まで。下の「待ち合わせ」) |
+  | `send.log` | ハブのエージェントが自分の頼んだことを読み直す(token なしでは呼び出し元が送った・受けた記録だけ。下の「送信の記録」) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(`watchMerges`)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
 - `session.new` は token なしでは、pekoe が既に知っているリポジトリ(`repo.list` に出るもの)で、知っているディレクトリと同じ場所のときだけ受け付け、セッションはその知っているディレクトリから作る。repo-id は origin の URL から決まり、エージェントが作ったクローンでも同じ id になるので、ディレクトリも見る。新しいリポジトリの登録は人間だけの操作(pekoed はそこで git を動かし、エージェントが自作したリポジトリの設定の filter / merge ドライバは、sandbox が使えない環境では外で動く)
-- `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` だけ。ほかのイベント(他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
+- `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
-- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
+- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・`state.db`(と `-wal` / `-shm`)・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
+
+### 呼び出し元の識別
+
+報告・送信の記録・`wait` の `mine` は「誰が」呼んだかを使う。`$PEKOE_SESSION` や cwd はエージェントが偽れるので、pekoed はソケットの相手のプロセスから決める(`internal/daemon/caller.go`)。
+
+1. 接続を受けたら相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`。`peer_*.go`)
+2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元
+3. token つきのリクエストは `human`。token なしで窓に当たらなければ `unknown`
+
+Claude Code のエージェントは pekoe が渡す sandbox の中で動き、tmux のソケットにはつなげない(`network.allowUnixSockets` は pekoed のソケットだけ)ので、別のセッションの窓の中にプロセスを作れない。二重 fork などで親を launchd に付け替えても `unknown` になるだけで、別のセッションには化けられない。
+
+- クライアントは `$PEKOE_SESSION` をリクエストの最上位の `session` に入れて送る(`internal/client`)。pekoed はこれを名乗り(`claimed`)として、識別したものと違うときだけ記録に残す。振り分けには使わない
+- `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
+- `report.post` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告は自分の窓のセッションに付く)
 
 ### hooks の sandbox
 
@@ -145,7 +163,9 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "git_blocked": "…/.git points at …, not …",  // worktree の .git が書き換えられていて、pekoed がそこで git を動かさない理由(「pekoed が動かす git」)。戻れば消える
   "overlaps": [                    // 衝突予報(同じリポジトリの open なセッションのうち、同じファイルを触っている相手)
     {"slug": "feat-x", "files": ["src/api.ts", "README.md"], "conflict": true, "conflict_files": ["src/api.ts"]}
-  ]
+  ],
+  "parent": "+tapi",               // session.new の呼び出し元(上の「呼び出し元の識別」): +tapi | <slug> | human | unknown。session.new 以外で作ったもの(open・adopt・review.pr)は空
+  "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"} // 最新の報告(summary は 1 行目、200 文字まで)
 }
 ```
 
@@ -164,11 +184,11 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, prompt?}` | `Session`(state = creating。進捗は `session.progress` イベント) |
+| `session.new` | `{repo, branch, from?, agent?, prompt?}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す |
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
-| `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」) |
+| `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」)。agent の窓への指示(`submit` つき、または token なし)は送信の記録に残す(断ったものも) |
 | `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時) |
 | `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う) |
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"\|"run"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height, dead, exit_status, signal?}`(`exit_status` は終わった窓の終了コード。動いている間やシグナルで終わったときは -1。`signal` は `"SIGINT"` など) |
@@ -176,7 +196,11 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
 | `session.kill` | `{slug}` | セッション終了(worktree は残す) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
-| `session.event` | `{hook, payload}` | hooks から(`pekoe event` が呼ぶ) |
+| `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `session`(`$PEKOE_SESSION`)と `payload.cwd` |
+| `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |
+| `report.list` | `{slug?, since?: id, limit?: 20}` | `[Report]`(新しい順。`limit` は 200 まで) |
+| `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
+| `send.log` | `{to?, from?, since?: id, limit?: 100}` | `[SendRecord]`(新しい順。下の「送信の記録」) |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
@@ -233,6 +257,71 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
+
+### 報告(report)
+
+作業セッションが完了・詰まり・途中経過・独立レビューの結果を残す(`pekoe report`)。状態(`state`)は変えない(done は Stop hook で決まる)。最新の 1 件を `Session.report` に載せて `session.updated` を出し、全体を `report.posted` で流す。`pekoe rm` でそのセッションの分も消える。
+
+```jsonc
+// Report
+{
+  "id": 17, "slug": "feat-csv", "by": "feat-csv",  // by は識別した呼び出し元
+  "claimed": "other",                              // $PEKOE_SESSION の名乗り。by と違うときだけ
+  "status": "done", "summary": "…",
+  "evidence": ["https://github.com/me/app/pull/42", "/tmp/shot.png"],
+  "head": "3f2a…", "dirty": false,                 // 報告を受けた時点の worktree の HEAD と未コミットの変更の有無(pekoed が読む)
+  "verdict": "pass", "reviewed_sha": "3f2a…",      // status = review のときだけ(verdict は必須)
+  "at": "…"
+}
+```
+
+- 呼び出し元(上の「呼び出し元の識別」)の窓のセッションに付く。token なしで `slug` に別のセッションを渡すと `a session reports only on itself` で断る。窓に当たらなければ `cannot tell which session is calling` で断る。tapi chat はセッションではないので断る
+- 証拠のファイルは読まない(読めば、エージェントが pekoed に任意のファイルを読ませられる)。パスと URL を文字列として残すだけ
+- 上限: summary 4000 文字、evidence 20 件・各 500 文字(超えたら断る)。summary は改行とタブ以外の制御文字を、evidence はすべての制御文字を落とす
+- state.db の `reports` の表に残る
+
+### 待ち合わせ(wait)
+
+統括役が「何か起きるまで」止まって待つ(Claude Code のバックグラウンド実行で待てば、待っている間にトークンを使わない)。pekoed は変化を連番つきでメモリの輪(直近 2000 件)に積む。`since` より後に条件に合うものがあればすぐ返し、なければ起きるまで(か `timeout_s` まで)待つ。
+
+```jsonc
+// wait の結果
+{
+  "cursor": "9f3c01ab-1532",     // 次の wait の since に渡す(<epoch>-<連番>)
+  "epoch": "9f3c01ab",           // pekoed の起動ごとに変わる
+  "changes": [{"seq": 1531, "kind": "report", "slug": "feat-csv", "at": "…", "summary": "feat-csv: report done: CSV の空行を…"},
+              {"seq": 1532, "kind": "done", "slug": "feat-csv", "at": "…", "summary": "feat-csv: done"}],
+  "timed_out": false,
+  "reset": false
+}
+```
+
+- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`removed`。`inbox` は受け付けるが、まだ出ない(判断の受信箱を足すときに出す)。`on` を省くとすべて
+- `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
+- `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない
+- 何も起きずに `timeout_s`(既定 1800、3600 まで)が過ぎたら `timed_out: true` と今の `cursor`。条件に合わなかった変化は飛ばして `cursor` は進む
+- `mine` は `Session.parent` が呼び出し元のもの。`unknown` の呼び出し元は使えない。`slugs` は `<repo>/<slug>` も受け付ける
+- token なしでは呼び出し元ごとに同時に 8 本まで。接続が切れると待ちも終わる
+
+### 送信の記録
+
+pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付きで state.db の `sends` の表に残す。
+
+| 記録するもの | from | kind |
+| --- | --- | --- |
+| `session.new` の `prompt`(`from` があれば先頭に `--from gh#N` の行) | 呼び出し元 | `new` |
+| `session.send` の agent の窓への指示(`submit` つき、または token なし) | 呼び出し元(TUI・CLI は `human`) | `send` |
+
+```jsonc
+// SendRecord
+{"id": 3, "at": "…", "from": "+tapi", "to": "feat-csv", "kind": "new", "text": "…", "via": "socket", "ok": true, "error": ""}
+```
+
+- `via` はソケット経由なら `socket`、Web UI からなら `web:<端末名>`
+- 記録しないもの: 打鍵(`session.keys`)、TUI が入力をそのまま流す `submit` なしの `session.send`、dev・run の窓への送信、`tapi.send`、ピック・エラー・レビューの送信
+- 送れなかったもの(許可ダイアログが出ていた、先頭が数字だったなど。token なしの受け付け時の確認で断ったものも)も `ok: false` とエラーで残す
+- 本文は 64 KiB で切る
+- token なしの `send.log` は、呼び出し元が `from` か `to` の記録だけ。`unknown` は断る
 
 ### Tapi オブジェクト
 
@@ -372,6 +461,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `session.waiting` | `Session`(running → waiting に変わった瞬間) |
 | `session.done` | `Session` |
 | `session.output` | `{slug, window}`(画面更新の合図。30ms で間引く) |
+| `report.posted` | `Report`(token なしの購読にも届く) |
 | `review.updated` | `{slug}` |
 | `review.answer` | `{slug, hunk_id, text}` |
 | `pick.received` | `Pick` |

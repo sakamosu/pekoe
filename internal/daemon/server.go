@@ -38,6 +38,9 @@ type Request struct {
 	// Token is the human token (human.go), sent by the TUI, the CLI and
 	// Neovim; the human-only methods are refused without it.
 	Token string `json:"token,omitempty"`
+	// Session is the client's $PEKOE_SESSION: what it says it is. Kept as
+	// Caller.Claimed only; who called is told from the process (caller.go).
+	Session string `json:"session,omitempty"`
 }
 
 type Response struct {
@@ -176,7 +179,13 @@ type Daemon struct {
 	stopOnce    sync.Once
 	killAgents  atomic.Bool // daemon.stop {kill_agents}: also stop the tmux server
 	handlers    map[string]func(json.RawMessage) (any, error)
-	testHook    func(ev string, data any) // observes events in tests
+	// callerHandlers are the methods that need to know who called
+	// (caller.go); each is in handlers too, called as a person there.
+	callerHandlers map[string]func(*Caller, json.RawMessage) (any, error)
+	// peerPID tells a connection's process (caller.go); tests swap it.
+	peerPID  func(net.Conn) int
+	changes  *changeLog                // what wait waits for (wait.go)
+	testHook func(ev string, data any) // observes events in tests
 	// portBusy says whether a session port is taken (AllocPort); nil is
 	// portBusy, which binds the port. Tests swap in one that does not bind
 	// (an agent's sandbox refuses every bind).
@@ -250,6 +259,8 @@ func New() (*Daemon, error) {
 		catch:     errcatch.NewStore(),
 		devScan:   map[string]*errcatch.Scanner{},
 		tapi:      newTapiState(),
+		peerPID:   peerPID,
+		changes:   newChangeLog(),
 	}
 	d.registerHandlers()
 	return d, nil
@@ -366,6 +377,7 @@ func (d *Daemon) releaseLock() {
 
 func (d *Daemon) serve(nc net.Conn) {
 	c := newConn(nc)
+	pr := &peer{pid: d.peerPID(nc), find: d.paneOf}
 	d.mu.Lock()
 	d.conns[c] = true
 	d.mu.Unlock()
@@ -404,12 +416,13 @@ func (d *Daemon) serve(nc net.Conn) {
 			continue
 		}
 		// Long operations must not block the connection's other requests.
+		who := &Caller{human: d.isHuman(req.Token), Claimed: req.Session, Via: viaSocket, peer: pr, done: c.done}
 		go func(req Request) {
-			if err := d.authorize(req); err != nil {
+			if err := d.authorize(req, who); err != nil {
 				c.send(Response{ID: req.ID, Error: err.Error()})
 				return
 			}
-			res, err := d.call(req.Method, req.Params, !d.isHuman(req.Token))
+			res, err := d.call(req.Method, req.Params, who)
 			r := Response{ID: req.ID, Result: res}
 			if err != nil {
 				r.Error = err.Error()
@@ -422,12 +435,17 @@ func (d *Daemon) serve(nc net.Conn) {
 
 // Call dispatches one API method (also used in-process by tests).
 func (d *Daemon) Call(method string, params json.RawMessage) (any, error) {
-	return d.call(method, params, false)
+	return d.call(method, params, humanCaller(""))
 }
 
-// call is Call for a request that came over the socket; agent is true
-// when it came without the human token (authorize let it through).
-func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res any, err error) {
+// CallAs is Call on behalf of who (the Web UI says it is the web).
+func (d *Daemon) CallAs(who *Caller, method string, params json.RawMessage) (any, error) {
+	return d.call(method, params, who)
+}
+
+// call dispatches a request from who; a caller without the human token
+// got here through authorize.
+func (d *Daemon) call(method string, params json.RawMessage, who *Caller) (res any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic in %s: %v", method, r)
@@ -438,11 +456,8 @@ func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res an
 	if !ok {
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
+	agent := !who.Human()
 	switch {
-	case agent && method == "session.send":
-		h = bind(d.hAgentSend)
-	case agent && method == "session.new":
-		h = bind(d.hAgentNew)
 	case agent && method == "land":
 		h = bind(d.hAgentLand)
 	case agent && method == "worktree.rm":
@@ -454,12 +469,19 @@ func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res an
 	if params, err = d.normalizeSlugParam(params); err != nil {
 		return nil, err
 	}
+	if ch, ok := d.callerHandlers[method]; ok {
+		return ch(who, params)
+	}
 	return h(params)
 }
 
 func (d *Daemon) emit(ev string, data any) {
 	if d.testHook != nil {
 		d.testHook(ev, data)
+	}
+	if s, ok := data.(*state.Session); ok && ev == "session.removed" && s != nil {
+		d.changes.forget(s.Slug)
+		d.changes.add(Change{Kind: kindRemoved, Slug: s.Slug, Summary: s.Slug + ": removed", parent: s.Parent})
 	}
 	d.mu.Lock()
 	cs := make([]*conn, 0, len(d.conns))
@@ -534,11 +556,9 @@ func (d *Daemon) registerHandlers() {
 		"repo.resolve":    bind(d.hRepoResolve),
 		"session.list":    bind(d.hList),
 		"session.get":     bind(func(p slugP) (any, error) { return d.snapshot(p.Slug) }),
-		"session.new":     bind(d.hNew),
 		"session.cancel":  bind(d.hCancel),
 		"session.open":    bind(d.hOpen),
 		"session.adopt":   bind(d.hAdopt),
-		"session.send":    bind(d.hSend),
 		"session.keys":    bind(d.hKeys),
 		"session.answer":  bind(d.hAnswer),
 		"session.screen":  bind(d.hScreen),
@@ -547,7 +567,6 @@ func (d *Daemon) registerHandlers() {
 		"session.kill":    bind(d.hKill),
 		"session.restart": bind(d.hRestart),
 		"session.undo":    bind(d.hUndo),
-		"session.event":   bind(d.hEvent),
 		"session.progress": bind(func(p slugP) (any, error) {
 			d.mu.Lock()
 			defer d.mu.Unlock()
@@ -606,5 +625,29 @@ func (d *Daemon) registerHandlers() {
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h
+	}
+	d.callerHandlers = map[string]func(*Caller, json.RawMessage) (any, error){
+		"session.new":   bindAs(d.hNewAs),
+		"session.send":  bindAs(d.hSendAs),
+		"session.event": bindAs(d.hEventAs),
+		"report.post":   bindAs(d.hReportPost),
+		"report.list":   bindAs(d.hReportList),
+		"wait":          bindAs(d.hWait),
+		"send.log":      bindAs(d.hSendLog),
+	}
+	for k, h := range d.callerHandlers {
+		h := h
+		d.handlers[k] = func(raw json.RawMessage) (any, error) { return h(humanCaller(""), raw) }
+	}
+}
+
+// bindAs is bind for a handler that needs its caller.
+func bindAs[T any](f func(*Caller, T) (any, error)) func(*Caller, json.RawMessage) (any, error) {
+	return func(who *Caller, raw json.RawMessage) (any, error) {
+		var p T
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, fmt.Errorf("bad params: %w", err)
+		}
+		return f(who, p)
 	}
 }

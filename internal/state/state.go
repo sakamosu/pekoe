@@ -141,6 +141,11 @@ type Session struct {
 	SeenLines       int       `json:"seen_lines,omitempty"` // absolute line offset when the user left
 	Env             []string  `json:"env,omitempty"`
 	Overlaps        []Overlap `json:"overlaps,omitempty"` // conflict forecast (daemon/conflicts.go)
+	// Parent is who created the session with session.new: "+tapi", a
+	// session's slug, "human" or "unknown" (daemon/caller.go). wait's mine
+	// and, later, the inbox's answers go to it. Empty: not made by session.new.
+	Parent string         `json:"parent,omitempty"`
+	Report *ReportSummary `json:"report,omitempty"` // the latest report.post
 }
 
 type DB struct {
@@ -158,6 +163,9 @@ CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, slug 
 CREATE TABLE IF NOT EXISTS picks (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_id TEXT, slug TEXT, data TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS risks (slug TEXT NOT NULL, path TEXT, line INTEGER, text TEXT);
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL, by TEXT NOT NULL, claimed TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, summary TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '[]', head TEXT NOT NULL DEFAULT '', dirty INTEGER NOT NULL DEFAULT 0, verdict TEXT NOT NULL DEFAULT '', reviewed_sha TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS reports_slug ON reports(slug, id);
+CREATE TABLE IF NOT EXISTS sends (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, from_ TEXT NOT NULL, to_ TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, via TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '');
 `
 
 func Open(path string) (*DB, error) {
@@ -203,7 +211,7 @@ func (d *DB) DeleteSession(slug string) error {
 		`DELETE FROM sessions WHERE slug=?`, `DELETE FROM ports WHERE slug=?`,
 		`DELETE FROM prompts WHERE slug=?`, `DELETE FROM reviews WHERE slug=?`,
 		`DELETE FROM hunks WHERE slug=?`, `DELETE FROM comments WHERE slug=?`,
-		`DELETE FROM risks WHERE slug=?`,
+		`DELETE FROM risks WHERE slug=?`, `DELETE FROM reports WHERE slug=?`,
 	} {
 		if _, err := tx.Exec(q, slug); err != nil {
 			tx.Rollback()

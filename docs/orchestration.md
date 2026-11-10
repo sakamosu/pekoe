@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 設計中(実装は段階 1 から。下の「段階」)。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す。
+状態: 段階 1 の前半(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」)。実装で設計から変えたところは各節に「実装:」で書いた。段階 1 の後半(判断の受信箱)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -83,6 +83,8 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 
 hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hooks は Claude Code が sandbox の外で起動するので親を辿れば同じペインに当たるはず。ここは実装のときに確かめる(当たらない場合は今の自己申告のまま)。
 
+実装: pekoe のセッションの中の Claude Code から親を辿ると、Bash ツールのコマンド → (sandbox の)シェル → claude → ペインのシェル(`#{pane_pid}`)→ tmux サーバー、と当たることを確かめた(`sysctl kern.proc.pid` は Claude Code の sandbox の中でも引ける)。hooks は同じ claude の子として起動されるので同じペインに当たる。そこで `session.event` は、ペインに当たればその slug に振り分け、当たらなければ今までどおり `$PEKOE_SESSION` と cwd で決める(tmux の外のエージェントを `adopt` したときなど)。hooks は sandbox の外で動き token を読めるので、hooks と `report.post` では token の有無ではなくペインを見る(token を読める sandbox なしのエージェントでも、報告は自分のセッションに付く)。名乗り(`claimed`)はクライアントがリクエストの最上位の `session` に `$PEKOE_SESSION` を入れて送る。
+
 ## 新しく足す仕組み
 
 段階 1(基盤)で作る。A(tapi)・C(スキル)・D(ダッシュボード)はどれもこれに乗る。
@@ -152,6 +154,7 @@ pekoe report - --status blocked < note.md     # 長文は stdin
 - 証拠のファイルを pekoed は読まない(読めば、エージェントが pekoed に任意のファイルを読ませられる)。パスと URL を文字列として残すだけで、開くのは人(TUI から `open`)
 - 上限: summary 4000 文字、evidence 20 件・各 500 文字。改行とタブ以外の制御文字は落とす
 - 状態(`state`)は変えない。報告は状態とは別の記録(done は Stop hook で決まる)
+- 実装: 上限を超えたものは切らずに断る(エージェントに直させる)。evidence は 1 行ずつなので改行も落とす。`status: review` には `verdict` を必須にし、それ以外の status に `verdict` / `reviewed_sha` が付いていれば断る。token つきの呼び出しは `slug` で相手を指定できる(人が手で残す・テスト用)。tapi chat はセッションではないので断る。報告を読む CLI として `pekoe reports [<slug>]` を足した(エージェントの文は `internal/untrusted` の区切りで囲んで出す)
 
 state.db: `reports(id INTEGER PRIMARY KEY, slug, by, claimed, status, summary, evidence TEXT /* JSON */, head, dirty, verdict, reviewed_sha, at)`。`pekoe rm` でそのセッションの分も消す。
 
@@ -162,7 +165,7 @@ state.db: `reports(id INTEGER PRIMARY KEY, slug, by, claimed, status, summary, e
 ```sh
 pekoe --json wait --mine --timeout 30m                          # 自分が依頼元のセッションに何か起きるまで
 pekoe --json wait --slug feat-csv --on report,done,failed
-pekoe --json wait --mine --since 1532                           # 前回の続きから(取りこぼさない)
+pekoe --json wait --mine --since 9f3c01ab-1532                  # 前回の続きから(取りこぼさない)
 ```
 
 | method | params | result |
@@ -175,6 +178,7 @@ pekoe --json wait --mine --since 1532                           # 前回の続�
 - `mine` は `Session.parent` が呼び出し元のもの。tapi はふつう `--mine` で待つ
 - 待ちは呼び出し元ごとに 8 本、`timeout_s` は 3600 まで。CLI は `--timeout` 省略で 30 分
 - CLI は `cursor` を JSON に入れて返す。スキルには「次の `wait` に `--since <cursor>` を渡す」と書く
+- 実装: `cursor` は `<epoch>-<連番>` の文字列にした(連番だけだと、再起動で連番が 0 からやり直したときに古い cursor を見分けられない)。数字だけの `--since` は断る。`pr` は `attention` に増えた項目ごとに 1 件。「報告なし」は英語の他の要約に合わせて `feat-csv: done (no report)`。「報告なし」は最後の UserPromptSubmit の後に報告が無いこと(再起動の後でまだプロンプトを見ていなければ、前の状態に入った時刻の後)。API の `timeout_s` の既定も 1800。8 本の上限は token なしの呼び出しだけ。`slugs` は `<repo>/<slug>` も受け付ける。接続が切れると待ちも終わる(上限の数え直しのため)
 
 ### 3. tapi への配送(任意、既定は切る)
 
@@ -254,6 +258,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に何を送った�
 | tapi への配送 | `pekoed` | `deliver` |
 
 - 記録しないもの: 打鍵(`session.keys`)、tapi chat への人の入力(`tapi.send`。会話は Claude Code の記録にあり、依頼は台帳に入る)、ピック・エラー・レビューの送信(段階 3 以降に足すか決める)
+- 実装: `session.send` のうち記録するのは agent の窓への「指示」(`submit` つき、または token なし)だけにした。TUI は人がエージェントの窓に打った文字を `submit` なしの `session.send` で流しており、これは打鍵と同じ扱い(細かすぎ、パスワードもありうる)。dev・run の窓への送信も記録しない。`via` は `socket` か `web:<端末名>`。`session.new` の `from`(gh#N)は本文の先頭に `--from gh#N` の行として入れる。token なしの受け付け時の確認(許可ダイアログ・先頭が数字)で断った send も `ok: false` で残す
 - 送れなかったもの(許可ダイアログで断ったなど)も `ok: false` とエラーで残す
 - 本文は 64 KiB で切る
 
@@ -285,7 +290,7 @@ state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evide
 
 | 項目 | 中身 |
 | --- | --- |
-| `parent` | 依頼元(`+tapi`・slug・`human`・`unknown`)。`session.new` の呼び出し元から決める |
+| `parent` | 依頼元(`+tapi`・slug・`human`・`unknown`)。`session.new` の呼び出し元から決める(実装: `session.open`・`adopt`・`review.pr` で作ったものは空。Chrome 拡張から作ったものは `human`) |
 | `request` | 台帳の id(`--request`) |
 | `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料 |
 | `report` | 最新の報告の要約 |

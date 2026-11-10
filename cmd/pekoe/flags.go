@@ -14,6 +14,7 @@ type spec struct {
 	use   string   // usage, without the leading "usage: "
 	bools []string // --name
 	vals  []string // --name VALUE / --name=VALUE
+	multi []string // of vals: may be given more than once (multiVal)
 }
 
 // usageError ends a command before it acts: help (exit 0, usage on stdout)
@@ -123,12 +124,23 @@ func (sp spec) parse(args []string) (map[string]string, []string, error) {
 			if v == "" {
 				return nil, nil, bad("--%s needs a value", k)
 			}
+			if prev, ok := f[k]; ok && is(sp.multi, k) {
+				v = prev + "\n" + v
+			}
 			f[k] = v
 		default:
 			return nil, nil, bad("unknown flag --%s", k)
 		}
 	}
 	return f, pos, nil
+}
+
+// multiVal is every value of a flag declared in multi.
+func multiVal(f map[string]string, k string) []string {
+	if f[k] == "" {
+		return nil
+	}
+	return strings.Split(f[k], "\n")
 }
 
 // Every subcommand's flags. `--json` is global (stripped in main, before or
@@ -154,6 +166,9 @@ var specs = map[string]spec{
 	"ext":       {use: "pekoe ext   port + token for the Chrome extension"},
 	"mcp":       {use: "pekoe mcp   MCP server for agents (stdio)"},
 	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},
+	"report":    {use: "pekoe report <summary> --status done|blocked|progress|review [--evidence URL|PATH]... [--verdict pass|fail --reviewed-sha SHA]   (summary '-' reads stdin; run by the session's agent)", vals: []string{"status", "evidence", "verdict", "reviewed-sha"}, multi: []string{"evidence"}},
+	"reports":   {use: "pekoe reports [<slug>] [--limit N] [--json]   the sessions' reports, newest first", vals: []string{"limit"}},
+	"wait":      {use: "pekoe wait [--mine] [--slug S,…] [--on report,done,…] [--since CURSOR] [--timeout 30m] [--json]   until something happens to sessions", bools: []string{"mine"}, vals: []string{"slug", "on", "since", "timeout"}},
 
 	"daemon":         {use: "pekoe daemon start|stop|restart|status"},
 	"daemon start":   {use: "pekoe daemon start"},

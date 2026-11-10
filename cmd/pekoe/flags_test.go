@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"pekoe/internal/client"
 	"pekoe/internal/testenv"
@@ -284,6 +285,36 @@ func TestEverySubcommandHasSpec(t *testing.T) {
 	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
+		}
+	}
+}
+
+// --evidence may be given more than once; other value flags keep the last.
+func TestMultiValueFlag(t *testing.T) {
+	f, pos, err := parseCmd("report", []string{"fixed it", "--status", "done", "--evidence", "https://x/pull/1", "--evidence=/tmp/a.png"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := multiVal(f, "evidence"); len(got) != 2 || got[0] != "https://x/pull/1" || got[1] != "/tmp/a.png" {
+		t.Fatalf("evidence: %q", got)
+	}
+	if len(pos) != 1 || f["status"] != "done" {
+		t.Fatalf("pos %q status %q", pos, f["status"])
+	}
+	if got := multiVal(map[string]string{}, "evidence"); got != nil {
+		t.Fatalf("none: %q", got)
+	}
+}
+
+func TestWaitTimeout(t *testing.T) {
+	for in, want := range map[string]time.Duration{"": 30 * time.Minute, "90s": 90 * time.Second, "120": 2 * time.Minute, "1h": time.Hour} {
+		if got, err := waitTimeout(in); err != nil || got != want {
+			t.Errorf("%q: %v %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"2h", "0", "x"} {
+		if _, err := waitTimeout(bad); err == nil {
+			t.Errorf("%q accepted", bad)
 		}
 	}
 }

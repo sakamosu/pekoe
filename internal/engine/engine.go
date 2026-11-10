@@ -84,10 +84,21 @@ type Engine interface {
 	Sessions() (map[string][]string, error)
 	Output() <-chan Output
 	Close()
+	// Panes lists the process id at the root of every pekoe window (tmux's
+	// #{pane_pid}): pekoed walks a socket peer's parents up to one of them
+	// to tell which session called (internal/daemon/caller.go).
+	Panes() ([]Pane, error)
 	// KillServer stops the terminal server itself, ending every agent.
 	// Only `pekoe daemon stop --kill-agents` uses it; a plain stop keeps the
 	// agents running for the next daemon.
 	KillServer() error
+}
+
+// Pane is one window's root process.
+type Pane struct {
+	Slug   string
+	Window string
+	PID    int
 }
 
 // SignalName turns tmux's pane_dead_signal ("int" in tmux 3.5, a number in
