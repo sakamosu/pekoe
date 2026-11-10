@@ -33,7 +33,7 @@ A cozy home for your coding agents. — with tapi, your little companion
   - TUI の `b`(ポートを Chrome で開く)は `open -a "Google Chrome"`
   - `pekoe adopt` はプロセスの cwd を `lsof` で調べる
 - **主な対象は Claude Code**(hooks で状態を受け取る)。codex・opencode なども `[agents.*]` で使えるが、状態は画面から推し量るだけ
-- **必要なもの:** tmux 3.3+、git。ソースから入れるなら Go 1.26.10+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使う)。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)
+- **必要なもの:** tmux 3.3+、git。ソースから入れるなら Go 1.27.3+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使う)。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)
 - **ターミナル層は tmux。** libghostty-vt の自前 mux([docs/design.md](docs/design.md) のフェーズ 5)は未着手で、やらない選択もある。Kitty graphics のパススルーは、右ペインを文字として描き直す tmux エンジンでは通せない(TUI 内プレビューの画像は pekoe 自身が Kitty graphics で描く)
 
 ## 構成

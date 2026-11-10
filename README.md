@@ -33,7 +33,7 @@ A terminal tool for running several coding agents in parallel, one per git workt
   - `b` in the TUI (open the port in Chrome) uses `open -a "Google Chrome"`
   - `pekoe adopt` looks up a process's cwd with `lsof`
 - **Claude Code is the main target** (state comes from its hooks). codex, opencode and others work through `[agents.*]`, but their state is only inferred from the screen
-- **Requirements:** tmux 3.3+, git. To build from source, Go 1.26.10+ (`make` uses only your local Go, via `GOTOOLCHAIN=local`). Optional: gh (issues, land, PR view, PR review), Neovim 0.10+ (review surface), Chrome (extension, in-TUI preview), Tailscale (Web UI)
+- **Requirements:** tmux 3.3+, git. To build from source, Go 1.27.3+ (`make` uses only your local Go, via `GOTOOLCHAIN=local`). Optional: gh (issues, land, PR view, PR review), Neovim 0.10+ (review surface), Chrome (extension, in-TUI preview), Tailscale (Web UI)
 - **The terminal layer is tmux.** A custom mux on libghostty-vt (phase 5 in [docs/design.md](docs/design.md)) has not been started and may never be. Kitty graphics passthrough can't work with the tmux engine, which redraws the right pane as text (the in-TUI preview images are drawn by pekoe itself with Kitty graphics)
 
 ## Architecture

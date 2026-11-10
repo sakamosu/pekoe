@@ -49,6 +49,7 @@ GitHub Release にも両方を置いている。`pekoe_<ver>_<os>_<arch>.tar.gz`
 - 既定のビルドでは `go version -m pekoe` にも `tailscale.com` は出ない(`internal/daemon/webts.go` が `//go:build web`、代わりに `webts_off.go`)。ただし `go.mod` には依存として載っている
 - 既定のビルドで設定に `[web] enable = true` があっても(dotfiles で個人の Mac と設定を共有しているなど)、何もせずに pekoed のログに警告を出すだけ。`pekoe web` は「Web UI なしのビルド」と再ビルドの方法を出す
 - `make test` は両方のビルドを検査する。隔離環境で Web UI 入りを試すには `WEB=1 scripts/sandbox.sh`
+- Go と `tailscale.com` の版は組にして上げる。Go 1.27 から `encoding/json` が v2 の実装の上で動くようになり、tailscale v1.92 の `tailcfg.SSHAction` の `format:nano` タグを受け付けなくなった。Go 1.27 でビルドした v1.92 は、SSH ルールのある tailnet だと control から届く netmap を毎回読めず、`starting` のまま止まっていた(エラーにもログイン待ちにもならない)。`internal/daemon/webts_test.go` の `TestTailscaleJSONDecodes` が、control や LocalAPI とやりとりする型をビルドに使う Go の `encoding/json` で読めるかを確かめる
 
 ### `[web]` が無効なとき
 
@@ -81,6 +82,8 @@ allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admi
 5. `pekoe web` が `state running` と `url https://pekoe.<tailnet>.ts.net/` を出したら、iPhone の Safari でその URL を開き、共有メニューから「ホーム画面に追加」
 
 `TS_AUTHKEY` は pekoed が起動時に自分の環境変数から取り除いてから tmux を立ち上げるので、エージェントのペインには渡らない(渡ると、エージェントがその鍵で自分のノードを tailnet に参加させ、ユーザー本人として Web UI を叩けてしまう)。`auth_key` を設定に書いた場合は、同じユーザーで動くエージェントには読めるので、参加したらすぐ消す。ログイン URL で参加するのがいちばん安全。
+
+`state starting` のまま進まないときは、`pekoe web` の `backend`(Tailscale の backend の状態)と `backend error`(control から受け取れなかった理由など)を見る。同じものが `pekoed.log` にも `web: tsnet backend: …` として出て(ログイン URL と auth key は伏せる)、1 分たっても starting のままなら `web: tsnet still not running after 1m0s (backend state …)` も出る。
 
 参加後の鍵は `state_dir`(既定 `~/.local/share/pekoe/tsnet`、パーミッション 700)に残るので、2 回目以降は何もしなくてよい。admin console で `pekoe` マシンの key expiry を無効にしておくと、180 日ごとの再ログインが要らない。
 

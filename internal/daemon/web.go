@@ -590,6 +590,11 @@ type webStatus struct {
 	AuthURL string   `json:"auth_url,omitempty"`
 	URLs    []string `json:"urls,omitempty"`
 	Error   string   `json:"error,omitempty"`
+	// the tsnet backend as Tailscale names it (NoState, Starting, Running…)
+	// and the last error it reported (e.g. a netmap it could not read);
+	// they say why a node stays "starting"
+	Backend      string `json:"backend,omitempty"`
+	BackendError string `json:"backend_error,omitempty"`
 }
 
 type webState struct {
