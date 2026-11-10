@@ -53,8 +53,9 @@ func (r *Release) Asset(name string) *Asset {
 }
 
 // GitHub reads releases of Repo through the REST API at API. Token may be
-// empty: the repository is public and needs none. With one, GitHub allows
-// more requests per hour, and a private repository can be read too.
+// empty, but only a public repository can be read without one: Repo is
+// still private (not public yet), so for now a token that can read it is
+// needed. With one, GitHub also allows more requests per hour.
 type GitHub struct {
 	API, Repo, Token string
 	HTTP             *http.Client
@@ -222,9 +223,9 @@ func (g *GitHub) Download(ctx context.Context, a *Asset, w io.Writer, limit int6
 }
 
 // HasAttestation reports whether GitHub keeps a build provenance for the
-// file with this SHA-256 (hex) in Repo. release.yml attests every release
-// of the public repository; older releases, made while it was private, have
-// none.
+// file with this SHA-256 (hex) in Repo. release.yml attests releases only
+// while the repository is public; releases made while it is private (every
+// release so far: it is not public yet) have none.
 func (g *GitHub) HasAttestation(ctx context.Context, sha256hex string) (bool, error) {
 	resp, err := g.get(ctx, strings.TrimSuffix(g.API, "/")+"/repos/"+g.Repo+"/attestations/sha256:"+sha256hex, "application/vnd.github+json")
 	if err != nil {
