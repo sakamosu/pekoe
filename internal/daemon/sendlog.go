@@ -49,6 +49,9 @@ func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 // hSendAs is session.send, recorded when it is an instruction to an agent:
 // submitted, or sent without the human token.
 func (d *Daemon) hSendAs(who *Caller, p sendP) (any, error) {
+	if who.Human() && win(p.Window) == engine.WinAgent {
+		d.noteTyped(p.Slug) // a person's text: no inbox delivery in the middle of it
+	}
 	res, err := d.send(p, !who.Human())
 	if sendLogged(who, p) {
 		d.recordSend(who, p.Slug, "send", p.Text, err)

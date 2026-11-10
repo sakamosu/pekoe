@@ -92,11 +92,15 @@ func (d *Daemon) tapiUpdate(f func(t *tapiState)) {
 	d.mu.Lock()
 	prev := d.tapi.state
 	f(&d.tapi)
+	idle := d.tapi.state != prev && d.tapi.state == state.Idle
 	if d.tapi.state != prev {
 		d.tapi.since = time.Now()
 	}
 	d.mu.Unlock()
 	d.emit("tapi.updated", d.tapiView())
+	if idle {
+		go d.deliverInbox(TapiSlug)
+	}
 }
 
 // tapiEvent moves tapi's state from a hook. Nothing else runs: no prompt

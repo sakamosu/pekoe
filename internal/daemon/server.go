@@ -210,6 +210,13 @@ type Daemon struct {
 	locateMiss map[string]time.Time // repo-ids knownRepos could not locate (repos.go), under mu
 
 	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
+
+	// the inbox (inbox.go)
+	inboxMu      sync.Mutex           // reads and writes of an item, one at a time
+	inboxDeliver sync.Map             // asker -> *sync.Mutex: one delivery at a time
+	inboxTick    atomic.Bool          // deliverAllInbox is running
+	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
+	webBases     sync.Map             // repo dir -> https://host/owner/name ("" none)
 }
 
 func New() (*Daemon, error) {
@@ -261,6 +268,7 @@ func New() (*Daemon, error) {
 		tapi:      newTapiState(),
 		peerPID:   peerPID,
 		changes:   newChangeLog(),
+		typedAt:   map[string]time.Time{},
 	}
 	d.registerHandlers()
 	return d, nil
@@ -552,14 +560,19 @@ func (d *Daemon) registerHandlers() {
 			}
 			return st, nil
 		},
-		"repo.list":       bind(d.hRepoList),
-		"repo.resolve":    bind(d.hRepoResolve),
-		"session.list":    bind(d.hList),
-		"session.get":     bind(func(p slugP) (any, error) { return d.snapshot(p.Slug) }),
-		"session.cancel":  bind(d.hCancel),
-		"session.open":    bind(d.hOpen),
-		"session.adopt":   bind(d.hAdopt),
-		"session.keys":    bind(d.hKeys),
+		"repo.list":      bind(d.hRepoList),
+		"repo.resolve":   bind(d.hRepoResolve),
+		"session.list":   bind(d.hList),
+		"session.get":    bind(func(p slugP) (any, error) { return d.snapshot(p.Slug) }),
+		"session.cancel": bind(d.hCancel),
+		"session.open":   bind(d.hOpen),
+		"session.adopt":  bind(d.hAdopt),
+		"session.keys": bind(func(p keysP) (any, error) {
+			if win(p.Window) == engine.WinAgent {
+				d.noteTyped(p.Slug)
+			}
+			return d.hKeys(p)
+		}),
 		"session.answer":  bind(d.hAnswer),
 		"session.screen":  bind(d.hScreen),
 		"session.resize":  bind(d.hResize),
@@ -619,21 +632,27 @@ func (d *Daemon) registerHandlers() {
 		"tapi.restart":          bind(d.hTapiRestart),
 		"tapi.reset":            bind(d.hTapiReset),
 		"tapi.screen":           bind(d.hTapiScreen),
-		"tapi.send":             bind(d.hTapiSend),
-		"tapi.keys":             bind(d.hTapiKeys),
+		"tapi.send":             bind(func(p tapiSendP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiSend(p) }),
+		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h
 	}
 	d.callerHandlers = map[string]func(*Caller, json.RawMessage) (any, error){
-		"session.new":   bindAs(d.hNewAs),
-		"session.send":  bindAs(d.hSendAs),
-		"session.event": bindAs(d.hEventAs),
-		"report.post":   bindAs(d.hReportPost),
-		"report.list":   bindAs(d.hReportList),
-		"wait":          bindAs(d.hWait),
-		"send.log":      bindAs(d.hSendLog),
+		"session.new":    bindAs(d.hNewAs),
+		"session.send":   bindAs(d.hSendAs),
+		"session.event":  bindAs(d.hEventAs),
+		"report.post":    bindAs(d.hReportPost),
+		"report.list":    bindAs(d.hReportList),
+		"wait":           bindAs(d.hWait),
+		"send.log":       bindAs(d.hSendLog),
+		"inbox.post":     bindAs(d.hInboxPost),
+		"inbox.list":     bindAs(d.hInboxList),
+		"inbox.get":      bindAs(d.hInboxGet),
+		"inbox.withdraw": bindAs(d.hInboxWithdraw),
+		"inbox.answer":   bindAs(d.hInboxAnswer),
+		"inbox.dismiss":  bindAs(d.hInboxDismiss),
 	}
 	for k, h := range d.callerHandlers {
 		h := h

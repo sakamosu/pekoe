@@ -222,6 +222,9 @@ func (d *Daemon) tickLoop() {
 		if n%10 == 3 {
 			d.kickConflicts() // conflict forecast: git every ~10 s
 		}
+		if n%5 == 4 {
+			go d.deliverAllInbox() // answers held back by a prompt or a person typing
+		}
 	}
 }
 

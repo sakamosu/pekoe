@@ -60,6 +60,12 @@ var agentMethods = map[string]string{
 	"report.list": "the hub agent reads the reports: summaries the agents wrote, as public as session.list",
 	"wait":        "the hub agent waits for its sessions (`pekoe wait`): one-line summaries of what session.list and the session events show; 8 waits per caller, an hour at most",
 	"send.log":    "the hub agent reads back what it asked for; without the token only records the caller sent or received",
+	// the inbox: asking a person is a record; nothing runs and the answer
+	// is a person's (inbox.answer / inbox.dismiss are human only)
+	"inbox.post":     "an agent asks a person (`pekoe ask-human`); unknown callers refused, 10 open items per caller, sizes capped, control characters dropped; facts are read by pekoed, not written by the agent",
+	"inbox.list":     "the hub agent reads what is waiting for a person and the answers given (precedent): the agents' questions, pekoed's facts and the person's answers to agents",
+	"inbox.get":      "one inbox item (`ask-human --wait` reads its answer)",
+	"inbox.withdraw": "an agent takes back its own question; only the caller's own items",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -83,6 +89,8 @@ var humanMethods = map[string]string{
 	"error.send":            "sends an error (with a source excerpt) to an agent",
 	"error.ignore":          "a person's choice",
 	"browser.send_errors":   "sends browser errors to an agent",
+	"inbox.answer":          "a person's decision: an agent answering would empty the inbox of meaning",
+	"inbox.dismiss":         "a person's decision (closing a question unanswered)",
 	// runs something outside the agent's sandbox
 	"init.write":      "repo config: setup / dev commands run outside the agent",
 	"run.start":       "runs a command in the worktree",

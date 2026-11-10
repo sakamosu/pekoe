@@ -32,7 +32,7 @@ const (
 	kindPR      = "pr"
 	kindLanded  = "landed"
 	kindRemoved = "removed"
-	kindInbox   = "inbox" // the inbox (next stage): accepted, not produced yet
+	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
 var waitKinds = map[string]bool{kindReport: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindLanded: true, kindRemoved: true, kindInbox: true}
@@ -52,6 +52,8 @@ type Change struct {
 	At      time.Time `json:"at"`
 	Summary string    `json:"summary"` // one line
 	parent  string    // the session's parent then (mine)
+	to      string    // inbox: the asker, the only caller it goes to
+	inbox   int64     // inbox: the item
 }
 
 type changeLog struct {
@@ -62,12 +64,16 @@ type changeLog struct {
 	wake     chan struct{} // closed and replaced on every change
 	waiting  map[string]int
 	promptAt map[string]time.Time // slug -> last UserPromptSubmit (done without a report)
+	waiters  map[*waiter]bool     // waits blocked now (addSeen)
 }
+
+// waiter is one wait blocked in hWait, with what it takes.
+type waiter struct{ match func(Change) bool }
 
 func newChangeLog() *changeLog {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
-	return &changeLog{epoch: hex.EncodeToString(b), wake: make(chan struct{}), waiting: map[string]int{}, promptAt: map[string]time.Time{}}
+	return &changeLog{epoch: hex.EncodeToString(b), wake: make(chan struct{}), waiting: map[string]int{}, promptAt: map[string]time.Time{}, waiters: map[*waiter]bool{}}
 }
 
 func (l *changeLog) cursorLocked() string { return fmt.Sprintf("%s-%d", l.epoch, l.seq) }
@@ -75,6 +81,27 @@ func (l *changeLog) cursorLocked() string { return fmt.Sprintf("%s-%d", l.epoch,
 func (l *changeLog) add(c Change) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.addLocked(c)
+}
+
+// addSeen adds c and reports whether a wait blocked now takes it (it
+// returns c, as one step with the check: a wait leaves waiters under the
+// same lock as it decides what to return).
+func (l *changeLog) addSeen(c Change) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	seen := false
+	for w := range l.waiters {
+		if w.match(c) {
+			seen = true
+			break
+		}
+	}
+	l.addLocked(c)
+	return seen
+}
+
+func (l *changeLog) addLocked(c Change) {
 	l.seq++
 	c.Seq = l.seq
 	if c.At.IsZero() {
@@ -159,6 +186,9 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 				sum += ": " + lineCut(s.Error, 120)
 			}
 			d.changes.add(Change{Kind: kind, Slug: s.Slug, Summary: sum, parent: s.Parent})
+		}
+		if s.State == state.Idle || s.State == state.Done {
+			go d.deliverInbox(s.Slug) // its input box is free: an answer waiting for it goes now
 		}
 	}
 	if s.PRStatus != nil {
@@ -245,7 +275,13 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 		on[k] = true
 	}
 	match := func(c Change) bool {
-		return (len(on) == 0 || on[c.Kind]) && (len(slugs) == 0 || slugs[c.Slug]) && (!p.Mine || c.parent == id)
+		if len(on) > 0 && !on[c.Kind] || len(slugs) > 0 && !slugs[c.Slug] {
+			return false
+		}
+		if c.Kind == kindInbox {
+			return c.to == id // an answer goes only to the one who asked
+		}
+		return !p.Mine || c.parent == id
 	}
 
 	l := d.changes
@@ -281,10 +317,16 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 			l.mu.Unlock()
 		}()
 	}
+	// blocked from here on: addSeen counts this wait as the receiver of
+	// what it matches until it leaves waiters, under the same lock as it
+	// takes its result
+	w := &waiter{match: match}
+	l.waiters[w] = true
 	l.mu.Unlock()
 
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
+	timedOut := false
 	for {
 		l.mu.Lock()
 		got := []Change{}
@@ -294,8 +336,11 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 			}
 		}
 		res := &waitResult{Cursor: l.cursorLocked(), Epoch: l.epoch, Changes: got}
-		if len(got) > 0 {
+		if len(got) > 0 || timedOut {
+			delete(l.waiters, w)
 			l.mu.Unlock()
+			res.TimedOut = len(got) == 0
+			d.inboxWaited(got)
 			return res, nil
 		}
 		after = l.seq // nothing that matched so far: only newer ones count
@@ -304,12 +349,19 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 		select {
 		case <-wake:
 		case <-deadline.C:
-			res.TimedOut = true
-			return res, nil
+			timedOut = true // look once more, then give up
 		case <-who.done:
+			l.leave(w)
 			return nil, errors.New("wait: connection closed")
 		case <-d.stop:
+			l.leave(w)
 			return nil, errors.New("wait: pekoed is stopping")
 		}
 	}
+}
+
+func (l *changeLog) leave(w *waiter) {
+	l.mu.Lock()
+	delete(l.waiters, w)
+	l.mu.Unlock()
 }
