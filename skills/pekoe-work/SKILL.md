@@ -35,9 +35,10 @@ description: pekoe の作業セッション(pekoe new で作られた linked wor
 
 自分の差分を自分の文脈で読み直すだけではレビューにならない。作者でないエージェントに読ませる:
 
+- 頼む前に、レビューを始めた印を残す: `pekoe report "独立レビューを頼んだ" --status review --verdict pending --reviewed-sha <sha>`。ダッシュボードの工程表はこれで review を「進行中」にする(印がないと、待っている間も impl のまま・ターンを終えると done に見える)。pending は合格ではない(マージの根拠にならない)
 - サブエージェント(Agent ツール)を立て、pekoe-review スキルに従ってレビューさせる。渡すのは、この作業の目的と完了条件、base のブランチ、レビューする HEAD の SHA(`git rev-parse HEAD`)。自分の結論(「ここは大丈夫」など)は渡さない
-- 不合格なら指摘を直し、コミットし直して、新しい SHA でもう一度レビューさせる
-- 合否はレビュアーが `pekoe report --status review --verdict pass|fail --reviewed-sha <sha>` で残す(サブエージェントはこのセッションの窓の中で動くので、報告はこのセッションに付く)。land するのは合格の後
+- 不合格なら指摘を直し、コミットし直して、新しい SHA で印を残し直してから、もう一度レビューさせる
+- 合否はレビュアーが `pekoe report --status review --verdict pass|fail --reviewed-sha <sha>` で残す(サブエージェントはこのセッションの窓の中で動くので、報告はこのセッションに付く)。land するのは合格の後。land の rebase で SHA が変わっても、差分の中身が同じなら pekoed が合格を引き継ぐ(中身が変わったら再レビュー)
 - プロンプトに「独立レビューは別のセッションでやる」とあれば、サブエージェントは立てずに land まで進め、報告にそう書く
 
 ## 報告(pekoe report)

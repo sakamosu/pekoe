@@ -177,6 +177,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   ],
   "parent": "+tapi",               // session.new の呼び出し元(上の「呼び出し元の識別」): +tapi | <slug> | human | unknown。session.new 以外で作ったもの(open・adopt・review.pr)は空
   "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"}, // 最新の報告(summary は 1 行目、200 文字まで)
+  "review": {"id": 15, "verdict": "pending", "reviewed_sha": "3f2a…", "at": "…"}, // 最新の status: review の報告(pending = レビュー中・pass・fail)。後に別の報告が来ても残る。無ければ省略
   "request": 4,                    // 結んだ台帳の依頼(pekoe new --request、ledger.link)。無ければ省略
   "after": ["feat-api"]            // このセッションが後に来るセッションの slug(session.new の after)。記録と表示だけで、起動は止めない
 }
@@ -210,7 +211,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `session.kill` | `{slug}` | セッション終了(worktree は残す) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
 | `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `session`(`$PEKOE_SESSION`)と `payload.cwd` |
-| `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |
+| `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pending"\|"pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |
 | `report.list` | `{slug?, since?: id, limit?: 20}` | `[Report]`(新しい順。`limit` は 200 まで) |
 | `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
 | `send.log` | `{to?, from?, since?: id, limit?: 100}` | `[SendRecord]`(新しい順。下の「送信の記録」) |
@@ -296,7 +297,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "status": "done", "summary": "…",
   "evidence": ["https://github.com/me/app/pull/42", "/tmp/shot.png"],
   "head": "3f2a…", "dirty": false,                 // 報告を受けた時点の worktree の HEAD と未コミットの変更の有無(pekoed が読む)
-  "verdict": "pass", "reviewed_sha": "3f2a…",      // status = review のときだけ(verdict は必須)
+  "verdict": "pass", "reviewed_sha": "3f2a…",      // status = review のときだけ(verdict は必須)。pending は「独立レビューを頼んだ・レビュー中」の印(作者が頼むときに残す)、pass / fail はレビュアーの合否
   "at": "…"
 }
 ```
@@ -305,6 +306,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 - 証拠のファイルは読まない(読めば、エージェントが pekoed に任意のファイルを読ませられる)。パスと URL を文字列として残すだけ
 - 上限: summary 4000 文字、evidence 20 件・各 500 文字(超えたら断る)。summary は改行とタブ以外の制御文字を、evidence はすべての制御文字を落とす
 - state.db の `reports` の表に残る
+- `status: review` の報告は `Session.review` にも入る(その後の done・progress の報告では消えない)。ダッシュボードの工程表と Web UI の概要は、これで review の段を決める(pending は進行中、pass は済み、fail は失敗)。要約の文は解析しない
 
 ### 待ち合わせ(wait)
 
@@ -401,7 +403,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 | 条件(`name`) | 揃っている |
 | --- | --- |
 | `land` | `pekoe land` が PR を作った(`landing`)、PR が `OPEN` |
-| `review` | 最新の `status: review` の報告が `verdict: pass` で、その `reviewed_sha` が PR の HEAD(`pr_status.head_sha`)と同じ(短い SHA は前方一致) |
+| `review` | 最新の `status: review` の報告が `verdict: pass` で(`pending` は揃わない)、その `reviewed_sha` が PR の HEAD(`pr_status.head_sha`)と同じ(短い SHA は前方一致)か、PR の HEAD と差分の中身が同じ(下) |
 | `ci` | PR の HEAD のチェックが 1 件以上あり、失敗も実行中もない |
 | `merge_state` | `pr_status.merge_state` が `CLEAN` |
 | `conflicts` | 衝突予報(`overlaps`)に `conflict` がない(自動で合わさる重なりはよい) |
@@ -421,11 +423,13 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
     {"name": "after", "ok": false, "detail": "feat-a が running"}
   ],
   "missing": ["review", "after"],     // 揃っていない条件の name(conds の順)
+  "review_stale": false,              // 最新のレビューは pass だが、PR の HEAD がレビューしたものと中身の違う変更になっている(再レビューが要る)。無ければ省く
   "inbox": 0                          // 開いている根拠の項目の id(merge.check だけ。無ければ省く)
 }
 ```
 
 - **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は「独立レビューの報告がない」のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
+- **rebase の後の合格の引き継ぎ**: `pekoe land` は `origin/<base>` に rebase してから push するので、レビューした後に land すると PR の HEAD の SHA が変わる。`reviewed_sha` と PR の HEAD が違うとき、pekoed はそれぞれの base(`origin/<base>`、無ければ `<base>`)との merge-base からの差分を比べ、同じなら合格を引き継ぐ(`detail` は「… は rebase し直しただけで差分の中身が同じ」)。比べるのは差分のテキストそのもの(空白・前後の文脈の行も含む)で、外すのは rebase だけで動くもの(`index` の行の blob id と、hunk の見出しの行番号・関数名)だけ。中身が 1 バイトでも違えば揃わず、`review_stale: true` で「再レビューが要る」と出る。PR の HEAD がこの worktree に無い(よそから push された)など比べられないときも揃わない(安全側)。結果はコミットの組ごとに覚える。引き継ぐのは「レビューした変更と同じ変更」であることまでで、新しい base との組み合わせは CI が確かめる
 - `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(日本語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
 - 項目: `options` は `["マージした", "待つ", "差し戻す"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
@@ -691,7 +695,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], at}` |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤りは 400 |
 | `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と台帳の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
-| `GET /api/overview` | — | 件数と、セッションごとの工程(`実装 → PR → CI → レビュー → マージ`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
+| `GET /api/overview` | — | 件数と、セッションごとの工程(`実装 → レビュー → PR → CI → マージ`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
 
