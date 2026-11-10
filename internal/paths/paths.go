@@ -128,6 +128,11 @@ func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 // chat agent (docs/tapi-chat.md). Not $HOME: hooks are matched to it by cwd.
 func TapiDir() string { return filepath.Join(DataDir(), "tapi") }
 
+// SkillsDir holds the copies of the Claude Code skills built into the
+// binary (internal/skills); `pekoe skills install` links them from
+// ~/.claude/skills.
+func SkillsDir() string { return filepath.Join(DataDir(), "skills") }
+
 // LockFile is held (flock) by the one pekoed serving this data directory.
 func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 

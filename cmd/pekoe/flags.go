@@ -163,6 +163,7 @@ var specs = map[string]spec{
 	"answer":    {use: "pekoe answer <slug> allow|deny|always"},
 	"attach":    {use: "pekoe attach <slug> [agent|review|dev]"},
 	"hooks":     {use: "pekoe hooks install|uninstall|status [--yes]", bools: []string{"yes"}},
+	"skills":    {use: "pekoe skills install|uninstall|status [--yes] [--json]   link pekoe's Claude Code skills from ~/.claude/skills", bools: []string{"yes"}},
 	"ext":       {use: "pekoe ext   port + token for the Chrome extension"},
 	"mcp":       {use: "pekoe mcp   MCP server for agents (stdio)"},
 	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},

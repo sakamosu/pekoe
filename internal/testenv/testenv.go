@@ -29,6 +29,8 @@ func Main(m *testing.M) {
 		"PEKOE_SOCK":        filepath.Join(dir, "s"),
 		"PEKOE_TMUX_SOCKET": "pekoe-test-" + filepath.Base(dir),
 		"PEKOE_WORKTREES":   filepath.Join(dir, "wt"),
+		// hooks and skills install into ~/.claude unless this is set
+		"CLAUDE_CONFIG_DIR": filepath.Join(dir, "claude"),
 	} {
 		os.Setenv(k, v)
 	}
