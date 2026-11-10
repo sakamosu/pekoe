@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)を実装済み。段階 3 の残りから先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓を実装済み。段階 3 の残り(Web UI・tapi への配送)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -440,6 +440,17 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 - PR の集計(月別・リポジトリ別のマージ数。gh で取ってキャッシュ)とプロジェクトのボードは後回し
 
+実装(`internal/tui/dashboard.go`):
+
+- **開き方**: U4 は (a)。新しいキーは足さず、Sessions で tapi の行を選ぶと [4] がダッシュボードになる(前の「↵ open tapi chat」の空き表示と、そこに出ていた顔と TIPS の代わり。顔は 1 か所の決まりのまま、ダッシュボードには顔を出さない)。tapi chat は今どおり Sessions の `↵` か `t`。ほかのセッションの行では今の窓のまま
+- **キー**: `4`(か `tab`・クリック)で入り、`j` `k` で選べる行(受信箱の項目・工程表のセッション・依頼・送信の記録・fyi)を動く。`↵` は受信箱の項目なら今の答えるモーダル(`inbox.go`)を開き、ほかの行は畳んだ中身を開く(工程表は `merge.check` の条件ごとの `detail` と最新の報告、依頼は全文と結んだセッションの工程、送信の記録は全文とエラー、fyi は問い・背景・リンク)。`o` は受信箱と fyi の項目のリンク(PR、なければ最初の http(s) のリンク)を開く。`h` / `esc` で Sessions へ。ホイールで選び、クリックで行を選ぶ
+- **読むもの**: セッションは TUI が持っている一覧(`subscribe` で動く)、受信箱は TUI が持っている未回答の項目。ほかは表示している間だけ `ledger.list`(open)・`send.log`(新しい 30 件)・`inbox.list`(`answered` のうち `fyi` の 10 件)・`merge.check` を読む。tapi の行を選んだときにすぐ、その後は 10 秒ごと、`ledger.updated` / `ledger.removed` / `inbox.updated` が来たら 2 秒後。古い pekoed で無いメソッドはその区画が空になるだけ
+- **概要**: running(作成中を含む)・waiting・to merge(`landing` で landed でない)・開いている PR・受信箱の未回答(`fyi` を除く)・台帳の open。他人の PR のレビューのセッション(`pr_review`)は数えず、工程表にも出さない。幅が足りなければ折り返す
+- **受信箱**: login → approve → decide → merge ready(`from: pekoed` の approve。根拠の項目)の順に種類ごとにまとめ、各項目は `#id`・誰から(`about` が違えばそれも)・問いの 1 行・経過時間
+- **工程表**: 依頼元(`+tapi` → `human` → セッション → その他)と依頼(`request` の順、なしは最後。台帳にあれば依頼の 1 行を見出しに)でまとめ、セッションごとに `impl ✓ › PR ✓ › CI ✗ › review · › merge ·`。幅が足りなければ記号だけ(`✓ ✓ ✗ · ·`)。印は ✓ 済み・✗ 失敗・PR ビューの check の pending と同じ印で進行中・`·` まだ・▶ マージしてよい(どれもアイコンの組 nerd / unicode / ascii に合わせる)(`merge.check` の `ready`)。impl は PR があるか報告が done / review で済み、報告が blocked か failed で失敗。CI は `pr_status` の pass / fail / pending。review は `merge.check` の `review` の条件(GitHub の changes requested は失敗)。merge は landed か PR が MERGED で済み。PR のあるセッションは後ろに `#42` と、足りない条件の `name`(`needs review, ci`)と開いている根拠の項目(`inbox #13`)を出す(記号の行より先に入れる)
+- **送信の記録・fyi**: 新しい順に 1 行(時刻・`from → to`・`kind`・本文の 1 行。送れなかったものは `failed`)。fyi は `→` の後に決めた選択肢を出す。区画の名前は `Decided`(tapi に限らず、`fyi` を出したエージェントの分を全部出す)
+- **エージェントの文**: 問い・依頼・送信の本文・報告の要約・選択肢・`detail` は受信箱のモーダルと同じ `inboxText`(ANSI・制御文字・見えない書式文字を落とす)を通してテキストとしてだけ描く。リンクは OSC 8 にするのが http / https だけ(`webLink`)
+
 ### Web UI
 
 段階 3 で「受信箱」と「概要・工程表(読むだけ)」の 2 画面を足す。受信箱に答えるときは確認シートを挟み、facts・リンク・エージェントの文を TUI と同じ順に並べる。
@@ -510,7 +521,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 中身:
 
-- TUI のダッシュボードの窓
+- TUI のダッシュボードの窓(実装済み。上の「ダッシュボード」→「TUI」の「実装:」)
 - Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)
 - **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目「#42 をマージしてよい根拠が揃いました」を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは「マージした」「待つ」「差し戻す(メモ)」で、差し戻しはメモをセッションに送る
 - tapi への配送(`[orchestrator] deliver`)
@@ -547,7 +558,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | U1 | 呼び出し元の識別 | (a) ソケットの相手の pid → tmux のペイン (b) `$PEKOE_SESSION` と cwd の自己申告(hooks と同じ) (c) セッションごとのトークンを環境変数で渡す | (a)。sandbox の中のエージェントは tmux につなげないので、別のペインに化けられない。(c) は環境変数が子プロセスと `ps` から漏れうるうえ、tapi の sandbox の設定も増える。(b) は表示の補助として残す |
 | U2 | 台帳の記録の仕方 | (a) tapi への人の入力をすべて自動で記録し、tapi が雑談を `--as chat` で閉じる (b) tapi が依頼と判断したときだけ `pekoe ledger add` | (a)。モデルが記録を忘れても取りこぼさないのが台帳の目的。閉じ忘れは「open のまま」として人に見える |
 | U3 | 独立レビューの担い手 | (a) 作業セッションの中のサブエージェント (b) 別のセッション(`pekoe new review/<slug> --base <branch>`) (c) `[review] gatekeeper` を広げる | v1 は (a) をスキルで回し、危ない変更(認証・課金・データの移行)だけ (b)。(a) は呼び出し元が作者と同じになるので、facts に「作者のセッションの中のレビュー」と出す。(c) は pekoed がモデルを動かすことになり、非目標の線に触れるので見送る |
-| U4 | ダッシュボードを開くキー | (a) tapi の行を選んだときの既定の表示だけ (b) 新しいキー(`g` は一覧の先頭への移動で使用中。`B`・`O` などの空き) | (a) で始める。tapi の行は先頭にあるので、Sessions の `g`(先頭へ)で行ける。足りなければ (b) |
+| U4 | ダッシュボードを開くキー | (a) tapi の行を選んだときの既定の表示だけ (b) 新しいキー(`g` は一覧の先頭への移動で使用中。`B`・`O` などの空き) | (a) に決めた(利用者の判断)。tapi の行は先頭にあるので、Sessions の `g`(先頭へ)で行ける。足りなければ (b) |
 | U5 | tapi のキャラクター | (a) 顔とタイトルを残し、返事は今の「キャラは 1 文だけ」の規則 (b) 統括役では口調を抑える | (a)(下書きのおすすめどおり) |
 | U6 | `issues.list` をトークンなしにするか | (a) 開かない(tapi は自分の sandbox の gh で読む) (b) 番号・タイトル・ラベルだけを返す形で開く(本文は人だけのまま) | (b)。gh の資格情報はエージェントに渡らず、タイトルは信頼できないデータとして区切りで囲む。本文はインジェクションの入口になりやすいので開かない |
 | U7 | tapi への自動配送の既定 | (a) 切る (b) idle のときだけ送る | (a)(下書きとハブの所見のとおり) |

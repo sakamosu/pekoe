@@ -158,7 +158,7 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 - 選択位置 `m.sel` はセッションの添字のままにし、tapi の行は `-1`(`tapiSel`)で表す。`current()` は nil になるので、セッション向けのキー(`/` `x` `D` `l` `r` `p` `d` `!` `v` など)は効かない。ボトムバーは `↵ open tapi` `T reset tapi`、`?` は tapi の行のキーだけを出す
 - `/` の絞り込み中も残る(絞り込みの対象外)
 - `]a` は tapi の許可待ち・質問待ちも巡回に含める。pekoed の `attention.next` はセッションしか知らないので、TUI が tapi の待ち始めと比べ、待ちの長いほうへ飛ぶ。飛んだ先は tapi の行(↵ で開く)で、`[a` で元に戻る
-- 選んでいる間の [4] は今は空き表示(`↵ open tapi chat`)。ダッシュボードに差し替えるのは段階 3
+- 選んでいる間の [4] はダッシュボード(README「tapi chat」、[orchestration.md](orchestration.md)「ダッシュボード」→「TUI」)。顔は出さない(顔は 1 か所)。tapi chat は `↵` か `t` で開く
 
 ### 気づかせ方
 
