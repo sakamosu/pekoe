@@ -98,6 +98,7 @@ See [Status and requirements](#status-and-requirements) for what you need. From 
 make install            # ~/.local/bin/pekoe (+ pekoed); links nvim/ and extension/ into ~/.local/share/pekoe
 make install WEB=1      # also build in the iPhone Web UI (-tags web, links Tailscale's tsnet)
 pekoe hooks install     # add hooks to ~/.claude/settings.json (asks first, keeps a backup)
+pekoe skills install    # optional: link pekoe's skills from ~/.claude/skills (asks first)
 make install-launchd    # optional: start pekoed at login
 ```
 
@@ -187,6 +188,7 @@ pekoe                                                 # TUI
 | `pekoe answer <slug> allow\|deny\|always` | Answer a permission prompt |
 | `pekoe attach <slug> [agent\|review\|dev]` | Attach to the tmux window directly (for debugging) |
 | `pekoe hooks install\|uninstall\|status [--yes]` | Add / remove / check the Claude Code hooks |
+| `pekoe skills install\|uninstall\|status [--yes]` | Link / unlink / check pekoe's Claude Code skills in `~/.claude/skills` ([Claude Code skills](#claude-code-skills)) |
 | `pekoe ext` | The port and token for the Chrome extension |
 | `pekoe web` | Web UI status, URL and first-time login URL |
 | `pekoe mcp` | MCP server (stdio) for agents |
@@ -304,9 +306,24 @@ Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats un
 
 Register with `claude mcp add pekoe -- pekoe mcp`. The tools are `open_in_editor(path, line, note?)` (nvim jumps to the line and shows the note) and `session_list()`.
 
-### Claude Code skill
+### Claude Code skills
 
-[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md). A skill that makes the Claude Code running in your main checkout a hub: it hands change requests to another worktree and agent with `pekoe new`, and sends follow-up instructions from main with `pekoe send`. Install it from the repository root with `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` (move or delete `~/.claude/skills/pekoe` first if it exists).
+The four in [skills/](skills/). Each works both in tapi chat and for the agent in a main checkout ([docs/orchestration.md](docs/orchestration.md)). They are written in Japanese.
+
+| Skill | Used by | What it covers |
+| --- | --- | --- |
+| [pekoe](skills/pekoe/SKILL.md) | main, tapi | hand change requests to another worktree and agent with `pekoe new`, and send follow-up instructions from main with `pekoe send` (the hub's basics) |
+| [pekoe-orchestrate](skills/pekoe-orchestrate/SKILL.md) | tapi, a hub | how to split requests, a prompt template, waiting with `pekoe wait`, what to bring to a person, how to report to them |
+| [pekoe-work](skills/pekoe-work/SKILL.md) | a work session | plan → implement → test → independent review → `pekoe land` → `pekoe report` |
+| [pekoe-review](skills/pekoe-review/SKILL.md) | an independent reviewer | an agent that is not the author reads the diff and records pass / fail with the commit SHA (`pekoe report --status review`) |
+
+Install them with `pekoe skills install`. Their text is built into the binary: it is written to the data directory (`~/.local/share/pekoe/skills/`) and linked from `~/.claude/skills/<name>` (`$CLAUDE_CONFIG_DIR/skills/<name>` if set). It shows what it will do and asks first (`--yes` skips the question). Work sessions run in worktrees of any repository, so the skills belong in your own `~/.claude/skills`, where every session reads them.
+
+- The text is that of the installed pekoe, not of a repository checkout. A newer pekoe (`pekoe update`, `make install`) writes it out again when pekoed starts; `pekoe skills install` does it right away
+- A link you made by hand (`ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe`) is replaced only after asking (only the link changes; what it pointed at is left alone). A link to the same place is left as it is. A directory or file that is not a link is skipped untouched, with a note to move it away and run again (not inside `~/.claude/skills`: Claude Code reads everything there as a skill)
+- `pekoe skills status` shows each one's state (installed, older text, a link to somewhere else, a directory in the way, not installed); `pekoe skills uninstall` removes pekoe's links and the written text (links made by hand stay)
+- To try changes to the skills themselves, link them by hand (`ln -s "$PWD/skills/<name>" ~/.claude/skills/<name>`); `pekoe skills install` asks before replacing such a link
+- Claude Code agents cannot rewrite the written text with the Edit tool (pekoe's sandbox settings deny it; below)
 
 ### Letting agents use pekoe: permissions
 
@@ -317,7 +334,7 @@ But an agent running as the same user can read files. Two things keep the token 
 1. **Claude Code agents run in a Claude Code sandbox that pekoe configures (on by default).** Every time pekoe starts Claude Code (new sessions, `open`, restarts, resuming after a daemon restart, and tapi chat; any `[agents.*]` whose `command` starts with `claude`), it adds `--settings <data dir>/agent-settings/<slug>.json`. The paths in it are the real ones, following `$PEKOE_HOME`, `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME` and `[web] state_dir`:
    - `sandbox.enabled: true`, `allowUnsandboxedCommands: false` (no retry with `dangerouslyDisableSandbox`), `failIfUnavailable: true` (Claude Code doesn't start without a working sandbox), `filesystem.disabled: false`
    - `filesystem.denyRead`: `human-token`, `http-token`, `state.db` (with `-wal` and `-shm`: it holds prompts, review comments, reports and the send log, which agents read only through pekoed's API), the tsnet state and pekoe's config directory (`~/.config/pekoe`). Enforced at the OS level for Bash commands and their children
-   - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself
+   - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself and the written skills' text (`skills/`)
    - `filesystem.denyWrite` and `Edit(...)`: the repository's `.git/config`, `.git/config.worktree` and `.git/hooks` (agents can still commit, but can't change settings the git you run yourself follows)
    - `network.allowUnixSockets`: pekoed's socket (for `pekoe ls`, `new` and `send`). Hooks run outside the sandbox, so `pekoe event` isn't affected anyway
 
@@ -351,7 +368,7 @@ But an agent running as the same user can read files. Two things keep the token 
 
    After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the skill) uses `ls`, `new`, `send`, `wait` and `reports`, and a working session uses `report`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait` and `reports`, and a working session (the pekoe-work and pekoe-review skills) uses `report`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
 
    ```json
    {
