@@ -140,8 +140,10 @@ func ghError(err error, out []byte) string {
 func runGH(dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c := exec.CommandContext(ctx, "gh", args...)
-	c.Dir = dir
+	c, err := ghCommand(ctx, dir, args...)
+	if err != nil {
+		return nil, err
+	}
 	return c.Output()
 }
 

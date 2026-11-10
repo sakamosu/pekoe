@@ -86,6 +86,9 @@ func (d *Daemon) forget(slug string) {
 	d.saveMu.Lock()
 	defer d.saveMu.Unlock()
 	d.mu.Lock()
+	if s := d.sessions[slug]; s != nil && !d.pathUsedLocked(s.Path, slug) {
+		gitx.Unpin(s.Path)
+	}
 	delete(d.sessions, slug)
 	delete(d.out, slug)
 	delete(d.progress, slug)
@@ -146,7 +149,19 @@ func (d *Daemon) setState(slug string, st state.State, waitKind string) {
 	})
 }
 
+// pathUsedLocked: another session than slug has its worktree at path.
+func (d *Daemon) pathUsedLocked(path, slug string) bool {
+	for sl, s := range d.sessions {
+		if sl != slug && s.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Daemon) add(s *state.Session) {
+	// before anything runs git in it: its .git file is the agent's to write
+	gitx.Pin(s.Path, s.RepoDir)
 	d.mu.Lock()
 	d.sessions[s.Slug] = s
 	if d.out[s.Slug] == nil {
@@ -586,8 +601,10 @@ func (d *Daemon) shell(ctx context.Context, dir string, env []string, cmdline st
 }
 
 func issuePrompt(dir, n string) (string, error) {
-	c := exec.Command("gh", "issue", "view", n, "--json", "title,body,number")
-	c.Dir = dir
+	c, err := ghCommand(context.Background(), dir, "issue", "view", n, "--json", "title,body,number")
+	if err != nil {
+		return "", err
+	}
 	out, err := c.Output()
 	if err != nil {
 		return "", err
@@ -1562,6 +1579,7 @@ func (d *Daemon) restore() {
 	for _, s := range list {
 		d.sessions[s.Slug] = s
 		d.out[s.Slug] = &outState{}
+		gitx.Pin(s.Path, s.RepoDir)
 	}
 	d.mu.Unlock()
 	// before anything reads per-repo config or files by repo-id
@@ -1584,6 +1602,10 @@ func (d *Daemon) restore() {
 				x.Error = worktreeMissing + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
 			})
 			continue
+		}
+		// its .git may have been changed while pekoed was away
+		if c, err := d.snapshot(s.Slug); err == nil {
+			d.checkGitDir(c)
 		}
 		// A session whose creation failed (setup hook, a worktree that was
 		// not ours) never got its agent: starting one now would run it in a

@@ -21,6 +21,7 @@ import (
 	"pekoe/internal/config"
 	"pekoe/internal/engine"
 	"pekoe/internal/errcatch"
+	"pekoe/internal/gitx"
 	"pekoe/internal/paths"
 	"pekoe/internal/sandbox"
 	"pekoe/internal/state"
@@ -141,11 +142,11 @@ func (c *conn) wants(ev string) bool {
 }
 
 type Daemon struct {
-	DB      *state.DB
-	Eng     engine.Engine
-	Global  *config.Global
+	DB     *state.DB
+	Eng    engine.Engine
+	Global *config.Global
 	// sbx wraps the commands that come from a worktree (internal/sandbox)
-	sbx *sandbox.Sandbox
+	sbx     *sandbox.Sandbox
 	ln      net.Listener
 	lock    *os.File // flock on pekoed.lock, held for the daemon's lifetime (lock.go)
 	sockID  fileID   // the socket file this daemon created
@@ -261,8 +262,13 @@ func (d *Daemon) Run() error {
 	if err := d.Eng.Start(); err != nil {
 		return fmt.Errorf("terminal engine: %w", err)
 	}
+	// every git pekoed runs, too: the repository's config and attributes
+	// (and a repository an agent made and passed to pekoe new --repo) can
+	// make git run commands (gitx/guard.go)
+	gitx.SetSandbox(d.sbx.Wrap)
+	defer gitx.SetSandbox(nil)
 	if !d.sbx.Enabled {
-		log.Printf("sandbox: off ([sandbox] enable = false): hooks and the gatekeeper run the worktree's code without one")
+		log.Printf("sandbox: off ([sandbox] enable = false): hooks, the gatekeeper and git run the worktree's code without one")
 	} else if err := d.sbx.Check(); err != nil {
 		log.Printf("sandbox: %v", err)
 	} else {

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/gitx"
 	"pekoe/internal/state"
 )
 
@@ -341,10 +342,28 @@ func ghAvailable() bool {
 	return err == nil
 }
 
-// gh runs the GitHub CLI in dir; the error carries gh's stderr.
-func gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
+// ghCommand is the GitHub CLI in dir. gh runs git there itself (to find the
+// repository, and git status for pr create), and the worktree's git config
+// is the agent's: it gets the environment pekoed's own git runs with
+// (gitx.Env: the pinned git directory, no fsmonitor, no hooks, …). A
+// worktree whose .git was changed is an error.
+func ghCommand(ctx context.Context, dir string, args ...string) (*exec.Cmd, error) {
+	env, err := gitx.Env(dir)
+	if err != nil {
+		return nil, fmt.Errorf("gh %s: %w", args[0], err)
+	}
 	c := exec.CommandContext(ctx, "gh", args...)
 	c.Dir = dir
+	c.Env = env
+	return c, nil
+}
+
+// gh runs the GitHub CLI in dir; the error carries gh's stderr.
+func gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	c, err := ghCommand(ctx, dir, args...)
+	if err != nil {
+		return nil, err
+	}
 	out, err := c.Output()
 	if err != nil {
 		msg := err.Error()
