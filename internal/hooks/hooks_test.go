@@ -81,3 +81,50 @@ func TestApplyKeepsSymlink(t *testing.T) {
 		t.Fatalf("tmp left behind: %v", left)
 	}
 }
+
+// A binary under a path with spaces is quoted in the command; install must
+// still recognize the hooks as its own (no duplicates, uninstall removes
+// them, Installed is true).
+func TestQuotedBinaryPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	bin := "/Users/me/My Tools/bin/pekoe"
+	for i := 0; i < 2; i++ {
+		path, before, after, _, err := Plan(bin, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Apply(path, before, after); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	if n := strings.Count(string(b), "event Stop"); n != 1 {
+		t.Fatalf("Stop hook installed %d times:\n%s", n, b)
+	}
+	if !Installed() {
+		t.Fatal("Installed() false after install")
+	}
+	path, before, after, _, _ := Plan(bin, true)
+	Apply(path, before, after)
+	b, _ = os.ReadFile(path)
+	if strings.Contains(string(b), "event Stop") {
+		t.Fatalf("uninstall left hooks: %s", b)
+	}
+}
+
+func TestIsOurs(t *testing.T) {
+	for c, want := range map[string]bool{
+		"pekoe event Stop":                          true,
+		"/usr/local/bin/pekoe event Stop":           true,
+		"'/Users/me/My Tools/bin/pekoe' event Stop": true,
+		`'/a/it'\''s/pekoe' event Stop`:             true,
+		"say done":                                  false,
+		"/bin/notpekoe event Stop":                  false,
+		"pekoe ls":                                  false,
+	} {
+		if got := isOurs(map[string]any{"command": c}); got != want {
+			t.Errorf("isOurs(%q) = %v, want %v", c, got, want)
+		}
+	}
+}
