@@ -333,3 +333,17 @@ func TestPreviewOpenReportsFailure(t *testing.T) {
 		t.Fatalf("o: %#v", msg)
 	}
 }
+
+// b (open the session's port) reports a browser that did not open, like o.
+func TestPortOpenReportsFailure(t *testing.T) {
+	m := previewModel(t, false)
+	t.Setenv("PATH", t.TempDir())
+	cmd := m.sessionAction("b", m.sessions[0])
+	if cmd == nil {
+		t.Fatal("b did nothing")
+	}
+	msg := cmd()
+	if _, ok := msg.(errMsg); !ok {
+		t.Fatalf("b: %#v", msg)
+	}
+}
