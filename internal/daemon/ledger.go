@@ -27,17 +27,23 @@ const (
 	ledgerNoteMax = 4000
 )
 
-// pekoedTyped: text pekoed itself typed into tapi's input box (an inbox
-// answer, "[pekoe inbox #12] …"), which comes back through
-// UserPromptSubmit and is no request of the person's.
-func pekoedTyped(prompt string) bool {
-	return strings.HasPrefix(strings.TrimSpace(prompt), "[pekoe")
+// notTyped: a prompt that reaches UserPromptSubmit without the person
+// typing it, so no request of theirs:
+//   - "[pekoe …": what pekoed itself typed into tapi's input box (an inbox
+//     answer, "[pekoe inbox #12] …")
+//   - "<task-notification>…": Claude Code telling the agent a background
+//     task (tapi's `pekoe wait`) finished, which it hands over as a new turn
+//
+// Only a prefix counts; the same words inside what a person typed stay.
+func notTyped(prompt string) bool {
+	p := strings.TrimSpace(prompt)
+	return strings.HasPrefix(p, "[pekoe") || strings.HasPrefix(p, "<task-notification>")
 }
 
 // recordRequest puts what the person typed into tapi into the ledger.
 func (d *Daemon) recordRequest(prompt string) {
 	text := cleanInbox(prompt, true)
-	if text == "" || pekoedTyped(text) {
+	if text == "" || notTyped(text) {
 		return
 	}
 	if r := []rune(text); len(r) > ledgerTextMax {

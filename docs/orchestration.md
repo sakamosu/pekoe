@@ -287,6 +287,7 @@ state.db: `sends(id INTEGER PRIMARY KEY, at, from_, to_, kind, text, via, ok, er
 人が tapi に頼んだことを、完了まで追う。会話が長くなっても、tapi をリセットしても残る。
 
 - 記録: tapi の UserPromptSubmit hook(pekoed は `tapiEvent` で受けている)で、人の入力を `open` で記録する。雑談やお礼も入るので、tapi が `pekoe ledger close <id> --as chat` で閉じる(未決事項 U2)
+- 記録しないもの: 空の入力、pekoed が tapi の入力欄に打った受信箱の答え(`[pekoe` で始まる)、Claude Code のバックグラウンドのタスクの完了通知(`<task-notification>` で始まる。tapi が `pekoe wait` をバックグラウンドで走らせると、終わるたびに新しいターンとして UserPromptSubmit に来る)。どれも前後の空白を除いた先頭で見るので、人が打った文の途中にあるだけなら記録する
 - 閉じ方: `pekoe ledger done <id> --evidence <PR の URL など> [--note …]`、`pekoe ledger drop <id> --note …`(やらないことにした)、`--as chat`(依頼ではなかった)
 - セッションと結ぶ: `pekoe new … --request <id>`(`Session.request` に入る)か `pekoe ledger link <id> <slug>`。ダッシュボードの「自分の依頼」は依頼ごとに結んだセッションの工程を出す
 - 台帳を消す・開き直すのは人だけ(`pekoe ledger reopen <id>` / `pekoe ledger rm <id>`)。`tapi.reset` は台帳に触らない

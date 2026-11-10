@@ -481,7 +481,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 }
 ```
 
-- **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても台帳には入れない(台帳の文は tapi が「人に頼まれたこと」として読むため)。pekoed 自身が tapi の入力欄に打ったもの(`[pekoe` で始まる受信箱の答え)と空の入力は入れない。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
+- **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても台帳には入れない(台帳の文は tapi が「人に頼まれたこと」として読むため)。人が打ったのではないもの(pekoed 自身が tapi の入力欄に打った `[pekoe` で始まる受信箱の答え、Claude Code がバックグラウンドのタスク(tapi の `pekoe wait` など)の完了を新しいターンとして渡す `<task-notification>` で始まる文)と空の入力は入れない。どちらも前後の空白を除いた先頭で見て、人が打った文の途中に出てくるだけなら記録する。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
 - **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`)
 - **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているときは、セッションを作らずに断る
 - **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり戻したりできないように
