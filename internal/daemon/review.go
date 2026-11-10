@@ -389,12 +389,26 @@ func (d *Daemon) hAsk(p askP) (any, error) {
 	if q == "" {
 		q = "ここの意図は?"
 	}
+	// The answer is whatever the next Stop brings: while the agent is still
+	// in a turn, that Stop would end the turn under way (its reply taken as
+	// the answer, and the test and gatekeeper skipped).
+	if s, err := d.snapshot(p.Slug); err != nil {
+		return nil, err
+	} else if s.State == state.Running || s.State == state.Waiting {
+		return nil, fmt.Errorf("%s is in the middle of a turn: ask once it stops (nothing was sent)", p.Slug)
+	}
 	end := h.NewStart + h.NewLines - 1
 	msg := fmt.Sprintf("%s (%s:L%d-%d)\nコードは変更せず、簡潔に答えてください。\n```diff\n%s```", q, f.Path, h.NewStart, end, hunkText(h))
 	d.mu.Lock()
-	d.asks[p.Slug] = p.HunkID
+	d.asks[p.Slug] = p.HunkID // before the send: the Stop may come quickly
 	d.mu.Unlock()
 	if _, err := d.hSend(sendP{Slug: p.Slug, Text: msg, Submit: true}); err != nil {
+		// not submitted: the next Stop is not an answer
+		d.mu.Lock()
+		if d.asks[p.Slug] == p.HunkID {
+			delete(d.asks, p.Slug)
+		}
+		d.mu.Unlock()
 		return nil, err
 	}
 	return nil, nil
