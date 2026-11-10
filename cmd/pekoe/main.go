@@ -1009,7 +1009,10 @@ func cmdUndo(args []string) error {
 	}
 	n := 0
 	if len(args) > 1 {
-		n, _ = strconv.Atoi(args[1])
+		// a typo must not fall back to the last prompt's snapshot
+		if n, err = strconv.Atoi(args[1]); err != nil || n < 1 {
+			return &usageError{use: specs["undo"].use, msg: "n must be a number from 1: " + args[1]}
+		}
 	}
 	cl := connect()
 	defer cl.Close()

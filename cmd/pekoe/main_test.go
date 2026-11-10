@@ -152,3 +152,19 @@ func TestOpenNeedsChoiceWithoutTerminal(t *testing.T) {
 		t.Fatalf("calls = %v (resumed without asking?)", c)
 	}
 }
+
+// undo's n must be a number from 1: a typo used to undo the last prompt.
+func TestUndoBadN(t *testing.T) {
+	fd := startFakeDaemon(t)
+	for _, n := range []string{"2x", "two", "0", "-1"} {
+		fd.reset()
+		err := dispatch("undo", "feat-x", n)
+		var ue *usageError
+		if !errors.As(err, &ue) || ue.help {
+			t.Errorf("undo %s: err = %v, want a usage error", n, err)
+		}
+		if c := fd.calls(); len(c) > 0 {
+			t.Errorf("undo %s: called pekoed: %v", n, c)
+		}
+	}
+}
