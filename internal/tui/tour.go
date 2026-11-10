@@ -2,9 +2,17 @@ package tui
 
 // The tutorial: coach marks over the TUI. One step puts one element of the
 // screen in focus (a panel, the state column, a dialog) and explains it in a
-// card next to it; ↵ / → / l go on, ← / h back, esc / q skip. It starts by
-// itself the first time pekoe runs (paths.TutorialFile records that it was
-// seen, skipped or not) and again with H or :tutorial.
+// card next to it; ↵ / → / l / space go on, ← / h / backspace back, esc / q
+// skip, L switches between English and Japanese and stays on the step. It
+// starts by itself the first time pekoe runs (paths.TutorialFile records
+// that it was seen, skipped or not, and the language it was left in) and
+// again with H or :tutorial.
+//
+// The language: the one recorded, else the environment (LC_ALL, then
+// LC_MESSAGES, then LANG; the first that is set decides): ja… is Japanese,
+// anything else English. The step text is in tour_sample.go, both
+// languages side by side; the card's frame (next/back/skip, sample · n/m)
+// stays English.
 //
 // The tour runs on sample data (tour_sample.go), swapped in inside the model
 // only: nothing is created in pekoed, nothing is written to state.db and no
@@ -42,7 +50,8 @@ import (
 )
 
 const (
-	tourKey = "H" // replays the tutorial from any panel
+	tourKey     = "H" // replays the tutorial from any panel
+	tourLangKey = "L" // switches the tour's language, in the tour only
 	// tourKeep bounds the messages kept while the tour runs; past it they
 	// are dropped (the reload at the end brings the state back anyway)
 	tourKeep = 2000
@@ -54,8 +63,15 @@ const (
 	tourSideMin  = 28
 )
 
+// the tour's languages
+const (
+	tourJa = "ja"
+	tourEn = "en"
+)
+
 type tourState struct {
 	step    int       // index into tourSteps
+	lang    string    // tourJa or tourEn
 	saved   model     // the real model, put back when the tour ends
 	pending []tea.Msg // arrived during the tour, replayed at the end
 }
@@ -63,8 +79,8 @@ type tourState struct {
 // rect is a cell area of the screen (the body above the bottom bar).
 type rect struct{ x, y, w, h int }
 
-// tourStep is one coach mark.
-type tourStep struct {
+// tourCopy is a step's text in one language.
+type tourCopy struct {
 	title string
 	// body: {k} is a key (secondary, bold), {@running} a state's icon in
 	// its color, ^q the prefix as configured
@@ -72,36 +88,73 @@ type tourStep struct {
 	// narrow replaces body below 100 columns, where the left column is one
 	// tabbed panel without Browser and Picks
 	narrow string
+}
+
+// tourStep is one coach mark: its text in each language, and one sample
+// screen for both.
+type tourStep struct {
+	ja, en tourCopy
 	setup  func(m *model) // puts the sample screen into shape (after tourBase)
 	// target is what the step is about; ok=false centers the card
 	target func(m *model) (r rect, ok bool)
 	cells  func(m *model) []rect // cells painted with the select fill
 }
 
+// text is the step's text in lang (tourJa, else English).
+func (s tourStep) text(lang string) tourCopy {
+	if lang == tourJa {
+		return s.ja
+	}
+	return s.en
+}
+
+// tourEnvLang is the language the environment asks for: the first of
+// LC_ALL, LC_MESSAGES and LANG that is set; ja… is Japanese, anything else
+// (and none at all) English.
+func tourEnvLang(getenv func(string) string) string {
+	for _, k := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
+		if v := getenv(k); v != "" {
+			if strings.HasPrefix(v, "ja") {
+				return tourJa
+			}
+			return tourEn
+		}
+	}
+	return tourEn
+}
+
 // ---- record ----
 
 type tourRecord struct {
 	SeenAt time.Time `json:"seen_at"`
+	Lang   string    `json:"lang,omitempty"` // the language the tour was left in; older records have none
 }
 
 // initTour reads the record at path ("" keeps none: the tour never starts
-// by itself, as in tests).
+// by itself, as in tests): whether the tour was seen, and in which language.
 func (m *model) initTour(path string) {
 	m.tourPath = path
 	m.tourAuto = false
+	m.tourLang = ""
 	if path == "" {
 		return
 	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
 		m.tourAuto = true
+		return
+	}
+	var r tourRecord
+	if err == nil && json.Unmarshal(b, &r) == nil && (r.Lang == tourJa || r.Lang == tourEn) {
+		m.tourLang = r.Lang
 	}
 }
 
-func saveTourSeen(path string) error {
+func saveTourSeen(path, lang string) error {
 	if path == "" {
 		return nil
 	}
-	b, err := json.Marshal(tourRecord{SeenAt: time.Now()})
+	b, err := json.Marshal(tourRecord{SeenAt: time.Now(), Lang: lang})
 	if err != nil {
 		return err
 	}
@@ -132,7 +185,11 @@ func (m *model) maybeAutoTour() {
 		return
 	}
 	m.tourAuto = false
-	m.tour = &tourState{saved: *m} // m.tour is still nil in the copy
+	lang := m.tourLang
+	if lang == "" {
+		lang = tourEnvLang(os.Getenv)
+	}
+	m.tour = &tourState{saved: *m, lang: lang} // m.tour is still nil in the copy
 	m.loadSample()
 	m.tourGo(0)
 }
@@ -151,7 +208,8 @@ func (m *model) endTour() tea.Cmd {
 	m.frame, m.spinning = live.frame, live.spinning
 	m.guard = live.guard
 	m.msg, m.msgErr, m.msgAt = live.msg, live.msgErr, live.msgAt
-	if err := saveTourSeen(m.tourPath); err != nil {
+	m.tourLang = t.lang // the next tour starts in it
+	if err := saveTourSeen(m.tourPath, t.lang); err != nil {
 		m.setMsg("tutorial: "+err.Error(), true)
 	}
 	var cmds []tea.Cmd
@@ -225,6 +283,12 @@ func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 			if m.tour.step > 0 {
 				m.tourGo(m.tour.step - 1)
 			}
+		case tourLangKey: // the other language, same step
+			if m.tour.lang == tourJa {
+				m.tour.lang = tourEn
+			} else {
+				m.tour.lang = tourJa
+			}
 		case "esc", "q":
 			return m.endTour()
 		case "ctrl+c":
@@ -250,14 +314,37 @@ func (m *model) tourApply() {
 
 // ---- view ----
 
+// tourHints are the card's keys; the language key comes last (the first to
+// go when the card is narrow) and is named by the language it switches to,
+// in that language.
 func (m *model) tourHints() [][2]string {
+	lang := [2]string{tourLangKey, "日本語"}
+	if m.tour.lang == tourJa {
+		lang[1] = "English"
+	}
 	if m.tour.step == len(tourSteps)-1 {
-		return [][2]string{{"↵", "done"}, {"←", "back"}}
+		return [][2]string{{"↵", "done"}, {"←", "back"}, lang}
 	}
 	if m.tour.step == 0 {
-		return [][2]string{{"↵", "next"}, {"esc", "skip"}}
+		return [][2]string{{"↵", "next"}, {"esc", "skip"}, lang}
 	}
-	return [][2]string{{"↵", "next"}, {"←", "back"}, {"esc", "skip"}}
+	return [][2]string{{"↵", "next"}, {"←", "back"}, {"esc", "skip"}, lang}
+}
+
+// tourCopy is the current step's text in the tour's language.
+func (m *model) tourCopy() tourCopy {
+	return tourSteps[m.tour.step].text(m.tour.lang)
+}
+
+// tourBody is the text the card shows: narrow below 100 columns when the
+// step has one, the prefix as configured.
+func (m *model) tourBody() string {
+	c := m.tourCopy()
+	body := c.body
+	if narrow(m.width) && c.narrow != "" {
+		body = c.narrow
+	}
+	return strings.ReplaceAll(body, "^q", m.prefixLabel())
 }
 
 // tourView paints the step's cells and puts the card next to its target.
@@ -364,7 +451,6 @@ func (m *model) tourPlace(t rect, has bool, bodyH int) (x, y int, card []string)
 // tapi's face and the title with the position, the text, the keys.
 func (m *model) tourCard(width, maxH int) []string {
 	th := m.th
-	st := tourSteps[m.tour.step]
 	inner := max(width-4, 1)
 	right := th.FG(theme.Dim, fmt.Sprintf("sample · %d/%d", m.tour.step+1, len(tourSteps)))
 	// tapi tells the tour: its face heads the card (the bar keeps only its
@@ -373,15 +459,11 @@ func (m *model) tourCard(width, maxH int) []string {
 	// The tour is the first screen a new user sees, before any [mascot]
 	// glyphs is set, and ● (work) or • (idle) are East Asian Ambiguous:
 	// fonts like Moralerspace draw them two cells wide and the face breaks.
-	head := m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done)) + " " + th.Bold(theme.Primary, st.title)
+	head := m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done)) + " " + th.Bold(theme.Primary, m.tourCopy().title)
 	if gap := inner - w(head) - w(right); gap >= 1 {
 		head += strings.Repeat(" ", gap) + right
 	}
-	body := st.body
-	if narrow(m.width) && st.narrow != "" {
-		body = st.narrow
-	}
-	text := m.tourText(strings.ReplaceAll(body, "^q", m.prefixLabel()), inner)
+	text := m.tourText(m.tourBody(), inner)
 	keys := m.keyHints(m.tourHints(), inner)
 	// rows: border, head, blank, text…, blank, keys, border
 	lines := append([]string{head, ""}, text...)
