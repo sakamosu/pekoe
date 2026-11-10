@@ -253,6 +253,6 @@ docs = ["README.ja.md#更新"]
 [[tip]]
 id = "hook-sandbox"
 short = "[hooks] の test・setup・dev と門番は sandbox の中で動く"
-detail = "worktree のコードはエージェントが書けるので、human-token を読めない sandbox で動かす(macOS は sandbox-exec、Linux は bwrap)。使えなければ動かさない。[sandbox] enable = false で外せる。"
+detail = "human-token を読めない sandbox で動かす(macOS は sandbox-exec、Linux は bwrap)。使えなければ動かさない。pekoed の git も同じ sandbox で動く。[sandbox] enable = false で外せる。"
 keys = ["[sandbox]"]
 docs = ["README.ja.md#エージェントに-pekoe-を使わせるときの権限", "docs/api.md"]
