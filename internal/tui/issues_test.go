@@ -359,3 +359,15 @@ func TestCommandNewNonASCIIBranch(t *testing.T) {
 		}
 	}
 }
+
+// l on the Sessions panel lands (asks first), as the help, README and tip
+// say; ↵ / → are the keys that go right and type.
+func TestSessionsLLands(t *testing.T) {
+	m := issueModel(t, "none", 160)
+	m.focus = pSessions
+	m.onKey(key("l"))
+	c, ok := m.modal.(*confirmModal)
+	if !ok || c.title != "Land" || m.typing {
+		t.Fatalf("l: modal %T typing %v", m.modal, m.typing)
+	}
+}

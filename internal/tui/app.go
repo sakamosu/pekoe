@@ -1360,7 +1360,7 @@ func (m *model) keySessions(key string) tea.Cmd {
 	case "G", "end":
 		m.sel = max(len(m.visible())-1, 0)
 		return m.onSelChange()
-	case "enter", "l", "right":
+	case "enter", "right": // l is land (sessionAction), as the help says
 		if s == nil {
 			return nil
 		}
