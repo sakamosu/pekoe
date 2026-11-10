@@ -284,6 +284,25 @@ local ok, err = xpcall(function()
     end
   end), ":PekoeFollow opens edited file in split")
   check(fwin and vim.api.nvim_win_get_cursor(fwin)[1] == 3, ":PekoeFollow jumps to first changed line")
+  -- 同じファイルへの連続した Edit(last_tool は同じ文字列のまま)も追う
+  local function emit_tool(last_tool, running)
+    local d = { slug = "feat-x", state = "running", last_tool = last_tool }
+    if running then
+      d.pending_tool = { name = "Edit", input = ftmp }
+    end
+    client.request_sync("test.emit", { event = "session.updated", data = d })
+    wait(150, function() return false end)
+  end
+  emit_tool("Edit " .. ftmp, true) -- PreToolUse 1
+  vim.fn.writefile({ "X", "b", "C", "d" }, ftmp)
+  emit_tool("Edit " .. ftmp, false) -- PostToolUse 1
+  emit_tool("Edit " .. ftmp, true) -- PreToolUse 2(同じ last_tool)
+  vim.fn.writefile({ "X", "b", "C", "Y" }, ftmp)
+  emit_tool("Bash ls", true)
+  check(wait(1500, function()
+    return fwin and vim.api.nvim_win_is_valid(fwin) and vim.api.nvim_win_get_cursor(fwin)[1] == 4
+  end), ":PekoeFollow follows a second Edit of the same file (line " ..
+    (fwin and vim.api.nvim_win_is_valid(fwin) and vim.api.nvim_win_get_cursor(fwin)[1] or -1) .. ")")
   vim.cmd("PekoeFollow!")
   check(follow.active() == nil, ":PekoeFollow! stops")
 
