@@ -73,6 +73,7 @@ func TestClaudeSandboxSettings(t *testing.T) {
 		"Read(/" + moved + "/**)",
 		"Edit(/" + realpath(filepath.Join(gitDir, "config")) + ")",
 		"Edit(/" + realpath(filepath.Join(gitDir, "hooks")) + "/**)",
+		"Edit(/" + paths.SkillsDir() + "/**)",
 	} {
 		if !slices.Contains(deny, rule) {
 			t.Errorf("permissions.deny lacks %s:\n%s", rule, strings.Join(deny, "\n"))
