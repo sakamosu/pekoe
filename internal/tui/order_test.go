@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"math/rand/v2"
-	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,6 +14,7 @@ import (
 
 	"pekoe/internal/client"
 	"pekoe/internal/state"
+	"pekoe/internal/testenv"
 )
 
 // ptyServer is a pekoed stand-in that, like the real one (server.go
@@ -28,17 +27,13 @@ type ptyServer struct {
 
 func startPtyServer(t *testing.T) (*ptyServer, *client.Client) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "bo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "s")
-	l, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// in memory: an agent's sandbox refuses binding a unix socket
+	sock := filepath.Join(t.TempDir(), "s")
+	l := testenv.Listen(sock)
 	t.Cleanup(func() { l.Close() })
+	oldDial := client.DialSocket
+	client.DialSocket = l.Dial
+	t.Cleanup(func() { client.DialSocket = oldDial })
 	ps := &ptyServer{}
 	go func() {
 		for {

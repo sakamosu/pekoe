@@ -59,8 +59,15 @@ func Dial() (*Client, error) {
 // agent (the MCP server).
 func DialAgent() (*Client, error) { return dial() }
 
+// DialSocket opens the connection to pekoed's socket at path. Tests swap
+// it for an in-memory one (internal/testenv.PipeListener): an agent's
+// sandbox refuses binding a unix socket.
+var DialSocket = func(path string) (net.Conn, error) {
+	return net.DialTimeout("unix", path, 2*time.Second)
+}
+
 func dial() (*Client, error) {
-	c, err := net.DialTimeout("unix", paths.Socket(), 2*time.Second)
+	c, err := DialSocket(paths.Socket())
 	if err != nil {
 		return nil, err
 	}
