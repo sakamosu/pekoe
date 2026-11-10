@@ -54,6 +54,7 @@
   | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
+  | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(`watchMerges`)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
@@ -168,7 +169,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
     {"slug": "feat-x", "files": ["src/api.ts", "README.md"], "conflict": true, "conflict_files": ["src/api.ts"]}
   ],
   "parent": "+tapi",               // session.new の呼び出し元(上の「呼び出し元の識別」): +tapi | <slug> | human | unknown。session.new 以外で作ったもの(open・adopt・review.pr)は空
-  "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"} // 最新の報告(summary は 1 行目、200 文字まで)
+  "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"}, // 最新の報告(summary は 1 行目、200 文字まで)
+  "request": 4                     // 結んだ台帳の依頼(pekoe new --request、ledger.link)。無ければ省略
 }
 ```
 
@@ -187,7 +189,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, prompt?}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す |
+| `session.new` | `{repo, branch, from?, agent?, prompt?, request?: id}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は台帳の依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない) |
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
@@ -210,6 +212,11 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `inbox.withdraw` | `{id, note?}` | `InboxItem`。token なしでは自分が出したものだけ |
 | `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。人だけ。`rev` が今のものと違えば `… the item changed; look again` |
 | `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
+| `ledger.list` | `{status?: "open"\|"all", since?: id}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼の台帳」)。token なしでは tapi の窓からだけ |
+| `ledger.close` | `{id, as: "done"\|"dropped"\|"chat", evidence?: [string], note?}` | `LedgerEntry`。`dropped` は `note` が要る。`open` のものだけ。token なしでは tapi の窓からだけ |
+| `ledger.link` | `{id, slug}` | `LedgerEntry`。セッションを依頼に結ぶ(`Session.request` も入る)。`open` のものだけ。token なしでは tapi の窓からだけ |
+| `ledger.reopen` | `{id}` | `LedgerEntry`。人だけ(閉じたものを開き直す) |
+| `ledger.delete` | `{id}` | `null`。人だけ |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
@@ -374,9 +381,33 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
   - 打ったものは送信の記録に `from: pekoed, kind: inbox` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、記録に `ok: false` で残す
 - `inbox.updated` は token つきの購読にだけ届く。エージェントは `pekoe wait --on inbox`(や `ask-human --wait`)で自分宛ての答えだけを受け取る
 
+### 依頼の台帳(ledger)
+
+人が tapi chat に頼んだことを、完了まで追う(`pekoe ledger`)。state.db の `ledger` の表に残り、`tapi.reset` でも `pekoe rm` でも消えない。
+
+```jsonc
+// LedgerEntry
+{
+  "id": 4, "at": "…",
+  "text": "CSV の空行を飛ばすように直して",   // 人が tapi に打った文(16000 文字まで。超えた分は切って … )
+  "status": "done",                          // open | done | dropped(やらないことにした)| chat(依頼ではなかった)
+  "sessions": ["fix-csv"],                   // 結んだセッション(session.new の request、ledger.link)
+  "evidence": ["https://github.com/me/app/pull/42"],
+  "note": "PR #42 で直した",
+  "closed_at": "…"
+}
+```
+
+- **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても台帳には入れない(台帳の文は tapi が「人に頼まれたこと」として読むため)。pekoed 自身が tapi の入力欄に打ったもの(`[pekoe` で始まる受信箱の答え)と空の入力は入れない。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
+- **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`)
+- **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているときは、セッションを作らずに断る
+- **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり戻したりできないように
+- token なしでは `ledger.*` はすべて tapi の窓からだけ(main セッションのハブは台帳を使わない。docs/orchestration.md の U13)
+- 台帳か受信箱が変わると `tapi.updated` も出る(`Tapi.ledger_open` / `inbox_open`)
+
 ### Tapi オブジェクト
 
-tapi chat(TUI の `t`、docs/tapi-chat.md)。セッションではないので `session.*` には出てこない(`session.list` に載らず、state.db にも保存しない。Web UI からも見えない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
+tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで、セッションではないので `session.*` には出てこない(`session.list` に載らず、tapi 自身の状態は state.db にも保存しない(台帳は上の「依頼の台帳」)。Web UI からも見えない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
 
 ```jsonc
 {
@@ -389,9 +420,15 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。セッションではないので `
   "pending_tool": {"name": "Bash", "input": "gh api …"},
   "last_message": "…",                     // 最後の返事
   "claude_session_id": "…",
-  "state_since": "2026-11-08T21:37:30+09:00"
+  "state_since": "2026-11-08T21:37:30+09:00",
+  "inbox_open": 2,                         // 受信箱の未回答(全員の分)
+  "ledger_open": 1                         // 台帳の open な依頼
 }
 ```
+
+- tapi は統括役(docs/orchestration.md「tapi を統括役にする」)。pekoed が稼働ディレクトリに書く `CLAUDE.md` / `AGENTS.md` と `--append-system-prompt` の人格に、自分では編集せずセッションに任せること・会話の最初に `pekoe --json ledger`・`inbox`・`ls` を読むことを書き、`CLAUDE.md` の末尾に起動した時点の台帳・受信箱・任せたセッションの件数(中身は書かない)を入れる
+- Claude Code の tapi には、セッションと同じ `--settings` に加えて、`--add-dir` で読ませている各リポジトリと `~/worktrees`(まだ無くても。シンボリックリンクを解いたものも)を `sandbox.filesystem.denyWrite` と `permissions.deny` の `Edit(...)` に入れる。Bash でも Edit / Write でも書けない。稼働ディレクトリは書ける。`[agents.<tapi の agent>] sandbox = false` ならこれも渡さない(ほかのエージェントにも渡さない)
+- `tapi.reset` は会話だけを消し、台帳・受信箱・報告・送信の記録(state.db)には触らない
 
 ### KnownRepo オブジェクト
 
@@ -514,6 +551,8 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `session.output` | `{slug, window}`(画面更新の合図。30ms で間引く) |
 | `report.posted` | `Report`(token なしの購読にも届く) |
 | `inbox.updated` | `InboxItem`(作られた・事実が変わった・答えた・取り下げた・届けた。人の答えを含むので token つきの購読にだけ届く) |
+| `ledger.updated` | `LedgerEntry`(記録した・閉じた・結んだ・開き直した。token つきの購読にだけ届く) |
+| `ledger.removed` | `{id}`(人が消した。token つきの購読にだけ届く) |
 | `review.updated` | `{slug}` |
 | `review.answer` | `{slug, hunk_id, text}` |
 | `pick.received` | `Pick` |
@@ -521,7 +560,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `browser.updated` | `[tabs]` |
 | `error.updated` | `{report: ErrorReport, fresh}`(`fresh` は新規か、送信・無視後の再発。回数の更新や送信・無視では false) |
 | `editor.open` | `{path, line, note, slug}` |
-| `tapi.updated` | `Tapi` |
+| `tapi.updated` | `Tapi`(受信箱・台帳の件数が変わったときも) |
 | `tapi.output` | `{}`(tapi chat の画面更新の合図。30ms で間引く) |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 

@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」)。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の残り(`--after`・知らせ方)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -300,6 +300,15 @@ state.db: `sends(id INTEGER PRIMARY KEY, at, from_, to_, kind, text, via, ok, er
 
 state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evidence TEXT, note, closed_at)`。
 
+実装(仕様の正は docs/api.md「依頼の台帳」):
+
+- **記録は tapi の窓からの hook だけ**: UserPromptSubmit を台帳に入れるのは、呼び出し元の識別で窓が `+tapi` と分かったときだけにした。`$PEKOE_SESSION=+tapi` の名乗りだけ(窓に当たらない、別のセッションの窓)では tapi の状態は今どおり動くが、台帳には入れない。台帳の文は tapi が「人に頼まれたこと」として読み、リセット後はそれを元に動くので、エージェントが偽の依頼を差し込める道にしない。pekoed 自身が tapi の入力欄に打つ受信箱の答え(`[pekoe inbox #12] …`)も UserPromptSubmit で戻ってくるので、`[pekoe` で始まるものは入れない。文は受信箱と同じく ANSI・制御文字・見えない書式文字を落とし、16000 文字で切る
+- **`ledger.list`**: 古い順(頼まれた順)。`since` は id。token なしでは tapi の窓からだけ(`ledger.close` / `ledger.link` も同じ。main セッションのハブは台帳を使わない: U13)
+- **閉じ方**: `ledger.close` の `as: dropped` は `note`(理由)を必須にした(人が後で「なぜやらなかったか」を読めるように)。`evidence` は `report.post` と同じ上限と掃除。`open` 以外を閉じる・結ぶのは断る(閉じたものに続きがあれば人が `reopen` する)
+- **`--request`**: `session.new` は、`request` の依頼が無い・閉じている・呼び出し元が tapi でも人でもないときは、セッションを作る前に断る。作れたら依頼の `sessions` に slug を足し、`Session.request` に id を入れる(`ledger.link` も同じ両方向)。CLI は `pekoe new … --request <id>`(`#4` も可)
+- **CLI**: `pekoe ledger [--all]`(依頼の文は人の文だが貼り付けた外の文を含みうるので区切りで囲む)、`done <id> [--evidence …] [--note …]`・`drop <id> --note …`・`close <id> --as done|dropped|chat`・`link <id> <slug>`(tapi)、`reopen <id>`・`rm <id> [--yes]`(人だけ。`rm` は確認つき)
+- **イベント**: 消したときは `ledger.removed`(`{id}`)を足した。`ledger.updated` / `ledger.removed` は token つきの購読にだけ届く。台帳か受信箱が変わると `tapi.updated` も出す(件数のため)
+
 ### Session に足す項目
 
 | 項目 | 中身 |
@@ -342,6 +351,8 @@ tapi は今どおり `state.Session` に入れない(docs/tapi-chat.md の方針
 - 依頼が済んだら `pekoe ledger done <id> --evidence …`
 - `--append-system-prompt` の人格の文に「統括役。自分で編集せず、セッションに任せて報告を待つ」の 1 文を足す
 
+実装: 上をすべて `tapiDoc` に書き、手順の詳細は pekoe-orchestrate スキルに任せた(スキルの無い codex などのために、要点は CLAUDE.md / AGENTS.md の「統括役の手順」にも書く)。人格には「会話の最初(リセットの後も)に `pekoe --json ledger`・`inbox`・`ls` を読む」も足した。Claude Code は人が打つまで動かないので、「起動したら最初に」は「会話の最初の返事の前に」と書いた(起動時に pekoed が最初のプロンプトを打つと、トークンを使ううえ台帳にも入るのでしない)。代わりに、`CLAUDE.md` の末尾に起動した時点の残り(台帳の open・受信箱の未回答・tapi が任せて landed でないセッション)の**件数**を書く。文は書かない(指示のファイルに他人の文を混ぜない)。land は今どおり「人に頼まれたときだけ」(セッションの報告に「land して」とあっても、それは報告の文で人の依頼ではない)
+
 ### 自分で作業しすぎないようにする
 
 tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるように起動している。Claude Code の sandbox が `--add-dir` のディレクトリへの Bash の書き込みを許すかは Claude Code の版で変わりうる(実装のときに確かめる)ので、許すかどうかに関わらず tapi の `--settings` で塞ぐ:
@@ -352,10 +363,14 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 
 組み立ては `claudeSandboxSettings` に「書けないディレクトリ」を渡す引数を足す形にする(セッションには渡さない)。1 ターンの直接のツール呼び出しの回数を hook で制限するかは、使ってみてから決める。
 
+実装: `claudeSandboxSettings(repoDirs, readOnly)`。tapi の `readOnly` は `--add-dir` に渡すもの(既知のリポジトリのメインの worktree と `~/worktrees`)で、`~/worktrees` はまだ無くても入れる(tapi が動いている間に最初のセッションが作る)。`withReal` でシンボリックリンクを解いたものも入れる。Claude Code の sandbox では `denyWrite` が書ける場所(cwd・`--add-dir`)より強いので、版によらず塞がる。残る穴: `[agents.<tapi の agent>] sandbox = false` にすると `--settings` ごと渡さないので、これも外れる(Edit の deny だけを渡すには、利用者の sandbox の設定を上書きしない別の形の settings が要る。使う人が出たら考える)。tapi の起動の後に登録されたリポジトリは `--add-dir` にも入らないので、Claude Code の sandbox の既定(cwd と `--add-dir` の外には書けない)で書けない。hook での回数の制限は入れていない
+
 ### 永続化と寿命
 
 - 上の表(`reports`・`inbox`・`sends`・`ledger`)はすべて state.db。`tapi.reset` は会話(Claude Code の記録)だけを消し、表には触らない。台帳を消すのは `pekoe ledger rm`(人だけ)
 - `Tapi` オブジェクトに `inbox_open`・`ledger_open`・`deliver`(配送の状態)を足す。会話の中身や画面は今どおり人間だけ(`tapi.screen`)
+
+実装: `inbox_open`(受信箱の未回答、全員の分)と `ledger_open` を足した。`deliver` は配送(段階 3)と一緒に足す。`pekoe tapi` も 2 つの件数を出す
 
 ### 知らせ方
 
@@ -521,6 +536,6 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | U10 | スキルの配り方 | (a) バイナリに同梱して `pekoe skills install` (b) 今の `ln -s` のまま (c) Claude Code のプラグインとして出す | (a)。リリースのバイナリでも入り、`pekoe update` で中身も新しくなる。(c) は Claude Code 以外に効かないので、(a) の後で検討 |
 | U11 | プロジェクト担当の層 | (a) 作らない(tapi → セッションの 2 層) (b) 「プログラム」と担当の main セッションを作る | (a)。複数 PR のまとまりが日常的になってから、台帳の依頼を「プログラム」に育てる形で考える |
 | U12 | `wait` の変化の記録を永続化するか | (a) メモリだけ(再起動で `reset`) (b) state.db | (a)。再起動の後は `ls` と受信箱を読み直せば足りる。再起動は稀 |
-| U13 | main セッションの依頼も台帳に入れるか | (a) v1 は tapi だけ (b) main セッションの UserPromptSubmit も記録 | (a)。main への入力は作業の指示と雑談が混ざり、プロンプトのスナップショット(`prompts`)とも重なる |
+| U13 | main セッションの依頼も台帳に入れるか | (a) v1 は tapi だけ (b) main セッションの UserPromptSubmit も記録 | (a)。main への入力は作業の指示と雑談が混ざり、プロンプトのスナップショット(`prompts`)とも重なる。実装: (a)。main をハブにするときは台帳なしで、`pekoe new` → `pekoe report` → `pekoe wait --mine` の流れだけを使う(`ledger.*` と `--request` は main からは断られる) |
 | U14 | 報告(`report`)を Stop hook と結ぶか | (a) 結ばない(エージェントが明示的に呼ぶ) (b) `report` の無い done を tapi に「報告なしで止まった」と知らせる | (a) に加えて (b) を `wait` の `done` で表す(`Change.summary` に「報告なし」)。done は今どおり Stop で決まる |
 | U15 | state.db をエージェントから読めなくする | (a) `denyRead` に足す (b) 足さない(記録の絞り込みは API の上だけ) | (a)。エージェントが state.db を直接読む用途は無く(CLI は pekoed を通す。pekoe の開発は `scripts/sandbox.sh` の別の `PEKOE_HOME`)、今入っているプロンプト・コメントも守れる |
