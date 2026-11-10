@@ -153,3 +153,37 @@ func TestNewRefusesOptionLikeRefs(t *testing.T) {
 		}
 	}
 }
+
+// A repository whose origin ends in ".." (x:.., https://host/a/..) must not
+// get its worktree outside ~/worktrees: session.new needs no token, and
+// pekoed, outside the agent's sandbox, would check the branch out in ~/<slug>.
+func TestNewWorktreeStaysUnderWorktrees(t *testing.T) {
+	for _, origin := range []string{"x:..", "https://github.com/a/.."} {
+		d, _, repo := setup(t)
+		run(t, repo, "git", "remote", "add", "origin", origin)
+		s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "evil"})
+		s = waitCreated(t, d, s.Slug)
+		root := os.Getenv("PEKOE_WORKTREES")
+		if s.State == state.Failed {
+			t.Fatalf("origin %q: %s", origin, s.Error)
+		}
+		if rel, err := filepath.Rel(root, s.Path); err != nil || strings.HasPrefix(rel, "..") || filepath.Dir(filepath.Dir(s.Path)) != root {
+			t.Fatalf("origin %q: worktree at %s, outside %s", origin, s.Path, root)
+		}
+		if _, err := os.Stat(filepath.Join(filepath.Dir(root), "evil")); err == nil {
+			t.Fatalf("origin %q: checked out next to %s", origin, root)
+		}
+	}
+}
+
+func TestWorktreePathRefusesEscape(t *testing.T) {
+	t.Setenv("PEKOE_WORKTREES", filepath.Join(t.TempDir(), "wt"))
+	for _, name := range []string{"..", ".", "", "a/../.."} {
+		if p, err := worktreePath(name, "evil"); err == nil {
+			t.Errorf("repo name %q: accepted %s", name, p)
+		}
+	}
+	if _, err := worktreePath("app", "feat-x"); err != nil {
+		t.Fatal(err)
+	}
+}

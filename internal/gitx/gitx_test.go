@@ -217,3 +217,25 @@ func TestAddWorktreeBaseIsNotAnOption(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An origin whose last element is ".." (or empty) must not become the
+// directory name under ~/worktrees: Join would climb out of it.
+func TestRepoNameIsOnePathElement(t *testing.T) {
+	dir := newRepo(t, filepath.Join(t.TempDir(), "app"))
+	git(t, dir, "remote", "add", "origin", "x:y")
+	for _, origin := range []string{"x:..", "https://github.com/a/..", "x:.", "https://github.com/a/../", "..", "x:a/..\\.."} {
+		git(t, dir, "remote", "set-url", "origin", origin)
+		n := RepoName(dir)
+		if !pathElem(n) || n == ".." {
+			t.Errorf("origin %q: RepoName = %q", origin, n)
+		}
+		id, err := RepoID(dir)
+		if err != nil || !pathElem(id) {
+			t.Errorf("origin %q: RepoID = %q, %v", origin, id, err)
+		}
+	}
+	git(t, dir, "remote", "set-url", "origin", "git@github.com:me/tool.git")
+	if n := RepoName(dir); n != "tool" {
+		t.Fatalf("RepoName = %q, want tool", n)
+	}
+}

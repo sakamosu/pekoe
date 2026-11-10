@@ -321,13 +321,17 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err := gitx.CheckRefArg("base", base); err != nil {
 		return nil, err
 	}
+	wt, err := worktreePath(repo.Name, slug)
+	if err != nil {
+		return nil, err
+	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {
 		return nil, err
 	}
 	s := &state.Session{
 		Slug: slug, Branch: p.Branch, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir,
-		Path: paths.Worktree(repo.Name, slug), Agent: agent, State: state.Creating,
+		Path: wt, Agent: agent, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
 	}
@@ -444,6 +448,9 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		return true
 	}
 	if !run("worktree", func() error {
+		if !paths.UnderWorktrees(s.Path) {
+			return fmt.Errorf("%s is not under %s", s.Path, paths.WorktreesRoot())
+		}
 		if _, err := os.Stat(s.Path); err == nil {
 			// an existing worktree for this branch: reuse it, but only when
 			// it is this repository's (a fork shares ~/worktrees/<name>)
@@ -496,6 +503,17 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		d.update(slug, func(x *state.Session) { x.Env = env })
 		return d.spawnAgent(slug, prompt, "", p.Width, p.Height)
 	})
+}
+
+// worktreePath is where a new session's worktree goes:
+// ~/worktrees/<repo>/<slug>. It refuses a path that would end up anywhere
+// else, since pekoed (outside the agents' sandbox) checks the branch out there.
+func worktreePath(repoName, slug string) (string, error) {
+	p := paths.Worktree(repoName, slug)
+	if !paths.UnderWorktrees(p) {
+		return "", fmt.Errorf("worktree path %s is not under %s", p, paths.WorktreesRoot())
+	}
+	return p, nil
 }
 
 // reusableWorktree accepts an existing directory as a session's worktree only
