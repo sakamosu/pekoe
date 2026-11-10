@@ -80,9 +80,18 @@ type InboxFacts struct {
 	PRStatus   *InboxPR       `json:"pr_status,omitempty"`
 	Test       Test           `json:"test"`
 	Overlaps   []Overlap      `json:"overlaps,omitempty"`
-	Report     *ReportSummary `json:"report,omitempty"`
+	Report     *InboxReport   `json:"report,omitempty"`
 	GitBlocked string         `json:"git_blocked,omitempty"`
 	Gone       bool           `json:"gone,omitempty"` // the session no longer exists
+}
+
+// InboxReport is the session's latest report without its words (the
+// summary is the agent's, not a fact).
+type InboxReport struct {
+	ID     int64     `json:"id"`
+	Status string    `json:"status"`
+	At     time.Time `json:"at"`
+	Head   string    `json:"head,omitempty"`
 }
 
 // InboxPR is the part of PRStatus the inbox shows.

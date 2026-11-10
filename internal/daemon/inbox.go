@@ -242,7 +242,10 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 		return &state.InboxFacts{Slug: slug, Gone: true}
 	}
 	f := &state.InboxFacts{Slug: slug, State: s.State, Branch: s.Branch, Base: s.Base, Diffstat: s.Diffstat, PR: s.PR,
-		Test: s.Test, Overlaps: s.Overlaps, Report: s.Report, GitBlocked: s.GitBlocked}
+		Test: s.Test, Overlaps: s.Overlaps, GitBlocked: s.GitBlocked}
+	if r := s.Report; r != nil {
+		f.Report = &state.InboxReport{ID: r.ID, Status: r.Status, At: r.At, Head: r.Head}
+	}
 	if f.Overlaps != nil {
 		f.Overlaps = append([]state.Overlap(nil), f.Overlaps...)
 	}
