@@ -679,33 +679,32 @@ func TestTourLangKey(t *testing.T) {
 	m := tourModel(t, "none", 120, 40) // Japanese locale
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m.Update(key("enter"))
-	m.Update(key("enter"))
-	if got := tourStepTitle(m); got != "状態の見かた" {
+	if got := tourStepTitle(m); got != "[1] tapi の行" {
 		t.Fatalf("step %q", got)
 	}
 	if keys := tourCardKeys(m); !strings.Contains(keys, tourLangKey+" en") {
 		t.Errorf("no %q in the card's keys %q", tourLangKey+" en", keys)
 	}
 	press(m, tourLangKey)
-	if m.tour == nil || m.tour.step != 2 {
+	if m.tour == nil || m.tour.step != 1 {
 		t.Fatalf("%s left the step", tourLangKey)
 	}
 	if keys := tourCardKeys(m); !strings.Contains(keys, tourLangKey+" ja") || !strings.Contains(keys, "next") {
 		t.Errorf("the card's keys after %s: %q", tourLangKey, keys)
 	}
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"Reading states", "sample · 3/"} {
+	for _, want := range []string{"[1] The tapi row", "sample · 2/"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q after %s:\n%s", want, tourLangKey, out)
 		}
 	}
-	if strings.Contains(out, "状態の見かた") {
+	if strings.Contains(out, "tapi の行") {
 		t.Error("the Japanese title is still shown")
 	}
 	keepsSize(t, m, m.View())
 	// the narrow layout swaps the text too
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	if !strings.Contains(ansi.Strip(m.View()), "Reading states") {
+	if !strings.Contains(ansi.Strip(m.View()), "The tapi row") {
 		t.Error("the narrow card is not in English")
 	}
 	press(m, tourLangKey)
@@ -812,5 +811,94 @@ func TestTourCapsLock(t *testing.T) {
 	press(m, "Q")
 	if m.tour != nil {
 		t.Fatal("Q did not end the tour")
+	}
+}
+
+// the first part of the tour is tapi's: the tapi row with the dashboard,
+// tapi chat, the inbox and the pipeline, all on the sample (none of the
+// real inbox or dashboard shows, and both come back afterwards)
+func TestTourOrchestratorSteps(t *testing.T) {
+	m := tourModel(t, "none", 150, 45)
+	m.inbox = []state.InboxItem{{ID: 99, Kind: "decision", From: "real-one", Question: "a real question", Status: state.InboxOpen}}
+	m.dash.ledger = []state.LedgerEntry{{ID: 98, Text: "a real request", Status: "open"}}
+	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	if m.tour == nil {
+		t.Fatal("no tour")
+	}
+	agent := func() string {
+		r := m.panelRect(pAgent)
+		lines := strings.Split(m.View(), "\n")
+		var out []string
+		for y := r.y; y < r.y+r.h && y < len(lines); y++ {
+			out = append(out, ansi.Strip(ansi.Cut(lines[y], r.x, r.x+r.w)))
+		}
+		return strings.Join(out, "\n")
+	}
+	seen := map[string]bool{}
+	for i := 0; m.tour != nil && i < 50; i++ {
+		title := tourStepTitle(m)
+		out := ansi.Strip(m.View())
+		if strings.Contains(out, "a real question") || strings.Contains(out, "a real request") {
+			t.Errorf("%q: the real inbox or ledger shows in the tour", title)
+		}
+		switch title {
+		case "[1] tapi の行":
+			seen[title] = true
+			if !m.onTapiRow() || !m.dashShown() {
+				t.Errorf("%q: the tapi row is not selected with the dashboard", title)
+			}
+		case "tapi chat":
+			seen[title] = true
+			if a := agent(); !m.chat.open || !strings.Contains(a, "Leave it to me") {
+				t.Errorf("%q: no sample chat:\n%s", title, a)
+			}
+		case "ダッシュボード":
+			seen[title] = true
+			a := agent()
+			for _, want := range []string{"Dashboard", "Overview", "Inbox", "#12", "decide", "merge ready", "Pipeline", "from tapi · request #7",
+				tourCSV, tourReady, "#131", "needs review, ci, merge_state", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
+				if !strings.Contains(a, want) {
+					t.Errorf("%q: no %q in [4]:\n%s", title, want, a)
+				}
+			}
+			if strings.Contains(a, "loading") {
+				t.Errorf("%q: the dashboard is loading:\n%s", title, a)
+			}
+		case "受信箱":
+			seen[title] = true
+			im, ok := m.modal.(*inboxModal)
+			if !ok || im.it.ID != 12 || im.sel != -1 {
+				t.Fatalf("%q: modal %T", title, m.modal)
+			}
+			for _, want := range []string{"Inbox #12", "pekoe read", "feat-csv-export", "Dates in the CSV", "推奨(エージェント)"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("%q: no %q:\n%s", title, want, out)
+				}
+			}
+		case "工程表とマージ":
+			seen[title] = true
+			rows, keys := m.dashRows(m.panelRect(pAgent).w - 4)
+			sel := -1
+			for j, k := range keys {
+				if k == "s:"+tourReady && rows[j].Sel {
+					sel = j
+				}
+			}
+			if sel < 0 {
+				t.Fatalf("%q: the ready session's row is not chosen", title)
+			}
+			if a := agent(); !strings.Contains(a, tourReady) || !strings.Contains(a, "merge "+m.ic.Here) {
+				t.Errorf("%q: no ready mark for %s:\n%s", title, tourReady, a)
+			}
+		}
+		m.Update(key("enter"))
+	}
+	for _, s := range []string{"[1] tapi の行", "tapi chat", "ダッシュボード", "受信箱", "工程表とマージ"} {
+		if !seen[s] {
+			t.Errorf("step %q not reached", s)
+		}
+	}
+	if len(m.inbox) != 1 || m.inbox[0].ID != 99 || len(m.dash.ledger) != 1 || m.dash.ledger[0].ID != 98 {
+		t.Errorf("the real inbox or ledger did not come back: %+v %+v", m.inbox, m.dash.ledger)
 	}
 }

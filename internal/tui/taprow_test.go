@@ -216,9 +216,8 @@ func TestSessionsClickSelectsRow(t *testing.T) {
 	}
 }
 
-// The tour's highlights sit on the rows as drawn: "Reading states" marks
-// every state icon and word, the tapi row's too, and "land" the done
-// session's row.
+// The tour's highlights sit on the rows as drawn: "[1] Sessions" marks
+// every state icon and word, the tapi row's too.
 func TestTourCellsFollowTapiRow(t *testing.T) {
 	m := tourModel(t, "none", 120, 40)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -233,7 +232,7 @@ func TestTourCellsFollowTapiRow(t *testing.T) {
 			return strings.TrimSpace(string(rs[r.x:min(r.x+r.w, len(rs))]))
 		}
 		switch title {
-		case "状態の見かた":
+		case "[1] Sessions":
 			seen[title] = true
 			cells := st.cells(m)
 			if len(cells) < 8 {
@@ -250,16 +249,10 @@ func TestTourCellsFollowTapiRow(t *testing.T) {
 					t.Errorf("a state cell on %q: %q", left[c.y], got)
 				}
 			}
-		case "land":
-			seen[title] = true
-			r, _ := st.target(m)
-			if !strings.Contains(left[r.y], "#128") {
-				t.Errorf("land points at %q", left[r.y])
-			}
 		}
 		m.Update(key("enter"))
 	}
-	if !seen["状態の見かた"] || !seen["land"] {
+	if !seen["[1] Sessions"] {
 		t.Fatalf("steps not reached: %v", seen)
 	}
 }
