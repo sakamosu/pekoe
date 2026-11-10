@@ -553,7 +553,7 @@ func (m *model) viewAgent(width, height int) []string {
 	s := m.current()
 	f := m.focus == pAgent
 	if s == nil && m.onTapiRow() {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "tapi", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "tapi · the orchestrator", "↵ open tapi chat · t from anywhere"), focused: f})
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "tapi", "", f), rows: m.bigRowsTip(width-4, height-2, m.chatMood(), "tapi · the orchestrator", "↵ open tapi chat · t from anywhere"), focused: f})
 	}
 	if s == nil {
 		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
