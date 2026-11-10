@@ -37,7 +37,7 @@ description: pekoe の作業セッション(pekoe new で作られた linked wor
 
 - サブエージェント(Agent ツール)を立て、pekoe-review スキルに従ってレビューさせる。渡すのは、この作業の目的と完了条件、base のブランチ、レビューする HEAD の SHA(`git rev-parse HEAD`)。自分の結論(「ここは大丈夫」など)は渡さない
 - 不合格なら指摘を直し、コミットし直して、新しい SHA でもう一度レビューさせる
-- 合否はレビュアーが `pekoe report --status review` で残す。land するのは合格の後
+- 合否はレビュアーが `pekoe report --status review --verdict pass|fail --reviewed-sha <sha>` で残す(サブエージェントはこのセッションの窓の中で動くので、報告はこのセッションに付く)。land するのは合格の後
 - プロンプトに「独立レビューは別のセッションでやる」とあれば、サブエージェントは立てずに land まで進め、報告にそう書く
 
 ## 報告(pekoe report)
@@ -48,7 +48,10 @@ pekoe report "<1〜3 行の要約>" --status done \
 pekoe report - --status done < report.md     # 長文は stdin
 ```
 
-- `--status`: `done`(終わった)・`blocked`(詰まった)・`progress`(途中経過。長い作業の節目に)
+- `--status`: `done`(終わった)・`blocked`(詰まった)・`progress`(途中経過。長い作業の節目に)。`--evidence` は何度でも付けられる(20 件まで、要約は 4000 文字まで)
+- どのセッションの報告かは pekoed が呼び出したプロセスから決める。slug を渡す引数は無い(自分のセッションの分しか書けない)
+- pekoed は証拠のファイルを読まない(パスと URL を文字列として残すだけ)。人が開けるパスにする
+- 報告しても `state` は変わらない。報告した後に止まると、依頼元の `pekoe wait` には `report` と `done` の両方が届く
 - 要約に書くもの: 何を変えたか、どう確かめたか(実行したコマンド)、独立レビューの結果、残っていること・やらなかったこと
 - evidence には PR の URL と、確かめた証拠(スクショ・GIF・ログのファイル)を付ける。パスは worktree の中か一時ディレクトリの絶対パス
 - 報告したら止まってよい。依頼元から追加の指示が来たら(`pekoe send` で入力欄に届く)続ける
@@ -57,7 +60,7 @@ pekoe report - --status done < report.md     # 長文は stdin
 
 - 自分で決められること(実装の方針、どちらの書き方にするか)は決めて進め、報告に書く
 - 依頼元の判断が要る(完了条件が矛盾している、範囲を広げないと直らない): `pekoe report - --status blocked` に、何が分かっていて何を決めてほしいかを書いて止まる
-- 人にしかできないこと(ログイン、認証情報、外部サービスの設定、許可の変更)だけは `pekoe --json ask-human "<頼むこと>" --kind login --about <slug>`。答えは入力欄か `pekoe --json ask-human --wait <id>` で届く
+- 人にしかできないこと(ログイン、認証情報、外部サービスの設定、許可の変更)だけは `pekoe --json ask-human "<頼むこと>" --kind login --about <slug>`。答えは入力欄か `pekoe --json ask-human --wait <id>` で届く。`ask-human` が無い版(使い方の一覧が出て終了コード 2)なら、`pekoe report - --status blocked` に人に頼みたいことを書いて止まる
 - sandbox で断られた(書き込み・ネットワーク)ら回避しない。何が断られたかを `--status blocked` で報告する
 
 ## やらないこと

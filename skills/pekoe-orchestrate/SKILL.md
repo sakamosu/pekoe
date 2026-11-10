@@ -9,13 +9,23 @@ description: pekoe の統括役(ハブ)として、依頼をセッションに�
 
 tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエージェントをハブにするときでも同じ手順で使う。違いは台帳(`pekoe ledger`)が tapi だけのものであること。
 
+## まだ無いかもしれないコマンド
+
+報告(`pekoe report` / `pekoe reports`)と待ち合わせ(`pekoe wait`)はある。判断の受信箱(`pekoe ask-human` / `pekoe inbox`)、依頼の台帳(`pekoe ledger`)、`pekoe new` の `--request` / `--after` は、入っている pekoe の版によってはまだ無い。無ければ使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
+
+- 受信箱の代わりに、人への報告(下)の「決定が必要」に問いと選択肢・推奨を書いて、会話の中で人に聞く
+- 台帳は無いものとして進める(依頼の残りは会話と `pekoe --json ls` で追う)
+- `--request` / `--after` は付けずに作り、順序はプロンプトと人への報告に書く
+- 回避のために別の手段(state.db を読む、ファイルに記録を作る)を探さない
+
 ## 始めるとき・続きから始めるとき
 
 会話の記憶に頼らない。状態は pekoed にある:
 
+- `pekoe --json ls`: セッションの状態。`parent` が自分(tapi なら `+tapi`、main なら自分の slug)のものが自分の任せた分。`report` に最新の報告の要約
+- `pekoe --json reports <slug>`: そのセッションの報告の全文(新しい順。`--limit N`)
 - `pekoe --json inbox`: 人に出した問いと答え
 - `pekoe --json ledger`: 人から頼まれてまだ閉じていない依頼(tapi だけ。main からは断られる)
-- `pekoe --json ls`: セッションの状態。`parent` が自分(tapi なら `+tapi`、main なら自分の slug)のものが自分の任せた分
 
 読んだら、待っていた続き(答えが出た問い・終わったセッション)から片付ける。
 
@@ -59,16 +69,17 @@ pekoe-work スキルの手順で進め、終わったら(詰まったら)pekoe r
 ポーリングしない(`sleep` のループや、`pekoe ls` を何度も叩かない)。`pekoe wait` を Claude Code のバックグラウンド実行(`run_in_background`)で走らせ、返ってくるまで何もしない。待っている間はトークンを使わない。
 
 ```sh
-pekoe --json wait --mine --timeout 30m                  # 初回
+pekoe --json wait --mine --timeout 30m                  # 初回(--since なしは「今から」)
 pekoe --json wait --mine --since <cursor> --timeout 30m # 2 回目から。前回の cursor を渡す
 ```
 
-- 返り値の `cursor` を覚えておき、次の `wait` に必ず `--since` で渡す(取りこぼさない)
-- `changes` の `summary` は 1 行だけ。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json inbox` で読む
-- `reset: true` が返ったら(pekoed が再起動した)、`pekoe --json ls` と `pekoe --json inbox` を読み直してから、`--since` なしで待ち直す
-- `timed_out` なら何も起きていない。人に報告することがなければそのまま待ち直す
-- 特定のセッションだけ待つなら `--slug <slug>`、種類を絞るなら `--on report,done,failed`
-- `done` で報告(`report`)が無いものは「報告なしで止まった」。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
+- 返り値は `{cursor, epoch, changes: [{seq, kind, slug, at, summary}], timed_out, reset}`。`cursor` を覚えておき、次の `wait` に必ず `--since` で渡す(取りこぼさない)。`timed_out` でも `reset` でも `cursor` は返るので、それを使う
+- `changes` の `summary` は 1 行だけ(`feat-csv: report done: …`、`feat-csv: PR #42 ci_failed` など)。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json reports <slug>` で読む
+- `reset: true` が返ったら(pekoed が再起動した・前の cursor が古すぎる)、間の変化は失われている。`pekoe --json ls` を読み直してから、返った `cursor` で待ち直す
+- `timed_out: true` なら何も起きていない。人に報告することがなければそのまま待ち直す(`--timeout` は 1h まで)
+- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)、種類を絞るなら `--on report,done,failed`(ほかに `waiting` `idle` `pr` `landed` `removed`)
+- `--mine` は自分が `pekoe new` で作ったセッション(`parent` が自分)だけ。pekoe の外で起動した main のエージェントは呼び出し元が分からず `--mine` を使えないので、`--slug` で待つ
+- `feat-csv: done (no report)` は報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
 
 ## 報告を受けたら
 
@@ -101,7 +112,7 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 - `--kind`: `decision`(選ぶ)・`approve`(取り消せない操作の承認)・`login`(人の手作業)・`fyi`(記録だけ)
 - `--about` に関係するセッションの slug を付ける。pekoed がそのセッションの事実(ブランチ・差分・PR・CI)を添えて人に見せる
 - 問いは 1 つずつ短く。似た問いは 1 件にまとめる(未回答は呼び出し元ごとに 10 件まで)
-- 答えを待つなら `pekoe --json ask-human --wait <id>` か、`pekoe wait` の `inbox`(ふだんの `wait --mine` に含まれる)。状況が変わって要らなくなった問いは取り下げる
+- 答えを待つなら `pekoe --json ask-human --wait <id>` か、`pekoe wait` の `inbox`(ふだんの `wait --mine` に含まれる。受信箱が入るまでは出ない)。状況が変わって要らなくなった問いは取り下げる
 - `pekoe inbox answer` は人だけの操作。自分で答えない
 
 ## 人への報告
