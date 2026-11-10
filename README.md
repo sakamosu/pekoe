@@ -337,6 +337,8 @@ But an agent running as the same user can read files. Use these two together:
    }
    ```
 
+**Commands from a worktree run in pekoe's own sandbox.** pekoed runs commands that come from code an agent can change: `[hooks] test` after every Stop, the `[review] gatekeeper`, `setup` on `pekoe new`, `dev`, `teardown` on rm / land, and the tests of `land`. Anyone can report a Stop, so an agent could otherwise put `cat ~/.local/share/pekoe/human-token` in a Makefile and have pekoed run it outside the agent's sandbox. pekoed runs these in a sandbox: `sandbox-exec` (Seatbelt) on macOS, bubblewrap (`bwrap`, from your distribution's package) on Linux. Everything is allowed (builds, tests and dev servers work as before) except reading `human-token`, `http-token`, the tsnet state and `config.toml`; writing pekoe's data and config directories and files that run later outside it (shell startup files, `~/.gitconfig`, `~/.claude/settings.json`, launch agents, the writable directories on `$PATH`, …); connecting to tmux servers; and, on macOS, opening apps or sending Apple events. Where no sandbox works, pekoe doesn't run them: the session shows `test not run: no sandbox`, the gatekeeper's reason shows up among the risks, and setup / dev / teardown / land fail saying why. `[sandbox] enable = false` in `config.toml` runs them without one. Not wrapped: the run window (`!`, a command you type yourself) and the agents (their own sandbox's job). The deny list is aimed at the secrets: a command can still write elsewhere in your home, so this doesn't replace reviewing what an agent changed. Details: [docs/api.md](docs/api.md) ("hooks の sandbox").
+
 The Web UI and the Chrome extension are human entry points that don't go through the socket, so each works with its own authentication. Threat model: [docs/web.md](docs/web.md#脅威モデル).
 
 ### From an iPhone (Web UI)
@@ -416,6 +418,8 @@ deny    = "n"
 agent = "claude"            # a name from [agents.*]; agents other than claude get no --add-dir (cwd only)
 [tips]                      # tips (4's empty view and tapi chat's greeting)
 enable = true               # false hides both
+[sandbox]                   # commands from worktrees ([hooks], gatekeeper) run in a sandbox
+enable = true               # false runs them without one (where none works, they are not run)
 ```
 
 `[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks`. `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.

@@ -493,7 +493,7 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	for _, c := range repo.Config.Hooks.Setup {
 		cmd := vars.ExpandShell(c)
 		if !run("setup:"+c, func() error {
-			out, err := shell(ctx, s.Path, env, cmd, 30*time.Minute)
+			out, err := d.shell(ctx, s.Path, env, cmd, 30*time.Minute)
 			if err != nil {
 				return fmt.Errorf("%v\n%s", err, tail(out, 20))
 			}
@@ -559,15 +559,26 @@ func tail(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// shell runs a command line through sh -c (design: ただのシェル).
-func shell(ctx context.Context, dir string, env []string, cmdline string, timeout time.Duration) (string, error) {
+// shell runs a command line from the repo's config through $SHELL -c
+// (design: ただのシェル), inside the sandbox: it runs code from the
+// worktree, which an agent can write. Without a sandbox it runs nothing and
+// returns a *sandbox.UnavailableError.
+// userShell is $SHELL, or /bin/sh.
+func userShell() string {
+	if sh := os.Getenv("SHELL"); sh != "" {
+		return sh
+	}
+	return "/bin/sh"
+}
+
+func (d *Daemon) shell(ctx context.Context, dir string, env []string, cmdline string, timeout time.Duration) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	sh := os.Getenv("SHELL")
-	if sh == "" {
-		sh = "/bin/sh"
+	argv, err := d.sbx.Wrap([]string{userShell(), "-c", cmdline})
+	if err != nil {
+		return "", err
 	}
-	c := exec.CommandContext(ctx, sh, "-c", cmdline)
+	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Dir = dir
 	c.Env = append(os.Environ(), env...)
 	out, err := c.CombinedOutput()

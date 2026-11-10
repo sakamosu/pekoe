@@ -335,6 +335,8 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
    }
    ```
 
+**worktree から来るコマンドは pekoe 自身の sandbox で動かす。** pekoed は、エージェントが書き換えられるコードを実行することがある: Stop のたびの `[hooks] test`、`[review] gatekeeper`、`pekoe new` の `setup`、`dev`、rm / land の `teardown`、`land` のテスト。Stop は誰でも報告できるので、そのままだとエージェントが Makefile に `cat ~/.local/share/pekoe/human-token` を混ぜ、エージェントの sandbox の外で pekoed に実行させられる。そこで pekoed はこれらを sandbox で動かす。macOS は `sandbox-exec`(Seatbelt)、Linux は bubblewrap(`bwrap`。ディストリのパッケージで入れる)。基本はすべて許し(ビルド・テスト・開発サーバーは今までどおり動く)、塞ぐのは次だけ: `human-token`・`http-token`・tsnet の state・`config.toml` を読むこと。pekoe のデータと設定のディレクトリ、あとで sandbox の外で実行されるファイル(シェルの起動ファイル、`~/.gitconfig`、`~/.claude/settings.json`、launch agent、`$PATH` のうち書き込めるディレクトリなど)に書くこと。tmux サーバーにつなぐこと。macOS ではアプリを開くことと Apple イベントを送ること。sandbox が使えない環境では動かさない: セッションに `test not run: no sandbox` と出し、門番は理由をリスクの欄に出し、setup・dev・teardown・land は理由を添えて失敗する。`config.toml` の `[sandbox] enable = false` で sandbox なしに戻せる。包まないもの: run 窓(`!`。自分で打つコマンド)とエージェント自身(それぞれの sandbox の役目)。塞ぐ範囲は秘密に絞っているので、ホームのほかの場所には書けてしまう。エージェントの変更を確かめる代わりにはならない。詳しくは [docs/api.md](docs/api.md) の「hooks の sandbox」。
+
 Web UI と Chrome 拡張はソケットを通らない人間の入口なので、それぞれの認証だけで使える。脅威モデルは [docs/web.md](docs/web.md#脅威モデル)。
 
 ### iPhone から(Web UI)
@@ -414,6 +416,8 @@ deny    = "n"
 agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
 [tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
 enable = true               # false で両方とも出さない
+[sandbox]                   # worktree から来るコマンド([hooks]・門番)を sandbox で動かす
+enable = true               # false で sandbox なしに動かす(使えない環境では動かさない)
 ```
 
 `[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` を書ける。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。

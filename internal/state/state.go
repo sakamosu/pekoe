@@ -30,7 +30,7 @@ const (
 )
 
 type Test struct {
-	Status  string    `json:"status"` // pass | fail | running | none
+	Status  string    `json:"status"` // pass | fail | running | none | blocked (no sandbox: not run)
 	Summary string    `json:"summary"`
 	At      time.Time `json:"at"`
 }

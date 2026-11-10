@@ -555,6 +555,8 @@ func (r *reviewModel) view() string {
 		test = " · " + th.FG(theme.Ok, m.ic.Check) + th.FG(theme.Dim, " test")
 	case "fail":
 		test = " · " + th.FG(theme.Err, m.ic.Fail) + th.FG(theme.Dim, " test")
+	case "blocked":
+		test = " · " + th.FG(theme.Warn, m.ic.Warning) + th.FG(theme.Dim, " test not run: no sandbox")
 	}
 	footer := th.FG(theme.Dim, "since ") + th.FG(theme.Text, r.rv.BaseLabel) + th.FG(theme.Dim, fmt.Sprintf(" · %d hunks · ", r.rv.Total)) + th.FG(theme.Ok, fmt.Sprint(r.rv.Approved)) + th.FG(theme.Dim, " approved")
 	footer2 := th.FG(theme.Ok, fmt.Sprintf("+%d", r.rv.Diffstat.Added)) + " " + th.FG(theme.Err, fmt.Sprintf("-%d", r.rv.Diffstat.Deleted)) + test
@@ -573,7 +575,11 @@ func (r *reviewModel) view() string {
 		crows = append(crows, row{Text: th.FG(theme.Dim, fit(fmt.Sprintf("%s:%d", filepath.Base(c.Path), c.Line), 14)) + tag + c.Text})
 	}
 	for _, rk := range r.rv.Risks {
-		crows = append(crows, row{Text: th.FG(theme.Warn, m.ic.Warning) + " " + th.FG(theme.Dim, fmt.Sprintf("%s:%d ", filepath.Base(rk.Path), rk.Line)) + rk.Text})
+		where := ""
+		if rk.Path != "" { // a pathless one is about the gatekeeper itself (not run: no sandbox)
+			where = th.FG(theme.Dim, fmt.Sprintf("%s:%d ", filepath.Base(rk.Path), rk.Line))
+		}
+		crows = append(crows, row{Text: th.FG(theme.Warn, m.ic.Warning) + " " + where + rk.Text})
 	}
 	if len(crows) == 0 {
 		crows = append(crows, row{Text: th.FG(theme.Dim, "none · c to comment")})
