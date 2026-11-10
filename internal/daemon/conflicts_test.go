@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/state"
 )
@@ -141,4 +143,76 @@ func TestConflictForecast(t *testing.T) {
 			t.Fatalf("untouched file warned: %+v", b.PendingTool)
 		}
 	})
+}
+
+// Without the token conflicts.list rescans at most every
+// agentConflictsEvery; within it the last scan comes back without running
+// git again. With the token it rescans every time, as before.
+func TestAgentConflictsCached(t *testing.T) {
+	d, wa, wb := twoSessions(t)
+	agent := &Caller{} // no token
+	agentList := func() []ConflictPair {
+		t.Helper()
+		r, err := d.CallAs(agent, "conflicts.list", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.([]ConflictPair)
+	}
+	scanned := func() time.Time {
+		d.cf.mu.Lock()
+		defer d.cf.mu.Unlock()
+		return d.cf.scanned
+	}
+
+	// the first call scans: nothing scanned yet
+	if ps := agentList(); len(ps) != 0 {
+		t.Fatalf("pairs before any edit: %+v", ps)
+	}
+	first := scanned()
+	if first.IsZero() {
+		t.Fatal("the first agent call did not scan")
+	}
+
+	// within the window: the cached (empty) pairs, no rescan
+	editLine(t, wa, 2, "from a")
+	editLine(t, wb, 2, "from b")
+	if ps := agentList(); len(ps) != 0 {
+		t.Fatalf("agent call within %s rescanned: %+v", agentConflictsEvery, ps)
+	}
+	if !scanned().Equal(first) {
+		t.Fatal("agent call within the window ran a scan")
+	}
+
+	// with the token: always a fresh scan, and the cache follows it
+	if ps := call[[]ConflictPair](t, d, "conflicts.list", map[string]any{}); len(ps) != 1 {
+		t.Fatalf("human call: %+v", ps)
+	}
+	if ps := agentList(); len(ps) != 1 || ps[0].A != "a" {
+		t.Fatalf("agent call after a human scan: %+v", ps)
+	}
+	if ps, _ := d.CallAs(agent, "conflicts.list", json.RawMessage(`{"repo_id":"elsewhere"}`)); len(ps.([]ConflictPair)) != 0 {
+		t.Fatalf("cached pairs not filtered by repo: %+v", ps)
+	}
+
+	// once the window has passed, the agent's call scans again
+	run(t, wb, "git", "checkout", "-q", "--", "f.txt")
+	d.cf.mu.Lock()
+	d.cf.scanned = time.Now().Add(-agentConflictsEvery - time.Second)
+	d.cf.mu.Unlock()
+	if ps := agentList(); len(ps) != 0 {
+		t.Fatalf("agent call after the window did not rescan: %+v", ps)
+	}
+	if !scanned().After(first) {
+		t.Fatal("no new scan after the window")
+	}
+}
+
+// conflicts.list works over the socket without the human token.
+func TestConflictsListWithoutToken(t *testing.T) {
+	d, _, _ := twoSessions(t)
+	c := dialPipe(t, d)
+	if e := c.call("conflicts.list", map[string]any{}, ""); e != "" {
+		t.Fatalf("conflicts.list without the token: %s", e)
+	}
 }
