@@ -816,7 +816,7 @@ function renderCounts(c) {
   tile("secondary", "✓", c.review, "to review");
   tile("primary", "#", c.open_prs, "open PRs");
   tile("ok", "✓", c.ready, "ready to merge");
-  tile("warn", "✉", c.inbox_open, "inbox", "#/inbox");
+  tile("warn", "?", c.inbox_open, "inbox", "#/inbox");
   tile("secondary", "☰", c.ledger_open, "requests open");
 }
 
