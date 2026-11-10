@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -332,5 +333,37 @@ func TestAgentSendRechecksBeforeTyping(t *testing.T) {
 	}
 	if e := c.call("session.send", map[string]any{"slug": "main", "text": "2"}, d.humanToken); e != "" {
 		t.Fatalf("send with the token: %s", e)
+	}
+}
+
+// Without the token, session.new works only in a repository pekoe knows,
+// at the directory pekoe knows it by: not in a new one, and not in a clone
+// that copied a known repository's origin (and so its id).
+func TestAgentNewOnlyInKnownRepos(t *testing.T) {
+	d, _, repo := setup(t)
+	run(t, repo, "git", "remote", "add", "origin", "https://example.com/me/app.git")
+	c := dialPipe(t, d)
+	if e := c.call("session.new", map[string]any{"repo": repo, "branch": "feat/a"}, ""); !strings.Contains(e, "does not know yet") || !strings.Contains(e, "only a person can do this") {
+		t.Fatalf("new repository without the token: error = %q", e)
+	}
+	if e := c.call("session.new", map[string]any{"repo": repo, "branch": "feat/a"}, d.humanToken); e != "" {
+		t.Fatalf("with the token: %s", e)
+	}
+	if e := c.call("session.new", map[string]any{"repo": repo, "branch": "feat/b"}, ""); e != "" {
+		t.Fatalf("known repository without the token: %s", e)
+	}
+	// a subdirectory of the known repository is the same repository
+	sub := filepath.Join(repo, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if e := c.call("session.new", map[string]any{"repo": sub, "branch": "feat/c"}, ""); e != "" {
+		t.Fatalf("subdirectory of a known repository: %s", e)
+	}
+
+	twin := gitRepo(t, "other", "app")
+	run(t, twin, "git", "remote", "add", "origin", "https://example.com/me/app.git")
+	if e := c.call("session.new", map[string]any{"repo": twin, "branch": "feat/d"}, ""); !strings.Contains(e, "does not know yet") {
+		t.Fatalf("clone with a known origin: error = %q", e)
 	}
 }
