@@ -74,14 +74,14 @@ EOF
 
 ## 人間だけの操作
 
-pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send`・`pekoe land` と hooks の `pekoe event` だけ。`pekoe new` は pekoe が既に知っているリポジトリ(セッションがある・あった、設定がある)でだけ通り、新しいリポジトリでは `a repository pekoe does not know yet` で断られる(最初のセッションはユーザーに TUI か端末で作ってもらう)。`pekoe land` は origin のあるリポジトリでだけ通る(origin がないと base をその場で進めるので人間だけの操作)。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・`pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `rm` / `issues` / `conflicts`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
+pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send`・`pekoe land`・landed のセッションの `pekoe rm` と hooks の `pekoe event` だけ。`pekoe new` は pekoe が既に知っているリポジトリ(セッションがある・あった、設定がある)でだけ通り、新しいリポジトリでは `a repository pekoe does not know yet` で断られる(最初のセッションはユーザーに TUI か端末で作ってもらう)。`pekoe land` は origin のあるリポジトリでだけ通る(origin がないと base をその場で進めるので人間だけの操作)。`pekoe rm` は `landed` のセッション(マージ済みで、pekoed が worktree をもう消したもの)を一覧から消すときだけ通る。ほかの状態のセッション・`--force`・worktree が残っている landed のセッションの rm は人間だけの操作。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・`pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `issues` / `conflicts`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
 - ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code のエージェントは pekoe が渡す sandbox の設定でトークンのファイルを読めないこと(`[agents.claude] sandbox = false` にしていなければ)を伝える。sandbox の中ではビルドキャッシュへの書き込みや許していないドメインへの接続が断られる。断られたら回避せず、`~/.claude/settings.json` に `allowWrite` / `allowedDomains` を足す方法(pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)をユーザーに伝える
 
 ## やらないこと
 
-- `pekoe land`(push と PR 作成)、マージ、`pekoe rm` / worktree 削除、`pekoe answer`(他セッションの許可に代わりに答える。そもそもエージェントからは断られる)は、ユーザーに明示的に頼まれたときだけ
+- `pekoe land`(push と PR 作成)、マージ、`pekoe rm` / worktree 削除、`pekoe answer`(他セッションの許可に代わりに答える。そもそもエージェントからは断られる)は、ユーザーに明示的に頼まれたときだけ。landed のセッションの片付け(`pekoe rm <slug> --yes`。一覧から消すだけ)は、頼まれればハブでできる。それ以外の rm はユーザーに TUI か端末でやってもらう
 - 自分自身のセッション(環境変数 `$PEKOE_SESSION` の slug)に `pekoe send` しない
 - 同じ作業のために何個もセッションを作らない。並行させる理由がある単位でだけ分ける。既存セッションの続きなら `pekoe send` で足す
 - `pekoe update`(pekoe を GitHub のリリースに入れ替える)は、ユーザーに頼まれたときだけ。ただし人間だけの操作なのでエージェントからは断られる。頼まれたら `pekoe update --check` で新しい版があるかを見て、入れ替えはユーザーに自分の端末で `pekoe update` してもらう
