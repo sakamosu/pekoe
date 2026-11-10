@@ -48,7 +48,7 @@ jobs:
         run: |
           go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
           go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" -tags web ./...
-      # goreleaser は go.mod より新しい Go を要求する(v2.20.0 は go >= 1.27.3)ので GOTOOLCHAIN=auto にする。
+      # goreleaser は go.mod より新しい Go を要求することがある(v2.20.0 は go >= 1.27.3)ので GOTOOLCHAIN=auto にする。
       # ツールチェーンも golang.org/toolchain としてモジュールプロキシから落ちてくる。
       # goreleaser がビルドする pekoe 側は go.mod の版(GOTOOLCHAIN=local)のまま。
       - name: Install goreleaser
