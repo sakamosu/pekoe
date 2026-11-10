@@ -49,3 +49,35 @@ func TestPlanKeepsOtherHooksAndIsIdempotent(t *testing.T) {
 		t.Fatal("no backup kept")
 	}
 }
+
+// settings.json kept in dotfiles as a symlink: install writes through the
+// link instead of replacing it with a regular file.
+func TestApplyKeepsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	dots := filepath.Join(t.TempDir(), "dotfiles")
+	os.MkdirAll(dots, 0o755)
+	real := filepath.Join(dots, "settings.json")
+	os.WriteFile(real, []byte(`{"model":"opus"}`), 0o644)
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	path, before, after, _, err := Plan("/usr/local/bin/pekoe", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(path, before, after); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("settings.json is no longer a symlink: %v", err)
+	}
+	b, _ := os.ReadFile(real)
+	if !strings.Contains(string(b), "pekoe event") {
+		t.Fatalf("hooks did not reach the link's target: %s", b)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dots, "*.pekoe-tmp")); len(left) > 0 {
+		t.Fatalf("tmp left behind: %v", left)
+	}
+}

@@ -125,11 +125,17 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 			return
 		}
 	}
-	tmp := path + ".pekoe-tmp"
+	// settings.json kept in dotfiles is a symlink: replace the file it
+	// points at, not the link (renaming over the link would cut it off)
+	target := path
+	if t, e := filepath.EvalSymlinks(path); e == nil {
+		target = t
+	}
+	tmp := target + ".pekoe-tmp"
 	if err = os.WriteFile(tmp, after, 0o600); err != nil {
 		return
 	}
-	err = os.Rename(tmp, path)
+	err = os.Rename(tmp, target)
 	return
 }
 
