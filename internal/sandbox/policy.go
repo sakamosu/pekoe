@@ -1,0 +1,92 @@
+package sandbox
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"golang.org/x/sys/unix"
+
+	"pekoe/internal/paths"
+)
+
+// DefaultPolicy is what pekoed denies the commands it runs from a
+// worktree. webStateDir is [web] state_dir (the tsnet node's keys).
+//
+// Read: the secrets — the human token, the Chrome extension's HTTP token,
+// the tsnet state, and config.toml ([web] auth_key).
+//
+// Write: pekoe's data and config directories (else the command could turn
+// the sandbox off, change the hooks, or replace the token), and places
+// whose contents run later outside any sandbox: shell startup files, git's
+// and Claude Code's settings, launch agents, editor and tmux config, and
+// the user-writable directories on $PATH (pekoed runs git, gh and tmux
+// from there). This list cannot be complete: the sandbox is aimed at the
+// secrets, not at everything a command running as the user could do.
+//
+// Connect: the user's tmux servers (pekoe's among them): through one, a
+// command could open a window that runs outside the sandbox.
+func DefaultPolicy(webStateDir string) Policy {
+	p := Policy{
+		DenyRead: []string{
+			paths.HumanTokenFile(),
+			paths.TokenFile(),
+			paths.WebStateDir(),
+			paths.GlobalConfig(),
+		},
+		DenyWrite: []string{paths.DataDir(), paths.ConfigDir()},
+	}
+	if webStateDir != "" && webStateDir != paths.WebStateDir() {
+		p.DenyRead = append(p.DenyRead, webStateDir)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, rel := range homeAutorun {
+			p.DenyWrite = append(p.DenyWrite, filepath.Join(home, rel))
+		}
+	}
+	if z := os.Getenv("ZDOTDIR"); filepath.IsAbs(z) {
+		p.DenyWrite = append(p.DenyWrite, z)
+	}
+	p.DenyWrite = append(p.DenyWrite, writablePathDirs(os.Getenv("PATH"))...)
+	p.DenyConnect = append(p.DenyConnect, tmuxDir())
+	return p
+}
+
+// homeAutorun are files and directories below $HOME whose contents get run
+// (or decide what gets run) later, outside the sandbox.
+var homeAutorun = []string{
+	".zshrc", ".zshenv", ".zprofile", ".zlogin", ".zlogout",
+	".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile",
+	".config/fish", ".config/zsh",
+	".gitconfig", ".config/git",
+	".ssh",
+	".claude/settings.json", ".claude/settings.local.json",
+	".tmux.conf", ".config/tmux",
+	".vimrc", ".config/nvim",
+	"Library/LaunchAgents",
+	".config/systemd/user", ".config/autostart",
+}
+
+// writablePathDirs are the absolute directories on path that this user can
+// write to (~/.local/bin, ~/go/bin, /opt/homebrew/bin …).
+func writablePathDirs(path string) []string {
+	var out []string
+	for _, d := range filepath.SplitList(path) {
+		if !filepath.IsAbs(d) {
+			continue
+		}
+		if unix.Access(d, unix.W_OK) == nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// tmuxDir is where tmux keeps this user's server sockets.
+func tmuxDir() string {
+	base := os.Getenv("TMUX_TMPDIR")
+	if base == "" {
+		base = "/tmp"
+	}
+	return filepath.Join(base, fmt.Sprintf("tmux-%d", os.Getuid()))
+}

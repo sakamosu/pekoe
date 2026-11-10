@@ -158,6 +158,17 @@ func UnderWorktrees(p string) bool {
 		strings.Count(rel, string(filepath.Separator)) >= 1
 }
 
+// Real is p (made absolute) with the symlinks of its deepest existing
+// ancestor resolved: the path the kernel sees, which is what a sandbox
+// profile has to name (on macOS /tmp is /private/tmp). p need not exist.
+func Real(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	return resolveExisting(abs)
+}
+
 // resolveExisting evaluates the symlinks of the deepest existing ancestor of
 // the clean absolute path p and appends the rest unchanged.
 func resolveExisting(p string) string {
