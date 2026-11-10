@@ -1425,8 +1425,8 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 		}
 		url := fmt.Sprintf("http://localhost:%d", s.Port)
 		return func() tea.Msg {
-			if err := exec.Command("open", "-a", "Google Chrome", url).Run(); err != nil {
-				_ = exec.Command("open", url).Run()
+			if err := openChrome(url); err != nil {
+				return errMsg{err}
 			}
 			return infoMsg("opened " + url)
 		}

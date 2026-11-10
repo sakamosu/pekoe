@@ -165,6 +165,7 @@ func (d *Daemon) purge(s *state.Session) {
 	d.catch.Forget(s.Slug)
 	removeAttachments(s.RepoID, s.Slug)
 	d.dropPreview(s)
+	os.Remove(agentSettingsFile(s.Slug))
 }
 
 // ---- dev server ----

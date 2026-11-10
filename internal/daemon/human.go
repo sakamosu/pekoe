@@ -39,7 +39,7 @@ var agentMethods = map[string]string{
 	"session.event": "the agents' hooks (`pekoe event`)",
 	"session.list":  "`pekoe ls`, the MCP server's session_list",
 	"session.get":   "one entry of session.list",
-	"session.new":   "the hub agent hands work to a new session (`pekoe new`)",
+	"session.new":   "the hub agent hands work to a new session (`pekoe new`); hAgentNew limits it to known repositories",
 	"session.send":  "the hub agent's follow-up instructions (`pekoe send`); authorizeSend limits it",
 	"repo.resolve":  "`pekoe ls` / `pekoe new --repo` find the repository",
 	"editor.open":   "the MCP server's open_in_editor (only an event for nvim)",
@@ -192,6 +192,33 @@ func (d *Daemon) authorize(req Request) error {
 		return d.authorizeSend(req.Params)
 	}
 	return nil
+}
+
+// hAgentNew is session.new without the human token: only in a repository
+// pekoe already knows (repo.list: one with a session, a remembered one, or
+// one with a repos/<id>.toml), at the directory pekoe knows it by.
+// Registering a new repository is a person's decision: pekoed runs git
+// there (worktree add checks files out), and a repository an agent made
+// itself could name filter or merge drivers in its own config, which run
+// outside any sandbox where none is available. A repository's id comes from
+// its origin URL, which an agent's own clone can copy, so the directory has
+// to match too; the session is then made from the known directory, not
+// from the path the agent passed (which could be a link it retargets).
+func (d *Daemon) hAgentNew(p newP) (any, error) {
+	if p.Repo == "" {
+		return d.hNew(p) // "repo path required"
+	}
+	repo, err := resolveRepo(p.Repo)
+	if err != nil {
+		return nil, err
+	}
+	for _, k := range d.knownRepos() {
+		if k.ID == repo.ID && k.Dir != "" && realpath(k.Dir) == realpath(repo.Dir) {
+			p.Repo = k.Dir
+			return d.hNew(p)
+		}
+	}
+	return nil, fmt.Errorf("session.new in %s, a repository pekoe does not know yet (start its first session yourself, from the TUI or your own terminal): %w", repo.Dir, ErrHumanOnly)
 }
 
 // authorizeSend: sending text stays open to agents (a hub agent hands work

@@ -52,7 +52,14 @@ type Agent struct {
 	Always  string `toml:"always"`
 	Deny    string `toml:"deny"`
 	Hooks   bool   `toml:"hooks"` // agent reports state through `pekoe event`
+	// Sandbox: Claude Code agents get pekoe's sandbox settings (--settings:
+	// the sandbox on, pekoe's tokens and config unreadable). Default true;
+	// ignored for other agents.
+	Sandbox *bool `toml:"sandbox"`
 }
+
+// SandboxOn: unset means on.
+func (a Agent) SandboxOn() bool { return a.Sandbox == nil || *a.Sandbox }
 
 type Theme struct {
 	Mode   string            `toml:"mode"`  // truecolor | ansi | none | auto
@@ -212,6 +219,9 @@ func LoadGlobal() (*Global, error) {
 			d.Deny = v.Deny
 		}
 		d.Hooks = d.Hooks || v.Hooks
+		if v.Sandbox != nil {
+			d.Sandbox = v.Sandbox
+		}
 		agents[k] = d
 	}
 	g.Agents = agents

@@ -51,7 +51,7 @@ func TestPromptIsNotAnOption(t *testing.T) {
 	evil := "--permission-mode=bypassPermissions"
 	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new", "prompt": evil})
 	got := fe.spawned(s.Slug, engine.WinAgent).Command
-	if !strings.HasPrefix(got, "claude -- '"+evil+"'") {
+	if !strings.HasPrefix(got, "claude"+settingsFlag(s.Slug)+" -- '"+evil+"'") {
 		t.Fatalf("prompt not after --: %s", got)
 	}
 }
@@ -66,7 +66,7 @@ func TestPromptAfterResumeIsNotAnOption(t *testing.T) {
 	if err := d.spawnAgent(s.Slug, "-x", "continue", 0, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := fe.spawned(s.Slug, engine.WinAgent).Command; !strings.HasPrefix(got, "claude --continue -- '-x'") {
+	if got := fe.spawned(s.Slug, engine.WinAgent).Command; !strings.HasPrefix(got, "claude --continue"+settingsFlag(s.Slug)+" -- '-x'") {
 		t.Fatalf("continue: %s", got)
 	}
 }

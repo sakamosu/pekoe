@@ -197,7 +197,7 @@ pekoe                                                 # TUI
 - `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
-- Of the commands that talk to pekoed, agents can use only `ls`, `new` and `send` (and `event`, for the hooks) without the token. The others (`answer`, `dev`, `init`, `open`, `review`, `rm`, `land`, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
+- Of the commands that talk to pekoed, agents can use only `ls`, `new` and `send` (and `event`, for the hooks) without the token, and `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only). The others (`answer`, `dev`, `init`, `open`, `review`, `rm`, `land`, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
 
 ## TUI
 
@@ -307,25 +307,44 @@ Register with `claude mcp add pekoe -- pekoe mcp`. The tools are `open_in_editor
 
 Agents run as the same user, so they can connect to pekoed's socket. pekoed runs outside the agents' sandbox, so without the `human-token` it allows only what agents need: `pekoe event` from the hooks, `pekoe ls`, `pekoe new` and `pekoe send` for the hub (the skill; `send` only into an agent's input box and not while it shows a permission dialog), and the MCP server's `session_list` and `open_in_editor`. Everything else (answering permission prompts, raw keys, typing into tapi chat, drafting and writing settings, running commands with `dev`, in the run window or the review surface, looking at other sessions' screens, diffs or error excerpts, stopping the daemon, …) needs the token. The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. Which method is which is listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
 
-But an agent running as the same user can read files. Use these two together:
+But an agent running as the same user can read files. Two things keep the token from it:
 
-1. **Make the token file unreadable to agents.** For Claude Code, enable the sandbox in `~/.claude/settings.json` and add the file to both `sandbox.filesystem.denyRead` (enforced at the OS level for Bash commands and their children) and a `Read(...)` rule in `permissions.deny` (for the Read tool). If you changed `$PEKOE_HOME` or `$XDG_DATA_HOME`, use that path
+1. **Claude Code agents run in a Claude Code sandbox that pekoe configures (on by default).** Every time pekoe starts Claude Code (new sessions, `open`, restarts, resuming after a daemon restart, and tapi chat; any `[agents.*]` whose `command` starts with `claude`), it adds `--settings <data dir>/agent-settings/<slug>.json`. The paths in it are the real ones, following `$PEKOE_HOME`, `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME` and `[web] state_dir`:
+   - `sandbox.enabled: true`, `allowUnsandboxedCommands: false` (no retry with `dangerouslyDisableSandbox`), `failIfUnavailable: true` (Claude Code doesn't start without a working sandbox), `filesystem.disabled: false`
+   - `filesystem.denyRead`: `human-token`, `http-token`, the tsnet state and pekoe's config directory (`~/.config/pekoe`). Enforced at the OS level for Bash commands and their children
+   - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself
+   - `filesystem.denyWrite` and `Edit(...)`: the repository's `.git/config`, `.git/config.worktree` and `.git/hooks` (agents can still commit, but can't change settings the git you run yourself follows)
+   - `network.allowUnixSockets`: pekoed's socket (for `pekoe ls`, `new` and `send`). Hooks run outside the sandbox, so `pekoe event` isn't affected anyway
+
+   **Claude Code only.** codex, opencode and other agents get nothing; if you use them, make the same paths unreadable with their own sandbox. `[agents.claude] sandbox = false` in `config.toml` turns it off (per agent definition, e.g. `[agents.claude-ask]`).
+
+   **How it combines with your own settings** (Claude Code's [sandbox](https://code.claude.com/docs/en/sandboxing) and [settings](https://code.claude.com/docs/en/settings) docs; this can change between versions):
+   - `--settings` ranks above `~/.claude/settings.json` and a repository's `.claude/settings.json` (only managed settings rank above it). `"enabled": false` in `~/.claude/settings.json` doesn't turn the sandbox off in pekoe's sessions
+   - Lists such as `denyRead`, `allowWrite`, `allowedDomains` and `permissions.deny` are merged: yours are added to pekoe's
+   - Because `allowUnsandboxedCommands: false` comes from `--settings`, the sandbox is "admin-required": settings that loosen it count only from `--settings`, `~/.claude/settings.json` and managed settings. `allowWrite`, `allowedDomains`, `excludedCommands` and the like in a repository's `.claude/settings.json` / `.claude/settings.local.json` are ignored (agents can write those files)
+   - `excludedCommands` in `~/.claude/settings.json` do apply, and the commands listed there run outside the sandbox, where they can read the token. Don't list commands that can read files (`gh`, `cat`, `python`, …), and don't reopen the paths above with `filesystem.allowRead`
+
+   **What stops working by default:** writing outside the working directory (the worktree), the temp directory and `--add-dir` directories (the Go build cache, npm / pnpm caches, …), and network access to domains you haven't allowed (none at first; auto mode refuses them, manual permission modes ask). `git commit` works (the worktree's shared `.git` is writable). To loosen it, put only `allowWrite` / `allowedDomains` and the like in `~/.claude/settings.json`. Without `"enabled"` they don't affect Claude Code outside pekoe (its sandbox stays off there). An example, with what developing pekoe itself needs (Go's caches and modules, `gh`; npm only if you use it):
 
    ```json
    {
-     "permissions": {
-       "deny": ["Read(~/.local/share/pekoe/human-token)"]
-     },
      "sandbox": {
-       "enabled": true,
+       "enableWeakerNetworkIsolation": true,
        "filesystem": {
-         "denyRead": ["~/.local/share/pekoe/human-token"]
+         "allowWrite": ["~/Library/Caches/go-build", "~/go/pkg/mod", "~/.npm", "~/Library/pnpm/store"]
+       },
+       "network": {
+         "allowedDomains": ["proxy.golang.org", "sum.golang.org", "github.com", "api.github.com", "registry.npmjs.org"]
        }
      }
    }
    ```
 
-   Then have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first can't read the file and the second is refused with `only a person can do this` (not `no such session`). Key names and behavior can change between Claude Code versions, so also see the [sandbox](https://code.claude.com/docs/en/sandboxing) and [permissions](https://code.claude.com/docs/en/permissions) docs. If pekoe can't reach the socket from inside the sandbox, review the sandbox's unix socket settings
+   Check the paths with `go env GOCACHE GOMODCACHE`, `npm config get cache` and `pnpm store path` (on Linux, `~/.cache/go-build` and so on). In the macOS sandbox `gh` fails to verify TLS (`x509: OSStatus -26276`); with `enableWeakerNetworkIsolation: true` and `api.github.com` allowed it works (tested). Don't put `gh` in `excludedCommands` to run it outside the sandbox (`gh api --input <file>` could send the token out). If you don't loosen it, a person handles PRs and issues with `pekoe land` and the TUI (the same goes for tapi chat's counts that use `gh`).
+
+   With `--permission-mode bypassPermissions`, connections to domains you haven't allowed go through without asking (Claude Code's behavior), so the network restriction has practically no effect; the file restrictions (the token stays unreadable) remain. On Linux, Claude Code's sandbox needs bubblewrap and socat; without them `failIfUnavailable` keeps Claude Code from starting (the agent's window shows why).
+
+   After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
 2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the skill) uses `ls`, `new` and `send`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm`, `land` or `daemon`
 
@@ -339,7 +358,7 @@ But an agent running as the same user can read files. Use these two together:
 
 **Commands from a worktree run in pekoe's own sandbox.** pekoed runs commands that come from code an agent can change: `[hooks] test` after every Stop, the `[review] gatekeeper`, `setup` on `pekoe new`, `dev`, `teardown` on rm / land, and the tests of `land`. Anyone can report a Stop, so an agent could otherwise put `cat ~/.local/share/pekoe/human-token` in a Makefile and have pekoed run it outside the agent's sandbox. pekoed runs these in a sandbox: `sandbox-exec` (Seatbelt) on macOS, bubblewrap (`bwrap`, from your distribution's package) on Linux. Everything is allowed (builds, tests and dev servers work as before) except reading `human-token`, `http-token`, the tsnet state and `config.toml`; writing pekoe's data and config directories and files that run later outside it (shell startup files, `~/.gitconfig`, `~/.claude/settings.json`, launch agents, the writable directories on `$PATH`, …); connecting to tmux servers; and, on macOS, opening apps or sending Apple events. Where no sandbox works, pekoe doesn't run them: the session shows `test not run: no sandbox`, the gatekeeper's reason shows up among the risks, and setup / dev / teardown / land fail saying why. `[sandbox] enable = false` in `config.toml` runs them without one. Not wrapped: the run window (`!`, a command you type yourself) and the agents (their own sandbox's job). The deny list is aimed at the secrets: a command can still write elsewhere in your home, so this doesn't replace reviewing what an agent changed. Details: [docs/api.md](docs/api.md) ("hooks の sandbox").
 
-**pekoed's own git doesn't run what an agent wrote into git's config.** git runs commands named in its config (`core.fsmonitor` on every `git status`, hooks, credential helpers, filter and merge drivers picked by `.gitattributes`, `gpg.program`, `core.sshCommand`, …), and pekoed runs git in the worktrees all the time (diffstat, snapshots, review, undo, the conflict forecast, land, rm). An agent can rewrite its worktree's `.git` file to point at a git directory of its own, and an agent that can commit can usually write the repository's `.git` too. So pekoed (and the `gh` it runs) uses the git directory the repository has for each session's worktree, whatever its `.git` file says (if that file was changed, pekoe runs no git there and the session shows `.git changed: git stopped`); sets the settings that name a command from your own config (system / global) or git's defaults — no fsmonitor, no hooks at all (so `land`'s push runs no pre-push hook), only your credential helpers and signing programs, no `ext::` remotes, `--no-ext-diff --no-textconv`, the default upload-pack / receive-pack; and runs git in the same sandbox as the hooks, for what has no fixed name (filter and merge drivers, git-lfs settings, the hooks of a local-path remote). Where no sandbox works, git still runs (pekoe can't work without it) and those last ones are not contained. git you run yourself (your shell, the run window, git plugins in the review surface's nvim) reads the worktree as git normally does: check `.git` before using git in a worktree that shows the warning, and don't let agents write `<repo>/.git/config` or `.git/hooks` (for Claude Code, `sandbox.filesystem.denyWrite`). Details: [docs/api.md](docs/api.md) ("pekoed が動かす git").
+**pekoed's own git doesn't run what an agent wrote into git's config.** git runs commands named in its config (`core.fsmonitor` on every `git status`, hooks, credential helpers, filter and merge drivers picked by `.gitattributes`, `gpg.program`, `core.sshCommand`, …), and pekoed runs git in the worktrees all the time (diffstat, snapshots, review, undo, the conflict forecast, land, rm). An agent can rewrite its worktree's `.git` file to point at a git directory of its own, and an agent that can commit can usually write the repository's `.git` too. So pekoed (and the `gh` it runs) uses the git directory the repository has for each session's worktree, whatever its `.git` file says (if that file was changed, pekoe runs no git there and the session shows `.git changed: git stopped`); sets the settings that name a command from your own config (system / global) or git's defaults — no fsmonitor, no hooks at all (so `land`'s push runs no pre-push hook), only your credential helpers and signing programs, no `ext::` remotes, `--no-ext-diff --no-textconv`, the default upload-pack / receive-pack; and runs git in the same sandbox as the hooks, for what has no fixed name (filter and merge drivers, git-lfs settings, the hooks of a local-path remote). Where no sandbox works, git still runs (pekoe can't work without it) and those last ones are not contained. git you run yourself (your shell, the run window, git plugins in the review surface's nvim) reads the worktree as git normally does: check `.git` before using git in a worktree that shows the warning, and don't let agents write `<repo>/.git/config` or `.git/hooks` (pekoe passes `sandbox.filesystem.denyWrite` and `Edit(...)` denies for them to Claude Code agents; block them yourself for other agents). Details: [docs/api.md](docs/api.md) ("pekoed が動かす git").
 
 The Web UI and the Chrome extension are human entry points that don't go through the socket, so each works with its own authentication. Threat model: [docs/web.md](docs/web.md#脅威モデル).
 
@@ -412,7 +431,9 @@ palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (
 splash  = true              # splash screen at startup
 [mascot.colors]             # override hi / bd / sh / eye
 bd = "#e4c49a"
-[agents.codex]              # agents other than Claude Code
+[agents.claude]
+sandbox = true              # pass pekoe's sandbox settings (--settings) to Claude Code; false to not
+[agents.codex]              # agents other than Claude Code (get no sandbox settings)
 command = "codex"
 allow   = "y"
 deny    = "n"
@@ -424,7 +445,7 @@ enable = true               # false hides both
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
 ```
 
-`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks`. `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
+`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks` `sandbox`. `sandbox` (default `true`) applies only when `command` starts with `claude` ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 
 ## Where data lives (your repositories stay clean)
 

@@ -195,7 +195,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`(と hooks 用の `event`)だけ。ほか(`answer`・`dev`・`init`・`open`・`review`・`rm`・`land`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`(と hooks 用の `event`)だけで、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ使える(新しいリポジトリで最初のセッションを作るのは人間だけの操作)。ほか(`answer`・`dev`・`init`・`open`・`review`・`rm`・`land`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -305,25 +305,44 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、`dev` や run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
 
-ただし同じユーザーのエージェントはファイルを読めてしまう。次の 2 つを合わせて使う。
+ただし同じユーザーのエージェントはファイルを読めてしまう。そこで次の 2 つで守る。
 
-1. **token のファイルをエージェントから読めなくする。** Claude Code なら `~/.claude/settings.json` で sandbox を有効にし、`sandbox.filesystem.denyRead`(Bash のコマンドとその子プロセスに OS レベルで効く)と `permissions.deny` の `Read(...)`(Read ツールに効く)の両方に入れる。`$PEKOE_HOME` や `$XDG_DATA_HOME` を変えているならそのパスにする
+1. **Claude Code のエージェントは、pekoe が渡す Claude Code の sandbox の中で動く(既定)。** pekoe は Claude Code を起動するたびに(新規・`open`・再起動・デーモン再起動後の再開、tapi chat も。`[agents.*]` の `command` が `claude` で始まるものすべて)`--settings <データディレクトリ>/agent-settings/<slug>.json` を付ける。中身は次のとおりで、パスは `$PEKOE_HOME`・`$XDG_DATA_HOME`・`$XDG_CONFIG_HOME`・`[web] state_dir` を反映した実際の値:
+   - `sandbox.enabled: true`・`allowUnsandboxedCommands: false`(`dangerouslyDisableSandbox` での再実行を許さない)・`failIfUnavailable: true`(sandbox が使えなければ Claude Code は起動しない)・`filesystem.disabled: false`
+   - `filesystem.denyRead`: `human-token`・`http-token`・tsnet の state・pekoe の設定ディレクトリ(`~/.config/pekoe`)。Bash のコマンドとその子プロセスに OS レベルで効く
+   - `permissions.deny`: 同じパスへの `Read(...)` と `Edit(...)`(sandbox の外で動く Read / Edit ツールの分)、`agent-settings` 自身への `Edit(...)`
+   - `filesystem.denyWrite` と `Edit(...)`: リポジトリの `.git/config`・`.git/config.worktree`・`.git/hooks`(commit はできる。自分で動かす git が従う設定は書けない)
+   - `network.allowUnixSockets`: pekoed のソケット(`pekoe ls`・`new`・`send` のため)。hooks は sandbox の外で動くので `pekoe event` はもともと影響を受けない
+
+   **claude だけ。** codex・opencode などほかのエージェントには何も渡さない。使うなら、そのエージェント自身の sandbox で同じパスを読めなくしておく。`config.toml` の `[agents.claude] sandbox = false` で外せる(`[agents.claude-ask]` のような別名の定義ごと)。
+
+   **自分の設定との合わせ方**(Claude Code の [sandbox](https://code.claude.com/docs/en/sandboxing) と [settings](https://code.claude.com/docs/en/settings) の仕様。版で変わりうる):
+   - `--settings` は `~/.claude/settings.json` やリポジトリの `.claude/settings.json` より強い(managed settings だけがその上)。`~/.claude/settings.json` に `"enabled": false` があっても pekoe のセッションでは sandbox は切れない
+   - `denyRead`・`allowWrite`・`allowedDomains`・`permissions.deny` のような配列は足し合わせ。自分の設定の分が pekoe の分に加わる
+   - `allowUnsandboxedCommands: false` を `--settings` で渡すので sandbox は「admin-required」になり、緩める設定は `--settings`・`~/.claude/settings.json`・managed settings からだけ効く。リポジトリの `.claude/settings.json` / `.claude/settings.local.json` の `allowWrite`・`allowedDomains`・`excludedCommands` などは無視される(エージェントが書けるため)
+   - 逆に `~/.claude/settings.json` の `excludedCommands` は効き、そこに挙げたコマンドは sandbox の外で動いてトークンを読める。ファイルを読めるコマンド(`gh`・`cat`・`python` など)を入れない。`filesystem.allowRead` で上のパスを開け直さない
+
+   **既定で通らなくなるもの**: cwd(worktree)・一時ディレクトリ・`--add-dir` の外への書き込み(Go のビルドキャッシュ、npm / pnpm のキャッシュなど)と、許したドメイン以外へのネットワーク(最初は空。auto モードでは断られ、手動の許可モードでは聞かれる)。`git commit` はできる(worktree の本体の `.git` には書ける)。緩めるなら `~/.claude/settings.json` に `allowWrite` / `allowedDomains` などだけを書く。`"enabled"` を書かなければ pekoe の外の Claude Code には効かない(sandbox が無効のままなので)。例(pekoe 自身の開発に要るもの: Go のキャッシュとモジュール、`gh`。npm は使うときだけ):
 
    ```json
    {
-     "permissions": {
-       "deny": ["Read(~/.local/share/pekoe/human-token)"]
-     },
      "sandbox": {
-       "enabled": true,
+       "enableWeakerNetworkIsolation": true,
        "filesystem": {
-         "denyRead": ["~/.local/share/pekoe/human-token"]
+         "allowWrite": ["~/Library/Caches/go-build", "~/go/pkg/mod", "~/.npm", "~/Library/pnpm/store"]
+       },
+       "network": {
+         "allowedDomains": ["proxy.golang.org", "sum.golang.org", "github.com", "api.github.com", "registry.npmjs.org"]
        }
      }
    }
    ```
 
-   設定したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。キーの名前や挙動は Claude Code の版で変わりうるので、[sandbox](https://code.claude.com/docs/en/sandboxing) と [permissions](https://code.claude.com/docs/en/permissions) のドキュメントも見る。sandbox の中から pekoe がソケットにつながらないときは、sandbox の unix ソケットの設定を見直す
+   パスは `go env GOCACHE GOMODCACHE`・`npm config get cache`・`pnpm store path` で確かめる(Linux なら `~/.cache/go-build` など)。`gh` は macOS の sandbox の中では TLS の検証に失敗する(`x509: OSStatus -26276`)が、`enableWeakerNetworkIsolation: true` と `api.github.com` を許せば動く(確かめた)。`gh` を `excludedCommands` に入れて sandbox の外で動かさない(`gh api --input <ファイル>` でトークンを外へ送れてしまう)。緩めずに使うなら、PR や issue は人間が `pekoe land` や TUI で扱う(tapi chat の `gh` を使う集計も同じ)。
+
+   `--permission-mode bypassPermissions` で使うと、許していないドメインへの接続も確認なしに通る(Claude Code の仕様)ので、ネットワークの制限は実質効かない。ファイルの制限(トークンを読めない)は残る。Linux では Claude Code の sandbox に bubblewrap と socat が要り、無いと `failIfUnavailable` で Claude Code が起動しない(エージェントの窓に終了の理由が出る)。
+
+   入れ直したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が `Operation not permitted` で読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。
 
 2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`land`、`daemon` は入れない
 
@@ -337,7 +356,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 **worktree から来るコマンドは pekoe 自身の sandbox で動かす。** pekoed は、エージェントが書き換えられるコードを実行することがある: Stop のたびの `[hooks] test`、`[review] gatekeeper`、`pekoe new` の `setup`、`dev`、rm / land の `teardown`、`land` のテスト。Stop は誰でも報告できるので、そのままだとエージェントが Makefile に `cat ~/.local/share/pekoe/human-token` を混ぜ、エージェントの sandbox の外で pekoed に実行させられる。そこで pekoed はこれらを sandbox で動かす。macOS は `sandbox-exec`(Seatbelt)、Linux は bubblewrap(`bwrap`。ディストリのパッケージで入れる)。基本はすべて許し(ビルド・テスト・開発サーバーは今までどおり動く)、塞ぐのは次だけ: `human-token`・`http-token`・tsnet の state・`config.toml` を読むこと。pekoe のデータと設定のディレクトリ、あとで sandbox の外で実行されるファイル(シェルの起動ファイル、`~/.gitconfig`、`~/.claude/settings.json`、launch agent、`$PATH` のうち書き込めるディレクトリなど)に書くこと。tmux サーバーにつなぐこと。macOS ではアプリを開くことと Apple イベントを送ること。sandbox が使えない環境では動かさない: セッションに `test not run: no sandbox` と出し、門番は理由をリスクの欄に出し、setup・dev・teardown・land は理由を添えて失敗する。`config.toml` の `[sandbox] enable = false` で sandbox なしに戻せる。包まないもの: run 窓(`!`。自分で打つコマンド)とエージェント自身(それぞれの sandbox の役目)。塞ぐ範囲は秘密に絞っているので、ホームのほかの場所には書けてしまう。エージェントの変更を確かめる代わりにはならない。詳しくは [docs/api.md](docs/api.md) の「hooks の sandbox」。
 
-**pekoed 自身の git は、エージェントが git の設定に書いたものを動かさない。** git は設定に書かれたコマンドを動かす(`git status` のたびの `core.fsmonitor`、フック、credential helper、`.gitattributes` が選ぶ filter・merge ドライバ、`gpg.program`、`core.sshCommand` など)。pekoed は worktree で git を頻繁に動かす(diffstat・スナップショット・レビュー・undo・衝突予報・land・rm)。エージェントは worktree の `.git` ファイルを自前の git ディレクトリに向け直せるし、commit できるエージェントはたいていリポジトリの `.git` にも書ける。そこで pekoed(と pekoed が動かす `gh`)は、セッションの worktree では `.git` ファイルが何を言おうとリポジトリが持つその worktree の git ディレクトリを使う(書き換えられていたらそこでは git を動かさず、セッションに `.git changed: git stopped` と出す)。コマンドを名指しする設定は、自分の設定(system / global)か git の既定値で上書きする: fsmonitor なし、フックは一切なし(`land` の push でも pre-push は走らない)、credential helper と署名のプログラムは自分のものだけ、`ext::` の remote なし、`--no-ext-diff --no-textconv`、upload-pack / receive-pack は既定のもの。名前が決まっていないもの(filter・merge ドライバ、git-lfs の設定、ローカルのパスにある remote のフック)のために、git 自体も hooks と同じ sandbox で動かす。sandbox が使えない環境でも git は動かす(git なしでは pekoe が使えない)ので、その最後のものは閉じ込められない。自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン)は worktree を普通の git と同じに読む: 警告が出た worktree で git を使う前に `.git` を確かめること、エージェントに `<repo>/.git/config` や `.git/hooks` を書かせないこと(Claude Code なら `sandbox.filesystem.denyWrite`)。詳しくは [docs/api.md](docs/api.md) の「pekoed が動かす git」。
+**pekoed 自身の git は、エージェントが git の設定に書いたものを動かさない。** git は設定に書かれたコマンドを動かす(`git status` のたびの `core.fsmonitor`、フック、credential helper、`.gitattributes` が選ぶ filter・merge ドライバ、`gpg.program`、`core.sshCommand` など)。pekoed は worktree で git を頻繁に動かす(diffstat・スナップショット・レビュー・undo・衝突予報・land・rm)。エージェントは worktree の `.git` ファイルを自前の git ディレクトリに向け直せるし、commit できるエージェントはたいていリポジトリの `.git` にも書ける。そこで pekoed(と pekoed が動かす `gh`)は、セッションの worktree では `.git` ファイルが何を言おうとリポジトリが持つその worktree の git ディレクトリを使う(書き換えられていたらそこでは git を動かさず、セッションに `.git changed: git stopped` と出す)。コマンドを名指しする設定は、自分の設定(system / global)か git の既定値で上書きする: fsmonitor なし、フックは一切なし(`land` の push でも pre-push は走らない)、credential helper と署名のプログラムは自分のものだけ、`ext::` の remote なし、`--no-ext-diff --no-textconv`、upload-pack / receive-pack は既定のもの。名前が決まっていないもの(filter・merge ドライバ、git-lfs の設定、ローカルのパスにある remote のフック)のために、git 自体も hooks と同じ sandbox で動かす。sandbox が使えない環境でも git は動かす(git なしでは pekoe が使えない)ので、その最後のものは閉じ込められない。自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン)は worktree を普通の git と同じに読む: 警告が出た worktree で git を使う前に `.git` を確かめること、エージェントに `<repo>/.git/config` や `.git/hooks` を書かせないこと(Claude Code のエージェントには pekoe が `sandbox.filesystem.denyWrite` と `Edit(...)` の deny で渡している。ほかのエージェントは自分で塞ぐ)。詳しくは [docs/api.md](docs/api.md) の「pekoed が動かす git」。
 
 Web UI と Chrome 拡張はソケットを通らない人間の入口なので、それぞれの認証だけで使える。脅威モデルは [docs/web.md](docs/web.md#脅威モデル)。
 
@@ -410,7 +429,9 @@ palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | li
 splash  = true              # 起動時のスプラッシュ
 [mascot.colors]             # hi / bd / sh / eye を上書き
 bd = "#e4c49a"
-[agents.codex]              # Claude Code 以外のエージェント
+[agents.claude]
+sandbox = true              # Claude Code に pekoe の sandbox の設定(--settings)を渡す。false で渡さない
+[agents.codex]              # Claude Code 以外のエージェント(sandbox の設定は渡さない)
 command = "codex"
 allow   = "y"
 deny    = "n"
@@ -422,7 +443,7 @@ enable = true               # false で両方とも出さない
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
 
-`[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` を書ける。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
+`[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` を書ける。`sandbox`(既定 `true`)は `command` が `claude` で始まるものにだけ効く([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
 
 ## データの置き場(リポジトリを汚さない)
 

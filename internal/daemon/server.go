@@ -434,8 +434,11 @@ func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res an
 	if !ok {
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
-	if agent && method == "session.send" {
+	switch {
+	case agent && method == "session.send":
 		h = bind(d.hAgentSend)
+	case agent && method == "session.new":
+		h = bind(d.hAgentNew)
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")

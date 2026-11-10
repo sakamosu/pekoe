@@ -53,7 +53,6 @@ var NoTip = map[string]string{
 	"[http]":    "Chrome 拡張の port。pekoe ext の tip で足りる",
 	"[theme]":   "見た目の好み。README の設定の節で足りる",
 	"[mascot]":  "見た目の好み。README の設定の節で足りる",
-	"[agents]":  "エージェントの定義。使う人は README の設定の節を読む",
 	"[ports]":   "ポート台帳の開始番号。困ったときに設定の節を見れば足りる",
 	"[animate]": "見た目の好み(最上位のキー animate)",
 	"[tips]":    "TIPS 自身。止め方は README の TIPS の節に書いてある",
