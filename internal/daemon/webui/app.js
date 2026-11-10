@@ -10,6 +10,9 @@ let view = "list"; // list | inbox | overview | detail
 let current = null; // slug shown in the detail view
 let backTo = ""; // the hash the detail view's back button returns to
 let tapi = null; // /api/tapi: tapi's state and the inbox / ledger counts
+// TAPI is tapi chat in the detail view (#/tapi). No session slug starts
+// with "+", so it never names a session.
+const TAPI = "+tapi";
 let listTimer = 0, screenTimer = 0;
 let busy = false;
 let sending = false; // a send is in flight
@@ -239,7 +242,25 @@ function renderBadge() {
 
 // ---- detail ----
 
+// apiBase: where the detail view's screen, send and keys go
+function apiBase(slug) {
+  return slug === TAPI ? "/api/tapi" : "/api/sessions/" + encodeURIComponent(slug);
+}
+
+// tapiUp: tapi chat runs (its screen, keys and send make sense)
+function tapiUp() {
+  return !!tapi && tapi.started && tapi.alive;
+}
+
+// detailTarget: what the detail view shows: the session, or tapi
+function detailTarget() {
+  if (current === TAPI) return tapiUp() ? tapi : null;
+  return sessions.find((x) => x.slug === current);
+}
+
 function renderDetailHead() {
+  $("d-kind").textContent = current === TAPI ? "◆ tapi" : "◆ Session";
+  if (current === TAPI) return renderTapiHead();
   const s = sessions.find((x) => x.slug === current);
   const head = $("d-head"), ask = $("d-ask");
   head.replaceChildren();
@@ -268,11 +289,56 @@ function renderDetailHead() {
 // renderTarget: the session send goes to, next to the box. It is the same
 // `current` doSend posts to, so what is shown is what is hit.
 function renderTarget(s) {
-  const to = $("d-to");
+  const to = $("d-to"), note = $("d-send-note");
+  const isTapi = current === TAPI;
+  to.classList.toggle("tapi", isTapi);
+  $("d-text").placeholder = isTapi ? "tapi に頼む(送る前に全文を確かめます)" : "一言の指示を送る";
+  if (isTapi) {
+    $("d-to-slug").textContent = "tapi";
+    $("d-to-repo").textContent = s ? "統括役 · 全リポジトリ" : tapi && tapi.started ? "has exited" : "is not started";
+    let why = "";
+    if (tapi && !tapi.sendable) why = "tapi への送信には config.toml の [web] allow_devices が要ります(端末を絞っているときだけ送れます)";
+    else if (s && s.answerable) why = "tapi は許可を待っています: 端末(pekoe TUI)で答えるまで送れません";
+    note.textContent = why;
+    note.hidden = !why;
+    to.classList.toggle("gone", !s);
+    $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending;
+    return;
+  }
+  note.hidden = true;
   $("d-to-slug").textContent = current || "";
   $("d-to-repo").textContent = s ? [s.repo, s.branch !== s.slug ? s.branch : ""].filter(Boolean).join(" · ") : "is gone";
   to.classList.toggle("gone", !s);
   $("d-send-btn").disabled = !s || sending;
+}
+
+// renderTapiHead: tapi's state in the detail view. Its permission prompts
+// are not answered here (no allow/deny): the card says so.
+function renderTapiHead() {
+  const head = $("d-head"), ask = $("d-ask");
+  const t = detailTarget();
+  head.replaceChildren();
+  $("d-name").textContent = "tapi";
+  renderTarget(t);
+  renderKeypad(t);
+  head.append(tapiLine());
+  const l2 = el("div", "line2");
+  l2.append(document.createTextNode("統括役 · 全リポジトリを読み、セッションを作って任せる"));
+  head.append(l2);
+  if (busy) return;
+  ask.replaceChildren();
+  ask.hidden = !t || t.state !== "waiting";
+  if (ask.hidden) return;
+  const body = el("div", "body");
+  if (t.answerable) {
+    const w = el("div", "also");
+    w.append(el("span", "ic", "⚠"), document.createTextNode(" tapi は許可を待っています。allow / deny は Web には出しません: 端末(pekoe TUI)で答えてください。それまで send とキーは止まります。"));
+    body.append(w);
+  } else if (t.wait_kind === "question") {
+    body.append(el("div", "msg", "質問です。画面を見ながら、キーパッドか send で答えてください。"));
+  }
+  if (t.last_message) body.append(el("div", "msg", t.last_message));
+  ask.append(body);
 }
 
 // ---- the agent screen, with its colors ----
@@ -373,7 +439,7 @@ async function refreshScreen() {
   const slug = current;
   const pre = $("d-screen");
   try {
-    const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/screen");
+    const r = await api(apiBase(slug) + "/screen");
     if (slug !== current || screenPaused) return; // answered after a switch or a pause
     if (holdScreen()) { // a selection started while it was on the way
       screenHeld = true;
@@ -479,6 +545,10 @@ async function doSend(ev) {
   // the target is fixed here, from the same `current` the label shows
   const slug = current;
   if (!text || !slug || sending) return;
+  if (slug === TAPI) {
+    openTapiSheet(text);
+    return;
+  }
   if (!sessions.some((x) => x.slug === slug)) {
     toast(slug + " is gone");
     return;
@@ -495,7 +565,58 @@ async function doSend(ev) {
     toast(slug + ": " + e.message);
   }
   sending = false;
-  if (current) renderTarget(sessions.find((x) => x.slug === current));
+  if (current) renderTarget(detailTarget());
+}
+
+// ---- send to tapi: always through a sheet with the whole text ----
+// tapi acts on every repository, so its send weighs more than one
+// session's: the sheet says the target is tapi and shows every character
+// that will be typed. The text is fixed when the sheet opens.
+
+let tsend = null; // the text in the sheet
+
+function openTapiSheet(text) {
+  if (!tapiUp()) {
+    toast("tapi is not running");
+    return;
+  }
+  if (!tapi.sendable) {
+    toast("tapi への送信には [web] allow_devices が要ります");
+    return;
+  }
+  busy = true;
+  tsend = text;
+  $("tsheet-cap").textContent = "text — all of it, as it will be typed (" + [...text].length + " chars, " + text.split("\n").length + " lines)";
+  $("tsheet-text").textContent = text;
+  $("tsheet-text").scrollTop = 0;
+  $("tsheet-ok").disabled = false;
+  $("tsheet").hidden = false;
+}
+
+function closeTapiSheet() {
+  $("tsheet").hidden = true;
+  tsend = null;
+  busy = false;
+}
+
+async function doTapiSend() {
+  const text = tsend;
+  if (text == null || sending) return;
+  $("tsheet-ok").disabled = true;
+  sending = true;
+  try {
+    await api("/api/tapi/send", { text });
+    drafts.delete(TAPI);
+    const ta = $("d-text");
+    if (current === TAPI && ta.value.trim() === text) ta.value = "";
+    toast("sent → tapi", true);
+    setTimeout(refreshScreen, 600);
+  } catch (e) {
+    toast("tapi: " + e.message);
+  }
+  sending = false;
+  closeTapiSheet();
+  refresh();
 }
 
 // ---- keypad: a question's menu (AskUserQuestion) by its keys ----
@@ -515,14 +636,14 @@ function renderKeypad(s) {
 async function pressKey(key) {
   const slug = current;
   if (!slug || pressing) return;
-  const s = sessions.find((x) => x.slug === slug);
+  const s = detailTarget();
   if (!questionUp(s)) return;
   // one key at a time: the buttons stay off until pekoed has sent it, so a
   // double tap is not two Downs (or two Enters)
   pressing = true;
   renderKeypad(s);
   try {
-    await api("/api/sessions/" + encodeURIComponent(slug) + "/keys", { keys: [key] });
+    await api(apiBase(slug) + "/keys", { keys: [key] });
     setTimeout(refreshScreen, 150);
     setTimeout(refreshScreen, 700);
     if (key === "Enter" || key === "Escape") setTimeout(refresh, 700);
@@ -533,7 +654,7 @@ async function pressKey(key) {
   // a short pause after the reply: the menu redraws before the next key
   setTimeout(() => {
     pressing = false;
-    if (current) renderKeypad(sessions.find((x) => x.slug === current));
+    if (current) renderKeypad(detailTarget());
   }, 200);
 }
 
@@ -820,6 +941,22 @@ function renderCounts(c) {
   tile("secondary", "☰", c.ledger_open, "requests open");
 }
 
+// tapiLine: icon  tapi  state  age, as a session's line1
+function tapiLine() {
+  const l1 = el("div", "line1");
+  if (!tapi) {
+    l1.append(colored("dim", "○", "ic"), el("span", "name r-text", "tapi"), colored("dim", "not readable", "word"));
+    return l1;
+  }
+  const lk = tapi.look || { icon: "○", role: "dim", word: tapi.state };
+  let word = lk.word, role = lk.role;
+  if (!tapi.started) [word, role] = ["not started", "dim"];
+  else if (!tapi.alive) [word, role] = ["exited", "dim"];
+  l1.append(colored(role, lk.icon, "ic"), el("span", "name r-text", "tapi"), colored(role, word, "word"),
+    el("span", "age", tapi.started && tapi.state !== "idle" ? ago(tapi.state_since) : ""));
+  return l1;
+}
+
 function renderTapi() {
   const box = $("o-tapi");
   box.replaceChildren();
@@ -827,15 +964,9 @@ function renderTapi() {
     box.append(el("div", "empty", "(tapi is not readable)"));
     return;
   }
-  const l1 = el("div", "line1");
-  const lk = tapi.look || { icon: "○", role: "dim", word: tapi.state };
-  let word = lk.word, role = lk.role;
-  if (!tapi.started) [word, role] = ["not started", "dim"];
-  else if (!tapi.alive) [word, role] = ["exited", "dim"];
-  l1.append(colored(role, lk.icon, "ic"), el("span", "name r-text", "tapi"), colored(role, word, "word"),
-    el("span", "age", tapi.started && tapi.state !== "idle" ? ago(tapi.state_since) : ""));
-  box.append(l1);
-  if (tapi.state === "waiting" && tapi.started) box.append(el("div", "also r-warn", "⚠ tapi waits: answer it at the terminal"));
+  box.append(tapiLine());
+  if (tapi.started && tapi.answerable) box.append(el("div", "also r-warn", "⚠ tapi waits for a permission: answer it at the terminal"));
+  else if (tapi.started && tapi.state === "waiting") box.append(el("div", "also r-warn", "? tapi asks: open it to answer"));
   if (tapi.last_message) box.append(el("div", "msg last", tapi.last_message));
 }
 
@@ -931,7 +1062,7 @@ async function refreshOverview() {
 // ---- routing & polling ----
 
 function go(slug) {
-  location.hash = slug ? "#/s/" + encodeURIComponent(slug) : backTo;
+  location.hash = slug === TAPI ? "#/tapi" : slug ? "#/s/" + encodeURIComponent(slug) : backTo;
 }
 
 const VIEWS = { "#/inbox": "inbox", "#/overview": "overview" };
@@ -943,10 +1074,11 @@ function route() {
     if (ta.value) drafts.set(current, ta.value);
     else drafts.delete(current);
   }
-  current = m ? decodeURIComponent(m[1]) : null;
-  view = m ? "detail" : VIEWS[location.hash] || "list";
+  const isTapi = location.hash === "#/tapi";
+  current = isTapi ? TAPI : m ? decodeURIComponent(m[1]) : null;
+  view = current ? "detail" : VIEWS[location.hash] || "list";
   inboxTyping = false; // a hidden note box may never get its blur
-  if (!m) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
+  if (!current) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
   ta.value = (current && drafts.get(current)) || "";
   for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
   $("tabs").hidden = view === "detail";
@@ -996,6 +1128,9 @@ $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
+$("tsheet-cancel").addEventListener("click", closeTapiSheet);
+$("tsheet-ok").addEventListener("click", doTapiSend);
+$("tsheet").addEventListener("click", (e) => { if (e.target === $("tsheet")) closeTapiSheet(); });
 $("isheet-cancel").addEventListener("click", closeInboxSheet);
 $("isheet-ok").addEventListener("click", doInboxAnswer);
 $("isheet").addEventListener("click", (e) => { if (e.target === $("isheet")) closeInboxSheet(); });
