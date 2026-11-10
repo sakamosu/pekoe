@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
+	"pekoe/internal/config"
 	"pekoe/internal/daemon"
 	"pekoe/internal/gitx"
 	"pekoe/internal/state"
@@ -72,5 +75,21 @@ func TestReviewCommentPlacement(t *testing.T) {
 	}
 	if len(under) != len(want) {
 		t.Errorf("comments shown: %v", under)
+	}
+}
+
+// Nothing to review shows the pekoe logo (it was still the old name),
+// centered within the panel.
+func TestLogoIsPekoe(t *testing.T) {
+	m := tapiModel(t, "none", config.Mascot{})
+	rows := m.logoRows(40, 14, "nothing to review")
+	text := plainRows(rows)
+	if !strings.Contains(text, `| '_ \ / _ \| |/ / _ \ / _ \`) || strings.Contains(text, `|_.__/`) {
+		t.Fatalf("logo:\n%s", text)
+	}
+	for _, r := range rows {
+		if w := ansi.StringWidth(r.Text); w > 40 {
+			t.Fatalf("row %q is %d wide", ansi.Strip(r.Text), w)
+		}
 	}
 }

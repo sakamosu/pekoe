@@ -275,12 +275,16 @@ func ktok(n int) string {
 }
 
 var logo = []string{
-	` _           _`,
-	`| |__   ___ | |__   __ _`,
-	`| '_ \ / _ \| '_ \ / _` + "`" + ` |`,
-	`| |_) | (_) | |_) | (_| |`,
-	`|_.__/ \___/|_.__/ \__,_|`,
+	`             _`,
+	` _ __   ___ | | _____   ___`,
+	`| '_ \ / _ \| |/ / _ \ / _ \`,
+	`| |_) |  __/|   < (_) |  __/`,
+	`| .__/ \___||_|\_\___/ \___|`,
+	`|_|`,
 }
+
+// logoBase is the logo's baseline row (the p's tail hangs below it).
+const logoBase = 4
 
 // logoRows centers the dim ASCII logo (one primary accent) with a caption.
 func (m *model) logoRows(width, height int, caption string) []row {
@@ -289,11 +293,14 @@ func (m *model) logoRows(width, height int, caption string) []row {
 	for i := 0; i < top; i++ {
 		rows = append(rows, row{})
 	}
-	lw := 26
+	lw := 0
+	for _, l := range logo {
+		lw = max(lw, len(l))
+	}
 	left := strings.Repeat(" ", max((width-lw)/2, 0))
 	for i, l := range logo {
 		t := m.th.FG(theme.Dim, l)
-		if i == len(logo)-1 {
+		if i == logoBase {
 			t += "  " + m.th.FG(theme.Primary, "●")
 		}
 		rows = append(rows, row{Text: left + t})
