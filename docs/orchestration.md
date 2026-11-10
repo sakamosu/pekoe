@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1 の前半(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」)。実装で設計から変えたところは各節に「実装:」で書いた。段階 1 の後半(判断の受信箱)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」)。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -245,6 +245,20 @@ pekoe inbox answer 12 1 [--note "…"]    # 人だけ
 - pekoed 自身も項目を作る(`from: pekoed`)。v1 ではマージ待ち(段階 3 の「マージしてよいかの根拠」)だけ
 
 state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, question, options TEXT, recommend, context, links TEXT, facts TEXT, status, answer TEXT, delivery, created_at, updated_at)`。答えたもの・取り下げたものも残す(前例として読む)。
+
+実装(段階 1。仕様の正は docs/api.md「判断の受信箱」):
+
+- **添字**: API の `recommend`・`decided`・`choice` は 0 始まり、CLI(`--recommend 1`・`inbox answer 12 1`)と画面は 1 始まり。`--recommend` / `--decided` は選択肢の文でも渡せる
+- **facts と rev**: 未回答の項目の facts は `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変われば `rev` を上げる。答えは読み直した後の `rev` と比べるので、人が見た後に HEAD が動いた・CI が落ちたものは `look again` で断られる(TUI のモーダルは選択を外して「変わった」と出す)。facts の `report` は id・状態・時刻・HEAD だけにした(要約はエージェントの文で、事実ではない)。`state`・`base`・`git_blocked`・`gone`(セッションが消えた)を足した
+- **kind**: `approve` は選択肢を省くと「承認する」「承認しない」。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
+- **取り除く文字**: 制御文字・ANSI に加えて、見えない書式文字(bidi の上書き・ゼロ幅。Unicode の Cf)も落とす(画面で文の順序を入れ替えられる)。TUI は描く前にもう一度落とす
+- **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
+- **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と 1 分ずつの `wait` を繰り返す)
+- **pty への配送**: 1 回に 1 件(古い順)。打つ条件は依頼元が `idle` か `done`(tapi chat は `idle`)・許可ダイアログなし(hooks と画面、受け付け時と打つ直前の 2 回)。試すのは依頼元が `idle` / `done` に入ったとき・答えた直後・5 秒ごと。1 行は `[pekoe inbox #12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox 12` に均す(メモの改行で入力が途中送信されないように)。Enter の直前に許可ダイアログが出たときは文字が入力欄に残るので、打ち直さず送信の記録に `ok: false` で残す
+- **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作るので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
+- **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない
+- **CLI**: `pekoe ask-human --wait` は真偽のフラグにした(問いと一緒なら出してから待つ、`--wait <id>` なら前に出したものを待つ。`--timeout` は `wait` と同じく 1 時間まで)。`pekoe inbox <id>`(1 件を詳しく)・`pekoe inbox withdraw`・`pekoe inbox dismiss`・`pekoe inbox --mine` を足した。`inbox answer` の `--rev` は省くと今の rev(`pekoe inbox` が rev を出す)
+- **TUI**: 未回答の項目が来たらトースト 1 回(`✉ feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は「推奨(エージェント)」と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
 
 ### 5. 送信の記録
 
