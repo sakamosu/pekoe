@@ -269,19 +269,6 @@ func repoKeyOf(s *state.Session) string {
 	return s.RepoDir
 }
 
-// multiRepo: headings only when sessions span more than one repository.
-func (m *model) multiRepo() bool {
-	first := ""
-	for i, s := range m.sessions {
-		if i == 0 {
-			first = repoKeyOf(s)
-		} else if repoKeyOf(s) != first {
-			return true
-		}
-	}
-	return false
-}
-
 // groupByRepo keeps the order within a repository and orders repositories
 // by their first session.
 func groupByRepo(ss []*state.Session) {

@@ -1,8 +1,8 @@
 package tui
 
 // The tapi row (docs/orchestration.md「Sessions の先頭の行」): tapi, the
-// orchestrator, always heads Sessions, above the repository headings and
-// outside the filter. It is a row, not a session: m.sel stays an index into
+// orchestrator, always heads Sessions under its own heading (orchestrator
+// ━━━), above the repository headings and outside the filter. It is a row, not a session: m.sel stays an index into
 // visible(), and tapiSel (-1) stands for the tapi row, so current() is nil
 // there and every session key finds nothing to act on. ↵ opens tapi chat.
 // The row starts with the state icon, never a face (docs/mascot.md: one
@@ -22,6 +22,24 @@ import (
 
 // tapiSel is m.sel on the tapi row.
 const tapiSel = -1
+
+// tapiHeadingName is the heading above the tapi row, shaped like a
+// repository heading (repoHeading) so the two sections read alike.
+const tapiHeadingName = "orchestrator"
+
+// tapiHeading: the tapi section's heading. It stands out a little from the
+// repository headings without a color of its own (a color means something,
+// docs/ui-guidelines.md): the name is always text, never dim, and the rule
+// is heavy (━), which still tells the two apart in the none mode.
+func (m *model) tapiHeading(cw int) string {
+	th := m.th
+	name := tapiHeadingName
+	if w(name) > cw-4 {
+		name = fit(name, max(cw-4, 1))
+	}
+	head := "  " + th.FG(theme.Text, name) + " "
+	return head + th.FG(theme.Border, strings.Repeat("━", max(cw-w(head), 0)))
+}
 
 // tapiRowName is the name on the row; tapiWordX is where its state word
 // starts (icon, space, name, space).

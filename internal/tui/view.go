@@ -180,11 +180,12 @@ const rowNone = -2
 func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 	now := time.Now()
 	vis := m.visible()
-	rows := make([]row, 0, len(vis)+1)
-	sels := make([]int, 0, len(vis)+1)
-	// tapi heads the list, above the headings and outside the filter (taprow.go)
-	rows = append(rows, row{Text: m.tapiLine(cw, now), Sel: m.onTapiRow()})
-	sels = append(sels, tapiSel)
+	rows := make([]row, 0, len(vis)+2)
+	sels := make([]int, 0, len(vis)+2)
+	// tapi heads the list under its own heading, above the repository
+	// headings and outside the filter (taprow.go)
+	rows = append(rows, row{Text: m.tapiHeading(cw)}, row{Text: m.tapiLine(cw, now), Sel: m.onTapiRow()})
+	sels = append(sels, rowNone, tapiSel)
 	waiting, toReview := 0, 0
 	var oldest time.Duration
 	for _, s := range m.sessions {
@@ -198,9 +199,10 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 			toReview++
 		}
 	}
-	headings := m.multiRepo()
+	// every repository gets its heading, even a single one: it closes the
+	// tapi section above
 	for i, s := range vis {
-		if headings && (i == 0 || repoKeyOf(vis[i-1]) != repoKeyOf(s)) {
+		if i == 0 || repoKeyOf(vis[i-1]) != repoKeyOf(s) {
 			rows = append(rows, row{Text: m.repoHeading(s, cw)})
 			sels = append(sels, rowNone)
 		}
@@ -1204,11 +1206,13 @@ func (m *model) viewBar() string {
 // ---- narrow (< 100 columns): left column becomes one tabbed panel ----
 
 func (m *model) narrowTopH() int {
-	n := 0
+	n, most := 0, 6
 	switch m.narrowTab {
 	case 0:
-		rows, _ := m.sessionRows(max(m.width-4, 1)) // repository headings count
-		n = len(rows)
+		rows, _ := m.sessionRows(max(m.width-4, 1)) // the headings count
+		// one more for the orchestrator heading, so as many sessions show
+		// as before it
+		n, most = len(rows), 7
 	case 1:
 		n = len(m.worktrees)
 	case 2:
@@ -1216,7 +1220,7 @@ func (m *model) narrowTopH() int {
 	case 3:
 		n = len(m.changes)
 	}
-	return clampi(n, 1, 6) + 2
+	return clampi(n, 1, most) + 2
 }
 
 func (m *model) viewNarrow() []string {
