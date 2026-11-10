@@ -336,6 +336,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 | `session.new` の `prompt`(`from` があれば先頭に `--from gh#N` の行) | 呼び出し元 | `new` |
 | `session.send` の agent の窓への指示(`submit` つき、または token なし) | 呼び出し元(TUI・CLI は `human`) | `send` |
 | 受信箱の答えの配送(下の「判断の受信箱」) | `pekoed` | `inbox` |
+| Web UI からの tapi への送信(`POST /api/tapi/send`。`to` は `+tapi`、docs/web.md「tapi chat の扱い」) | `human` | `send` |
 
 ```jsonc
 // SendRecord
@@ -343,7 +344,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 ```
 
 - `via` はソケット経由なら `socket`、Web UI からなら `web:<端末名>`
-- 記録しないもの: 打鍵(`session.keys`)、TUI が入力をそのまま流す `submit` なしの `session.send`、dev・run の窓への送信、`tapi.send`、ピック・エラー・レビューの送信
+- 記録しないもの: 打鍵(`session.keys`・`tapi.keys`)、TUI が入力をそのまま流す `submit` なしの `session.send`、dev・run の窓への送信、TUI・CLI からの `tapi.send`、ピック・エラー・レビューの送信
 - 送れなかったもの(許可ダイアログが出ていた、先頭が数字だったなど。token なしの受け付け時の確認で断ったものも)も `ok: false` とエラーで残す
 - 本文は 64 KiB で切る
 - token なしの `send.log` は、呼び出し元が `from` か `to` の記録だけ。`unknown` は断る
