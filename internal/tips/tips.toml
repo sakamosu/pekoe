@@ -249,3 +249,10 @@ short = "pekoe update で最新のリリースに入れ替える"
 detail = "GitHub の最新リリースを取って checksums.txt と照らし、pekoe と nvim・Chrome 拡張を入れ替える。Web UI 入りなら _web の版を取る。--check は新しい版があるか見るだけ。"
 keys = ["pekoe update", "--check"]
 docs = ["README.ja.md#更新"]
+
+[[tip]]
+id = "hook-sandbox"
+short = "[hooks] の test・setup・dev と門番は sandbox の中で動く"
+detail = "worktree のコードはエージェントが書けるので、human-token を読めない sandbox で動かす(macOS は sandbox-exec、Linux は bwrap)。使えなければ動かさない。[sandbox] enable = false で外せる。"
+keys = ["[sandbox]"]
+docs = ["README.ja.md#エージェントに-pekoe-を使わせるときの権限", "docs/api.md"]

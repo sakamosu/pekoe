@@ -45,6 +45,22 @@
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
 - 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。エージェントからファイルを読めなくする設定は README の「エージェントに pekoe を使わせるときの権限」
 
+### hooks の sandbox
+
+pekoed は sandbox の外で動くので、エージェントが書き換えられるコード(worktree の Makefile・package.json・テスト、エージェントのブランチを `--base` にした `pekoe new`)を pekoed が実行すると、そのコードは human-token を読めてしまう。`session.event` は token なしで受け付けるので、Stop を偽れば何度でも走らせられる。そこで、worktree から来るコマンドはすべて sandbox(`internal/sandbox`)で包む。
+
+- 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く
+- 包まないもの: `run.start`(run 窓。人間が打ったコマンドで、自分の端末で打つのと同じ)、エージェント自身の起動(Claude Code の sandbox の役目)、`review.surface` の nvim
+- macOS: `/usr/bin/sandbox-exec`。プロファイルは `(allow default)` に deny を足す。パスは `-D` の引数で渡し、プロファイルに埋めない。Seatbelt は解決後のパスで照合するので、各パスを書いたままのものと symlink を解いたもの(`/tmp` → `/private/tmp`)の両方で塞ぐ
+  - 読めない: `human-token`、`http-token`、tsnet の state(`[web] state_dir` と既定の場所)、`config.toml`(`[web] auth_key`)
+  - 書けない: データディレクトリと設定ディレクトリ(sandbox を外す・hooks を書き換える・token を差し替えることを防ぐ)、あとで sandbox の外で実行されるもの(シェルの起動ファイル、`~/.gitconfig`・`~/.config/git`、`~/.ssh`、`~/.claude/settings*.json`、tmux・vim / nvim の設定、`~/Library/LaunchAgents`、`$PATH` のうち書き込めるディレクトリ。pekoed は git・gh・tmux を `$PATH` から起動する)。上のどれかの親ディレクトリも名前の変更・削除はできない(`~/.local/share` をずらせば規則の外に出てしまう)
+  - つなげない: tmux のソケットのディレクトリ(`$TMUX_TMPDIR/tmux-<uid>`。つなげれば sandbox の外で動く窓を開ける)。pekoed のソケットにはつなげる(token なしの扱い)
+  - `lsopen`・`appleevent-send` も拒否(`open` や Terminal の `do script` で外に出られる)。`launchctl submit` は sandbox の中からは launchd が受け付けない
+- Linux: bubblewrap(`/usr/bin/bwrap` などの決まった場所だけを探す。`$PATH` は使わない: `~/.local/bin` に偽の bwrap を置かれると、次から素のまま動いてしまう)。`--dev-bind / /` で今の / をそのまま見せ、書けないものを `--ro-bind` で重ね、読めないファイルに `/dev/null`、ディレクトリと tmux のソケットのディレクトリに空の tmpfs を重ねる。`--unshare-pid` と新しい `/proc` で、`/proc/<pid>` から pekoed のメモリや環境を読めないようにし、`--die-with-parent` で pekoed と一緒に止まる。存在しないパスは重ねられない(bwrap がホスト側に作ってしまう)ので外す。pekoed は起動時にデータ・設定ディレクトリと token を作るので、要のものは必ずある
+- 使えるかどうかは、初めて使うときに `sh -c :` を包んで動かして確かめる。通れば覚え、だめならその都度確かめ直す(bwrap を入れたらそのまま使える)
+- 使えないとき(sandbox-exec が無い・動かない、bwrap が無い・ユーザー名前空間が使えない、sandbox の中で pekoed を動かしている、ほかの OS)は**動かさない**。Stop の test は `test.status` を `blocked`(`summary` に理由)にし、門番はリスクに理由を 1 件入れる(`path` は空)。setup・dev・teardown・land は理由を添えたエラーにする。人間が始めるものも止めるのは、`pekoe new` はエージェント(ハブ)も呼べて、`--base` にエージェントのブランチを渡せるから。dev は動き続ける。どうしても要るなら `config.toml` の `[sandbox] enable = false`(pekoed の再起動で効く。設定ディレクトリは sandbox から書けない)
+- 残る穴: 塞ぐのは秘密と、知られた「あとで外で実行される場所」だけで、ホームのほかの場所(キャッシュ、`~/go/pkg/mod`、Homebrew の Cellar など)には書ける。そこに置いたものを人間や pekoed があとで sandbox の外で実行すれば抜けられる。Linux では、まだ無いファイルと親ディレクトリの名前の変更は塞げない
+
 ### send と許可ダイアログ
 
 許可メニューは最初の 1 文字を選択肢として受け取り、Enter は選ばれている「Yes」を確定する。そこで `session.send` / `tapi.send` は、許可ダイアログが出ている間は文字を打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が `question` 以外の `waiting`)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。
@@ -74,7 +90,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
   "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。input は主な引数 1 つの 1 行の要約(改行のかたまりは " ⏎ "、200 バイトまで)。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション。引数が複数行なら lines(行数)、要約が切れていれば cut: true と size(全体のバイト数)
-  "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none
+  "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none | blocked(sandbox が使えず動かしていない。summary に理由)
   "diffstat": {"added": 120, "deleted": 8, "files": 4},
   "prompts": 7,                    // スナップショット数
   "review_n": 2,                   // 最後のレビュー地点番号(0 = 未レビュー)
