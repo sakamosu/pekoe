@@ -305,7 +305,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
 	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
-	if s, err := d.get(slug); err == nil && s.State != state.Landed {
+	old, err := d.snapshot(slug)
+	if err == nil && old.State != state.Landed {
 		return nil, fmt.Errorf("session %s already exists", slug)
 	}
 	agent := p.Agent
@@ -331,6 +332,13 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
+	}
+	if old != nil {
+		// a landed session of this slug is replaced: its prompts, reviews
+		// and comments must not carry over (undo would pick its last prompt,
+		// whose snapshot ref landing deleted)
+		d.purge(old)
+		d.emit("session.removed", old)
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {
