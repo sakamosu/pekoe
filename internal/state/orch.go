@@ -26,7 +26,7 @@ type Report struct {
 	// uncommitted changes when the report came in (read by pekoed).
 	Head        string    `json:"head,omitempty"`
 	Dirty       bool      `json:"dirty"`
-	Verdict     string    `json:"verdict,omitempty"` // pass | fail (status review)
+	Verdict     string    `json:"verdict,omitempty"` // pending | pass | fail (status review)
 	ReviewedSHA string    `json:"reviewed_sha,omitempty"`
 	At          time.Time `json:"at"`
 }
@@ -39,6 +39,24 @@ type ReportSummary struct {
 	Summary string    `json:"summary"`
 	At      time.Time `json:"at"`
 	Head    string    `json:"head,omitempty"`
+}
+
+// ReviewSummary is Session.review: the latest status-review report's
+// verdict (pending: the review was asked for and is under way) and the
+// commit it is about.
+type ReviewSummary struct {
+	ID          int64     `json:"id"`
+	Verdict     string    `json:"verdict"`
+	ReviewedSHA string    `json:"reviewed_sha,omitempty"`
+	At          time.Time `json:"at"`
+}
+
+// ReviewBrief is r as Session.review (nil when r is not a review).
+func (r *Report) ReviewBrief() *ReviewSummary {
+	if r == nil || r.Status != "review" {
+		return nil
+	}
+	return &ReviewSummary{ID: r.ID, Verdict: r.Verdict, ReviewedSHA: r.ReviewedSHA, At: r.At}
 }
 
 // Brief is r as Session.report.

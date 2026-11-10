@@ -1,6 +1,7 @@
 package gitx
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -404,5 +405,60 @@ func TestRestoreSnapshotDoesNotFollowSwappedSymlink(t *testing.T) {
 	_ = RestoreSnapshot(dir, sha)
 	if b, err := os.ReadFile(victim); err != nil || string(b) != "keep me\n" {
 		t.Fatalf("file outside the worktree: %q, %v", b, err)
+	}
+}
+
+// ChangeID is the same for a change rebased onto a newer base (the base
+// moved elsewhere in the file), and differs once the change itself does,
+// even by whitespace.
+func TestChangeIDSurvivesRebase(t *testing.T) {
+	isolatedConfig(t, "")
+	repo, wt := repoWithWorktree(t, false)
+	lines := func(n int, mid string) string {
+		var b strings.Builder
+		for i := 0; i < n; i++ {
+			fmt.Fprintf(&b, "line %d\n", i)
+			if i == n/2 {
+				b.WriteString(mid)
+			}
+		}
+		return b.String()
+	}
+	commit := func(dir, file, body, msg string) string {
+		os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644)
+		gitT(t, dir, "add", "-A")
+		gitT(t, dir, "commit", "-q", "--no-gpg-sign", "-m", msg)
+		return gitT(t, dir, "rev-parse", "HEAD")
+	}
+	commit(repo, "a.txt", lines(40, ""), "base")
+	gitT(t, wt, "rebase", "-q", "main")
+	reviewed := commit(wt, "a.txt", lines(40, "feature\n"), "feat")
+	idReviewed, err := ChangeID(wt, reviewed, "main")
+	if err != nil || idReviewed == "" {
+		t.Fatalf("ChangeID = %q, %v", idReviewed, err)
+	}
+	// main moves: a line far from the change, and another file
+	commit(repo, "a.txt", "top\n"+lines(40, ""), "main moves")
+	commit(repo, "b.txt", "b\n", "another file")
+	gitT(t, wt, "rebase", "-q", "main")
+	rebased := gitT(t, wt, "rev-parse", "HEAD")
+	if rebased == reviewed {
+		t.Fatal("the rebase did not move HEAD")
+	}
+	if id, err := ChangeID(wt, rebased, "main"); err != nil || id != idReviewed {
+		t.Errorf("rebased: ChangeID = %q, %v; want %q", id, err, idReviewed)
+	}
+	// short ids resolve too
+	if id, _ := ChangeID(wt, reviewed[:7], "main"); id != idReviewed {
+		t.Errorf("short sha: %q", id)
+	}
+	// whitespace in the change is a different change
+	ws := commit(wt, "a.txt", "top\n"+lines(40, "feature \n"), "ws")
+	if id, _ := ChangeID(wt, ws, "main"); id == idReviewed {
+		t.Error("a whitespace change kept the id")
+	}
+	// nothing changed: no id
+	if id, err := ChangeID(wt, gitT(t, repo, "rev-parse", "main"), "main"); err != nil || id != "" {
+		t.Errorf("empty change: %q, %v", id, err)
 	}
 }

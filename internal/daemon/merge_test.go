@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -258,5 +260,68 @@ func TestMergeCheckWithoutToken(t *testing.T) {
 	}
 	if strings.Join(slugs, ",") != "main" { // feat-a landed
 		t.Fatalf("listed: %v", slugs)
+	}
+}
+
+// A review asked for and under way (verdict pending) is no pass.
+func TestMergeEvidenceReviewPending(t *testing.T) {
+	d, _ := mergeSetup(t)
+	review(t, d, "pending", mergeHead)
+	c := mergeCheckOf(t, d)
+	if c.Ready || strings.Join(c.Missing, ",") != "review" || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "独立レビューの最中") {
+		t.Fatalf("check: %+v", c)
+	}
+	if s, _ := d.snapshot("main"); s.Review == nil || s.Review.Verdict != "pending" || s.Report.Status != "review" {
+		t.Fatalf("session: %+v %+v", s.Review, s.Report)
+	}
+	// a later report does not hide the review under way
+	callAs[state.Report](t, d, agentAs("main"), "report.post", map[string]any{"summary": "waiting", "status": "progress"})
+	if s, _ := d.snapshot("main"); s.Review == nil || s.Review.Verdict != "pending" {
+		t.Fatalf("review after a progress report: %+v", s.Review)
+	}
+}
+
+// land rebases the reviewed commit onto a newer base, which gives the PR
+// a new head: a pass carries over when the head changes the same as the
+// reviewed commit (to the byte), and not once the change itself differs.
+func TestMergeEvidenceRebasedReview(t *testing.T) {
+	d, _ := mergeSetup(t)
+	s, _ := d.snapshot("main")
+	repo := s.Path
+	commit := func(file, body, msg string) string {
+		os.WriteFile(filepath.Join(repo, file), []byte(body), 0o644)
+		run(t, repo, "git", "add", "-A")
+		run(t, repo, "git", "commit", "-qm", msg)
+		return strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
+	}
+	run(t, repo, "git", "branch", "base")
+	reviewed := commit("a.txt", "1\n2\nfeature\n3\n", "feature")
+	run(t, repo, "git", "checkout", "-q", "base")
+	commit("b.txt", "b\n", "the base moves")
+	run(t, repo, "git", "checkout", "-q", "-b", "rebased")
+	run(t, repo, "git", "cherry-pick", reviewed)
+	rebased := strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
+	changed := commit("a.txt", "1\n2\nfeature!\n3\n", "more")
+	d.update("main", func(x *state.Session) {
+		x.Base = "base"
+		c := *x.PRStatus
+		c.HeadSHA = rebased
+		x.PRStatus = &c
+	})
+	review(t, d, "pass", reviewed[:10])
+
+	c := mergeCheckOf(t, d)
+	if !c.Ready || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "差分の中身が同じ") {
+		t.Fatalf("rebased: %+v", c)
+	}
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = changed; x.PRStatus = &c })
+	c = mergeCheckOf(t, d)
+	if c.Ready || !c.ReviewStale || strings.Join(c.Missing, ",") != "review" || !strings.Contains(c.Conds[1].Detail, "再レビューが要る") {
+		t.Fatalf("changed: %+v", c)
+	}
+	// a head pekoed cannot read (pushed from elsewhere) is not carried
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = mergeHead2; x.PRStatus = &c })
+	if c = mergeCheckOf(t, d); c.Ready || !strings.Contains(c.Conds[1].Detail, "比べられなかった") {
+		t.Fatalf("unknown head: %+v", c)
 	}
 }

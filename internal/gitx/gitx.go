@@ -404,6 +404,42 @@ func MergeBase(dir, a, b string) (string, error) {
 	return Run(dir, "merge-base", "--end-of-options", a, b)
 }
 
+// ChangeID names what commit changes relative to base: a hash of the diff
+// from their merge-base to commit, with what a rebase alone moves taken
+// out (the index lines' blob ids, the hunk headers' line numbers and
+// function names). Every other byte counts, whitespace and context lines
+// included, so two commits get the same id only when their diffs say the
+// same thing: the same change, rebased onto a newer base or recommitted.
+// An empty change gets "" (nothing to compare).
+func ChangeID(dir, commit, base string) (string, error) {
+	c, err := RevParse(dir, commit)
+	if err != nil {
+		return "", err
+	}
+	mb, err := MergeBase(dir, c, base)
+	if err != nil {
+		return "", err
+	}
+	out, err := RunRaw(context.Background(), dir, nil, nil, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--binary", "--full-index", "-U3", "--end-of-options", mb, c)
+	if err != nil {
+		return "", err
+	}
+	if len(out) == 0 {
+		return "", nil
+	}
+	h := sha1.New()
+	for _, l := range bytes.SplitAfter(out, []byte("\n")) {
+		switch {
+		case bytes.HasPrefix(l, []byte("index ")):
+			continue
+		case bytes.HasPrefix(l, []byte("@@ ")):
+			l = []byte("@@\n")
+		}
+		h.Write(l)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // beforeRemove runs between RestoreSnapshot's diff and its removes (tests).
 var beforeRemove func()
 

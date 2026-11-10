@@ -1624,6 +1624,15 @@ func (d *Daemon) restore() {
 	// before anything reads per-repo config or files by repo-id
 	d.realignRepoIDs()
 	for _, s := range list {
+		// sessions saved before Session.review existed: their latest
+		// review is in the reports
+		if s.Review == nil && s.State != state.Landed {
+			if rv := d.latestReview(s.Slug).ReviewBrief(); rv != nil {
+				d.update(s.Slug, func(x *state.Session) { x.Review = rv })
+			}
+		}
+	}
+	for _, s := range list {
 		if s.State == state.Landed {
 			// landed before landedPRMerged existed: the summary still
 			// shows the last fetch before the merge

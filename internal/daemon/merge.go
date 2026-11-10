@@ -8,7 +8,10 @@ package daemon
 //
 //   - land: pekoe land made the PR (Session.landing), and it is open
 //   - review: the latest independent review (report.post --status review)
-//     passed, and the commit it names is the PR's head on GitHub
+//     passed, and the commit it names is the PR's head on GitHub, or a
+//     commit whose diff against the base is the head's to the byte (land
+//     rebased it: sameChange). A pending review (asked for, under way)
+//     does not count
 //   - ci: every check of the PR's head passed (none failed, none running,
 //     at least one)
 //   - merge_state: GitHub's mergeStateStatus is CLEAN
@@ -36,6 +39,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/gitx"
 	"pekoe/internal/state"
 )
 
@@ -102,18 +106,12 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 		add("land", true, "pekoe land 済み(PR #%d)", s.PR)
 	}
 
-	var rv *state.Report
-	if rs, err := d.DB.Reports(s.Slug, 0, 200); err == nil {
-		for i := range rs {
-			if rs[i].Status == "review" {
-				rv = &rs[i]
-				break
-			}
-		}
-	}
+	rv := d.latestReview(s.Slug)
 	switch {
 	case rv == nil:
 		add("review", false, "独立レビューの報告がない")
+	case rv.Verdict == "pending":
+		add("review", false, "独立レビューの最中(報告 #%d・%s)", rv.ID, shortSHA(rv.ReviewedSHA))
 	case rv.Verdict != "pass":
 		add("review", false, "最新のレビュー(報告 #%d)が %s", rv.ID, rv.Verdict)
 	case rv.ReviewedSHA == "":
@@ -121,13 +119,18 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 	case c.PRHead == "":
 		add("review", false, "PR の HEAD をまだ読んでいない(レビューは %s)", shortSHA(rv.ReviewedSHA))
 	case !strings.HasPrefix(c.PRHead, rv.ReviewedSHA):
-		add("review", false, "レビューした %s と PR の HEAD %s が違う", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
-	default:
-		by := rv.By + " のレビュー"
-		if rv.By == s.Slug {
-			by = "作者のセッションの中のレビュー"
+		switch d.sameChange(s, rv.ReviewedSHA, c.PRHead) {
+		case changeSame:
+			add("review", true, "報告 #%d で pass(%s・%s)。PR の HEAD %s は rebase し直しただけで差分の中身が同じ", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
+		case changeDiffers:
+			c.ReviewStale = true
+			add("review", false, "レビューした %s から PR の HEAD %s で差分の中身が変わった(再レビューが要る)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
+		default:
+			c.ReviewStale = true
+			add("review", false, "レビューした %s と PR の HEAD %s が違う(差分の中身を比べられなかった)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
 		}
-		add("review", true, "報告 #%d で pass(%s・%s)", rv.ID, shortSHA(rv.ReviewedSHA), by)
+	default:
+		add("review", true, "報告 #%d で pass(%s・%s)", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
 	}
 
 	switch {
@@ -198,6 +201,60 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 
 	c.Ready = len(c.Missing) == 0
 	return c
+}
+
+func reviewBy(s *state.Session, rv *state.Report) string {
+	if rv.By == s.Slug {
+		return "作者のセッションの中のレビュー"
+	}
+	return rv.By + " のレビュー"
+}
+
+// What sameChange found.
+const (
+	changeUnknown = iota // git could not tell (a commit is not here, the worktree is gone)
+	changeSame
+	changeDiffers
+)
+
+// sameChange: does head change the same as reviewed, against the base the
+// PR goes into? pekoe land rebases onto origin/<base>, which gives the PR
+// a new head though nothing the review read changed; gitx.ChangeID tells
+// that apart from a head that changes more, less or otherwise (whitespace
+// included). A known answer is kept per pair of commits: neither the
+// commits nor their merge-bases with the base move.
+func (d *Daemon) sameChange(s *state.Session, reviewed, head string) int {
+	key := s.RepoID + " " + reviewed + " " + head
+	if v, ok := d.changeSame.Load(key); ok {
+		return v.(int)
+	}
+	if s.Path == "" || !d.checkGitDir(s) {
+		return changeUnknown
+	}
+	base := s.Base
+	if base == "" {
+		base = gitx.DefaultBase(s.Path)
+	}
+	if gitx.CheckRefArg("base", base) != nil {
+		return changeUnknown
+	}
+	if _, err := gitx.RevParse(s.Path, "origin/"+base); err == nil {
+		base = "origin/" + base
+	}
+	a, err := gitx.ChangeID(s.Path, reviewed, base)
+	if err != nil {
+		return changeUnknown
+	}
+	b, err := gitx.ChangeID(s.Path, head, base)
+	if err != nil {
+		return changeUnknown
+	}
+	r := changeDiffers
+	if a != "" && a == b {
+		r = changeSame
+	}
+	d.changeSame.Store(key, r)
+	return r
 }
 
 // mergeDetails is the one line of what is missing in c.
