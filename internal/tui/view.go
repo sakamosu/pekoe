@@ -223,6 +223,9 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 		// what the selected agent is doing right now (PreToolUse)
 		parts = append(parts, m.th.FG(theme.Ok, theme.Look(m.ic, state.Running, m.frame, m.g.AnimateOn()).Icon)+" "+m.th.FG(theme.Dim, truncRunes(cur.LastTool, 40)))
 	}
+	if af := m.afterFooter(m.current()); af != "" {
+		parts = append(parts, af)
+	}
 	if waiting > 0 || toReview > 0 || len(parts) > 0 {
 		if waiting > 0 {
 			parts = append(parts, m.th.FG(theme.Warn, m.ic.Wait)+m.th.FG(theme.Dim, fmt.Sprintf(" %d waiting · oldest %s", waiting, theme.Ago(oldest))))
@@ -305,6 +308,9 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	}
 	if ct := m.conflictTag(s); ct != "" {
 		tag += " " + ct
+	}
+	if at := m.afterTag(s, nameW-w(tag)); at != "" {
+		tag += " " + at
 	}
 	if n := m.sessionErrors(s.Slug); n > 0 {
 		e := "err"
