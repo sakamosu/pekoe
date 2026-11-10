@@ -1210,8 +1210,8 @@ func (m *model) narrowTopH() int {
 	switch m.narrowTab {
 	case 0:
 		rows, _ := m.sessionRows(max(m.width-4, 1)) // the headings count
-		// one more for the orchestrator heading, so as many sessions show
-		// as before it
+		// one more for the orchestrator heading (with one repository its
+		// heading takes a row too: a session fewer than before it)
 		n, most = len(rows), 7
 	case 1:
 		n = len(m.worktrees)

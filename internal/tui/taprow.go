@@ -2,9 +2,10 @@ package tui
 
 // The tapi row (docs/orchestration.md「Sessions の先頭の行」): tapi, the
 // orchestrator, always heads Sessions under its own heading (orchestrator
-// ━━━), above the repository headings and outside the filter. It is a row, not a session: m.sel stays an index into
-// visible(), and tapiSel (-1) stands for the tapi row, so current() is nil
-// there and every session key finds nothing to act on. ↵ opens tapi chat.
+// ━━━), above the repository headings and outside the filter. It is a
+// row, not a session: m.sel stays an index into visible(), and tapiSel (-1)
+// stands for the tapi row, so current() is nil there and every session key
+// finds nothing to act on. ↵ opens tapi chat.
 // The row starts with the state icon, never a face (docs/mascot.md: one
 // face at a time).
 
