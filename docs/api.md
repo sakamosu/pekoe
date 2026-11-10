@@ -4,7 +4,14 @@
 
 ## 1. unix socket(TUI・CLI・Neovim)
 
-`~/.local/share/pekoe/pekoed.sock`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/pekoed.sock`)。改行区切りの JSON(JSON Lines)。1 接続でリクエストとイベントが混ざって流れる。
+次の順で最初に当たったもの(`internal/paths`):
+
+1. `$PEKOE_SOCK`
+2. `$PEKOE_HOME/share/pekoed.sock`(`$PEKOE_HOME` があれば)
+3. `$XDG_DATA_HOME/pekoe/pekoed.sock`(`$XDG_DATA_HOME` があれば)
+4. `~/.local/share/pekoe/pekoed.sock`
+
+改行区切りの JSON(JSON Lines)。1 接続でリクエストとイベントが混ざって流れる。
 
 ```jsonc
 // client → daemon
