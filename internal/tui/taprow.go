@@ -7,7 +7,9 @@ package tui
 // stands for the tapi row, so current() is nil there and every session key
 // finds nothing to act on. ↵ opens tapi chat.
 // The row starts with the state icon, never a face (docs/mascot.md: one
-// face at a time).
+// face at a time). Calm states (asleep, idle, exited) paint it in tapi's
+// body color; states that want the user (run, wait, an error) keep the
+// session colors.
 
 import (
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"pekoe/internal/daemon"
 	"pekoe/internal/state"
@@ -73,20 +76,37 @@ func (m *model) selectTapi() tea.Cmd {
 	return m.onSelChange()
 }
 
-// tapiLook is the state icon and word of the tapi row.
-func (m *model) tapiLook() theme.StateLook {
+// tapiLook is the state icon and word of the tapi row; calm says nobody
+// needs to look (asleep, idle, exited, done), so the icon takes tapi's
+// body color instead of the state color.
+func (m *model) tapiLook() (lk theme.StateLook, calm bool) {
 	v := m.chat.info
 	switch {
 	case v == nil || !v.Started:
-		lk := theme.Look(m.ic, state.Idle, m.frame, m.g.AnimateOn())
+		lk = theme.Look(m.ic, state.Idle, m.frame, m.g.AnimateOn())
 		lk.Word = "asleep"
-		return lk
+		return lk, true
 	case !v.Alive:
-		lk := theme.Look(m.ic, state.Failed, m.frame, m.g.AnimateOn())
+		lk = theme.Look(m.ic, state.Failed, m.frame, m.g.AnimateOn())
 		lk.Word = "exited"
-		return lk
+		return lk, true
 	}
-	return theme.Look(m.ic, v.State, m.frame, m.g.AnimateOn())
+	lk = theme.Look(m.ic, v.State, m.frame, m.g.AnimateOn())
+	return lk, v.State == state.Idle || v.State == state.Done
+}
+
+// tapiIcon paints the row's icon. A calm icon is tapi's body color, and
+// the hollow idle circle becomes a filled pearl (● / 🞄) so the row isn't
+// bare; with no color the glyph stays as is (● would read as run).
+func (m *model) tapiIcon(lk theme.StateLook, calm bool) string {
+	icon := fit(lk.Icon, 1)
+	if !calm || m.th.Mode == theme.None || m.tapi == nil || m.tapi.r == nil {
+		return m.th.FG(lk.Role, icon)
+	}
+	if lk.Icon == m.ic.Idle && m.ic.Name == "unicode" {
+		icon = m.tapi.r.Pearl()
+	}
+	return lipgloss.NewStyle().Foreground(m.tapi.r.Body()).Render(icon)
 }
 
 // tapiBadges are the counts after the age: the open questions of the
@@ -123,7 +143,7 @@ func stripCtl(s string) string {
 func (m *model) tapiLine(cw int, now time.Time) string {
 	th := m.th
 	v := m.chat.info
-	lk := m.tapiLook()
+	lk, calm := m.tapiLook()
 	age := ""
 	if v != nil && v.Started && v.Alive && !v.StateSince.IsZero() {
 		age = theme.Ago(now.Sub(v.StateSince))
@@ -132,7 +152,7 @@ func (m *model) tapiLine(cw int, now time.Time) string {
 	if v == nil || !v.Started {
 		nameRole = theme.Dim
 	}
-	line := th.FG(lk.Role, fit(lk.Icon, 1)) + " " + th.Bold(nameRole, tapiRowName) + " " + th.FG(lk.Role, fit(lk.Word, stateW)) + " " + th.FG(theme.Dim, fit(age, ageW))
+	line := m.tapiIcon(lk, calm) + " " + th.Bold(nameRole, tapiRowName) + " " + th.FG(lk.Role, fit(lk.Word, stateW)) + " " + th.FG(theme.Dim, fit(age, ageW))
 	for _, b := range m.tapiBadges() {
 		line += " " + b
 	}

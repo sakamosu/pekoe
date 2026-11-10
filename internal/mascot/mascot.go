@@ -237,6 +237,25 @@ func (r *Renderer) Paint(m Mood, s string) string {
 	return r.paint(s, spec.States[m].Accent, "")
 }
 
+// Body is tapi's body color (bd: cream on dark themes, caramel on light
+// ones, or the [mascot] colors override); NoColor when colorless. The tapi
+// row of Sessions paints its calm state icon with it.
+func (r *Renderer) Body() lipgloss.TerminalColor {
+	if r.noColor {
+		return lipgloss.NoColor{}
+	}
+	return r.color("bd")
+}
+
+// Pearl is a filled dot sized for the glyph setting: ● (🞄 in narrow mode,
+// o in ascii), tapi's pearl drawn as one cell.
+func (r *Renderer) Pearl() string {
+	if r.glyphs == "ascii" {
+		return "o"
+	}
+	return r.narrowGlyph("●")
+}
+
 // Color returns the mood's accent color.
 func (r *Renderer) Color(m Mood) lipgloss.TerminalColor { return r.color(spec.States[m].Accent) }
 
