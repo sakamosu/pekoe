@@ -99,7 +99,7 @@ type model struct {
 	tabs      []daemon.Tab
 	tsel      int
 	picks     []*state.Pick
-	pickSent  map[int64]bool // sent from the card, not yet reloaded as sent (sendPick)
+	pickSent  map[int64]bool    // sent from the card, not yet reloaded as sent (sendPick)
 	psel      int               // over picks, then errs (Picks panel)
 	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
