@@ -255,7 +255,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
@@ -602,6 +602,10 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focus = pSessions
 		m.typing = false
 		m.chat.open = false // the jump shows the session
+		// tapi waits: its row (↵ opens tapi chat)
+		if msg.slug == daemon.TapiSlug {
+			return m, m.selectTapi()
+		}
 		cmd := m.selectSlug(msg.slug)
 		if msg.pr { // in the queue for its PR: show the PR
 			return m, tea.Batch(cmd, m.openPR())
@@ -702,7 +706,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sel = i
 			}
 		}
-		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
+		m.clampSel()
 		m.sessionsIn = true
 		m.pickHome()
 		return m, tea.Batch(m.onSelChange(), m.maybePermission())
@@ -901,7 +905,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 			if i, _ := m.find(curSlug); i >= 0 {
 				m.sel = i
 			}
-		} else if len(m.sessions) == 1 {
+		} else if len(m.sessions) == 1 && !m.onTapiRow() {
 			m.sel = 0
 		}
 		var cmds []tea.Cmd
@@ -944,7 +948,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 			m.sel = i
 			return tea.Batch(m.loadWorktrees(), m.loadRepos())
 		}
-		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
+		m.clampSel()
 		m.lastSel = "-"
 		return tea.Batch(m.onSelChange(), m.loadWorktrees(), m.loadRepos())
 	case "session.progress":
@@ -1350,20 +1354,22 @@ func (m *model) moveWrap(idx *int, n int, delta int) {
 }
 
 func (m *model) keySessions(key string) tea.Cmd {
+	if m.onTapiRow() {
+		return m.tapiRowKey(key)
+	}
 	s := m.current()
 	if cmd, ok := m.common(key); ok {
 		return cmd
 	}
 	switch key {
 	case "j", "down":
-		m.moveWrap(&m.sel, len(m.visible()), 1)
+		m.moveSel(1)
 		return m.onSelChange()
 	case "k", "up":
-		m.moveWrap(&m.sel, len(m.visible()), -1)
+		m.moveSel(-1)
 		return m.onSelChange()
-	case "g", "home":
-		m.sel = 0
-		return m.onSelChange()
+	case "g", "home": // the top is the tapi row
+		return m.selectTapi()
 	case "G", "end":
 		m.sel = max(len(m.visible())-1, 0)
 		return m.onSelChange()
@@ -1717,6 +1723,17 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			}
 		}
 	}
+	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft && !inAgent {
+		if sel, ok := m.sessionRowAt(ev.X, ev.Y); ok { // a click on a row of [1] selects it
+			m.focus = pSessions
+			m.typing = false
+			if sel != tapiSel { // a session's row shows that session
+				m.chat.open = false
+			}
+			m.sel = sel
+			return m.onSelChange()
+		}
+	}
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if inAgent {
 			m.focus = pAgent
@@ -1761,16 +1778,31 @@ func (m *model) nextWaiting() tea.Cmd {
 	if s := m.current(); s != nil {
 		from = s.Slug
 	}
+	onTapi := m.onTapiRow()
+	// tapi waiting for the user (permission or a question) is in the queue
+	// too, as the oldest waiter it is; pekoed's queue knows only sessions
+	var tapiSince *time.Time
+	if m.tapiWaits() && !onTapi {
+		t := m.chat.info.StateSince
+		tapiSince = &t
+	}
+	back := from
+	if onTapi {
+		back = daemon.TapiSlug
+	}
 	return func() tea.Msg {
 		var s *state.Session
 		if err := m.cl.Call("attention.next", map[string]any{"from": from}, &s); err != nil {
 			return errMsg{err}
 		}
+		if tapiSince != nil && (s == nil || s.State != state.Waiting || !s.StateSince.Before(*tapiSince)) {
+			return jumpMsg{slug: daemon.TapiSlug, from: back}
+		}
 		if s == nil {
 			return infoMsg("nothing is waiting")
 		}
 		pr := s.State != state.Waiting && s.PRStatus != nil && len(s.PRStatus.Attention) > 0
-		return jumpMsg{slug: s.Slug, from: from, pr: pr}
+		return jumpMsg{slug: s.Slug, from: back, pr: pr}
 	}
 }
 
@@ -1786,6 +1818,9 @@ func (m *model) backFromWaiting() tea.Cmd {
 	slug := m.returnTo[len(m.returnTo)-1]
 	m.returnTo = m.returnTo[:len(m.returnTo)-1]
 	m.typing = false
+	if slug == daemon.TapiSlug {
+		return m.selectTapi()
+	}
 	return m.selectSlug(slug)
 }
 

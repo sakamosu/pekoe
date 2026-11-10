@@ -103,8 +103,8 @@ func TestSelectedRowKeepsBackground(t *testing.T) {
 	m.sessions = []*state.Session{{Slug: "a", Branch: "fix/a", State: state.Waiting, StateSince: now}}
 	m.sel = 0
 	rows, _ := m.sessionRows(40)
-	out := m.box(44, 4, boxOpt{rows: rows})
-	line := out[1]
+	out := m.box(44, 5, boxOpt{rows: rows})
+	line := out[2] // under the tapi row
 	bg := bgSeq(m.th, theme.Select)
 	if !strings.Contains(line, bg) {
 		t.Fatalf("no select background: %q", line)

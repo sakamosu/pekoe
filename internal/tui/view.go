@@ -156,8 +156,7 @@ func (m *model) leftHeights(width, height int) []int {
 }
 
 func (m *model) sessionsTitle(f bool) string {
-	n := len(m.visible())
-	pos := fmt.Sprintf("%d/%d", min(m.sel+1, n), n)
+	pos := m.sessionsPos()
 	extra := ""
 	if m.filter != "" || m.filterOn {
 		extra = "filter:" + m.filter
@@ -169,9 +168,23 @@ func (m *model) sessionsTitle(f bool) string {
 }
 
 func (m *model) sessionRows(cw int) ([]row, string) {
+	rows, _, footer := m.sessionRowsSel(cw)
+	return rows, footer
+}
+
+// rowNone is a row of [1] that selects nothing (a heading, the empty hint).
+const rowNone = -2
+
+// sessionRowsSel is sessionRows with what each row selects: tapiSel, an
+// index of visible(), or rowNone.
+func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 	now := time.Now()
 	vis := m.visible()
-	rows := make([]row, 0, len(vis))
+	rows := make([]row, 0, len(vis)+1)
+	sels := make([]int, 0, len(vis)+1)
+	// tapi heads the list, above the headings and outside the filter (taprow.go)
+	rows = append(rows, row{Text: m.tapiLine(cw, now), Sel: m.onTapiRow()})
+	sels = append(sels, tapiSel)
 	waiting, toReview := 0, 0
 	var oldest time.Duration
 	for _, s := range m.sessions {
@@ -189,8 +202,10 @@ func (m *model) sessionRows(cw int) ([]row, string) {
 	for i, s := range vis {
 		if headings && (i == 0 || repoKeyOf(vis[i-1]) != repoKeyOf(s)) {
 			rows = append(rows, row{Text: m.repoHeading(s, cw)})
+			sels = append(sels, rowNone)
 		}
 		rows = append(rows, row{Text: m.sessionLine(s, cw, now), Sel: i == m.sel})
+		sels = append(sels, i)
 	}
 	if len(vis) == 0 {
 		hint := m.sessionsEmptyHint()
@@ -198,6 +213,7 @@ func (m *model) sessionRows(cw int) ([]row, string) {
 			hint = "no match"
 		}
 		rows = append(rows, row{Text: m.th.FG(theme.Dim, hint)})
+		sels = append(sels, rowNone)
 	}
 	footer := ""
 	var parts []string
@@ -214,7 +230,7 @@ func (m *model) sessionRows(cw int) ([]row, string) {
 		}
 		footer = strings.Join(parts, "    ")
 	}
-	return rows, footer
+	return rows, sels, footer
 }
 
 // sessionLine: icon  name  state  age  +add -del  test  (grid columns)
@@ -536,6 +552,9 @@ func (m *model) viewAgent(width, height int) []string {
 	th := m.th
 	s := m.current()
 	f := m.focus == pAgent
+	if s == nil && m.onTapiRow() {
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "tapi", "", f), rows: m.bigRowsTip(width-4, height-2, m.chatMood(), "tapi · the orchestrator", "↵ open tapi chat · t from anywhere"), focused: f})
+	}
 	if s == nil {
 		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
 	}
@@ -1113,6 +1132,9 @@ func (m *model) hints() [][2]string {
 	if m.filterOn {
 		return [][2]string{{"↵", "apply"}, {"esc", "clear"}}
 	}
+	if m.onTapiRow() {
+		return tapiRowHints()
+	}
 	return [][2]string{{"j/k", "move"}, {"↵", "open"}, {"n", "new"}, {"r", "review"}, {"]a", "next wait"}, {"?", "help"}}
 }
 
@@ -1203,7 +1225,7 @@ func (m *model) viewNarrow() []string {
 	f := m.focus != pAgent && !m.typing
 	tabs := []struct {
 		icon, name string
-	}{{m.ic.Sessions, fmt.Sprintf("Sessions %d/%d", min(m.sel+1, len(m.visible())), len(m.visible()))}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Issues, fmt.Sprintf("Issues %d %s", len(m.visibleIssues()), m.issueFilterName())}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
+	}{{m.ic.Sessions, "Sessions " + m.sessionsPos()}, {m.ic.Worktrees, "Worktrees"}, {m.ic.Issues, fmt.Sprintf("Issues %d %s", len(m.visibleIssues()), m.issueFilterName())}, {m.ic.Changes, fmt.Sprintf("Changes %d", len(m.changes))}}
 	var parts []string
 	for i, t := range tabs {
 		label := theme.Prefix(t.icon) + t.name

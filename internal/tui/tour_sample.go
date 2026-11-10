@@ -80,8 +80,9 @@ var tourSteps = []tourStep{
 				return nil
 			}
 			nameW, _ := sessionCols(cw)
-			var out []rect
-			for i := range rows {
+			// the tapi row (rows[0]) has its word right after the name
+			out := []rect{{x, y, 1, 1}, {x + tapiWordX, y, stateW, 1}}
+			for i := 1; i < len(rows); i++ {
 				out = append(out, rect{x, y + i, 1, 1}, rect{x + nameW + 3, y + i, stateW, 1})
 			}
 			return out
@@ -201,11 +202,11 @@ var tourSteps = []tourStep{
 	{
 		ja: tourCopy{
 			title: "tapi chat",
-			body:  "どのパネルからでも、{t} を押すと [4] がわたしとのチャットになります。調べものを頼んだり、セッションを作って作業を任せたりしてください。{T} で会話を最初からやり直せます。",
+			body:  "どのパネルからでも、{t} を押すと [4] がわたしとのチャットになります。Sessions の一番上の tapi の行で {↵} を押しても開けます。調べものを頼んだり、セッションを作って作業を任せたりしてください。{T} で会話を最初からやり直せます。",
 		},
 		en: tourCopy{
 			title: "tapi chat",
-			body:  "From any panel, {t} turns [4] into a chat with me. Ask me to look things up, or to create a session and hand off work. {T} starts the conversation over.",
+			body:  "From any panel, {t} turns [4] into a chat with me; so does {↵} on the tapi row at the top of Sessions. Ask me to look things up, or to create a session and hand off work. {T} starts the conversation over.",
 		},
 		setup: func(m *model) {
 			m.focus = pAgent
@@ -250,7 +251,7 @@ func (m *model) tourBase() {
 	m.typing, m.prefix, m.prefixType, m.bracket = false, false, false, ""
 	m.window = engine.WinAgent
 	m.modal = nil
-	m.chat = chatState{}
+	m.chat = chatState{info: tourTapi()} // the tapi row shows the sample tapi
 	m.iss.open, m.iss.queryOn = false, false
 	m.filter, m.filterOn = "", false
 	m.tourSelect(tourRun)
@@ -373,7 +374,8 @@ func tourIssues(now time.Time) []daemon.Issue {
 }
 
 func tourTapi() *daemon.Tapi {
-	return &daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Idle}
+	return &daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Idle, StateSince: time.Now().Add(-2 * time.Minute),
+		LastMessage: "Start a session for #198 (CSV export)?"}
 }
 
 // tourScreen is a made-up agent screen for a sample session, drawn with the

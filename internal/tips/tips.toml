@@ -34,6 +34,13 @@ keys = ["t", "T", "pekoe tapi", "[tapi]"]
 docs = ["docs/tapi-chat.md", "README.ja.md#tapi-chat"]
 
 [[tip]]
+id = "tapi-row"
+short = "Sessions の一番上の行は tapi(統括役)"
+detail = "tapi の行には状態・待ち時間・最後の返事の 1 行が出る。j k や g で選んで ↵ で tapi chat が開く。絞り込み中も残り、x や l などセッション向けのキーは効かない。"
+keys = ["↵"]
+docs = ["docs/tapi-chat.md", "README.ja.md#tapi-chat"]
+
+[[tip]]
 id = "panel-focus"
 short = "1〜4 と Tab でパネルを直接移る"
 detail = "1 Sessions・2 Worktrees / Browser / Issues・3 Changes / Picks・4 Agent。Tab と Shift+Tab で順に移り、[ ] でパネルの中のサブタブを切り替える。"
