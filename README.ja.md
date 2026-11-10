@@ -208,7 +208,7 @@ pekoe                                                 # TUI
 
 ## TUI
 
-左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser ⇄ Issues、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの。preview・dev・run・PR の窓に切り替わる)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。複数リポジトリのセッションはリポジトリごとの見出しでまとめる。[1] の一番上(見出しより上)は常に tapi の行([tapi chat](#tapi-chat))。行はクリックでも選べる。
+左に番号付きパネル([1] Sessions、[2] Worktrees ⇄ Browser ⇄ Issues、[3] Changes ⇄ Picks)、右に [4] Agent(エージェントの画面そのもの。preview・dev・run・PR の窓に切り替わる)、最下行に powerline のステータスとキーヒント。100 列未満では左列がタブ 1 枚になる。セッションはリポジトリごとの見出し(名前と罫線)でまとめる。その上には常に `orchestrator ━━━` の見出しと tapi の行([tapi chat](#tapi-chat))。行はクリックでも選べる。
 
 セッションの状態はアイコンと色で出す(配色は [docs/ui-guidelines.md](docs/ui-guidelines.md) のトークン)。最下行左端のマスコット tapi は全セッションの最優先の状態を顔で表し、隣の 1 行で誰が何をしているかを言う:
 
@@ -265,7 +265,7 @@ pekoe                                                 # TUI
 - `^q`(prefix)で閉じる。会話は残り、もう一度 `t` で続きから。`Esc` はエージェントに届く(Claude Code の中断)。`^q` `z` / `^q` `<` `>` `=` はエージェントのときと同じく効き、そのまま tapi chat の入力に戻る(ズーム中に開けば全幅で、pty の大きさもペインに合わせる)
 - 初めて開いたときにエージェントが起動する(pekoed の起動時には起動しない)。稼働ディレクトリは `~/.local/share/pekoe/tapi/` で、pekoed が役割と使うコマンドを書いた `CLAUDE.md` を置く。初回は Claude Code のフォルダ信頼の確認が出る
 - Claude Code なら pekoe が知っているリポジトリと `~/worktrees` を `--add-dir` で渡すので、横断で読むたびに許可を求められない(リポジトリの増減は次の起動から)
-- Sessions の一番上は tapi の行で、状態アイコン・`tapi`・その状態になってからの時間・最後の返事の 1 行を出す(例: `◉ tapi  wait 2m  Start a session for #198?`)。リポジトリの見出しより上に常にあり、`/` の絞り込み中も残る。`j` `k`(か `g`)で選んで `↵` で tapi chat が開く。セッション向けのキー(`/` `x` `D` `l` `r` `p` `d` `!` `v` など)はこの行では効かず、ボトムバーには `↵ open tapi` `T reset tapi` が出る
+- Sessions の一番上は tapi の行で、状態アイコン・`tapi`・その状態になってからの時間・最後の返事の 1 行を出す(例: `◉ tapi  wait 2m  Start a session for #198?`)。`orchestrator` の見出しの下、リポジトリの見出しより上に常にあり、`/` の絞り込み中も残る。`j` `k`(か `g`)で選んで `↵` で tapi chat が開く。セッション向けのキー(`/` `x` `D` `l` `r` `p` `d` `!` `v` など)はこの行では効かず、ボトムバーには `↵ open tapi` `T reset tapi` が出る
 - tapi の顔はタイトルに出て、考え中・許可待ちで表情が変わる。閉じている間に許可待ち・質問待ちになると、最下行の声が `chat waits · t` になる
 - tapi に打った文は依頼の台帳(`pekoe ledger`)に記録され、tapi が任せたセッションと結んで、済んだら閉じる(雑談は「依頼ではなかった」で閉じる)
 - tapi はリポジトリと `~/worktrees` を読めるが書けない(Bash でも Edit / Write でも。下の「エージェントに pekoe を使わせるときの権限」)。書けるのは稼働ディレクトリだけ
