@@ -10,7 +10,7 @@ tapi chat は TUI からいつでも呼べる特別なエージェントで、�
 - リポジトリ横断の調査(例: 抱えているリポジトリ群の dependabot アラートの様子)
 - 振り分け役(調べた結果から `pekoe new --repo R` でセッションを作る、`pekoe send` で指示を足す)
 
-グローバルに 1 つだけで、pekoe 側には何も永続化しない一時的なもの。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には出さない。
+グローバルに 1 つだけで、pekoe 側には何も永続化しない一時的なもの(依頼の台帳などを state.db に持たせる変更を [orchestration.md](orchestration.md) で見直し中)。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には出さない(統括役にする変更で見直し中: [orchestration.md](orchestration.md))。
 
 ## 持ち方: セッションとは別の、メモリ上の 1 つ
 
@@ -61,7 +61,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 `paths.TapiDir()` = `~/.local/share/pekoe/tapi/`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/tapi/`)。
 
 - `$HOME` にはしない: cwd の前方一致で、ホーム以下で動く無関係な Claude Code の hook を拾ってしまう
-- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、人物像と口調・振る舞いのルール(docs/mascot.md「tapi の人物像」。キャラは返事の最初か最後の 1 文だけで、中身は正確さ優先。返事に顔・絵文字・顔文字は入れない)、今日マージされた PR の数え方、TIPS の紹介の仕方(下記)、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
+- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(横断調査・振り分け役。統括役への書き換えを [orchestration.md](orchestration.md) で見直し中)、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --prompt …`、`pekoe send <slug> -`)、やらないこと(land・rm・answer はユーザーに頼まれたときだけ、ここでファイルを変更しない)、人物像と口調・振る舞いのルール(docs/mascot.md「tapi の人物像」。キャラは返事の最初か最後の 1 文だけで、中身は正確さ優先。返事に顔・絵文字・顔文字は入れない)、今日マージされた PR の数え方、TIPS の紹介の仕方(下記)、起動時点の登録済みリポジトリの一覧(名前とパス)を書く
 - 初回は Claude Code のフォルダ信頼ダイアログが出る。開いた時点で入力モードなので、そのまま答えればよい(pekoe からは `~/.claude.json` を書き換えない)
 
 ### TIPS の紹介
@@ -98,7 +98,7 @@ agent = "claude"   # 既定。[agents.claude-ask] などを定義していれば
 - tmux サーバーは pekoed より長生きなので、pekoed を再起動しても `+tapi~agent` の窓は残っている。`tapi.open` / `tapi.get` は窓の有無を tmux に聞くだけなので、そのままつながる(状態は idle から始まり、次の hook で正しくなる)
 - エージェントが終了した(窓が dead)ときは、TUI の ↵ で `tapi.restart`(claude なら `--continue` で同じ会話を続ける)
 - リセット(`tapi.reset`、TUI の `T`、`pekoe tapi reset`)でエージェントの窓を閉じ、Claude Code の記録 `~/.claude/projects/<符号化した tapi の cwd>/` を消し(シンボリックリンクを解決した cwd の分も)、メモリ上の状態を初期化する。次に開くと新しい会話になる
-- pekoe 側(state.db など)には何も書かない
+- pekoe 側(state.db など)には何も書かない(統括役にする変更で見直し中: [orchestration.md](orchestration.md))
 
 ## API(docs/api.md)
 
@@ -146,7 +146,7 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 
 ### 気づかせ方
 
-tapi chat を閉じている間に tapi が許可待ち・質問待ちになったら、ステータスバーの tapi の声を `chat waits · t` にする(セッションの wait より弱く、セッションの wait が無いときだけ)。tapi は人が呼んだときにしか動かないので、トーストやデスクトップ通知までは出さない。
+tapi chat を閉じている間に tapi が許可待ち・質問待ちになったら、ステータスバーの tapi の声を `chat waits · t` にする(セッションの wait より弱く、セッションの wait が無いときだけ)。tapi は人が呼んだときにしか動かないので、トーストやデスクトップ通知までは出さない(統括役にする変更で見直し中: [orchestration.md](orchestration.md))。
 
 ## スキル(skills/pekoe/SKILL.md)
 
@@ -176,9 +176,9 @@ engine.Engine にはメソッドを足さない(ウィンドウ名が `+tapi~age
 | 事項 | 今回の決め | 見直す条件 |
 | --- | --- | --- |
 | tapi の状態を `session.*` と同じ型で返すか | 別の型 `Tapi`(リポジトリ前提の項目を持たない) | Neovim などからも tapi を扱いたくなったら共通部分を切り出す |
-| 許可待ちの通知 | バーの声だけ。トースト・OSC 通知は出さない | — |
+| 許可待ちの通知 | バーの声だけ。トースト・OSC 通知は出さない | [orchestration.md](orchestration.md) で見直し中(統括役になると見落としの方が困る) |
 | リポジトリの増減の反映 | 次回起動時(リセットか再起動) | 不便なら、増えたときに「再起動で反映」と声で知らせる |
 | codex などの横断読み取り | cwd だけ(`--add-dir` 相当なし) | 各エージェントに相当のオプションができたら `[agents.*]` に `add_dir` のような書式を足す |
 | 会話の記録の場所 | Claude Code の既定(`~/.claude/projects/…`)。`CLAUDE_CONFIG_DIR` があればそちら | — |
-| Web UI | 出さない | 要望が出たら別途 |
+| Web UI | 出さない | [orchestration.md](orchestration.md) で見直し中(iPhone から tapi に送る・受信箱に答える) |
 | フォルダ信頼ダイアログ | ユーザーがその場で答える | 毎回のリセットで煩わしければ、信頼済みにする方法を検討する |
