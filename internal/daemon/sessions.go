@@ -97,10 +97,14 @@ func (d *Daemon) forget(slug string) {
 
 // update mutates a session under the lock, persists it and emits events.
 func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, error) {
+	// evMu: two updates racing must emit in the order they changed the
+	// session, or a client is left showing the older copy
+	d.evMu.Lock()
 	d.mu.Lock()
 	s, ok := d.sessions[slug]
 	if !ok {
 		d.mu.Unlock()
+		d.evMu.Unlock()
 		return nil, fmt.Errorf("no such session: %s", slug)
 	}
 	prev := s.State
@@ -110,7 +114,6 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	}
 	c := d.copyLocked(s)
 	d.mu.Unlock()
-	d.persist(s)
 	d.emit("session.updated", c)
 	if c.State != prev {
 		switch c.State {
@@ -119,6 +122,10 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 		case state.Done:
 			d.emit("session.done", c)
 		}
+	}
+	d.evMu.Unlock()
+	d.persist(s)
+	if c.State != prev {
 		d.previewOnState(c, prev)
 	}
 	return c, nil
@@ -359,6 +366,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 }
 
 func (d *Daemon) stepUpdate(slug string, i int, status, detail string, started time.Time) {
+	d.evMu.Lock()
+	defer d.evMu.Unlock()
 	d.mu.Lock()
 	steps := d.progress[slug]
 	if i < len(steps) {
@@ -390,6 +399,7 @@ func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, sto
 		if pct > 99 {
 			pct = 99
 		}
+		d.evMu.Lock()
 		d.mu.Lock()
 		if steps := d.progress[slug]; i < len(steps) && steps[i].Status == "running" {
 			steps[i].Progress = pct
@@ -399,6 +409,7 @@ func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, sto
 		cp := append([]Step(nil), d.progress[slug]...)
 		d.mu.Unlock()
 		d.emit("session.progress", map[string]any{"slug": slug, "steps": cp})
+		d.evMu.Unlock()
 	}
 }
 
