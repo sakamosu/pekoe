@@ -49,3 +49,82 @@ func TestPlanKeepsOtherHooksAndIsIdempotent(t *testing.T) {
 		t.Fatal("no backup kept")
 	}
 }
+
+// settings.json kept in dotfiles as a symlink: install writes through the
+// link instead of replacing it with a regular file.
+func TestApplyKeepsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	dots := filepath.Join(t.TempDir(), "dotfiles")
+	os.MkdirAll(dots, 0o755)
+	real := filepath.Join(dots, "settings.json")
+	os.WriteFile(real, []byte(`{"model":"opus"}`), 0o644)
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	path, before, after, _, err := Plan("/usr/local/bin/pekoe", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(path, before, after); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("settings.json is no longer a symlink: %v", err)
+	}
+	b, _ := os.ReadFile(real)
+	if !strings.Contains(string(b), "pekoe event") {
+		t.Fatalf("hooks did not reach the link's target: %s", b)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dots, "*.pekoe-tmp")); len(left) > 0 {
+		t.Fatalf("tmp left behind: %v", left)
+	}
+}
+
+// A binary under a path with spaces is quoted in the command; install must
+// still recognize the hooks as its own (no duplicates, uninstall removes
+// them, Installed is true).
+func TestQuotedBinaryPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	bin := "/Users/me/My Tools/bin/pekoe"
+	for i := 0; i < 2; i++ {
+		path, before, after, _, err := Plan(bin, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Apply(path, before, after); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
+	if n := strings.Count(string(b), "event Stop"); n != 1 {
+		t.Fatalf("Stop hook installed %d times:\n%s", n, b)
+	}
+	if !Installed() {
+		t.Fatal("Installed() false after install")
+	}
+	path, before, after, _, _ := Plan(bin, true)
+	Apply(path, before, after)
+	b, _ = os.ReadFile(path)
+	if strings.Contains(string(b), "event Stop") {
+		t.Fatalf("uninstall left hooks: %s", b)
+	}
+}
+
+func TestIsOurs(t *testing.T) {
+	for c, want := range map[string]bool{
+		"pekoe event Stop":                          true,
+		"/usr/local/bin/pekoe event Stop":           true,
+		"'/Users/me/My Tools/bin/pekoe' event Stop": true,
+		`'/a/it'\''s/pekoe' event Stop`:             true,
+		"say done":                                  false,
+		"/bin/notpekoe event Stop":                  false,
+		"pekoe ls":                                  false,
+	} {
+		if got := isOurs(map[string]any{"command": c}); got != want {
+			t.Errorf("isOurs(%q) = %v, want %v", c, got, want)
+		}
+	}
+}

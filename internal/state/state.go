@@ -598,7 +598,9 @@ func (d *DB) Delete(k string) error {
 
 // Prefixed returns every kv pair whose key starts with prefix, as {k, v}.
 func (d *DB) Prefixed(prefix string) [][2]string {
-	rows, err := d.db.Query(`SELECT k, v FROM kv WHERE substr(k, 1, ?) = ? ORDER BY k`, len(prefix), prefix)
+	// SQLite's length() and substr() both count characters (Go's len
+	// counts bytes, which misses non-ASCII prefixes)
+	rows, err := d.db.Query(`SELECT k, v FROM kv WHERE substr(k, 1, length(?)) = ? ORDER BY k`, prefix, prefix)
 	if err != nil {
 		return nil
 	}

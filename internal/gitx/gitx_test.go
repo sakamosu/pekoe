@@ -261,3 +261,119 @@ func TestCheckBranchName(t *testing.T) {
 		}
 	}
 }
+
+// plainGit makes git run with its defaults (core.quotePath=true), not the
+// developer's ~/.gitconfig, which may hide quoting bugs.
+func plainGit(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+// Paths with spaces, non-ASCII, tabs: git quotes them ("b/\346...") or puts
+// a tab after them (+++ b/sp ace.txt\t); the review needs the real names.
+func TestDiffOddPaths(t *testing.T) {
+	plainGit(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "old 名前.txt"), []byte("same\nsame\nsame\nsame\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "画像.bin"), []byte{0, 1, 2}, 0o644)
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+	base := git(t, dir, "rev-parse", "HEAD")
+
+	names := []string{"sp ace.txt", "日本語.txt", "tab\tname.txt", `q"uote.txt`}
+	for _, n := range names {
+		os.WriteFile(filepath.Join(dir, n), []byte("hello\n"), 0o644)
+	}
+	os.WriteFile(filepath.Join(dir, "画像.bin"), []byte{0, 1, 3}, 0o644)
+	git(t, dir, "mv", "old 名前.txt", "新 名前.txt")
+	tree, err := SnapshotTree(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := Diff(dir, base, tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]FileDiff{}
+	for _, f := range files {
+		got[f.Path] = f
+	}
+	for _, n := range names {
+		f, ok := got[n]
+		if !ok || f.Status != "A" {
+			t.Errorf("%q: missing or not added; files: %q", n, keys(got))
+			continue
+		}
+		if ShowFile(dir, tree, n) != "hello\n" {
+			t.Errorf("%q: ShowFile empty", n)
+		}
+	}
+	if f, ok := got["画像.bin"]; !ok || !f.Binary {
+		t.Errorf("binary 画像.bin missing; files: %q", keys(got))
+	}
+	if f, ok := got["新 名前.txt"]; !ok || f.Status != "R" || f.OldPath != "old 名前.txt" {
+		t.Errorf("rename: %+v; files: %q", f, keys(got))
+	}
+}
+
+func keys(m map[string]FileDiff) []string {
+	var k []string
+	for p := range m {
+		k = append(k, p)
+	}
+	return k
+}
+
+// undo removes files made after the snapshot, whatever their names.
+func TestRestoreSnapshotOddNames(t *testing.T) {
+	plainGit(t)
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644)
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+	sha, err := SnapshotCommit(dir, "snap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{"日本語.txt", "tab\tname.txt", "sp ace.txt"}
+	for _, n := range names {
+		os.WriteFile(filepath.Join(dir, n), []byte("x\n"), 0o644)
+	}
+	if err := RestoreSnapshot(dir, sha); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Errorf("%q added after the snapshot survived undo", n)
+		}
+	}
+}
+
+// Quoted names as git prints them without core.quotePath=false.
+func TestParseDiffQuoted(t *testing.T) {
+	in := "diff --git \"a/\\346\\227\\245.txt\" \"b/\\346\\227\\245.txt\"\n" +
+		"new file mode 100644\n--- /dev/null\n+++ \"b/\\346\\227\\245.txt\"\n@@ -0,0 +1 @@\n+x\n" +
+		"diff --git \"a/\\347\\224\\273.bin\" \"b/\\347\\224\\273.bin\"\nBinary files \"a/\\347\\224\\273.bin\" and \"b/\\347\\224\\273.bin\" differ\n" +
+		"diff --git a/sp ace.txt b/sp ace.txt\n--- a/sp ace.txt\t\n+++ b/sp ace.txt\t\n@@ -1 +1 @@\n-a\n+b\n"
+	files := ParseDiff(in)
+	want := []string{"日.txt", "画.bin", "sp ace.txt"}
+	if len(files) != len(want) {
+		t.Fatalf("files = %+v", files)
+	}
+	for i, w := range want {
+		if files[i].Path != w {
+			t.Errorf("file %d: path %q, want %q", i, files[i].Path, w)
+		}
+	}
+}
+
+// git puts a tab after a ---/+++ name containing a space.
+func TestParseDiffSpaceInName(t *testing.T) {
+	in := "diff --git a/sp ace.txt b/sp ace.txt\n--- a/sp ace.txt\t\n+++ b/sp ace.txt\t\n@@ -1 +1 @@\n-a\n+b\n"
+	files := ParseDiff(in)
+	if len(files) != 1 || files[0].Path != "sp ace.txt" {
+		t.Fatalf("files = %+v", files)
+	}
+}

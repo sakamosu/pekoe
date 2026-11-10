@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -125,6 +126,45 @@ func TestPrintWebStatus(t *testing.T) {
 			if strings.Contains(out, n) {
 				t.Errorf("%s: unexpected %q in:\n%s", c.name, n, out)
 			}
+		}
+	}
+}
+
+// open with past sessions and nobody at a terminal (a script, --json): no
+// question on stdout and no resume picked on the user's behalf.
+func TestOpenNeedsChoiceWithoutTerminal(t *testing.T) {
+	fd := startFakeDaemon(t)
+	fd.results = map[string]any{"session.open": map[string]any{
+		"needs_choice": true,
+		"past":         []map[string]any{{"id": "abc", "modified": "2026-11-01T10:00:00Z"}},
+	}}
+	old := jsonOut
+	jsonOut = true
+	t.Cleanup(func() { jsonOut = old })
+	out, err := capture(t, func() error { return dispatch("open", t.TempDir()) })
+	if err == nil || !strings.Contains(err.Error(), "--resume") {
+		t.Fatalf("err = %v, want one asking for --resume or --new", err)
+	}
+	if out != "" {
+		t.Fatalf("stdout = %q, want nothing", out)
+	}
+	if c := fd.calls(); !reflect.DeepEqual(c, []string{"session.open"}) {
+		t.Fatalf("calls = %v (resumed without asking?)", c)
+	}
+}
+
+// undo's n must be a number from 1: a typo used to undo the last prompt.
+func TestUndoBadN(t *testing.T) {
+	fd := startFakeDaemon(t)
+	for _, n := range []string{"2x", "two", "0", "-1"} {
+		fd.reset()
+		err := dispatch("undo", "feat-x", n)
+		var ue *usageError
+		if !errors.As(err, &ue) || ue.help {
+			t.Errorf("undo %s: err = %v, want a usage error", n, err)
+		}
+		if c := fd.calls(); len(c) > 0 {
+			t.Errorf("undo %s: called pekoed: %v", n, c)
 		}
 	}
 }

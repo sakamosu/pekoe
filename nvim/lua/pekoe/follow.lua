@@ -5,7 +5,12 @@ local sessions = require("pekoe.sessions")
 
 local M = {}
 
-local F = nil -- {slug, root, last_tool, pending = {path, before}, win, unsub, timer}
+local F = nil -- {slug, root, last_tool, in_tool, pending = {path, before}, win, unsub, timer}
+
+-- ツールの実行中か(PreToolUse で pending_tool が付き、PostToolUse で消える)
+local function in_tool(s)
+  return s.pending_tool ~= nil and s.pending_tool ~= vim.NIL
+end
 
 local function read_lines(path)
   local ok, lines = pcall(vim.fn.readfile, path)
@@ -115,7 +120,11 @@ local function on_updated(s)
   if s.path then
     F.root = s.path
   end
-  if s.last_tool == F.last_tool then
+  -- 同じファイルを続けて Edit すると last_tool は同じ文字列のままなので、
+  -- pending_tool が付いたこと(次の PreToolUse)も新しいツールとみなす
+  local started = in_tool(s) and not F.in_tool
+  F.in_tool = in_tool(s)
+  if s.last_tool == F.last_tool and not started then
     return
   end
   F.last_tool = s.last_tool
@@ -141,6 +150,7 @@ function M.start(slug)
       if F and F.slug == s and sess then
         F.root = sess.path
         F.last_tool = sess.last_tool
+        F.in_tool = in_tool(sess)
       end
     end)
     F.unsub = client.on("session.updated", on_updated)

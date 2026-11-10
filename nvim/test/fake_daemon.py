@@ -110,7 +110,7 @@ async def handle_req(method, params, writer, token=None):
                 return s
         raise KeyError("no such session: %s" % params.get("slug"))
     if method == "review.files":
-        if params.get("slug") != "feat-x":
+        if params.get("slug") not in ("feat-x", "fix-y"):
             raise KeyError("no such session: %s" % params.get("slug"))
         r = copy.deepcopy(state["review"])
         if not params.get("show_approved"):

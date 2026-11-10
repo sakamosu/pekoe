@@ -660,6 +660,9 @@ local function set_name(buf, name)
 end
 
 local function create_layout(slug)
+  -- 手で閉じた前のレイアウトのバッファが残っていると、set_name がそれを消したときに
+  -- その BufWipeout が今作っている R を nil にする。先に古い autocmd を消しておく
+  local group = vim.api.nvim_create_augroup("PekoeReviewLayout", { clear = true })
   local cur = vim.api.nvim_get_current_buf()
   local reuse = vim.api.nvim_buf_get_name(cur) == ""
     and not vim.bo[cur].modified
@@ -727,7 +730,6 @@ local function create_layout(slug)
   end, "pekoe: go to the file list")
   common_maps(R.diff_buf)
 
-  local group = vim.api.nvim_create_augroup("PekoeReviewLayout", { clear = true })
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = group,
     buffer = R.list_buf,
@@ -745,8 +747,10 @@ local function create_layout(slug)
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = group,
     buffer = R.diff_buf,
-    callback = function()
-      R = nil
+    callback = function(ev)
+      if R and R.diff_buf == ev.buf then
+        R = nil
+      end
     end,
   })
 end
@@ -755,6 +759,12 @@ end
 function M.open(slug, cb)
   sessions.resolve(slug, function(s)
     if R and valid_win(R.list_win) and valid_win(R.diff_win) then
+      if R.slug ~= s then
+        -- 前のセッションは reviewing を抜ける(閉じるときに送るのは今の slug だけ)
+        client.request("review.end", { slug = R.slug }, function() end)
+        set_name(R.diff_buf, "pekoe://review/" .. s .. "/diff")
+        set_name(R.list_buf, "pekoe://review/" .. s .. "/files")
+      end
       R.slug = s
       R.data = nil
       R.file_idx = 1

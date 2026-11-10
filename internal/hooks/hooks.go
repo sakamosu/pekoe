@@ -15,8 +15,6 @@ import (
 
 var Events = []string{"SessionStart", "UserPromptSubmit", "Notification", "Stop", "PreToolUse", "PostToolUse", "SessionEnd"}
 
-const marker = "pekoe event"
-
 func SettingsPath() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
 		return filepath.Join(d, "settings.json")
@@ -38,7 +36,56 @@ func shq(s string) string {
 
 func isOurs(h map[string]any) bool {
 	c, _ := h["command"].(string)
-	return strings.Contains(c, marker)
+	_, ok := ourEvent(c)
+	return ok
+}
+
+// ourEvent reads a command written by command(): `<bin> event <ev>`, where
+// bin (possibly shq-quoted) is named pekoe. It returns the event.
+func ourEvent(c string) (string, bool) {
+	w := shWords(c)
+	if len(w) != 3 || filepath.Base(w[0]) != "pekoe" || w[1] != "event" {
+		return "", false
+	}
+	return w[2], true
+}
+
+// shWords splits c on blanks, undoing shq's single quotes and backslash
+// escapes (all command() produces).
+func shWords(c string) []string {
+	var words []string
+	var cur strings.Builder
+	in, quoted := false, false
+	for i := 0; i < len(c); i++ {
+		ch := c[i]
+		switch {
+		case quoted:
+			if ch == '\'' {
+				quoted = false
+			} else {
+				cur.WriteByte(ch)
+			}
+		case ch == '\'':
+			quoted, in = true, true
+		case ch == '\\' && i+1 < len(c):
+			i++
+			cur.WriteByte(c[i])
+			in = true
+		case ch == ' ' || ch == '\t':
+			if in {
+				words = append(words, cur.String())
+				cur.Reset()
+				in = false
+			}
+		default:
+			cur.WriteByte(ch)
+			in = true
+		}
+	}
+	if in {
+		words = append(words, cur.String())
+	}
+	return words
 }
 
 // Plan returns the new settings content (and whether anything changes).
@@ -125,11 +172,17 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 			return
 		}
 	}
-	tmp := path + ".pekoe-tmp"
+	// settings.json kept in dotfiles is a symlink: replace the file it
+	// points at, not the link (renaming over the link would cut it off)
+	target := path
+	if t, e := filepath.EvalSymlinks(path); e == nil {
+		target = t
+	}
+	tmp := target + ".pekoe-tmp"
 	if err = os.WriteFile(tmp, after, 0o600); err != nil {
 		return
 	}
-	err = os.Rename(tmp, path)
+	err = os.Rename(tmp, target)
 	return
 }
 
@@ -139,10 +192,27 @@ func Installed() bool {
 	if err != nil {
 		return false
 	}
+	var root struct {
+		Hooks map[string][]struct {
+			Hooks []map[string]any `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(b, &root) != nil {
+		return false
+	}
 	for _, ev := range Events {
-		if !bytes.Contains(b, []byte("event "+ev)) {
+		found := false
+		for _, g := range root.Hooks[ev] {
+			for _, h := range g.Hooks {
+				c, _ := h["command"].(string)
+				if got, ok := ourEvent(c); ok && got == ev {
+					found = true
+				}
+			}
+		}
+		if !found {
 			return false
 		}
 	}
-	return bytes.Contains(b, []byte(marker))
+	return true
 }

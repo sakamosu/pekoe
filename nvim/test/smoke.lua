@@ -284,8 +284,68 @@ local ok, err = xpcall(function()
     end
   end), ":PekoeFollow opens edited file in split")
   check(fwin and vim.api.nvim_win_get_cursor(fwin)[1] == 3, ":PekoeFollow jumps to first changed line")
+  -- 同じファイルへの連続した Edit(last_tool は同じ文字列のまま)も追う
+  local function emit_tool(last_tool, running)
+    local d = { slug = "feat-x", state = "running", last_tool = last_tool }
+    if running then
+      d.pending_tool = { name = "Edit", input = ftmp }
+    end
+    client.request_sync("test.emit", { event = "session.updated", data = d })
+    wait(150, function() return false end)
+  end
+  emit_tool("Edit " .. ftmp, true) -- PreToolUse 1
+  vim.fn.writefile({ "X", "b", "C", "d" }, ftmp)
+  emit_tool("Edit " .. ftmp, false) -- PostToolUse 1
+  emit_tool("Edit " .. ftmp, true) -- PreToolUse 2(同じ last_tool)
+  vim.fn.writefile({ "X", "b", "C", "Y" }, ftmp)
+  emit_tool("Bash ls", true)
+  check(wait(1500, function()
+    return fwin and vim.api.nvim_win_is_valid(fwin) and vim.api.nvim_win_get_cursor(fwin)[1] == 4
+  end), ":PekoeFollow follows a second Edit of the same file (line " ..
+    (fwin and vim.api.nvim_win_is_valid(fwin) and vim.api.nvim_win_get_cursor(fwin)[1] or -1) .. ")")
   vim.cmd("PekoeFollow!")
   check(follow.active() == nil, ":PekoeFollow! stops")
+
+  -- 接続先は Go の paths.Socket と同じ規則($XDG_DATA_HOME も見る)
+  do
+    local saved = { vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME }
+    vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME = nil, nil, "/x/data"
+    local got = client.socket_path()
+    vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME = saved[1], saved[2], saved[3]
+    check(got == "/x/data/pekoe/pekoed.sock", "socket under $XDG_DATA_HOME: " .. got)
+  end
+
+  local function count_logged(method, slug)
+    local n = 0
+    for _, e in ipairs(daemon_log()) do
+      if e.method == method and (e.params or {}).slug == slug then
+        n = n + 1
+      end
+    end
+    return n
+  end
+
+  -- 開いているレビュー面で別のセッションに切り替えると、前のセッションは reviewing を抜ける
+  local ends = count_logged("review.end", "feat-x")
+  local switched = false
+  review.open("fix-y", function() switched = true end)
+  check(wait(1500, function() return switched end), "review switched to fix-y")
+  check(wait(1000, function() return count_logged("review.end", "feat-x") > ends end), "switching sends review.end for the previous slug")
+  R = review.state()
+  check(R and find(vim.api.nvim_buf_get_name(R.diff_buf), "pekoe://review/fix-y/"), "diff buffer renamed to the new slug")
+  local back = false
+  review.open("feat-x", function() back = true end)
+  check(wait(1500, function() return back end), "review back on feat-x")
+
+  -- 一覧の窓を手で閉じたあと同じ slug で開き直せる
+  R = review.state()
+  vim.api.nvim_set_current_win(R.list_win)
+  vim.cmd("q") -- q キーではなく :q(バッファは bufhidden=hide で残る)
+  local opened = false
+  local okopen, operr = pcall(review.open, "feat-x", function() opened = true end)
+  check(okopen and wait(1500, function() return opened end), "reopen after closing the layout by hand: " .. tostring(operr))
+  R = review.state()
+  check(R and R.slug == "feat-x" and vim.api.nvim_win_is_valid(R.list_win), "review state alive after reopening")
 
   -- S / :PekoeSend: flush → PEKOE_SESSION があれば終了
   local quit = false

@@ -45,7 +45,8 @@ pekoe のデーモン(pekoed)に unix socket で繋がる Neovim プラグイン
 
 1. `$PEKOE_SOCK`
 2. `$PEKOE_HOME/share/pekoed.sock`(`$PEKOE_HOME` があれば)
-3. `~/.local/share/pekoe/pekoed.sock`
+3. `$XDG_DATA_HOME/pekoe/pekoed.sock`(`$XDG_DATA_HOME` があれば)
+4. `~/.local/share/pekoe/pekoed.sock`
 
 繋がると `session.` / `review.` / `editor.` のイベントを購読する。切れたら 0.5 秒から最大 15 秒の間隔で再接続する。
 

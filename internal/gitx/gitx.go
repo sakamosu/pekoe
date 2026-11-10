@@ -43,7 +43,9 @@ func RunEnv(dir string, env []string, args ...string) (string, error) {
 }
 
 func RunRaw(ctx context.Context, dir string, env []string, stdin []byte, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	// paths in git's output as they are (core.quotePath defaults to true:
+	// "\346\227\245..." for non-ASCII names), whatever the user's config
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.quotePath=false"}, args...)...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	cmd.Env = append(cmd.Env, env...)
@@ -413,17 +415,15 @@ func RestoreSnapshot(dir, commit string) error {
 	if err != nil {
 		return err
 	}
-	out, err := Run(dir, "diff", "--name-status", "--no-renames", commit, cur)
+	// -z: names unquoted even with tabs or newlines in them
+	out, err := RunRaw(context.Background(), dir, nil, nil, "diff", "--name-status", "--no-renames", "-z", commit, cur)
 	if err != nil {
 		return err
 	}
-	for _, ln := range strings.Split(out, "\n") {
-		st, p, ok := strings.Cut(ln, "\t")
-		if !ok {
-			continue
-		}
-		if st == "A" { // added after the snapshot
-			_ = os.Remove(filepath.Join(dir, p))
+	f := strings.Split(string(out), "\x00")
+	for i := 0; i+1 < len(f); i += 2 {
+		if f[i] == "A" { // added after the snapshot
+			_ = os.Remove(filepath.Join(dir, f[i+1]))
 		}
 	}
 	_, err = Run(dir, "restore", "--source="+commit, "--worktree", "--", ":/")
@@ -485,6 +485,55 @@ func atoi(s string, def int) int {
 	return n
 }
 
+// unquotePath undoes git's C-style quoting of a path ("tab\tname",
+// "\346\227\245..."), which applies to names with control characters, quotes
+// or backslashes (and, without core.quotePath=false, non-ASCII).
+func unquotePath(p string) string {
+	if len(p) >= 2 && p[0] == '"' && p[len(p)-1] == '"' {
+		if u, err := strconv.Unquote(p); err == nil {
+			return u
+		}
+	}
+	return p
+}
+
+// headerPath reads the name on a ---/+++ line: git adds a tab after an
+// unquoted name containing a space.
+func headerPath(p string) string {
+	if !strings.HasPrefix(p, `"`) {
+		p = strings.TrimSuffix(p, "\t")
+	}
+	return unquotePath(p)
+}
+
+// diffGitPaths splits "a/x b/y" from a diff --git line, either side quoted.
+func diffGitPaths(rest string) (oldPath, path string) {
+	var a, b string
+	if strings.HasPrefix(rest, `"`) {
+		// the quoted name ends at the first unescaped quote
+		end := -1
+		for i := 1; i < len(rest); i++ {
+			if rest[i] == '\\' {
+				i++
+			} else if rest[i] == '"' {
+				end = i
+				break
+			}
+		}
+		if end < 0 || end+1 >= len(rest) {
+			return "", ""
+		}
+		a, b = rest[:end+1], strings.TrimPrefix(rest[end+1:], " ")
+	} else if i := strings.Index(rest, ` "b/`); i >= 0 {
+		a, b = rest[:i], rest[i+1:]
+	} else if i := strings.Index(rest, " b/"); i >= 0 {
+		a, b = rest[:i], rest[i+1:]
+	} else {
+		return "", ""
+	}
+	return strings.TrimPrefix(unquotePath(a), "a/"), strings.TrimPrefix(unquotePath(b), "b/")
+}
+
 func ParseDiff(s string) []FileDiff {
 	var files []FileDiff
 	var f *FileDiff
@@ -503,12 +552,9 @@ func ParseDiff(s string) []FileDiff {
 			finishHunk()
 			files = append(files, FileDiff{Status: "M"})
 			f = &files[len(files)-1]
-			// diff --git a/x b/y
-			rest := strings.TrimPrefix(ln, "diff --git ")
-			if i := strings.Index(rest, " b/"); i >= 0 {
-				f.OldPath = strings.TrimPrefix(rest[:i], "a/")
-				f.Path = rest[i+3:]
-			}
+			// diff --git a/x b/y (the only names a binary or mode-only
+			// change gets)
+			f.OldPath, f.Path = diffGitPaths(strings.TrimPrefix(ln, "diff --git "))
 		case f == nil:
 		case h == nil && strings.HasPrefix(ln, "new file mode"):
 			f.Status = "A"
@@ -516,14 +562,14 @@ func ParseDiff(s string) []FileDiff {
 			f.Status = "D"
 		case h == nil && strings.HasPrefix(ln, "rename from "):
 			f.Status = "R"
-			f.OldPath = strings.TrimPrefix(ln, "rename from ")
+			f.OldPath = unquotePath(strings.TrimPrefix(ln, "rename from "))
 		case h == nil && strings.HasPrefix(ln, "rename to "):
-			f.Path = strings.TrimPrefix(ln, "rename to ")
+			f.Path = unquotePath(strings.TrimPrefix(ln, "rename to "))
 		case h == nil && strings.HasPrefix(ln, "Binary files"):
 			f.Binary = true
 		case h == nil && strings.HasPrefix(ln, "--- "):
 		case h == nil && strings.HasPrefix(ln, "+++ "):
-			if p := strings.TrimPrefix(ln, "+++ "); p != "/dev/null" {
+			if p := headerPath(strings.TrimPrefix(ln, "+++ ")); p != "/dev/null" {
 				f.Path = strings.TrimPrefix(p, "b/")
 			}
 		case strings.HasPrefix(ln, "@@"):
