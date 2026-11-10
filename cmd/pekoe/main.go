@@ -989,7 +989,9 @@ func cmdRm(args []string) error {
 	}
 	if f["yes"] == "" {
 		what := "forget the session (worktree outside ~/worktrees is kept)"
-		if s.Managed {
+		if s.State == state.Landed {
+			what = "remove it from the list (landed: its worktree is already gone)"
+		} else if s.Managed {
 			what = "run teardown and delete " + s.Path
 		}
 		if !confirm(fmt.Sprintf("%s: %s?", s.Slug, what)) {

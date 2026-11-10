@@ -452,3 +452,87 @@ func TestAgentNewOnlyInKnownRepos(t *testing.T) {
 		t.Fatalf("clone with a known origin: error = %q", e)
 	}
 }
+
+// rm without the token clears a landed session (its worktree is already
+// gone) and nothing else: other states, force, and a landed session whose
+// worktree is still on disk need a person.
+func TestAgentRmOnlyLanded(t *testing.T) {
+	d, _, repo := setup(t)
+	c := dialPipe(t, d)
+	s := readySession(t, d, repo, "feat/live")
+	for _, params := range []map[string]any{
+		{"slug": s.Slug},
+		{"slug": s.Slug, "force": true},
+	} {
+		if e := c.call("worktree.rm", params, ""); !strings.Contains(e, "only a person can do this") {
+			t.Fatalf("rm %v of a %s session without the token: error = %q", params, s.State, e)
+		}
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatalf("worktree removed: %v", err)
+	}
+	if _, err := d.get(s.Slug); err != nil {
+		t.Fatalf("session removed: %v", err)
+	}
+
+	// landed, but the worktree removal failed: refused, directory kept
+	d.update(s.Slug, func(x *state.Session) { x.State = state.Landed })
+	if e := c.call("worktree.rm", map[string]any{"slug": s.Slug}, ""); !strings.Contains(e, "still there") || !strings.Contains(e, "only a person can do this") {
+		t.Fatalf("rm of a landed session with its worktree: error = %q", e)
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatalf("worktree removed: %v", err)
+	}
+
+	// landed the usual way: the worktree is gone, rm clears the record
+	d.update(s.Slug, func(x *state.Session) { x.State = state.Running })
+	if err := d.finishLanding(s.Slug); err != nil {
+		t.Fatal(err)
+	}
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.State != state.Landed {
+		t.Fatalf("state %s, want landed", got.State)
+	}
+	if _, err := os.Stat(s.Path); err == nil {
+		t.Fatal("finishLanding left the worktree")
+	}
+	if e := c.call("worktree.rm", map[string]any{"slug": s.Slug, "force": true}, ""); !strings.Contains(e, "only a person can do this") {
+		t.Fatalf("rm --force of a landed session without the token: error = %q", e)
+	}
+	if e := c.call("worktree.rm", map[string]any{"slug": s.Slug}, ""); e != "" {
+		t.Fatalf("rm of a landed session without the token: %s", e)
+	}
+	if _, err := d.get(s.Slug); err == nil {
+		t.Fatal("landed session still listed")
+	}
+	l, err := d.DB.Sessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range l {
+		if x.Slug == s.Slug {
+			t.Fatal("landed session still in state.db")
+		}
+	}
+}
+
+// The landed check sits where rm removes the session: a session.new of the
+// same slug that replaced the landed one is not removed by an rm that
+// looked earlier.
+func TestAgentRmRechecksUnderLock(t *testing.T) {
+	d, _, repo := setup(t)
+	s := readySession(t, d, repo, "feat/again")
+	d.finishLanding(s.Slug)
+	landed, _ := d.get(s.Slug)
+	// what a racing session.new does: a new session under the same slug
+	d.mu.Lock()
+	n := *landed
+	n.State = state.Running
+	d.sessions[s.Slug] = &n
+	d.mu.Unlock()
+	if d.forgetIf(s.Slug, func(x *state.Session) bool { return x == landed && x.State == state.Landed }) {
+		t.Fatal("forgetIf removed the session that replaced the landed one")
+	}
+	if got, err := d.get(s.Slug); err != nil || got != &n {
+		t.Fatalf("replacement gone: %v", err)
+	}
+}

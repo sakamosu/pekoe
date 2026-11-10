@@ -143,6 +143,53 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
 }
 
+// hAgentRm is rm without the human token (call routes it here), for the
+// hub agent cleaning up after land. Only a landed session: pekoed has
+// already torn it down and removed its worktree when it saw the merge, so
+// all that is left is pekoe's record of it (the row, its prompts and
+// reviews, the files kept for it), and the code is on the base branch.
+// rm of any other session removes a worktree and its uncommitted changes,
+// which stays a person's decision; so does force. A landed session whose
+// worktree is still there (the removal failed) is refused too: deleting
+// that directory is rm's job, with the token.
+//
+// The state is checked again in forgetIf, under the lock that removes the
+// session: a session.new of the same slug replaces a landed session, and a
+// check made before that must not let rm through to the new one.
+func (d *Daemon) hAgentRm(p rmP) (any, error) {
+	if p.Force {
+		return nil, fmt.Errorf("rm with force: %w", ErrHumanOnly)
+	}
+	s, err := d.get(p.Slug)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	st, path, managed := s.State, s.Path, s.Managed
+	d.mu.Unlock()
+	if st != state.Landed {
+		return nil, fmt.Errorf("rm of a %s session removes its worktree (an agent may remove only landed sessions): %w", st, ErrHumanOnly)
+	}
+	if path != "" && managed {
+		if _, err := os.Stat(path); err == nil {
+			return nil, fmt.Errorf("%s has landed but its worktree %s is still there (removing it takes rm with the human token): %w", p.Slug, path, ErrHumanOnly)
+		}
+	}
+	var snap *state.Session
+	if !d.forgetIf(p.Slug, func(x *state.Session) bool {
+		if x != s || x.State != state.Landed {
+			return false
+		}
+		snap = d.copyLocked(x)
+		return true
+	}) {
+		return nil, fmt.Errorf("%s changed while being removed (no longer the landed session): %w", p.Slug, ErrHumanOnly)
+	}
+	d.purgeFiles(snap)
+	d.emit("session.removed", snap)
+	return map[string]any{"removed": p.Slug, "worktree_deleted": false}, nil
+}
+
 // purge drops everything pekoe keeps about a session (not its worktree):
 // the row and its prompts, reviews, comments and risks, the picks, errors,
 // attachments and preview addressed to it.
@@ -150,6 +197,12 @@ func (d *Daemon) purge(s *state.Session) {
 	// out of memory and state.db together, before anything else can save it
 	// again (an update racing with rm used to write it back: see persist)
 	d.forget(s.Slug)
+	d.purgeFiles(s)
+}
+
+// purgeFiles is purge after the session is forgotten: the picks, errors,
+// attachments, preview and agent settings kept outside its row.
+func (d *Daemon) purgeFiles(s *state.Session) {
 	// picks addressed to this session go with it (no leftovers)
 	if picks, err := d.DB.Picks(1000); err == nil {
 		for _, pk := range picks {

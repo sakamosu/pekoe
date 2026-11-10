@@ -49,6 +49,11 @@ var agentMethods = map[string]string{
 	// the teardown waits for it. hAgentLand refuses a repository without
 	// origin, where land would fast-forward the base branch right away.
 	"land": "the hub agent lands a session it was asked to (`pekoe land`): rebase, test in pekoed's sandbox, push, gh pr create; hAgentLand refuses repositories without origin",
+	// after land: a landed session's worktree is already gone (pekoed
+	// removed it when it saw the merge), so rm only drops pekoe's record.
+	// hAgentRm refuses every other state, force, and a landed session
+	// whose worktree is still there.
+	"worktree.rm": "the hub agent clears a landed session from the list (`pekoe rm`); hAgentRm refuses other states, force, and a worktree still on disk",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -84,7 +89,6 @@ var humanMethods = map[string]string{
 	"session.undo":    "rewrites the worktree",
 	"session.kill":    "stops an agent",
 	"session.cancel":  "removes a session being created",
-	"worktree.rm":     "removes a worktree",
 	"window.kill":     "stops a window",
 	"run.close":       "stops the run window",
 	"preview.capture": "drives Chrome on a URL",
