@@ -756,7 +756,7 @@ func (m *model) pendingPick() *state.Pick {
 	s := m.current()
 	var best *state.Pick
 	for _, pk := range m.picks {
-		if pk.Sent {
+		if pk.Sent || m.pickSent[pk.ID] {
 			continue
 		}
 		if s != nil && (pk.Slug == s.Slug || pk.Slug == "") {
@@ -782,6 +782,42 @@ func (m *model) ensurePickInput() {
 	m.pickInput = in
 }
 
+type pickSendFailedMsg struct {
+	id  int64
+	err error
+}
+
+// sendPick sends a pick to a session. Until a reload shows it sent, the
+// card does not come back for it, so a second ↵ cannot send it again.
+func (m *model) sendPick(id int64, slug, text, ok string) tea.Cmd {
+	if m.pickSent == nil {
+		m.pickSent = map[int64]bool{}
+	}
+	m.pickSent[id] = true
+	cl := m.cl
+	return tea.Batch(func() tea.Msg {
+		if err := cl.Call("pick.send", map[string]any{"id": id, "slug": slug, "text": text}, nil); err != nil {
+			return pickSendFailedMsg{id: id, err: err}
+		}
+		return infoMsg(ok)
+	}, m.loadPicks())
+}
+
+// prunePickSent forgets the picks a reload shows sent (or gone).
+func (m *model) prunePickSent() {
+	for id := range m.pickSent {
+		gone := true
+		for _, pk := range m.picks {
+			if pk.ID == id && !pk.Sent {
+				gone = false
+			}
+		}
+		if gone {
+			delete(m.pickSent, id)
+		}
+	}
+}
+
 func (m *model) pickKey(k tea.KeyMsg) (tea.Cmd, bool) {
 	in := m.pickInput
 	pk := m.pendingPick()
@@ -797,13 +833,13 @@ func (m *model) pickKey(k tea.KeyMsg) (tea.Cmd, bool) {
 		}
 		text := in.String()
 		m.pickInput = nil
-		return tea.Batch(m.act("pick.send", map[string]any{"id": pk.ID, "slug": slug, "text": text}, fmt.Sprintf("sent pick #%04d to %s", pk.ID, slug)), m.loadPicks()), true
+		return m.sendPick(pk.ID, slug, text, fmt.Sprintf("sent pick #%04d to %s", pk.ID, slug)), true
 	case "esc":
 		m.pickInput = nil
 		return tea.Batch(m.act("pick.discard", map[string]any{"id": pk.ID}, "discarded pick"), m.loadPicks()), true
 	case "ctrl+s":
 		m.modal = newSessionPicker(m, "Send pick to", func(slug string) tea.Cmd {
-			return tea.Batch(m.act("pick.send", map[string]any{"id": pk.ID, "slug": slug, "text": in.String()}, "sent pick to "+slug), m.loadPicks())
+			return m.sendPick(pk.ID, slug, in.String(), "sent pick to "+slug)
 		})
 		return nil, true
 	case "ctrl+n":

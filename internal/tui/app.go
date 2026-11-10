@@ -99,6 +99,7 @@ type model struct {
 	tabs      []daemon.Tab
 	tsel      int
 	picks     []*state.Pick
+	pickSent  map[int64]bool // sent from the card, not yet reloaded as sent (sendPick)
 	psel      int               // over picks, then errs (Picks panel)
 	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
@@ -664,6 +665,11 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case pickSendFailedMsg: // the card comes back to try again
+		delete(m.pickSent, msg.id)
+		m.setMsg(msg.err.Error(), true)
+		return m, nil
+
 	case infoMsg:
 		m.setMsg(string(msg), false)
 		return m, nil
@@ -726,6 +732,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case picksMsg:
 		m.picks = msg
+		m.prunePickSent()
 		m.ensurePickInput()
 		return m, m.sendPickImages()
 

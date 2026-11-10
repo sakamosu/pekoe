@@ -477,3 +477,49 @@ func TestCmdsDoNotWriteModel(t *testing.T) {
 		t.Fatalf("err %q", n.err)
 	}
 }
+
+// ↵ twice on a pick card before the reload shows it sent sends it once;
+// a send that fails brings the card back.
+func TestPickSentOnce(t *testing.T) {
+	m, f, _ := chatModel(t)
+	f.reply = func(method string) any {
+		if method == "pick.list" { // the reload races the send: still unsent
+			return []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+		}
+		return nil
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+	m.window, m.focus = engine.WinAgent, pAgent
+	m.ensurePickInput()
+	first := m.onKey(key("enter"))
+	m.View()
+	second := m.onKey(key("enter"))
+	runCmd(m, first)
+	runCmd(m, second)
+	if n := len(f.find("pick.send")); n != 1 {
+		t.Fatalf("pick.send %d times", n)
+	}
+	if m.pendingPick() != nil {
+		t.Fatal("the card is back while the pick is being sent")
+	}
+
+	m, f, _ = chatModel(t)
+	f.reply = func(method string) any {
+		if method == "pick.send" {
+			return errors.New("tmux is gone")
+		}
+		return nil
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+	m.window, m.focus = engine.WinAgent, pAgent
+	m.ensurePickInput()
+	msgs := msgsOf(m.onKey(key("enter")))
+	for _, msg := range msgs {
+		if _, ok := msg.(picksMsg); !ok { // keep the pick: the fake has no list
+			m.Update(msg)
+		}
+	}
+	if pk := m.pendingPick(); pk == nil || pk.ID != 7 {
+		t.Fatalf("failed send: card %v, msgs %v", pk, msgs)
+	}
+}
