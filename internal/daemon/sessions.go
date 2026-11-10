@@ -308,7 +308,10 @@ type newP struct {
 	Base   string `json:"base"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
-	parent string // the caller (hNewAs); "" is a person (the Chrome extension)
+	// Request ties the session to a ledger entry (pekoe new --request;
+	// hNewAs checks it and links the entry)
+	Request int64  `json:"request"`
+	parent  string // the caller (hNewAs); "" is a person (the Chrome extension)
 }
 
 func stepLabel(cmd string) string {
@@ -387,7 +390,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Path: wt, Agent: agent, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
-		Parent: p.parent,
+		Parent: p.parent, Request: p.Request,
 	}
 	if s.Parent == "" {
 		s.Parent = callerHuman

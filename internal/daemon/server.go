@@ -213,6 +213,7 @@ type Daemon struct {
 
 	// the inbox (inbox.go)
 	inboxMu      sync.Mutex           // reads and writes of an item, one at a time
+	ledgerMu     sync.Mutex           // changes of a ledger entry, one at a time (ledger.go)
 	inboxDeliver sync.Map             // asker -> *sync.Mutex: one delivery at a time
 	inboxTick    atomic.Bool          // deliverAllInbox is running
 	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
@@ -487,6 +488,10 @@ func (d *Daemon) emit(ev string, data any) {
 	if d.testHook != nil {
 		d.testHook(ev, data)
 	}
+	if ev == "inbox.updated" {
+		// Tapi.inbox_open may have changed
+		defer d.emit("tapi.updated", d.tapiView())
+	}
 	if s, ok := data.(*state.Session); ok && ev == "session.removed" && s != nil {
 		d.changes.forget(s.Slug)
 		d.changes.add(Change{Kind: kindRemoved, Slug: s.Slug, Summary: s.Slug + ": removed", parent: s.Parent})
@@ -635,6 +640,8 @@ func (d *Daemon) registerHandlers() {
 		"tapi.send":             bind(func(p tapiSendP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiSend(p) }),
 		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
+		"ledger.reopen":         bind(d.hLedgerReopen),
+		"ledger.delete":         bind(d.hLedgerDelete),
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h
@@ -653,6 +660,9 @@ func (d *Daemon) registerHandlers() {
 		"inbox.withdraw": bindAs(d.hInboxWithdraw),
 		"inbox.answer":   bindAs(d.hInboxAnswer),
 		"inbox.dismiss":  bindAs(d.hInboxDismiss),
+		"ledger.list":    bindAs(d.hLedgerList),
+		"ledger.close":   bindAs(d.hLedgerClose),
+		"ledger.link":    bindAs(d.hLedgerLink),
 	}
 	for k, h := range d.callerHandlers {
 		h := h

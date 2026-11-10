@@ -106,24 +106,9 @@ func cleanReport(p reportP) (*state.Report, error) {
 	if n := utf8.RuneCountInString(sum); n > reportSummaryMax {
 		return nil, fmt.Errorf("report.post: summary is %d characters, at most %d (put the details in a file and pass its path as evidence)", n, reportSummaryMax)
 	}
-	if len(p.Evidence) > reportEvidenceMax {
-		return nil, fmt.Errorf("report.post: at most %d evidence entries", reportEvidenceMax)
-	}
-	ev := []string{}
-	for _, e := range p.Evidence {
-		e = strings.TrimSpace(strings.Map(func(r rune) rune {
-			if r < 0x20 || r == 0x7f || r >= 0x80 && r <= 0x9f {
-				return -1
-			}
-			return r
-		}, e))
-		if e == "" {
-			continue
-		}
-		if utf8.RuneCountInString(e) > reportEvidenceLen {
-			return nil, fmt.Errorf("report.post: an evidence entry is at most %d characters", reportEvidenceLen)
-		}
-		ev = append(ev, e)
+	ev, err := cleanEvidence("report.post", p.Evidence)
+	if err != nil {
+		return nil, err
 	}
 	r := &state.Report{Status: p.Status, Summary: sum, Evidence: ev}
 	if p.Status == "review" {
@@ -139,6 +124,31 @@ func cleanReport(p reportP) (*state.Report, error) {
 		return nil, fmt.Errorf("report.post: verdict and reviewed_sha go with status review")
 	}
 	return r, nil
+}
+
+// cleanEvidence checks evidence (paths and URLs, kept as text) and drops
+// every control character: one line each. Empty entries go.
+func cleanEvidence(method string, in []string) ([]string, error) {
+	if len(in) > reportEvidenceMax {
+		return nil, fmt.Errorf("%s: at most %d evidence entries", method, reportEvidenceMax)
+	}
+	ev := []string{}
+	for _, e := range in {
+		e = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f || r >= 0x80 && r <= 0x9f {
+				return -1
+			}
+			return r
+		}, e))
+		if e == "" {
+			continue
+		}
+		if utf8.RuneCountInString(e) > reportEvidenceLen {
+			return nil, fmt.Errorf("%s: an evidence entry is at most %d characters", method, reportEvidenceLen)
+		}
+		ev = append(ev, e)
+	}
+	return ev, nil
 }
 
 type reportListP struct {

@@ -28,11 +28,18 @@ const sendLogMax = 64 << 10
 func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 	p.parent = who.ID()
 	var res any
-	var err error
-	if who.Human() {
+	err := d.checkRequest(who, p.Request)
+	switch {
+	case err != nil:
+	case who.Human():
 		res, err = d.hNew(p)
-	} else {
+	default:
 		res, err = d.hAgentNew(p)
+	}
+	if s, ok := res.(*state.Session); ok && s != nil && err == nil && p.Request != 0 {
+		// the entry was open a moment ago; if tapi closed it since, the
+		// session keeps its request and the entry its status
+		_, _ = d.linkLedger("session.new --request", p.Request, s.Slug)
 	}
 	to := paths.Slug(p.Branch)
 	if s, ok := res.(*state.Session); ok && s != nil {

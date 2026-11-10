@@ -40,6 +40,10 @@ type Tapi struct {
 	LastMessage     string      `json:"last_message,omitempty"`
 	ClaudeSessionID string      `json:"claude_session_id,omitempty"`
 	StateSince      time.Time   `json:"state_since"`
+	// InboxOpen and LedgerOpen count the inbox's open items (everyone's)
+	// and the ledger's open requests (docs/orchestration.md「永続化と寿命」)
+	InboxOpen  int `json:"inbox_open"`
+	LedgerOpen int `json:"ledger_open"`
 }
 
 // tapiState is tapi chat's state in memory (under d.mu).
@@ -68,6 +72,8 @@ func (d *Daemon) tapiView() *Tapi {
 	}
 	v.Started = d.tapiStarted()
 	v.Alive = v.Started && d.Eng.Alive(TapiSlug, engine.WinAgent)
+	v.InboxOpen, _ = d.DB.InboxOpenTotal()
+	v.LedgerOpen, _ = d.DB.LedgerOpenCount()
 	return v
 }
 
