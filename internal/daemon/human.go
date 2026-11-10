@@ -43,6 +43,12 @@ var agentMethods = map[string]string{
 	"session.send":  "the hub agent's follow-up instructions (`pekoe send`); authorizeSend limits it",
 	"repo.resolve":  "`pekoe ls` / `pekoe new --repo` find the repository",
 	"editor.open":   "the MCP server's open_in_editor (only an event for nvim)",
+	// push and PR creation: an agent whose sandbox allows github.com can
+	// git push and gh pr create itself, so refusing land protected nothing.
+	// The tests run in pekoed's sandbox; merging is a person's decision, and
+	// the teardown waits for it. hAgentLand refuses a repository without
+	// origin, where land would fast-forward the base branch right away.
+	"land": "the hub agent lands a session it was asked to (`pekoe land`): rebase, test in pekoed's sandbox, push, gh pr create; hAgentLand refuses repositories without origin",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -72,7 +78,6 @@ var humanMethods = map[string]string{
 	"dev.toggle":      "runs the repo's dev command",
 	"review.surface":  "starts nvim in the session's review window",
 	"review.pr":       "gh: reads and writes the PR with the person's credentials",
-	"land":            "push and PR creation",
 	"session.open":    "starts an agent in any directory",
 	"session.adopt":   "takes over an existing worktree",
 	"session.restart": "restarts an agent",

@@ -174,7 +174,7 @@ pekoe                                                 # TUI
 | `pekoe conflicts [--repo R]` | 衝突予報。同じファイルを触っているセッションのペアと、衝突するか(`git merge-tree`) |
 | `pekoe send <slug> <text> [--no-enter]` | pty に文字を送る(既定で Enter を足す。`-` で stdin) |
 | `pekoe review [<slug> \| gh#N [--repo R]]` | レビュー面。引数なしなら次のレビュー待ち。`gh#N` で人の PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`。マージ検出後に teardown と worktree 削除 |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`。マージ検出後に teardown と worktree 削除。エージェントも呼べる(マージは人間が決める) |
 | `pekoe rm <slug> [--force] [--yes]` | teardown → worktree 削除(`~/worktrees` 配下のみ。外のものはセッションを忘れるだけ) |
 | `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止 |
 | `pekoe undo <slug> [n]` | 最後(か n 番目)のプロンプトの変更を取り消す |
@@ -195,7 +195,7 @@ pekoe                                                 # TUI
 - `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`(と hooks 用の `event`)だけで、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ使える(新しいリポジトリで最初のセッションを作るのは人間だけの操作)。ほか(`answer`・`dev`・`init`・`open`・`review`・`rm`・`land`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`(と hooks 用の `event`)だけで、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・`dev`・`init`・`open`・`review`・`rm`・`issues`・`conflicts`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -338,13 +338,13 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
    }
    ```
 
-   パスは `go env GOCACHE GOMODCACHE`・`npm config get cache`・`pnpm store path` で確かめる(Linux なら `~/.cache/go-build` など)。`gh` は macOS の sandbox の中では TLS の検証に失敗する(`x509: OSStatus -26276`)が、`enableWeakerNetworkIsolation: true` と `api.github.com` を許せば動く(確かめた)。`gh` を `excludedCommands` に入れて sandbox の外で動かさない(`gh api --input <ファイル>` でトークンを外へ送れてしまう)。緩めずに使うなら、PR や issue は人間が `pekoe land` や TUI で扱う(tapi chat の `gh` を使う集計も同じ)。
+   パスは `go env GOCACHE GOMODCACHE`・`npm config get cache`・`pnpm store path` で確かめる(Linux なら `~/.cache/go-build` など)。`gh` は macOS の sandbox の中では TLS の検証に失敗する(`x509: OSStatus -26276`)が、`enableWeakerNetworkIsolation: true` と `api.github.com` を許せば動く(確かめた)。`gh` を `excludedCommands` に入れて sandbox の外で動かさない(`gh api --input <ファイル>` でトークンを外へ送れてしまう)。緩めずに使うなら、issue は人間が TUI で扱い(tapi chat の `gh` を使う集計も同じ)、`pekoe land` がエージェントにとっての push の手段になる(pekoed が自分の sandbox でテストしてから push と PR 作成をする)。`github.com` / `api.github.com` を許せば、エージェントは自分で `git push` と `gh pr create` ができる。land をエージェントに開いているのはそのためで、歯止めは人間がマージすること。
 
    `--permission-mode bypassPermissions` で使うと、許していないドメインへの接続も確認なしに通る(Claude Code の仕様)ので、ネットワークの制限は実質効かない。ファイルの制限(トークンを読めない)は残る。Linux では Claude Code の sandbox に bubblewrap と socat が要り、無いと `failIfUnavailable` で Claude Code が起動しない(エージェントの窓に終了の理由が出る)。
 
    入れ直したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が `Operation not permitted` で読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。
 
-2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`land`、`daemon` は入れない
+2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`daemon` は入れない。`land` は token なしでも通るが、許可リストに入れなければ push のたびに Claude Code が確認する
 
    ```json
    {

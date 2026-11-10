@@ -176,7 +176,7 @@ pekoe                                                 # TUI
 | `pekoe conflicts [--repo R]` | Conflict forecast: pairs of sessions touching the same files, and whether they conflict (`git merge-tree`) |
 | `pekoe send <slug> <text> [--no-enter]` | Type text into the pty (adds Enter by default; `-` reads stdin) |
 | `pekoe review [<slug> \| gh#N [--repo R]]` | Review surface. Without arguments, the next session waiting for review. `gh#N` for someone else's PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected, teardown and remove the worktree |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected, teardown and remove the worktree. Agents can run it too (merging stays yours) |
 | `pekoe rm <slug> [--force] [--yes]` | teardown → remove the worktree (only under `~/worktrees`; for others pekoe only forgets the session) |
 | `pekoe dev <slug>` | Start / stop `dev` on the session's port |
 | `pekoe undo <slug> [n]` | Undo the changes of the last (or n-th) prompt |
@@ -197,7 +197,7 @@ pekoe                                                 # TUI
 - `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
-- Of the commands that talk to pekoed, agents can use only `ls`, `new` and `send` (and `event`, for the hooks) without the token, and `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only). The others (`answer`, `dev`, `init`, `open`, `review`, `rm`, `land`, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
+- Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send` and `land` (and `event`, for the hooks) without the token; `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only), and `land` only in a repository with an origin (without one, land fast-forwards the base branch right away). The others (`answer`, `dev`, `init`, `open`, `review`, `rm`, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
 
 ## TUI
 
@@ -340,13 +340,13 @@ But an agent running as the same user can read files. Two things keep the token 
    }
    ```
 
-   Check the paths with `go env GOCACHE GOMODCACHE`, `npm config get cache` and `pnpm store path` (on Linux, `~/.cache/go-build` and so on). In the macOS sandbox `gh` fails to verify TLS (`x509: OSStatus -26276`); with `enableWeakerNetworkIsolation: true` and `api.github.com` allowed it works (tested). Don't put `gh` in `excludedCommands` to run it outside the sandbox (`gh api --input <file>` could send the token out). If you don't loosen it, a person handles PRs and issues with `pekoe land` and the TUI (the same goes for tapi chat's counts that use `gh`).
+   Check the paths with `go env GOCACHE GOMODCACHE`, `npm config get cache` and `pnpm store path` (on Linux, `~/.cache/go-build` and so on). In the macOS sandbox `gh` fails to verify TLS (`x509: OSStatus -26276`); with `enableWeakerNetworkIsolation: true` and `api.github.com` allowed it works (tested). Don't put `gh` in `excludedCommands` to run it outside the sandbox (`gh api --input <file>` could send the token out). If you don't loosen it, a person handles issues in the TUI (the same goes for tapi chat's counts that use `gh`), and `pekoe land` becomes the agents' way to push: pekoed pushes and opens the PR, after running the tests in its own sandbox. If you do allow `github.com` / `api.github.com`, an agent can `git push` and `gh pr create` by itself anyway, which is why `land` is open to agents; what keeps you in control is that you merge.
 
    With `--permission-mode bypassPermissions`, connections to domains you haven't allowed go through without asking (Claude Code's behavior), so the network restriction has practically no effect; the file restrictions (the token stays unreadable) remain. On Linux, Claude Code's sandbox needs bubblewrap and socat; without them `failIfUnavailable` keeps Claude Code from starting (the agent's window shows why).
 
    After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the skill) uses `ls`, `new` and `send`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm`, `land` or `daemon`
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the skill) uses `ls`, `new` and `send`, so if you add pekoe to the allow list, limit it to those. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push
 
    ```json
    {

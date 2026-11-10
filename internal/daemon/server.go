@@ -443,6 +443,8 @@ func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res an
 		h = bind(d.hAgentSend)
 	case agent && method == "session.new":
 		h = bind(d.hAgentNew)
+	case agent && method == "land":
+		h = bind(d.hAgentLand)
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")

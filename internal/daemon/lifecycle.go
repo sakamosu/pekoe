@@ -308,7 +308,20 @@ func runScript(sh, cmd string, w, h int) string {
 
 // ---- land: rebase → test → push → gh pr create; teardown after merge ----
 
-func (d *Daemon) hLand(p slugP) (any, error) {
+func (d *Daemon) hLand(p slugP) (any, error) { return d.land(p, false) }
+
+// hAgentLand is land without the human token (call routes it here). An
+// agent whose sandbox allows github.com could push and run gh pr create
+// itself, so pushing the session's branch and opening its PR is no more
+// than it can do; merging stays a person's decision, and the teardown
+// waits for that merge (watchMerges). A repository without origin is
+// different: land fast-forwards the base branch in the main checkout and
+// removes the worktree right away, with nobody merging, so that stays
+// human-only. The check sits in land itself, where it reads origin, so
+// removing origin after a check cannot slip past it.
+func (d *Daemon) hAgentLand(p slugP) (any, error) { return d.land(p, true) }
+
+func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
@@ -332,6 +345,9 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 		return nil, err
 	}
 	hasOrigin := gitx.Origin(s.Path) != ""
+	if !hasOrigin && agent {
+		return nil, fmt.Errorf("land in a repository without origin fast-forwards %s and removes the worktree with nobody merging: %w", base, ErrHumanOnly)
+	}
 	steps := []string{}
 	onto := base
 	if hasOrigin {
