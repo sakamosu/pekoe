@@ -82,11 +82,21 @@ func (d *Daemon) persist(s *state.Session) {
 
 // forget drops a session from memory and from state.db as one step with
 // respect to persist (see there).
-func (d *Daemon) forget(slug string) {
+func (d *Daemon) forget(slug string) { d.forgetIf(slug, nil) }
+
+// forgetIf is forget, but only while ok (called under mu) holds for the
+// session in memory; it reports whether it forgot it. A check made before
+// cannot go stale: nothing changes the session between ok and the delete.
+func (d *Daemon) forgetIf(slug string, ok func(*state.Session) bool) bool {
 	d.saveMu.Lock()
 	defer d.saveMu.Unlock()
 	d.mu.Lock()
-	if s := d.sessions[slug]; s != nil && !d.pathUsedLocked(s.Path, slug) {
+	s := d.sessions[slug]
+	if ok != nil && (s == nil || !ok(s)) {
+		d.mu.Unlock()
+		return false
+	}
+	if s != nil && !d.pathUsedLocked(s.Path, slug) {
 		gitx.Unpin(s.Path)
 	}
 	delete(d.sessions, slug)
@@ -97,6 +107,7 @@ func (d *Daemon) forget(slug string) {
 	if err := d.DB.DeleteSession(slug); err != nil {
 		log.Printf("delete %s: %v", slug, err)
 	}
+	return true
 }
 
 // update mutates a session under the lock, persists it and emits events.
@@ -1599,6 +1610,11 @@ func (d *Daemon) restore() {
 	d.realignRepoIDs()
 	for _, s := range list {
 		if s.State == state.Landed {
+			// landed before landedPRMerged existed: the summary still
+			// shows the last fetch before the merge
+			if s.PR > 0 && (s.PRStatus == nil || s.PRStatus.State != "MERGED") {
+				d.update(s.Slug, func(x *state.Session) { landedPRMerged(x) })
+			}
 			continue
 		}
 		if s.State == state.Creating {

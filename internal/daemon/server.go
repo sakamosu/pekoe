@@ -445,6 +445,8 @@ func (d *Daemon) call(method string, params json.RawMessage, agent bool) (res an
 		h = bind(d.hAgentNew)
 	case agent && method == "land":
 		h = bind(d.hAgentLand)
+	case agent && method == "worktree.rm":
+		h = bind(d.hAgentRm)
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")
