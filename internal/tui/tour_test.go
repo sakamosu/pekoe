@@ -855,8 +855,8 @@ func TestTourOrchestratorSteps(t *testing.T) {
 		case "ダッシュボード":
 			seen[title] = true
 			a := agent()
-			for _, want := range []string{"Dashboard", "Overview", "Inbox", "#12", "decide", "merge ready", "Pipeline", "from tapi · request #7",
-				tourCSV, tourReady, "#131", "needs review, ci, merge_state", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
+			for _, want := range []string{"Dashboard", "Overview", "Inbox", "#12", "decide", "merge ready", "Pipeline", "from tapi · #7",
+				tourCSV, tourReady, "#131", "CI failed", "review: no independent review reported", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
 				if !strings.Contains(a, want) {
 					t.Errorf("%q: no %q in [4]:\n%s", title, want, a)
 				}
@@ -887,7 +887,7 @@ func TestTourOrchestratorSteps(t *testing.T) {
 			if sel < 0 {
 				t.Fatalf("%q: the ready session's row is not chosen", title)
 			}
-			if a := agent(); !strings.Contains(a, tourReady) || !strings.Contains(a, "merge "+m.ic.Here) {
+			if a := agent(); !strings.Contains(a, tourReady) || !strings.Contains(a, "ready to merge") {
 				t.Errorf("%q: no ready mark for %s:\n%s", title, tourReady, a)
 			}
 		}

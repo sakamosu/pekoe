@@ -525,14 +525,11 @@ type tourSeg struct {
 	kind byte // 0 text, 'k' key, '@' state icon
 }
 
-// tourLook is the icon of {@name}: a session state, "overlap" (⚠), or
-// "ready" (the pipeline's ready-to-merge mark, stageMark).
+// tourLook is the icon of {@name}: a session state or "overlap" (⚠).
 func (m *model) tourLook(name string) theme.StateLook {
 	switch name {
 	case "overlap":
 		return theme.StateLook{Icon: m.ic.Warning, Role: theme.Warn}
-	case "ready":
-		return theme.StateLook{Icon: fit(m.ic.Here, 1), Role: theme.Ok}
 	}
 	return theme.Look(m.ic, state.State(name), 0, false)
 }

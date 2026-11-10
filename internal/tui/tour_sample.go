@@ -130,11 +130,11 @@ var tourSteps = []tourStep{
 	{
 		ja: tourCopy{
 			title: "工程表とマージ",
-			body:  "工程表は、セッションごとの impl › PR › CI › review › merge。足りないものは needs … に出る。fix-cart-total は全部そろって {@ready} になってるね。そろうと pekoed が受信箱に merge ready を 1 件出すけど、マージするのはきみ。GitHub でマージしてから、その項目に答えてね。",
+			body:  "工程表は、セッションごとの impl › PR › CI › review › merge のバーと、今の段階のひとこと。足りないものは needs … とその理由に出る。fix-cart-total は全部そろって ready to merge になってるね。そろうと pekoed が受信箱に merge ready を 1 件出すけど、マージするのはきみ。GitHub でマージしてから、その項目に答えてね。",
 		},
 		en: tourCopy{
 			title: "Pipeline and merging",
-			body:  "The pipeline shows impl › PR › CI › review › merge for each session, and what is still missing as needs …. fix-cart-total has it all and shows {@ready}. Then pekoed puts a merge ready item in the inbox, but the merge is yours: merge it on GitHub, then answer the item.",
+			body:  "The pipeline shows a bar of impl › PR › CI › review › merge for each session and a word for where it is; what is still missing shows as needs …, with the reason. fix-cart-total has it all and says ready to merge. Then pekoed puts a merge ready item in the inbox, but the merge is yours: merge it on GitHub, then answer the item.",
 		},
 		setup: func(m *model) {
 			m.sel = tapiSel
