@@ -195,6 +195,7 @@ type Daemon struct {
 	paneH      int          // used when a client spawns without knowing it (CLI)
 	preview    *previewer   // in-terminal browser preview (preview.go)
 	cf         conflictScan // conflict forecast (conflicts.go)
+	clean      cleanupCache // git readings of cleanup.list (cleanup.go)
 
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
@@ -474,6 +475,8 @@ func (d *Daemon) call(method string, params json.RawMessage, who *Caller) (res a
 		h = bind(d.hAgentRm)
 	case agent && method == "conflicts.list":
 		h = bind(d.hAgentConflicts)
+	case agent && method == "cleanup.list":
+		h = bind(d.hAgentCleanup)
 	case agent && method == "dev.toggle":
 		h = bind(func(p slugP) (any, error) { return d.hAgentDevToggle(who, p) })
 	}
@@ -605,6 +608,7 @@ func (d *Daemon) registerHandlers() {
 		"run.close":             bind(d.hRunClose),
 		"changes":               bind(d.hChanges),
 		"conflicts.list":        bind(d.hConflicts),
+		"cleanup.list":          bind(d.hCleanup),
 		"review.start":          bind(d.hReviewStart),
 		"review.end":            bind(d.hReviewEnd),
 		"review.files":          bind(d.hReviewFiles),
