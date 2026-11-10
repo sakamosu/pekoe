@@ -337,6 +337,15 @@ local ok, err = xpcall(function()
   review.open("feat-x", function() back = true end)
   check(wait(1500, function() return back end), "review back on feat-x")
 
+  -- 一覧の窓を手で閉じたあと同じ slug で開き直せる
+  R = review.state()
+  vim.api.nvim_set_current_win(R.list_win)
+  vim.cmd("q") -- q キーではなく :q(バッファは bufhidden=hide で残る)
+  local opened = false
+  local okopen, operr = pcall(review.open, "feat-x", function() opened = true end)
+  check(okopen and wait(1500, function() return opened end), "reopen after closing the layout by hand: " .. tostring(operr))
+  R = review.state()
+  check(R and R.slug == "feat-x" and vim.api.nvim_win_is_valid(R.list_win), "review state alive after reopening")
 
   -- S / :PekoeSend: flush → PEKOE_SESSION があれば終了
   local quit = false
