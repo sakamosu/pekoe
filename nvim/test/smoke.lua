@@ -315,6 +315,28 @@ local ok, err = xpcall(function()
     check(got == "/x/data/pekoe/pekoed.sock", "socket under $XDG_DATA_HOME: " .. got)
   end
 
+  local function count_logged(method, slug)
+    local n = 0
+    for _, e in ipairs(daemon_log()) do
+      if e.method == method and (e.params or {}).slug == slug then
+        n = n + 1
+      end
+    end
+    return n
+  end
+
+  -- 開いているレビュー面で別のセッションに切り替えると、前のセッションは reviewing を抜ける
+  local ends = count_logged("review.end", "feat-x")
+  local switched = false
+  review.open("fix-y", function() switched = true end)
+  check(wait(1500, function() return switched end), "review switched to fix-y")
+  check(wait(1000, function() return count_logged("review.end", "feat-x") > ends end), "switching sends review.end for the previous slug")
+  R = review.state()
+  check(R and find(vim.api.nvim_buf_get_name(R.diff_buf), "pekoe://review/fix-y/"), "diff buffer renamed to the new slug")
+  local back = false
+  review.open("feat-x", function() back = true end)
+  check(wait(1500, function() return back end), "review back on feat-x")
+
 
   -- S / :PekoeSend: flush → PEKOE_SESSION があれば終了
   local quit = false

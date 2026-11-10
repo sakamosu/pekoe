@@ -755,6 +755,12 @@ end
 function M.open(slug, cb)
   sessions.resolve(slug, function(s)
     if R and valid_win(R.list_win) and valid_win(R.diff_win) then
+      if R.slug ~= s then
+        -- 前のセッションは reviewing を抜ける(閉じるときに送るのは今の slug だけ)
+        client.request("review.end", { slug = R.slug }, function() end)
+        set_name(R.diff_buf, "pekoe://review/" .. s .. "/diff")
+        set_name(R.list_buf, "pekoe://review/" .. s .. "/files")
+      end
       R.slug = s
       R.data = nil
       R.file_idx = 1
