@@ -344,7 +344,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | Claude Code の hooks | `~/.claude/settings.json` | ユーザー側に書き、全リポジトリに一括で効く。プロジェクト側 `.claude/` は触らない |
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | pekoe が削除していい領域はこの配下だけ |
 | 見せた tip の記録 | `~/.local/share/pekoe/tips.json` | TUI と `pekoe tip`(tapi chat)で共通。一巡したら空からやり直す |
-| チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。最後に使った言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(なければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
+| チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。ツアー中に切り替えて選んだ言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(選んでいなければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
 | ポート台帳・DB 名・セッション ID・状態 | `~/.local/share/pekoe/state.db`(SQLite) | デーモンの外部記憶。再起動後の復元に使う |
 | デーモンの socket | `~/.local/share/pekoe/pekoed.sock` | TUI・CLI・nvim が繋ぐ |
 | デーモンのロック | `~/.local/share/pekoe/pekoed.lock` | 動いている pekoed が `flock` で持つ。1 つの state.db に pekoed は 1 つ |
@@ -401,7 +401,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | Issues: Enter / `n` | その issue のセッションへ飛ぶ / issue からセッション作成(ブランチ名を提案するモーダル) |
 | Issues: `f` `/` `o` `R` | 自分担当 → 全 open → ラベル指定 / 絞り込み / ブラウザで開く / 再取得 |
 | `?` | ヘルプ |
-| `H` / `:tutorial` | チュートリアル(コーチマーク)をもう一度。初回起動時は自動で始まり、見たことを `tutorial.json` に残す。サンプルのセッションで動き、ツアー中のキーはツアーの操作(↵ → l 次・← h 戻る・esc q やめる・L 英語 / 日本語の切り替え)以外を捨てる |
+| `H` / `:tutorial` | チュートリアル(コーチマーク)をもう一度。初回起動時は自動で始まり、見たことを `tutorial.json` に残す。サンプルのセッションで動き、ツアー中のキーはツアーの操作(↵ → l space 次・← h backspace 戻る・esc q やめる(Caps Lock の L H Q も同じ)・tab 英語 / 日本語の切り替え)以外を捨てる |
 | `.` | 次の tip。[4] の空き表示(セッション未選択・worktree 作成中)に tip が出ている間だけ効く |
 | prefix + `h` `l` | 左ペインと右ペインのフォーカス移動(右ペインにフォーカス中はキーがすべて claude に渡る) |
 | prefix + `z` | 右ペインのズーム(全幅にして左ペインを隠す)の切り替え。左のパネルにフォーカスを移すとズームは解ける |

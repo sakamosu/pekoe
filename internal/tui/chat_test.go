@@ -2,10 +2,13 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
@@ -291,5 +294,232 @@ func TestChatLayout(t *testing.T) {
 	}
 	if out := checkSize(t, m, "left zoomed"); strings.Contains(out, "tapi chat") {
 		t.Fatalf("left zoomed:\n%s", out)
+	}
+}
+
+// Another session going away keeps the selection and typing where they
+// are: a removed A must not move B's keystrokes onto C as commands.
+func TestRemovedOtherSessionKeepsTyping(t *testing.T) {
+	now := time.Now()
+	for _, gone := range []string{"api-a", "api-c"} {
+		m, _, _ := chatModel(t)
+		m.sessions = []*state.Session{
+			sess("api-a", appA, state.Idle, now),
+			sess("api-b", appA, state.Idle, now.Add(time.Second)),
+			sess("api-c", appA, state.Idle, now.Add(2*time.Second)),
+		}
+		m.sel, m.lastSel = 1, "api-b"
+		m.focus, m.typing = pAgent, true
+		data, _ := json.Marshal(state.Session{Slug: gone})
+		runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+		if s := m.current(); s == nil || s.Slug != "api-b" || !m.typing {
+			t.Fatalf("%s removed: current %v typing %v", gone, m.lastSel, m.typing)
+		}
+	}
+	// the current one going away moves on and stops typing
+	m, _, _ := chatModel(t)
+	m.sessions = []*state.Session{sess("api-a", appA, state.Idle, now), sess("api-b", appA, state.Idle, now.Add(time.Second))}
+	m.sel, m.lastSel, m.typing = 1, "api-b", true
+	data, _ := json.Marshal(state.Session{Slug: "api-b"})
+	runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+	if s := m.current(); s == nil || s.Slug != "api-a" || m.typing {
+		t.Fatalf("current removed: current %v typing %v", m.lastSel, m.typing)
+	}
+}
+
+// Tabs closing under the selection: the selection follows the list, and E
+// on a stale selection sends the first tab with errors instead of panicking.
+func TestBrowserTabsShrink(t *testing.T) {
+	m, f, _ := chatModel(t)
+	m.tabs = []daemon.Tab{{Port: 3000}, {Port: 3001}, {Port: 3002}}
+	m.tsel = 2
+	data, _ := json.Marshal([]daemon.Tab{{Port: 3000}, {Port: 3001, Errors: 2}})
+	runCmd(m, m.onEvent(client.Event{Event: "browser.updated", Data: data}))
+	if m.tsel != 1 {
+		t.Fatalf("browser.updated: tsel %d", m.tsel)
+	}
+	m.Update(tabsMsg{{Port: 3000}})
+	if m.tsel != 0 {
+		t.Fatalf("tabsMsg: tsel %d", m.tsel)
+	}
+	m.tabs = []daemon.Tab{{Port: 3000}, {Port: 3001, Errors: 2}}
+	m.tsel = 5
+	runCmd(m, m.keyBrowser("E"))
+	if got := f.find("browser.send_errors"); len(got) != 1 || got[0]["port"] != float64(3001) {
+		t.Fatalf("send_errors %v", got)
+	}
+}
+
+// The permission dialog closes once the wait ends elsewhere or the session
+// goes away, and y names the tool it showed (the daemon checks it).
+func TestPermissionModalFollowsSession(t *testing.T) {
+	waiting := func() *state.Session {
+		s := sess("api-1", appA, state.Waiting, time.Now())
+		s.WaitKind = "permission"
+		s.PendingTool = &state.Tool{Name: "Bash", Input: "rm -rf build"}
+		return s
+	}
+	open := func(t *testing.T) (*model, *fakePekoed) {
+		m, f, _ := chatModel(t)
+		m.sessions = []*state.Session{waiting()}
+		m.maybePermission()
+		if _, ok := m.modal.(*permissionModal); !ok {
+			t.Fatalf("modal %T", m.modal)
+		}
+		return m, f
+	}
+
+	m, _ := open(t)
+	answered := waiting()
+	answered.State, answered.WaitKind, answered.PendingTool = state.Running, "", nil
+	data, _ := json.Marshal(answered)
+	runCmd(m, m.onEvent(client.Event{Event: "session.updated", Data: data}))
+	if m.modal != nil {
+		t.Fatalf("answered elsewhere: modal %T still open", m.modal)
+	}
+
+	m, _ = open(t)
+	data, _ = json.Marshal(state.Session{Slug: "api-1"})
+	runCmd(m, m.onEvent(client.Event{Event: "session.removed", Data: data}))
+	if m.modal != nil {
+		t.Fatalf("removed: modal %T still open", m.modal)
+	}
+
+	m, f := open(t)
+	runCmd(m, m.onKey(key("y")))
+	got := f.find("session.answer")
+	if len(got) != 1 {
+		t.Fatalf("session.answer %v", got)
+	}
+	tool, _ := got[0]["expect"].(map[string]any)["tool"].(map[string]any)
+	if got[0]["answer"] != "allow" || tool["name"] != "Bash" || tool["input"] != "rm -rf build" {
+		t.Fatalf("session.answer %v", got[0])
+	}
+}
+
+// The wheel over a full-screen program without mouse support (less in the
+// run window) scrolls that window: the Up/Down go to it, not the agent.
+func TestAltScreenWheelGoesToShownWindow(t *testing.T) {
+	m, f, _ := chatModel(t)
+	m.window = engine.WinRun
+	m.focus, m.typing = pAgent, true
+	m.screen = &engine.Screen{Lines: []string{"commit abc"}, Width: 100, Height: 30, AltScreen: true}
+	m.screenOf = "api-1"
+	x0, y0 := m.agentOrigin()
+	runCmd(m, m.onMouse(tea.MouseMsg{X: x0 + 1, Y: y0 + 1, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}))
+	got := f.find("session.keys")
+	if len(got) != 1 || got[0]["window"] != engine.WinRun {
+		t.Fatalf("session.keys %v", got)
+	}
+}
+
+// msgsOf runs cmd (and batches inside it) without passing anything to
+// Update: what a Cmd's goroutine does on its own.
+func msgsOf(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	switch msg := cmd().(type) {
+	case tea.BatchMsg:
+		var out []tea.Msg
+		for _, c := range msg {
+			out = append(out, msgsOf(c)...)
+		}
+		return out
+	case modalDoneMsg:
+		return append([]tea.Msg{msg}, msgsOf(msg.cmd)...)
+	default:
+		return []tea.Msg{msg}
+	}
+}
+
+// Cmds hand their results to Update as messages; they never write the
+// model from their own goroutine (a data race with View).
+func TestCmdsDoNotWriteModel(t *testing.T) {
+	m, _, _ := chatModel(t)
+	runCmd(m, m.onKey(key("T")))
+	before := m.chat.info
+	var reset tea.Msg
+	for _, msg := range msgsOf(m.onKey(key("y"))) {
+		if _, ok := msg.(chatResetMsg); ok {
+			reset = msg
+		}
+	}
+	if reset == nil || m.chat.info != before {
+		t.Fatalf("tapi.reset: msg %v, info written in the Cmd: %v", reset, m.chat.info != before)
+	}
+	m.Update(reset)
+	if m.chat.info == before || m.chat.info == nil {
+		t.Fatal("chatResetMsg did not set the info")
+	}
+
+	m, f, _ := chatModel(t)
+	f.reply = func(method string) any {
+		if method == "session.new" {
+			return errors.New("branch exists")
+		}
+		return nil
+	}
+	runCmd(m, m.openNew(nil))
+	n, ok := m.modal.(*newModal)
+	if !ok {
+		t.Fatalf("modal %T", m.modal)
+	}
+	for _, r := range "feat/x" {
+		n.key(key(string(r)))
+	}
+	msgs := msgsOf(n.key(key("enter")))
+	if n.err != "" || len(msgs) != 1 {
+		t.Fatalf("session.new: err written in the Cmd %q, msgs %v", n.err, msgs)
+	}
+	m.Update(msgs[0])
+	if n.err != "branch exists" {
+		t.Fatalf("err %q", n.err)
+	}
+}
+
+// ↵ twice on a pick card before the reload shows it sent sends it once;
+// a send that fails brings the card back.
+func TestPickSentOnce(t *testing.T) {
+	m, f, _ := chatModel(t)
+	f.reply = func(method string) any {
+		if method == "pick.list" { // the reload races the send: still unsent
+			return []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+		}
+		return nil
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+	m.window, m.focus = engine.WinAgent, pAgent
+	m.ensurePickInput()
+	first := m.onKey(key("enter"))
+	m.View()
+	second := m.onKey(key("enter"))
+	runCmd(m, first)
+	runCmd(m, second)
+	if n := len(f.find("pick.send")); n != 1 {
+		t.Fatalf("pick.send %d times", n)
+	}
+	if m.pendingPick() != nil {
+		t.Fatal("the card is back while the pick is being sent")
+	}
+
+	m, f, _ = chatModel(t)
+	f.reply = func(method string) any {
+		if method == "pick.send" {
+			return errors.New("tmux is gone")
+		}
+		return nil
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "api-1", At: time.Now()}}
+	m.window, m.focus = engine.WinAgent, pAgent
+	m.ensurePickInput()
+	msgs := msgsOf(m.onKey(key("enter")))
+	for _, msg := range msgs {
+		if _, ok := msg.(picksMsg); !ok { // keep the pick: the fake has no list
+			m.Update(msg)
+		}
+	}
+	if pk := m.pendingPick(); pk == nil || pk.ID != 7 {
+		t.Fatalf("failed send: card %v, msgs %v", pk, msgs)
 	}
 }

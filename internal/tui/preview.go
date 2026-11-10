@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -318,6 +319,15 @@ func (m *model) previewURL(s *state.Session) string {
 	return fmt.Sprintf("http://localhost:%d%s", s.Port, path)
 }
 
+// openChrome opens url in Google Chrome on macOS (where the extension
+// sees it), else in the default browser (openURL: open / xdg-open).
+func openChrome(url string) error {
+	if runtime.GOOS == "darwin" && exec.Command("open", "-a", "Google Chrome", url).Run() == nil {
+		return nil
+	}
+	return openURL(url)
+}
+
 func (m *model) keyPreview(key string) tea.Cmd {
 	s := m.current()
 	if s == nil {
@@ -343,8 +353,8 @@ func (m *model) keyPreview(key string) tea.Cmd {
 	case "o":
 		url := m.previewURL(s)
 		return func() tea.Msg {
-			if err := exec.Command("open", "-a", "Google Chrome", url).Run(); err != nil {
-				_ = exec.Command("open", url).Run()
+			if err := openChrome(url); err != nil {
+				return errMsg{err}
 			}
 			return infoMsg("opened " + url)
 		}

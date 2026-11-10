@@ -3,9 +3,10 @@ package tui
 // The tutorial: coach marks over the TUI. One step puts one element of the
 // screen in focus (a panel, the state column, a dialog) and explains it in a
 // card next to it; ↵ / → / l / space go on, ← / h / backspace back, esc / q
-// skip, L switches between English and Japanese and stays on the step. It
-// starts by itself the first time pekoe runs (paths.TutorialFile records
-// that it was seen, skipped or not, and the language it was left in) and
+// skip (L / H / Q too: Caps Lock on), tab switches between English and
+// Japanese and stays on the step. It starts by itself the first time pekoe
+// runs (paths.TutorialFile records that it was seen, skipped or not, and the
+// language picked with tab) and
 // again with H or :tutorial.
 //
 // The language: the one recorded, else the environment (LC_ALL, then
@@ -50,8 +51,10 @@ import (
 )
 
 const (
-	tourKey     = "H" // replays the tutorial from any panel
-	tourLangKey = "L" // switches the tour's language, in the tour only
+	tourKey = "H" // replays the tutorial from any panel
+	// tourLangKey switches the tour's language, in the tour only; not a
+	// letter: Caps Lock turns l (next) into L
+	tourLangKey = "tab"
 	// tourKeep bounds the messages kept while the tour runs; past it they
 	// are dropped (the reload at the end brings the state back anyway)
 	tourKeep = 2000
@@ -72,6 +75,7 @@ const (
 type tourState struct {
 	step    int       // index into tourSteps
 	lang    string    // tourJa or tourEn
+	picked  bool      // lang was switched with the key: recorded at the end
 	saved   model     // the real model, put back when the tour ends
 	pending []tea.Msg // arrived during the tour, replayed at the end
 }
@@ -98,6 +102,14 @@ type tourStep struct {
 	// target is what the step is about; ok=false centers the card
 	target func(m *model) (r rect, ok bool)
 	cells  func(m *model) []rect // cells painted with the select fill
+}
+
+// tourOther is the language the language key switches to.
+func tourOther(lang string) string {
+	if lang == tourJa {
+		return tourEn
+	}
+	return tourJa
 }
 
 // text is the step's text in lang (tourJa, else English).
@@ -127,7 +139,7 @@ func tourEnvLang(getenv func(string) string) string {
 
 type tourRecord struct {
 	SeenAt time.Time `json:"seen_at"`
-	Lang   string    `json:"lang,omitempty"` // the language the tour was left in; older records have none
+	Lang   string    `json:"lang,omitempty"` // the language picked with the key; none: the environment decides
 }
 
 // initTour reads the record at path ("" keeps none: the tour never starts
@@ -208,8 +220,10 @@ func (m *model) endTour() tea.Cmd {
 	m.frame, m.spinning = live.frame, live.spinning
 	m.guard = live.guard
 	m.msg, m.msgErr, m.msgAt = live.msg, live.msgErr, live.msgAt
-	m.tourLang = t.lang // the next tour starts in it
-	if err := saveTourSeen(m.tourPath, t.lang); err != nil {
+	if t.picked { // only a language picked is kept; otherwise the locale decides next time
+		m.tourLang = t.lang
+	}
+	if err := saveTourSeen(m.tourPath, m.tourLang); err != nil {
 		m.setMsg("tutorial: "+err.Error(), true)
 	}
 	var cmds []tea.Cmd
@@ -274,22 +288,19 @@ func (m *model) tourUpdate(msg tea.Msg) tea.Cmd {
 func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 	for _, k := range keys {
 		switch k.String() {
-		case "enter", "right", "l", " ":
+		case "enter", "right", "l", "L", " ": // L, H, Q: Caps Lock is on
 			if m.tour.step == len(tourSteps)-1 {
 				return m.endTour() // Done
 			}
 			m.tourGo(m.tour.step + 1)
-		case "left", "h", "backspace":
+		case "left", "h", "H", "backspace":
 			if m.tour.step > 0 {
 				m.tourGo(m.tour.step - 1)
 			}
 		case tourLangKey: // the other language, same step
-			if m.tour.lang == tourJa {
-				m.tour.lang = tourEn
-			} else {
-				m.tour.lang = tourJa
-			}
-		case "esc", "q":
+			m.tour.picked = true
+			m.tour.lang = tourOther(m.tour.lang)
+		case "esc", "q", "Q":
 			return m.endTour()
 		case "ctrl+c":
 			cmd := m.endTour()
@@ -318,10 +329,7 @@ func (m *model) tourApply() {
 // go when the card is narrow) and is named by the code of the language it
 // switches to (en / ja).
 func (m *model) tourHints() [][2]string {
-	lang := [2]string{tourLangKey, "ja"}
-	if m.tour.lang == tourJa {
-		lang[1] = "en"
-	}
+	lang := [2]string{tourLangKey, tourOther(m.tour.lang)}
 	if m.tour.step == len(tourSteps)-1 {
 		return [][2]string{{"↵", "done"}, {"←", "back"}, lang}
 	}

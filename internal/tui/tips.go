@@ -3,7 +3,8 @@ package tui
 // Tips (internal/tips) in the empty main pane: under tapi's big face while
 // no session is selected or a worktree is being created — the moments the
 // user waits anyway. One tip at a time; "." shows the next. The text is
-// Japanese (the one exception to English UI text, docs/ui-guidelines.md).
+// Japanese (one of the two exceptions to English UI text, with the
+// tutorial's cards; docs/ui-guidelines.md).
 
 import (
 	"strings"

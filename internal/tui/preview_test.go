@@ -318,3 +318,18 @@ func TestPreviewYieldsToIssueView(t *testing.T) {
 		t.Fatal("the preview did not come back")
 	}
 }
+
+// o reports a browser that did not open (no open / xdg-open: Linux
+// without xdg-utils, or nothing on PATH here) instead of "opened".
+func TestPreviewOpenReportsFailure(t *testing.T) {
+	m := previewModel(t, false)
+	t.Setenv("PATH", t.TempDir())
+	cmd := m.keyPreview("o")
+	if cmd == nil {
+		t.Fatal("o did nothing")
+	}
+	msg := cmd()
+	if _, ok := msg.(errMsg); !ok {
+		t.Fatalf("o: %#v", msg)
+	}
+}

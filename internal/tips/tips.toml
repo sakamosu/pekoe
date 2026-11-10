@@ -154,8 +154,8 @@ docs = ["README.ja.md#チュートリアル"]
 
 [[tip]]
 id = "tutorial-lang"
-short = "チュートリアルは L で英語と日本語を切り替えられる"
-detail = "H でツアーを開き、L を押すと今のステップのまま言語が変わる。選んだ言語は tutorial.json に残り、次のツアーもその言語で始まる。最初は LANG などのロケールで決まる。"
+short = "チュートリアルは tab で英語と日本語を切り替えられる"
+detail = "H でツアーを開き、tab を押すと今のステップのまま言語が変わる。選んだ言語は tutorial.json に残り、次のツアーもその言語で始まる。最初は LANG などのロケールで決まる。"
 keys = ["H"]
 docs = ["README.ja.md#チュートリアル"]
 

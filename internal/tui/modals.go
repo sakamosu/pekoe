@@ -113,6 +113,13 @@ func (p *permissionModal) sess() *state.Session {
 	return nil
 }
 
+// stale: the wait was answered elsewhere (web UI, extension, the agent's
+// own window), ended, or the session is gone.
+func (p *permissionModal) stale() bool {
+	s := p.sess()
+	return s == nil || s.State != state.Waiting || s.WaitKind != "permission"
+}
+
 func (p *permissionModal) mode() (string, string) { return "PERMISSION", p.m.ic.Wait }
 
 func (p *permissionModal) hints() [][2]string {
@@ -152,7 +159,13 @@ func (p *permissionModal) view() []string {
 func (p *permissionModal) key(k tea.KeyMsg) tea.Cmd {
 	m := p.m
 	answer := func(a string) tea.Cmd {
-		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a}, ""))
+		// expect: the tool on screen; the daemon refuses the answer when the
+		// session has moved on to another prompt meanwhile (as the web UI)
+		var tool *state.Tool
+		if s := p.sess(); s != nil {
+			tool = s.PendingTool
+		}
+		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a, "expect": map[string]any{"tool": tool}}, ""))
 	}
 	switch k.String() {
 	case "y":
@@ -418,8 +431,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 			return func() tea.Msg {
 				var pk state.Pick
 				if err := m.cl.Call("pick.send", map[string]any{"id": id, "new_branch": branch, "text": text, "repo": dir}, &pk); err != nil {
-					n.err = err.Error()
-					return nil
+					return newErrMsg{n: n, err: err.Error()}
 				}
 				return newCreatedMsg{slug: pk.Slug}
 			}
@@ -428,8 +440,7 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 			var s state.Session
 			err := m.cl.Call("session.new", map[string]any{"repo": dir, "branch": branch, "from": from, "prompt": prompt, "width": aw, "height": ah}, &s)
 			if err != nil {
-				n.err = err.Error()
-				return nil
+				return newErrMsg{n: n, err: err.Error()}
 			}
 			return newCreatedMsg{slug: s.Slug}
 		}
@@ -441,10 +452,22 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 
 type newCreatedMsg struct{ slug string }
 
+// newErrMsg: creating failed; the dialog shows it (set in Update, not in
+// the Cmd's goroutine).
+type newErrMsg struct {
+	n   *newModal
+	err string
+}
+
 func (n *newModal) other(msg tea.Msg) tea.Cmd {
-	if c, ok := msg.(newCreatedMsg); ok {
+	switch c := msg.(type) {
+	case newCreatedMsg:
 		n.slug = c.slug
 		return tea.Batch(n.m.loadSessions(), n.m.loadWorktrees(), n.m.selectSlug(c.slug))
+	case newErrMsg:
+		if c.n == n {
+			n.err = c.err
+		}
 	}
 	return nil
 }
@@ -734,7 +757,7 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 			m.modal = nil
 			return m.openNew(func(nm *newModal) {
 				if len(f) > 1 {
-					nm.inputs[0] = &input{text: []rune(f[1]), pos: len(f[1])}
+					nm.inputs[0] = &input{text: []rune(f[1]), pos: len([]rune(f[1]))}
 					if len(f) > 2 {
 						p := strings.Join(f[2:], " ")
 						nm.inputs[2] = &input{text: []rune(p), pos: len([]rune(p))}

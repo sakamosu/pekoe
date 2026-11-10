@@ -184,3 +184,52 @@ func TestSessionLineErrorMarker(t *testing.T) {
 		t.Error("the marker uses the err role")
 	}
 }
+
+// A message over several lines (throw new Error("a\nb")) keeps the card,
+// the Picks row and the detail dialog to their rows: the card and the row
+// show its first line, the dialog all of it.
+func TestErrorMultilineMessage(t *testing.T) {
+	m := errModel(t)
+	m.errs[1].Message = "Error: first line\nsecond line"
+	m.focus = pAgent
+	cw, ch := m.agentSize()
+	rows := m.agentRows(cw, ch)
+	for _, r := range rows {
+		if strings.Contains(r.Text, "\n") {
+			t.Fatalf("card row with a newline: %q", r.Text)
+		}
+	}
+	if card := plainRows(rows); !strings.Contains(card, "Error: first line") {
+		t.Fatalf("card:\n%s", card)
+	}
+	m.sub3 = 1
+	for _, l := range m.thirdPanel(80, 12, true) {
+		if strings.Contains(l, "\n") {
+			t.Fatalf("Picks row with a newline: %q", l)
+		}
+	}
+	e := &errModal{m: m, r: m.errs[1]}
+	body := e.body()
+	for _, l := range body {
+		if strings.Contains(l, "\n") {
+			t.Fatalf("detail line with a newline: %q", l)
+		}
+	}
+	if !strings.Contains(ansi.Strip(strings.Join(body, "|")), "Error: first line|second line") {
+		t.Fatalf("detail: %q", body)
+	}
+}
+
+// A pane too narrow for a card's frame (terminal 5 columns wide) draws no
+// card instead of panicking on a negative Repeat.
+func TestCardsInNarrowPane(t *testing.T) {
+	m := errModel(t)
+	m.focus = pAgent
+	for cw := 0; cw < 6; cw++ {
+		m.agentRows(cw, 10) // the error card
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "a", URL: "http://localhost:3001/", OuterHTML: "<b>x</b>", At: time.Now()}}
+	for cw := 0; cw < 6; cw++ {
+		m.agentRows(cw, 10) // the pick card
+	}
+}

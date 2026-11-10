@@ -99,6 +99,7 @@ type model struct {
 	tabs      []daemon.Tab
 	tsel      int
 	picks     []*state.Pick
+	pickSent  map[int64]bool    // sent from the card, not yet reloaded as sent (sendPick)
 	psel      int               // over picks, then errs (Picks panel)
 	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
@@ -664,6 +665,11 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case pickSendFailedMsg: // the card comes back to try again
+		delete(m.pickSent, msg.id)
+		m.setMsg(msg.err.Error(), true)
+		return m, nil
+
 	case infoMsg:
 		m.setMsg(string(msg), false)
 		return m, nil
@@ -718,6 +724,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabsMsg:
 		m.tabs = msg
+		m.tsel = clampi(m.tsel, 0, max(len(m.tabs)-1, 0))
 		if len(m.tabs) > 0 && m.sub2 == 0 && m.focus != pSecond {
 			m.sub2 = 1 // linked tabs exist: show Browser in [2] (mock 05)
 		}
@@ -725,6 +732,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case picksMsg:
 		m.picks = msg
+		m.prunePickSent()
 		m.ensurePickInput()
 		return m, m.sendPickImages()
 
@@ -888,6 +896,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		}
 		m.tapiOnSession(prev, &s, curSlug)
 		m.upsert(&s)
+		m.closeStalePermission()
 		if curSlug != "" {
 			if i, _ := m.find(curSlug); i >= 0 {
 				m.sel = i
@@ -918,11 +927,22 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		var s state.Session
 		json.Unmarshal(ev.Data, &s)
 		m.tapi.lastActive = time.Now()
+		curSlug := ""
+		if cur := m.current(); cur != nil {
+			curSlug = cur.Slug
+		}
 		for i, x := range m.sessions {
 			if x.Slug == s.Slug {
 				m.sessions = append(m.sessions[:i], m.sessions[i+1:]...)
 				break
 			}
+		}
+		m.closeStalePermission()
+		// another session going away keeps the selection (and typing) on
+		// the current one; only losing the current one moves it
+		if i, _ := m.find(curSlug); curSlug != "" && i >= 0 {
+			m.sel = i
+			return tea.Batch(m.loadWorktrees(), m.loadRepos())
 		}
 		m.sel = clampi(m.sel, 0, max(len(m.visible())-1, 0))
 		m.lastSel = "-"
@@ -961,6 +981,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		var ts []daemon.Tab
 		if json.Unmarshal(ev.Data, &ts) == nil {
 			m.tabs = ts
+			m.tsel = clampi(m.tsel, 0, max(len(m.tabs)-1, 0))
 			if len(ts) > 0 && m.sub2 == 0 && m.focus != pSecond {
 				m.sub2 = 1
 			}
@@ -994,6 +1015,14 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 
 // maybePermission opens the permission modal for the selected session when
 // it waits for a permission and the user is not typing elsewhere.
+// closeStalePermission closes the permission dialog once its session no
+// longer waits for a permission (or is gone): it would keep every key.
+func (m *model) closeStalePermission() {
+	if p, ok := m.modal.(*permissionModal); ok && p.stale() {
+		m.modal = nil
+	}
+}
+
 func (m *model) maybePermission() tea.Cmd {
 	if m.modal != nil || m.typing || m.review != nil {
 		return nil
@@ -1338,7 +1367,7 @@ func (m *model) keySessions(key string) tea.Cmd {
 	case "G", "end":
 		m.sel = max(len(m.visible())-1, 0)
 		return m.onSelChange()
-	case "enter", "l", "right":
+	case "enter", "right": // l is land (sessionAction), as the help says
 		if s == nil {
 			return nil
 		}
@@ -1507,12 +1536,12 @@ func (m *model) keyBrowser(key string) tea.Cmd {
 			return m.selectSlug(m.tabs[m.tsel].Slug)
 		}
 	case "E":
-		port := 0
+		port, errs := 0, 0
 		if m.tsel < len(m.tabs) {
-			port = m.tabs[m.tsel].Port
+			port, errs = m.tabs[m.tsel].Port, m.tabs[m.tsel].Errors
 		}
 		for _, t := range m.tabs { // first tab with errors when the selected has none
-			if port == 0 || (t.Errors > 0 && m.tabs[m.tsel].Errors == 0) {
+			if port == 0 || (t.Errors > 0 && errs == 0) {
 				port = t.Port
 			}
 		}
@@ -1704,9 +1733,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			}
 			s := m.current()
 			if s != nil && m.screen.AltScreen {
-				slug := s.Slug
+				slug, win := s.Slug, m.window
 				return m.inOrder(func() error {
-					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "keys": []string{k}}, nil)
+					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{k}}, nil)
 					return nil
 				})
 			}
