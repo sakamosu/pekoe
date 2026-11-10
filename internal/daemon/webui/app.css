@@ -240,3 +240,75 @@ main { padding: 4px 10px 8px; }
 
 /* pause: a small key-colored button (the screen stays still to copy) */
 .btn.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
+
+/* ---- tabs: Sessions · Inbox · Overview (the view now is primary) ---- */
+.tabs {
+  display: flex; gap: 4px; padding: 0 10px 6px;
+  background: var(--bg);
+}
+.tab {
+  flex: 1; padding: 8px 0; text-align: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--dim); text-decoration: none; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab[aria-current="page"] { color: var(--primary); border-color: var(--primary); }
+.badge {
+  display: inline-block; min-width: 1.4em; padding: 0 5px; margin-left: 2px;
+  border-radius: 999px; background: var(--warn); color: var(--bg);
+  font-size: 12px; line-height: 1.5;
+}
+.cap { padding: 0 12px 6px; font-size: 12px; color: var(--dim); }
+.lnk { color: var(--secondary); word-break: break-all; }
+
+/* ---- inbox: facts first (pekoe), then the agent's words ---- */
+.ibox { margin: 8px; }
+.ihead { padding: 8px 10px 4px; }
+.sub { margin: 8px 0 4px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--border); }
+.facts .fact { font-size: 13px; overflow-wrap: anywhere; }
+.fact .fk { display: inline-block; min-width: 6.5em; color: var(--dim); }
+.says { margin-top: 6px; }
+.says .from { font-size: 12px; color: var(--dim); }
+.says .q { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.says .ctx { color: var(--dim); max-height: 14em; }
+.opts { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.opt {
+  display: flex; align-items: baseline; gap: 8px; width: 100%;
+  min-height: 44px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  -webkit-tap-highlight-color: transparent;
+}
+.opt .num { flex: none; color: var(--secondary); font-weight: 700; }
+.opt .otext { min-width: 0; overflow-wrap: anywhere; }
+.opt .rec { margin-left: auto; flex: none; font-size: 11px; color: var(--dim); }
+.opt.sel { border-color: var(--primary); background: var(--select); }
+.opt.sel .num { color: var(--primary); }
+.ibox textarea.note {
+  width: 100%; margin-top: 10px; min-height: 44px; resize: vertical;
+  padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg);
+  font: 16px/1.4 var(--mono);
+}
+.ibox textarea.note:focus { outline: none; border-color: var(--primary); }
+
+/* ---- overview: counts, tapi, the flow of every session ---- */
+.counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: 6px; padding: 4px 10px 10px; }
+.tile {
+  display: flex; align-items: baseline; gap: 6px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); text-decoration: none;
+}
+.tile .n { font-weight: 700; }
+.tile .w { min-width: 0; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tapi { padding: 0 12px 10px; }
+.tapi .last { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
+.group { padding: 2px 0 8px; }
+.group + .group { border-top: 1px solid var(--border); }
+.gtitle { padding: 6px 12px 0; font-size: 12px; }
+.gtitle .sep { padding: 0 .4em; color: var(--dim); }
+.req { padding: 2px 12px 0; font-size: 12px; color: var(--dim); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.flow .steps { margin: 0 12px 0 calc(12px + 1.1em + 8px); font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 4px; }
+.flow .arrow { color: var(--dim); }
+.step.st-todo { color: var(--dim); }
+.flow .miss { margin: 2px 12px 4px calc(12px + 1.1em + 8px); font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.at { color: var(--dim); font-size: 12px; }

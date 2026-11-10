@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓を実装済み。段階 3 の残り(Web UI・tapi への配送)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表を実装済み。段階 3 の残り(Web UI からの tapi への送信・tapi への配送)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -454,6 +454,15 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 ### Web UI
 
 段階 3 で「受信箱」と「概要・工程表(読むだけ)」の 2 画面を足す。受信箱に答えるときは確認シートを挟み、facts・リンク・エージェントの文を TUI と同じ順に並べる。
+
+実装(仕様の正は docs/web.md「受信箱(Inbox タブ)の扱い」と API の表):
+
+- **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は「推奨(エージェント)」と書くだけで選ばない。選ぶ(選択肢のない問いはメモを書く)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
+- **rev**: 送るのはカードを描いたときの `rev`。3 秒ごとの更新で `rev` が上がったら選択を外して「changed while you looked」と出す(TUI と同じ)。メモを打っている間と確認シートを開いている間は描き直さない(打った文が消えないように)ので、その間に変わったものは pekoed が 409 で断り、ページは選択を外して出し直す
+- **API**: `GET /api/inbox`・`POST /api/inbox/{id}/answer`(`inbox.answer` の「the item changed; look again」と「答え済み」を 409、無い id を 404、それ以外の誤りを 400 に分けるため、`inbox.go` のエラーを `errors.Is` で見分けられるようにした。文面は変えていない)・`GET /api/tapi`・`GET /api/overview`。答えずに閉じる(`dismiss`)は Web に出さなかった(答えずに閉じると依頼元は「閉じられた」だけを受け取る。外出先で答えられないものは置いておけばよい)
+- **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・台帳)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。台帳の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `実装 → PR → CI → レビュー → マージ` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない
+- **tapi**: `pending_tool` は返さない(tapi の許可への allow / deny は Web に出さない: U9)。Claude のセッション ID と稼働ディレクトリも返さない
+- **HTML として解釈されない**: ページは今までどおり `textContent` だけで入れ、リンクは `http(s)` だけを `<a>` にする。`<script>` などを含む問い・背景・選択肢・`javascript:` のリンクが JSON に生のタグとして出ないこと、`app.js` に HTML を作る入口(`innerHTML` など)がないことをテストで確かめる
 
 ## 脅威モデルの追加
 

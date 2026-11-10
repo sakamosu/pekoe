@@ -6,7 +6,10 @@ const $ = (id) => document.getElementById(id);
 const ROLES = new Set(["ok", "warn", "err", "primary", "secondary", "dim", "text"]);
 
 let sessions = [];
+let view = "list"; // list | inbox | overview | detail
 let current = null; // slug shown in the detail view
+let backTo = ""; // the hash the detail view's back button returns to
+let tapi = null; // /api/tapi: tapi's state and the inbox / ledger counts
 let listTimer = 0, screenTimer = 0;
 let busy = false;
 let sending = false; // a send is in flight
@@ -212,14 +215,26 @@ function renderSummary() {
 
 async function refresh() {
   try {
-    const r = await api("/api/sessions");
+    const [r, t] = await Promise.all([api("/api/sessions"), api("/api/tapi").catch(() => null)]);
     sessions = r.sessions || [];
+    tapi = t;
     renderSummary();
-    if (current) renderDetailHead();
-    else if (!busy) renderList();
+    renderBadge();
+    if (view === "detail") renderDetailHead();
+    else if (view === "list" && !busy) renderList();
+    else if (view === "inbox") await refreshInbox();
+    else if (view === "overview") await refreshOverview();
   } catch (e) {
     toast(e.message);
   }
+}
+
+// renderBadge: the open inbox items (everyone's) on the Inbox tab
+function renderBadge() {
+  const b = $("t-inbox-n");
+  const n = tapi ? tapi.inbox_open : 0;
+  b.textContent = n ? String(n) : "";
+  b.hidden = !n;
 }
 
 // ---- detail ----
@@ -522,11 +537,404 @@ async function pressKey(key) {
   }, 200);
 }
 
+// ---- inbox: what agents ask a person ----
+// pekoed's facts and the links first, the agent's words after (its
+// opinion, not pekoe's). The recommendation is labelled as the agent's and
+// never chosen for the person. Every string goes in with textContent; a
+// link becomes an anchor only when it is http(s).
+
+let inbox = []; // open items, oldest first
+let inboxSig = ""; // what is on screen
+let inboxHeld = false; // a redraw was skipped (a note being typed, the sheet open)
+let inboxTyping = false;
+const inboxDraft = new Map(); // id → {rev, choice, note, changed}: what the person picked, for the rev shown
+let ianswer = null; // the answer in the confirm sheet
+
+const KINDS = {
+  decision: ["?", "secondary", "decision"],
+  approve: ["!", "warn", "approve"],
+  login: ["@", "primary", "login"],
+  fyi: ["i", "dim", "fyi"],
+};
+
+const txt = (s) => document.createTextNode(String(s));
+const short = (sha) => (sha ? String(sha).slice(0, 9) : "-");
+
+// link: an anchor for an http(s) URL with nothing odd in it; anything else
+// (javascript:, data:, a path) stays plain text
+function link(url, text) {
+  const u = String(url ?? "");
+  if (!/^https?:\/\//i.test(u) || /[\s"<>\\]/.test(u)) return el("span", "r-dim", text ?? u);
+  const a = el("a", "lnk", text ?? u);
+  a.href = u;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  return a;
+}
+
+function factRow(label, ...nodes) {
+  const r = el("div", "fact");
+  r.append(el("span", "fk", label), ...nodes);
+  return r;
+}
+
+function factsBlock(it) {
+  const box = el("div", "facts");
+  box.append(el("div", "sub", "pekoe read"));
+  const f = it.facts;
+  if (!f) {
+    box.append(el("div", "fact r-dim", "(not about a session)"));
+  } else if (f.gone) {
+    box.append(factRow("session", colored("warn", f.slug + " is gone")));
+  } else {
+    const ses = [txt(f.slug), sep(), txt(f.state)];
+    if (f.branch) ses.push(sep(), txt(f.branch + (f.base ? " → " + f.base : "")));
+    box.append(factRow("session", ...ses));
+    const d = f.diffstat || { added: 0, deleted: 0, files: 0 };
+    box.append(factRow("HEAD", txt(short(f.head)), sep(), colored("ok", "+" + d.added), txt(" "), colored("err", "−" + d.deleted), txt(" · " + d.files + " files")));
+    if (f.pr) {
+      const n = [f.pr_url ? link(f.pr_url, "#" + f.pr) : txt("#" + f.pr)];
+      const ps = f.pr_status;
+      if (ps) {
+        n.push(sep(), txt(ps.state || "?"), sep(), txt("CI "), colored(ps.fail ? "dim" : "ok", ps.pass + " pass"), txt(" "),
+          colored(ps.fail ? "err" : "dim", ps.fail + " fail"), txt(" " + ps.pending + " pending"));
+        if (ps.review_decision) n.push(sep(), txt(ps.review_decision));
+        if (ps.merge_state) n.push(sep(), txt(ps.merge_state));
+        if (ps.unresolved) n.push(sep(), colored("warn", ps.unresolved + " unresolved"));
+      }
+      box.append(factRow("PR", ...n));
+    }
+    const ts = f.test && f.test.status;
+    if (ts && ts !== "none") box.append(factRow("test", colored(ts === "pass" ? "ok" : ts === "fail" ? "err" : "dim", ts)));
+    for (const o of f.overlaps || []) {
+      box.append(factRow("forecast", o.conflict ? colored("err", "conflicts") : txt("overlaps"), txt(" with " + o.slug)));
+    }
+    if (f.report) box.append(factRow("report", txt("#" + f.report.id + " " + f.report.status + " · " + ago(f.report.at) + " ago")));
+    if (f.git_blocked) box.append(factRow("git", colored("warn", ".git changed: git stopped")));
+    if (f.merge) {
+      for (const c of f.merge.conds || []) box.append(factRow(c.name, colored(c.ok ? "ok" : "err", c.ok ? "✓" : "✗"), txt(" " + c.detail)));
+    }
+  }
+  for (const l of it.links || []) box.append(factRow("link", link(l)));
+  return box;
+}
+
+// draftOf: the person's pick for it. When the item changed since it was
+// drawn (its rev went up: HEAD moved, CI turned), the choice is dropped
+// and the card says so, as the TUI's modal does.
+function draftOf(it) {
+  let d = inboxDraft.get(it.id);
+  if (!d) {
+    d = { rev: it.rev, choice: null, note: "", changed: false };
+    inboxDraft.set(it.id, d);
+  } else if (d.rev !== it.rev) {
+    d.changed = d.changed || d.choice !== null;
+    d.choice = null;
+    d.rev = it.rev;
+  }
+  return d;
+}
+
+function canAnswer(it, d) {
+  return (it.options || []).length ? d.choice !== null : d.note.trim() !== "";
+}
+
+function inboxCard(it) {
+  const d = draftOf(it);
+  const card = el("div", "card ibox");
+  const [icon, role, word] = KINDS[it.kind] || ["?", "dim", it.kind];
+  const head = el("div", "line1 ihead");
+  head.append(colored(role, icon, "ic"), el("span", "name r-text", "#" + it.id), colored(role, word, "word"), el("span", "age", ago(it.created_at)));
+  const body = el("div", "body");
+  body.append(factsBlock(it));
+  if (d.changed) body.append(el("div", "also r-warn", "⚠ changed while you looked: check the facts again"));
+
+  const says = el("div", "says");
+  says.append(el("div", "sub", "the agent says (its words, not pekoe's)"));
+  const from = el("div", "from");
+  from.append(txt("from " + it.from));
+  if (it.claimed) from.append(txt(" "), colored("warn", "⚠ claims to be " + it.claimed));
+  says.append(from, el("div", "q", it.question));
+  if (it.context) says.append(el("pre", "input ctx", it.context));
+  body.append(says);
+
+  const btn = el("button", "btn key", "answer…");
+  btn.type = "button";
+  const update = () => (btn.disabled = !canAnswer(it, d) || !!ianswer);
+  const opts = el("div", "opts");
+  opts.setAttribute("role", "radiogroup");
+  (it.options || []).forEach((o, i) => {
+    const b = el("button", "opt");
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.append(el("span", "num", String(i + 1)), el("span", "otext", o));
+    if (it.recommend === i) b.append(el("span", "rec", "推奨(エージェント)"));
+    b.addEventListener("click", () => {
+      d.choice = d.choice === i ? null : i;
+      d.changed = false;
+      paint();
+      update();
+    });
+    opts.append(b);
+  });
+  const paint = () => opts.querySelectorAll(".opt").forEach((b, i) => {
+    b.classList.toggle("sel", d.choice === i);
+    b.setAttribute("aria-checked", String(d.choice === i));
+  });
+  paint();
+  if (opts.childNodes.length) body.append(opts);
+
+  const ta = el("textarea", "note");
+  ta.rows = 2;
+  ta.maxLength = 4000;
+  ta.placeholder = (it.options || []).length ? "note (optional; 差し戻す needs one)" : "answer in words";
+  ta.value = d.note;
+  ta.addEventListener("input", () => {
+    d.note = ta.value;
+    update();
+  });
+  ta.addEventListener("focus", () => (inboxTyping = true));
+  ta.addEventListener("blur", () => {
+    inboxTyping = false;
+    setTimeout(resumeInbox, 300); // after a tap on answer… has landed
+  });
+  btn.addEventListener("click", () => openInboxSheet(it));
+  const row = el("div", "row");
+  row.append(btn);
+  body.append(ta, row);
+  update();
+  card.append(head, body);
+  return card;
+}
+
+function renderInbox() {
+  const rows = $("i-rows");
+  rows.replaceChildren();
+  $("i-count").textContent = inbox.length ? String(inbox.length) : "";
+  for (const id of [...inboxDraft.keys()]) if (!inbox.some((it) => it.id === id)) inboxDraft.delete(id);
+  if (!inbox.length) {
+    rows.append(el("div", "empty", "nothing waits for you"));
+    return;
+  }
+  for (const it of inbox) rows.append(inboxCard(it));
+}
+
+function holdInbox() {
+  return inboxTyping || !!ianswer;
+}
+
+function resumeInbox() {
+  if (inboxHeld && !holdInbox()) {
+    inboxHeld = false;
+    renderInbox();
+  }
+}
+
+async function refreshInbox() {
+  try {
+    const r = await api("/api/inbox");
+    if (view !== "inbox") return;
+    const items = r.items || [];
+    const sig = JSON.stringify(items);
+    if (sig === inboxSig) return;
+    inbox = items;
+    inboxSig = sig;
+    if (holdInbox()) inboxHeld = true;
+    else renderInbox();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+// openInboxSheet: what will be sent, to whom, before it is.
+function openInboxSheet(it) {
+  const d = inboxDraft.get(it.id);
+  if (!d || !canAnswer(it, d)) return;
+  const note = d.note.trim();
+  ianswer = { id: it.id, rev: d.rev, choice: d.choice, note };
+  $("isheet-title").textContent = "answer inbox #" + it.id;
+  $("isheet-to").textContent = it.from + (it.about && it.about !== it.from ? " · about " + it.about : "");
+  $("isheet-q").textContent = it.question;
+  const a = [];
+  if (d.choice !== null) a.push(d.choice + 1 + ". " + it.options[d.choice] + (it.recommend === d.choice ? "  (推奨(エージェント)と同じ)" : ""));
+  if (note) a.push("note: " + note);
+  $("isheet-a").textContent = a.join("\n");
+  $("isheet-warn").hidden = false;
+  $("isheet-warn").textContent = "as of rev " + d.rev + ": if the facts change before this reaches pekoe, it is refused and shown again";
+  $("isheet-ok").disabled = false;
+  $("isheet").hidden = false;
+}
+
+function closeInboxSheet() {
+  $("isheet").hidden = true;
+  ianswer = null;
+  resumeInbox();
+}
+
+async function doInboxAnswer() {
+  const a = ianswer;
+  if (!a) return;
+  $("isheet-ok").disabled = true;
+  const body = { rev: a.rev, note: a.note };
+  if (a.choice !== null) body.choice = a.choice;
+  try {
+    await api("/api/inbox/" + encodeURIComponent(String(a.id)) + "/answer", body);
+    inboxDraft.delete(a.id);
+    toast("answered #" + a.id, true);
+  } catch (e) {
+    const d = inboxDraft.get(a.id);
+    if (e.status === 409 && d) {
+      d.choice = null;
+      d.changed = true;
+      toast("#" + a.id + " changed or was closed: look again");
+    } else {
+      toast("#" + a.id + ": " + e.message);
+    }
+  }
+  closeInboxSheet();
+  inboxSig = "";
+  refresh();
+}
+
+// ---- overview: counts, tapi, and every session's flow (read only) ----
+
+const STEP_NAMES = { impl: "実装", pr: "PR", ci: "CI", review: "レビュー", merge: "マージ" };
+const STEP_LOOK = { done: ["✓", "ok"], now: ["●", "warn"], fail: ["✗", "err"], todo: ["○", "dim"] };
+let overviewSig = "";
+
+function renderCounts(c) {
+  const box = $("o-counts");
+  box.replaceChildren();
+  const tile = (role, icon, n, word, hash) => {
+    const t = el(hash ? "a" : "div", "tile");
+    if (hash) t.href = hash;
+    t.append(colored(n ? role : "dim", icon), el("span", "n", String(n)), el("span", "w", word));
+    box.append(t);
+  };
+  tile("ok", "●", c.running, "running");
+  tile("warn", "●", c.waiting, "waiting");
+  tile("secondary", "✓", c.review, "to review");
+  tile("primary", "#", c.open_prs, "open PRs");
+  tile("ok", "✓", c.ready, "ready to merge");
+  tile("warn", "?", c.inbox_open, "inbox", "#/inbox");
+  tile("secondary", "☰", c.ledger_open, "requests open");
+}
+
+function renderTapi() {
+  const box = $("o-tapi");
+  box.replaceChildren();
+  if (!tapi) {
+    box.append(el("div", "empty", "(tapi is not readable)"));
+    return;
+  }
+  const l1 = el("div", "line1");
+  const lk = tapi.look || { icon: "○", role: "dim", word: tapi.state };
+  let word = lk.word, role = lk.role;
+  if (!tapi.started) [word, role] = ["not started", "dim"];
+  else if (!tapi.alive) [word, role] = ["exited", "dim"];
+  l1.append(colored(role, lk.icon, "ic"), el("span", "name r-text", "tapi"), colored(role, word, "word"),
+    el("span", "age", tapi.started && tapi.state !== "idle" ? ago(tapi.state_since) : ""));
+  box.append(l1);
+  if (tapi.state === "waiting" && tapi.started) box.append(el("div", "also r-warn", "⚠ tapi waits: answer it at the terminal"));
+  if (tapi.last_message) box.append(el("div", "msg last", tapi.last_message));
+}
+
+function parentLabel(g) {
+  switch (g.parent) {
+    case "+tapi": return "tapi";
+    case "": return "opened directly";
+    case "human": return "you";
+    case "unknown": return "unknown";
+  }
+  return "from " + g.parent;
+}
+
+function flowRow(f) {
+  const wrap = el("div", "flow");
+  const b = el("button", "row-s");
+  b.type = "button";
+  b.append(line1(f));
+  b.addEventListener("click", () => go(f.slug));
+  const steps = el("div", "steps");
+  f.steps.forEach((s, i) => {
+    if (i) steps.append(el("span", "arrow", "→"));
+    const [icon, role] = STEP_LOOK[s.status] || ["○", "dim"];
+    const sp = el("span", "step st-" + (STEP_LOOK[s.status] ? s.status : "todo"));
+    sp.append(colored(role, icon), txt(" " + (STEP_NAMES[s.name] || s.name)));
+    steps.append(sp);
+  });
+  wrap.append(b, steps);
+  const notes = el("div", "miss");
+  if (f.merge) {
+    if (f.merge.ready) {
+      notes.append(el("div", "r-ok", "✓ 根拠が揃った · 人のマージ待ち" + (f.merge.inbox ? " (inbox #" + f.merge.inbox + ")" : "")));
+    }
+    for (const c of f.merge.conds || []) {
+      if (c.ok) continue;
+      const line = el("div");
+      line.append(colored("err", "✗"), txt(" " + c.name + ": " + c.detail));
+      notes.append(line);
+    }
+  } else {
+    for (const s of f.steps) {
+      if (s.status !== "fail" || !s.detail) continue;
+      const line = el("div");
+      line.append(colored("err", "✗"), txt(" " + (STEP_NAMES[s.name] || s.name) + ": " + s.detail));
+      notes.append(line);
+    }
+  }
+  if (!f.merge && f.after && f.after.length) notes.append(el("div", null, "after " + f.after.join(", "))); // with a PR, merge.check's after says it
+  if (notes.childNodes.length) wrap.append(notes);
+  return wrap;
+}
+
+function renderOverview(o) {
+  renderCounts(o.counts || {});
+  renderTapi();
+  const box = $("o-flow");
+  box.replaceChildren();
+  const groups = o.groups || [];
+  if (!groups.length) {
+    box.append(el("div", "empty", "no sessions"));
+    return;
+  }
+  for (const g of groups) {
+    const sec = el("div", "group");
+    const t = el("div", "gtitle");
+    t.append(el("span", "r-secondary", parentLabel(g)));
+    if (g.request) {
+      t.append(sep(), txt("request #" + g.request.id + " "), colored(g.request.status === "open" ? "warn" : "dim", g.request.status));
+      if (g.request.text) sec.append(t, el("div", "req", g.request.text));
+      else sec.append(t);
+    } else {
+      sec.append(t);
+    }
+    for (const f of g.rows || []) sec.append(flowRow(f));
+    box.append(sec);
+  }
+}
+
+async function refreshOverview() {
+  try {
+    const o = await api("/api/overview");
+    if (view !== "overview") return;
+    const sig = JSON.stringify([o.counts, o.groups, tapi]);
+    $("o-at").textContent = new Date().toLocaleTimeString();
+    if (sig === overviewSig) return;
+    overviewSig = sig;
+    renderOverview(o);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
 // ---- routing & polling ----
 
 function go(slug) {
-  location.hash = slug ? "#/s/" + encodeURIComponent(slug) : "";
+  location.hash = slug ? "#/s/" + encodeURIComponent(slug) : backTo;
 }
+
+const VIEWS = { "#/inbox": "inbox", "#/overview": "overview" };
 
 function route() {
   const m = location.hash.match(/^#\/s\/(.+)$/);
@@ -536,19 +944,33 @@ function route() {
     else drafts.delete(current);
   }
   current = m ? decodeURIComponent(m[1]) : null;
+  view = m ? "detail" : VIEWS[location.hash] || "list";
+  inboxTyping = false; // a hidden note box may never get its blur
+  if (!m) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
   ta.value = (current && drafts.get(current)) || "";
-  $("list").hidden = !!current;
-  $("detail").hidden = !current;
-  $("back").hidden = !current;
-  if (current) {
+  for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
+  $("tabs").hidden = view === "detail";
+  for (const v of ["list", "inbox", "overview"]) {
+    const t = $("t-" + v);
+    if (view === v) t.setAttribute("aria-current", "page");
+    else t.removeAttribute("aria-current");
+  }
+  $("back").hidden = view !== "detail";
+  $("back").textContent = "‹ " + ({ "#/inbox": "inbox", "#/overview": "overview" }[backTo] || "sessions");
+  if (view === "detail") {
     $("d-screen").textContent = "";
     screenSig = "";
     screenPaused = screenHeld = false;
     renderScreenState();
     renderDetailHead();
     refreshScreen();
-  } else {
+  } else if (view === "list") {
     renderList();
+  } else if (view === "inbox") {
+    inboxSig = "";
+    refreshInbox();
+  } else {
+    refreshOverview();
   }
   schedule();
 }
@@ -574,6 +996,9 @@ $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
+$("isheet-cancel").addEventListener("click", closeInboxSheet);
+$("isheet-ok").addEventListener("click", doInboxAnswer);
+$("isheet").addEventListener("click", (e) => { if (e.target === $("isheet")) closeInboxSheet(); });
 $("d-pause").addEventListener("click", togglePause);
 for (const b of $("d-keys").querySelectorAll("button[data-key]")) {
   b.addEventListener("click", () => pressKey(b.dataset.key));
@@ -596,7 +1021,7 @@ const list = $("list");
 const release = () => {
   if (!touching) return;
   touching = false;
-  if (!current && !busy) renderList();
+  if (view === "list" && !busy) renderList();
 };
 list.addEventListener("pointerdown", () => (touching = true));
 // released a bit later: the click that follows pointerup must still land on

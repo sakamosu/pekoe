@@ -104,6 +104,13 @@ keys = ["pekoe web", "[web]"]
 docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
 
 [[tip]]
+id = "web-inbox"
+short = "iPhone の Web UI から受信箱に答えられる"
+detail = "Inbox タブは事実とリンクが先、エージェントの文が後。推奨は選ばれていないので自分で選び、確認シートを見て送る。Overview タブは件数と各セッションの 実装 → PR → CI → レビュー → マージ。"
+keys = ["pekoe web"]
+docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
+
+[[tip]]
 id = "new-from-issue"
 short = "pekoe new <branch> --from gh#N で issue から始める"
 detail = "GitHub の issue の本文を初期プロンプトにしてセッションを作る。--prompt なら指示を直接渡せる。"

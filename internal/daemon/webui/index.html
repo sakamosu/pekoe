@@ -24,11 +24,40 @@
   <span class="sum" id="sum"></span>
 </header>
 
+<nav class="tabs" id="tabs" aria-label="views">
+  <a class="tab" id="t-list" href="#">Sessions</a>
+  <a class="tab" id="t-inbox" href="#/inbox">Inbox <span class="badge" id="t-inbox-n" hidden></span></a>
+  <a class="tab" id="t-overview" href="#/overview">Overview</a>
+</nav>
+
 <main id="list">
   <section class="panel focus">
     <div class="ttl"><span class="name">◆ Sessions</span> <span id="l-count"></span></div>
     <div id="l-rows" aria-live="polite"></div>
     <div class="foot" id="l-foot" hidden></div>
+  </section>
+</main>
+
+<main id="inbox" hidden>
+  <section class="panel focus">
+    <div class="ttl"><span class="name">◆ Inbox</span> <span id="i-count"></span></div>
+    <div class="cap">pekoe が読んだ事実とリンクを先に、エージェントの文を後に出します。推奨はエージェントの意見で、選ばれてはいません。</div>
+    <div id="i-rows" aria-live="polite"></div>
+  </section>
+</main>
+
+<main id="overview" hidden>
+  <section class="panel">
+    <div class="ttl"><span class="name">◆ Overview</span> <span class="at" id="o-at"></span></div>
+    <div class="counts" id="o-counts"></div>
+  </section>
+  <section class="panel">
+    <div class="ttl"><span class="name">◆ tapi</span></div>
+    <div class="tapi" id="o-tapi"></div>
+  </section>
+  <section class="panel focus">
+    <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">実装 → PR → CI → レビュー → マージ</span></div>
+    <div id="o-flow"></div>
   </section>
 </main>
 
@@ -102,6 +131,23 @@
     <div class="row">
       <button class="btn" id="sheet-cancel">cancel</button>
       <button class="btn" id="sheet-ok"></button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-back" id="isheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="isheet-title">
+    <h2 id="isheet-title"></h2>
+    <div class="sheet-cap">to — the answer goes to</div>
+    <div class="target" id="isheet-to"></div>
+    <div class="sheet-cap">question (the agent's words)</div>
+    <pre class="input" id="isheet-q"></pre>
+    <div class="sheet-cap">your answer</div>
+    <pre class="input" id="isheet-a"></pre>
+    <div class="sheet-warn" id="isheet-warn" hidden></div>
+    <div class="row">
+      <button class="btn" id="isheet-cancel">cancel</button>
+      <button class="btn allow" id="isheet-ok">answer</button>
     </div>
   </div>
 </div>

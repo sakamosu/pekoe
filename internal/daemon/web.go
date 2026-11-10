@@ -108,6 +108,10 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{slug}/answer", d.webAnswer)
 	mux.HandleFunc("POST /api/sessions/{slug}/send", d.webSend)
 	mux.HandleFunc("POST /api/sessions/{slug}/keys", d.webKeys)
+	mux.HandleFunc("GET /api/inbox", d.webInbox)
+	mux.HandleFunc("POST /api/inbox/{id}/answer", d.webInboxAnswer)
+	mux.HandleFunc("GET /api/tapi", d.webTapi)
+	mux.HandleFunc("GET /api/overview", d.webOverview)
 	return webGuard(o, mux)
 }
 
@@ -485,11 +489,7 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 	}
 	p := peerFrom(r)
 	log.Printf("web: %s sends %d chars to %s (from %s)", p.Login, len(text), slug, p.Device)
-	via := viaWeb
-	if p.Device != "" {
-		via += ":" + p.Device
-	}
-	if _, err := d.CallAs(humanCaller(via), "session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
+	if _, err := d.CallAs(humanCaller(webVia(p)), "session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
 		webErr(w, err)
 		return
 	}
