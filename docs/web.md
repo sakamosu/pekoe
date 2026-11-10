@@ -77,7 +77,7 @@ allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admi
 1. `make install WEB=1` で Web UI 入りのビルドを入れる
 2. tailnet の admin console で MagicDNS と HTTPS Certificates を有効にする
 3. `[web]` を書いて pekoed を再起動する
-4. `pekoe web` を実行する。`state needs-login` と `login https://login.tailscale.com/a/…` が出るので、そのリンクを開いて承認する(同じ URL は `pekoed.log` にも出る)。pekoed の起動直後の数秒は URL がまだ無く、`login  (getting the login URL…)` と出るので、少し待ってもう一度 `pekoe web` を実行する。auth key を使うなら `auth_key` か `TS_AUTHKEY` を設定して再起動すれば、URL は出ずに参加する
+4. `pekoe web` を実行する。`state needs-login` と `login https://login.tailscale.com/a/…` が出るので、そのリンクを開いて承認する。URL は `pekoed.log` には出さない(ログはエージェントの sandbox から読め、先に開いた人の tailnet にこのノードが入ってしまうため。ログには「`pekoe web` で確認」とだけ出る)。`web.status` は人間用トークンが要るので、エージェントは `pekoe web` でも読めない。pekoed の起動直後の数秒は URL がまだ無く、`login  (getting the login URL…)` と出るので、少し待ってもう一度 `pekoe web` を実行する。auth key を使うなら `auth_key` か `TS_AUTHKEY` を設定して再起動すれば、URL は出ずに参加する
 5. `pekoe web` が `state running` と `url https://pekoe.<tailnet>.ts.net/` を出したら、iPhone の Safari でその URL を開き、共有メニューから「ホーム画面に追加」
 
 `TS_AUTHKEY` は pekoed が起動時に自分の環境変数から取り除いてから tmux を立ち上げるので、エージェントのペインには渡らない(渡ると、エージェントがその鍵で自分のノードを tailnet に参加させ、ユーザー本人として Web UI を叩けてしまう)。`auth_key` を設定に書いた場合は、同じユーザーで動くエージェントには読めるので、参加したらすぐ消す。ログイン URL で参加するのがいちばん安全。

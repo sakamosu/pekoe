@@ -27,6 +27,7 @@ pekoe のデーモン(pekoed)に unix socket で繋がる Neovim プラグイン
     keymaps = {
       send_range = "<leader>bs",  -- false で割り当てない
       new_session = "<leader>bn",
+      approval_focus = "<leader>ba", -- 許可待ちフロートに入る
       review = { approve = "a", reject = "x", comment = "c", ask = "?" },
       approval = { allow = "y", deny = "n", always = "A" },
     },
@@ -58,6 +59,7 @@ pekoe のデーモン(pekoed)に unix socket で繋がる Neovim プラグイン
 | `:'<,'>PekoeSendRange` | 範囲をセッションに送る(`<leader>bs` と同じ) |
 | `:'<,'>PekoeNew` | 範囲を初期指示に新しいセッションを作る(`<leader>bn` と同じ) |
 | `:PekoeAnswer y\|n\|always [slug]` | 許可待ちに答える |
+| `:PekoeApproval` | 許可待ちフロートに入る(`<leader>ba` と同じ) |
 | `:PekoeFollow [slug]` / `:PekoeFollow!` | エージェントが編集したファイルを split に開いて変更箇所へ飛ぶ / 停止 |
 | `:PekoeFixDiagnostics[!] [slug]` | バッファ(`!` でワークスペース)の LSP 診断を `path:line: severity: message` の一覧にして送る |
 | `:PekoeRisks [slug]` | 門番エージェント(`[review] gatekeeper`)が挙げた危ない箇所を quickfix に流し込む。読む順序を決める材料 |
@@ -95,10 +97,15 @@ pekoe のデーモン(pekoed)に unix socket で繋がる Neovim プラグイン
 
 ### 許可待ちフロート
 
-エージェントが許可待ち(`session.waiting` / `wait_kind = "permission"`)になると右下にフロートが出てフォーカスが移る。
+エージェントが許可待ち(`session.waiting` / `wait_kind = "permission"`)になると右下にフロートが出る。フォーカスは奪わない(打鍵中の `y` が許可にならないように)。`<leader>ba` か `:PekoeApproval` で入る。
+
+フロートには pekoe の要約(`pending_tool`)と、エージェントの画面の末尾 20 行(`session.screen`)を並べる。要約はフックから届いたもので、エージェントが偽造できる。**何を許可するかは画面(エージェント自身の許可ダイアログ)で確かめる**。画面が出るまで `y` / `A` は効かない。
+
+答えには表示したツールを `expect` として付けて送る。pekoed の `pending_tool` が変わっていれば断られ、フロートを出し直す(「the prompt changed; look again」)。中身が変わったときはフロートから外に出るので、読み直してからもう一度入る。
 
 | キー | 動作 |
 | --- | --- |
+| `<leader>ba` / `:PekoeApproval` | フロートに入る(どこからでも) |
 | `y` | 許可(allow) |
 | `n` | 拒否(deny) |
 | `A` | 常に許可(always) |

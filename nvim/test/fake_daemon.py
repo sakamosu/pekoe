@@ -7,6 +7,8 @@
 - subscribe した接続には 0.3 秒後に session.waiting(permission)を流す
 - review.approve で状態を変えて review.updated を流す
 - editor.open は購読者に editor.open イベントとして流す
+- session.screen は fix-y の許可ダイアログの画面を返す
+- session.answer は expect が今の pending_tool と違えば断る
 - test.log で受け取ったリクエスト一覧(人間用トークンも)を返す(テスト用の拡張)
 """
 import asyncio
@@ -150,7 +152,23 @@ async def handle_req(method, params, writer, token=None):
         return None
     if method == "test.log":
         return state["log"]
-    if method in ("review.start", "review.end", "session.send", "session.answer", "session.new"):
+    if method == "session.screen":
+        if params.get("slug") != "fix-y":
+            raise KeyError("no such session: %s" % params.get("slug"))
+        return {"lines": ["\x1b[1mBash command\x1b[0m", "  pnpm prisma migrate dev",
+                          "Do you want to proceed?", "\x1b[36m❯ 1. Yes\x1b[0m", "  2. No", "", ""],
+                "width": 80, "height": 7}
+    if method == "session.answer":
+        exp = params.get("expect")
+        if exp is not None:
+            cur = next((x.get("pending_tool") for x in SESSIONS if x["slug"] == params.get("slug")), None)
+            t = exp.get("tool")
+            same = (t is None and cur is None) or (t is not None and cur is not None and
+                                                   t.get("name") == cur.get("name") and t.get("input") == cur.get("input"))
+            if not same:
+                raise KeyError("the prompt changed; look again")
+        return None
+    if method in ("review.start", "review.end", "session.send", "session.new"):
         return None
     raise KeyError("unknown method: %s" % method)
 

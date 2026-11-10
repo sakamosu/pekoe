@@ -70,6 +70,11 @@ cmd("PekoeAnswer", function(a)
   require("pekoe.approval").answer(ans, a.fargs[2])
 end, { nargs = "+", desc = "pekoe: answer a pending permission" })
 
+cmd("PekoeApproval", function()
+  pekoe()
+  require("pekoe.approval").focus()
+end, { desc = "pekoe: focus the permission float" })
+
 cmd("PekoeFollow", function(a)
   pekoe()
   if a.bang then

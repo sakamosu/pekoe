@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"pekoe/internal/gitx"
 	"pekoe/internal/state"
 )
 
@@ -238,6 +239,9 @@ func TestSuggestBranch(t *testing.T) {
 		}
 		if len(got) > 60 || strings.ContainsAny(got, " :!?`'.") || strings.Contains(got, "--") || strings.HasSuffix(got, "-") {
 			t.Errorf("%q is not a clean branch name", got)
+		}
+		if err := gitx.CheckBranchName(got); err != nil {
+			t.Errorf("session.new would refuse the suggested branch: %v", err)
 		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type Error struct {
@@ -124,6 +125,27 @@ func CheckRefArg(what, name string) error {
 	return nil
 }
 
+// CheckBranchName checks the name of a branch pekoe is asked to create. On
+// top of CheckRefArg it refuses the characters a shell treats specially:
+// the name goes into [hooks] commands as {{branch}}, which pekoed runs
+// outside the agents' sandbox, and quoting cannot protect a {{branch}} the
+// user put inside quotes of their own ("app_{{branch}}"). git itself allows
+// most of them ($ ( ) | { } …). Ordinary names (letters, digits, / - _ .)
+// pass, and so do the ones pekoe suggests (feat/12-csv-export).
+func CheckBranchName(name string) error {
+	if err := CheckRefArg("branch", name); err != nil {
+		return err
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || unicode.IsSpace(r) || strings.ContainsRune(shellSpecial, r) {
+			return fmt.Errorf("invalid branch %q: %q is not allowed (use letters, digits, / - _ .)", name, r)
+		}
+	}
+	return nil
+}
+
+const shellSpecial = "$`'\"\\;|&(){}<>*?[]~!#"
+
 // MainWorktree returns the primary worktree path of the repository.
 func MainWorktree(dir string) (string, error) {
 	wts, err := Worktrees(dir)
@@ -169,10 +191,12 @@ func NormalizeURL(u string) string {
 }
 
 // RepoID is the normalized origin URL with / replaced by _, or the main
-// worktree path when there is no origin.
+// worktree path when there is no origin (or the origin gives no usable id).
 func RepoID(dir string) (string, error) {
 	if n := NormalizeURL(Origin(dir)); n != "" {
-		return strings.ReplaceAll(n, "/", "_"), nil
+		if id := strings.ReplaceAll(n, "/", "_"); pathElem(id) {
+			return id, nil
+		}
 	}
 	p, err := MainWorktree(dir)
 	if err != nil {
@@ -182,16 +206,27 @@ func RepoID(dir string) (string, error) {
 	return "path_" + strings.ReplaceAll(p, "/", "_"), nil
 }
 
-// RepoName is the short name used under ~/worktrees/<repo>.
+// RepoName is the short name used under ~/worktrees/<repo>. It is always a
+// single path element: an origin of "x:.." or "https://host/a/.." would
+// otherwise put worktrees outside ~/worktrees (filepath.Join cleans the "..").
 func RepoName(dir string) string {
 	if n := NormalizeURL(Origin(dir)); n != "" {
-		return filepath.Base(n)
+		if b := filepath.Base(n); pathElem(b) {
+			return b
+		}
 	}
-	p, err := MainWorktree(dir)
-	if err != nil {
-		return "repo"
+	if p, err := MainWorktree(dir); err == nil {
+		if b := filepath.Base(p); pathElem(b) {
+			return b
+		}
 	}
-	return filepath.Base(p)
+	return "repo"
+}
+
+// pathElem reports whether s can stand as one element of a path: not empty,
+// not "." or "..", no separator, no NUL.
+func pathElem(s string) bool {
+	return s != "" && s != "." && s != ".." && !strings.ContainsAny(s, "/\\\x00")
 }
 
 type WorktreeInfo struct {

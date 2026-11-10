@@ -256,11 +256,16 @@ type Vars struct {
 // Commands that go to a shell use ExpandShell.
 func (v Vars) Expand(s string) string { return v.expand(s, func(x string) string { return x }) }
 
-// ExpandShell fills in the values for a command line run by sh -c. A branch
-// name may hold characters the shell treats specially ($, `, ;, spaces …),
-// so a value with any of them is put in single quotes. Plain values (the
-// usual feat/x, /Users/me/worktrees/app/feat-x) are left as they are, so
-// a command that already quotes them ("{{path}}", '{{branch}}') keeps working.
+// ExpandShell fills in the values for a command line run by sh -c. A value
+// may hold characters the shell treats specially ($, `, ;, spaces …), so a
+// value with any of them is put in single quotes; plain values (the usual
+// feat/x, /Users/me/worktrees/app/feat-x) are left as they are.
+//
+// The placeholder must not be inside quotes of the command's own:
+// "app_{{branch}}" would become "app_'x$(…)'", and the $(…) runs since the
+// single quotes are literal inside double quotes. pekoe quotes when needed,
+// so write app_{{branch}}. session.new also refuses branch names with shell
+// characters (gitx.CheckBranchName); a path ({{path}}) may still have them.
 func (v Vars) ExpandShell(s string) string { return v.expand(s, ShellQuoteIfNeeded) }
 
 func (v Vars) expand(s string, q func(string) string) string {

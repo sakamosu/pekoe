@@ -287,7 +287,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md)。`{ dir = "~/.local/share/pekoe/nvim" }` を lazy.nvim に足す(`make install` が置くリンク。リリースを上の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim`)。pekoe が起動する nvim には自動で読み込まれる。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
+[nvim/README.md](nvim/README.md)。`{ dir = "~/.local/share/pekoe/nvim" }` を lazy.nvim に足す(`make install` が置くリンク。リリースを上の手順で入れたなら `~/.local/opt/pekoe/share/pekoe/nvim`)。pekoe が起動する nvim には自動で読み込まれる。レビュー面(`:PekoeReview` `:PekoeSend`)のほか、選択範囲を送る `<leader>bs`、選択から新セッションの `<leader>bn`、許可待ちのフロート(フォーカスは奪わず、`<leader>ba` で入って画面を見て答える)、`:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`。
 
 ### Chrome 拡張
 
@@ -373,7 +373,7 @@ DATABASE_URL = "postgres:///app_{{slug}}"
 gatekeeper = "claude -p '危ない箇所を path:line: text で挙げて'"   # diff を stdin で受ける
 ```
 
-変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`。setup は順に実行し、失敗したら止めて左ペインに赤で出す。`[hooks]` のコマンドに埋めるとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は単引用符で囲んで 1 語として渡す(`feat/x` のような普通の値はそのまま)。`[env]` の値には引用符を付けない。
+変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`。setup は順に実行し、失敗したら止めて左ペインに赤で出す。`[hooks]` のコマンドに埋めるとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は単引用符で囲んで 1 語として渡す(`feat/x` のような普通の値はそのまま)。pekoe が必要なときに囲むので、**`{{…}}` を自分で引用符で囲まないこと**(`createdb "app_{{branch}}"` ではなく `createdb app_{{branch}}`。二重引用符の中では単引用符が効かない)。ブランチ名は、シェルが特別に扱う文字(`$` `(` `)` `;` `|` `{` `}` 空白など)を含むものを `pekoe new` が断る。`[env]` の値には引用符を付けない。
 
 `~/.config/pekoe/config.toml`(全体):
 

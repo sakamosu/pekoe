@@ -14,7 +14,6 @@ import (
 
 	"pekoe/internal/engine"
 	"pekoe/internal/gitx"
-	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -502,7 +501,10 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 		}
 	}
 	slug := d.uniqueSlug(local, repo.ID, repo.Name)
-	path := paths.Worktree(repo.Name, slug)
+	path, err := worktreePath(repo.Name, slug)
+	if err != nil {
+		return nil, err
+	}
 	own := false
 	if _, err := os.Stat(path); err == nil {
 		if err := reusableWorktree(repo.Dir, path); err != nil {

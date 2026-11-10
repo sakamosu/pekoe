@@ -6,6 +6,7 @@ M.defaults = {
   keymaps = {
     send_range = "<leader>bs", -- visual: 選択範囲を指示つきで送る
     new_session = "<leader>bn", -- visual: 選択を初期指示に新セッション
+    approval_focus = "<leader>ba", -- normal: 許可待ちフロートに入る(フロートはフォーカスを奪わない)
     review = {
       next_hunk = "]h",
       prev_hunk = "[h",
@@ -56,6 +57,12 @@ local function setup_keymaps()
       require("pekoe.send").new_session()
     end, { desc = "pekoe: new session from the selection" })
     table.insert(global_maps, { "x", km.new_session })
+  end
+  if km.approval_focus then
+    vim.keymap.set("n", km.approval_focus, function()
+      require("pekoe.approval").focus()
+    end, { desc = "pekoe: focus the permission float" })
+    table.insert(global_maps, { "n", km.approval_focus })
   end
 end
 

@@ -22,6 +22,13 @@ func TestUnderWorktrees(t *testing.T) {
 	if !UnderWorktrees(inside) {
 		t.Fatal("worktree under root not recognized")
 	}
+	// a worktree about to be made (root is under /var → /private/var on macOS)
+	if !UnderWorktrees(filepath.Join(root, "other", "feat-y")) {
+		t.Fatal("a path that does not exist yet is not recognized")
+	}
+	if UnderWorktrees(filepath.Join(root, "..", "evil")) || UnderWorktrees(filepath.Join(root, "app", "..", "..", "x", "y")) {
+		t.Fatal("a path climbing out of root is accepted")
+	}
 	for _, p := range []string{root, filepath.Join(root, "app"), t.TempDir(), filepath.Join(root, "..")} {
 		if UnderWorktrees(p) {
 			t.Errorf("%s must not be deletable", p)

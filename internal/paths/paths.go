@@ -139,24 +139,40 @@ func Worktree(repo, slug string) string {
 	return filepath.Join(WorktreesRoot(), repo, slug)
 }
 
-// UnderWorktrees reports whether p is strictly inside WorktreesRoot.
+// UnderWorktrees reports whether p is strictly inside WorktreesRoot, at
+// least two levels down (<repo>/<slug>). p need not exist yet: symlinks are
+// resolved on its deepest existing ancestor, so a worktree about to be made
+// can be checked before git creates it.
 func UnderWorktrees(p string) bool {
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return false
 	}
-	if r, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = r
-	}
-	rootDir := WorktreesRoot()
-	if r, err := filepath.EvalSymlinks(rootDir); err == nil {
-		rootDir = r
-	}
+	abs = resolveExisting(abs)
+	rootDir := resolveExisting(filepath.Clean(WorktreesRoot()))
 	rel, err := filepath.Rel(rootDir, abs)
 	if err != nil {
 		return false
 	}
-	return rel != "." && !strings.HasPrefix(rel, "..") && strings.Count(rel, string(filepath.Separator)) >= 1
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) &&
+		strings.Count(rel, string(filepath.Separator)) >= 1
+}
+
+// resolveExisting evaluates the symlinks of the deepest existing ancestor of
+// the clean absolute path p and appends the rest unchanged.
+func resolveExisting(p string) string {
+	rest := ""
+	for cur := p; ; {
+		if r, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(r, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 // Slug turns a branch name into a filesystem/ref-safe slug: feat/csv -> feat-csv.
