@@ -646,7 +646,11 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 		if ag.Prompt == "paste" {
 			pasteLater = prompt
 		} else {
-			cmd += " " + shellQuote(prompt)
+			// after "--": a prompt (or an issue body from --from gh#N) that
+			// starts with "-" is the prompt, not options such as
+			// --permission-mode or --settings (claude and codex both take
+			// "--"; an agent that doesn't can use prompt = "paste")
+			cmd += " -- " + shellQuote(prompt)
 		}
 	}
 	env := append([]string{}, s.Env...)

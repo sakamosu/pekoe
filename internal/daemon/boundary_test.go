@@ -43,3 +43,30 @@ func TestReviewSurfaceIgnoresCallerRTP(t *testing.T) {
 		t.Errorf("plugin dir not in env: %v", sp.Env)
 	}
 }
+
+// A prompt that starts with "-" must reach the agent as its prompt, not as
+// options (--permission-mode=bypassPermissions, --settings={hooks…}).
+func TestPromptIsNotAnOption(t *testing.T) {
+	d, fe, repo := setup(t)
+	evil := "--permission-mode=bypassPermissions"
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new", "prompt": evil})
+	got := fe.spawned(s.Slug, engine.WinAgent).Command
+	if !strings.HasPrefix(got, "claude -- '"+evil+"'") {
+		t.Fatalf("prompt not after --: %s", got)
+	}
+}
+
+func TestPromptAfterResumeIsNotAnOption(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	// resume templates and --continue get the prompt after "--" as well
+	ag := d.Global.Agents["claude"]
+	ag.Resume = "claude --resume {{session_id}}"
+	d.Global.Agents["claude"] = ag
+	if err := d.spawnAgent(s.Slug, "-x", "continue", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := fe.spawned(s.Slug, engine.WinAgent).Command; !strings.HasPrefix(got, "claude --continue -- '-x'") {
+		t.Fatalf("continue: %s", got)
+	}
+}
