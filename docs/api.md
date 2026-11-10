@@ -263,7 +263,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
 | `merge.check` | `{slug?}` | `[MergeCheck]`(slug 順)。landed でない自分の PR のセッション(他人の PR のレビューを除く)ごとに、マージしてよいかの条件の何が揃っていて何が足りないか。`slug` を渡すとそのセッションだけ(下の「マージしてよいかの根拠」) |
-| `stats` | `{days?: 7, repo?}` | `Stats`(下の「集計(stats)」)。ローカルの日付で今日を含む `days` 日(1〜3660)・リポジトリごとのマージ数とトークン。`repo` はリポジトリの名前か repo-id(省くと全部。tapi chat の分も) |
+| `stats` | `{days?: 7, repo?}` | `Stats`(下の「集計(stats)」)。ローカルの日付で今日を含む `days` 日(1〜3660)・リポジトリごとのマージ数とトークン。`repo` はリポジトリの名前(マージの記録は repo-id でも当たるが、トークンは名前でだけ絞るので、CLI は名前に直して渡す。省くと全部。tapi chat の分も) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"\|"run"}` | レビュー面 / dev server / run のウィンドウを閉じる(run は `run.close` と同じ) |
 | `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
@@ -519,7 +519,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **マージ**: pekoe が landed にしたとき(`watchMerges` が PR のマージを見て teardown するとき、origin のないリポジトリの land)に `session_log` に記録する。マージの日時は pekoed がマージを見た時刻(`watchMerges` は 2 分ごとなので最大 2 分ほど遅れる)。GitHub に問い合わせて過去のマージを遡ることはしない(pekoe が見届けたものだけ)。他人の PR のレビュー(`pekoe review gh#N`)は数えない
 - **残す記録**: `session_log` は slug・リポジトリ(名前と repo-id)・ブランチ・PR 番号・作成日時・マージ日時・終了日時(landed になった時刻。land せずに rm したら rm の時刻)。セッションが landed になったときと rm されたとき(`worktree.rm`・landed の slug を `session.new` で置き換えたとき)に書き、rm の前に transcript の残りを読む。トークンの累計は `usage_days` の和。セッションの 1 生は slug と作成日時で区別するので、同じ slug を後で使い直しても別の記録になる。rm では読み位置(`usage_cursors`)だけを消し、日ごとの和と記録は残す
 - **token なしで読める**: 数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない(`session.list` で見えるものより少ない)。読む transcript は hooks が渡したもの(`readTokens` が既に読んでいるもの)の増えた行だけで、新しく何かを動かしたり、ほかのファイルを読んだりはしない。tapi chat が「今日いくつマージした? どれくらい使った?」に答えるために要る
-- **数の確かさ**: `transcript_path` は hooks の payload の値で、`session.event` は token なしで誰でも送れる。ほかのファイルを名乗られるとそのセッションの数が増えうる(通常のファイルで `.jsonl` で終わるものだけを読み、中身は数として足すだけ)。hooks の無いエージェント(codex など)のトークンは数えられない。料金への換算はしない
+- **数の確かさ**: `transcript_path` は hooks の payload の値で、`session.event` は token なしで誰でも送れる。ほかのファイルを名乗られるとそのセッションの数が増えうる(通常のファイルで `.jsonl` で終わるものだけを読み、中身は数として足すだけ)。重複を除くのは同じファイルで続く同じ `message.id` の行だけなので、Claude Code が resume や fork で履歴を別の transcript に写したときは、写された分を二重に数えうる(pekoe の再開は `--resume` で同じファイルに続けるので、通常は起きない)。hooks の無いエージェント(codex など)のトークンは数えられない。料金への換算はしない
 
 ### Tapi オブジェクト
 

@@ -211,11 +211,19 @@ func localDay(stamp string) string {
 // removed also forgets where its transcripts were read: nothing counts for
 // that life any more.
 func (d *Daemon) recordSession(s *state.Session, merged *time.Time, removed bool) {
-	if s == nil || s.Slug == "" || s.PRReview {
-		return // someone else's PR under review: not this user's merge
+	if s == nil || s.Slug == "" {
+		return
 	}
 	life := usageLife{Slug: s.Slug, Born: state.Born(s), Repo: s.Repo}
 	d.countUsage(life, "", false)
+	if s.PRReview { // someone else's PR under review: its tokens count, no record of a merge
+		if removed {
+			d.usageMu.Lock()
+			_ = d.DB.DeleteUsageCursors(life.Slug, life.Born)
+			d.usageMu.Unlock()
+		}
+		return
+	}
 	now := time.Now()
 	r := state.SessionRecord{Slug: s.Slug, Repo: s.Repo, RepoID: s.RepoID, Branch: s.Branch, PR: s.PR,
 		CreatedAt: s.CreatedAt, MergedAt: merged, EndedAt: &now}

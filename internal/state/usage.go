@@ -12,7 +12,6 @@ package state
 // used again later starts a record of its own.
 
 import (
-	"database/sql"
 	"time"
 )
 
@@ -161,7 +160,9 @@ func (d *DB) RecordSession(r SessionRecord) error {
 // SessionRecords lists the recorded lives that merged or ended at since or
 // later, with their tokens, oldest first.
 func (d *DB) SessionRecords(since time.Time) ([]SessionRecord, error) {
-	s := ts(since)
+	// RFC3339Nano drops trailing zeros, so as strings "…:00.5Z" sorts
+	// before "…:00Z": look from a second earlier (callers filter exactly)
+	s := ts(since.Add(-time.Second))
 	rows, err := d.db.Query(`SELECT l.slug,l.born,l.repo,l.repo_id,l.branch,l.pr,l.merged_at,l.ended_at,
 		COALESCE(SUM(u.input),0),COALESCE(SUM(u.output),0),COALESCE(SUM(u.cache_creation),0),COALESCE(SUM(u.cache_read),0)
 		FROM session_log l LEFT JOIN usage_days u ON u.slug=l.slug AND u.born=l.born
@@ -184,17 +185,6 @@ func (d *DB) SessionRecords(since time.Time) ([]SessionRecord, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
-}
-
-// LifeTokens is the usage of slug's life born so far.
-func (d *DB) LifeTokens(slug, born string) (Usage, error) {
-	var u Usage
-	err := d.db.QueryRow(`SELECT COALESCE(SUM(input),0),COALESCE(SUM(output),0),COALESCE(SUM(cache_creation),0),COALESCE(SUM(cache_read),0)
-		FROM usage_days WHERE slug=? AND born=?`, slug, born).Scan(&u.Input, &u.Output, &u.CacheCreation, &u.CacheRead)
-	if err == sql.ErrNoRows {
-		err = nil
-	}
-	return u, err
 }
 
 func parseOpt(s string) *time.Time {
