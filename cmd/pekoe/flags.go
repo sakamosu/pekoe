@@ -147,7 +147,7 @@ func multiVal(f map[string]string, k string) []string {
 // after the subcommand) and so is not listed here.
 var specs = map[string]spec{
 	"init":      {use: "pekoe init [<dir>] [--yes] [--overwrite] [--print]", bools: []string{"yes", "overwrite", "print"}},
-	"new":       {use: "pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT] [--request ID]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base", "request"}},
+	"new":       {use: "pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base", "request", "after"}, multi: []string{"after"}},
 	"open":      {use: "pekoe open [<worktree>] [--resume|--new] [--agent NAME]", bools: []string{"resume", "new"}, vals: []string{"agent"}},
 	"adopt":     {use: "pekoe adopt [<path>] [--yes]", bools: []string{"yes"}},
 	"ls":        {use: "pekoe ls [--all|--repo R] [--json]", bools: []string{"all"}, vals: []string{"repo"}},
