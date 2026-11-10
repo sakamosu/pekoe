@@ -103,7 +103,7 @@ make install-launchd    # 任意: ログイン時に pekoed を起動
 
 ### リリースから(ビルド済みバイナリ)
 
-GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。リポジトリはまだ公開していない(公開準備中)ので、今はリポジトリを読める GitHub アカウントが要る: `gh auth login` してから `gh` で落とす(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す)。公開後は、トークンなしで `gh` でも curl でも落とせる:
+GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。リポジトリはまだ公開していない(公開準備中)ので、今はリポジトリを読める GitHub アカウントが要る: `gh auth login` してから `gh` で落とす(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す)。公開後は、リポジトリを読める権限は要らなくなる: curl ならトークンなしで、`gh` ならどのアカウントでログインしていても落とせる:
 
 ```sh
 ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # 最新の版(特定の版なら ver=<version>)

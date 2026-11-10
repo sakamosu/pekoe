@@ -368,7 +368,7 @@ func (u *updater) checkProvenance(ctx context.Context, file, sum string) error {
 		fmt.Fprintf(u.err, "warning: could not look up the build provenance (%v); checked the SHA-256 only\n", err)
 		return nil
 	case !has:
-		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made while the repository is private have none); checked the SHA-256 only\n")
+		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made while the repository was private have none); checked the SHA-256 only\n")
 		return nil
 	case u.attest == nil:
 		fmt.Fprintf(u.err, "warning: the release has a build provenance, but gh is not installed to verify it; checked the SHA-256 only\n")

@@ -105,7 +105,7 @@ make install-launchd    # optional: start pekoed at login
 
 ### From a release (prebuilt binaries)
 
-GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. The repository is not public yet (it is being prepared for release), so for now you need a GitHub account that can read it: download with `gh` after `gh auth login` (for the Web UI build, add `_web` before `.tar.gz`). Once it is public, `gh` and curl will work without a token:
+GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. The repository is not public yet (it is being prepared for release), so for now you need a GitHub account that can read it: download with `gh` after `gh auth login` (for the Web UI build, add `_web` before `.tar.gz`). Once it is public, no access to the repository will be needed: curl works without a token, and `gh` with any logged-in account:
 
 ```sh
 ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest version (or ver=<version>)
