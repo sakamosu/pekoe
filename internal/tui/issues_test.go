@@ -336,3 +336,26 @@ func TestIssueKeysBeatErrorCard(t *testing.T) {
 		t.Fatalf("↵ should jump to the issue's session, got open=%v focus=%d", m.iss.open, m.focus)
 	}
 }
+
+// :new with a non-ASCII branch puts the cursor after the last rune, not at
+// the byte length (which sliced past the text and crashed the view).
+func TestCommandNewNonASCIIBranch(t *testing.T) {
+	for _, branch := range []string{"fix/ログイン", "café"} {
+		m := issueModel(t, "none", 160)
+		m.Update(key(":"))
+		for _, r := range "new " + branch + " やって" {
+			m.Update(key(string(r)))
+		}
+		m.Update(key("enter"))
+		nm, ok := m.modal.(*newModal)
+		if !ok {
+			t.Fatalf("%s: modal %T", branch, m.modal)
+		}
+		if nm.inputs[0].String() != branch || nm.inputs[0].pos != len([]rune(branch)) {
+			t.Fatalf("%s: branch=%q pos=%d", branch, nm.inputs[0].String(), nm.inputs[0].pos)
+		}
+		if out := checkSize(t, m, "new modal"); !strings.Contains(out, branch) {
+			t.Fatalf("%s: modal view:\n%s", branch, out)
+		}
+	}
+}

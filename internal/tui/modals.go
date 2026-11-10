@@ -734,7 +734,7 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 			m.modal = nil
 			return m.openNew(func(nm *newModal) {
 				if len(f) > 1 {
-					nm.inputs[0] = &input{text: []rune(f[1]), pos: len(f[1])}
+					nm.inputs[0] = &input{text: []rune(f[1]), pos: len([]rune(f[1]))}
 					if len(f) > 2 {
 						p := strings.Join(f[2:], " ")
 						nm.inputs[2] = &input{text: []rune(p), pos: len([]rune(p))}
