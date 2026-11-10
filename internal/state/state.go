@@ -146,6 +146,9 @@ type Session struct {
 	// and, later, the inbox's answers go to it. Empty: not made by session.new.
 	Parent string         `json:"parent,omitempty"`
 	Report *ReportSummary `json:"report,omitempty"` // the latest report.post
+	// Request is the ledger entry the session works on (pekoe new
+	// --request; daemon/ledger.go). 0: none.
+	Request int64 `json:"request,omitempty"`
 }
 
 type DB struct {
@@ -168,6 +171,7 @@ CREATE INDEX IF NOT EXISTS reports_slug ON reports(slug, id);
 CREATE TABLE IF NOT EXISTS sends (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, from_ TEXT NOT NULL, to_ TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, via TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, rev INTEGER NOT NULL, kind TEXT NOT NULL, from_ TEXT NOT NULL, claimed TEXT NOT NULL DEFAULT '', about TEXT NOT NULL DEFAULT '', question TEXT NOT NULL, options TEXT NOT NULL DEFAULT '[]', recommend INTEGER, context TEXT NOT NULL DEFAULT '', links TEXT NOT NULL DEFAULT '[]', facts TEXT, status TEXT NOT NULL, answer TEXT, delivery TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS inbox_from ON inbox(from_, status);
+CREATE TABLE IF NOT EXISTS ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, sessions TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', closed_at TEXT NOT NULL DEFAULT '');
 `
 
 func Open(path string) (*DB, error) {
