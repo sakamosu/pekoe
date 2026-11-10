@@ -9,11 +9,11 @@ description: pekoe の統括役(ハブ)として、依頼をセッションに�
 
 tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエージェントをハブにするときでも同じ手順で使う。違いは台帳(`pekoe ledger`)が tapi だけのものであること。
 
-## まだ無いかもしれないコマンド
+## コマンドが無いと言われたら(古い pekoe)
 
-報告(`pekoe report` / `pekoe reports`)・待ち合わせ(`pekoe wait`)・判断の受信箱(`pekoe ask-human` / `pekoe inbox`)・依頼の台帳(`pekoe ledger`)・`pekoe new --request` はある。`pekoe new` の `--after` は、入っている pekoe の版によってはまだ無い。無ければ使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
+`pekoe report` / `pekoe reports`・`pekoe wait`・`pekoe ask-human` / `pekoe inbox`・`pekoe ledger`・`pekoe new` の `--request` / `--after` は今の pekoe にある。古い pekoe でどれかが無ければ、使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
 
-- `--after` は付けずに作り、順序はプロンプトと人への報告に書く
+- 人に `pekoe update` を頼み、それまでは無いものを使わずに進める(順序はプロンプトと人への報告に書く)
 - 回避のために別の手段(state.db を読む、ファイルに記録を作る)を探さない
 
 ## 始めるとき・続きから始めるとき
@@ -31,7 +31,7 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 ## 依頼を受けたら
 
 - 1 PR で済むか分けるかを決める。分けるのは、独立にレビュー・マージできて、触るファイルが重ならない単位だけ。迷ったら 1 本
-- 分けたものに順序があるなら `pekoe new … --after <先のセッションの slug>` で記録する(起動は止まらないので、先のものが landed になってから作ってもよい)
+- 分けたものに順序があるなら `pekoe new … --after <先のセッションの slug>` で記録する(複数可)。記録して表示するだけで起動は止まらないので、先のものの変更に乗る作業は先のものが landed になってから作ってもよい(landed のセッションも `--after` に渡せる)。`--after` に渡せるのは今あるセッションだけ(先に作る)。自分自身・循環は断られる
 - tapi では台帳の id を `pekoe new … --request <id>` で結ぶ(依頼が閉じていれば断られ、セッションは作られない)。後から結ぶなら `pekoe ledger link <id> <slug>`。main をハブにするときは台帳を使わず、`--request` も付けない
 - 雑談・お礼・質問だけの入力も台帳に入る。依頼でなければ `pekoe ledger close <id> --as chat` で閉じる
 - 調べもの(ファイルを読む・`pekoe --json ls`・`git log`)は自分でやり、結果をプロンプトに込める。編集は自分でしない

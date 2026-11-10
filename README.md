@@ -169,7 +169,7 @@ pekoe                                                 # TUI
 | --- | --- |
 | `pekoe` | TUI (starts the daemon if needed) |
 | `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | Detect the repository's settings and write a draft. `--print` only prints it |
-| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT] [--request ID]` | Create a worktree + session. Shows setup progress and returns once the agent has started. `--request` is how tapi chat ties a session to a request in its ledger (tapi and you only) |
+| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]` | Create a worktree + session. Shows setup progress and returns once the agent has started. `--after` records which sessions this one comes after (repeatable; existing sessions only, not itself, no cycles). It is only recorded and shown (`after feat-a` on the row in [1], each one's state in its footer, `after` in `pekoe --json ls`): the session starts right away. `--request` is how tapi chat ties a session to a request in its ledger (tapi and you only) |
 | `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start in an existing worktree. Choose whether to resume a past Claude Code session (`--resume` to resume, `--new` for a new one) |
 | `pekoe adopt [<path>] [--yes]` | Stop an agent running outside pekoe and resume the same session inside pekoe |
 | `pekoe ls [--all\|--repo R]` | Sessions and their state. Inside a repository only that repository's, outside all of them |

@@ -315,7 +315,7 @@ state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evide
 | --- | --- |
 | `parent` | 依頼元(`+tapi`・slug・`human`・`unknown`)。`session.new` の呼び出し元から決める(実装: `session.open`・`adopt`・`review.pr` で作ったものは空。Chrome 拡張から作ったものは `human`) |
 | `request` | 台帳の id(`--request`) |
-| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料 |
+| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料(実装: 作る時点で今あるセッションだけを受け付ける。打ち間違いが「いつまでも満たされない依存」として残らないように、先のものから作らせる。landed のものも渡せる。一覧は作った後に変えないので循環は「landed の同じ slug を作り直す」ときにしか起きず、それと自分自身を断る。10 個まで、重複は 1 つに。後で `pekoe rm` された相手は消さずに残し、TUI は `gone` と出す。TUI は行に「まだ済んでいない(landed でも PR がマージ済みでもない)相手」を `after feat-a +1` で出し、選んだセッションのフッターにそれぞれの状態を出す。`pekoe ls` の文字の出力には出さない(`--json` には出る)) |
 | `report` | 最新の報告の要約 |
 
 tapi は今どおり `state.Session` に入れない(docs/tapi-chat.md の方針)。`parent: "+tapi"` は文字列で指すだけ。
