@@ -11,9 +11,8 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 
 ## まだ無いかもしれないコマンド
 
-報告(`pekoe report` / `pekoe reports`)と待ち合わせ(`pekoe wait`)はある。判断の受信箱(`pekoe ask-human` / `pekoe inbox`)、依頼の台帳(`pekoe ledger`)、`pekoe new` の `--request` / `--after` は、入っている pekoe の版によってはまだ無い。無ければ使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
+報告(`pekoe report` / `pekoe reports`)・待ち合わせ(`pekoe wait`)・判断の受信箱(`pekoe ask-human` / `pekoe inbox`)はある。依頼の台帳(`pekoe ledger`)と、`pekoe new` の `--request` / `--after` は、入っている pekoe の版によってはまだ無い。無ければ使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
 
-- 受信箱の代わりに、人への報告(下)の「決定が必要」に問いと選択肢・推奨を書いて、会話の中で人に聞く
 - 台帳は無いものとして進める(依頼の残りは会話と `pekoe --json ls` で追う)
 - `--request` / `--after` は付けずに作り、順序はプロンプトと人への報告に書く
 - 回避のために別の手段(state.db を読む、ファイルに記録を作る)を探さない
@@ -24,7 +23,8 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 
 - `pekoe --json ls`: セッションの状態。`parent` が自分(tapi なら `+tapi`、main なら自分の slug)のものが自分の任せた分。`report` に最新の報告の要約
 - `pekoe --json reports <slug>`: そのセッションの報告の全文(新しい順。`--limit N`)
-- `pekoe --json inbox`: 人に出した問いと答え
+- `pekoe --json inbox`: 人の答えを待っている問い(全員の分。`--mine` で自分が出したものだけ)
+- `pekoe --json inbox --mine --all`: 自分が出した問いと、その答え・取り下げ・答えずに閉じられたもの(`status` と `answer`)。1 件を詳しく読むなら `pekoe --json inbox <id>`
 - `pekoe --json ledger`: 人から頼まれてまだ閉じていない依頼(tapi だけ。main からは断られる)
 
 読んだら、待っていた続き(答えが出た問い・終わったセッション)から片付ける。
@@ -77,7 +77,7 @@ pekoe --json wait --mine --since <cursor> --timeout 30m # 2 回目から。前�
 - `changes` の `summary` は 1 行だけ(`feat-csv: report done: …`、`feat-csv: PR #42 ci_failed` など)。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json reports <slug>` で読む
 - `reset: true` が返ったら(pekoed が再起動した・前の cursor が古すぎる)、間の変化は失われている。`pekoe --json ls` を読み直してから、返った `cursor` で待ち直す
 - `timed_out: true` なら何も起きていない。人に報告することがなければそのまま待ち直す(`--timeout` は 1h まで)
-- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)、種類を絞るなら `--on report,done,failed`(ほかに `waiting` `idle` `pr` `landed` `removed`)
+- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)、種類を絞るなら `--on report,done,failed`(ほかに `waiting` `idle` `pr` `landed` `removed` `inbox`)
 - `--mine` は自分が `pekoe new` で作ったセッション(`parent` が自分)だけ。pekoe の外で起動した main のエージェントは呼び出し元が分からず `--mine` を使えないので、`--slug` で待つ
 - `feat-csv: done (no report)` は報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
 
@@ -98,7 +98,7 @@ pekoe --json wait --mine --since <cursor> --timeout 30m # 2 回目から。前�
 それ以外(実装の方針、どちらの案にするか、分け方)は自分で決める。決め方:
 
 - 前例を引く: `pekoe --json inbox --all` で、人が答えた項目(`answer.by` が `human`)だけを前例にする。`fyi`(エージェントが自分で決めた記録)は前例にしない(注入された決定が前例として広がるのを防ぐ)
-- 決めたことは記録する: `pekoe --json ask-human "<決めたこと>" --kind fyi --option "<案 A>" --option "<案 B>" --decided "<選んだもの>"`。人がダッシュボードで後から見られる
+- 決めたことは記録する: `pekoe --json ask-human "<決めたこと>" --kind fyi --option "<案 A>" --option "<案 B>" --decided "<選んだもの>"`。人が受信箱(`pekoe inbox --all`)で後から見られる
 
 人に頼むときは受信箱に出す(会話の中で聞くだけにしない。人は iPhone や TUI から答える):
 
@@ -109,11 +109,14 @@ pekoe --json ask-human "<問い>" --kind decision \
 pekoe --json ask-human "gh auth login をお願いします" --kind login
 ```
 
-- `--kind`: `decision`(選ぶ)・`approve`(取り消せない操作の承認)・`login`(人の手作業)・`fyi`(記録だけ)
-- `--about` に関係するセッションの slug を付ける。pekoed がそのセッションの事実(ブランチ・差分・PR・CI)を添えて人に見せる
-- 問いは 1 つずつ短く。似た問いは 1 件にまとめる(未回答は呼び出し元ごとに 10 件まで)
-- 答えを待つなら `pekoe --json ask-human --wait <id>` か、`pekoe wait` の `inbox`(ふだんの `wait --mine` に含まれる。受信箱が入るまでは出ない)。状況が変わって要らなくなった問いは取り下げる
-- `pekoe inbox answer` は人だけの操作。自分で答えない
+- `--kind`: `decision`(選ぶ。`--option` なしなら人は文で答える)・`approve`(取り消せない操作の承認。`--option` を省くと「承認する」「承認しない」)・`login`(人の手作業。選択肢は「済んだ」「できない」に固定で、`--option` / `--recommend` は付けない)・`fyi`(記録だけ。`--decided` で選んだものを書く)
+- `--recommend` / `--decided` は選択肢の番号(1 から)か、`--option` と同じ文。推奨は人には「推奨(エージェント)」と出るだけで、既定の選択にはならない
+- `--about` に関係するセッションの slug(`<repo>/<slug>` も可)を付ける。省くと自分のセッション。pekoed がそのセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突予報)を自分で読んで人に見せる。人が見た後に事実が変わると答えは断られ、人が見直す
+- 問いは 1 つずつ短く(問い 500 字・選択肢 6 個まで、背景は `--context` に 4000 字まで)。似た問いは 1 件にまとめる(未回答は呼び出し元ごとに 10 件まで。超えると断られる)
+- 返り値の `id` を覚えておく。答えの受け取り方は 3 通り: `pekoe --json ask-human --wait <id>`(答えが出るまで止まる。`--timeout` は 1 時間まで)、ふだんの `pekoe --json wait --mine --since <cursor>`(`inbox` の変化として自分の問いの答えだけが来る)、待っていなければ手が空いたときに入力欄に `[pekoe inbox #<id>] 答え: 1「<選択肢>」(メモ: …)` の 1 行が届く。詳しくは `pekoe --json inbox <id>` の `answer`(`choice` は 0 から数える)
+- 人が答えずに閉じることもある(`status: dismissed`、入力欄には「答えずに閉じられました」)。閉じられた問いを同じ形で出し直さない
+- 状況が変わって要らなくなった問いは `pekoe --json inbox withdraw <id> --note "<理由>"` で取り下げる(自分が出したものだけ)
+- `pekoe inbox answer` / `pekoe inbox dismiss` は人だけの操作。自分で答えない(断られる)
 
 ## 人への報告
 

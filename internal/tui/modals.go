@@ -732,7 +732,7 @@ func (c *commandModal) view() []string {
 	if c.err != "" {
 		lines = append(lines, "", th.FG(theme.Err, c.err))
 	}
-	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · ext · tutorial · q"))
+	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · inbox · ext · tutorial · q"))
 	return c.m.modalFrame(c.m.modalWidth(80), th.Bold(theme.Primary, "Command"), lines, c.hints(), false)
 }
 
@@ -788,6 +788,13 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 		case "tutorial":
 			m.modal = nil
 			return m.startTour()
+		case "inbox":
+			m.modal = nil
+			m.inboxRoundReset()
+			if it := m.nextInbox(); it != nil {
+				return m.openInbox(*it)
+			}
+			return done(func() tea.Msg { return infoMsg("the inbox is empty") })
 		case "ext":
 			return done(func() tea.Msg {
 				var info map[string]any

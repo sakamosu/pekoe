@@ -51,19 +51,22 @@
   | `report.list` | ハブのエージェントの `pekoe reports`(エージェントが書いた要約で、`session.list` と同じ公開度) |
   | `wait` | ハブのエージェントの `pekoe wait`(呼び出し元ごとに 8 本、1 時間まで。下の「待ち合わせ」) |
   | `send.log` | ハブのエージェントが自分の頼んだことを読み直す(token なしでは呼び出し元が送った・受けた記録だけ。下の「送信の記録」) |
+  | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
+  | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
+  | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(`watchMerges`)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
 - `session.new` は token なしでは、pekoe が既に知っているリポジトリ(`repo.list` に出るもの)で、知っているディレクトリと同じ場所のときだけ受け付け、セッションはその知っているディレクトリから作る。repo-id は origin の URL から決まり、エージェントが作ったクローンでも同じ id になるので、ディレクトリも見る。新しいリポジトリの登録は人間だけの操作(pekoed はそこで git を動かし、エージェントが自作したリポジトリの設定の filter / merge ドライバは、sandbox が使えない環境では外で動く)
-- `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
+- `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(人の答えを含む `inbox.updated`、他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
 - 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・`state.db`(と `-wal` / `-shm`)・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
 
 ### 呼び出し元の識別
 
-報告・送信の記録・`wait` の `mine` は「誰が」呼んだかを使う。`$PEKOE_SESSION` や cwd はエージェントが偽れるので、pekoed はソケットの相手のプロセスから決める(`internal/daemon/caller.go`)。
+報告・送信の記録・`wait` の `mine`・受信箱は「誰が」呼んだかを使う。`$PEKOE_SESSION` や cwd はエージェントが偽れるので、pekoed はソケットの相手のプロセスから決める(`internal/daemon/caller.go`)。
 
 1. 接続を受けたら相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`。`peer_*.go`)
 2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元
@@ -73,7 +76,7 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 
 - クライアントは `$PEKOE_SESSION` をリクエストの最上位の `session` に入れて送る(`internal/client`)。pekoed はこれを名乗り(`claimed`)として、識別したものと違うときだけ記録に残す。振り分けには使わない
 - `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
-- `report.post` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告は自分の窓のセッションに付く)
+- `report.post` と `inbox.*` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告と問いは自分の窓のセッションに付く)
 
 ### hooks の sandbox
 
@@ -201,6 +204,12 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `report.list` | `{slug?, since?: id, limit?: 20}` | `[Report]`(新しい順。`limit` は 200 まで) |
 | `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
 | `send.log` | `{to?, from?, since?: id, limit?: 100}` | `[SendRecord]`(新しい順。下の「送信の記録」) |
+| `inbox.post` | `{question, kind: "decision"\|"approve"\|"login"\|"fyi", options?: [string], recommend?: int, context?, links?: [string], about?: slug, decided?: int}` | `InboxItem`(下の「判断の受信箱」) |
+| `inbox.list` | `{status?: "open"\|"answered"\|"withdrawn"\|"dismissed"\|"all", mine?: bool, limit?: 100}` | `[InboxItem]`(新しい順。既定は `open`。`limit` は 500 まで) |
+| `inbox.get` | `{id}` | `InboxItem` |
+| `inbox.withdraw` | `{id, note?}` | `InboxItem`。token なしでは自分が出したものだけ |
+| `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。人だけ。`rev` が今のものと違えば `… the item changed; look again` |
+| `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
@@ -296,7 +305,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 }
 ```
 
-- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`removed`。`inbox` は受け付けるが、まだ出ない(判断の受信箱を足すときに出す)。`on` を省くとすべて
+- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox #12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
 - `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
 - `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない
 - 何も起きずに `timeout_s`(既定 1800、3600 まで)が過ぎたら `timed_out: true` と今の `cursor`。条件に合わなかった変化は飛ばして `cursor` は進む
@@ -311,6 +320,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 | --- | --- | --- |
 | `session.new` の `prompt`(`from` があれば先頭に `--from gh#N` の行) | 呼び出し元 | `new` |
 | `session.send` の agent の窓への指示(`submit` つき、または token なし) | 呼び出し元(TUI・CLI は `human`) | `send` |
+| 受信箱の答えの配送(下の「判断の受信箱」) | `pekoed` | `inbox` |
 
 ```jsonc
 // SendRecord
@@ -322,6 +332,47 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 - 送れなかったもの(許可ダイアログが出ていた、先頭が数字だったなど。token なしの受け付け時の確認で断ったものも)も `ok: false` とエラーで残す
 - 本文は 64 KiB で切る
 - token なしの `send.log` は、呼び出し元が `from` か `to` の記録だけ。`unknown` は断る
+
+### 判断の受信箱(inbox)
+
+エージェントが人に判断・承認・手作業を頼む(`pekoe ask-human`)。人は TUI(トーストと `]a`)か CLI(`pekoe inbox answer`)で答え、答えは問いを出したエージェントに届く。state.db の `inbox` の表に残り、答えたもの・取り下げたものも消さない(前例として読む。`pekoe rm` でも消えない)。
+
+```jsonc
+// InboxItem
+{
+  "id": 12, "rev": 2, "kind": "decision",
+  "from": "feat-pagination", "claimed": "",           // 識別した呼び出し元と、食い違うときの名乗り
+  "about": "feat-pagination",                         // 事実を取るセッション(省くと呼び出し元のセッション)
+  "question": "…", "options": ["変える", "今のオフセット式のまま"],
+  "recommend": 0,                                     // エージェントの推奨(0 始まり)。意見として出し、既定の選択にしない
+  "context": "…", "links": ["https://github.com/…/pull/42"],
+  "facts": {                                          // pekoed が自分で読んだもの(エージェントは書けない)
+    "slug": "feat-pagination", "state": "idle", "branch": "feat/pagination", "base": "main", "head": "3f2a…",
+    "diffstat": {"added": 120, "deleted": 8, "files": 4},
+    "pr": 42, "pr_url": "https://github.com/me/app/pull/42",
+    "pr_status": {"state": "OPEN", "pass": 5, "fail": 0, "pending": 0, "review_decision": "APPROVED", "unresolved": 0, "merge_state": "CLEAN"},
+    "test": {"status": "pass"}, "overlaps": [], "report": {"id": 17, "status": "done", "at": "…", "head": "3f2a…"},  // 最新の報告(要約はエージェントの文なので入れない)
+    "git_blocked": "", "gone": false
+  },
+  "status": "answered",                               // open | answered | withdrawn | dismissed
+  "answer": {"choice": 0, "note": "…", "by": "human", "via": "socket", "at": "…"},
+  "delivery": "delivered",                            // pending | delivered | waited | none
+  "created_at": "…", "updated_at": "…"
+}
+```
+
+- 添字(`recommend`・`decided`・`choice`)は 0 始まり。CLI と画面は 1 始まりで出す
+- `kind`: `decision`(選ぶ。選択肢なしなら答えはメモで)・`approve`(選択肢を省くと「承認する」「承認しない」)・`login`(人の手作業。選択肢は「済んだ」「できない」に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。`answered` で作られ、`answer.by` は呼び出し元)。選択肢が 1 つだけのものは断る
+- `from` は呼び出し元(上の「呼び出し元の識別」)の窓。窓がなく token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
+- 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
+- **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
+- `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)
+- **答えの届け方**(`answer` と `dismiss`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox #12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox 12`(閉じたものは `答えずに閉じられました`)。1 行に均し、先頭は `[`(数字にしない)
+  - 打つ条件: セッションなら `idle` か `done` で agent の窓が生きている、tapi chat なら起動していて `idle`。どちらも許可ダイアログが出ていない(hooks の状態と画面の両方。受け付けた時と、送信ロックを取って打つ直前の 2 回。`session.send` の token なしの経路と同じ)。人がその窓に打った(TUI・CLI・Web UI の `session.send`・`session.keys`・`tapi.send`・`tapi.keys`)のが 30 秒以内なら待つ
+  - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
+  - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。依頼元のセッションが消えたら `none`
+  - 打ったものは送信の記録に `from: pekoed, kind: inbox` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、記録に `ok: false` で残す
+- `inbox.updated` は token つきの購読にだけ届く。エージェントは `pekoe wait --on inbox`(や `ask-human --wait`)で自分宛ての答えだけを受け取る
 
 ### Tapi オブジェクト
 
@@ -462,6 +513,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `session.done` | `Session` |
 | `session.output` | `{slug, window}`(画面更新の合図。30ms で間引く) |
 | `report.posted` | `Report`(token なしの購読にも届く) |
+| `inbox.updated` | `InboxItem`(作られた・事実が変わった・答えた・取り下げた・届けた。人の答えを含むので token つきの購読にだけ届く) |
 | `review.updated` | `{slug}` |
 | `review.answer` | `{slug, hunk_id, text}` |
 | `pick.received` | `Pick` |

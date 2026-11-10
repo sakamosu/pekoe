@@ -126,6 +126,10 @@ func main() {
 		err = cmdReports(args)
 	case "wait":
 		err = cmdWait(args)
+	case "ask-human":
+		err = cmdAskHuman(args)
+	case "inbox":
+		err = cmdInbox(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -200,6 +204,9 @@ func usage() {
   pekoe wait [--mine] [--slug S] [--on KINDS] [--since CURSOR] [--timeout 30m] [--json]
                                block until something happens to sessions; pass the
                                returned cursor to the next wait's --since
+  pekoe ask-human <question> [--option O]... [--recommend N] [--kind K] [--wait]
+                               ask a person (run by an agent); the answer comes back
+  pekoe inbox [<id>] [--all]    the questions agents asked; pekoe inbox answer <id> <n>
   pekoe dev <slug>              toggle the dev server on the session's port
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always

@@ -80,6 +80,13 @@ type model struct {
 	sessions []*state.Session
 	sel      int // index into visible(); repository headings are not rows of it
 
+	// the inbox (inbox.go): open items oldest first, toasted once each;
+	// ]a visits the open ones not visited this round first
+	inbox        []state.InboxItem
+	inboxToasted map[int64]bool
+	inboxVisited map[int64]bool
+	attnRound    map[string]bool // sessions ]a went to this round
+
 	repos       []daemon.KnownRepo // repo.list: repositories pekoe knows (repos.go)
 	reposLoaded bool
 	chosen      *daemon.KnownRepo // picked with w; wins over the selection's repository
@@ -255,7 +262,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadInbox(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
@@ -596,6 +603,17 @@ func (m *model) route(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case jumpMsg:
+		// the session queue came round again: so does the inbox
+		if m.attnRound[msg.slug] && len(m.inbox) > 0 {
+			m.inboxRoundReset()
+			if it := m.nextInbox(); it != nil {
+				return m, m.openInbox(*it)
+			}
+		}
+		if m.attnRound == nil {
+			m.attnRound = map[string]bool{}
+		}
+		m.attnRound[msg.slug] = true
 		if msg.from != "" && msg.from != msg.slug {
 			m.returnTo = append(m.returnTo, msg.from)
 		}
@@ -676,6 +694,22 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case infoMsg:
 		m.setMsg(string(msg), false)
+		return m, nil
+
+	case inboxMsg:
+		m.onInboxList(msg)
+		return m, nil
+
+	case inboxAnswerMsg:
+		return m, m.onInboxAnswer(msg)
+
+	case noWaitMsg:
+		// nothing else waits: go round the inbox again
+		m.inboxRoundReset()
+		if it := m.nextInbox(); it != nil {
+			return m, m.openInbox(*it)
+		}
+		m.setMsg("nothing is waiting", false)
 		return m, nil
 
 	case reposMsg:
@@ -959,6 +993,8 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		json.Unmarshal(ev.Data, &p)
 		m.progress[p.Slug] = p.Steps
 		return nil
+	case "inbox.updated":
+		return m.onInboxEvent(ev.Data)
 	case "session.output":
 		var p struct {
 			Slug string `json:"slug"`
@@ -1774,6 +1810,10 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 // ---- attention queue / review queue ----
 
 func (m *model) nextWaiting() tea.Cmd {
+	// open questions in the inbox first: a person is asked for something
+	if it := m.nextInbox(); it != nil && m.modal == nil {
+		return m.openInbox(*it)
+	}
 	from := ""
 	if s := m.current(); s != nil {
 		from = s.Slug
@@ -1799,12 +1839,15 @@ func (m *model) nextWaiting() tea.Cmd {
 			return jumpMsg{slug: daemon.TapiSlug, from: back}
 		}
 		if s == nil {
-			return infoMsg("nothing is waiting")
+			return noWaitMsg{}
 		}
 		pr := s.State != state.Waiting && s.PRStatus != nil && len(s.PRStatus.Attention) > 0
 		return jumpMsg{slug: s.Slug, from: back, pr: pr}
 	}
 }
+
+// noWaitMsg: attention.next found no session (or tapi) waiting.
+type noWaitMsg struct{}
 
 type jumpMsg struct {
 	slug, from string
