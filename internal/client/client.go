@@ -80,11 +80,14 @@ func ReadHumanToken() string {
 
 // Connect dials the daemon, starting it in the background when absent.
 func Connect() (*Client, error) {
-	if cl, err := Dial(); err == nil {
+	cl, dialErr := Dial()
+	if dialErr == nil {
 		return cl, nil
 	}
 	if err := StartDaemon(); err != nil {
-		return nil, err
+		// e.g. inside an agent's sandbox, which may reach the socket but
+		// not write pekoe's data directory: say what failed first
+		return nil, fmt.Errorf("cannot reach pekoed (%v) and cannot start it: %w", dialErr, err)
 	}
 	// generous: the new pekoed may first wait for an old one to finish
 	// shutting down (it holds the lock until it is gone)
