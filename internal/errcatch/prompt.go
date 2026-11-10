@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"pekoe/internal/untrusted"
 )
@@ -19,8 +20,8 @@ func Excerpt(root, rel string, line, n int) string {
 	if root == "" || rel == "" || line <= 0 {
 		return ""
 	}
-	f, err := os.Open(filepath.Join(root, rel))
-	if err != nil {
+	f := openInTree(root, rel)
+	if f == nil {
 		return ""
 	}
 	defer f.Close()
@@ -40,6 +41,33 @@ func Excerpt(root, rel string, line, n int) string {
 		fmt.Fprintf(&b, "%s %*d | %s\n", mark, width, i, strings.TrimRight(sc.Text(), " \t"))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// openInTree opens root/rel only when it is a regular file inside root:
+// rel itself must not be a link, and no directory on the way may lead out
+// of root (os.Root refuses that, also when a link is swapped in after
+// Resolve looked). nil otherwise.
+func openInTree(root, rel string) *os.File {
+	if filepath.IsAbs(rel) {
+		return nil
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil
+	}
+	defer r.Close()
+	if st, err := r.Lstat(rel); err != nil || !st.Mode().IsRegular() {
+		return nil
+	}
+	f, err := r.OpenFile(rel, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil
+	}
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		f.Close()
+		return nil
+	}
+	return f
 }
 
 // OriginText is how the report reads in prose: "dev server" / "browser :3001".

@@ -287,3 +287,51 @@ func TestFromConsoleCleansMessage(t *testing.T) {
 		t.Fatalf("prompt %q", p)
 	}
 }
+
+// A link in the worktree must not make a file outside it "the project's
+// own": error.get and error.send would put its lines in the excerpt (an
+// agent could plant x.js -> ~/.local/share/pekoe/human-token).
+func TestResolveAndExcerptStayInTree(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "wt")
+	outside := filepath.Join(base, "secret")
+	os.MkdirAll(filepath.Join(root, "src"), 0o755)
+	os.MkdirAll(outside, 0o755)
+	os.WriteFile(filepath.Join(outside, "token"), []byte("s3cret\n"), 0o600)
+	os.WriteFile(filepath.Join(root, "src/App.tsx"), []byte("ok\n"), 0o644)
+	os.Symlink(filepath.Join(outside, "token"), filepath.Join(root, "x.js"))
+	os.Symlink(outside, filepath.Join(root, "dir"))
+	os.Symlink("../secret/token", filepath.Join(root, "rel.js"))
+	os.Symlink("App.tsx", filepath.Join(root, "src/alias.tsx")) // stays inside
+	for _, c := range []struct {
+		file string
+		rel  string
+		ok   bool
+	}{
+		{"/x.js", "", false},
+		{"x.js", "", false},
+		{filepath.Join(root, "x.js"), "", false},
+		{"/dir/token", "", false},
+		{"rel.js", "", false},
+		{"/src/alias.tsx", "src/App.tsx", true},
+	} {
+		rel, ok := Resolve(root, Frame{File: c.file, Line: 1})
+		if rel != c.rel || ok != c.ok {
+			t.Errorf("Resolve(%q) = %q %v, want %q %v", c.file, rel, ok, c.rel, c.ok)
+		}
+	}
+	for _, rel := range []string{"x.js", "dir/token", "rel.js", "src/alias.tsx", "../secret/token"} {
+		if ex := Excerpt(root, rel, 1, ExcerptLines); ex != "" {
+			t.Errorf("Excerpt(%q) read through a link: %q", rel, ex)
+		}
+	}
+	// a root reached through a link (macOS /var -> /private/var) still works
+	link := filepath.Join(base, "wtlink")
+	os.Symlink(root, link)
+	if rel, ok := Resolve(link, Frame{File: "/src/App.tsx", Line: 1}); !ok || rel != "src/App.tsx" {
+		t.Errorf("Resolve through a linked root = %q %v", rel, ok)
+	}
+	if ex := Excerpt(link, "src/App.tsx", 1, ExcerptLines); !strings.Contains(ex, "ok") {
+		t.Errorf("Excerpt through a linked root = %q", ex)
+	}
+}
