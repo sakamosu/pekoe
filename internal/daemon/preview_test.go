@@ -305,3 +305,18 @@ func TestPreviewSlotFollowsRepo(t *testing.T) {
 		t.Fatalf("slot of another repository reused: %+v", p)
 	}
 }
+
+// When Chrome dies, its last stderr line is the error even if it was
+// written after the debugging pipe closed (stderr was read before Chrome
+// had been waited for: a data race, and the reason was lost).
+func TestChromeExitShowsLastStderrLine(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "chrome")
+	os.WriteFile(bin, []byte("#!/bin/sh\nexec 4>&-\nsleep 0.3\necho 'FATAL: sandbox broke' >&2\nexit 1\n"), 0o755)
+	t.Setenv("PEKOE_CHROME", bin)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := chromeCapturer{}.Capture(ctx, CaptureReq{URL: "http://localhost:1/", Out: filepath.Join(t.TempDir(), "x.png"), Width: 10, Height: 10})
+	if err == nil || !strings.Contains(err.Error(), "FATAL: sandbox broke") {
+		t.Fatalf("want Chrome's last line, got %v", err)
+	}
+}
