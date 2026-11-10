@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにした。段階 3 の残りから先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -105,7 +105,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 | `ledger.list` | 可(絞る) | tapi が依頼の残りを読み直す(リセット後の再開) | トークンなしでは呼び出し元が `+tapi` のときだけ |
 | `ledger.close` / `ledger.link` | 可(絞る) | tapi が依頼を閉じる・セッションと結ぶ。記録を書くだけで、人がいつでも開き直せる | 呼び出し元が `+tapi` のときだけ |
 | `ledger.reopen` / `ledger.delete` | **不可** | 台帳を消す・戻すのは人の操作(tapi が自分の取りこぼしを消せないように) | — |
-| `conflicts.list` | 可(段階 3) | 同じ情報(`overlaps`)は `session.list` で既に見える。git は pekoed の sandbox で動く | 計算し直しは 10 秒に 1 回まで。それ以内はキャッシュを返す |
+| `conflicts.list` | 可(段階 3) | 同じ情報(`overlaps`)は `session.list` で既に見える。git は pekoed の sandbox で動く | 計算し直しは 10 秒に 1 回まで。それ以内はキャッシュを返す。実装: トークンなしの呼び出しだけ `hAgentConflicts` に回し、最後の計算(トークンつきの呼び出し・裏の約 10 秒ごとの計算・hooks の Edit で走るものを含む)から 10 秒以内ならその結果を `repo_id` で絞って返す。判定と計算し直しは同じロックの中で、同時に来ても git は 1 回。トークンつきは今までどおり毎回計算し直す |
 | `tapi.deliver_pause` | **不可** | TUI が「人が tapi chat に入力中」を知らせる内部の記録 | — |
 
 変えないもの(人間だけのまま): `session.answer`・`session.keys`・`tapi.send`(人が tapi に打つ道。エージェントが tapi に話しかけるのは `wait` の返り値と、任意の配送だけ)・`pr.view` / `pr.failed_log`(人の認証情報で gh を動かす。PR の要約は `session.list` の `pr_status` で足り、詳しく見たいエージェントは自分の sandbox の gh を使う)・`issues.view`(本文は外から来た信頼できない文。`issues.list` は未決事項 U6)・マージに関わるもの全部。
@@ -514,7 +514,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)
 - **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目「#42 をマージしてよい根拠が揃いました」を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは「マージした」「待つ」「差し戻す(メモ)」で、差し戻しはメモをセッションに送る
 - tapi への配送(`[orchestrator] deliver`)
-- `conflicts.list` をトークンなしに
+- `conflicts.list` をトークンなしに(実装済み)
 
 完了条件:
 

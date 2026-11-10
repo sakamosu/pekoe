@@ -206,7 +206,7 @@ pekoe                                                 # TUI
 - `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `report` `reports` `wait` `inbox` `ledger` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
-- Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send`, `land`, `rm` of a landed session, `report`, `reports` and `wait` (and `event`, for the hooks) without the token; `report` only for the caller's own session (refused from outside a pekoe window), `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only), `land` only in a repository with an origin (without one, land fast-forwards the base branch right away), and `rm` only on a landed session whose worktree is already gone, without `--force`. The others (`answer`, `dev`, `init`, `open`, `review`, `rm` of any other session, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
+- Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send`, `land`, `rm` of a landed session, `report`, `reports`, `wait` and `conflicts` (and `event`, for the hooks) without the token; `conflicts` is recomputed at most every 10 seconds (within that the last forecast comes back), `report` only for the caller's own session (refused from outside a pekoe window), `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only), `land` only in a repository with an origin (without one, land fast-forwards the base branch right away), and `rm` only on a landed session whose worktree is already gone, without `--force`. The others (`answer`, `dev`, `init`, `open`, `review`, `rm` of any other session, `issues`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
 
 ## TUI
 
@@ -374,7 +374,7 @@ But an agent running as the same user can read files. Two things keep the token 
 
    After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports` and `inbox` (tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report` and `ask-human`, so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports`, `inbox` and `conflicts` (tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report` and `ask-human`, so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
 
    ```json
    {
@@ -383,7 +383,8 @@ But an agent running as the same user can read files. Two things keep the token 
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
          "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
-         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)"
+         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)",
+         "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)"
        ]
      }
    }

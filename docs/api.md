@@ -55,6 +55,7 @@
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
   | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
+  | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`dev.toggle`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(`watchMerges`)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
@@ -227,7 +228,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
-| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`pekoe conflicts`) |
+| `conflicts.list` | `{repo_id?}` | `[{repo_id, a, b, status: "overlap"\|"conflict", files, conflict_files?}]`。その場で計算し直し、各セッションの `overlaps` も更新する(`pekoe conflicts`)。token なしでは、前の計算(pekoed が裏で回す約 10 秒ごとの計算を含む)から 10 秒以内ならそのときの結果を返し、git を動かさない(どのエージェントも 10 秒に 1 回より多く worktree の git を走らせられない)。git は pekoed の git(下の「pekoed が動かす git」)で、diff と `merge-tree` だけ |
 | `review.start` | `{slug}` | state を reviewing に |
 | `review.end` | `{slug}` | レビュー画面を閉じたとき。未送信コメントが無ければ reviewing → done（全 hunk 承認済みなら approved） |
 | `review.files` | `{slug, show_approved?: bool, since?: n}` | `Review`(下記) |
