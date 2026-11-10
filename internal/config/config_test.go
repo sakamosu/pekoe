@@ -52,7 +52,7 @@ func TestTapiAgent(t *testing.T) {
 }
 
 // Values put into a shell command line are passed as one literal word, and
-// plain values stay as they were (configs that quote them keep working).
+// plain values stay as they were.
 func TestExpandShell(t *testing.T) {
 	for _, v := range []string{"fix$(echo pwned)", "x`id`", "a;b|c&d", "it's", "a b", "~", ""} {
 		got, err := exec.Command("/bin/sh", "-c", Vars{Branch: v}.ExpandShell("printf '%s|' {{branch}}")).Output()
@@ -64,8 +64,8 @@ func TestExpandShell(t *testing.T) {
 		}
 	}
 	v := Vars{Slug: "feat-x", Branch: "feat/x", Path: "/Users/me/worktrees/app/feat-x", Repo: "my.app", Port: 3000}
-	in := `createdb app_{{slug}} && cd "{{path}}" && echo '{{branch}}' {{repo}} {{port}}`
-	if got, want := v.ExpandShell(in), `createdb app_feat-x && cd "/Users/me/worktrees/app/feat-x" && echo 'feat/x' my.app 3000`; got != want {
+	in := `createdb app_{{slug}} && cd {{path}} && echo {{branch}} {{repo}} {{port}}`
+	if got, want := v.ExpandShell(in), `createdb app_feat-x && cd /Users/me/worktrees/app/feat-x && echo feat/x my.app 3000`; got != want {
 		t.Errorf("plain values changed:\n got %s\nwant %s", got, want)
 	}
 	// [env] values are not for a shell: no quotes there

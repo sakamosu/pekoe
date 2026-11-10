@@ -95,24 +95,31 @@ func TestCancelKeepsDirectoryItDidNotMake(t *testing.T) {
 	}
 }
 
-// {{branch}} in a setup hook is one literal word for the shell.
-func TestSetupHookQuotesBranch(t *testing.T) {
+// A branch name with shell characters is refused by session.new, so a
+// {{branch}} the user put in quotes of their own ("app_{{branch}}") cannot
+// be broken out of; ordinary names expand as before.
+func TestSetupHookBranch(t *testing.T) {
 	d, _, repo := setup(t)
 	id := call[map[string]any](t, d, "init.detect", map[string]any{"path": repo})["repo_id"].(string)
 	os.MkdirAll(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos"), 0o755)
-	cfg := "[hooks]\nsetup = [\"printf %s {{branch}} > marker\"]\n"
+	cfg := "[hooks]\nsetup = [\"printf %s \\\"app_{{branch}}\\\" > marker\"]\n"
 	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte(cfg), 0o644)
-	branch := "fix$(touch${IFS}pwned)"
-	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": branch})
+	for _, branch := range []string{"x$(touch${IFS}pwned)", "x`touch pwned`", "x;touch pwned", "x'$(touch pwned)'"} {
+		b, _ := json.Marshal(map[string]any{"repo": repo, "branch": branch})
+		if _, err := d.Call("session.new", b); err == nil {
+			t.Fatalf("branch %q accepted", branch)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("PEKOE_WORKTREES"), "app")); err == nil {
+		t.Fatal("a refused branch made a worktree")
+	}
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x-1.2"})
 	s = waitCreated(t, d, s.Slug)
 	if s.State == state.Failed {
 		t.Fatalf("setup failed: %s", s.Error)
 	}
-	if _, err := os.Stat(filepath.Join(s.Path, "pwned")); err == nil {
-		t.Fatal("the branch name ran as a command")
-	}
-	if b, _ := os.ReadFile(filepath.Join(s.Path, "marker")); string(b) != branch {
-		t.Fatalf("marker = %q, want the branch name as is", b)
+	if b, _ := os.ReadFile(filepath.Join(s.Path, "marker")); string(b) != "app_feat/x-1.2" {
+		t.Fatalf("marker = %q", b)
 	}
 }
 

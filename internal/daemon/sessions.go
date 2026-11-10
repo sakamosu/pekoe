@@ -285,7 +285,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Branch == "" {
 		return nil, errors.New("branch required")
 	}
-	if err := gitx.CheckRefArg("branch", p.Branch); err != nil {
+	if err := gitx.CheckBranchName(p.Branch); err != nil {
 		return nil, err
 	}
 	repo, err := resolveRepo(p.Repo)

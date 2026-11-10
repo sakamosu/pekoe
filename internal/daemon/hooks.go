@@ -535,7 +535,9 @@ func (d *Daemon) refreshBranch(slug string) {
 		return
 	}
 	b := gitx.CurrentBranch(s.Path)
-	if b == "" || b == "HEAD" {
+	if b == "" || b == "HEAD" || gitx.CheckBranchName(b) != nil {
+		// a name the agent picked in the worktree goes into [hooks]
+		// commands as {{branch}}: the same rule as session.new
 		return
 	}
 	d.update(slug, func(x *state.Session) {

