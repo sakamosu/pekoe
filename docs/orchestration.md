@@ -258,7 +258,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作るので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
 - **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない
 - **CLI**: `pekoe ask-human --wait` は真偽のフラグにした(問いと一緒なら出してから待つ、`--wait <id>` なら前に出したものを待つ。`--timeout` は `wait` と同じく 1 時間まで)。`pekoe inbox <id>`(1 件を詳しく)・`pekoe inbox withdraw`・`pekoe inbox dismiss`・`pekoe inbox --mine` を足した。`inbox answer` の `--rev` は省くと今の rev(`pekoe inbox` が rev を出す)
-- **TUI**: 未回答の項目が来たらトースト 1 回(`✉ feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は「推奨(エージェント)」と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
+- **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は「推奨(エージェント)」と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
 
 ### 5. 送信の記録
 
@@ -333,7 +333,7 @@ tapi は今どおり `state.Session` に入れない(docs/tapi-chat.md の方針
 ### Sessions の先頭の行
 
 - [1] Sessions の先頭(リポジトリの見出しより上)に tapi の行を常に出す。`j` `k` で選べ、↵ で tapi chat を開く。`t` はそのまま残す
-- 行に出すもの: 状態のアイコン(セッションと同じ `theme.Look`)、名前 `tapi`、待ち時間、受信箱の未回答の件数、台帳の残り、最後の返事の 1 行(`last_message` の先頭)。例: `◉ tapi  wait 2m  ✉3  ☐2  CSV の件、PR 出たよ`
+- 行に出すもの: 状態のアイコン(セッションと同じ `theme.Look`)、名前 `tapi`、待ち時間、受信箱の未回答の件数、台帳の残り、最後の返事の 1 行(`last_message` の先頭)。例: `◉ tapi  wait 2m  ?3  ☐2  CSV の件、PR 出たよ`
 - セッション向けのキー(`/` `x` `D` `l` `r` `p` `d` `!` `v` など)は tapi の行では効かず、ボトムバーに `tapi: ↵ open · T reset` のようなヒントだけを出す。`/` の絞り込み中も tapi の行は残す(絞り込みの対象外)
 - 直すところ: `sessionRows`(internal/tui/view.go)、選択位置(`m.sel` はセッションの添字なので、tapi の行を -1 のような別の値で表す)、`visible()` と `current()`、チュートリアル(tour.go の `sessionRowsAt`。tapi の行の分だけずらす。tapi chat のステップの説明に一言足す)、マウスのクリック判定、`]a` の巡回(tapi の許可待ち・受信箱を含めるか)
 - docs/mascot.md の「顔は 1 か所」は守る。行頭は状態アイコンで、顔は出さない
@@ -377,14 +377,14 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 統括役になると、tapi が人を待っているのを見落とす方が困る。今の「バーの声だけ」(docs/tapi-chat.md「気づかせ方」)を変える:
 
 - tapi の許可待ち・質問待ちは、セッションの wait と同じエスカレーション(0 秒: 顔と台詞 → 30 秒: 点滅 → 2 分: OS 通知。docs/mascot.md)に乗せる。台詞は `tapi needs you · t`
-- 受信箱に項目が増えたらトースト 1 回(`✉ feat-pagination asks: …`。文は 40 文字で切る)。`approve` と `login` は wait と同じエスカレーションに乗せる。`fyi` は知らせない
+- 受信箱に項目が増えたらトースト 1 回(`? feat-pagination asks: …`。文は 40 文字で切る)。`approve` と `login` は wait と同じエスカレーションに乗せる。`fyi` は知らせない
 - `[orchestrator] notify = "quiet"` で今の弱い知らせ方に戻せる
 
 実装(internal/tui/notify.go。既定は `notify = "escalate"`、それ以外の値も escalate):
 
 - **受信箱は `approve` / `login` だけでなく `decision` もエスカレーションに乗せた**: どの種類でも、問いを出したエージェントは答えまで止まる(`ask-human --wait` か、次の手を答えに頼っている)。種類で分けると、人が離れている間に判断待ちだけが黙って溜まる。乗せるのは「エージェントが待っている問い」= 未回答・`fyi` でない・`from` が `human` でない(人が自分で出した問いは誰も待たない)もの
-- **トースト**: tapi の wait と受信箱の問いは、セッションの wait と同じ顔つきのトースト(5 秒)にした。受信箱の問いは今までメッセージ行に出していたもの(`✉ feat-x asks: …(40 文字) · ]a`)をトーストに移した(両方に出すと同じ文が 2 か所に並ぶ)。quiet ではメッセージ行のまま。人が出した問い・`fyi` もメッセージ行
-- **バーの声**: セッションの wait / error が無いとき、tapi の wait(`tapi needs you · t`)、無ければ待たれている問い(1 件なら `✉ feat-x asks · ]a`、複数なら `✉ 2 questions · ]a`)。30 秒で点滅は待ち始め(tapi は `state_since`、問いは `created_at`)から数える。セッションの wait があるときはセッションが優先(バーは 1 つしか言えない。tapi と問いはトーストと通知で別に知らせる)
+- **トースト**: tapi の wait と受信箱の問いは、セッションの wait と同じ顔つきのトースト(5 秒)にした。受信箱の問いは今までメッセージ行に出していたもの(`? feat-x asks: …(40 文字) · ]a`)をトーストに移した(両方に出すと同じ文が 2 か所に並ぶ)。quiet ではメッセージ行のまま。人が出した問い・`fyi` もメッセージ行
+- **バーの声**: セッションの wait / error が無いとき、tapi の wait(`tapi needs you · t`)、無ければ待たれている問い(1 件なら `? feat-x asks · ]a`、複数なら `? 2 questions · ]a`)。30 秒で点滅は待ち始め(tapi は `state_since`、問いは `created_at`)から数える。セッションの wait があるときはセッションが優先(バーは 1 つしか言えない。tapi と問いはトーストと通知で別に知らせる)
 - **OS 通知**: ターミナルにフォーカスが無いとき、待ち始めから 2 分で 1 回ずつ(`tapi needs you` / `feat-x asks: …(60 文字)`)。tapi の分は tapi chat を開いていても出す(開いたまま離席していることがある)
 - quiet は統括役にする前と同じ: tapi はバーの `chat waits · t` だけ(セッションの wait より弱い)、受信箱は新しい問いのメッセージ行 1 回だけ
 - 残すもの: `]a` の巡回に tapi の許可待ちを入れるか(tapi の行の作業で決める)

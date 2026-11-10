@@ -56,7 +56,7 @@ func (m *model) onInboxList(its []state.InboxItem) {
 		}
 	}
 	if first && len(m.inbox) > 0 {
-		m.setMsg(fmt.Sprintf("✉ %d open in the inbox · ]a to answer", len(m.inbox)), false)
+		m.setMsg(fmt.Sprintf("? %d open in the inbox · ]a to answer", len(m.inbox)), false)
 	}
 }
 
@@ -80,7 +80,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		}
 		if !m.inboxToasted[it.ID] {
 			m.inboxToasted[it.ID] = true
-			text := "✉ " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + " · ]a"
+			text := "? " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + " · ]a"
 			if inboxHoldsUp(it) && !m.quietNotify() {
 				m.waitToast("", mascot.Wait, text) // an agent waits on it (notify.go)
 			} else {

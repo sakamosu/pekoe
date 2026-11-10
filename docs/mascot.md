@@ -74,10 +74,10 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 | ステータスバー（最下行左端） | 1行 | 常時 | 集約状態の顔 ＋ 台詞。例：`▐● ●▌ 3 working` / `▐◕ ◕▌ fix-ci needs you` / `▐⨯ ⨯▌ auth-refactor failed` / `▐- -▌ all quiet` |
 | 主ペイン | 3行 | 空のときだけ | セッション未選択、worktree 作成中、依存インストール中。中央に顔と短いキャプション。泡アニメはここ専用。セッション未選択と worktree 作成中だけ、キャプションの下に TIPS を 1 つ添える(README「TIPS」。`.` で次へ。入らなければ出さない) |
 | pekoe 自身のプロンプト | 1行 | pekoe が尋ねるとき | `▐◕ ◕▌ delete worktree fix-ci? [y/n]` のように文頭に置く。puppy＝「pekoe が聞いている」を一貫させる |
-| トースト（右下、2行） | 1行 | 見ていないセッションが wait / error になったとき。tapi chat を閉じている間に tapi が wait になったとき、エージェントが受信箱に問いを出したとき(`[orchestrator] notify = "quiet"` でなければ) | `▐◕ ◕▌ fix-ci needs you` / `▐◕ ◕▌ tapi needs you · t` / `▐◕ ◕▌ ✉ feat-x asks: … · ]a`。数秒で消える。任意キーでも消える。表示中のセッションについては出さない |
+| トースト（右下、2行） | 1行 | 見ていないセッションが wait / error になったとき。tapi chat を閉じている間に tapi が wait になったとき、エージェントが受信箱に問いを出したとき(`[orchestrator] notify = "quiet"` でなければ) | `▐◕ ◕▌ fix-ci needs you` / `▐◕ ◕▌ tapi needs you · t` / `▐◕ ◕▌ ? feat-x asks: … · ]a`。数秒で消える。任意キーでも消える。表示中のセッションについては出さない |
 | tapi chat のタイトル | 1行 | `t` で tapi chat(docs/tapi-chat.md)を開いている間 | `▐● ●▌ [4] tapi chat · claude · thinking`。目は tapi chat のエージェントの状態(running → work、waiting → wait、idle → idle、未起動 → sleep、終了 → error)。この間ステータスバーは顔を出さず台詞だけにする(顔は1か所) |
 | チュートリアルのカード | 1行 | ツアー(初回起動、`H` / `:tutorial`)の間 | `▐^ ^▌ pekoe へようこそ  sample · 1/12`。tapi が画面を案内している体で、カードのタイトルの頭に置く。目はいつも done の `^ ^`(案内役の笑顔)。ツアーは `[mascot] glyphs` を設定する前の新しいユーザーが最初に見る画面なので、どのフォント・glyphs 設定でも 1 セルで描かれる ASCII の目だけを使う(work の `●` や idle の `•` は East Asian Ambiguous で、Moralerspace などは 2 セル幅に描いて顔が崩れる)。この間ステータスバーは顔を出さず台詞だけにし、tapi chat のステップでもその窓のタイトルに顔を出さない(顔は1か所) |
-| ステータスバーの台詞(tapi・受信箱) | — | tapi chat を閉じている間に許可待ち・質問待ちになったか、エージェントが答えを待つ受信箱の問い(`fyi` と人が出したもの以外)があり、セッションの wait / error が無いとき | `▐◕ ◕▌ tapi needs you · t`(tapi が先)/ `▐◕ ◕▌ ✉ feat-x asks · ]a` / `▐◕ ◕▌ ✉ 2 questions · ]a`。セッションの wait と同じエスカレーション(下の表)に乗る。`[orchestrator] notify = "quiet"` では tapi の `chat waits · t` だけで、トーストも通知も出さない(統括役にする前の弱い知らせ方) |
+| ステータスバーの台詞(tapi・受信箱) | — | tapi chat を閉じている間に許可待ち・質問待ちになったか、エージェントが答えを待つ受信箱の問い(`fyi` と人が出したもの以外)があり、セッションの wait / error が無いとき | `▐◕ ◕▌ tapi needs you · t`(tapi が先)/ `▐◕ ◕▌ ? feat-x asks · ]a` / `▐◕ ◕▌ ? 2 questions · ]a`。セッションの wait と同じエスカレーション(下の表)に乗る。`[orchestrator] notify = "quiet"` では tapi の `chat waits · t` だけで、トーストも通知も出さない(統括役にする前の弱い知らせ方) |
 | スプラッシュ | 3行＋文字 | 起動時 | 集約状態の顔の右に名前・バージョン・生きているセッション数。1秒かキー入力で消える |
 | CLI / README | 3行＋文字 | `pekoe --help`、README の頭 | 静止画 |
 | Neovim statusline / tmux | 1セル | プラグインが入っているとき | 集約状態の点。pekoed から状態を受け取る |

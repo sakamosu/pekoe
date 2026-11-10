@@ -90,7 +90,7 @@ func (m *model) tapiLook() theme.StateLook {
 }
 
 // tapiBadges are the counts after the age: the open questions of the
-// inbox (✉3) and the open requests of the ledger (☐2) once pekoed has them
+// inbox (?3) and the open requests of the ledger (☐2) once pekoed has them
 // (docs/orchestration.md 段階 1・2). None yet.
 func (m *model) tapiBadges() []string {
 	return nil
