@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,12 +19,13 @@ import (
 
 	"pekoe/internal/daemon"
 	"pekoe/internal/selfupdate"
+	"pekoe/internal/testenv"
 )
 
 // fakeGitHub serves releases of owner/repo from memory (private: refuses
 // requests without a token, as GitHub does) and counts the requests.
 type fakeGitHub struct {
-	srv      *httptest.Server
+	srv      *testenv.Server
 	tag      string
 	assets   map[string][]byte
 	requests int
@@ -34,7 +34,7 @@ type fakeGitHub struct {
 
 func newFakeGitHub(t *testing.T, tag string) *fakeGitHub {
 	f := &fakeGitHub{tag: tag, assets: map[string][]byte{}, auth: map[string]bool{}}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.srv = testenv.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.requests++
 		f.auth[r.Header.Get("Authorization")] = true
 		if r.Header.Get("Authorization") != "Bearer tok" {
