@@ -71,6 +71,10 @@ var agentMethods = map[string]string{
 	"ledger.list":  "tapi chat reads back the requests still open (after a reset too); only from tapi's window",
 	"ledger.close": "tapi chat closes a request (done with evidence, dropped, or not a request); only from tapi's window, a person can reopen it",
 	"ledger.link":  "tapi chat ties a request to the session working on it; only from tapi's window",
+	// the conflict forecast: the same pairs session.list already shows as
+	// each session's overlaps; git runs in pekoed (read-only: diff and
+	// merge-tree), at most every agentConflictsEvery (hAgentConflicts)
+	"conflicts.list": "the hub agent orders parallel work by the files sessions share (`pekoe conflicts`); the overlaps session.list shows, rescanned at most every 10 s",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -136,7 +140,6 @@ var humanMethods = map[string]string{
 	"review.files":   "the diff under review, with the person's comments",
 	"review.risks":   "review notes",
 	"changes":        "the diff of a session",
-	"conflicts.list": "changes across sessions",
 	"init.detect":    "reads any repository's files",
 	"repo.list":      "every repository pekoe knows",
 	"worktree.list":  "every worktree",

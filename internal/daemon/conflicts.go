@@ -42,6 +42,7 @@ type conflictScan struct {
 	lastKick atomic.Int64
 	merges   map[string]mergeResult // "<head a> <head b>" -> merge-tree result
 	pairs    []ConflictPair
+	scanned  time.Time                  // when pairs was computed (under mu)
 	changed  map[string]map[string]bool // slug -> changed files at the last scan (under Daemon.mu)
 }
 
@@ -147,7 +148,11 @@ func pairOf(a, b *touchSet, d *Daemon) *ConflictPair {
 func (d *Daemon) scanConflicts(repoID string) []ConflictPair {
 	d.cf.mu.Lock()
 	defer d.cf.mu.Unlock()
+	return d.scanConflictsLocked(repoID)
+}
 
+// scanConflictsLocked is scanConflicts with d.cf.mu held.
+func (d *Daemon) scanConflictsLocked(repoID string) []ConflictPair {
 	d.mu.Lock()
 	var open []*state.Session
 	var stale []string // out of the race but still carrying a forecast
@@ -183,6 +188,7 @@ func (d *Daemon) scanConflicts(repoID string) []ConflictPair {
 		}
 	}
 	d.cf.pairs = pairs
+	d.cf.scanned = time.Now()
 
 	per := map[string][]state.Overlap{}
 	for _, p := range pairs {
@@ -244,6 +250,11 @@ func (d *Daemon) scanConflicts(repoID string) []ConflictPair {
 		})
 	}
 
+	return pairsOf(pairs, repoID)
+}
+
+// pairsOf filters pairs to repoID ("" for all), never nil.
+func pairsOf(pairs []ConflictPair, repoID string) []ConflictPair {
 	out := []ConflictPair{}
 	for _, p := range pairs {
 		if repoID == "" || p.RepoID == repoID {
@@ -309,4 +320,22 @@ type conflictsP struct {
 
 func (d *Daemon) hConflicts(p conflictsP) (any, error) {
 	return d.scanConflicts(p.RepoID), nil
+}
+
+// agentConflictsEvery: how often a caller without the token may have the
+// forecast recomputed. Each scan runs git in every open worktree, so an
+// agent polling conflicts.list must not keep pekoed busy; within this the
+// last scan (the background one included) is returned.
+const agentConflictsEvery = 10 * time.Second
+
+// hAgentConflicts is conflicts.list without the human token: the same
+// pairs every session's overlaps already show in session.list, rescanned
+// at most every agentConflictsEvery.
+func (d *Daemon) hAgentConflicts(p conflictsP) (any, error) {
+	d.cf.mu.Lock()
+	defer d.cf.mu.Unlock()
+	if !d.cf.scanned.IsZero() && time.Since(d.cf.scanned) < agentConflictsEvery {
+		return pairsOf(d.cf.pairs, p.RepoID), nil
+	}
+	return d.scanConflictsLocked(p.RepoID), nil
 }
