@@ -54,6 +54,7 @@
   | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
+  | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
@@ -160,6 +161,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
     "review_decision": "CHANGES_REQUESTED", // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
     "unresolved": 2,               // 未解決のレビュースレッド
     "merge_state": "BLOCKED",      // mergeStateStatus: CLEAN | BLOCKED | DIRTY | BEHIND | UNSTABLE …
+    "head_sha": "3f2a…",           // GitHub 上の PR の HEAD(headRefOid)
     "last_comment": "…", "last_thread": "…",
     "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
     "attention_at": "…", "at": "…"
@@ -253,6 +255,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `review.pr` | `{repo, number}` | `pekoe review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
+| `merge.check` | `{slug?}` | `[MergeCheck]`(slug 順)。landed でない自分の PR のセッション(他人の PR のレビューを除く)ごとに、マージしてよいかの条件の何が揃っていて何が足りないか。`slug` を渡すとそのセッションだけ(下の「マージしてよいかの根拠」) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"\|"run"}` | レビュー面 / dev server / run のウィンドウを閉じる(run は `run.close` と同じ) |
 | `browser.send_errors` | `{port, slug?}` | 溜まった console error をまとめてセッションに送る(ファイルに書いて `@` 参照の 1 行。そのポートのエラーカードは sent になる) |
@@ -359,9 +362,10 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
     "slug": "feat-pagination", "state": "idle", "branch": "feat/pagination", "base": "main", "head": "3f2a…",
     "diffstat": {"added": 120, "deleted": 8, "files": 4},
     "pr": 42, "pr_url": "https://github.com/me/app/pull/42",
-    "pr_status": {"state": "OPEN", "pass": 5, "fail": 0, "pending": 0, "review_decision": "APPROVED", "unresolved": 0, "merge_state": "CLEAN"},
+    "pr_status": {"state": "OPEN", "pass": 5, "fail": 0, "pending": 0, "review_decision": "APPROVED", "unresolved": 0, "merge_state": "CLEAN", "head_sha": "3f2a…"},
     "test": {"status": "pass"}, "overlaps": [], "report": {"id": 17, "status": "done", "at": "…", "head": "3f2a…"},  // 最新の報告(要約はエージェントの文なので入れない)
-    "git_blocked": "", "gone": false
+    "git_blocked": "", "gone": false,
+    "merge": { …MergeCheck }                          // 自分の PR があり landed でないセッションだけ(下の「マージしてよいかの根拠」)
   },
   "status": "answered",                               // open | answered | withdrawn | dismissed
   "answer": {"choice": 0, "note": "…", "by": "human", "via": "socket", "at": "…"},
@@ -382,6 +386,44 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
   - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。依頼元のセッションが消えたら `none`
   - 打ったものは送信の記録に `from: pekoed, kind: inbox` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、記録に `ok: false` で残す
 - `inbox.updated` は token つきの購読にだけ届く。エージェントは `pekoe wait --on inbox`(や `ask-human --wait`)で自分宛ての答えだけを受け取る
+- pekoed 自身も項目を作る(`from: "pekoed"`)。v1 では下の「マージしてよいかの根拠」だけ
+
+### マージしてよいかの根拠
+
+pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を作り、人のマージを待っている)を 10 秒ごとに見て、下の条件が全部揃ったら受信箱に `from: "pekoed"`・`kind: "approve"` の項目を 1 件作る: `#42 をマージしてよい根拠が揃いました(feat-csv・HEAD 3f2a1b0)`。**pekoed はマージしない**(`gh pr merge` などを呼ばない。マージは人が GitHub でする)。
+
+| 条件(`name`) | 揃っている |
+| --- | --- |
+| `land` | `pekoe land` が PR を作った(`landing`)、PR が `OPEN` |
+| `review` | 最新の `status: review` の報告が `verdict: pass` で、その `reviewed_sha` が PR の HEAD(`pr_status.head_sha`)と同じ(短い SHA は前方一致) |
+| `ci` | PR の HEAD のチェックが 1 件以上あり、失敗も実行中もない |
+| `merge_state` | `pr_status.merge_state` が `CLEAN` |
+| `conflicts` | 衝突予報(`overlaps`)に `conflict` がない(自動で合わさる重なりはよい) |
+| `after` | `after` のセッションがすべて `landed`(`pekoe rm` された相手は「無い」で揃わない) |
+
+```jsonc
+// MergeCheck(merge.check の要素、InboxItem.facts.merge)
+{
+  "slug": "feat-csv", "pr": 42, "pr_head": "3f2a…",
+  "ready": false,
+  "conds": [
+    {"name": "land", "ok": true, "detail": "pekoe land 済み(PR #42)"},
+    {"name": "review", "ok": false, "detail": "レビューした 1b2c3d4 と PR の HEAD 3f2a1b0 が違う"},
+    {"name": "ci", "ok": true, "detail": "5 件すべて成功"},
+    {"name": "merge_state", "ok": true, "detail": "CLEAN"},
+    {"name": "conflicts", "ok": true, "detail": "衝突の予報なし"},
+    {"name": "after", "ok": false, "detail": "feat-a が running"}
+  ],
+  "missing": ["review", "after"],     // 揃っていない条件の name(conds の順)
+  "inbox": 0                          // 開いている根拠の項目の id(merge.check だけ。無ければ省く)
+}
+```
+
+- `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(日本語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
+- 項目: `options` は `["マージした", "待つ", "差し戻す"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
+- **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
+- **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)は、同じ HEAD で条件が戻ればもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
+- **答え**: `マージした`(0)と `待つ`(1)は記録だけ(マージの検知は今までどおり `watchMerges`)。`差し戻す`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
 
 ### 依頼の台帳(ledger)
 

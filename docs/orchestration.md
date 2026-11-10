@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにした。段階 3 の残りから先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)を実装済み。段階 3 の残りから先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -515,6 +515,16 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目「#42 をマージしてよい根拠が揃いました」を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは「マージした」「待つ」「差し戻す(メモ)」で、差し戻しはメモをセッションに送る
 - tapi への配送(`[orchestrator] deliver`)
 - `conflicts.list` をトークンなしに(実装済み)
+
+実装(マージしてよいかの根拠。仕様の正は docs/api.md「マージしてよいかの根拠」):
+
+- **見るもの**: 「land 済み」は `Session.landing`(`pekoe land` が push して PR を作り、マージ待ち)。判定は 10 秒ごとの tick で、材料はすべて pekoed が持っているもの(`pr_status`・報告・`overlaps`・`after` の相手の状態)。「PR の HEAD」は GitHub 上の head のコミットで、PR の取得(`gh api graphql`)に `headRefOid` を足して `pr_status.head_sha` に入れた(worktree の HEAD ではなく、人がマージするものと比べる)
+- **review**: 見るのは最新の `status: review` の報告だけ(後から fail が出れば揃わない)。`reviewed_sha` は前方一致。誰のレビューか(作者のセッションの中か)は `detail` に出すだけで、条件にはしない(U3 の (a) を v1 で回すため)
+- **ci**: チェックが 1 件もない PR は「揃っていない」にした。チェックがないことは CI が緑の根拠にならない(人は項目なしでもマージできる)
+- **conflicts**: 衝突予報は open なセッション同士の計算なので、止めた(`x`)セッションは予報が消え、この条件は揃って見える
+- **取り消しと作り直し**: 条件が崩れた・HEAD が動いた・landed になった・消えた項目は pekoed が `withdrawn` にする。人が答えた PR・HEAD には作り直さない(「待つ」と答えたものを 10 秒ごとに出し直さない)。pekoed が自分で取り消したもの(CI の再実行・衝突予報の揺れ)は、同じ HEAD でも条件が戻れば作り直す。「重ねて作らない」は開いている項目を 1 件にすることと読んだ
+- **差し戻し**: 受信箱の答えの配送(`deliverInbox`)の宛先を「問いを出した呼び出し元」から「答えを受け取る相手」に広げ、pekoed の項目に「差し戻す」と答えたときだけ `about` のセッションに打つ。メモは必須
+- **何が足りないか**: `merge.check`(token なし。`session.list` と `report.list` で見えるものの計算だけ)。同じ判定を `facts.merge` にも入れたので、受信箱のどの項目からも「今の根拠」が読める。TUI のダッシュボード・Web UI の工程表はこれを使う(別の PR)。CLI は足していない
 
 完了条件:
 
