@@ -131,7 +131,7 @@ func (m *model) errorKey(key string) (tea.Cmd, bool) {
 // errorCard draws the card at the bottom of the agent pane.
 func (m *model) errorCard(cw int) []row {
 	r := m.pendingError()
-	if r == nil {
+	if r == nil || cw < 4 { // no room for the frame
 		return nil
 	}
 	th := m.th

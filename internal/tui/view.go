@@ -854,7 +854,7 @@ func (m *model) pickKey(k tea.KeyMsg) (tea.Cmd, bool) {
 
 func (m *model) pickCard(cw int) []row {
 	pk := m.pendingPick()
-	if pk == nil || m.window != engine.WinAgent {
+	if pk == nil || m.window != engine.WinAgent || cw < 4 { // cw < 4: no room for the frame
 		return nil
 	}
 	m.ensurePickInput()

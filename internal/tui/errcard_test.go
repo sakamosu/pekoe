@@ -219,3 +219,17 @@ func TestErrorMultilineMessage(t *testing.T) {
 		t.Fatalf("detail: %q", body)
 	}
 }
+
+// A pane too narrow for a card's frame (terminal 5 columns wide) draws no
+// card instead of panicking on a negative Repeat.
+func TestCardsInNarrowPane(t *testing.T) {
+	m := errModel(t)
+	m.focus = pAgent
+	for cw := 0; cw < 6; cw++ {
+		m.agentRows(cw, 10) // the error card
+	}
+	m.picks = []*state.Pick{{ID: 7, Slug: "a", URL: "http://localhost:3001/", OuterHTML: "<b>x</b>", At: time.Now()}}
+	for cw := 0; cw < 6; cw++ {
+		m.agentRows(cw, 10) // the pick card
+	}
+}
