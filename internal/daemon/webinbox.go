@@ -33,9 +33,9 @@ func webVia(p *webPeer) string {
 // ---- inbox ----
 
 // webInbox lists the open items, oldest first (the order the TUI's ]a
-// goes through them). Their facts are read again on the way (inbox.list).
+// goes through them), up to inbox.list's 500 (agents may hold 10 open each). Their facts are read again on the way (inbox.list).
 func (d *Daemon) webInbox(w http.ResponseWriter, r *http.Request) {
-	res, err := d.CallAs(humanCaller(webVia(peerFrom(r))), "inbox.list", mustJSON(map[string]any{"status": state.InboxOpen, "limit": 100}))
+	res, err := d.CallAs(humanCaller(webVia(peerFrom(r))), "inbox.list", mustJSON(map[string]any{"status": state.InboxOpen, "limit": 500}))
 	if err != nil {
 		webErr(w, err)
 		return

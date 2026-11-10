@@ -891,7 +891,6 @@ function flowRow(f) {
 function renderOverview(o) {
   renderCounts(o.counts || {});
   renderTapi();
-  $("o-at").textContent = new Date().toLocaleTimeString();
   const box = $("o-flow");
   box.replaceChildren();
   const groups = o.groups || [];
@@ -920,7 +919,8 @@ async function refreshOverview() {
     const o = await api("/api/overview");
     if (view !== "overview") return;
     const sig = JSON.stringify([o.counts, o.groups, tapi]);
-    if (sig === overviewSig && !touching) return;
+    $("o-at").textContent = new Date().toLocaleTimeString();
+    if (sig === overviewSig) return;
     overviewSig = sig;
     renderOverview(o);
   } catch (e) {
@@ -945,6 +945,7 @@ function route() {
   }
   current = m ? decodeURIComponent(m[1]) : null;
   view = m ? "detail" : VIEWS[location.hash] || "list";
+  inboxTyping = false; // a hidden note box may never get its blur
   if (!m) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
   ta.value = (current && drafts.get(current)) || "";
   for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
