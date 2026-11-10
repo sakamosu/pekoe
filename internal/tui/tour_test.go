@@ -666,9 +666,15 @@ func TestTourLangFromRecord(t *testing.T) {
 	}
 }
 
-// L switches the language and stays on the step; the card's keys name the
-// language it switches to; the language is recorded and the next tour
-// starts in it
+// tourCardKeys is the key line of the tour's card (not the bottom bar).
+func tourCardKeys(m *model) string {
+	card := m.tourCard(tourCardW, 39)
+	return ansi.Strip(card[len(card)-2])
+}
+
+// The language key switches the language and stays on the step; the
+// card's keys name the language it switches to; the language is recorded
+// and the next tour starts in it
 func TestTourLangKey(t *testing.T) {
 	m := tourModel(t, "none", 120, 40) // Japanese locale
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -677,15 +683,18 @@ func TestTourLangKey(t *testing.T) {
 	if got := tourStepTitle(m); got != "状態の見かた" {
 		t.Fatalf("step %q", got)
 	}
-	if out := ansi.Strip(m.View()); !strings.Contains(out, tourLangKey+" en") {
-		t.Errorf("no %q in the card:\n%s", tourLangKey+" en", out)
+	if keys := tourCardKeys(m); !strings.Contains(keys, tourLangKey+" en") {
+		t.Errorf("no %q in the card's keys %q", tourLangKey+" en", keys)
 	}
 	press(m, tourLangKey)
 	if m.tour == nil || m.tour.step != 2 {
 		t.Fatalf("%s left the step", tourLangKey)
 	}
+	if keys := tourCardKeys(m); !strings.Contains(keys, tourLangKey+" ja") || !strings.Contains(keys, "next") {
+		t.Errorf("the card's keys after %s: %q", tourLangKey, keys)
+	}
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"Reading states", tourLangKey + " ja", "sample · 3/", "next"} {
+	for _, want := range []string{"Reading states", "sample · 3/"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q after %s:\n%s", want, tourLangKey, out)
 		}
@@ -740,9 +749,7 @@ func TestTourLangHint(t *testing.T) {
 		}
 		for step := range tourSteps {
 			m.tourGo(step)
-			card := m.tourCard(tourCardW, 39)
-			keys := ansi.Strip(card[len(card)-2])
-			if !strings.Contains(keys, want) {
+			if keys := tourCardKeys(m); !strings.Contains(keys, want) {
 				t.Errorf("%s step %d: keys %q lack %q", lang, step, keys, want)
 			}
 			for cw := tourSideMin; cw <= tourCardW; cw++ {
@@ -754,7 +761,7 @@ func TestTourLangHint(t *testing.T) {
 	}
 }
 
-// Leaving the tour without L records no language: the locale decides the
+// Leaving the tour without the language key records no language: the locale decides the
 // next one (a language picked before stays)
 func TestTourLangNotRecordedUnlessPicked(t *testing.T) {
 	for _, c := range []struct{ record, lang, next, title string }{
