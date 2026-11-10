@@ -149,7 +149,7 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 
 ### Sessions の先頭の行
 
-[1] Sessions の一番上(リポジトリの見出しより上)に tapi の行を常に出す(統括役にする変更の段階 2。[orchestration.md](orchestration.md)「Sessions の先頭の行」)。
+[1] Sessions の一番上(リポジトリの見出しより上)に、`orchestrator` の見出しと tapi の行を常に出す(見出しの見た目は docs/design.md「tapi の行(TUI)」。統括役にする変更の段階 2。[orchestration.md](orchestration.md)「Sessions の先頭の行」)。
 
 - 行に出すもの: 状態アイコン(セッションと同じ `theme.Look`。未起動は `asleep`、エージェントが終了していれば `exited`)、名前 `tapi`、その状態になってからの時間、最後の返事(`last_message`)の最初の 1 行。受信箱の未回答と台帳の残りの件数は待ち時間の後ろに足す(`tapiBadges`。pekoed は `Tapi.inbox_open` / `ledger_open` で持っている)
 - 顔は出さない(docs/mascot.md「顔は 1 か所」。行頭は状態アイコン)

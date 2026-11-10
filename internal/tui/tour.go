@@ -755,15 +755,16 @@ func (m *model) modalRect() (rect, bool) {
 }
 
 // sessionRowsAt is where the session rows of [1] are: the content's left
-// edge and width, the first row's y, and the rows; ok=false when they do
-// not all fit (the panel scrolls).
-func (m *model) sessionRowsAt() (x, cw, y int, rows []row, ok bool) {
+// edge and width, the first row's y, the rows and what each selects
+// (sessionRowsSel: headings are rowNone); ok=false when they do not all fit
+// (the panel scrolls).
+func (m *model) sessionRowsAt() (x, cw, y int, rows []row, sels []int, ok bool) {
 	r := m.panelRect(pSessions)
 	cw = r.w - 4
-	rows, footer := m.sessionRows(cw)
+	rows, sels, footer := m.sessionRowsSel(cw)
 	avail := r.h - 2
 	if footer != "" && !narrow(m.width) {
 		avail--
 	}
-	return r.x + 2, cw, r.y + 1, rows, len(rows) <= avail && m.width > 0
+	return r.x + 2, cw, r.y + 1, rows, sels, len(rows) <= avail && m.width > 0
 }

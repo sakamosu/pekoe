@@ -75,15 +75,20 @@ var tourSteps = []tourStep{
 			return m.panelRect(pSessions), true
 		},
 		cells: func(m *model) []rect {
-			x, cw, y, rows, ok := m.sessionRowsAt()
+			x, cw, y, _, sels, ok := m.sessionRowsAt()
 			if !ok {
 				return nil
 			}
 			nameW, _ := sessionCols(cw)
-			// the tapi row (rows[0]) has its word right after the name
-			out := []rect{{x, y, 1, 1}, {x + tapiWordX, y, stateW, 1}}
-			for i := 1; i < len(rows); i++ {
-				out = append(out, rect{x, y + i, 1, 1}, rect{x + nameW + 3, y + i, stateW, 1})
+			var out []rect
+			for i, sel := range sels {
+				switch sel {
+				case rowNone: // a heading or the empty hint
+				case tapiSel: // the tapi row has its word right after the name
+					out = append(out, rect{x, y + i, 1, 1}, rect{x + tapiWordX, y + i, stateW, 1})
+				default:
+					out = append(out, rect{x, y + i, 1, 1}, rect{x + nameW + 3, y + i, stateW, 1})
+				}
 			}
 			return out
 		},
@@ -171,7 +176,7 @@ var tourSteps = []tourStep{
 			m.focus = pSessions
 		},
 		target: func(m *model) (rect, bool) {
-			x, cw, y, rows, ok := m.sessionRowsAt()
+			x, cw, y, rows, _, ok := m.sessionRowsAt()
 			if !ok {
 				return m.panelRect(pSessions), true
 			}

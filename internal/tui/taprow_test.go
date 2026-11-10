@@ -13,26 +13,32 @@ import (
 	"pekoe/internal/state"
 )
 
-// The tapi row heads [1], above the repository headings, and stays under a
-// filter that matches nothing.
+// The tapi row heads [1] under the orchestrator heading, above the
+// repository headings, and stays under a filter that matches nothing.
 func TestTapiRowHeadsSessions(t *testing.T) {
 	m := repoModel(t, "none", 180)
 	m.chat.info = &daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Waiting,
 		StateSince: time.Now().Add(-2 * time.Minute), LastMessage: "\n  CSV の件、PR 出たよ\x1b[31m\nsecond line"}
-	rows, _ := m.sessionRows(60)
-	first := ansi.Strip(rows[0].Text)
+	rows, sels, _ := m.sessionRowsSel(60)
+	if h := ansi.Strip(rows[0].Text); !strings.HasPrefix(h, "  orchestrator ━") || ansi.StringWidth(rows[0].Text) != 60 || sels[0] != rowNone {
+		t.Errorf("the orchestrator heading heads [1], 60 wide, selecting nothing: %q (%d)", h, sels[0])
+	}
+	first := ansi.Strip(rows[1].Text)
 	for _, want := range []string{"tapi", "wait", "2m", "CSV の件、PR 出たよ"} {
 		if !strings.Contains(first, want) {
 			t.Errorf("tapi row %q: no %q", first, want)
 		}
 	}
-	if strings.Contains(first, "second line") || strings.Contains(rows[0].Text, "\x1b[31m") {
-		t.Errorf("only the first line of the reply, without control characters: %q", rows[0].Text)
+	if sels[1] != tapiSel {
+		t.Errorf("the tapi row selects %d", sels[1])
 	}
-	if ansi.StringWidth(rows[0].Text) > 60 {
-		t.Errorf("tapi row wider than the panel: %d", ansi.StringWidth(rows[0].Text))
+	if strings.Contains(first, "second line") || strings.Contains(rows[1].Text, "\x1b[31m") {
+		t.Errorf("only the first line of the reply, without control characters: %q", rows[1].Text)
 	}
-	if h := ansi.Strip(rows[1].Text); !strings.Contains(h, "api") || strings.Contains(h, "api-1") {
+	if ansi.StringWidth(rows[1].Text) > 60 {
+		t.Errorf("tapi row wider than the panel: %d", ansi.StringWidth(rows[1].Text))
+	}
+	if h := ansi.Strip(rows[2].Text); !strings.Contains(h, "api ─") || strings.Contains(h, "api-1") {
 		t.Errorf("the repository heading should follow the tapi row: %q", h)
 	}
 	// no face on the row (docs/mascot.md: one face at a time)
@@ -42,14 +48,14 @@ func TestTapiRowHeadsSessions(t *testing.T) {
 
 	m.filter = "nothing-matches"
 	rows, _ = m.sessionRows(60)
-	if len(rows) != 2 || !strings.Contains(ansi.Strip(rows[0].Text), "tapi") || !strings.Contains(ansi.Strip(rows[1].Text), "no match") {
+	if len(rows) != 3 || !strings.Contains(ansi.Strip(rows[0].Text), "orchestrator") || !strings.Contains(ansi.Strip(rows[1].Text), "tapi") || !strings.Contains(ansi.Strip(rows[2].Text), "no match") {
 		t.Errorf("filtered: %+v", rows)
 	}
 
 	// before tapi.get answers (or tapi never started) the row still shows
 	m.filter, m.chat.info = "", nil
 	rows, _ = m.sessionRows(60)
-	if got := ansi.Strip(rows[0].Text); !strings.Contains(got, "tapi") || !strings.Contains(got, "asleep") {
+	if got := ansi.Strip(rows[1].Text); !strings.Contains(got, "tapi") || !strings.Contains(got, "asleep") {
 		t.Errorf("no tapi yet: %q", got)
 	}
 }
@@ -197,9 +203,15 @@ func TestSessionsClickSelectsRow(t *testing.T) {
 		if heading < 0 {
 			t.Fatalf("%s: no heading", c.name)
 		}
-		click(heading)
-		if m.sel != sel {
-			t.Errorf("%s: a click on a heading moved the selection to %d", c.name, m.sel)
+		orch := lineIndex(lines, "orchestrator ━", lw)
+		if orch < 0 || orch >= y {
+			t.Fatalf("%s: the orchestrator heading (line %d) should be above the tapi row (line %d)", c.name, orch, y)
+		}
+		for _, y := range []int{heading, orch} {
+			click(y)
+			if m.sel != sel {
+				t.Errorf("%s: a click on a heading (line %d) moved the selection to %d", c.name, y, m.sel)
+			}
 		}
 	}
 }

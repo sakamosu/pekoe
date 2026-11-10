@@ -211,15 +211,56 @@ func TestSessionsGroupedByRepo(t *testing.T) {
 	}
 }
 
-func TestSingleRepoHasNoHeadings(t *testing.T) {
+// One repository still gets its heading: it closes the tapi section above
+// (orchestrator ━━━, tapi, api ───, its sessions).
+func TestSingleRepoHasHeading(t *testing.T) {
 	for _, width := range []int{180, 90} {
 		m := repoModel(t, "truecolor", width)
 		m.sessions = m.sessions[:1]
 		m.sessions = append(m.sessions, sess("api-2", appA, state.Idle, time.Now()))
 		out := checkSize(t, m, "single")
-		if lineIndex(strings.Split(out, "\n"), " api ─", sessionsWidth(m)) >= 0 || lineIndex(strings.Split(out, "\n"), "api-1", sessionsWidth(m)) < 0 {
-			t.Fatalf("one repository: no heading expected:\n%s", out)
+		lines, lw := strings.Split(out, "\n"), sessionsWidth(m)
+		o, tp, h, a1 := lineIndex(lines, "orchestrator ━", lw), lineIndex(lines, "tapi ", lw), lineIndex(lines, " api ─", lw), lineIndex(lines, "api-1", lw)
+		if !(o >= 0 && o < tp && tp < h && h < a1) {
+			t.Fatalf("%d: orchestrator %d, tapi %d, api %d, api-1 %d:\n%s", width, o, tp, h, a1, out)
 		}
+	}
+}
+
+// The orchestrator heading has the shape of a repository heading and stands
+// out a little: its name is never dim and its rule is heavy, in every color
+// mode and icon set.
+func TestTapiHeadingStandsOut(t *testing.T) {
+	for _, color := range []string{"truecolor", "ansi", "none"} {
+		for _, icons := range []string{"nerd", "unicode", "ascii"} {
+			label := color + "/" + icons
+			m := repoModel(t, color, 180)
+			m.ic = theme.Icons(icons)
+			for _, cw := range []int{60, 20, 6} {
+				h := m.tapiHeading(cw)
+				if ansi.StringWidth(h) != cw {
+					t.Errorf("%s/%d: heading %d wide: %q", label, cw, ansi.StringWidth(h), ansi.Strip(h))
+				}
+				if !strings.Contains(ansi.Strip(h), "━") {
+					t.Errorf("%s/%d: no heavy rule: %q", label, cw, ansi.Strip(h))
+				}
+			}
+			h, r := ansi.Strip(m.tapiHeading(40)), ansi.Strip(m.repoHeading(m.sessions[2], 40)) // web: not current
+			if h != "  orchestrator "+strings.Repeat("━", 25) || strings.Contains(r, "━") {
+				t.Errorf("%s: %q / %q", label, h, r)
+			}
+			// the name lines up with the repository names
+			if strings.Index(h, "orchestrator") != strings.Index(r, "web") {
+				t.Errorf("%s: names out of line: %q / %q", label, h, r)
+			}
+			if color != "none" && !strings.Contains(m.tapiHeading(40), m.th.FG(theme.Text, "orchestrator")) {
+				t.Errorf("%s: the name should be text: %q", label, m.tapiHeading(40))
+			}
+		}
+	}
+	// a narrow panel cuts the name, keeping one rule cell
+	if h := ansi.Strip(repoModel(t, "none", 180).tapiHeading(10)); h != "  orche… ━" {
+		t.Errorf("narrow: %q", h)
 	}
 }
 
