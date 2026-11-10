@@ -1421,6 +1421,10 @@ func (d *Daemon) hReviewNext(p fromP) (any, error) {
 
 // ---- restore after daemon restart ----
 
+// worktreeMissing starts the error restore gives a session whose worktree
+// is gone (it resumes the session if the directory comes back).
+const worktreeMissing = "worktree missing: "
+
 func (d *Daemon) restore() {
 	list, err := d.DB.Sessions()
 	if err != nil {
@@ -1451,8 +1455,15 @@ func (d *Daemon) restore() {
 		if _, err := os.Stat(s.Path); err != nil {
 			d.update(s.Slug, func(x *state.Session) {
 				x.State = state.Failed
-				x.Error = "worktree missing: " + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
+				x.Error = worktreeMissing + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
 			})
+			continue
+		}
+		// A session whose creation failed (setup hook, a worktree that was
+		// not ours) never got its agent: starting one now would run it in a
+		// half-made or foreign directory and wipe the error. Only the
+		// failure above (the worktree was away) is undone once it is back.
+		if s.State == state.Failed && !strings.HasPrefix(s.Error, worktreeMissing) {
 			continue
 		}
 		d.refreshBranch(s.Slug)
