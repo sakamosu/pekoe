@@ -12,21 +12,18 @@ import (
 	"time"
 
 	"pekoe/internal/paths"
+	"pekoe/internal/testenv"
 )
 
 // lockEnv isolates a data directory and a socket (kept short: macOS caps
-// unix socket paths at ~104 bytes, too short for t.TempDir()).
+// unix socket paths at ~104 bytes, too short for t.TempDir()). The tests
+// that Run a daemon serve that real socket: they call testenv.NeedUnixSocket.
 func lockEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("PEKOE_HOME", t.TempDir())
 	t.Setenv("PEKOE_WORKTREES", filepath.Join(os.Getenv("PEKOE_HOME"), "wt"))
 	t.Setenv("PEKOE_TMUX_SOCKET", "pekoe-test-unused") // never started: fakeEngine
-	dir, err := os.MkdirTemp("/tmp", "pekoelk")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	t.Setenv("PEKOE_SOCK", filepath.Join(dir, "s"))
+	t.Setenv("PEKOE_SOCK", filepath.Join(testenv.ShortDir(t, "pekoelk"), "s"))
 	old := lockWait
 	lockWait = 3 * time.Second
 	t.Cleanup(func() { lockWait = old })
@@ -89,6 +86,12 @@ func TestSecondDaemonRefused(t *testing.T) {
 	}
 	lockWait = 3 * time.Second
 
+	// from here on d1 serves its socket
+	if testenv.CanBindUnix() != nil {
+		d1.DB.Close()
+		d1.releaseLock()
+	}
+	testenv.NeedUnixSocket(t)
 	done := runBG(d1)
 	waitServing(t)
 	start := time.Now()
@@ -111,6 +114,7 @@ func TestSecondDaemonRefused(t *testing.T) {
 // The old daemon's late shutdown must leave alone a socket and pid file
 // that are no longer its own (issue #42: it unlinked the new daemon's).
 func TestShutdownKeepsNewerSocket(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	d, err := newServing(t)
 	if err != nil {
@@ -154,6 +158,7 @@ func TestShutdownKeepsNewerSocket(t *testing.T) {
 
 // Its own socket and pid file are removed on the way out.
 func TestShutdownRemovesOwnSocket(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	d, err := newServing(t)
 	if err != nil {
@@ -185,6 +190,7 @@ func (s slowClose) Close() { time.Sleep(s.delay) }
 // still shutting down — its listener closed, its exit delayed: exactly one
 // new daemon comes up, and the old one's late cleanup leaves its socket be.
 func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
+	testenv.NeedUnixSocket(t)
 	lockEnv(t)
 	old, err := newServing(t)
 	if err != nil {

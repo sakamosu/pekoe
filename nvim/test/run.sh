@@ -12,6 +12,24 @@ for f in "$ROOT"/plugin/*.lua "$ROOT"/lua/pekoe/*.lua "$ROOT"/test/*.lua; do
 done
 echo "syntax ok"
 
+# 偽デーモンは本物の unix ソケットで待つ。エージェントの sandbox の中では bind
+# できないので、そのときだけ理由を出して飛ばす(ほかの失敗は隠さない)
+if ! why=$(python3 -c '
+import os, socket, sys
+p = sys.argv[1]
+s = socket.socket(socket.AF_UNIX)
+try:
+    s.bind(p)
+except PermissionError as e:
+    print(e); sys.exit(1)
+finally:
+    s.close()
+    if os.path.exists(p): os.unlink(p)
+' "$SOCK"); then
+  echo "SKIP nvim headless tests: needs a real unix socket, which cannot be bound here ($why); run make test outside the agent's sandbox to cover it"
+  exit 0
+fi
+
 PID=
 trap 'kill $PID 2>/dev/null || true; rm -f "$SOCK"' EXIT
 start_daemon() {
