@@ -555,6 +555,7 @@ type portP struct {
 // Like a single error card, the list goes to a file and the agent gets one
 // @ line; the cards of those errors are marked sent.
 func (d *Daemon) hSendErrors(p portP) (any, error) {
+	started := time.Now()
 	d.mu.Lock()
 	errs := append([]ConsoleError(nil), d.errors[p.Port]...)
 	d.mu.Unlock()
@@ -599,12 +600,30 @@ func (d *Daemon) hSendErrors(p portP) (any, error) {
 	if _, err := d.sendAttachment(slug, s.RepoID, body, instr); err != nil {
 		return nil, err
 	}
+	// Only what went into the file is sent: errors the page logged while
+	// the attachment was being pasted stay (and so do their cards).
 	d.mu.Lock()
-	delete(d.errors, p.Port)
+	sent := map[ConsoleError]int{}
+	for _, e := range errs {
+		sent[e]++
+	}
+	var kept []ConsoleError
+	for _, e := range d.errors[p.Port] {
+		if sent[e] > 0 {
+			sent[e]--
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if len(kept) == 0 {
+		delete(d.errors, p.Port)
+	} else {
+		d.errors[p.Port] = kept
+	}
 	d.mu.Unlock()
 	d.emit("browser.updated", d.browserTabs())
 	for _, r := range d.catch.MarkWhere(func(r *errcatch.Report) bool {
-		return r.Slug == slug && r.Source == errcatch.SourceBrowser && r.Port == p.Port
+		return r.Slug == slug && r.Source == errcatch.SourceBrowser && r.Port == p.Port && !r.Last.After(started)
 	}, errcatch.StatusSent, time.Now()) {
 		d.emit("error.updated", errorEvent{Report: r})
 	}

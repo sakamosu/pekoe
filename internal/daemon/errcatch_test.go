@@ -277,3 +277,42 @@ func TestRemoveAttachmentsOnlyOwn(t *testing.T) {
 		}
 	}
 }
+
+// An error the page logs while the bulk send is pasting the file was not in
+// the file: it stays in the Browser panel and its card stays open.
+func TestSendErrorsKeepsErrorsThatCameDuringTheSend(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	d.token = "secret"
+	post := func(body string) {
+		r := httptest.NewRequest("POST", "/console", strings.NewReader(body))
+		r.Header.Set("Origin", "chrome-extension://x")
+		r.Header.Set("Authorization", "Bearer secret")
+		d.guard(d.httpConsole)(httptest.NewRecorder(), r)
+	}
+	url := fmt.Sprintf("http://localhost:%d/list", s.Port)
+	post(fmt.Sprintf(`{"url":%q,"errors":[{"message":"Error: one","stack":"Error: one\n    at f (http://localhost:%d/src/f.ts:1:1)"}]}`, url, s.Port))
+	var once sync.Once
+	fe.mu.Lock()
+	fe.onText = func(string) {
+		once.Do(func() {
+			time.Sleep(5 * time.Millisecond)
+			post(fmt.Sprintf(`{"url":%q,"errors":[{"message":"Error: late","stack":"Error: late\n    at g (http://localhost:%d/src/g.ts:1:1)"}]}`, url, s.Port))
+		})
+	}
+	fe.mu.Unlock()
+	res := call[map[string]any](t, d, "browser.send_errors", map[string]any{"port": s.Port})
+	if res["sent"].(float64) != 1 {
+		t.Fatalf("sent: %+v", res)
+	}
+	d.mu.Lock()
+	left := append([]ConsoleError(nil), d.errors[s.Port]...)
+	d.mu.Unlock()
+	if len(left) != 1 || left[0].Message != "Error: late" {
+		t.Fatalf("the late error must stay in the panel: %+v", left)
+	}
+	open := call[[]errcatch.Report](t, d, "error.list", map[string]any{"slug": s.Slug})
+	if len(open) != 1 || open[0].Message != "Error: late" {
+		t.Fatalf("the late error's card must stay open: %+v", open)
+	}
+}
