@@ -78,13 +78,19 @@ func newReviewModel(cl *client.Client, slug string, th *theme.Theme, ic theme.Ic
 // RunReview opens the review surface for a session from the CLI:
 // nvim (+ pekoe.nvim) when configured, otherwise the built-in screen.
 func RunReview(cl *client.Client, slug string) error {
-	g, _ := config.LoadGlobal()
+	g, err := config.LoadGlobal()
+	if err != nil {
+		return err
+	}
 	var s state.Session
 	if err := cl.Call("session.get", map[string]any{"slug": slug}, &s); err != nil {
 		return err
 	}
 	_ = cl.Call("review.start", map[string]any{"slug": slug}, nil)
-	if g != nil && g.Review.Surface == "nvim" {
+	// every way out ends the review (nvim's exec does not come back: the
+	// plugin ends it)
+	defer cl.Call("review.end", map[string]any{"slug": slug}, nil)
+	if g.Review.Surface == "nvim" {
 		if nv, err := exec.LookPath("nvim"); err == nil {
 			args := []string{"nvim"}
 			if rtp := NvimPluginDir(); rtp != "" {
@@ -106,8 +112,7 @@ func RunReview(cl *client.Client, slug string) error {
 	rm.standalone = true
 	p := tea.NewProgram(&standaloneReview{rm}, tea.WithAltScreen())
 	go pump(cl, p)
-	_, err := p.Run()
-	_ = cl.Call("review.end", map[string]any{"slug": slug}, nil)
+	_, err = p.Run()
 	return err
 }
 
