@@ -21,8 +21,8 @@ func openItem(id int64) state.InboxItem {
 	rec := 1
 	return state.InboxItem{ID: id, Rev: 1, Kind: "decision", From: "feat-x", About: "feat-x", Status: state.InboxOpen,
 		Question: "ページングを変えてよい?\x1b[2J‮", Options: []string{"変える", "今のまま"}, Recommend: &rec,
-		Links: []string{"https://github.com/me/app/pull/42", "javascript:alert(1)"},
-		Facts: &state.InboxFacts{Slug: "feat-x", State: state.Idle, Branch: "feat/x", Head: "0123456789abcdef", PR: 42, PRURL: "https://github.com/me/app/pull/42"},
+		Links:     []string{"https://github.com/me/app/pull/42", "javascript:alert(1)"},
+		Facts:     &state.InboxFacts{Slug: "feat-x", State: state.Idle, Branch: "feat/x", Head: "0123456789abcdef", PR: 42, PRURL: "https://github.com/me/app/pull/42"},
 		CreatedAt: time.Now()}
 }
 
