@@ -69,6 +69,7 @@ type PRView struct {
 	ReviewDecision string      `json:"review_decision,omitempty"`
 	Base           string      `json:"base"`
 	Head           string      `json:"head"`
+	HeadSHA        string      `json:"head_sha"` // headRefOid
 	Checks         []PRCheck   `json:"checks"`
 	Reviews        []PRReview  `json:"reviews"`
 	Threads        []PRThread  `json:"threads"`
@@ -79,7 +80,7 @@ type PRView struct {
 const prQuery = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      number title body url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName
+      number title body url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName headRefOid
       commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt databaseId
@@ -128,6 +129,7 @@ type gqlPR struct {
 	ReviewDecision   string `json:"reviewDecision"`
 	BaseRefName      string `json:"baseRefName"`
 	HeadRefName      string `json:"headRefName"`
+	HeadRefOid       string `json:"headRefOid"`
 	Commits          struct {
 		Nodes []struct {
 			Commit struct {
@@ -211,7 +213,7 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 	v := &PRView{
 		Number: g.Number, Title: g.Title, Body: g.Body, URL: g.URL, State: g.State, IsDraft: g.IsDraft,
 		Mergeable: g.Mergeable, MergeState: g.MergeStateStatus, ReviewDecision: g.ReviewDecision,
-		Base: g.BaseRefName, Head: g.HeadRefName, FetchedAt: now,
+		Base: g.BaseRefName, Head: g.HeadRefName, HeadSHA: strings.ToLower(g.HeadRefOid), FetchedAt: now,
 		Checks: []PRCheck{}, Reviews: []PRReview{}, Threads: []PRThread{}, Comments: []PRComment{},
 	}
 	for _, c := range g.Commits.Nodes {
@@ -275,7 +277,7 @@ func checkBucket(c PRCheck) string {
 
 // Summary is the small part kept on the session (Session.PRStatus).
 func (v *PRView) Summary() *state.PRStatus {
-	st := &state.PRStatus{State: v.State, Draft: v.IsDraft, ReviewDecision: v.ReviewDecision, MergeState: v.MergeState, At: v.FetchedAt}
+	st := &state.PRStatus{State: v.State, Draft: v.IsDraft, ReviewDecision: v.ReviewDecision, MergeState: v.MergeState, HeadSHA: v.HeadSHA, At: v.FetchedAt}
 	for _, c := range v.Checks {
 		switch c.Bucket {
 		case "pass":

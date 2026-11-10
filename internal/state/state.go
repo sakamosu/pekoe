@@ -76,6 +76,7 @@ type PRStatus struct {
 	ReviewDecision string    `json:"review_decision,omitempty"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
 	Unresolved     int       `json:"unresolved"`                // unresolved review threads
 	MergeState     string    `json:"merge_state,omitempty"`     // mergeStateStatus: CLEAN | BLOCKED | DIRTY | …
+	HeadSHA        string    `json:"head_sha,omitempty"`        // the PR's head commit on GitHub (headRefOid)
 	LastComment    time.Time `json:"last_comment,omitempty"`    // newest comment / review / thread comment
 	LastThread     time.Time `json:"last_thread,omitempty"`     // newest comment on an unresolved thread
 	Attention      []string  `json:"attention,omitempty"`
@@ -98,7 +99,7 @@ func (p *PRStatus) Same(q *PRStatus) bool {
 	}
 	return p.State == q.State && p.Draft == q.Draft && p.Pass == q.Pass && p.Fail == q.Fail &&
 		p.Pending == q.Pending && p.ReviewDecision == q.ReviewDecision && p.Unresolved == q.Unresolved &&
-		p.MergeState == q.MergeState && p.LastComment.Equal(q.LastComment) && p.LastThread.Equal(q.LastThread)
+		p.MergeState == q.MergeState && p.HeadSHA == q.HeadSHA && p.LastComment.Equal(q.LastComment) && p.LastThread.Equal(q.LastThread)
 }
 
 type Session struct {

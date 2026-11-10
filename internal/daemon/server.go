@@ -218,6 +218,7 @@ type Daemon struct {
 	inboxTick    atomic.Bool          // deliverAllInbox is running
 	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
 	webBases     sync.Map             // repo dir -> https://host/owner/name ("" none)
+	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 }
 
 func New() (*Daemon, error) {
@@ -617,6 +618,7 @@ func (d *Daemon) registerHandlers() {
 		"pr.view":               bind(d.hPRView),
 		"pr.seen":               bind(d.hPRSeen),
 		"pr.failed_log":         bind(d.hFailedLog),
+		"merge.check":           bind(d.hMergeCheck),
 		"pick.list":             bind(d.hPickList),
 		"pick.send":             bind(d.hPickSend),
 		"pick.discard":          bind(d.hPickDiscard),

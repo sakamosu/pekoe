@@ -75,6 +75,9 @@ var agentMethods = map[string]string{
 	// each session's overlaps; git runs in pekoed (read-only: diff and
 	// merge-tree), at most every agentConflictsEvery (hAgentConflicts)
 	"conflicts.list": "the hub agent orders parallel work by the files sessions share (`pekoe conflicts`); the overlaps session.list shows, rescanned at most every 10 s",
+	// merge evidence: a computation over session.list (pr_status, overlaps,
+	// after) and report.list, both open already; runs nothing
+	"merge.check": "the hub agent and the dashboards read what a session still lacks before it may be merged; read only, from what session.list and report.list show",
 }
 
 // humanMethods: every other registered method, with why an agent may not

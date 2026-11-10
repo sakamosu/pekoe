@@ -259,7 +259,10 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 	}
 	if ps := s.PRStatus; ps != nil {
 		f.PRStatus = &state.InboxPR{State: ps.State, Draft: ps.Draft, Pass: ps.Pass, Fail: ps.Fail, Pending: ps.Pending,
-			ReviewDecision: ps.ReviewDecision, Unresolved: ps.Unresolved, MergeState: ps.MergeState}
+			ReviewDecision: ps.ReviewDecision, Unresolved: ps.Unresolved, MergeState: ps.MergeState, HeadSHA: ps.HeadSHA}
+	}
+	if mergeable(s) {
+		f.Merge = d.mergeCheck(s)
 	}
 	return f
 }
@@ -366,7 +369,7 @@ func (d *Daemon) hInboxGet(who *Caller, p inboxIDP) (any, error) {
 // inboxRead: the asker read its own answer through the API, so it needs
 // no line typed into its window.
 func (d *Daemon) inboxRead(who *Caller, it *state.InboxItem) {
-	if who.Human() || it.Delivery != state.DeliveryPending || inboxCaller(who) != it.From {
+	if who.Human() || it.Delivery != state.DeliveryPending || inboxCaller(who) != inboxRecipient(it) {
 		return
 	}
 	if ok, _ := d.DB.SetInboxDelivery(it.ID, state.DeliveryPending, state.DeliveryWaited); ok {
@@ -471,6 +474,8 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 			return fmt.Errorf("inbox.answer: choice is an option's index, 0 to %d", len(it.Options)-1)
 		case len(it.Options) == 0 && note == "":
 			return errors.New("inbox.answer: this question has no options; answer with a note")
+		case isMergeItem(it) && *p.Choice == mergeSendBack && note == "":
+			return errors.New("inbox.answer: 差し戻す needs a note (it is sent to the session)")
 		}
 		it.Status = state.InboxAnswered
 		it.Answer = &state.InboxAnswer{Choice: p.Choice, Note: note, By: callerHuman, Via: who.Via, At: time.Now()}
@@ -513,8 +518,24 @@ func (d *Daemon) hInboxDismiss(who *Caller, p inboxIDP) (any, error) {
 // or an unknown caller is told nothing.
 func (d *Daemon) inboxClosed(it *state.InboxItem) {
 	switch it.From {
-	case callerHuman, callerUnknown, callerPekoed, "":
+	case callerHuman, callerUnknown, "":
 		d.emit("inbox.updated", it)
+		return
+	case callerPekoed:
+		// pekoed's own item: only a merge sent back goes anywhere, as a
+		// line typed into the session's window
+		to := inboxRecipient(it)
+		if to != "" {
+			d.inboxMu.Lock()
+			if ok, _ := d.DB.SetInboxDelivery(it.ID, state.DeliveryNone, state.DeliveryPending); ok {
+				it.Delivery = state.DeliveryPending
+			}
+			d.inboxMu.Unlock()
+		}
+		d.emit("inbox.updated", it)
+		if it.Delivery == state.DeliveryPending {
+			go d.deliverInbox(to)
+		}
 		return
 	}
 	slug := it.About
@@ -537,6 +558,18 @@ func (d *Daemon) inboxClosed(it *state.InboxItem) {
 	}
 }
 
+// inboxRecipient is who a closed item's answer is typed to: the asker, or
+// for pekoed's merge item sent back, the session it is about ("" nobody).
+func inboxRecipient(it *state.InboxItem) string {
+	if it.From != callerPekoed {
+		return it.From
+	}
+	if mergeSentBack(it) {
+		return it.About
+	}
+	return ""
+}
+
 // inboxSummary is the wait Change's one line.
 func inboxSummary(it *state.InboxItem) string {
 	s := fmt.Sprintf("inbox #%d %s", it.ID, it.Status)
@@ -553,6 +586,12 @@ func inboxLine(it *state.InboxItem) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[pekoe inbox #%d] ", it.ID)
 	switch {
+	case mergeSentBack(it):
+		pr := 0
+		if it.Facts != nil {
+			pr = it.Facts.PR
+		}
+		fmt.Fprintf(&b, "人が PR #%d のマージを差し戻しました", pr)
 	case it.Status == state.InboxDismissed:
 		b.WriteString("答えずに閉じられました")
 	case a != nil && a.Choice != nil && *a.Choice < len(it.Options):
@@ -622,8 +661,17 @@ func (d *Daemon) deliverInbox(to string) {
 		return // a delivery to it is under way
 	}
 	defer mu.(*sync.Mutex).Unlock()
-	its, err := d.DB.InboxList(state.InboxFilter{From: to, Delivery: state.DeliveryPending})
-	if err != nil || len(its) == 0 {
+	all, err := d.DB.InboxList(state.InboxFilter{Delivery: state.DeliveryPending})
+	if err != nil {
+		return
+	}
+	var its []state.InboxItem
+	for _, it := range all {
+		if inboxRecipient(&it) == to {
+			its = append(its, it)
+		}
+	}
+	if len(its) == 0 {
 		return
 	}
 	it := &its[len(its)-1] // oldest
@@ -682,9 +730,9 @@ func (d *Daemon) deliverAllInbox() {
 	}
 	seen := map[string]bool{}
 	for _, it := range its {
-		if !seen[it.From] {
-			seen[it.From] = true
-			d.deliverInbox(it.From)
+		if to := inboxRecipient(&it); to != "" && !seen[to] {
+			seen[to] = true
+			d.deliverInbox(to)
 		}
 	}
 }
