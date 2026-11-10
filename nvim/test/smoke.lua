@@ -287,6 +287,16 @@ local ok, err = xpcall(function()
   vim.cmd("PekoeFollow!")
   check(follow.active() == nil, ":PekoeFollow! stops")
 
+  -- 接続先は Go の paths.Socket と同じ規則($XDG_DATA_HOME も見る)
+  do
+    local saved = { vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME }
+    vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME = nil, nil, "/x/data"
+    local got = client.socket_path()
+    vim.env.PEKOE_SOCK, vim.env.PEKOE_HOME, vim.env.XDG_DATA_HOME = saved[1], saved[2], saved[3]
+    check(got == "/x/data/pekoe/pekoed.sock", "socket under $XDG_DATA_HOME: " .. got)
+  end
+
+
   -- S / :PekoeSend: flush → PEKOE_SESSION があれば終了
   local quit = false
   review._quit = function() quit = true end

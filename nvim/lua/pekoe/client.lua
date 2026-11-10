@@ -22,17 +22,14 @@ local st = {
   warned = false,
 }
 
+--- pekoed のソケット(Go の paths.Socket と同じ規則)
 ---@return string
 function M.socket_path()
   local sock = vim.env.PEKOE_SOCK
   if sock and sock ~= "" then
     return sock
   end
-  local home = vim.env.PEKOE_HOME
-  if home and home ~= "" then
-    return home .. "/share/pekoed.sock"
-  end
-  return vim.fn.expand("~/.local/share/pekoe/pekoed.sock")
+  return M.data_dir() .. "/pekoed.sock"
 end
 
 --- pekoed のデータディレクトリ(Go の paths.DataDir と同じ規則)
