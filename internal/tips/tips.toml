@@ -195,6 +195,13 @@ keys = ["4"]
 docs = ["docs/orchestration.md", "README.ja.md#tapi-chat"]
 
 [[tip]]
+id = "dashboard-pipeline"
+short = "ダッシュボードの工程表はバーと一言で今の段階を見せる"
+detail = "バーは 実装 → PR → CI → レビュー → マージ。緑が済み・黄が進行中・赤が失敗・青緑がマージしてよい。後ろに今の段階(CI running など)と足りない条件の理由が出る。マージ済みは最後にまとまる。"
+keys = ["4"]
+docs = ["docs/orchestration.md"]
+
+[[tip]]
 id = "merge-evidence"
 short = "マージしてよい根拠が揃うと pekoed が受信箱で知らせる"
 detail = "land した PR が、HEAD への独立レビューの合格・CI がすべて緑・CLEAN・衝突予報なし・--after の相手が landed を満たすと項目が 1 件来る。マージは GitHub で自分で。差し戻すとメモがセッションに届く。"
