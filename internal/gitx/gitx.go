@@ -523,7 +523,8 @@ func ParseDiff(s string) []FileDiff {
 			f.Binary = true
 		case h == nil && strings.HasPrefix(ln, "--- "):
 		case h == nil && strings.HasPrefix(ln, "+++ "):
-			if p := strings.TrimPrefix(ln, "+++ "); p != "/dev/null" {
+			// git adds a tab after a name containing a space
+			if p := strings.TrimSuffix(strings.TrimPrefix(ln, "+++ "), "\t"); p != "/dev/null" {
 				f.Path = strings.TrimPrefix(p, "b/")
 			}
 		case strings.HasPrefix(ln, "@@"):

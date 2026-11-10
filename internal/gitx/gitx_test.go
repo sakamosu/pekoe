@@ -261,3 +261,12 @@ func TestCheckBranchName(t *testing.T) {
 		}
 	}
 }
+
+// git puts a tab after a ---/+++ name containing a space.
+func TestParseDiffSpaceInName(t *testing.T) {
+	in := "diff --git a/sp ace.txt b/sp ace.txt\n--- a/sp ace.txt\t\n+++ b/sp ace.txt\t\n@@ -1 +1 @@\n-a\n+b\n"
+	files := ParseDiff(in)
+	if len(files) != 1 || files[0].Path != "sp ace.txt" {
+		t.Fatalf("files = %+v", files)
+	}
+}
