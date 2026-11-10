@@ -18,6 +18,7 @@ import (
 	"pekoe/internal/gitx"
 	"pekoe/internal/initdetect"
 	"pekoe/internal/paths"
+	"pekoe/internal/sandbox"
 	"pekoe/internal/state"
 )
 
@@ -89,7 +90,7 @@ func (d *Daemon) teardown(s *state.Session) error {
 	v := d.vars(s)
 	for _, c := range cfg.Hooks.Teardown {
 		cmd := v.ExpandShell(c)
-		if out, err := shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
+		if out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
 			return fmt.Errorf("teardown %q: %v\n%s", cmd, err, tail(out, 10))
 		}
 	}
@@ -183,6 +184,12 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Dev)
 	full := cmd + `; printf '\n[pekoe] dev server exited (%s)\n' "$?"`
+	// the dev server runs the worktree's code (package.json …) and keeps
+	// running: in the sandbox, or not at all
+	full, err = d.sbx.ShellLine(userShell(), full)
+	if err != nil {
+		return nil, fmt.Errorf("dev server %w", err)
+	}
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
 		return nil, err
 	}
@@ -337,7 +344,10 @@ func (d *Daemon) hLand(p slugP) (any, error) {
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
 		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
-		out, err := shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
+		out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
+		if errors.Is(err, sandbox.ErrUnavailable) {
+			return nil, fmt.Errorf("tests %w", err)
+		}
 		t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
 		if err != nil {
 			t.Status = "fail"

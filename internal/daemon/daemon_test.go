@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"pekoe/internal/engine"
+	"pekoe/internal/sandbox"
 	"pekoe/internal/state"
 )
 
@@ -182,6 +183,9 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	}
 	fe := newFake()
 	d.Eng = fe
+	// hooks run bare here (the tests may themselves be in a sandbox, where
+	// another cannot start); sandbox_test.go sets a real one
+	d.sbx = &sandbox.Sandbox{}
 	t.Cleanup(func() { d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
 }

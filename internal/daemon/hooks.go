@@ -647,11 +647,20 @@ func (d *Daemon) runTest(slug string) {
 		return
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
+	// no sandbox: not run at all, and the session says why (anyone can
+	// send a Stop, so this would run the worktree's code at will)
+	if err := d.sbx.Check(); err != nil {
+		log.Printf("test %s: %v", slug, err)
+		d.update(slug, func(x *state.Session) {
+			x.Test = state.Test{Status: "blocked", Summary: err.Error(), At: time.Now()}
+		})
+		return
+	}
 	// a newer Stop's run supersedes this one: stop the older run, and drop
 	// its result (it tested code that has changed since)
 	ctx, run := d.tests.start(slug)
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
-	out, err := shell(ctx, s.Path, s.Env, cmd, 20*time.Minute)
+	out, err := d.shell(ctx, s.Path, s.Env, cmd, 20*time.Minute)
 	if !d.tests.finish(slug, run) {
 		return
 	}
@@ -687,11 +696,16 @@ func (d *Daemon) runGatekeeper(slug string) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	sh := os.Getenv("SHELL")
-	if sh == "" {
-		sh = "/bin/sh"
+	// in the sandbox: the gatekeeper runs in the worktree, where an agent
+	// can leave files that it reads or runs (CLAUDE.md, .claude/settings.json)
+	argv, err := d.sbx.Wrap([]string{userShell(), "-c", d.vars(s).ExpandShell(cfg.Review.Gatekeeper)})
+	if err != nil {
+		log.Printf("gatekeeper %s: %v", slug, err)
+		_ = d.DB.SetRisks(slug, []state.Risk{{Text: "gatekeeper " + err.Error()}})
+		d.emit("review.updated", map[string]any{"slug": slug})
+		return
 	}
-	c := execCommand(ctx, sh, "-c", d.vars(s).ExpandShell(cfg.Review.Gatekeeper))
+	c := execCommand(ctx, argv[0], argv[1:]...)
 	c.Dir = s.Path
 	c.Stdin = bytes.NewReader(diff)
 	out, err := c.Output()

@@ -22,6 +22,7 @@ import (
 	"pekoe/internal/engine"
 	"pekoe/internal/errcatch"
 	"pekoe/internal/paths"
+	"pekoe/internal/sandbox"
 	"pekoe/internal/state"
 )
 
@@ -143,6 +144,8 @@ type Daemon struct {
 	DB      *state.DB
 	Eng     engine.Engine
 	Global  *config.Global
+	// sbx wraps the commands that come from a worktree (internal/sandbox)
+	sbx *sandbox.Sandbox
 	ln      net.Listener
 	lock    *os.File // flock on pekoed.lock, held for the daemon's lifetime (lock.go)
 	sockID  fileID   // the socket file this daemon created
@@ -228,6 +231,7 @@ func New() (*Daemon, error) {
 	}
 	d := &Daemon{
 		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(), humanToken: humanToken,
+		sbx:       sandbox.New(sandbox.DefaultPolicy(g.Web.StateDir), g.Sandbox.On()),
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
@@ -256,6 +260,13 @@ func newTmux() *engine.Tmux {
 func (d *Daemon) Run() error {
 	if err := d.Eng.Start(); err != nil {
 		return fmt.Errorf("terminal engine: %w", err)
+	}
+	if !d.sbx.Enabled {
+		log.Printf("sandbox: off ([sandbox] enable = false): hooks and the gatekeeper run the worktree's code without one")
+	} else if err := d.sbx.Check(); err != nil {
+		log.Printf("sandbox: %v", err)
+	} else {
+		log.Printf("sandbox: %s", d.sbx.Mechanism())
 	}
 	sock := paths.Socket()
 	// The lock (New) rules out a second pekoed on this data directory; this

@@ -105,6 +105,17 @@ type Tips struct {
 	Enable *bool `toml:"enable"`
 }
 
+// Sandbox is [sandbox]: pekoed runs the commands that come from a worktree
+// (an agent can write them: [hooks] test / setup / dev / teardown and the
+// gatekeeper) in a sandbox that cannot read pekoe's tokens
+// (internal/sandbox). On by default; where no sandbox works, those
+// commands are not run. enable = false runs them as they are.
+type Sandbox struct {
+	Enable *bool `toml:"enable"`
+}
+
+func (s Sandbox) On() bool { return s.Enable == nil || *s.Enable }
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
@@ -123,9 +134,10 @@ type Global struct {
 	Ports struct {
 		Base int `toml:"base"`
 	} `toml:"ports"`
-	Tapi    Tapi  `toml:"tapi"`
-	Tips    Tips  `toml:"tips"`
-	Animate *bool `toml:"animate"`
+	Tapi    Tapi    `toml:"tapi"`
+	Tips    Tips    `toml:"tips"`
+	Sandbox Sandbox `toml:"sandbox"`
+	Animate *bool   `toml:"animate"`
 	Picks   struct {
 		AutoSend *bool `toml:"auto_send"`
 	} `toml:"picks"`
