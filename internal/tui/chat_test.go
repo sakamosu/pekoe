@@ -323,3 +323,26 @@ func TestRemovedOtherSessionKeepsTyping(t *testing.T) {
 		t.Fatalf("current removed: current %v typing %v", m.lastSel, m.typing)
 	}
 }
+
+// Tabs closing under the selection: the selection follows the list, and E
+// on a stale selection sends the first tab with errors instead of panicking.
+func TestBrowserTabsShrink(t *testing.T) {
+	m, f, _ := chatModel(t)
+	m.tabs = []daemon.Tab{{Port: 3000}, {Port: 3001}, {Port: 3002}}
+	m.tsel = 2
+	data, _ := json.Marshal([]daemon.Tab{{Port: 3000}, {Port: 3001, Errors: 2}})
+	runCmd(m, m.onEvent(client.Event{Event: "browser.updated", Data: data}))
+	if m.tsel != 1 {
+		t.Fatalf("browser.updated: tsel %d", m.tsel)
+	}
+	m.Update(tabsMsg{{Port: 3000}})
+	if m.tsel != 0 {
+		t.Fatalf("tabsMsg: tsel %d", m.tsel)
+	}
+	m.tabs = []daemon.Tab{{Port: 3000}, {Port: 3001, Errors: 2}}
+	m.tsel = 5
+	runCmd(m, m.keyBrowser("E"))
+	if got := f.find("browser.send_errors"); len(got) != 1 || got[0]["port"] != float64(3001) {
+		t.Fatalf("send_errors %v", got)
+	}
+}

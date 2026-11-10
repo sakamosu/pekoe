@@ -718,6 +718,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabsMsg:
 		m.tabs = msg
+		m.tsel = clampi(m.tsel, 0, max(len(m.tabs)-1, 0))
 		if len(m.tabs) > 0 && m.sub2 == 0 && m.focus != pSecond {
 			m.sub2 = 1 // linked tabs exist: show Browser in [2] (mock 05)
 		}
@@ -971,6 +972,7 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		var ts []daemon.Tab
 		if json.Unmarshal(ev.Data, &ts) == nil {
 			m.tabs = ts
+			m.tsel = clampi(m.tsel, 0, max(len(m.tabs)-1, 0))
 			if len(ts) > 0 && m.sub2 == 0 && m.focus != pSecond {
 				m.sub2 = 1
 			}
@@ -1517,12 +1519,12 @@ func (m *model) keyBrowser(key string) tea.Cmd {
 			return m.selectSlug(m.tabs[m.tsel].Slug)
 		}
 	case "E":
-		port := 0
+		port, errs := 0, 0
 		if m.tsel < len(m.tabs) {
-			port = m.tabs[m.tsel].Port
+			port, errs = m.tabs[m.tsel].Port, m.tabs[m.tsel].Errors
 		}
 		for _, t := range m.tabs { // first tab with errors when the selected has none
-			if port == 0 || (t.Errors > 0 && m.tabs[m.tsel].Errors == 0) {
+			if port == 0 || (t.Errors > 0 && errs == 0) {
 				port = t.Port
 			}
 		}
