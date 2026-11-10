@@ -66,9 +66,9 @@ func (m *model) orchWait() (text string, since time.Time, ok bool) {
 	if len(its) == 0 {
 		return "", time.Time{}, false
 	}
-	text = "✉ " + its[0].From + " asks · ]a"
+	text = "? " + its[0].From + " asks · ]a"
 	if len(its) > 1 {
-		text = fmt.Sprintf("✉ %d questions · ]a", len(its))
+		text = fmt.Sprintf("? %d questions · ]a", len(its))
 	}
 	return text, its[0].CreatedAt, true
 }

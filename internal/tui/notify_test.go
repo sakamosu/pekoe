@@ -73,7 +73,7 @@ func TestInboxWaitEscalates(t *testing.T) {
 	if m.tapi.toast == nil || !strings.Contains(m.tapi.toast.text, "feat-x asks: ページングを変えてよい?") || strings.Contains(m.tapi.toast.text, "\x1b") {
 		t.Fatalf("toast: %+v", m.tapi.toast)
 	}
-	if out := checkSize(t, m, "one question"); !strings.Contains(out, "✉ feat-x asks · ]a") {
+	if out := checkSize(t, m, "one question"); !strings.Contains(out, "? feat-x asks · ]a") {
 		t.Fatalf("bar:\n%s", out)
 	}
 	mine := openItem(2)
@@ -85,7 +85,7 @@ func TestInboxWaitEscalates(t *testing.T) {
 	other := openItem(3)
 	other.From, other.Kind = "feat-y", "approve"
 	inboxEv(t, m, other)
-	if out := checkSize(t, m, "two questions"); !strings.Contains(out, "✉ 2 questions · ]a") {
+	if out := checkSize(t, m, "two questions"); !strings.Contains(out, "? 2 questions · ]a") {
 		t.Fatalf("bar:\n%s", out)
 	}
 	later := it.CreatedAt.Add(3 * time.Minute)
