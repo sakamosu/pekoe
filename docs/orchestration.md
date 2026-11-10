@@ -378,6 +378,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | `pekoe-review`(新規) | 独立レビューをする側 | 作者でないエージェントが差分を読み、合格・不合格をコミットの SHA と一緒に `pekoe report --status review --verdict pass\|fail --reviewed-sha <sha>` で残す。担い手(サブエージェントか別セッションか)は未決事項 U3 |
 
 - **配り方**(未決事項 U10): スキルをバイナリに同梱し(docs と同じく `pekoe tip --doc` が読める形)、`pekoe skills install` が `~/.claude/skills/pekoe*` にシンボリックリンク(リリースのバイナリならデータディレクトリに書き出してからリンク)を張る。`pekoe hooks install` と同じ流れ(確認つき、`--yes`、`status` / `uninstall`)。今の README の `ln -s` の手順はこれに置き換える。作業セッションは任意のリポジトリの worktree で動くので、ユーザーの `~/.claude/skills` に置けばどこでも読める
+  - 実装(internal/skills、`pekoe skills`)で決めたこと: `make install` の開発版もリポジトリの skills/ ではなくデータディレクトリの写しを指す(文が入れた pekoe の版と食い違わない。checkout のブランチで変わらない)。写しは pekoed の起動時に書き出し直す(`pekoe update` の後の再起動で新しくなる)。既にあるものは、同じ先を指すリンクならそのまま、別の先へのリンクは確認して張り替える(指していた先には触らない)、リンクでないディレクトリ・ファイルは触らずに飛ばす(`~/.claude/skills` の中に退避すると Claude Code がスキルとして読むので、退避もしない)。書き出した文はエージェントの `Edit(...)` の deny に入れる
 - **codex など**: スキルの仕組みが無いエージェントには、tapi が `pekoe new` のプロンプトに作業の手順(`pekoe-work` の要点)を込める。テンプレートは `pekoe-orchestrate` に置く
 - **許可の案内**: README.ja.md / README.md「エージェントに pekoe を使わせるときの権限」の許可リストの例に `Bash(pekoe report *)`・`Bash(pekoe --json wait *)`・`Bash(pekoe --json ask-human *)`・`Bash(pekoe --json inbox)`・`Bash(pekoe ledger *)` を足す。`pekoe inbox answer` は人だけの操作で、許可リストに入れても断られる
 

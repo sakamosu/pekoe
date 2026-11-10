@@ -18,6 +18,7 @@
 //	pekoe answer <slug> allow|deny|always
 //	pekoe attach <slug>        attach the raw tmux window (debug)
 //	pekoe hooks install|uninstall|status
+//	pekoe skills install|uninstall|status
 //	pekoe ext                  port and token for the Chrome extension
 //	pekoe mcp                  MCP server (stdio) for agents
 //	pekoe daemon start|stop|restart|status|run
@@ -44,6 +45,7 @@ import (
 
 	"golang.org/x/term"
 
+	"pekoe"
 	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
@@ -52,6 +54,7 @@ import (
 	"pekoe/internal/mascot"
 	"pekoe/internal/mcp"
 	"pekoe/internal/paths"
+	"pekoe/internal/skills"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 	"pekoe/internal/tui"
@@ -111,6 +114,8 @@ func main() {
 		err = cmdAttach(args)
 	case "hooks":
 		err = cmdHooks(args)
+	case "skills":
+		err = cmdSkills(args)
 	case "ext":
 		if _, _, err = parseCmd("ext", args); err == nil {
 			err = cmdExt()
@@ -199,6 +204,8 @@ func usage() {
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always
   pekoe hooks install|uninstall|status
+  pekoe skills install|uninstall|status [--yes]
+                               link pekoe's Claude Code skills from ~/.claude/skills
   pekoe ext                     port + token for the Chrome extension
   pekoe web                     phone web UI on the tailnet: state, URL, login link ([web])
   pekoe mcp                     MCP server for agents (claude mcp add pekoe -- pekoe mcp)
@@ -1257,6 +1264,10 @@ func cmdDaemon(args []string) error {
 		signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 		go func() { <-sig; d.Stop() }()
 		signal.Ignore(syscall.SIGHUP)
+		// a new pekoe brings its skills' text to an existing install
+		if err := skills.Refresh(pekoe.Docs, skillDirs()); err != nil {
+			log.Printf("skills: %v", err)
+		}
 		return d.Run()
 	case "start":
 		if cl, err := client.Dial(); err == nil {

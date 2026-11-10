@@ -132,9 +132,10 @@ func (d *Daemon) claudeSandboxSettings(repoDirs []string) string {
 			deny = append(deny, tool+"("+permPath(dir)+"/**)")
 		}
 	}
-	// the settings themselves: Bash cannot write pekoe's data directory,
-	// the Edit tool is kept off it here
-	for _, dir := range withReal([]string{filepath.Dir(agentSettingsFile("x"))}) {
+	// the settings themselves and the skills' text (pekoe skills install;
+	// Claude Code follows it in every session): Bash cannot write pekoe's
+	// data directory, the Edit tool is kept off them here
+	for _, dir := range withReal([]string{filepath.Dir(agentSettingsFile("x")), paths.SkillsDir()}) {
 		deny = append(deny, "Edit("+permPath(dir)+"/**)")
 	}
 	for _, f := range gf {

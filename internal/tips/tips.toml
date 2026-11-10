@@ -258,6 +258,13 @@ keys = ["pekoe mcp"]
 docs = ["README.ja.md#mcp"]
 
 [[tip]]
+id = "skills"
+short = "pekoe skills install でスキルを Claude Code に入れる"
+detail = "pekoe・pekoe-orchestrate・pekoe-work・pekoe-review の 4 つを ~/.claude/skills にリンクする。統括役の回し方・作業の進め方・独立レビューの手順。中身はバイナリに同梱で、pekoe update の後も新しくなる。"
+keys = ["pekoe skills"]
+docs = ["README.ja.md#claude-code-スキル", "docs/orchestration.md"]
+
+[[tip]]
 id = "init"
 short = "pekoe init でリポジトリの設定を下書きする"
 detail = "lockfile・.envrc・git の無視ファイルから setup や copy を推測し、コピーするファイルを番号で選ばせてから書く。--print なら書かずに出すだけ。"

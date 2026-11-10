@@ -96,6 +96,7 @@ flowchart LR
 make install            # ~/.local/bin/pekoe (+ pekoed), nvim/ と extension/ を ~/.local/share/pekoe に link
 make install WEB=1      # iPhone 用 Web UI も入れる(-tags web、Tailscale の tsnet をリンク)
 pekoe hooks install     # ~/.claude/settings.json に hooks を追加(書く前に確認し、バックアップを残す)
+pekoe skills install    # 任意: pekoe のスキルを ~/.claude/skills にリンク(書く前に確認する)
 make install-launchd    # 任意: ログイン時に pekoed を起動
 ```
 
@@ -185,6 +186,7 @@ pekoe                                                 # TUI
 | `pekoe answer <slug> allow\|deny\|always` | 許可待ちに答える |
 | `pekoe attach <slug> [agent\|review\|dev]` | tmux の窓に直接 attach(デバッグ用) |
 | `pekoe hooks install\|uninstall\|status [--yes]` | Claude Code の hooks を足す / 外す / 確認 |
+| `pekoe skills install\|uninstall\|status [--yes]` | pekoe の Claude Code スキルを `~/.claude/skills` にリンクする / 外す / 確認([Claude Code スキル](#claude-code-スキル)) |
 | `pekoe ext` | Chrome 拡張に入れる port と token |
 | `pekoe web` | Web UI の状態・URL・初回のログイン URL |
 | `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
@@ -304,7 +306,22 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### Claude Code スキル
 
-[skills/pekoe/SKILL.md](skills/pekoe/SKILL.md)。main のチェックアウトで動く Claude Code をハブにして、変更依頼を `pekoe new` で別 worktree・別エージェントに任せ、追加の指示も main から `pekoe send` で送るためのスキル。リポジトリのルートで `ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe` としてインストールする(`~/.claude/skills/pekoe` が既にある場合は先に退避か削除する)。
+[skills/](skills/) の 4 つ。どれも tapi chat と main のチェックアウトのエージェントの両方で使える([docs/orchestration.md](docs/orchestration.md))。
+
+| スキル | 使う側 | 中身 |
+| --- | --- | --- |
+| [pekoe](skills/pekoe/SKILL.md) | main・tapi | 変更依頼を `pekoe new` で別 worktree・別エージェントに任せ、追加の指示も main から `pekoe send` で送る(ハブの基本) |
+| [pekoe-orchestrate](skills/pekoe-orchestrate/SKILL.md) | tapi・ハブ | 依頼の分け方、プロンプトのテンプレート、`pekoe wait` での待ち方、人に上げる基準、人への報告の形 |
+| [pekoe-work](skills/pekoe-work/SKILL.md) | 作業セッション | 計画 → 実装 → テスト → 独立レビュー → `pekoe land` → `pekoe report` |
+| [pekoe-review](skills/pekoe-review/SKILL.md) | 独立レビュー | 作者でないエージェントが差分を読み、合否を SHA つきで `pekoe report --status review` に残す |
+
+`pekoe skills install` で入れる。スキルの文はバイナリに同梱されていて、データディレクトリ(`~/.local/share/pekoe/skills/`)に書き出し、`~/.claude/skills/<name>`(`$CLAUDE_CONFIG_DIR` があれば `$CLAUDE_CONFIG_DIR/skills/<name>`)からシンボリックリンクを張る。書く前に何をするかを出して確認する(`--yes` で省く)。作業セッションはどのリポジトリの worktree でも動くので、ユーザーの `~/.claude/skills` に置けばどこでも読める。
+
+- 文は入れた pekoe の版のもの(リポジトリの checkout ではない)。新しい pekoe にすると(`pekoe update`、`make install`)、pekoed が起動するときに書き出し直す。すぐに替えたいときは `pekoe skills install`
+- 前に手で張ったリンク(`ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe`)があれば、置き換えてよいか聞く(リンクを張り替えるだけで、指していた先には触らない)。同じ先を指すリンクならそのまま。リンクでないディレクトリやファイルがあれば触らずに飛ばし、退避してからもう一度実行するよう出す(Claude Code は `~/.claude/skills` の下をすべてスキルとして読むので、その中には退避しない)
+- `pekoe skills status` で状態(入っている・文が古い・別の先へのリンク・ディレクトリがある・入っていない)、`pekoe skills uninstall` で pekoe が張ったリンクと書き出した文を消す(手で張ったリンクは残す)
+- pekoe のスキル自体を直しながら試すときは、手で `ln -s "$PWD/skills/<name>" ~/.claude/skills/<name>` を張ってよい。`pekoe skills install` はそれを置き換える前に聞く
+- Claude Code のエージェントは、書き出した文を Edit ツールで書き換えられない(pekoe が渡す sandbox の設定で塞ぐ。下)
 
 ### エージェントに pekoe を使わせるときの権限
 
@@ -315,7 +332,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 1. **Claude Code のエージェントは、pekoe が渡す Claude Code の sandbox の中で動く(既定)。** pekoe は Claude Code を起動するたびに(新規・`open`・再起動・デーモン再起動後の再開、tapi chat も。`[agents.*]` の `command` が `claude` で始まるものすべて)`--settings <データディレクトリ>/agent-settings/<slug>.json` を付ける。中身は次のとおりで、パスは `$PEKOE_HOME`・`$XDG_DATA_HOME`・`$XDG_CONFIG_HOME`・`[web] state_dir` を反映した実際の値:
    - `sandbox.enabled: true`・`allowUnsandboxedCommands: false`(`dangerouslyDisableSandbox` での再実行を許さない)・`failIfUnavailable: true`(sandbox が使えなければ Claude Code は起動しない)・`filesystem.disabled: false`
    - `filesystem.denyRead`: `human-token`・`http-token`・`state.db`(と `-wal`・`-shm`。プロンプト・レビューのコメント・報告・送信の記録が入っている。エージェントは pekoed の API を通してだけ読む)・tsnet の state・pekoe の設定ディレクトリ(`~/.config/pekoe`)。Bash のコマンドとその子プロセスに OS レベルで効く
-   - `permissions.deny`: 同じパスへの `Read(...)` と `Edit(...)`(sandbox の外で動く Read / Edit ツールの分)、`agent-settings` 自身への `Edit(...)`
+   - `permissions.deny`: 同じパスへの `Read(...)` と `Edit(...)`(sandbox の外で動く Read / Edit ツールの分)、`agent-settings` 自身と書き出したスキルの文(`skills/`)への `Edit(...)`
    - `filesystem.denyWrite` と `Edit(...)`: リポジトリの `.git/config`・`.git/config.worktree`・`.git/hooks`(commit はできる。自分で動かす git が従う設定は書けない)
    - `network.allowUnixSockets`: pekoed のソケット(`pekoe ls`・`new`・`send` のため)。hooks は sandbox の外で動くので `pekoe event` はもともと影響を受けない
 
@@ -349,7 +366,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
    入れ直したら、エージェントに `cat ~/.local/share/pekoe/human-token` と `pekoe answer no-such-session deny` を試させて、前者が `Operation not permitted` で読めず、後者が `only a person can do this` で断られる(`no such session` ではない)ことを確かめる。
 
-2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(スキル)が使うのは `ls`・`new`・`send`・`wait`・`reports`、作業セッションが使うのは `report` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`daemon` は入れない。`land` は token なしでも通るが、許可リストに入れなければ push のたびに Claude Code が確認する。`rm` も同じで、landed のセッションはエージェントが消せるが、Claude Code が先に確認する
+2. **`Bash(pekoe *)` のように pekoe を丸ごと許可しない。** ハブ(pekoe・pekoe-orchestrate スキル)が使うのは `ls`・`new`・`send`・`wait`・`reports`、作業セッション(pekoe-work・pekoe-review スキル)が使うのは `report` なので、許可リストに入れるならそこだけに絞る。`pekoe event`(hooks 用)、`answer`、`dev`、`init`、`rm`、`daemon` は入れない。`land` は token なしでも通るが、許可リストに入れなければ push のたびに Claude Code が確認する。`rm` も同じで、landed のセッションはエージェントが消せるが、Claude Code が先に確認する
 
    ```json
    {
