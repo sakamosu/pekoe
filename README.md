@@ -378,7 +378,7 @@ But an agent running as the same user can read files. Two things keep the token 
        "allow": [
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
-         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)"
+         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)"
        ]
      }
    }

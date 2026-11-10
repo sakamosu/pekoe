@@ -376,7 +376,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
        "allow": [
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
-         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)"
+         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)"
        ]
      }
    }
