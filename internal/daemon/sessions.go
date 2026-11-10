@@ -312,6 +312,8 @@ type newP struct {
 	// hNewAs checks it and links the entry)
 	Request int64  `json:"request"`
 	parent  string // the caller (hNewAs); "" is a person (the Chrome extension)
+
+	After []string `json:"after"` // slugs this one comes after (after.go)
 }
 
 func stepLabel(cmd string) string {
@@ -370,6 +372,10 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err := gitx.CheckRefArg("base", base); err != nil {
 		return nil, err
 	}
+	after, err := d.resolveAfter(p.After, slug)
+	if err != nil {
+		return nil, err
+	}
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
@@ -390,7 +396,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Path: wt, Agent: agent, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
-		Parent: p.parent, Request: p.Request,
+		Parent: p.parent, Request: p.Request, After: after,
 	}
 	if s.Parent == "" {
 		s.Parent = callerHuman

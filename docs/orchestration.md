@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の残り(`--after`・知らせ方)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -315,7 +315,7 @@ state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evide
 | --- | --- |
 | `parent` | 依頼元(`+tapi`・slug・`human`・`unknown`)。`session.new` の呼び出し元から決める(実装: `session.open`・`adopt`・`review.pr` で作ったものは空。Chrome 拡張から作ったものは `human`) |
 | `request` | 台帳の id(`--request`) |
-| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料 |
+| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料(実装: 作る時点で今あるセッションだけを受け付ける。打ち間違いが「いつまでも満たされない依存」として残らないように、先のものから作らせる。landed のものも渡せる。一覧は作った後に変えないので循環は「landed の同じ slug を作り直す」ときにしか起きず、それと自分自身を断る。10 個まで、重複は 1 つに。後で `pekoe rm` された相手は消さずに残し、TUI は `gone` と出す。TUI は行に「まだ済んでいない(landed でも PR がマージ済みでもない)相手」を `after feat-a +1` で出し、選んだセッションのフッターにそれぞれの状態を出す。`pekoe ls` の文字の出力には出さない(`--json` には出る)) |
 | `report` | 最新の報告の要約 |
 
 tapi は今どおり `state.Session` に入れない(docs/tapi-chat.md の方針)。`parent: "+tapi"` は文字列で指すだけ。
@@ -379,6 +379,15 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 - tapi の許可待ち・質問待ちは、セッションの wait と同じエスカレーション(0 秒: 顔と台詞 → 30 秒: 点滅 → 2 分: OS 通知。docs/mascot.md)に乗せる。台詞は `tapi needs you · t`
 - 受信箱に項目が増えたらトースト 1 回(`✉ feat-pagination asks: …`。文は 40 文字で切る)。`approve` と `login` は wait と同じエスカレーションに乗せる。`fyi` は知らせない
 - `[orchestrator] notify = "quiet"` で今の弱い知らせ方に戻せる
+
+実装(internal/tui/notify.go。既定は `notify = "escalate"`、それ以外の値も escalate):
+
+- **受信箱は `approve` / `login` だけでなく `decision` もエスカレーションに乗せた**: どの種類でも、問いを出したエージェントは答えまで止まる(`ask-human --wait` か、次の手を答えに頼っている)。種類で分けると、人が離れている間に判断待ちだけが黙って溜まる。乗せるのは「エージェントが待っている問い」= 未回答・`fyi` でない・`from` が `human` でない(人が自分で出した問いは誰も待たない)もの
+- **トースト**: tapi の wait と受信箱の問いは、セッションの wait と同じ顔つきのトースト(5 秒)にした。受信箱の問いは今までメッセージ行に出していたもの(`✉ feat-x asks: …(40 文字) · ]a`)をトーストに移した(両方に出すと同じ文が 2 か所に並ぶ)。quiet ではメッセージ行のまま。人が出した問い・`fyi` もメッセージ行
+- **バーの声**: セッションの wait / error が無いとき、tapi の wait(`tapi needs you · t`)、無ければ待たれている問い(1 件なら `✉ feat-x asks · ]a`、複数なら `✉ 2 questions · ]a`)。30 秒で点滅は待ち始め(tapi は `state_since`、問いは `created_at`)から数える。セッションの wait があるときはセッションが優先(バーは 1 つしか言えない。tapi と問いはトーストと通知で別に知らせる)
+- **OS 通知**: ターミナルにフォーカスが無いとき、待ち始めから 2 分で 1 回ずつ(`tapi needs you` / `feat-x asks: …(60 文字)`)。tapi の分は tapi chat を開いていても出す(開いたまま離席していることがある)
+- quiet は統括役にする前と同じ: tapi はバーの `chat waits · t` だけ(セッションの wait より弱い)、受信箱は新しい問いのメッセージ行 1 回だけ
+- 残すもの: `]a` の巡回に tapi の許可待ちを入れるか(tapi の行の作業で決める)
 
 ### Web UI
 

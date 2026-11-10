@@ -27,8 +27,10 @@ func openItem(id int64) state.InboxItem {
 }
 
 // A new question toasts once; one answered elsewhere leaves the list.
+// (notify = "quiet": a message line. The default is in notify_test.go.)
 func TestInboxToast(t *testing.T) {
 	m := wrapModel(t, "feat-x")
+	m.g.Orchestrator.Notify = "quiet"
 	m.onInboxList(nil)
 	inboxEv(t, m, openItem(1))
 	if !strings.Contains(m.msg, "feat-x asks: ページングを変えてよい?") || strings.Contains(m.msg, "\x1b") {

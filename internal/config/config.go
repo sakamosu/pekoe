@@ -106,6 +106,21 @@ type Tapi struct {
 	Agent string `toml:"agent"` // a name in [agents.*], default "claude"
 }
 
+// Orchestrator is [orchestrator]: tapi as the orchestrator
+// (docs/orchestration.md). Notify is how the TUI tells you that tapi or an
+// agent's question in the inbox waits for you: "escalate" (the default:
+// the same steps as a session's wait — a toast, the bar's speech blinking
+// after 30 s, an OS notification after 2 min while the terminal is not
+// focused) or "quiet" (as before tapi orchestrated: tapi's wait only in the
+// bar, below a session's, and one message line per new question). Any
+// other value is "escalate".
+type Orchestrator struct {
+	Notify string `toml:"notify"`
+}
+
+// QuietNotify: notify = "quiet".
+func (o Orchestrator) QuietNotify() bool { return strings.EqualFold(o.Notify, "quiet") }
+
 // Tips is [tips]: one feature at a time in the TUI's empty main pane and
 // in tapi chat's greeting (internal/tips). On by default.
 type Tips struct {
@@ -149,6 +164,8 @@ type Global struct {
 	Picks   struct {
 		AutoSend *bool `toml:"auto_send"`
 	} `toml:"picks"`
+
+	Orchestrator Orchestrator `toml:"orchestrator"`
 }
 
 func DefaultAgents() map[string]Agent {

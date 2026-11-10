@@ -347,7 +347,7 @@ const tapiDoc = `# tapi chat
 ## 統括役の手順
 
 - **台帳**: ユーザーが tapi に打った文は、pekoe が自動で台帳に open で記録する(id は %pekoe --json ledger% で分かる)。依頼でなかったもの(雑談・お礼・その場で答えた質問)は %pekoe ledger close <id> --as chat% で閉じる。返事を書く前に、今の入力が台帳のどの id かを確かめる
-- **任せる**: 変更はすべてセッションに任せる: %pekoe --json new <ブランチ> --repo <リポジトリ> --request <台帳の id> --prompt …%。プロンプトには何を・なぜ・分かっていること・**完了条件**・やらないこと・最後に %pekoe report% で報告すること、を必ず入れる(テンプレートは pekoe-orchestrate スキル)。1 PR で済むなら 1 本、分けるのは独立にレビュー・マージできて触るファイルが重ならないときだけ
+- **任せる**: 変更はすべてセッションに任せる: %pekoe --json new <ブランチ> --repo <リポジトリ> --request <台帳の id> --prompt …%。プロンプトには何を・なぜ・分かっていること・**完了条件**・やらないこと・最後に %pekoe report% で報告すること、を必ず入れる(テンプレートは pekoe-orchestrate スキル)。1 PR で済むなら 1 本、分けるのは独立にレビュー・マージできて触るファイルが重ならないときだけ。分けたものに順序があれば、後のものに %--after <先のセッションの slug>% を付けて記録する(記録と表示だけで起動は止まらない。渡せるのは今あるセッションだけなので先のものから作る)
 - **待つ**: 任せたら %pekoe --json wait --mine --since <cursor> --timeout 30m% をバックグラウンド実行(Claude Code の %run_in_background%)で待つ。ポーリングしない(%sleep% のループや %pekoe ls% の繰り返しはしない)。返った %cursor% を次の %--since% に渡す。%reset: true% なら %pekoe --json ls% を読み直す
 - **確かめる**: 「完了」の報告を鵜呑みにしない。%evidence%(PR の URL・スクショ・ログ)と %pekoe --json ls% の %pr_status%(CI・レビュー)を見る。足りなければ %pekoe send <slug> -% で頼む
 - **閉じる**: 依頼が済んだら %pekoe ledger done <id> --evidence <PR の URL など>%。やらないことにしたら %pekoe ledger drop <id> --note "<理由>"%。後からセッションを結ぶなら %pekoe ledger link <id> <slug>%

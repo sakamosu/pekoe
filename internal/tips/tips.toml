@@ -132,11 +132,25 @@ keys = ["pekoe wait", "--mine", "--since", "--on"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 
 [[tip]]
+id = "new-after"
+short = "pekoe new --after で、どのセッションの後かを残す"
+detail = "--after feat-a(複数可)で順序を記録する。[1] の行に after feat-a、選ぶとフッターに相手の状態が出る。記録と表示だけで起動は止めない。渡せるのは今あるセッションだけで、自分自身と循環は断られる。"
+keys = ["pekoe new", "--after"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
 id = "ask-human"
 short = "エージェントは pekoe ask-human で人に判断を頼む"
 detail = "--option で選択肢、--recommend で推奨、--kind approve / login / fyi。--wait で答えまで待つ。待たなければ手が空いたときに答えが入力欄に届く。事実(HEAD・差分・PR・CI)は pekoed が付ける。"
 keys = ["pekoe ask-human", "--option", "--recommend", "--kind", "--wait"]
 docs = ["docs/api.md", "docs/orchestration.md"]
+
+[[tip]]
+id = "orchestrator-notify"
+short = "tapi と受信箱の待ちもセッションの wait と同じに知らせる"
+detail = "tapi の許可待ちや、エージェントが答えを待つ受信箱の問いは、トースト → 30 秒で点滅 → 2 分で OS 通知。[orchestrator] notify = \"quiet\" で最下行・メッセージ行だけに戻る。"
+keys = ["[orchestrator]"]
+docs = ["docs/orchestration.md", "docs/mascot.md"]
 
 [[tip]]
 id = "inbox"

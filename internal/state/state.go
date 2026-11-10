@@ -149,6 +149,10 @@ type Session struct {
 	// Request is the ledger entry the session works on (pekoe new
 	// --request; daemon/ledger.go). 0: none.
 	Request int64 `json:"request,omitempty"`
+	// After are the slugs of the sessions this one comes after (pekoe new
+	// --after, daemon/after.go). Only recorded and shown: nothing waits on
+	// them yet.
+	After []string `json:"after,omitempty"`
 }
 
 type DB struct {

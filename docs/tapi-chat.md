@@ -162,7 +162,9 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 
 ### 気づかせ方
 
-tapi chat を閉じている間に tapi が許可待ち・質問待ちになったら、ステータスバーの tapi の声を `chat waits · t` にする(セッションの wait より弱く、セッションの wait が無いときだけ)。今はトーストやデスクトップ通知までは出さない。統括役になった tapi は人が呼ばなくても(報告を待って)動くので、見落とさないようセッションの wait と同じエスカレーションに乗せる変更を [orchestration.md](orchestration.md)「知らせ方」で別に進めている。
+tapi chat を閉じている間に tapi が許可待ち・質問待ちになったら、セッションの wait と同じに知らせる: トースト(`tapi needs you · t`)、ステータスバーの声(セッションの wait / error が無いとき。30 秒で点滅)、ターミナルにフォーカスが無ければ 2 分で OS の通知。統括役の tapi は人が離れている間も報告を待って動くので、許可待ちを見落とすと任せた作業が止まる([orchestration.md](orchestration.md)「知らせ方」)。
+
+`config.toml` の `[orchestrator] notify = "quiet"` で前の知らせ方に戻る: バーの声を `chat waits · t` にするだけ(セッションの wait より弱く、セッションの wait が無いときだけ)で、トーストや通知は出さない。tapi を人が呼んだときにしか動かさない使い方向け。
 
 ## スキル
 
