@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -64,13 +65,13 @@ func (d *Daemon) startWeb() {
 	srv := &tsnet.Server{
 		Dir:      cfg.StateDir,
 		Hostname: cfg.Hostname,
-		AuthKey:  key, // empty: a login URL (watchWeb logs it, once per URL)
+		AuthKey:  key, // empty: a login URL (web.status; `pekoe web` shows it)
 		UserLogf: func(format string, a ...any) {
 			// tsnet repeats the login URL every 5 s while it waits
 			if strings.HasPrefix(format, "To start this tsnet server") || strings.HasPrefix(format, "AuthLoop:") {
 				return
 			}
-			log.Printf("web: tsnet: "+format, a...)
+			log.Print(redactAuthURL("web: tsnet: " + fmt.Sprintf(format, a...)))
 		},
 		// Logf (the backend's verbose log) stays nil: discarded.
 	}
@@ -192,7 +193,8 @@ func (d *Daemon) stopWeb() {
 }
 
 // watchWeb keeps the status `pekoe web` shows: the backend state, the URLs
-// and, while it needs a login, the URL to open (logged once per URL).
+// and, while it needs a login, the URL to open (web.status only: the log
+// says to run `pekoe web`, once per URL).
 func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Client) {
 	lastURL := ""
 	for {
@@ -214,7 +216,10 @@ func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 				s.URLs = urls
 			})
 			if st.AuthURL != "" && st.AuthURL != lastURL {
-				log.Printf("web: to join the tailnet, open %s (or start pekoed with TS_AUTHKEY)", st.AuthURL)
+				// not the URL itself: pekoed.log is readable from the
+				// agents' sandbox, and whoever opens the URL first adds
+				// this node to their tailnet. web.status needs the token.
+				log.Printf("web: waiting for a tailnet login: run `pekoe web` to see the login URL (or start pekoed with TS_AUTHKEY)")
 			}
 			lastURL = st.AuthURL
 		}
@@ -228,6 +233,15 @@ func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 		case <-time.After(wait):
 		}
 	}
+}
+
+// authURLRe matches a Tailscale login URL (https://login.tailscale.com/a/…,
+// or the same path on another control server).
+var authURLRe = regexp.MustCompile(`https?://[^\s"'<>]+/a/[0-9A-Za-z]+`)
+
+// redactAuthURL drops login URLs from a line bound for pekoed.log.
+func redactAuthURL(s string) string {
+	return authURLRe.ReplaceAllString(s, "<login URL: see `pekoe web`>")
 }
 
 // tsWhoIs asks the node who owns a connection's source address. self is
