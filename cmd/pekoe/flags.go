@@ -147,7 +147,7 @@ func multiVal(f map[string]string, k string) []string {
 // after the subcommand) and so is not listed here.
 var specs = map[string]spec{
 	"init":      {use: "pekoe init [<dir>] [--yes] [--overwrite] [--print]", bools: []string{"yes", "overwrite", "print"}},
-	"new":       {use: "pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base"}},
+	"new":       {use: "pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT] [--request ID]", bools: []string{"wait"}, vals: []string{"repo", "from", "agent", "prompt", "base", "request"}},
 	"open":      {use: "pekoe open [<worktree>] [--resume|--new] [--agent NAME]", bools: []string{"resume", "new"}, vals: []string{"agent"}},
 	"adopt":     {use: "pekoe adopt [<path>] [--yes]", bools: []string{"yes"}},
 	"ls":        {use: "pekoe ls [--all|--repo R] [--json]", bools: []string{"all"}, vals: []string{"repo"}},
@@ -176,6 +176,14 @@ var specs = map[string]spec{
 	"inbox answer":   {use: "pekoe inbox answer <id> [<choice>] [--note TEXT] [--rev N]   answer (a person only; choice from 1; --rev: the rev you looked at)", vals: []string{"note", "rev"}},
 	"inbox withdraw": {use: "pekoe inbox withdraw <id> [--note TEXT]   take back your own question (the agent that asked)", vals: []string{"note"}},
 	"inbox dismiss":  {use: "pekoe inbox dismiss <id> [--note TEXT]   close a question without an answer (a person only)", vals: []string{"note"}},
+
+	"ledger":        {use: "pekoe ledger [--all] [--json]   what a person asked tapi chat for (open ones; --all: closed too)", bools: []string{"all"}},
+	"ledger done":   {use: "pekoe ledger done <id> [--evidence URL|PATH]... [--note TEXT]   the request is done (tapi chat)", vals: []string{"evidence", "note"}, multi: []string{"evidence"}},
+	"ledger drop":   {use: "pekoe ledger drop <id> --note TEXT   not doing it, and why (tapi chat)", vals: []string{"note"}},
+	"ledger close":  {use: "pekoe ledger close <id> --as done|dropped|chat [--evidence URL|PATH]... [--note TEXT]   (tapi chat; chat: it was no request)", vals: []string{"as", "evidence", "note"}, multi: []string{"evidence"}},
+	"ledger link":   {use: "pekoe ledger link <id> <slug>   tie a session to the request (tapi chat)"},
+	"ledger reopen": {use: "pekoe ledger reopen <id>   open a closed request again (a person only)"},
+	"ledger rm":     {use: "pekoe ledger rm <id> [--yes]   delete a request (a person only)", bools: []string{"yes"}},
 
 	"daemon":         {use: "pekoe daemon start|stop|restart|status"},
 	"daemon start":   {use: "pekoe daemon start"},

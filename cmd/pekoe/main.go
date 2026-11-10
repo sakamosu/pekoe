@@ -130,6 +130,8 @@ func main() {
 		err = cmdAskHuman(args)
 	case "inbox":
 		err = cmdInbox(args)
+	case "ledger":
+		err = cmdLedger(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -187,7 +189,7 @@ func usage() {
 
   pekoe                         open the TUI
   pekoe init                    draft ~/.config/pekoe/repos/<repo-id>.toml
-  pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]
+  pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT] [--request ID]
   pekoe open <worktree> [--resume|--new]
   pekoe adopt [--yes]           take over agents started by hand
   pekoe ls [--all|--repo R] [--json]   sessions (default: this repository; outside one, all)
@@ -207,6 +209,8 @@ func usage() {
   pekoe ask-human <question> [--option O]... [--recommend N] [--kind K] [--wait]
                                ask a person (run by an agent); the answer comes back
   pekoe inbox [<id>] [--all]    the questions agents asked; pekoe inbox answer <id> <n>
+  pekoe ledger [--all] [--json] what you asked tapi chat for; tapi closes them with
+                               pekoe ledger done|drop|close|link, you reopen|rm
   pekoe dev <slug>              toggle the dev server on the session's port
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always
@@ -386,7 +390,15 @@ func cmdNew(args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT]")
+		return &usageError{use: specs["new"].use, msg: "branch required"}
+	}
+	var request int64
+	if r := f["request"]; r != "" {
+		n, err := strconv.ParseInt(strings.TrimPrefix(r, "#"), 10, 64)
+		if err != nil || n < 1 {
+			return &usageError{use: specs["new"].use, msg: "--request is a ledger id (pekoe ledger)"}
+		}
+		request = n
 	}
 	cl := connect()
 	defer cl.Close()
@@ -403,7 +415,7 @@ func cmdNew(args []string) error {
 	}
 	if err := cl.Call("session.new", map[string]any{
 		"repo": dir, "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
-		"base": f["base"], "width": w, "height": h,
+		"base": f["base"], "width": w, "height": h, "request": request,
 	}, &s); err != nil {
 		return err
 	}
@@ -1363,6 +1375,7 @@ func cmdTapi(args []string) error {
 			}
 			fmt.Printf("tapi chat: %s · agent %s · %s\n", st, v.Agent, v.Dir)
 		}
+		fmt.Printf("ledger: %d open · inbox: %d open\n", v.LedgerOpen, v.InboxOpen)
 		return nil
 	case "reset":
 		if f["yes"] == "" {

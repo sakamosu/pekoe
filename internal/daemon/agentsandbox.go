@@ -110,18 +110,24 @@ func withReal(list []string) []string {
 func permPath(p string) string { return "/" + p }
 
 // claudeSandboxSettings is the JSON passed with --settings to a Claude Code
-// agent working on the repositories repoDirs.
-func (d *Daemon) claudeSandboxSettings(repoDirs []string) string {
+// agent working on the repositories repoDirs. readOnly are directories the
+// agent reads but must not write, by Bash (denyWrite, which wins over the
+// directories Claude Code lets it write, --add-dir included) nor by the
+// Edit and Write tools (permissions.deny): tapi chat's repositories and
+// worktrees (docs/orchestration.md「自分で作業しすぎないようにする」).
+// Sessions get none.
+func (d *Daemon) claudeSandboxSettings(repoDirs, readOnly []string) string {
 	sf, sd := d.agentSecrets()
 	gf, gd := gitProtected(repoDirs)
 	sf, sd, gf, gd = withReal(sf), withReal(sd), withReal(gf), withReal(gd)
+	ro := withReal(readOnly)
 
 	var c claudeSettings
 	c.Sandbox.Enabled = true
 	c.Sandbox.AllowUnsandboxedCommands = false
 	c.Sandbox.FailIfUnavailable = true
 	c.Sandbox.Filesystem.DenyRead = append(append([]string{}, sf...), sd...)
-	c.Sandbox.Filesystem.DenyWrite = append(append([]string{}, gf...), gd...)
+	c.Sandbox.Filesystem.DenyWrite = append(append(append([]string{}, gf...), gd...), ro...)
 	c.Sandbox.Network.AllowUnixSockets = withReal([]string{paths.Socket()})
 	deny := []string{}
 	for _, tool := range []string{"Read", "Edit"} {
@@ -144,6 +150,9 @@ func (d *Daemon) claudeSandboxSettings(repoDirs []string) string {
 	for _, dir := range gd {
 		deny = append(deny, "Edit("+permPath(dir)+"/**)")
 	}
+	for _, dir := range ro {
+		deny = append(deny, "Edit("+permPath(dir)+"/**)")
+	}
 	c.Permissions.Deny = deny
 	b, _ := json.Marshal(c)
 	return string(b)
@@ -162,9 +171,9 @@ func agentSettingsFile(slug string) string {
 
 // withAgentSandbox appends --settings <file> to a Claude Code agent's
 // command line unless [agents.<name>] sandbox = false; other agents get
-// nothing. The settings go through a file: written inline they take a few
+// nothing. readOnly: see claudeSandboxSettings. The settings go through a file: written inline they take a few
 // KB of tmux's command line, which the prompt needs (promptArgMax).
-func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs []string) (string, error) {
+func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs, readOnly []string) (string, error) {
 	if !sandbox || !isClaude(cmd) {
 		return cmd, nil
 	}
@@ -176,7 +185,7 @@ func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs []str
 	if err != nil {
 		return "", err
 	}
-	_, err = tmp.WriteString(d.claudeSandboxSettings(repoDirs))
+	_, err = tmp.WriteString(d.claudeSandboxSettings(repoDirs, readOnly))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}

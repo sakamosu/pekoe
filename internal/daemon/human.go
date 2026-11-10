@@ -66,6 +66,11 @@ var agentMethods = map[string]string{
 	"inbox.list":     "the hub agent reads what is waiting for a person and the answers given (precedent): the agents' questions, pekoed's facts and the person's answers to agents",
 	"inbox.get":      "one inbox item (`ask-human --wait` reads its answer)",
 	"inbox.withdraw": "an agent takes back its own question; only the caller's own items",
+	// the ledger is tapi chat's: without the token only a caller in tapi's
+	// window (ledgerAllowed); records only
+	"ledger.list":  "tapi chat reads back the requests still open (after a reset too); only from tapi's window",
+	"ledger.close": "tapi chat closes a request (done with evidence, dropped, or not a request); only from tapi's window, a person can reopen it",
+	"ledger.link":  "tapi chat ties a request to the session working on it; only from tapi's window",
 }
 
 // humanMethods: every other registered method, with why an agent may not
@@ -91,6 +96,8 @@ var humanMethods = map[string]string{
 	"browser.send_errors":   "sends browser errors to an agent",
 	"inbox.answer":          "a person's decision: an agent answering would empty the inbox of meaning",
 	"inbox.dismiss":         "a person's decision (closing a question unanswered)",
+	"ledger.reopen":         "a person's decision: tapi must not undo how a request was closed",
+	"ledger.delete":         "a person's decision: tapi must not erase a request it let slip",
 	// runs something outside the agent's sandbox
 	"init.write":      "repo config: setup / dev commands run outside the agent",
 	"run.start":       "runs a command in the worktree",

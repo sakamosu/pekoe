@@ -167,10 +167,21 @@ func summarizeTool(name string, input json.RawMessage) state.Tool {
 // no pekoe window (an agent pekoe adopted, which runs outside tmux) falls
 // back to $PEKOE_SESSION and the cwd, as before.
 func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
-	if pane := who.Pane(); pane != "" {
+	pane := who.Pane()
+	if pane != "" {
 		p.Session = pane
 	}
-	return d.hEvent(p)
+	res, err := d.hEvent(p)
+	if pane == TapiSlug && err == nil {
+		// a person's request to tapi (ledger.go): only from tapi's own
+		// window, never from a caller that just names it
+		var hp hookPayload
+		_ = json.Unmarshal(p.Payload, &hp)
+		if hook := p.Hook; hook == "UserPromptSubmit" || hook == "" && hp.HookEventName == "UserPromptSubmit" {
+			d.recordRequest(hp.Prompt)
+		}
+	}
+	return res, err
 }
 
 func (d *Daemon) hEvent(p eventP) (any, error) {

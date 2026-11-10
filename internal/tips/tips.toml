@@ -146,6 +146,13 @@ keys = ["pekoe inbox", "pekoe inbox answer <id>", "--all", "--note"]
 docs = ["docs/api.md"]
 
 [[tip]]
+id = "ledger"
+short = "tapi に頼んだことは pekoe ledger の台帳に残る"
+detail = "tapi に打った文は台帳に open で入り、tapi が new --request でセッションと結び、済んだら閉じる。リセットしても残り、新しい tapi は台帳から続ける。開き直す・消すのは人だけ(reopen / rm)。"
+keys = ["pekoe ledger", "pekoe new --request", "--request", "--as"]
+docs = ["docs/tapi-chat.md", "docs/api.md"]
+
+[[tip]]
 id = "inbox-answer"
 short = "受信箱の問いには ]a から答える"
 detail = "エージェントが人に頼むとトーストが出る。]a で未回答の問いを先に回り、pekoe が読んだ事実を見てから 1〜6 で選んで ↵。推奨は既定で選ばれない。n でメモ、x で答えずに閉じる。:inbox でも開く。"

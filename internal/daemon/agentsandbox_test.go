@@ -31,10 +31,10 @@ func TestClaudeSandboxSettings(t *testing.T) {
 	d, _, repo := setup(t)
 	moved := filepath.Join(t.TempDir(), "ts")
 	d.Global.Web.StateDir = moved
-	c := decodeSettings(t, d.claudeSandboxSettings([]string{repo}))
+	c := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
 
 	sb := c.Sandbox
-	if !strings.Contains(d.claudeSandboxSettings(nil), `"disabled":false`) {
+	if !strings.Contains(d.claudeSandboxSettings(nil, nil), `"disabled":false`) {
 		t.Error("filesystem.disabled is not pinned to false")
 	}
 	if !sb.Enabled || sb.AllowUnsandboxedCommands || !sb.FailIfUnavailable {
@@ -155,5 +155,44 @@ func TestTapiGetsSandboxSettings(t *testing.T) {
 	}
 	if _, err := os.Stat(agentSettingsFile(TapiSlug)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// tapi reads every repository and the worktrees but writes none of them:
+// Bash (denyWrite) nor the Edit / Write tools (permissions.deny). A
+// session's settings keep its worktree writable.
+func TestTapiCannotWriteRepos(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	if err := d.tapiSpawn(80, 24); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(agentSettingsFile(TapiSlug))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := decodeSettings(t, string(b))
+	wt := paths.WorktreesRoot()
+	// pekoe knows the repository by its resolved path (what --add-dir gets)
+	for _, dir := range []string{realpath(repo), wt, realpath(wt)} {
+		if !slices.Contains(c.Sandbox.Filesystem.DenyWrite, dir) {
+			t.Errorf("denyWrite lacks %s: %v", dir, c.Sandbox.Filesystem.DenyWrite)
+		}
+		if !slices.Contains(c.Permissions.Deny, "Edit(/"+dir+"/**)") {
+			t.Errorf("permissions.deny lacks Edit of %s:\n%s", dir, strings.Join(c.Permissions.Deny, "\n"))
+		}
+	}
+	td := paths.TapiDir()
+	for _, p := range append(c.Sandbox.Filesystem.DenyWrite, c.Permissions.Deny...) {
+		if strings.Contains(p, td) {
+			t.Errorf("tapi's own directory is not writable: %s", p)
+		}
+	}
+	// a session's own settings do not shut its worktree
+	s := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
+	for _, p := range append(s.Sandbox.Filesystem.DenyWrite, s.Permissions.Deny...) {
+		if p == realpath(repo) || p == "Edit(/"+realpath(repo)+"/**)" {
+			t.Errorf("a session's repository is shut: %s", p)
+		}
 	}
 }
