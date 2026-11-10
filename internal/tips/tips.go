@@ -20,8 +20,9 @@ import (
 	"pekoe/internal/paths"
 )
 
-// Tip is one entry of tips.toml. Short and Detail are Japanese (the one
-// exception to English UI text, docs/ui-guidelines.md).
+// Tip is one entry of tips.toml. Short and Detail are Japanese (one of the
+// two exceptions to English UI text, with the tutorial's cards;
+// docs/ui-guidelines.md).
 type Tip struct {
 	ID     string   `toml:"id" json:"id"`
 	Short  string   `toml:"short" json:"short"`
