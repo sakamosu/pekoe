@@ -98,3 +98,14 @@ func TestHumanToken(t *testing.T) {
 		cl.Close()
 	}
 }
+
+// land waits past the 30 minutes pekoed gives [hooks] test: timing out
+// first reports a failure while pekoed goes on to push and open the PR.
+func TestLandOutwaitsTests(t *testing.T) {
+	if got := timeoutFor("land"); got <= 30*time.Minute {
+		t.Fatalf("land timeout %v, want longer than the 30m test cap", got)
+	}
+	if got := timeoutFor("session.list"); got != 10*time.Minute {
+		t.Fatalf("session.list timeout %v", got)
+	}
+}

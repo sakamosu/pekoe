@@ -208,7 +208,18 @@ func (cl *Client) Done() <-chan struct{} { return cl.done }
 
 // Call sends a request and decodes the result into out (may be nil).
 func (cl *Client) Call(method string, params any, out any) error {
-	return cl.CallTimeout(method, params, out, 10*time.Minute)
+	return cl.CallTimeout(method, params, out, timeoutFor(method))
+}
+
+// timeoutFor is how long Call waits for method. land runs [hooks] test
+// for up to 30 minutes (internal/daemon/lifecycle.go) and then pushes and
+// opens the PR; giving up before that would report a failure while pekoed
+// carries on, and a retry would rebase and test the worktree twice.
+func timeoutFor(method string) time.Duration {
+	if method == "land" {
+		return 35 * time.Minute
+	}
+	return 10 * time.Minute
 }
 
 func (cl *Client) CallTimeout(method string, params any, out any, timeout time.Duration) error {
@@ -258,7 +269,8 @@ func (cl *Client) CallTimeout(method string, params any, out any, timeout time.D
 		cl.mu.Lock()
 		delete(cl.pending, id)
 		cl.mu.Unlock()
-		return fmt.Errorf("%s: timed out", method)
+		// pekoed does not cancel a request whose caller went away
+		return fmt.Errorf("%s: timed out waiting for pekoed (it may still be running it)", method)
 	}
 }
 
