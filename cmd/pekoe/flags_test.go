@@ -282,7 +282,7 @@ func TestSplitGlobal(t *testing.T) {
 
 // Every subcommand main dispatches has a declared spec.
 func TestEverySubcommandHasSpec(t *testing.T) {
-	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss"} {
+	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss", "ledger", "ledger done", "ledger drop", "ledger close", "ledger link", "ledger reopen", "ledger rm"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
 		}

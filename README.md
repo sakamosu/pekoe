@@ -83,7 +83,7 @@ Design docs are in Japanese.
 | [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
-| [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the front-desk agent you talk to with `t` in the TUI) |
+| [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design draft: tapi as the orchestrator, so you don't manage sessions by hand |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
@@ -169,7 +169,7 @@ pekoe                                                 # TUI
 | --- | --- |
 | `pekoe` | TUI (starts the daemon if needed) |
 | `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | Detect the repository's settings and write a draft. `--print` only prints it |
-| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT]` | Create a worktree + session. Shows setup progress and returns once the agent has started |
+| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--prompt TEXT] [--request ID]` | Create a worktree + session. Shows setup progress and returns once the agent has started. `--request` is how tapi chat ties a session to a request in its ledger (tapi and you only) |
 | `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start in an existing worktree. Choose whether to resume a past Claude Code session (`--resume` to resume, `--new` for a new one) |
 | `pekoe adopt [<path>] [--yes]` | Stop an agent running outside pekoe and resume the same session inside pekoe |
 | `pekoe ls [--all\|--repo R]` | Sessions and their state. Inside a repository only that repository's, outside all of them |
@@ -185,6 +185,7 @@ pekoe                                                 # TUI
 | `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | Block until something happens to sessions (`report`, `done`, `waiting`, `idle`, `failed`, `pr`, `landed`, `removed`). `--mine`: only the sessions you made with `pekoe new`. Pass the returned `cursor` to the next `--since` to miss nothing. After pekoed restarts it says `reset`: read `pekoe --json ls` again. A session that went done without a report says `(no report)` |
 | `pekoe ask-human <question> [--option O]... [--recommend N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context -] [--wait]` | An agent asks a person to decide, approve or do something (the inbox). pekoed adds the facts it reads itself about the session (branch, HEAD, diff, PR, CI, conflicts). The answer comes back as the result if the agent waits (`--wait`, or `pekoe wait --on inbox`); otherwise it is typed into the agent's input box as `[pekoe inbox #N] 答え: …` once the agent is free (never while a permission dialog is up) |
 | `pekoe inbox [<id>] [--all]` / `pekoe inbox answer <id> [<n>] [--note …]` | The inbox, and one item in full (the agent's words fenced off, after the facts). Only a person answers (`answer`) or closes one unanswered (`dismiss`). In the TUI a new item shows a toast, and `]a` takes you to the answer dialog |
+| `pekoe ledger [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger reopen\|rm <id>` | The ledger of requests. pekoed records what you type into tapi chat as open; tapi ties sessions to it with `--request` and closes it with `done --evidence <PR>`, `drop --note <why>` or `close --as chat` (it was no request). `pekoe tapi reset` keeps it. Only a person reopens (`reopen`) or deletes (`rm`) one |
 | `pekoe dev <slug>` | Start / stop `dev` on the session's port |
 | `pekoe undo <slug> [n]` | Undo the changes of the last (or n-th) prompt |
 | `pekoe answer <slug> allow\|deny\|always` | Answer a permission prompt |
@@ -196,13 +197,13 @@ pekoe                                                 # TUI
 | `pekoe mcp` | MCP server (stdio) for agents |
 | `pekoe daemon start\|stop\|restart\|status` | Daemon control. `stop` waits until the process exits. `restart` waits for it to stop, starts it again and prints the versions before and after (use it after `make install`; if it isn't running, it just starts). Agents keep running inside tmux |
 | `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server (`$PEKOE_TMUX_SOCKET`). **On the default socket `pekoe` this stops every agent.** For cleaning up sandboxes |
-| `pekoe tapi [reset [--yes]]` | tapi chat's state / stop it and forget the conversation (same as `T` in the TUI) |
+| `pekoe tapi [reset [--yes]]` | tapi chat's state (with the ledger's and the inbox's open counts) / stop it and forget the conversation (same as `T` in the TUI; the ledger and the inbox stay) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | Introduce one pekoe feature (a tip not shown yet, see [Tips](#tips)). `<id>` for that tip, `--list` for all, `--doc` prints the doc a tip points to (bundled in the binary) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | Replace pekoe with the latest GitHub release ([Updating](#updating)). `--check` only looks for a newer version. Humans only |
 | `pekoe version` | Version |
 
 - `R` can be a repo-id, a short name (the name in `~/worktrees/<name>`) or a path. Commands that take a slug also accept `<repo>/<slug>`
-- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `report` `reports` `wait` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
+- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `report` `reports` `wait` `inbox` `ledger` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
 - Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send`, `land`, `rm` of a landed session, `report`, `reports` and `wait` (and `event`, for the hooks) without the token; `report` only for the caller's own session (refused from outside a pekoe window), `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only), `land` only in a repository with an origin (without one, land fast-forwards the base branch right away), and `rm` only on a landed session whose worktree is already gone, without `--force`. The others (`answer`, `dev`, `init`, `open`, `review`, `rm` of any other session, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
@@ -261,14 +262,16 @@ All keys are listed in [docs/design.md](docs/design.md#cli-コマンドとキー
 
 ### tapi chat
 
-Press `t` in any panel and [4] switches to a conversation with the mascot tapi (tapi chat), ready for typing. It is a front-desk agent that doesn't belong to any session: use it for one-off investigations and questions, research across repositories ("any dependabot alerts in my repositories?"), and handing out work (create a session with `pekoe new --repo R` and delegate, add instructions with `pekoe send`). You can talk to it while the main session is busy.
+Press `t` in any panel and [4] switches to a conversation with the mascot tapi (tapi chat), ready for typing. tapi is the **orchestrator**: it doesn't write the changes you ask for itself, but creates sessions with `pekoe new` to do them, waits for their reports with `pekoe wait`, and gives you one report back. What it brings to you is only what needs your decision or approval (the inbox). One-off questions that belong to no session and research across repositories ("any dependabot alerts in my repositories?") it answers itself. You can talk to it while the main session is busy. Creating sessions in the TUI and typing into them directly, without tapi, works as before.
 
 - `^q` (the prefix) closes it. The conversation stays; `t` again continues it. `Esc` goes to the agent (Claude Code's interrupt). `^q` `z` / `^q` `<` `>` `=` work as they do for agents and return you to typing in tapi chat (opened while zoomed it is full width, and the pty is sized to the pane)
 - The agent starts the first time you open it (not when pekoed starts). It runs in `~/.local/share/pekoe/tapi/`, where pekoed puts a `CLAUDE.md` describing its role and the commands it uses. The first time, Claude Code asks you to trust the folder
 - With Claude Code, the repositories pekoe knows and `~/worktrees` are passed with `--add-dir`, so reading across them doesn't ask for permission each time (added or removed repositories apply from the next start)
 - The first row of Sessions is tapi's: its state icon, `tapi`, how long it has been in that state, and the first line of its last reply (e.g. `◉ tapi  wait 2m  Start a session for #198?`). It is always there, above the repository headings, and a `/` filter leaves it in place. Select it with `j` `k` (or `g`) and `↵` opens tapi chat. Session keys (`/` `x` `D` `l` `r` `p` `d` `!` `v` …) do nothing on it; the bottom line shows `↵ open tapi` `T reset tapi` instead
 - tapi's face is in the title and changes while it thinks or waits for permission. If it starts waiting for permission or an answer while closed, the bottom line says `chat waits · t`
-- `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. pekoe itself saves nothing. It doesn't appear in the Web UI
+- What you type into tapi is recorded in the ledger of requests (`pekoe ledger`); tapi ties the sessions it starts to it and closes it when done (small talk is closed as "no request")
+- tapi reads the repositories and `~/worktrees` but can't write them (not with Bash, Edit or Write; see "Letting agents use pekoe" below). Only its own directory is writable
+- `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. The ledger and the inbox stay in pekoed, and the next tapi reads them and picks up where things are. It doesn't appear in the Web UI
 - Change the agent with `[tapi] agent` ([Configuration](#configuration))
 
 ### Tutorial
@@ -329,7 +332,7 @@ Install them with `pekoe skills install`. Their text is built into the binary: i
 
 ### Letting agents use pekoe: permissions
 
-Agents run as the same user, so they can connect to pekoed's socket. pekoed runs outside the agents' sandbox, so without the `human-token` it allows only what agents need: `pekoe event` from the hooks, `pekoe ls`, `pekoe new`, `pekoe send`, `pekoe land`, `pekoe rm`, `pekoe wait`, `pekoe reports` and `pekoe inbox` (the list) for the hub (the skill; `send` only into an agent's input box and not while it shows a permission dialog; `land` only in a repository with an origin; `rm` only of a landed session, below), `pekoe report` for a working session (its own session only), `pekoe ask-human` for an agent asking a person (only a person answers), and the MCP server's `session_list` and `open_in_editor`. Everything else (answering permission prompts, raw keys, typing into tapi chat, drafting and writing settings, running commands with `dev`, in the run window or the review surface, looking at other sessions' screens, diffs or error excerpts, stopping the daemon, …) needs the token. `rm` without the token removes only a landed session: when pekoed saw its PR merged it already ran the teardown and removed the worktree, so what is left is pekoe's record of it and the code is on the base branch. `rm` of a session in any other state would delete a worktree and its uncommitted changes, so it stays human-only, and so do `rm --force` and a landed session whose worktree is still there (its removal failed). The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. Which method is which is listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
+Agents run as the same user, so they can connect to pekoed's socket. pekoed runs outside the agents' sandbox, so without the `human-token` it allows only what agents need: `pekoe event` from the hooks, `pekoe ls`, `pekoe new`, `pekoe send`, `pekoe land`, `pekoe rm`, `pekoe wait`, `pekoe reports` and `pekoe inbox` (the list) for the hub (the skill; `send` only into an agent's input box and not while it shows a permission dialog; `land` only in a repository with an origin; `rm` only of a landed session, below), `pekoe ledger` for tapi chat (the list, closing and linking; only from tapi's window), `pekoe report` for a working session (its own session only), `pekoe ask-human` for an agent asking a person (only a person answers), and the MCP server's `session_list` and `open_in_editor`. Everything else (answering permission prompts, raw keys, typing into tapi chat, drafting and writing settings, running commands with `dev`, in the run window or the review surface, looking at other sessions' screens, diffs or error excerpts, stopping the daemon, …) needs the token. `rm` without the token removes only a landed session: when pekoed saw its PR merged it already ran the teardown and removed the worktree, so what is left is pekoe's record of it and the code is on the base branch. `rm` of a session in any other state would delete a worktree and its uncommitted changes, so it stays human-only, and so do `rm --force` and a landed session whose worktree is still there (its removal failed). The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. Which method is which is listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
 
 But an agent running as the same user can read files. Two things keep the token from it:
 
@@ -338,6 +341,7 @@ But an agent running as the same user can read files. Two things keep the token 
    - `filesystem.denyRead`: `human-token`, `http-token`, `state.db` (with `-wal` and `-shm`: it holds prompts, review comments, reports and the send log, which agents read only through pekoed's API), the tsnet state and pekoe's config directory (`~/.config/pekoe`). Enforced at the OS level for Bash commands and their children
    - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself and the written skills' text (`skills/`)
    - `filesystem.denyWrite` and `Edit(...)`: the repository's `.git/config`, `.git/config.worktree` and `.git/hooks` (agents can still commit, but can't change settings the git you run yourself follows)
+   - tapi chat only: `filesystem.denyWrite` and `Edit(...)` for each repository it reads through `--add-dir` and for `~/worktrees` (symlinks resolved too). The orchestrator hands work to sessions instead of doing it, so it can't write there with Bash, Edit or Write. Its own directory (`tapi/`) stays writable. `[agents.<tapi's agent>] sandbox = false` drops this as well
    - `network.allowUnixSockets`: pekoed's socket (for `pekoe ls`, `new` and `send`). Hooks run outside the sandbox, so `pekoe event` isn't affected anyway
 
    **Claude Code only.** codex, opencode and other agents get nothing; if you use them, make the same paths unreadable with their own sandbox. `[agents.claude] sandbox = false` in `config.toml` turns it off (per agent definition, e.g. `[agents.claude-ask]`).
@@ -370,7 +374,7 @@ But an agent running as the same user can read files. Two things keep the token 
 
    After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
 
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports` and `inbox`, and a working session (the pekoe-work and pekoe-review skills) uses `report` and `ask-human`, so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` is a person's operation and is refused even if you allow it. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
+2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports` and `inbox` (tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report` and `ask-human`, so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `dev`, `init`, `rm` or `daemon`. `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
 
    ```json
    {
@@ -378,7 +382,8 @@ But an agent running as the same user can read files. Two things keep the token 
        "allow": [
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
-         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)"
+         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
+         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)"
        ]
      }
    }
