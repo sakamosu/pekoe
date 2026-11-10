@@ -48,7 +48,7 @@ func (f prFixture) write(t *testing.T, ghDir string) {
 	pr := map[string]any{
 		"number": 42, "title": "Add CSV export", "body": "## Summary", "url": "https://github.com/me/app/pull/42",
 		"state": f.State, "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": f.Merge,
-		"reviewDecision": decision, "baseRefName": "main", "headRefName": "feat/csv",
+		"reviewDecision": decision, "baseRefName": "main", "headRefName": "feat/csv", "headRefOid": "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
 		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
 		"reviews":       map[string]any{"nodes": nz(f.Reviews)},
 		"reviewThreads": map[string]any{"nodes": nz(f.Threads)},
@@ -138,7 +138,7 @@ func TestPRViewParses(t *testing.T) {
 	}.write(t, ghd)
 
 	v := call[PRView](t, d, "pr.view", map[string]any{"slug": slug})
-	if v.Number != 42 || v.State != "OPEN" || v.MergeState != "BLOCKED" || v.ReviewDecision != "CHANGES_REQUESTED" || v.Base != "main" || v.Head != "feat/csv" || v.Body != "## Summary" {
+	if v.Number != 42 || v.State != "OPEN" || v.MergeState != "BLOCKED" || v.ReviewDecision != "CHANGES_REQUESTED" || v.Base != "main" || v.Head != "feat/csv" || v.HeadSHA != "abcdef0123456789abcdef0123456789abcdef01" || v.Body != "## Summary" {
 		t.Fatalf("header: %+v", v)
 	}
 	if len(v.Checks) != 4 {
@@ -170,7 +170,7 @@ func TestPRViewParses(t *testing.T) {
 	// the summary rides along on the session
 	s := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
 	st := s.PRStatus
-	if st == nil || st.Fail != 1 || st.Pass != 1 || st.Pending != 2 || st.Unresolved != 1 || st.ReviewDecision != "CHANGES_REQUESTED" {
+	if st == nil || st.Fail != 1 || st.Pass != 1 || st.Pending != 2 || st.Unresolved != 1 || st.ReviewDecision != "CHANGES_REQUESTED" || st.HeadSHA != v.HeadSHA {
 		t.Fatalf("summary: %+v", st)
 	}
 	if st.LastComment.Format("15:04") != "12:00" || st.LastThread.Format("15:04") != "11:05" {
