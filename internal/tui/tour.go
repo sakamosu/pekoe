@@ -315,12 +315,12 @@ func (m *model) tourApply() {
 // ---- view ----
 
 // tourHints are the card's keys; the language key comes last (the first to
-// go when the card is narrow) and is named by the language it switches to,
-// in that language.
+// go when the card is narrow) and is named by the code of the language it
+// switches to (en / ja).
 func (m *model) tourHints() [][2]string {
-	lang := [2]string{tourLangKey, "日本語"}
+	lang := [2]string{tourLangKey, "ja"}
 	if m.tour.lang == tourJa {
-		lang[1] = "English"
+		lang[1] = "en"
 	}
 	if m.tour.step == len(tourSteps)-1 {
 		return [][2]string{{"↵", "done"}, {"←", "back"}, lang}

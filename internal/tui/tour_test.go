@@ -677,15 +677,15 @@ func TestTourLangKey(t *testing.T) {
 	if got := tourStepTitle(m); got != "状態の見かた" {
 		t.Fatalf("step %q", got)
 	}
-	if out := ansi.Strip(m.View()); !strings.Contains(out, tourLangKey+" English") {
-		t.Errorf("no %q in the card:\n%s", tourLangKey+" English", out)
+	if out := ansi.Strip(m.View()); !strings.Contains(out, tourLangKey+" en") {
+		t.Errorf("no %q in the card:\n%s", tourLangKey+" en", out)
 	}
 	press(m, tourLangKey)
 	if m.tour == nil || m.tour.step != 2 {
 		t.Fatalf("%s left the step", tourLangKey)
 	}
 	out := ansi.Strip(m.View())
-	for _, want := range []string{"Reading states", tourLangKey + " 日本語", "sample · 3/", "next"} {
+	for _, want := range []string{"Reading states", tourLangKey + " ja", "sample · 3/", "next"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q after %s:\n%s", want, tourLangKey, out)
 		}
@@ -734,9 +734,9 @@ func TestTourLangHint(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	for _, lang := range []string{tourJa, tourEn} {
 		m.tour.lang = lang
-		want := tourLangKey + " English"
+		want := tourLangKey + " en"
 		if lang == tourEn {
-			want = tourLangKey + " 日本語"
+			want = tourLangKey + " ja"
 		}
 		for step := range tourSteps {
 			m.tourGo(step)
