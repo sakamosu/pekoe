@@ -83,7 +83,8 @@ func (d *Daemon) recordRefusedSend(who *Caller, raw json.RawMessage, why error) 
 	d.recordSend(who, p.Slug, "send", p.Text, why)
 }
 
-func (d *Daemon) recordSend(who *Caller, to, kind, text string, err error) {
+// recordSend adds one record and returns its id (0 when it could not be written).
+func (d *Daemon) recordSend(who *Caller, to, kind, text string, err error) int64 {
 	if len(text) > sendLogMax {
 		text = text[:sendLogMax]
 		for !utf8.ValidString(text) {
@@ -100,7 +101,9 @@ func (d *Daemon) recordSend(who *Caller, to, kind, text string, err error) {
 	}
 	if e := d.DB.AddSend(r); e != nil {
 		log.Printf("send log: %v", e)
+		return 0
 	}
+	return r.ID
 }
 
 type sendLogP struct {

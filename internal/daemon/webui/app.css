@@ -172,6 +172,10 @@ main { padding: 4px 10px 8px; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .to.gone { border-left-color: var(--err); }
 .to.gone .to-slug { color: var(--err); }
+/* tapi: an instruction to the orchestrator (every repository), not to one session */
+.to.tapi { border-left-color: var(--warn); }
+.to.tapi .to-slug { color: var(--warn); }
+.send-note { margin-bottom: 6px; font-size: 12px; color: var(--warn); }
 .send-row { display: flex; gap: 8px; align-items: flex-end; }
 .send textarea {
   flex: 1; min-height: 44px; max-height: 30vh; resize: vertical;
@@ -205,6 +209,7 @@ main { padding: 4px 10px 8px; }
 .sheet.danger h2 { color: var(--err); }
 .sheet .target { font: 700 14px var(--mono); }
 .sheet .input { max-height: 22vh; }
+.sheet .input.whole { max-height: 40vh; } /* the whole text to tapi, scrollable */
 .sheet-cap { margin-top: 10px; font-size: 12px; color: var(--dim); }
 .sheet-screen { font-size: 11px; max-height: 30vh; background: var(--term-bg); }
 .sheet-warn { margin-top: 8px; font-size: 13px; color: var(--warn); }
@@ -301,6 +306,7 @@ main { padding: 4px 10px 8px; }
 .tile .n { font-weight: 700; }
 .tile .w { min-width: 0; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tapi { padding: 0 12px 10px; }
+.open-tapi { display: inline-flex; align-items: center; margin: 0 12px 10px; text-decoration: none; }
 .tapi .last { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
 .group { padding: 2px 0 8px; }
 .group + .group { border-top: 1px solid var(--border); }

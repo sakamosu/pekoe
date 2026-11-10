@@ -1,6 +1,6 @@
 package daemon
 
-// The web UI's inbox, tapi summary and overview (docs/orchestration.md
+// The web UI's inbox and overview (tapi's view is webtapi.go) (docs/orchestration.md
 // 「ダッシュボード」→「Web UI」, docs/web.md). Read-only except for the
 // inbox answer, which is inbox.answer as the person on the phone: the rev
 // they looked at goes with it, and a changed item is refused with 409.
@@ -85,37 +85,6 @@ func (d *Daemon) webInboxAnswer(w http.ResponseWriter, r *http.Request) {
 	default:
 		webErr(w, err)
 	}
-}
-
-// ---- tapi ----
-
-// webTapi is what the phone sees of tapi chat: its state, how long, its
-// last reply and the counts. Not the pending tool (allow/deny for tapi
-// stays at the terminal), its directory or the Claude session id.
-type webTapi struct {
-	Started     bool        `json:"started"`
-	Alive       bool        `json:"alive"`
-	State       state.State `json:"state"`
-	WaitKind    string      `json:"wait_kind,omitempty"`
-	StateSince  time.Time   `json:"state_since"`
-	LastMessage string      `json:"last_message,omitempty"`
-	InboxOpen   int         `json:"inbox_open"`
-	LedgerOpen  int         `json:"ledger_open"`
-	Look        webLook     `json:"look"`
-}
-
-func (d *Daemon) webTapiView() webTapi {
-	t := d.tapiView()
-	return webTapi{
-		Started: t.Started, Alive: t.Alive, State: t.State, WaitKind: t.WaitKind,
-		StateSince: t.StateSince, LastMessage: t.LastMessage,
-		InboxOpen: t.InboxOpen, LedgerOpen: t.LedgerOpen,
-		Look: toWebLook(theme.Look(theme.WebIcons(), t.State, 0, false)),
-	}
-}
-
-func (d *Daemon) webTapi(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, d.webTapiView())
 }
 
 // ---- overview: the counts and the flow of every session ----

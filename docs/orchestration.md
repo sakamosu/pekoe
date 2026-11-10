@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表を実装済み。段階 3 の残り(Web UI からの tapi への送信・tapi への配送)から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の台帳)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼の台帳」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信を実装済み。段階 3 は tapi への配送(後回しに決めた)を除いて終わった。配送と段階 4 から先は設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -404,6 +404,15 @@ docs/tapi-chat.md の「Web UI には出さない」を見直す。iPhone から
 
 tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi はファイルを書けないが、全リポジトリを読めて `gh` などを動かせるので、許可は端末の前で)。これも未決事項 U9 で一緒に決める。
 
+実装(U9 は (a)。仕様の正は docs/web.md「tapi chat の扱い」と API の表):
+
+- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi 統括役 · 全リポジトリ」と warn の色で出し、send を押すと必ず確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む。全文はシートの中でスクロールして読める
+- **`allow_devices`**: 設定が無ければ `POST /api/tapi/send` は 403 で、送信欄は理由を出して押せない。画面とキーパッドは指示にならないので `allow_devices` が無くても出す。`GET /api/tapi` に `sendable`(送れるか)と `answerable`(許可待ちか)を足した
+- **確認**: 送信はセッションの send と同じ関数(`webReadText`: 空・4000 文字超・制御文字は 400)を通し、tapi が許可待ち(hook の状態)なら 409。`tapi.send` 自身が打つ前と Enter の直前に hook の状態と画面(`promptUp`)を見直すので、画面に許可メニューが出ていても 409。tapi が起動していない・終了しているときも 409
+- **記録**: 送ったもの・断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番かと、本文の最初の 200 文字を出す(全文は送信の記録。ログはエージェントの sandbox から読めるので切る)。TUI からの `tapi.send` は今までどおり記録しない
+- **キーパッド**: 質問待ちのときだけ、セッションと同じ許可リスト(`webReadKeys`)。許可待ち・画面に許可メニューがあるときは 409
+- **allow / deny の経路が無い**: `/api/tapi/` に answer は無く、`/api/sessions/+tapi/…` は `session.*` が `+tapi` を拒むので届かない(テストで確かめる)
+
 ## スキルの分け方と配り方
 
 今は skills/pekoe/SKILL.md(窓口 → セッションの振り分け)だけ。役割ごとに分ける。どれも tapi と main セッションの両方で使える書き方にする(決まったこと 2)。
@@ -461,7 +470,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **rev**: 送るのはカードを描いたときの `rev`。3 秒ごとの更新で `rev` が上がったら選択を外して「changed while you looked」と出す(TUI と同じ)。メモを打っている間と確認シートを開いている間は描き直さない(打った文が消えないように)ので、その間に変わったものは pekoed が 409 で断り、ページは選択を外して出し直す
 - **API**: `GET /api/inbox`・`POST /api/inbox/{id}/answer`(`inbox.answer` の「the item changed; look again」と「答え済み」を 409、無い id を 404、それ以外の誤りを 400 に分けるため、`inbox.go` のエラーを `errors.Is` で見分けられるようにした。文面は変えていない)・`GET /api/tapi`・`GET /api/overview`。答えずに閉じる(`dismiss`)は Web に出さなかった(答えずに閉じると依頼元は「閉じられた」だけを受け取る。外出先で答えられないものは置いておけばよい)
 - **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・台帳)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。台帳の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `実装 → PR → CI → レビュー → マージ` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない
-- **tapi**: `pending_tool` は返さない(tapi の許可への allow / deny は Web に出さない: U9)。Claude のセッション ID と稼働ディレクトリも返さない
+- **tapi**: `pending_tool` は返さない(tapi の許可への allow / deny は Web に出さない: U9)。Claude のセッション ID と稼働ディレクトリも返さない。tapi への送信・画面・キーパッドは上の「Web UI」(統括役の節)の「実装:」
 - **HTML として解釈されない**: ページは今までどおり `textContent` だけで入れ、リンクは `http(s)` だけを `<a>` にする。`<script>` などを含む問い・背景・選択肢・`javascript:` のリンクが JSON に生のタグとして出ないこと、`app.js` に HTML を作る入口(`innerHTML` など)がないことをテストで確かめる
 
 ## 脅威モデルの追加
@@ -531,9 +540,9 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 中身:
 
 - TUI のダッシュボードの窓(実装済み。上の「ダッシュボード」→「TUI」の「実装:」)
-- Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)
+- Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)(実装済み。受信箱・概要は「ダッシュボード」→「Web UI」、tapi への送信は統括役の「Web UI」の「実装:」)
 - **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目「#42 をマージしてよい根拠が揃いました」を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは「マージした」「待つ」「差し戻す(メモ)」で、差し戻しはメモをセッションに送る
-- tapi への配送(`[orchestrator] deliver`)
+- tapi への配送(`[orchestrator] deliver`)(後回しに決めた。段階 3 はこれを除いて実装済み)
 - `conflicts.list` をトークンなしに(実装済み)
 
 実装(マージしてよいかの根拠。仕様の正は docs/api.md「マージしてよいかの根拠」):
@@ -572,7 +581,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | U6 | `issues.list` をトークンなしにするか | (a) 開かない(tapi は自分の sandbox の gh で読む) (b) 番号・タイトル・ラベルだけを返す形で開く(本文は人だけのまま) | (b)。gh の資格情報はエージェントに渡らず、タイトルは信頼できないデータとして区切りで囲む。本文はインジェクションの入口になりやすいので開かない |
 | U7 | tapi への自動配送の既定 | (a) 切る (b) idle のときだけ送る | (a)(下書きとハブの所見のとおり) |
 | U8 | 受信箱の答えの届け方 | (a) 待っていれば返り値、いなければ空いたときに pty (b) 常に pty (c) 常に `wait` で取りに来させる | (a)。codex など `wait` を使わないエージェントにも届き、`wait` を使うエージェントには pty に何も打たない |
-| U9 | Web UI からの tapi への送信 | (a) 送れる(確認シートつき)、`allow_devices` が無ければ断る (b) 送れる(セッションと同じ扱い) (c) 読むだけ | (a)。セッション 1 つへの send より重いので、端末を絞っているときだけ。tapi の許可への allow / deny は出さない |
+| U9 | Web UI からの tapi への送信 | (a) 送れる(確認シートつき)、`allow_devices` が無ければ断る (b) 送れる(セッションと同じ扱い) (c) 読むだけ | (a)。セッション 1 つへの send より重いので、端末を絞っているときだけ。tapi の許可への allow / deny は出さない。実装: (a)(利用者がおすすめどおりに決めた。上の「Web UI」の「実装:」) |
 | U10 | スキルの配り方 | (a) バイナリに同梱して `pekoe skills install` (b) 今の `ln -s` のまま (c) Claude Code のプラグインとして出す | (a)。リリースのバイナリでも入り、`pekoe update` で中身も新しくなる。(c) は Claude Code 以外に効かないので、(a) の後で検討 |
 | U11 | プロジェクト担当の層 | (a) 作らない(tapi → セッションの 2 層) (b) 「プログラム」と担当の main セッションを作る | (a)。複数 PR のまとまりが日常的になってから、台帳の依頼を「プログラム」に育てる形で考える |
 | U12 | `wait` の変化の記録を永続化するか | (a) メモリだけ(再起動で `reset`) (b) state.db | (a)。再起動の後は `ls` と受信箱を読み直せば足りる。再起動は稀 |

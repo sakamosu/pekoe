@@ -54,6 +54,7 @@
   <section class="panel">
     <div class="ttl"><span class="name">◆ tapi</span></div>
     <div class="tapi" id="o-tapi"></div>
+    <a class="btn key small open-tapi" id="o-tapi-open" href="#/tapi">talk to tapi ›</a>
   </section>
   <section class="panel focus">
     <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">実装 → PR → CI → レビュー → マージ</span></div>
@@ -63,7 +64,7 @@
 
 <main id="detail" hidden>
   <section class="panel">
-    <div class="ttl"><span class="name">◆ Session</span></div>
+    <div class="ttl"><span class="name" id="d-kind">◆ Session</span></div>
     <div class="head" id="d-head"></div>
   </section>
   <section class="card" id="d-ask" hidden></section>
@@ -111,6 +112,7 @@
       <span class="to-slug" id="d-to-slug"></span>
       <span class="to-repo" id="d-to-repo"></span>
     </div>
+    <div class="send-note" id="d-send-note" hidden></div>
     <div class="send-row">
       <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send" aria-describedby="d-to"></textarea>
       <button type="submit" class="btn key" id="d-send-btn">send</button>
@@ -148,6 +150,21 @@
     <div class="row">
       <button class="btn" id="isheet-cancel">cancel</button>
       <button class="btn allow" id="isheet-ok">answer</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-back" id="tsheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tsheet-title">
+    <h2 id="tsheet-title">send to tapi</h2>
+    <div class="sheet-cap">to — the orchestrator, not one session</div>
+    <div class="target">tapi(統括役)</div>
+    <div class="sheet-warn">⚠ tapi は全リポジトリを読み、セッションを作って任せます。セッション 1 つへの send より重い指示です。全文を読んでから送ってください。</div>
+    <div class="sheet-cap" id="tsheet-cap">text — all of it, as it will be typed</div>
+    <pre class="input whole" id="tsheet-text"></pre>
+    <div class="row">
+      <button class="btn" id="tsheet-cancel">cancel</button>
+      <button class="btn allow" id="tsheet-ok">send to tapi</button>
     </div>
   </div>
 </div>

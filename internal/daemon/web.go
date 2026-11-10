@@ -110,7 +110,14 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{slug}/keys", d.webKeys)
 	mux.HandleFunc("GET /api/inbox", d.webInbox)
 	mux.HandleFunc("POST /api/inbox/{id}/answer", d.webInboxAnswer)
-	mux.HandleFunc("GET /api/tapi", d.webTapi)
+	// tapi chat (webtapi.go): its screen, send (only with allow_devices)
+	// and the question keypad. No allow/deny: tapi's permission prompts
+	// are answered at the terminal.
+	sendable := len(lowerSet(o.cfg.AllowDevices)) > 0
+	mux.HandleFunc("GET /api/tapi", d.webTapi(sendable))
+	mux.HandleFunc("GET /api/tapi/screen", d.webTapiScreen)
+	mux.HandleFunc("POST /api/tapi/send", d.webTapiSend(sendable))
+	mux.HandleFunc("POST /api/tapi/keys", d.webTapiKeys)
 	mux.HandleFunc("GET /api/overview", d.webOverview)
 	return webGuard(o, mux)
 }
@@ -452,28 +459,38 @@ func toolLabel(t *state.Tool) string {
 	return strings.TrimSpace(t.Name + " " + truncate(t.Input, 80))
 }
 
-func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
+// webReadText reads a send's {text}: trimmed, 1 to webMaxText characters,
+// no control characters. On false it has written the 400.
+func webReadText(w http.ResponseWriter, r *http.Request) (string, bool) {
 	var in struct {
 		Text string `json:"text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
-		return
+		return "", false
 	}
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		http.Error(w, "empty text", http.StatusBadRequest)
-		return
+		return "", false
 	}
 	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > webMaxText {
 		http.Error(w, fmt.Sprintf("text must be at most %d characters", webMaxText), http.StatusBadRequest)
-		return
+		return "", false
 	}
 	// text, not keys: an ESC or ^C in it would press keys the keypad never
 	// offers (Shift-Tab, interrupt). SendText drops them too; say so here.
 	if engine.HasControl(text) {
 		http.Error(w, "text must not contain control characters", http.StatusBadRequest)
+		return "", false
+	}
+	return text, true
+}
+
+func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	text, ok := webReadText(w, r)
+	if !ok {
 		return
 	}
 	s, err := d.snapshot(slug)
@@ -509,22 +526,9 @@ func webQuestion(s *state.Session) bool {
 // allow/deny only.
 func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	var in struct {
-		Keys []string `json:"keys"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
+	keys, ok := webReadKeys(w, r)
+	if !ok {
 		return
-	}
-	if len(in.Keys) == 0 || len(in.Keys) > webMaxKeys {
-		http.Error(w, fmt.Sprintf("keys must be 1 to %d keys", webMaxKeys), http.StatusBadRequest)
-		return
-	}
-	for _, k := range in.Keys {
-		if !webKeys[k] {
-			http.Error(w, fmt.Sprintf("key %q is not allowed", k), http.StatusBadRequest)
-			return
-		}
 	}
 	s, err := d.snapshot(slug)
 	if err != nil {
@@ -548,12 +552,35 @@ func (d *Daemon) webKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := peerFrom(r)
-	log.Printf("web: %s presses %s on %s (from %s)", p.Login, strings.Join(in.Keys, " "), slug, p.Device)
-	if _, err := d.Call("session.keys", mustJSON(keysP{Slug: slug, Keys: in.Keys})); err != nil {
+	log.Printf("web: %s presses %s on %s (from %s)", p.Login, strings.Join(keys, " "), slug, p.Device)
+	if _, err := d.Call("session.keys", mustJSON(keysP{Slug: slug, Keys: keys})); err != nil {
 		webErr(w, err)
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// webReadKeys reads a keypad request's {keys}: 1 to webMaxKeys keys, each
+// in webKeys. On false it has written the 400.
+func webReadKeys(w http.ResponseWriter, r *http.Request) ([]string, bool) {
+	var in struct {
+		Keys []string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return nil, false
+	}
+	if len(in.Keys) == 0 || len(in.Keys) > webMaxKeys {
+		http.Error(w, fmt.Sprintf("keys must be 1 to %d keys", webMaxKeys), http.StatusBadRequest)
+		return nil, false
+	}
+	for _, k := range in.Keys {
+		if !webKeys[k] {
+			http.Error(w, fmt.Sprintf("key %q is not allowed", k), http.StatusBadRequest)
+			return nil, false
+		}
+	}
+	return in.Keys, true
 }
 
 func webErr(w http.ResponseWriter, err error) {
