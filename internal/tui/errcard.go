@@ -148,7 +148,7 @@ func (m *model) errorCard(cw int) []row {
 	if !focused {
 		keys = [][2]string{{"4", "focus card"}}
 	}
-	lines := []string{head, r.Message, where, m.keyHints(keys, inner)}
+	lines := []string{head, firstLine(r.Message), where, m.keyHints(keys, inner)}
 	b := func(s string) string { return th.FG(theme.Border, s) }
 	out := []row{{Text: b("╭" + strings.Repeat("─", cw-2) + "╮")}}
 	for _, l := range lines {
@@ -166,7 +166,7 @@ func (m *model) errorRow(r errcatch.Report, width int, cur string) string {
 		meta += " → " + r.Slug
 	}
 	msgW := max(width-12-w(meta)-w(when), 8)
-	return th.FG(theme.Secondary, m.ic.Unsent) + " " + th.FG(theme.Err, "err") + "   " + fit(r.Message, msgW) + " " + th.FG(theme.Dim, meta) + " " + th.FG(theme.Dim, when)
+	return th.FG(theme.Secondary, m.ic.Unsent) + " " + th.FG(theme.Err, "err") + "   " + fit(firstLine(r.Message), msgW) + " " + th.FG(theme.Dim, meta) + " " + th.FG(theme.Dim, when)
 }
 
 func (m *model) selectedError() *errcatch.Report {
@@ -205,10 +205,13 @@ func (e *errModal) hints() [][2]string {
 
 func (e *errModal) body() []string {
 	th, r := e.m.th, e.r
-	lines := []string{
-		th.FG(theme.Text, r.Message),
-		th.FG(theme.Dim, fmt.Sprintf("%s · %s · ×%d · first %s · last %s", errOrigin(r), r.Kind, r.Count, r.First.Format("15:04:05"), r.Last.Format("15:04:05"))),
+	var lines []string
+	for _, l := range strings.Split(cleanText(r.Message), "\n") { // a message may span lines
+		lines = append(lines, th.FG(theme.Text, l))
 	}
+	lines = append(lines,
+		th.FG(theme.Dim, fmt.Sprintf("%s · %s · ×%d · first %s · last %s", errOrigin(r), r.Kind, r.Count, r.First.Format("15:04:05"), r.Last.Format("15:04:05"))),
+	)
 	if loc := r.Loc(); loc != "" {
 		lines = append(lines, "\x00sunk"+loc)
 	}
