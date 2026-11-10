@@ -99,7 +99,6 @@ func TestHumanOnlyMethodsNeedToken(t *testing.T) {
 		{"tapi.keys", map[string]any{"keys": []string{"Enter"}}},
 		{"init.write", map[string]any{"path": repo, "toml": "[hooks]\nsetup = \"true\"\n"}},
 		{"run.start", map[string]any{"slug": "main", "command": "true"}},
-		{"dev.toggle", map[string]any{"slug": "main"}},
 		{"daemon.stop", map[string]any{"kill_agents": true}},
 		// added after the deny list and missed by it: run nvim, read
 		// excerpts, return the login URL or the extension's token

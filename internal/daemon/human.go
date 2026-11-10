@@ -54,6 +54,12 @@ var agentMethods = map[string]string{
 	// hAgentRm refuses every other state, force, and a landed session
 	// whose worktree is still there.
 	"worktree.rm": "the hub agent clears a landed session from the list (`pekoe rm`); hAgentRm refuses other states, force, and a worktree still on disk",
+	// the dev server: [hooks] dev runs in pekoed's hooks sandbox, as [hooks]
+	// test does on every Stop, so starting it is no new way to run
+	// something; an agent's own sandbox cannot listen on a port, and it
+	// needs the server to look at its UI. hAgentDevToggle limits it to the
+	// caller's own session.
+	"dev.toggle": "a session starts or stops its own dev server (`pekoe dev <slug>`); hAgentDevToggle limits it to the caller's own session, unknown callers refused; the command runs in pekoed's hooks sandbox, as [hooks] test does",
 	// orchestration (docs/orchestration.md): records only, nothing runs and
 	// pekoed reads no file for them
 	"report.post": "a session reports its own work (`pekoe report`); only for the caller's own session, unknown callers refused, sizes capped; evidence paths are kept as text, never read",
@@ -108,7 +114,6 @@ var humanMethods = map[string]string{
 	// runs something outside the agent's sandbox
 	"init.write":      "repo config: setup / dev commands run outside the agent",
 	"run.start":       "runs a command in the worktree",
-	"dev.toggle":      "runs the repo's dev command",
 	"review.surface":  "starts nvim in the session's review window",
 	"review.pr":       "gh: reads and writes the PR with the person's credentials",
 	"session.open":    "starts an agent in any directory",

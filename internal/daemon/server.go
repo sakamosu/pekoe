@@ -474,6 +474,8 @@ func (d *Daemon) call(method string, params json.RawMessage, who *Caller) (res a
 		h = bind(d.hAgentRm)
 	case agent && method == "conflicts.list":
 		h = bind(d.hAgentConflicts)
+	case agent && method == "dev.toggle":
+		h = bind(func(p slugP) (any, error) { return d.hAgentDevToggle(who, p) })
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")
