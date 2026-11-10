@@ -404,6 +404,53 @@ func MergeBase(dir, a, b string) (string, error) {
 	return Run(dir, "merge-base", "--end-of-options", a, b)
 }
 
+// SameChange: does head change the same as reviewed, each against its
+// merge-base with base? It is what tells "the reviewed change, rebased
+// onto a newer base" (pekoe land) from a head that changes more, less or
+// elsewhere. reviewed's change is put onto head's merge-base the way a
+// rebase would (a three-way merge from reviewed's merge-base, in memory:
+// merge-tree writes no ref and touches no worktree), and the change is the
+// same only when that gives head's tree exactly: every file, every byte,
+// every place. A merge that conflicts is not the same change. Commits git
+// cannot find are an error (nothing to compare).
+func SameChange(dir, reviewed, head, base string) (bool, error) {
+	r, err := RevParse(dir, reviewed)
+	if err != nil {
+		return false, err
+	}
+	h, err := RevParse(dir, head)
+	if err != nil {
+		return false, err
+	}
+	mbR, err := MergeBase(dir, r, base)
+	if err != nil {
+		return false, err
+	}
+	mbH, err := MergeBase(dir, h, base)
+	if err != nil {
+		return false, err
+	}
+	if r == mbR {
+		return false, nil // reviewed changes nothing: nothing was reviewed
+	}
+	want, err := Run(dir, "rev-parse", "--verify", "--quiet", "--end-of-options", h+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	out, err := RunRaw(context.Background(), dir, nil, nil, "merge-tree", "--write-tree", "--no-messages", "--merge-base", mbR, "--end-of-options", mbH, r)
+	if err != nil {
+		var ge *Error
+		if errors.As(err, &ge) {
+			if ee, ok := ge.Err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+				return false, nil // conflicts: not the change that was reviewed
+			}
+		}
+		return false, err
+	}
+	got, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return got != "" && got == want, nil
+}
+
 // beforeRemove runs between RestoreSnapshot's diff and its removes (tests).
 var beforeRemove func()
 

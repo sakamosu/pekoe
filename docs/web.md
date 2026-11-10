@@ -8,7 +8,7 @@ Mac で pekoed を動かしたまま、外出先の iPhone(Tailscale アプリ�
 - 質問(AskUserQuestion などの択一・複数選択メニュー)へのキーパッド(← ↑ ↓ → / Tab ⇧Tab Space / 1〜9 / Esc Enter。質問待ちのときだけ出る)
 - エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
 - 判断の受信箱への回答(Inbox タブ。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
-- 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `実装 → PR → CI → レビュー → マージ` と、マージしてよいかの根拠の足りない条件)
+- 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `実装 → レビュー → PR → CI → マージ` と、マージしてよいかの根拠の足りない条件)
 - tapi chat(統括役)の画面・質問へのキーパッド・`send`(送る前に宛先と全文の確認シート。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
 
 賢さは pekoed にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。

@@ -265,13 +265,13 @@ func TestWebOverview(t *testing.T) {
 		}
 		return strings.Join(out, " ")
 	}
-	if got := steps(main); got != "impl:done pr:done ci:done review:now merge:todo" {
+	if got := steps(main); got != "impl:done review:now pr:done ci:done merge:todo" {
 		t.Errorf("main: %s", got)
 	}
 	if main.Merge == nil || strings.Join(main.Merge.Missing, ",") != "review,after" {
 		t.Errorf("main's missing: %+v", main.Merge)
 	}
-	if got := steps(feat); got != "impl:now pr:todo ci:todo review:todo merge:todo" || feat.Merge != nil {
+	if got := steps(feat); got != "impl:now review:todo pr:todo ci:todo merge:todo" || feat.Merge != nil {
 		t.Errorf("feat-a: %s %+v", got, feat.Merge)
 	}
 
@@ -282,7 +282,7 @@ func TestWebOverview(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &res)
 	for _, f := range res.Groups[0].Rows {
 		if f.Slug == "main" {
-			if got := steps(&f); got != "impl:done pr:done ci:fail review:fail merge:todo" {
+			if got := steps(&f); got != "impl:done review:fail pr:done ci:fail merge:todo" {
 				t.Errorf("main after a fail: %s", got)
 			}
 		}

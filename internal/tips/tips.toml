@@ -106,7 +106,7 @@ docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
 [[tip]]
 id = "web-inbox"
 short = "iPhone の Web UI から受信箱に答えられる"
-detail = "Inbox タブは事実とリンクが先、エージェントの文が後。推奨は選ばれていないので自分で選び、確認シートを見て送る。Overview タブは件数と各セッションの 実装 → PR → CI → レビュー → マージ。"
+detail = "Inbox タブは事実とリンクが先、エージェントの文が後。推奨は選ばれていないので自分で選び、確認シートを見て送る。Overview タブは件数と各セッションの 実装 → レビュー → PR → CI → マージ。"
 keys = ["pekoe web"]
 docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
 
@@ -190,16 +190,23 @@ docs = ["docs/orchestration.md"]
 [[tip]]
 id = "dashboard"
 short = "tapi の行を選ぶと [4] がダッシュボードになる"
-detail = "概要・受信箱・工程表(実装 → PR → CI → レビュー → マージ)・依頼・送信の記録・fyi を 1 画面に。4 で入り j k で選んで ↵ で答えるか開く、o でリンク。tapi chat は ↵ のまま。"
+detail = "概要・受信箱・工程表(実装 → レビュー → PR → CI → マージ)・依頼・送信の記録・fyi を 1 画面に。4 で入り j k で選んで ↵ で答えるか開く、o でリンク。tapi chat は ↵ のまま。"
 keys = ["4"]
 docs = ["docs/orchestration.md", "README.ja.md#tapi-chat"]
 
 [[tip]]
 id = "dashboard-pipeline"
 short = "ダッシュボードの工程表はバーと一言で今の段階を見せる"
-detail = "バーは 実装 → PR → CI → レビュー → マージ。緑が済み・黄が進行中・赤が失敗・青緑がマージしてよい。後ろに今の段階(CI running など)と足りない条件の理由が出る。マージ済みは最後にまとまる。"
+detail = "バーは 実装 → レビュー → PR → CI → マージ。緑が済み・黄が進行中・赤が失敗・青緑がマージしてよい。後ろに今の段階(CI running など)と足りない条件の理由が出る。マージ済みは最後にまとまる。"
 keys = ["4"]
 docs = ["docs/orchestration.md"]
+
+[[tip]]
+id = "dashboard-review-stage"
+short = "工程表の review は独立レビューの最中も見える"
+detail = "pekoe report --status review --verdict pending で 🔍 in review。pass で済み、fail で review failed。PR の後に中身が変われば needs re-review、rebase で SHA が変わっただけなら合格のまま。"
+keys = ["4"]
+docs = ["docs/orchestration.md", "docs/api.md"]
 
 [[tip]]
 id = "merge-evidence"

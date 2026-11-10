@@ -83,14 +83,33 @@ func (d *Daemon) hReportPost(who *Caller, p reportP) (any, error) {
 	if err := d.DB.AddReport(r); err != nil {
 		return nil, err
 	}
-	brief := r.Brief()
-	c, err := d.update(slug, func(x *state.Session) { x.Report = brief })
+	brief, rv := r.Brief(), r.ReviewBrief()
+	c, err := d.update(slug, func(x *state.Session) {
+		x.Report = brief
+		if rv != nil {
+			x.Review = rv
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
 	d.changes.add(Change{Kind: kindReport, Slug: slug, Summary: fmt.Sprintf("%s: report %s: %s", slug, r.Status, lineCut(brief.Summary, 120)), parent: c.Parent})
 	d.emit("report.posted", r)
 	return r, nil
+}
+
+// latestReview is the session's newest status-review report (pending, pass or fail), or nil.
+func (d *Daemon) latestReview(slug string) *state.Report {
+	rs, err := d.DB.Reports(slug, 0, 200)
+	if err != nil {
+		return nil
+	}
+	for i := range rs {
+		if rs[i].Status == "review" {
+			return &rs[i]
+		}
+	}
+	return nil
 }
 
 // cleanReport checks p's fields and sizes and drops control characters
@@ -112,8 +131,10 @@ func cleanReport(p reportP) (*state.Report, error) {
 	}
 	r := &state.Report{Status: p.Status, Summary: sum, Evidence: ev}
 	if p.Status == "review" {
-		if p.Verdict != "pass" && p.Verdict != "fail" {
-			return nil, fmt.Errorf("report.post: status review needs verdict pass or fail")
+		// pending marks a review asked for and under way (the dashboard's
+		// review stage); merge.check counts only pass
+		if p.Verdict != "pass" && p.Verdict != "fail" && p.Verdict != "pending" {
+			return nil, fmt.Errorf("report.post: status review needs verdict pending, pass or fail")
 		}
 		sha := strings.ToLower(strings.TrimSpace(p.ReviewedSHA))
 		if sha != "" && !shaRe.MatchString(sha) {

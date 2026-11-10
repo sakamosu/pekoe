@@ -283,13 +283,15 @@ func (m *model) dashSelIndex(its []dashItem) int {
 
 // ---- the pipeline of a session ----
 
-// stage marks: done, failing, under way, not yet, ready to merge
+// stage marks: done, failing, under way, not yet, ready to merge, and
+// stale (a review passed, but the PR's head changed what it read)
 const (
 	stOK = iota
 	stFail
 	stRun
 	stNone
 	stReady
+	stStale
 )
 
 func (m *model) stageMark(st int) string {
@@ -299,7 +301,7 @@ func (m *model) stageMark(st int) string {
 		return th.FG(theme.Ok, fit(m.ic.Check, 1))
 	case stFail:
 		return th.FG(theme.Err, fit(m.ic.Fail, 1))
-	case stRun:
+	case stRun, stStale:
 		return th.FG(theme.Warn, fit(m.ic.Pending, 1))
 	case stReady:
 		return th.FG(theme.Secondary, fit(m.ic.Here, 1))
@@ -310,64 +312,79 @@ func (m *model) stageMark(st int) string {
 	return th.FG(theme.Dim, "·")
 }
 
-// dashStages is a session's 実装 → PR → CI → レビュー → マージ, from its
-// state, report, PR summary and pekoed's merge check.
+// dashStages is a session's 実装 → レビュー → PR → CI → マージ, the order
+// the work goes in (pekoe-work: an independent review before pekoe land),
+// from its state, its reports, the PR summary and pekoed's merge check.
 func dashStages(s *state.Session, mc *state.MergeCheck) [5]int {
 	ps := s.PRStatus
 	landed := s.State == state.Landed || (ps != nil && ps.State == "MERGED")
+	rv := s.Review
 	var st [5]int
-	// implement
+	// implement: done once a review was asked for (the agent hands the
+	// change over), it reported done, or it has a PR
 	switch {
 	case landed || s.PR > 0:
 		st[0] = stOK
 	case s.State == state.Failed || (s.Report != nil && s.Report.Status == "blocked"):
 		st[0] = stFail
-	case s.Report != nil && (s.Report.Status == "done" || s.Report.Status == "review"):
+	case rv != nil || (s.Report != nil && (s.Report.Status == "done" || s.Report.Status == "review")):
 		st[0] = stOK
 	case s.State == state.Running || s.State == state.Creating || s.State == state.Waiting:
 		st[0] = stRun
 	default: // idle or done without a report: nothing says it is under way
 		st[0] = stNone
 	}
-	// PR
+	// review: the latest independent review (report --status review):
+	// pending under way, pass done, fail failing. With a PR it must be of
+	// the PR's head (or the same change, rebased: merge.check); a pass of
+	// a change the head has moved past is stale.
 	switch {
 	case landed:
 		st[1] = stOK
-	case s.PR > 0 && ps != nil && ps.State == "CLOSED":
+	case ps != nil && ps.ReviewDecision == "CHANGES_REQUESTED":
 		st[1] = stFail
-	case s.PR > 0:
+	case mc != nil && mergeCond(mc, "review"):
 		st[1] = stOK
-	case s.Landing:
-		st[1] = stRun
-	default:
+	case rv == nil:
 		st[1] = stNone
+	case rv.Verdict == "pending":
+		st[1] = stRun
+	case rv.Verdict != "pass":
+		st[1] = stFail
+	case mc != nil && mc.ReviewStale:
+		st[1] = stStale
+	default:
+		st[1] = stOK
+	}
+	// PR
+	switch {
+	case landed:
+		st[2] = stOK
+	case s.PR > 0 && ps != nil && ps.State == "CLOSED":
+		st[2] = stFail
+	case s.PR > 0:
+		st[2] = stOK
+	case s.Landing:
+		st[2] = stRun
+	default:
+		st[2] = stNone
 	}
 	// CI
 	switch {
 	case landed:
-		st[2] = stOK
+		st[3] = stOK
 	case s.PR == 0:
-		st[2] = stNone
+		st[3] = stNone
 	case ps == nil:
-		st[2] = stRun
+		st[3] = stRun
 	case ps.Fail > 0:
-		st[2] = stFail
-	case ps.Pending > 0:
-		st[2] = stRun
-	case ps.Pass > 0:
-		st[2] = stOK
-	default:
-		st[2] = stNone
-	}
-	// review
-	st[3] = stNone
-	switch {
-	case landed:
-		st[3] = stOK
-	case ps != nil && ps.ReviewDecision == "CHANGES_REQUESTED":
 		st[3] = stFail
-	case mc != nil && mergeCond(mc, "review"):
+	case ps.Pending > 0:
+		st[3] = stRun
+	case ps.Pass > 0:
 		st[3] = stOK
+	default:
+		st[3] = stNone
 	}
 	// merge
 	switch {
@@ -403,18 +420,18 @@ func mergeCond(mc *state.MergeCheck, name string) bool {
 	return false
 }
 
-var stageNames = [5]string{"impl", "PR", "CI", "review", "merge"}
+var stageNames = [5]string{"impl", "review", "PR", "CI", "merge"}
 
 // stageRole is the color of a stage's mark: done green, failing red,
-// under way yellow, ready to merge secondary (the person's turn, like
-// done and merged in Sessions), not yet dim.
+// under way or stale yellow, ready to merge secondary (the person's turn,
+// like done and merged in Sessions), not yet dim.
 func stageRole(st int) theme.Role {
 	switch st {
 	case stOK:
 		return theme.Ok
 	case stFail:
 		return theme.Err
-	case stRun:
+	case stRun, stStale:
 		return theme.Warn
 	case stReady:
 		return theme.Secondary
@@ -488,18 +505,28 @@ func (m *model) stagePhraseCond(s *state.Session, st [5]int, mc *state.MergeChec
 	if s.State == state.Waiting {
 		return say("🙋", theme.Warn, "waits for you")
 	}
-	fail := [5]string{"blocked", "PR closed", "CI failed", "changes requested", ""}
-	run := [5]string{"working", "landing", "CI running", "", ""}
+	fail := [5]string{"blocked", "review failed", "PR closed", "CI failed", ""}
+	if ps := s.PRStatus; ps != nil && ps.ReviewDecision == "CHANGES_REQUESTED" {
+		fail[1] = "changes requested"
+	}
+	run := [5]string{"working", "in review", "landing", "CI running", ""}
 	for i, x := range st {
 		if x == stFail && fail[i] != "" {
 			return say("🚧", theme.Err, fail[i])
 		}
 	}
+	if st[1] == stStale {
+		p, _ := say("👀", theme.Warn, "needs re-review")
+		return p, "review"
+	}
 	for i, x := range st {
 		if x == stRun && run[i] != "" {
 			e := "⏳"
-			if i == 0 {
+			switch i {
+			case 0:
 				e = "🔨"
+			case 1:
+				e = "🔍"
 			}
 			return say(e, theme.Warn, run[i])
 		}
@@ -511,6 +538,9 @@ func (m *model) stagePhraseCond(s *state.Session, st [5]int, mc *state.MergeChec
 	if st[0] == stNone {
 		return say("💤", theme.Dim, "no report yet")
 	}
+	if s.PR == 0 && st[1] == stNone {
+		return say("👀", theme.Warn, "needs review")
+	}
 	if s.PR == 0 {
 		return say("📦", theme.Text, "ready to land")
 	}
@@ -519,8 +549,8 @@ func (m *model) stagePhraseCond(s *state.Session, st [5]int, mc *state.MergeChec
 
 // stageWhy is pekoed's own words for a missing merge condition: the one
 // the phrase names ("needs review" → "独立レビューの報告がない"), or else the
-// first one the phrase does not already say (CI running or failing is in
-// the phrase), with its name: "review: レビューした 17b962a と PR の HEAD
+// first one the phrase does not already say (CI running or failing, and a
+// review under way, are in the phrase), with its name: "review: レビューした 17b962a と PR の HEAD
 // ea9697f が違う". It is what tells "no review yet" from "reviewed an
 // older commit".
 func stageWhy(st [5]int, mc *state.MergeCheck, named string) string {
@@ -528,7 +558,7 @@ func stageWhy(st [5]int, mc *state.MergeCheck, named string) string {
 		return ""
 	}
 	for _, n := range mc.Missing {
-		if n == "ci" && (st[2] == stRun || st[2] == stFail) {
+		if n == "ci" && (st[3] == stRun || st[3] == stFail) || n == "review" && st[1] == stRun {
 			continue
 		}
 		if named != "" && n != named {

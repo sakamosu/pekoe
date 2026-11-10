@@ -145,9 +145,11 @@ func (c *conn) wants(ev string) bool {
 }
 
 type Daemon struct {
-	DB     *state.DB
-	Eng    engine.Engine
-	Global *config.Global
+	DB *state.DB
+	// changeSame caches merge.go's sameChange per repo and pair of commits
+	changeSame sync.Map
+	Eng        engine.Engine
+	Global     *config.Global
 	// sbx wraps the commands that come from a worktree (internal/sandbox)
 	sbx     *sandbox.Sandbox
 	ln      net.Listener

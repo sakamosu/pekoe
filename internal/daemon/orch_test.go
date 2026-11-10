@@ -148,6 +148,8 @@ func TestReportLimits(t *testing.T) {
 		{"summary": "x", "status": "done", "evidence": make([]string, 21)},
 		{"summary": "x", "status": "done", "evidence": []string{strings.Repeat("a", 501)}},
 		{"summary": "x", "status": "review"},
+		{"summary": "x", "status": "review", "verdict": "maybe"},
+		{"summary": "x", "status": "progress", "verdict": "pending"},
 		{"summary": "x", "status": "done", "verdict": "pass"},
 		{"summary": "x", "status": "review", "verdict": "pass", "reviewed_sha": "not-a-sha"},
 	} {

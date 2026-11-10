@@ -42,7 +42,7 @@ pekoe report "<合否の理由を 1〜3 行>" --status review \
 pekoe report - --status review --verdict fail --reviewed-sha <sha> < review.md
 ```
 
-- `--status review` には `--verdict` が要る。`--reviewed-sha` は実際に読んだ SHA。読んだ後に HEAD が動いていたら、その SHA の合否として残す(新しい SHA はもう一度レビューする)
+- `--status review` には `--verdict` が要る(`pass`・`fail`。`pending` は作者がレビューを頼んだときに残す「レビュー中」の印で、レビュアーは使わない)。`--reviewed-sha` は実際に読んだ SHA。読んだ後に HEAD が動いていたら、その SHA の合否として残す(新しい SHA はもう一度レビューする)
 - 不合格なら、直すべき点を 1 つずつ、ファイルと行・何が問題か・どうなればよいかで書く。好みの指摘と、直さないとマージできない指摘を分ける
 - 合格でも、気になった点は書いてよい(合否は変えない)
 - サブエージェントとして呼ばれたときは、作者にも同じ内容を返す。報告は作者のセッションに付く(pekoed は呼び出したプロセスの窓で決める)ので、依頼元からは「作者のセッションの中のレビュー」に見える

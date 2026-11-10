@@ -89,7 +89,7 @@ func TestDashboardSections(t *testing.T) {
 	out := ansi.Strip(raw)
 	order := []string{"Dashboard · tapi the orchestrator", "Overview", "3 questions to answer", "1 running", "1 to merge", "1 PR open", "1 request",
 		"Inbox", "3 open", "login", "#14", "decide", "#12 feat-csv", "ページングを変えてよい? <script>alert(1)</script>", "merge ready", "#13 pekoed",
-		"Pipeline", "impl › PR › CI › review › merge", "from tapi · #3 CSV の空行", "feat-csv", "✓✓✓··", "needs review", "#42", "独立レビューの報告がない",
+		"Pipeline", "impl › review › PR › CI › merge", "from tapi · #3 CSV の空行", "feat-csv", "✓·✓✓·", "needs review", "#42", "独立レビューの報告がない",
 		"from you", "fix-ci", "working",
 		"Requests", "#3 CSV の空行を飛ばして <script>", "→ feat-csv",
 		"Sends", "+tapi → feat-csv send", "テストも足して", "failed", "CSV を直す",
@@ -279,7 +279,7 @@ func TestDashboardGlyphs(t *testing.T) {
 	m := dashPipelineModel(t)
 	dashLook(t, m, "truecolor", "unicode")
 	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
-	for _, want := range []string{"🧭 Overview", "📬 Inbox", "🚦 Pipeline", "▰▰▰▰▰▰▱▱▱▱  👀 needs review", "🎉 merged · 1", "📨 Sends", "💡 Decided"} {
+	for _, want := range []string{"🧭 Overview", "📬 Inbox", "🚦 Pipeline", "▰▰▱▱▰▰▰▰▱▱  👀 needs review", "🎉 merged · 1", "📨 Sends", "💡 Decided"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("truecolor unicode: %q missing:\n%s", want, out)
 		}
@@ -292,7 +292,7 @@ func TestDashboardGlyphs(t *testing.T) {
 
 	dashLook(t, m, "ansi", "ascii")
 	out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
-	if !strings.Contains(out, "vvv..  needs review") {
+	if !strings.Contains(out, "v.vv.  needs review") {
 		t.Errorf("ascii: no ASCII marks:\n%s", out)
 	}
 	for _, r := range out {
@@ -302,7 +302,7 @@ func TestDashboardGlyphs(t *testing.T) {
 	}
 
 	dashLook(t, m, "none", "unicode")
-	if out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n")); !strings.Contains(out, "✓✓✓··  👀 needs review") {
+	if out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n")); !strings.Contains(out, "✓·✓✓·  👀 needs review") {
 		t.Errorf("no color: no marks:\n%s", out)
 	}
 }
@@ -366,4 +366,79 @@ func sessionEv(t *testing.T, name string, s *state.Session) client.Event {
 		t.Fatal(err)
 	}
 	return client.Event{Event: name, Data: b}
+}
+
+// The stages follow the work (impl → review → PR → CI → merge): asking
+// for the independent review hands the change over (impl done) and puts
+// the review under way, even when the agent ended its turn (state done, no
+// done report); its verdict decides the review stage; after the PR a pass
+// counts only for the PR's head or the same change rebased (merge.check),
+// and a head that changed what was reviewed asks for a re-review.
+func TestDashStagesReview(t *testing.T) {
+	m, _ := dashModel(t)
+	dashLook(t, m, "none", "unicode")
+	pending := &state.ReviewSummary{ID: 2, Verdict: "pending", ReviewedSHA: "abc1234"}
+	pass := &state.ReviewSummary{ID: 3, Verdict: "pass", ReviewedSHA: "abc1234"}
+	fail := &state.ReviewSummary{ID: 3, Verdict: "fail", ReviewedSHA: "abc1234"}
+	rep := func(id int64, status string) *state.ReportSummary {
+		return &state.ReportSummary{ID: id, Status: status}
+	}
+	opened := func(s *state.Session) *state.Session {
+		s.PR, s.Landing = 42, true
+		s.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: "def5678", Pass: 3, MergeState: "CLEAN"}
+		return s
+	}
+	review := func(ok bool, detail string, stale bool) *state.MergeCheck {
+		mc := &state.MergeCheck{PR: 42, PRHead: "def5678", ReviewStale: stale, Missing: []string{}, Conds: []state.MergeCond{
+			{Name: "land", OK: true}, {Name: "review", OK: ok, Detail: detail}, {Name: "ci", OK: true}}}
+		if !ok {
+			mc.Missing = []string{"review"}
+		}
+		return mc
+	}
+	cases := []struct {
+		name   string
+		s      *state.Session
+		mc     *state.MergeCheck
+		want   [5]int
+		phrase string
+		why    string
+	}{
+		{"before review", &state.Session{State: state.Running},
+			nil, [5]int{stRun, stNone, stNone, stNone, stNone}, "working", ""},
+		{"done, not reviewed", &state.Session{State: state.Done, Report: rep(1, "done")},
+			nil, [5]int{stOK, stNone, stNone, stNone, stNone}, "needs review", ""},
+		{"in review, the agent's turn ended", &state.Session{State: state.Done, Report: rep(2, "review"), Review: pending},
+			nil, [5]int{stOK, stRun, stNone, stNone, stNone}, "in review", ""},
+		{"in review, a progress report since", &state.Session{State: state.Running, Report: rep(3, "progress"), Review: pending},
+			nil, [5]int{stOK, stRun, stNone, stNone, stNone}, "in review", ""},
+		{"passed", &state.Session{State: state.Done, Report: rep(3, "review"), Review: pass},
+			nil, [5]int{stOK, stOK, stNone, stNone, stNone}, "ready to land", ""},
+		{"failed", &state.Session{State: state.Running, Report: rep(3, "review"), Review: fail},
+			nil, [5]int{stOK, stFail, stNone, stNone, stNone}, "review failed", ""},
+		{"PR, reviewed its head", opened(&state.Session{State: state.Done, Review: pass}),
+			review(true, "報告 #3 で pass", false), [5]int{stOK, stOK, stOK, stOK, stNone}, "waiting", ""},
+		{"PR, head only rebased", opened(&state.Session{State: state.Done, Review: pass}),
+			review(true, "報告 #3 で pass(abc1234)。PR の HEAD def5678 は rebase し直しただけで差分の中身が同じ", false),
+			[5]int{stOK, stOK, stOK, stOK, stNone}, "waiting", ""},
+		{"PR, head changed the reviewed change", opened(&state.Session{State: state.Done, Review: pass}),
+			review(false, "レビューした abc1234 から PR の HEAD def5678 で差分の中身が変わった(再レビューが要る)", true),
+			[5]int{stOK, stStale, stOK, stOK, stNone}, "needs re-review", "差分の中身が変わった(再レビューが要る)"},
+		{"PR, re-review under way", opened(&state.Session{State: state.Done, Review: &state.ReviewSummary{ID: 4, Verdict: "pending", ReviewedSHA: "def5678"}}),
+			review(false, "独立レビューの最中(報告 #4・def5678)", false), [5]int{stOK, stRun, stOK, stOK, stNone}, "in review", ""},
+	}
+	for _, c := range cases {
+		c.s.Slug = "feat-x"
+		got := dashStages(c.s, c.mc)
+		if got != c.want {
+			t.Errorf("%s: stages %v, want %v", c.name, got, c.want)
+		}
+		p, named := m.stagePhraseCond(c.s, got, c.mc)
+		if p = ansi.Strip(p); !strings.HasSuffix(p, c.phrase) {
+			t.Errorf("%s: phrase %q, want %q", c.name, p, c.phrase)
+		}
+		if why := stageWhy(got, c.mc, named); !strings.Contains(why, c.why) || (c.why == "" && why != "") {
+			t.Errorf("%s: why %q, want %q", c.name, why, c.why)
+		}
+	}
 }

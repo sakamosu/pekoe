@@ -130,11 +130,11 @@ var tourSteps = []tourStep{
 	{
 		ja: tourCopy{
 			title: "工程表とマージ",
-			body:  "工程表は、セッションごとの impl › PR › CI › review › merge のバーと、今の段階のひとこと。足りないものは needs … とその理由に出る。fix-cart-total は全部そろって ready to merge になってるね。そろうと pekoed が受信箱に merge ready を 1 件出すけど、マージするのはきみ。GitHub でマージしてから、その項目に答えてね。",
+			body:  "工程表は、セッションごとの impl › review › PR › CI › merge(作業の順: 実装 → 独立レビュー → PR → CI → マージ)のバーと、今の段階のひとこと。足りないものは needs … とその理由に出る。fix-cart-total は全部そろって ready to merge になってるね。そろうと pekoed が受信箱に merge ready を 1 件出すけど、マージするのはきみ。GitHub でマージしてから、その項目に答えてね。",
 		},
 		en: tourCopy{
 			title: "Pipeline and merging",
-			body:  "The pipeline shows a bar of impl › PR › CI › review › merge for each session and a word for where it is; what is still missing shows as needs …, with the reason. fix-cart-total has it all and says ready to merge. Then pekoed puts a merge ready item in the inbox, but the merge is yours: merge it on GitHub, then answer the item.",
+			body:  "The pipeline shows a bar of impl › review › PR › CI › merge (the order the work goes in: implement, independent review, PR, CI, merge) for each session and a word for where it is; what is still missing shows as needs …, with the reason. fix-cart-total has it all and says ready to merge. Then pekoed puts a merge ready item in the inbox, but the merge is yours: merge it on GitHub, then answer the item.",
 		},
 		setup: func(m *model) {
 			m.sel = tapiSel
@@ -350,6 +350,7 @@ func (m *model) loadSample() {
 	ready.PR, ready.Landing = 131, true
 	ready.PRStatus = &state.PRStatus{State: "OPEN", Pass: 3, MergeState: "CLEAN"}
 	ready.Report = &state.ReportSummary{ID: 31, Status: "review", Summary: "Independent review: pass", At: ago(22 * time.Minute)}
+	ready.Review = &state.ReviewSummary{ID: 31, Verdict: "pass", ReviewedSHA: "3f9c2e1", At: ago(22 * time.Minute)}
 	idle := mk(tourIdle, "chore/deps", state.Idle, 2*time.Hour, 3*time.Hour)
 
 	m.sessions = []*state.Session{idle, done, run, wait, csv, ready}

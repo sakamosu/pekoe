@@ -89,7 +89,7 @@ func (d *Daemon) webInboxAnswer(w http.ResponseWriter, r *http.Request) {
 
 // ---- overview: the counts and the flow of every session ----
 
-// Step states in the flow (実装 → PR → CI → レビュー → マージ).
+// Step states in the flow (実装 → レビュー → PR → CI → マージ).
 const (
 	stepDone = "done" // finished
 	stepNow  = "now"  // under way, or waiting on someone
@@ -254,7 +254,7 @@ func cutRunes(s string, n int) string {
 	return s
 }
 
-// webFlowOf places s on 実装 → PR → CI → レビュー → マージ, from its
+// webFlowOf places s on 実装 → レビュー → PR → CI → マージ, from its
 // state, its latest report, its PR and merge.check (mc, nil when it has
 // no PR of its own or has landed).
 func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
@@ -290,9 +290,11 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		f.Steps = append(f.Steps, webStep{Name: name, Status: status, Detail: detail})
 	}
 
-	// 実装: done once there is a PR (land pushed it) or it landed
+	// 実装: done once the independent review was asked for (the change is
+	// handed over), there is a PR (land pushed it) or it landed
+	rv := d.latestReview(s.Slug)
 	switch {
-	case s.PR > 0 || s.Landing || merged:
+	case s.PR > 0 || s.Landing || merged || rv != nil:
 		step("impl", stepDone, "")
 	case s.State == state.Failed || s.Error != "":
 		step("impl", stepFail, firstLine(s.Error))
@@ -300,6 +302,27 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("impl", stepFail, "blocked(報告 #"+strconv.FormatInt(s.Report.ID, 10)+")")
 	default:
 		step("impl", stepNow, string(s.State))
+	}
+
+	// レビュー: the latest independent review (status review), before the
+	// PR as the work goes (pekoe-work). pending is under way. With a PR,
+	// a pass counts only for the PR's HEAD or the same change rebased
+	// (merge.check's review).
+	switch c := cond("review"); {
+	case merged:
+		step("review", stepDone, "")
+	case c != nil && c.OK:
+		step("review", stepDone, c.Detail)
+	case rv != nil && rv.Verdict == "pending":
+		step("review", stepNow, fmt.Sprintf("独立レビューの最中(報告 #%d)", rv.ID))
+	case rv != nil && rv.Verdict != "pass":
+		step("review", stepFail, fmt.Sprintf("報告 #%d が %s", rv.ID, rv.Verdict))
+	case c != nil && rv != nil:
+		step("review", stepNow, c.Detail) // passed, but not this HEAD
+	case rv != nil:
+		step("review", stepDone, fmt.Sprintf("報告 #%d で pass", rv.ID))
+	default:
+		step("review", stepTodo, "")
 	}
 
 	// PR
@@ -332,24 +355,6 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("ci", stepTodo, "CI のチェックがない")
 	}
 
-	// レビュー: the latest independent review (status review). With a PR,
-	// it counts only when it reviewed the PR's HEAD (merge.check's review).
-	rv := d.latestReview(s.Slug)
-	switch c := cond("review"); {
-	case merged:
-		step("review", stepDone, "")
-	case c != nil && c.OK:
-		step("review", stepDone, c.Detail)
-	case rv != nil && rv.Verdict != "pass":
-		step("review", stepFail, fmt.Sprintf("報告 #%d が %s", rv.ID, rv.Verdict))
-	case c != nil && rv != nil:
-		step("review", stepNow, c.Detail) // passed, but not this HEAD
-	case rv != nil:
-		step("review", stepDone, fmt.Sprintf("報告 #%d で pass", rv.ID))
-	default:
-		step("review", stepTodo, "")
-	}
-
 	// マージ: the person merges (pekoed never does)
 	switch {
 	case merged:
@@ -360,20 +365,6 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("merge", stepTodo, "")
 	}
 	return f
-}
-
-// latestReview is the session's newest status-review report, or nil.
-func (d *Daemon) latestReview(slug string) *state.Report {
-	rs, err := d.DB.Reports(slug, 0, 200)
-	if err != nil {
-		return nil
-	}
-	for i := range rs {
-		if rs[i].Status == "review" {
-			return &rs[i]
-		}
-	}
-	return nil
 }
 
 func firstLine(s string) string {

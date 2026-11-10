@@ -98,8 +98,12 @@ type MergeCheck struct {
 	PRHead  string      `json:"pr_head,omitempty"` // the PR's head commit on GitHub
 	Ready   bool        `json:"ready"`
 	Conds   []MergeCond `json:"conds"`
-	Missing []string    `json:"missing"`         // names of the conditions not met, in order
-	Inbox   int64       `json:"inbox,omitempty"` // the open item saying it is ready (merge.check only)
+	Missing []string    `json:"missing"` // names of the conditions not met, in order
+	// ReviewStale: the latest review passed, but the PR's head changes
+	// something else than the commit it reviewed (a re-review is needed).
+	// A head that only rebased the reviewed change carries the pass.
+	ReviewStale bool  `json:"review_stale,omitempty"`
+	Inbox       int64 `json:"inbox,omitempty"` // the open item saying it is ready (merge.check only)
 }
 
 // MergeCond is one condition: land | review | ci | merge_state | conflicts | after.

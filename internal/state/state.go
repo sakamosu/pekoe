@@ -147,6 +147,10 @@ type Session struct {
 	// and, later, the inbox's answers go to it. Empty: not made by session.new.
 	Parent string         `json:"parent,omitempty"`
 	Report *ReportSummary `json:"report,omitempty"` // the latest report.post
+	// Review is the latest independent review (report.post --status
+	// review): started (verdict pending), passed or failed, and the commit.
+	// It stays when later reports (done, progress) come in.
+	Review *ReviewSummary `json:"review,omitempty"`
 	// Request is the ledger entry the session works on (pekoe new
 	// --request; daemon/ledger.go). 0: none.
 	Request int64 `json:"request,omitempty"`

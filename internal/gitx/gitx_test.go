@@ -406,3 +406,61 @@ func TestRestoreSnapshotDoesNotFollowSwappedSymlink(t *testing.T) {
 		t.Fatalf("file outside the worktree: %q, %v", b, err)
 	}
 }
+
+// SameChange holds for a change rebased onto a newer base (the base moved
+// elsewhere in the file, and in another file), and not once the change
+// differs: by whitespace, by more lines, or by the same lines in another
+// place with the same context (a reviewer's finding: a hash of the diff
+// without its hunk headers took those for the same).
+func TestSameChangeSurvivesRebase(t *testing.T) {
+	isolatedConfig(t, "")
+	repo, wt := repoWithWorktree(t, false)
+	fn := func(name, extra string) string {
+		return "func " + name + "(u User) error {\n\tif err := load(u); err != nil {\n\t\treturn err\n\t}\n" + extra + "\treturn nil\n}\n\n"
+	}
+	body := func(top, a, b string) string { return top + fn("A", a) + fn("B", b) + fn("C", "") }
+	commit := func(dir, file, content, msg string) string {
+		os.WriteFile(filepath.Join(dir, file), []byte(content), 0o644)
+		gitT(t, dir, "add", "-A")
+		gitT(t, dir, "commit", "-q", "--no-gpg-sign", "-m", msg)
+		return gitT(t, dir, "rev-parse", "HEAD")
+	}
+	auth := "\tauthorize(u)\n"
+	commit(repo, "a.go", body("", "", ""), "base")
+	gitT(t, wt, "rebase", "-q", "main")
+	reviewed := commit(wt, "a.go", body("", auth, ""), "feat")
+
+	// main moves: a line far from the change, and another file
+	commit(repo, "a.go", body("// top\n", "", ""), "main moves")
+	commit(repo, "b.txt", "b\n", "another file")
+	gitT(t, wt, "rebase", "-q", "main")
+	rebased := gitT(t, wt, "rev-parse", "HEAD")
+	if rebased == reviewed {
+		t.Fatal("the rebase did not move HEAD")
+	}
+	check := func(name, head string, want bool) {
+		t.Helper()
+		if got, err := SameChange(wt, reviewed, head, "main"); err != nil || got != want {
+			t.Errorf("%s: SameChange = %v, %v; want %v", name, got, err, want)
+		}
+	}
+	check("rebased", rebased, true)
+	check("itself", reviewed, true)
+	if got, err := SameChange(wt, reviewed[:7], rebased, "main"); err != nil || !got {
+		t.Errorf("short sha: %v, %v", got, err)
+	}
+	// the same line in B instead of A: the same diff text, another place
+	gitT(t, wt, "checkout", "-q", "-b", "elsewhere", "main")
+	check("elsewhere", commit(wt, "a.go", body("// top\n", "", auth), "elsewhere"), false)
+	check("whitespace", commit(wt, "a.go", body("// top\n", "\tauthorize(u) \n", ""), "ws"), false)
+	check("more", commit(wt, "a.go", body("// top\n", auth, auth), "more"), false)
+	// a head pekoed has no object for, and a reviewed commit that changes nothing
+	if _, err := SameChange(wt, reviewed, strings.Repeat("ab", 20), "main"); err == nil {
+		t.Error("an unknown head compared")
+	}
+	if main := gitT(t, repo, "rev-parse", "main"); true {
+		if got, err := SameChange(wt, main, main, "main"); err != nil || got {
+			t.Errorf("nothing reviewed: %v, %v", got, err)
+		}
+	}
+}
