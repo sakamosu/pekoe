@@ -83,6 +83,30 @@ type InboxFacts struct {
 	Report     *InboxReport `json:"report,omitempty"`
 	GitBlocked string       `json:"git_blocked,omitempty"`
 	Gone       bool         `json:"gone,omitempty"` // the session no longer exists
+	// Merge is whether the evidence that the session's PR may be merged
+	// is all there (daemon/merge.go); only for a session with its own PR
+	// that has not landed.
+	Merge *MergeCheck `json:"merge,omitempty"`
+}
+
+// MergeCheck is what pekoed reads of a session's PR against the conditions
+// for "it may be merged" (docs/orchestration.md 段階 3): each condition,
+// met or not, with what was seen. Ready when every one is met.
+type MergeCheck struct {
+	Slug    string      `json:"slug"`
+	PR      int         `json:"pr,omitempty"`
+	PRHead  string      `json:"pr_head,omitempty"` // the PR's head commit on GitHub
+	Ready   bool        `json:"ready"`
+	Conds   []MergeCond `json:"conds"`
+	Missing []string    `json:"missing"`         // names of the conditions not met, in order
+	Inbox   int64       `json:"inbox,omitempty"` // the open item saying it is ready (merge.check only)
+}
+
+// MergeCond is one condition: land | review | ci | merge_state | conflicts | after.
+type MergeCond struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
 }
 
 // InboxReport is the session's latest report without its words (the
@@ -104,6 +128,7 @@ type InboxPR struct {
 	ReviewDecision string `json:"review_decision,omitempty"`
 	Unresolved     int    `json:"unresolved"`
 	MergeState     string `json:"merge_state,omitempty"`
+	HeadSHA        string `json:"head_sha,omitempty"`
 }
 
 // Same reports whether two sets of facts say the same thing.
