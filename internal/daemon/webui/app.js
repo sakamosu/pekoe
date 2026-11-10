@@ -83,6 +83,7 @@ function details(s, withRepo) {
   if (s.test === "pass") add(colored("ok", "✓"), document.createTextNode("test"));
   else if (s.test === "fail") add(colored("err", "✗"), document.createTextNode("test"));
   else if (s.test === "running") add(document.createTextNode("…test"));
+  else if (s.test === "blocked") add(colored("warn", "!"), document.createTextNode("test not run: no sandbox"));
   if (s.pr) {
     const n = [document.createTextNode("#" + s.pr)];
     if (s.pr_look) n.push(document.createTextNode(" "), colored(s.pr_look.role, s.pr_look.icon));

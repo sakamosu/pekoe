@@ -263,6 +263,8 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 		test = th.FG(theme.Err, m.ic.Fail)
 	case "running":
 		test = th.FG(theme.Dim, "…")
+	case "blocked": // no sandbox: [hooks] test was not run
+		test = th.FG(theme.Warn, m.ic.Warning)
 	}
 	nameW, diffW := sessionCols(cw)
 	if diffW == 0 {
@@ -556,6 +558,9 @@ func (m *model) viewAgent(width, height int) []string {
 	}
 	if s.Port > 0 {
 		extra += fmt.Sprintf(" · :%d", s.Port)
+	}
+	if s.Test.Status == "blocked" {
+		extra += " · " + th.FG(theme.Warn, "test not run: no sandbox")
 	}
 	if s.State == state.Creating {
 		extra = "· not started"
