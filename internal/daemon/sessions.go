@@ -887,15 +887,23 @@ type adoptCandidate struct {
 	Cwd       string `json:"cwd"`
 	Where     string `json:"where"` // tty or tmux target
 	SessionID string `json:"session_id"`
+	Skip      string `json:"skip,omitempty"` // why it is left alone (not stopped)
 }
+
+// findAgents lists agent processes (swapped in tests).
+var findAgents = findAgentProcesses
 
 // hAdopt finds agents started by hand in other tabs (or tmux sessions on the
 // default server). A process cannot move between ptys, so adopting means
 // stopping it and resuming the same Claude Code session inside pekoe.
 func (d *Daemon) hAdopt(p adoptP) (any, error) {
-	cands := findAgentProcesses()
+	cands := findAgents()
 	if p.Path != "" {
-		top, _ := gitx.Toplevel(p.Path)
+		top, err := gitx.Toplevel(p.Path)
+		if err != nil {
+			// an empty top would match every agent on the machine
+			return nil, fmt.Errorf("%s is not inside a git repository", p.Path)
+		}
 		var f []adoptCandidate
 		for _, c := range cands {
 			if c.Cwd == top || strings.HasPrefix(c.Cwd, top+"/") {
@@ -904,29 +912,46 @@ func (d *Daemon) hAdopt(p adoptP) (any, error) {
 		}
 		cands = f
 	}
-	d.mu.Lock()
-	managed := map[string]bool{}
-	for _, s := range d.sessions {
-		managed[s.Path] = true
-	}
-	d.mu.Unlock()
-	var free []adoptCandidate
+	var free, skipped []adoptCandidate
+	byTop := map[string][]adoptCandidate{}
+	var tops []string
 	for _, c := range cands {
 		top, err := gitx.Toplevel(c.Cwd)
-		if err != nil || managed[top] {
+		if err != nil || d.managedPath(top) {
 			continue
 		}
 		c.Cwd = top
+		if byTop[top] == nil {
+			tops = append(tops, top)
+		}
+		byTop[top] = append(byTop[top], c)
+	}
+	for _, top := range tops {
+		cs := byTop[top]
+		if len(cs) > 1 {
+			// one worktree holds one session, and which conversation each
+			// process has cannot be told apart: stop none of them
+			for _, c := range cs {
+				c.Skip = fmt.Sprintf("%d agents in this worktree: quit all but one first", len(cs))
+				skipped = append(skipped, c)
+			}
+			continue
+		}
+		c := cs[0]
 		if ps := pastClaudeSessions(top); len(ps) > 0 {
 			c.SessionID = ps[0].ID
 		}
 		free = append(free, c)
 	}
 	if !p.Confirm {
-		return map[string]any{"candidates": free}, nil
+		return map[string]any{"candidates": free, "skipped": skipped}, nil
 	}
 	var adopted []*state.Session
 	for _, c := range free {
+		if d.managedPath(c.Cwd) { // opened meanwhile: leave the process running
+			log.Printf("adopt %s: already managed", c.Cwd)
+			continue
+		}
 		if proc, err := os.FindProcess(c.PID); err == nil {
 			_ = proc.Signal(os.Interrupt)
 			time.Sleep(500 * time.Millisecond)
@@ -943,6 +968,18 @@ func (d *Daemon) hAdopt(p adoptP) (any, error) {
 		}
 	}
 	return adopted, nil
+}
+
+// managedPath reports whether a session already lives in the worktree.
+func (d *Daemon) managedPath(top string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range d.sessions {
+		if s.Path == top {
+			return true
+		}
+	}
+	return false
 }
 
 func orNew(id string) string {

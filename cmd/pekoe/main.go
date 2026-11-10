@@ -521,19 +521,30 @@ func cmdAdopt(args []string) error {
 	}
 	cl := connect()
 	defer cl.Close()
+	type cand struct {
+		PID       int    `json:"pid"`
+		Cwd       string `json:"cwd"`
+		Where     string `json:"where"`
+		SessionID string `json:"session_id"`
+		Skip      string `json:"skip"`
+	}
 	var res struct {
-		Candidates []struct {
-			PID       int    `json:"pid"`
-			Cwd       string `json:"cwd"`
-			Where     string `json:"where"`
-			SessionID string `json:"session_id"`
-		} `json:"candidates"`
+		Candidates []cand `json:"candidates"`
+		Skipped    []cand `json:"skipped"`
 	}
 	if err := cl.Call("session.adopt", map[string]any{"path": path}, &res); err != nil {
 		return err
 	}
+	if len(res.Skipped) > 0 {
+		fmt.Println("left running (not adopted):")
+		for _, c := range res.Skipped {
+			fmt.Printf("  pid %-6d %-8s %s  %s\n", c.PID, c.Where, c.Cwd, c.Skip)
+		}
+	}
 	if len(res.Candidates) == 0 {
-		fmt.Println("no unmanaged agents found")
+		if len(res.Skipped) == 0 {
+			fmt.Println("no unmanaged agents found")
+		}
 		return nil
 	}
 	fmt.Println("agents running outside pekoe:")
