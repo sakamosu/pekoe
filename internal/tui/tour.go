@@ -104,6 +104,14 @@ type tourStep struct {
 	cells  func(m *model) []rect // cells painted with the select fill
 }
 
+// tourOther is the language the language key switches to.
+func tourOther(lang string) string {
+	if lang == tourJa {
+		return tourEn
+	}
+	return tourJa
+}
+
 // text is the step's text in lang (tourJa, else English).
 func (s tourStep) text(lang string) tourCopy {
 	if lang == tourJa {
@@ -291,11 +299,7 @@ func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 			}
 		case tourLangKey: // the other language, same step
 			m.tour.picked = true
-			if m.tour.lang == tourJa {
-				m.tour.lang = tourEn
-			} else {
-				m.tour.lang = tourJa
-			}
+			m.tour.lang = tourOther(m.tour.lang)
 		case "esc", "q", "Q":
 			return m.endTour()
 		case "ctrl+c":
@@ -325,10 +329,7 @@ func (m *model) tourApply() {
 // go when the card is narrow) and is named by the code of the language it
 // switches to (en / ja).
 func (m *model) tourHints() [][2]string {
-	lang := [2]string{tourLangKey, "ja"}
-	if m.tour.lang == tourJa {
-		lang[1] = "en"
-	}
+	lang := [2]string{tourLangKey, tourOther(m.tour.lang)}
 	if m.tour.step == len(tourSteps)-1 {
 		return [][2]string{{"↵", "done"}, {"←", "back"}, lang}
 	}
