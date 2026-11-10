@@ -9,8 +9,12 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"golang.org/x/text/width"
+
 	"pekoe/internal/client"
+	"pekoe/internal/config"
 	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // hostile is agent text with an escape that would clear the screen, a
@@ -83,10 +87,10 @@ func TestDashboardSections(t *testing.T) {
 		t.Fatalf("an agent's escape or bidi override was drawn: %q", raw)
 	}
 	out := ansi.Strip(raw)
-	order := []string{"Dashboard · tapi the orchestrator", "Overview", "1 running", "1 to merge", "1 PR open", "3 in the inbox", "1 request",
-		"Inbox", "login", "#14", "decide", "#12 feat-csv", "ページングを変えてよい? <script>alert(1)</script>", "merge ready", "#13 pekoed",
-		"Pipeline", "from tapi · request #3 CSV の空行", "feat-csv", "impl ✓ › PR ✓ › CI ✓ › review · › merge ·", "#42", "needs review",
-		"from you", "fix-ci",
+	order := []string{"Dashboard · tapi the orchestrator", "Overview", "3 questions to answer", "1 running", "1 to merge", "1 PR open", "1 request",
+		"Inbox", "3 open", "login", "#14", "decide", "#12 feat-csv", "ページングを変えてよい? <script>alert(1)</script>", "merge ready", "#13 pekoed",
+		"Pipeline", "impl › PR › CI › review › merge", "from tapi · #3 CSV の空行", "feat-csv", "✓✓✓··", "needs review", "#42", "独立レビューの報告がない",
+		"from you", "fix-ci", "working",
 		"Requests", "#3 CSV の空行を飛ばして <script>", "→ feat-csv",
 		"Sends", "+tapi → feat-csv send", "テストも足して", "failed", "CSV を直す",
 		"Decided", "#15 +tapi", "PR を 2 つに分けた", "→ 2 つ"}
@@ -170,9 +174,18 @@ func TestDashboardOnlyOnTapiRow(t *testing.T) {
 // The dashboard keeps every line to the terminal's width, wide and narrow,
 // with rows unfolded.
 func TestDashboardWidths(t *testing.T) {
-	for _, size := range [][2]int{{140, 40}, {100, 30}, {99, 30}, {80, 24}, {60, 20}, {40, 16}} {
-		label := fmt.Sprintf("dashboard %dx%d", size[0], size[1])
+	for _, look := range []struct{ color, icons string }{{"none", "nerd"}, {"truecolor", "unicode"}, {"ansi", "ascii"}} {
+		for _, size := range [][2]int{{150, 45}, {140, 40}, {100, 30}, {99, 30}, {80, 24}, {60, 20}, {40, 16}} {
+			dashWidths(t, look.color, look.icons, size)
+		}
+	}
+}
+
+func dashWidths(t *testing.T, color, icons string, size [2]int) {
+	{
+		label := fmt.Sprintf("dashboard %s %s %dx%d", color, icons, size[0], size[1])
 		m, _ := dashModel(t)
+		dashLook(t, m, color, icons)
 		m.width, m.height = size[0], size[1]
 		m.focus = pAgent
 		m.dash.open = map[string]bool{"s:feat-csv": true, "req:3": true, "send:41": true, "fyi:15": true}
@@ -181,6 +194,143 @@ func TestDashboardWidths(t *testing.T) {
 			m.onKey(key("j"))
 		}
 		checkSize(t, m, label+" scrolled")
+	}
+}
+
+// dashLook paints the model in a color mode and icon set.
+func dashLook(t *testing.T, m *model, color, icons string) {
+	t.Helper()
+	t.Setenv("PEKOE_COLOR", color)
+	m.th = theme.Load(&config.Theme{})
+	m.ic = theme.Icons(icons)
+}
+
+// dashPipelineModel adds what the pipeline sorts out: a repository's own
+// checkout (main), a merged session, a session that reviewed an older
+// commit while CI still runs, and an idle one without a report.
+func dashPipelineModel(t *testing.T) *model {
+	t.Helper()
+	m, f := dashModel(t)
+	base := f.reply
+	f.reply = func(method string) any {
+		if method == "merge.check" {
+			return append(base(method).([]state.MergeCheck), state.MergeCheck{Slug: "fix-stale", PR: 121, Missing: []string{"review", "ci", "merge_state"}, Conds: []state.MergeCond{
+				{Name: "land", OK: true, Detail: "pekoe land 済み(PR #121)"},
+				{Name: "review", OK: false, Detail: "レビューした 17b962a と PR の HEAD ea9697f が違う"},
+				{Name: "ci", OK: false, Detail: "2 件が終わっていない"},
+				{Name: "merge_state", OK: false, Detail: "merge_state が BLOCKED"},
+			}})
+		}
+		return base(method)
+	}
+	m.sessions = append(m.sessions,
+		&state.Session{Slug: "merged-one", State: state.Landed, Parent: "+tapi", PR: 5, Landing: true, PRStatus: &state.PRStatus{State: "MERGED"}},
+		&state.Session{Slug: "repo-main", State: state.Running, Path: "/r/app", RepoDir: "/r/app"},
+		&state.Session{Slug: "fix-stale", State: state.Idle, Parent: "+tapi", PR: 121, Landing: true, PRStatus: &state.PRStatus{State: "OPEN", Pass: 3, Pending: 2},
+			Report: &state.ReportSummary{ID: 68, Status: "done"}, Path: "/w/stale", RepoDir: "/r/app"},
+		&state.Session{Slug: "quiet-one", State: state.Idle, Path: "/w/quiet", RepoDir: "/r/app"},
+	)
+	m.dash = dashState{}
+	runCmd(m, m.loadDash())
+	return m
+}
+
+// The pipeline leaves out a repository's own checkout, puts merged
+// sessions last in a quiet group of their own, says where each session is
+// in words, and gives pekoed's reason for a missing condition the phrase
+// does not say (a review of an older commit is not "needs review").
+func TestDashboardPipeline(t *testing.T) {
+	m := dashPipelineModel(t)
+	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	if strings.Contains(out, "repo-main") {
+		t.Errorf("a repository's own checkout is in the pipeline:\n%s", out)
+	}
+	order := []string{"Pipeline", "feat-csv", "needs review", "fix-stale", "CI running", "#121", "review: レビューした 17b962a と PR の HEAD ea9697f が違う",
+		"fix-ci", "other", "quiet-one", "no report yet", "merged · 1", "merged-one", "merged", "#5", "Requests"}
+	at := 0
+	for _, want := range order {
+		i := strings.Index(out[at:], want)
+		if i < 0 {
+			t.Fatalf("%q missing or out of order (after byte %d):\n%s", want, at, out)
+		}
+		at += i + len(want)
+	}
+	// the overview still counts what the checkout's agent does
+	if !strings.Contains(out, "2 running") {
+		t.Errorf("overview:\n%s", out)
+	}
+	// rows are chosen in the order they are drawn: merged last
+	var slugs []string
+	for _, it := range m.dashItems() {
+		if it.slug != "" {
+			slugs = append(slugs, it.slug)
+		}
+	}
+	if got := strings.Join(slugs, " "); got != "feat-csv fix-stale fix-ci quiet-one merged-one" {
+		t.Errorf("pipeline rows: %s", got)
+	}
+}
+
+// With color and a picture-friendly icon set the stages are a bar (▰ ▱)
+// and the sections carry emoji; the ascii icon set gets ASCII marks and no
+// emoji; without color the bar becomes marks (it could not tell done from
+// failing). Every emoji is two cells (East Asian Wide).
+func TestDashboardGlyphs(t *testing.T) {
+	m := dashPipelineModel(t)
+	dashLook(t, m, "truecolor", "unicode")
+	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	for _, want := range []string{"🧭 Overview", "📬 Inbox", "🚦 Pipeline", "▰▰▰▰▰▰▱▱▱▱  👀 needs review", "🎉 merged · 1", "📨 Sends", "💡 Decided"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("truecolor unicode: %q missing:\n%s", want, out)
+		}
+	}
+	for _, r := range out {
+		if r >= 0x1F000 && width.LookupRune(r).Kind() != width.EastAsianWide {
+			t.Errorf("%q (U+%04X) is not East Asian Wide", r, r)
+		}
+	}
+
+	dashLook(t, m, "ansi", "ascii")
+	out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
+	if !strings.Contains(out, "vvv..  needs review") {
+		t.Errorf("ascii: no ASCII marks:\n%s", out)
+	}
+	for _, r := range out {
+		if r >= 0x1F000 || r == '▰' || r == '▱' {
+			t.Fatalf("ascii: %q drawn:\n%s", r, out)
+		}
+	}
+
+	dashLook(t, m, "none", "unicode")
+	if out = ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n")); !strings.Contains(out, "✓✓✓··  👀 needs review") {
+		t.Errorf("no color: no marks:\n%s", out)
+	}
+}
+
+// A nothing-to-do inbox and an empty pipeline say so, kindly.
+func TestDashboardEmpty(t *testing.T) {
+	m, _ := dashModel(t)
+	m.inbox, m.sessions = nil, nil
+	out := ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
+	for _, want := range []string{"nothing needs you", "nothing to answer", "no sessions yet"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing:\n%s", want, out)
+		}
+	}
+}
+
+// A send's line is what it is about, not its "## 何を" heading.
+func TestSendGist(t *testing.T) {
+	for in, want := range map[string]string{
+		"## 何を\nTUI のダッシュボードを直す\n\n## なぜ": "TUI のダッシュボードを直す",
+		"\n  テストも足して\n二行目":                "テストも足して",
+		"## 何を\n\n":                       "何を",
+		"#42 を見て":                         "#42 を見て",
+		"":                                "",
+	} {
+		if got := sendGist(in); got != want {
+			t.Errorf("sendGist(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
