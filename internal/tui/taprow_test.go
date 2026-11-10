@@ -11,6 +11,7 @@ import (
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
 	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 // The tapi row heads [1] under the orchestrator heading, above the
@@ -262,4 +263,58 @@ func TestTourCellsFollowTapiRow(t *testing.T) {
 	if !seen["状態の見かた"] || !seen["land"] {
 		t.Fatalf("steps not reached: %v", seen)
 	}
+}
+
+// Calm states paint the tapi row's icon in tapi's body color (cream on a
+// dark theme, caramel on a light one) and fill the hollow idle circle;
+// run and wait keep the session colors. Other session rows don't change.
+func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
+	t.Setenv("PEKOE_ICONS", "unicode")
+	for _, tc := range []struct {
+		palette, body string
+	}{{"", "38;2;227;195;154"}, {"light", "38;2;138;85;56"}} {
+		m := repoModel(t, "truecolor", 120)
+		m.ic = theme.Icons("unicode")
+		m.g.Mascot.Palette = tc.palette
+		m.buildTapi(nil)
+		alive := func(s state.State) *daemon.Tapi {
+			return &daemon.Tapi{Started: true, Alive: true, State: s, StateSince: time.Now()}
+		}
+		for _, c := range []struct {
+			name string
+			info *daemon.Tapi
+			calm bool
+			icon string
+		}{
+			{"asleep", nil, true, "●"},
+			{"idle", alive(state.Idle), true, "●"},
+			{"exited", &daemon.Tapi{Started: true, Alive: false}, true, "✗"},
+			{"run", alive(state.Running), false, ""},
+			{"wait", alive(state.Waiting), false, "●"},
+		} {
+			m.chat.info = c.info
+			rows, _ := m.sessionRows(80)
+			line := rows[1].Text
+			if got := ansi.Strip(line); c.icon != "" && !strings.HasPrefix(got, c.icon+" tapi") {
+				t.Errorf("%s/%q: row %q should start with %s", tc.palette, c.name, got, c.icon)
+			}
+			if has := strings.HasPrefix(line, "\x1b["+tc.body+"m"); has != c.calm {
+				t.Errorf("%s/%q: body-colored icon %v, want %v: %q", tc.palette, c.name, has, c.calm, line)
+			}
+		}
+		for _, r := range sessionRowTexts(m) {
+			if strings.Contains(r, tc.body) {
+				t.Errorf("a session row took tapi's color: %q", r)
+			}
+		}
+	}
+}
+
+func sessionRowTexts(m *model) []string {
+	rows, _ := m.sessionRows(80)
+	var out []string
+	for _, r := range rows[2:] {
+		out = append(out, r.Text)
+	}
+	return out
 }

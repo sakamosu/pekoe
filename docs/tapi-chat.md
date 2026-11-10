@@ -153,6 +153,7 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 
 - 行に出すもの: 状態アイコン(セッションと同じ `theme.Look`。未起動は `asleep`、エージェントが終了していれば `exited`)、名前 `tapi`、その状態になってからの時間、最後の返事(`last_message`)の最初の 1 行。受信箱の未回答と台帳の残りの件数は待ち時間の後ろに足す(`tapiBadges`。pekoed は `Tapi.inbox_open` / `ledger_open` で持っている)
 - 顔は出さない(docs/mascot.md「顔は 1 か所」。行頭は状態アイコン)
+- 行頭のアイコンの色: 人の注意が要らない状態(`asleep`・`idle`・`exited`)は tapi の体の色(`[mascot]` の `bd`。暗い背景はクリーム `#e4c49a`、`palette = "light"` はキャラメル `#8a5538`、`[mascot.colors]` で上書きしていればその色)で塗り、unicode のアイコンセットでは輪郭の `○` を塗りの粒(`●`。`glyphs = "narrow"` は `🞄`)にする。人の注意が要る状態(`run`・`wait`)はセッションと同じ状態の色のまま(合図を消さない)。状態の言葉の色は変えない。none モード(色なし)ではグリフも変えない(`●` が run と見分けられなくなるため)。ほかのセッションの行は変えない
 - 状態は起動時の `tapi.get` と `tapi.updated` で受け取る。tapi chat を開く前から出る
 - `j` `k` で選べ(端で折り返す。`g` で一番上の tapi の行へ)、`↵` で tapi chat を開く。`t` はどのパネルからでも今までどおり
 - 選択位置 `m.sel` はセッションの添字のままにし、tapi の行は `-1`(`tapiSel`)で表す。`current()` は nil になるので、セッション向けのキー(`/` `x` `D` `l` `r` `p` `d` `!` `v` など)は効かない。ボトムバーは `↵ open tapi` `T reset tapi`、`?` は tapi の行のキーだけを出す
