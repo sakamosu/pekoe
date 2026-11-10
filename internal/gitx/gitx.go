@@ -404,40 +404,51 @@ func MergeBase(dir, a, b string) (string, error) {
 	return Run(dir, "merge-base", "--end-of-options", a, b)
 }
 
-// ChangeID names what commit changes relative to base: a hash of the diff
-// from their merge-base to commit, with what a rebase alone moves taken
-// out (the index lines' blob ids, the hunk headers' line numbers and
-// function names). Every other byte counts, whitespace and context lines
-// included, so two commits get the same id only when their diffs say the
-// same thing: the same change, rebased onto a newer base or recommitted.
-// An empty change gets "" (nothing to compare).
-func ChangeID(dir, commit, base string) (string, error) {
-	c, err := RevParse(dir, commit)
+// SameChange: does head change the same as reviewed, each against its
+// merge-base with base? It is what tells "the reviewed change, rebased
+// onto a newer base" (pekoe land) from a head that changes more, less or
+// elsewhere. reviewed's change is put onto head's merge-base the way a
+// rebase would (a three-way merge from reviewed's merge-base, in memory:
+// merge-tree writes no ref and touches no worktree), and the change is the
+// same only when that gives head's tree exactly: every file, every byte,
+// every place. A merge that conflicts is not the same change. Commits git
+// cannot find are an error (nothing to compare).
+func SameChange(dir, reviewed, head, base string) (bool, error) {
+	r, err := RevParse(dir, reviewed)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	mb, err := MergeBase(dir, c, base)
+	h, err := RevParse(dir, head)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	out, err := RunRaw(context.Background(), dir, nil, nil, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "--binary", "--full-index", "-U3", "--end-of-options", mb, c)
+	mbR, err := MergeBase(dir, r, base)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	if len(out) == 0 {
-		return "", nil
+	mbH, err := MergeBase(dir, h, base)
+	if err != nil {
+		return false, err
 	}
-	h := sha1.New()
-	for _, l := range bytes.SplitAfter(out, []byte("\n")) {
-		switch {
-		case bytes.HasPrefix(l, []byte("index ")):
-			continue
-		case bytes.HasPrefix(l, []byte("@@ ")):
-			l = []byte("@@\n")
+	if r == mbR {
+		return false, nil // reviewed changes nothing: nothing was reviewed
+	}
+	want, err := Run(dir, "rev-parse", "--verify", "--quiet", "--end-of-options", h+"^{tree}")
+	if err != nil {
+		return false, err
+	}
+	out, err := RunRaw(context.Background(), dir, nil, nil, "merge-tree", "--write-tree", "--no-messages", "--merge-base", mbR, "--end-of-options", mbH, r)
+	if err != nil {
+		var ge *Error
+		if errors.As(err, &ge) {
+			if ee, ok := ge.Err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+				return false, nil // conflicts: not the change that was reviewed
+			}
 		}
-		h.Write(l)
+		return false, err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	got, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	return got != "" && got == want, nil
 }
 
 // beforeRemove runs between RestoreSnapshot's diff and its removes (tests).

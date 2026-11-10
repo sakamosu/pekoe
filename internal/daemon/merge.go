@@ -9,8 +9,8 @@ package daemon
 //   - land: pekoe land made the PR (Session.landing), and it is open
 //   - review: the latest independent review (report.post --status review)
 //     passed, and the commit it names is the PR's head on GitHub, or a
-//     commit whose diff against the base is the head's to the byte (land
-//     rebased it: sameChange). A pending review (asked for, under way)
+//     commit whose change, put onto the head's base, gives the head's tree to
+//     the byte (land rebased it: sameChange). A pending review (asked for, under way)
 //     does not count
 //   - ci: every check of the PR's head passed (none failed, none running,
 //     at least one)
@@ -219,9 +219,9 @@ const (
 
 // sameChange: does head change the same as reviewed, against the base the
 // PR goes into? pekoe land rebases onto origin/<base>, which gives the PR
-// a new head though nothing the review read changed; gitx.ChangeID tells
-// that apart from a head that changes more, less or otherwise (whitespace
-// included). A known answer is kept per pair of commits: neither the
+// a new head though nothing the review read changed; gitx.SameChange
+// tells that apart from a head that changes more, less or elsewhere: the
+// reviewed change put onto the head's base must give the head's tree. A known answer is kept per pair of commits: neither the
 // commits nor their merge-bases with the base move.
 func (d *Daemon) sameChange(s *state.Session, reviewed, head string) int {
 	key := s.RepoID + " " + reviewed + " " + head
@@ -241,16 +241,12 @@ func (d *Daemon) sameChange(s *state.Session, reviewed, head string) int {
 	if _, err := gitx.RevParse(s.Path, "origin/"+base); err == nil {
 		base = "origin/" + base
 	}
-	a, err := gitx.ChangeID(s.Path, reviewed, base)
-	if err != nil {
-		return changeUnknown
-	}
-	b, err := gitx.ChangeID(s.Path, head, base)
+	same, err := gitx.SameChange(s.Path, reviewed, head, base)
 	if err != nil {
 		return changeUnknown
 	}
 	r := changeDiffers
-	if a != "" && a == b {
+	if same {
 		r = changeSame
 	}
 	d.changeSame.Store(key, r)

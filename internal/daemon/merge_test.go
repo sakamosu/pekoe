@@ -283,7 +283,8 @@ func TestMergeEvidenceReviewPending(t *testing.T) {
 
 // land rebases the reviewed commit onto a newer base, which gives the PR
 // a new head: a pass carries over when the head changes the same as the
-// reviewed commit (to the byte), and not once the change itself differs.
+// reviewed commit (to the byte, in the same place), and not once the
+// change differs or lands elsewhere.
 func TestMergeEvidenceRebasedReview(t *testing.T) {
 	d, _ := mergeSetup(t)
 	s, _ := d.snapshot("main")
@@ -294,14 +295,19 @@ func TestMergeEvidenceRebasedReview(t *testing.T) {
 		run(t, repo, "git", "commit", "-qm", msg)
 		return strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
 	}
+	block := "p\nx\ny\nz\nq\n"
+	commit("a.txt", block+block+block, "blocks")
 	run(t, repo, "git", "branch", "base")
-	reviewed := commit("a.txt", "1\n2\nfeature\n3\n", "feature")
+	reviewed := commit("a.txt", "p\nx\ny\nfeature\nz\nq\n"+block+block, "feature")
 	run(t, repo, "git", "checkout", "-q", "base")
 	commit("b.txt", "b\n", "the base moves")
 	run(t, repo, "git", "checkout", "-q", "-b", "rebased")
 	run(t, repo, "git", "cherry-pick", reviewed)
 	rebased := strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
-	changed := commit("a.txt", "1\n2\nfeature!\n3\n", "more")
+	changed := commit("a.txt", "p\nx\ny\nfeature!\nz\nq\n"+block+block, "more")
+	// the same line with the same context, in the second block
+	run(t, repo, "git", "checkout", "-q", "-b", "elsewhere", "base")
+	elsewhere := commit("a.txt", block+"p\nx\ny\nfeature\nz\nq\n"+block, "elsewhere")
 	d.update("main", func(x *state.Session) {
 		x.Base = "base"
 		c := *x.PRStatus
@@ -318,6 +324,10 @@ func TestMergeEvidenceRebasedReview(t *testing.T) {
 	c = mergeCheckOf(t, d)
 	if c.Ready || !c.ReviewStale || strings.Join(c.Missing, ",") != "review" || !strings.Contains(c.Conds[1].Detail, "再レビューが要る") {
 		t.Fatalf("changed: %+v", c)
+	}
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = elsewhere; x.PRStatus = &c })
+	if c = mergeCheckOf(t, d); c.Ready || !c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "再レビューが要る") {
+		t.Fatalf("elsewhere: %+v", c)
 	}
 	// a head pekoed cannot read (pushed from elsewhere) is not carried
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = mergeHead2; x.PRStatus = &c })
