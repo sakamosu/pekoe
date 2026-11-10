@@ -184,3 +184,39 @@ func TestSendTextDropsControls(t *testing.T) {
 		t.Fatalf("pane got %q", s)
 	}
 }
+
+// Against a real private tmux server: a ';' at the end of a literal (or a
+// lone ';', as one keystroke from the TUI) reaches the pane, not tmux's
+// command parser.
+func TestSendLiteralSemicolon(t *testing.T) {
+	d, err := os.MkdirTemp("/tmp", "bt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(d) })
+	t.Setenv("TMUX_TMPDIR", d)
+	tm := &Tmux{Socket: "pekoe-test-semicolon", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	out := d + "/out"
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", winName("s", "agent"), "stty raw -echo; exec cat > "+out); err != nil {
+		t.Skip("tmux unavailable:", err)
+	}
+	tm.recordPid()
+	pid := tm.recordedPid()
+	t.Cleanup(func() { tm.KillServer(); killTmuxPid(pid, tm.Socket) })
+	time.Sleep(200 * time.Millisecond)
+	for _, s := range []string{";", "b;", "c;d", ";e", `f\;`, "Z"} {
+		if err := tm.SendLiteral("s", "agent", s); err != nil {
+			t.Fatalf("%q: %v", s, err)
+		}
+	}
+	var got []byte
+	for i := 0; i < 40; i++ {
+		time.Sleep(50 * time.Millisecond)
+		if got, _ = os.ReadFile(out); strings.Contains(string(got), "Z") {
+			break
+		}
+	}
+	if want := `;b;c;d;ef\;Z`; string(got) != want {
+		t.Fatalf("pane got %q, want %q", got, want)
+	}
+}

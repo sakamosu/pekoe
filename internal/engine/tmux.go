@@ -384,9 +384,15 @@ func (t *Tmux) SendText(slug, window, text string) error {
 	return err
 }
 
+// SendLiteral types text as is. tmux reads an argument that ends in ';'
+// as a command separator (a lone ";" sends nothing, "b;" sends "b"), and
+// turns a trailing "\;" back into ';', so the last ';' is escaped.
 func (t *Tmux) SendLiteral(slug, window, text string) error {
 	if text == "" {
 		return nil
+	}
+	if strings.HasSuffix(text, ";") {
+		text = text[:len(text)-1] + `\;`
 	}
 	_, err := t.run("send-keys", "-t", t.target(slug, window), "-l", "--", text)
 	return err
