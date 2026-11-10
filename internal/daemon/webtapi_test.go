@@ -34,7 +34,7 @@ func tapiSends(t *testing.T, d *Daemon) []state.SendRecord {
 // Without allow_devices, any device of the user could instruct tapi: the
 // send is refused and nothing is typed.
 func TestWebTapiSendNeedsAllowDevices(t *testing.T) {
-	d, fe, h := webTapiSetup(t)
+	_, fe, h := webTapiSetup(t)
 	before := sentCount(fe)
 	w := doWeb(t, h, tapiSendReq(ipPhone, "feat-csv を作って"))
 	if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "allow_devices") {
@@ -52,7 +52,6 @@ func TestWebTapiSendNeedsAllowDevices(t *testing.T) {
 	if w := doWeb(t, h, webReq{path: "/api/tapi/screen", from: ipPhone}); w.Code != 200 {
 		t.Fatalf("screen: %d %s", w.Code, w.Body)
 	}
-	_ = d
 }
 
 // With allow_devices: typed with Enter, recorded in the send log with the
