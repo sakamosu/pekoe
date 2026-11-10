@@ -45,7 +45,7 @@ func (m *model) initTips(path string) {
 // session selected, or the selected session's worktree is being created).
 // Errors, PR, preview, an ended session and tapi chat get none.
 func (m *model) tipSpot() bool {
-	if m.tip.shown == nil || m.chat.open || m.issueShown() || m.review != nil || m.tapi.splash {
+	if m.tip.shown == nil || m.chat.open || m.issueShown() || m.review != nil || m.tapi.splash || m.dashShown() { // the tapi row shows the dashboard
 		return false
 	}
 	s := m.current()

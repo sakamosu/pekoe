@@ -561,7 +561,7 @@ func (m *model) viewAgent(width, height int) []string {
 	s := m.current()
 	f := m.focus == pAgent
 	if s == nil && m.onTapiRow() {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "tapi", "", f), rows: m.bigRowsTip(width-4, height-2, m.chatMood(), "tapi · the orchestrator", "↵ open tapi chat · t from anywhere"), focused: f})
+		return m.viewDash(width, height)
 	}
 	if s == nil {
 		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
@@ -1061,6 +1061,9 @@ func (m *model) modeName() (string, string) {
 		if m.window == winPreview {
 			return "PREVIEW", m.ic.Browser
 		}
+		if m.dashShown() {
+			return "DASHBOARD", m.ic.Sessions
+		}
 		return "AGENT", m.ic.Agent
 	}
 	return "SESSIONS", m.ic.Sessions
@@ -1122,6 +1125,9 @@ func (m *model) hints() [][2]string {
 		}
 		if m.window == winPreview {
 			return m.previewHints()
+		}
+		if m.dashShown() {
+			return dashHints()
 		}
 		if m.pendingPick() != nil {
 			return [][2]string{{"↵", "send"}, {"i", "type"}, {"h", "back"}, {"u", "undo prompt"}, {"?", "help"}}

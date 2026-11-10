@@ -60,8 +60,8 @@ func TestTapiRowHeadsSessions(t *testing.T) {
 	}
 }
 
-// On the tapi row the session keys do nothing; ↵ opens tapi chat; the bar
-// and the help say so.
+// On the tapi row the session keys do nothing; [4] shows the dashboard; ↵
+// opens tapi chat; the bar and the help say so.
 func TestTapiRowKeys(t *testing.T) {
 	m, f, _ := chatModel(t)
 	m.focus = pSessions
@@ -69,7 +69,7 @@ func TestTapiRowKeys(t *testing.T) {
 	if !m.onTapiRow() || m.current() != nil {
 		t.Fatalf("k from the first session: sel %d", m.sel)
 	}
-	if out := checkSize(t, m, "tapi row"); !strings.Contains(out, "Sessions tapi/1") || !strings.Contains(out, "↵ open tapi chat") {
+	if out := checkSize(t, m, "tapi row"); !strings.Contains(out, "Sessions tapi/1") || !strings.Contains(out, "Dashboard · tapi the orchestrator") {
 		t.Errorf("title or main panel:\n%s", out)
 	}
 	hints := ""

@@ -586,6 +586,7 @@ const (
 	hsPRReview  = "PR view: someone else's PR"
 	hsErrorCard = "agent: an error card"
 	hsAgent     = "agent"
+	hsDash      = "dashboard"
 )
 
 // helpSets is every list of panel keys the help can show (key, action, key
@@ -611,6 +612,7 @@ func (m *model) helpSets() map[string][][3]string {
 		hsPR:        pr,
 		hsPRReview:  append(append([][3]string(nil), pr[:2]...), pr[4:]...), // someone else's PR: nothing goes to an agent
 		hsErrorCard: append([][3]string{{"s", "send the error card", "s"}, {"i", "ignore the error card", "i"}, {"↵", "error detail", "\r"}, {"a", "type into the agent", "a"}, {"v", "preview / dev window", "v"}}, common...),
+		hsDash:      dashKeysFull(),
 		hsAgent:     append([][3]string{{"i", "type into the agent", "i"}, {"v", "preview / dev window", "v"}}, common...),
 	}
 }
@@ -650,6 +652,8 @@ func (m *model) panelKeySet() string {
 		return hsChat
 	case m.issueShown():
 		return hsIssueMain
+	case m.dashShown():
+		return hsDash
 	case m.window == winPreview:
 		return hsPreview
 	case m.window == winPR:
