@@ -154,6 +154,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	}
 	d.catch.Forget(p.Slug)
 	removeAttachments(s.RepoID, p.Slug)
+	d.dropPreview(s)
 	d.emit("session.removed", s)
 	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
 }

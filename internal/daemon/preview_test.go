@@ -269,3 +269,39 @@ func TestChromeCaptureReal(t *testing.T) {
 		t.Fatalf("closed port: %v", err)
 	}
 }
+
+// rm takes the preview with it: a new session of the same slug must not
+// show (or keep retaking) the removed one's screenshots.
+func TestRmForgetsPreview(t *testing.T) {
+	d, _, s := previewSetup(t, true)
+	call[Preview](t, d, "preview.capture", map[string]any{"slug": s.Slug})
+	call[Preview](t, d, "preview.watch", map[string]any{"slug": s.Slug, "on": true})
+	dir := paths.PreviewDir(s.RepoID, s.Slug)
+	if _, err := os.Stat(filepath.Join(dir, "preview.json")); err != nil {
+		t.Fatal(err)
+	}
+	call[any](t, d, "worktree.rm", map[string]any{"slug": s.Slug, "force": true})
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("screenshots left behind: %v", err)
+	}
+	n := call[state.Session](t, d, "session.open", map[string]any{"path": s.Path, "resume": "new"})
+	if n.Slug != s.Slug {
+		t.Fatalf("slug %s, want %s", n.Slug, s.Slug)
+	}
+	p := call[Preview](t, d, "preview.get", map[string]any{"slug": n.Slug})
+	if p.After != nil || p.N != 0 || p.Watch {
+		t.Fatalf("new session got the old preview: %+v", p)
+	}
+}
+
+// A slot made for another repository's session of the same slug is not
+// reused.
+func TestPreviewSlotFollowsRepo(t *testing.T) {
+	d, _, s := previewSetup(t, true)
+	call[Preview](t, d, "preview.capture", map[string]any{"slug": s.Slug})
+	other := s
+	other.RepoID = "other-repo"
+	if p := d.previewSnapshot(d.slot(&other)); p.After != nil || p.N != 0 {
+		t.Fatalf("slot of another repository reused: %+v", p)
+	}
+}
