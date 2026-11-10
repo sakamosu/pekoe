@@ -33,10 +33,11 @@ type fakeEngine struct {
 	onCap  func()            // called on every Capture, before it reads lines
 	delay  time.Duration     // Spawn takes this long (races)
 	spawn  map[string]engine.Spawn
+	panes  map[string]int // window -> its root process (Panes)
 }
 
 func newFake() *fakeEngine {
-	return &fakeEngine{wins: map[string]bool{}, sizes: map[string][2]int{}, dead: map[string]bool{}, exits: map[string][2]int{}, spawn: map[string]engine.Spawn{}, out: make(chan engine.Output, 16)}
+	return &fakeEngine{wins: map[string]bool{}, sizes: map[string][2]int{}, dead: map[string]bool{}, exits: map[string][2]int{}, spawn: map[string]engine.Spawn{}, panes: map[string]int{}, out: make(chan engine.Output, 16)}
 }
 
 func (f *fakeEngine) Start() error { return nil }
@@ -149,6 +150,19 @@ func (f *fakeEngine) Sessions() (map[string][]string, error) {
 func (f *fakeEngine) Output() <-chan engine.Output { return f.out }
 func (f *fakeEngine) Close()                       {}
 func (f *fakeEngine) KillServer() error            { return f.rec("killserver") }
+
+// Panes gives each window the pid a test set in panes (none: no panes).
+func (f *fakeEngine) Panes() ([]engine.Pane, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var ps []engine.Pane
+	for k, pid := range f.panes {
+		if slug, w, ok := strings.Cut(k, "~"); ok {
+			ps = append(ps, engine.Pane{Slug: slug, Window: w, PID: pid})
+		}
+	}
+	return ps, nil
+}
 func (f *fakeEngine) last() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

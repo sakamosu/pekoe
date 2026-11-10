@@ -485,7 +485,11 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 	}
 	p := peerFrom(r)
 	log.Printf("web: %s sends %d chars to %s (from %s)", p.Login, len(text), slug, p.Device)
-	if _, err := d.Call("session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
+	via := viaWeb
+	if p.Device != "" {
+		via += ":" + p.Device
+	}
+	if _, err := d.CallAs(humanCaller(via), "session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
 		webErr(w, err)
 		return
 	}

@@ -498,7 +498,34 @@ func (t *Tmux) Sessions() (map[string][]string, error) {
 	return m, nil
 }
 
-// PaneCommand returns the running command and pid of a window (for adopt).
+// Panes lists the root process of every pekoe window.
+func (t *Tmux) Panes() ([]Pane, error) {
+	out, err := t.run("list-panes", "-s", "-t", "="+t.Session, "-F", "#{window_name}\t#{pane_pid}")
+	if err != nil {
+		return nil, err
+	}
+	return parsePanes(out), nil
+}
+
+// parsePanes reads list-panes' "name<TAB>pid" lines; windows that are not
+// pekoe's (no "~", the keeper) and bad pids are left out.
+func parsePanes(out string) []Pane {
+	var ps []Pane
+	for _, l := range strings.Split(out, "\n") {
+		name, pid, ok := strings.Cut(l, "\t")
+		if !ok {
+			continue
+		}
+		slug, w, ok := strings.Cut(name, "~")
+		n, err := strconv.Atoi(strings.TrimSpace(pid))
+		if !ok || err != nil || n <= 1 {
+			continue
+		}
+		ps = append(ps, Pane{Slug: slug, Window: w, PID: n})
+	}
+	return ps
+}
+
 func (t *Tmux) Output() <-chan Output { return t.out }
 
 func (t *Tmux) Close() {

@@ -160,6 +160,19 @@ func summarizeTool(name string, input json.RawMessage) state.Tool {
 	return t
 }
 
+// hEventAs is session.event: a hook that comes from a pekoe window is that
+// window's session, whatever its $PEKOE_SESSION and cwd say. Claude Code
+// starts its hooks itself, outside its sandbox, as children of the agent
+// process, which is in the window's process tree (caller.go). A hook from
+// no pekoe window (an agent pekoe adopted, which runs outside tmux) falls
+// back to $PEKOE_SESSION and the cwd, as before.
+func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
+	if pane := who.Pane(); pane != "" {
+		p.Session = pane
+	}
+	return d.hEvent(p)
+}
+
 func (d *Daemon) hEvent(p eventP) (any, error) {
 	var hp hookPayload
 	_ = json.Unmarshal(p.Payload, &hp)
@@ -190,6 +203,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 			}
 		})
 	case "UserPromptSubmit":
+		d.changes.notePrompt(slug)
 		d.snapshotPrompt(slug, hp.Prompt)
 		d.update(slug, func(s *state.Session) {
 			if hp.SessionID != "" {

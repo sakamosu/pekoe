@@ -31,3 +31,17 @@ func TestCleanText(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePanes(t *testing.T) {
+	out := "_keeper\t100\nfeat-x~agent\t200\nfeat-x~dev\t201\n+tapi~agent\t300\nodd~agent\tx\nbad~agent\t1\n"
+	got := parsePanes(out)
+	want := []Pane{{"feat-x", "agent", 200}, {"feat-x", "dev", 201}, {"+tapi", "agent", 300}}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %+v, want %+v", got, want)
+		}
+	}
+}

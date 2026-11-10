@@ -122,6 +122,7 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 		d.evMu.Unlock()
 		return nil, fmt.Errorf("no such session: %s", slug)
 	}
+	before := *s
 	prev := s.State
 	f(s)
 	if s.State != prev {
@@ -129,6 +130,7 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	}
 	c := d.copyLocked(s)
 	d.mu.Unlock()
+	d.sessionChanges(&before, c) // under evMu: in change order
 	d.emit("session.updated", c)
 	if c.State != prev {
 		switch c.State {
@@ -306,6 +308,7 @@ type newP struct {
 	Base   string `json:"base"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+	parent string // the caller (hNewAs); "" is a person (the Chrome extension)
 }
 
 func stepLabel(cmd string) string {
@@ -384,6 +387,10 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Path: wt, Agent: agent, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
+		Parent: p.parent,
+	}
+	if s.Parent == "" {
+		s.Parent = callerHuman
 	}
 	d.add(s)
 	steps := []Step{
@@ -1153,13 +1160,12 @@ func win(w string) string {
 
 func (d *Daemon) hSend(p sendP) (any, error) { return d.send(p, false) }
 
-// hAgentSend is session.send without the human token (call routes it
-// here, after authorizeSend). The prompt check is repeated right before
+// session.send without the human token (hSendAs, after authorizeSend)
+// is send(p, true). The prompt check is repeated right before
 // typing, under the session's send lock: authorizeSend's check ran before
 // the request was dispatched, and an agent can time its own permission
 // dialog to show up in between, where the text's first character would
 // pick a choice ("2" is "Yes, and don't ask again").
-func (d *Daemon) hAgentSend(p sendP) (any, error) { return d.send(p, true) }
 
 func (d *Daemon) send(p sendP, agent bool) (any, error) {
 	if _, err := d.get(p.Slug); err != nil {
@@ -1175,7 +1181,7 @@ func (d *Daemon) send(p sendP, agent bool) (any, error) {
 	// first character could pick a choice, its Enter the highlighted "Yes".
 	// Checked before typing and again right before Enter. A plain paste
 	// (no submit: the TUI forwarding the user's own typing) is not held,
-	// unless it comes without the human token (hAgentSend).
+	// unless it comes without the human token (agent).
 	toAgent := win(p.Window) == engine.WinAgent
 	guard := p.Submit && toAgent
 	if guard || (agent && toAgent) {
