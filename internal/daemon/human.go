@@ -94,7 +94,7 @@ var humanMethods = map[string]string{
 	"daemon.stop":     "stops pekoed (and, with kill_agents, every agent)",
 	// secrets, or what other sessions show or read
 	"ext.info":       "returns the HTTP token of the Chrome extension",
-	"web.status":     "returns the Web UI's login URL",
+	"web.status":     "returns the Web UI's login URL and backend errors",
 	"session.screen": "another session's screen",
 	"tapi.screen":    "tapi chat's screen",
 	"tapi.get":       "tapi chat's state and screen",

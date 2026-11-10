@@ -1138,6 +1138,9 @@ type webStatus struct {
 	AuthURL string   `json:"auth_url"`
 	URLs    []string `json:"urls"`
 	Error   string   `json:"error"`
+	// Tailscale's backend state and its last error (a node stuck "starting")
+	Backend      string `json:"backend,omitempty"`
+	BackendError string `json:"backend_error,omitempty"`
 }
 
 // cmdWeb shows the phone web UI's state ([web], docs/web.md): its URL once
@@ -1186,6 +1189,13 @@ func printWebStatus(w io.Writer, st webStatus, globalConfig string) {
 		fmt.Fprintln(w, "login  (getting the login URL…)")
 		fmt.Fprintln(w, "\nThe login URL is not ready yet. Run `pekoe web` again in a few seconds.")
 		fmt.Fprintln(w, "If it never shows up, the machine may be waiting for approval in the Tailscale admin console (see pekoed.log).")
+	}
+	if st.State == "starting" && st.Backend != "" {
+		fmt.Fprintln(w, "backend", st.Backend)
+	}
+	if st.BackendError != "" && st.State != "running" {
+		fmt.Fprintln(w, "backend error", st.BackendError)
+		fmt.Fprintln(w, "\nThe Tailscale backend keeps failing (see pekoed.log). If it says it cannot unmarshal or decode, this pekoe was likely built with a Go newer than its Tailscale library supports: rebuild from an up-to-date checkout (make install WEB=1).")
 	}
 	if st.Error != "" {
 		fmt.Fprintln(w, "error ", st.Error)

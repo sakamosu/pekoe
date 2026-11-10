@@ -73,7 +73,10 @@ func (d *Daemon) startWeb() {
 			}
 			log.Print(redactAuthURL("web: tsnet: " + fmt.Sprintf(format, a...)))
 		},
-		// Logf (the backend's verbose log) stays nil: discarded.
+		// The backend's verbose log is discarded, except the errors it
+		// gets from the control server: without them a node that never
+		// gets to Running says nothing about why.
+		Logf: d.webBackendLogf(),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	started := make(chan error, 1) // srv.Start's result; Close must not run before it
@@ -192,11 +195,69 @@ func (d *Daemon) stopWeb() {
 	}
 }
 
+// webBackendLogf is tsnet's backend Logf: it keeps only "Received error:"
+// (an error from the control server, e.g. a netmap this build cannot
+// decode) for `pekoe web`, and logs it when it changes. The backend retries
+// with a backoff of a few seconds, so the same error comes again and again.
+func (d *Daemon) webBackendLogf() func(string, ...any) {
+	var (
+		mu       sync.Mutex
+		last     string
+		lastTime time.Time
+	)
+	return func(format string, a ...any) {
+		msg, ok := backendError(fmt.Sprintf(format, a...))
+		if !ok {
+			return
+		}
+		// it goes to pekoed.log, which the agents' sandbox can read:
+		// no login URL, no auth key (#89)
+		msg = redactBackendError(msg)
+		d.web.set(func(s *webStatus) { s.BackendError = msg })
+		mu.Lock()
+		again := msg == last && time.Since(lastTime) < 10*time.Minute
+		if !again {
+			last, lastTime = msg, time.Now()
+		}
+		mu.Unlock()
+		if !again {
+			log.Printf("web: tsnet backend: %s", msg)
+		}
+	}
+}
+
+// backendError picks the error out of a backend log line. "[v1] Received
+// error: EOF" (a verbose line) is the control connection closing: normal.
+func backendError(line string) (string, bool) {
+	const mark = "Received error: "
+	i := strings.Index(line, mark)
+	if i < 0 || strings.HasPrefix(line, "[v") {
+		return "", false
+	}
+	return strings.TrimSpace(line[i+len(mark):]), true
+}
+
+// authKeyRe matches a Tailscale auth key (tskey-auth-…, tskey-client-…).
+var authKeyRe = regexp.MustCompile(`tskey-[0-9A-Za-z_-]+`)
+
+// redactBackendError keeps a backend error safe for pekoed.log and
+// web.status: login URLs and auth keys are dropped.
+func redactBackendError(s string) string {
+	return authKeyRe.ReplaceAllString(redactAuthURL(s), "<auth key>")
+}
+
+// webStuckAfter is how long the node may stay "starting" before pekoed.log
+// says so (with the backend state): logging in and the first netmap take
+// seconds.
+const webStuckAfter = time.Minute
+
 // watchWeb keeps the status `pekoe web` shows: the backend state, the URLs
 // and, while it needs a login, the URL to open (web.status only: the log
 // says to run `pekoe web`, once per URL).
 func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Client) {
 	lastURL := ""
+	since := time.Now() // when the node last left Running or a login wait
+	warned := false
 	for {
 		st, err := lc.StatusWithoutPeers(ctx)
 		if err == nil {
@@ -208,12 +269,18 @@ func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 				state = "needs-login"
 			}
 			urls := webURLs(srv.CertDomains())
+			var backendErr string
 			d.web.set(func(s *webStatus) {
 				if s.State != "error" {
 					s.State = state
 				}
 				s.AuthURL = st.AuthURL
 				s.URLs = urls
+				s.Backend = st.BackendState
+				if state == "running" {
+					s.BackendError = ""
+				}
+				backendErr = s.BackendError
 			})
 			if st.AuthURL != "" && st.AuthURL != lastURL {
 				// not the URL itself: pekoed.log is readable from the
@@ -222,6 +289,16 @@ func (d *Daemon) watchWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 				log.Printf("web: waiting for a tailnet login: run `pekoe web` to see the login URL (or start pekoed with TS_AUTHKEY)")
 			}
 			lastURL = st.AuthURL
+			if state != "starting" {
+				since, warned = time.Now(), false
+			} else if !warned && time.Since(since) > webStuckAfter {
+				warned = true
+				why := ""
+				if backendErr != "" {
+					why = "; last backend error: " + backendErr
+				}
+				log.Printf("web: tsnet still not running after %s (backend state %s%s)", webStuckAfter, st.BackendState, why)
+			}
 		}
 		wait := 2 * time.Second
 		if err == nil && st.BackendState == ipn.Running.String() {

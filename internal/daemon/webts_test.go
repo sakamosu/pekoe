@@ -119,3 +119,32 @@ func checkDecodes(t tb, typ reflect.Type, seen map[reflect.Type]bool) {
 		checkDecodes(t, typ.Field(i).Type, seen)
 	}
 }
+
+func TestBackendError(t *testing.T) {
+	cases := []struct {
+		line, want string
+		ok         bool
+	}{
+		{"Received error: PollNetMap: response: json: cannot unmarshal", "PollNetMap: response: json: cannot unmarshal", true},
+		{"[v1] Received error: EOF", "", false},
+		{"control: [v1] PollNetMap: stream=true ep=[]", "", false},
+	}
+	for _, c := range cases {
+		got, ok := backendError(c.line)
+		if got != c.want || ok != c.ok {
+			t.Errorf("backendError(%q) = %q, %v; want %q, %v", c.line, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// backend errors reach pekoed.log, which the agents' sandbox can read
+func TestRedactBackendError(t *testing.T) {
+	in := "register request: http 410: auth path not found: https://login.tailscale.com/a/1a2b3c4d; key tskey-auth-kAbC123-XyZ456"
+	got := redactBackendError(in)
+	if strings.Contains(got, "/a/") || strings.Contains(got, "tskey-") {
+		t.Errorf("secret left in %q", got)
+	}
+	if !strings.Contains(got, "http 410: auth path not found") {
+		t.Errorf("the error itself was dropped: %q", got)
+	}
+}
