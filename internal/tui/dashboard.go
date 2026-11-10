@@ -145,31 +145,52 @@ func inboxKind(it *state.InboxItem) string {
 	return it.Kind
 }
 
-// dashPipeline is the sessions in the pipeline (not someone else's PR).
+// dashPipeline is the sessions in the pipeline: not someone else's PR,
+// and not a repository's own checkout (main): that one has no branch of
+// its own to land, so its stages would only ever say "implementing".
 func (m *model) dashPipeline() []*state.Session {
 	var out []*state.Session
 	for _, s := range m.sessions {
-		if !s.PRReview {
+		if !s.PRReview && !repoCheckout(s) {
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// dashGroup is the sessions one requester asked for under one request.
+// repoCheckout: the session runs in the repository's main worktree (the
+// main session of a repository), not in a worktree of its own.
+func repoCheckout(s *state.Session) bool {
+	return s.RepoDir != "" && s.Path == s.RepoDir
+}
+
+// dashLanded: the session's work is merged (it only stays as a record).
+func dashLanded(s *state.Session) bool {
+	return s.State == state.Landed || (s.PRStatus != nil && s.PRStatus.State == "MERGED")
+}
+
+// dashGroup is the sessions one requester asked for under one request, or
+// (merged) every session whose work is merged.
 type dashGroup struct {
 	parent   string
 	request  int64
+	merged   bool
 	sessions []*state.Session
 }
 
 // dashGroups groups the pipeline by parent and request: tapi first, then
 // the person, then the sessions that asked, then the rest; requests in
-// order, none last.
+// order, none last. The merged sessions come last in a group of their own:
+// what is still moving is what the eye should find first.
 func (m *model) dashGroups() []dashGroup {
 	idx := map[[2]string]int{}
 	var gs []dashGroup
+	var merged []*state.Session
 	for _, s := range m.dashPipeline() {
+		if dashLanded(s) {
+			merged = append(merged, s)
+			continue
+		}
 		k := [2]string{s.Parent, fmt.Sprint(s.Request)}
 		i, ok := idx[k]
 		if !ok {
@@ -203,6 +224,9 @@ func (m *model) dashGroups() []dashGroup {
 		}
 		return a.request < b.request
 	})
+	if len(merged) > 0 {
+		gs = append(gs, dashGroup{merged: true, sessions: merged})
+	}
 	return gs
 }
 
@@ -278,7 +302,10 @@ func (m *model) stageMark(st int) string {
 	case stRun:
 		return th.FG(theme.Warn, fit(m.ic.Pending, 1))
 	case stReady:
-		return th.FG(theme.Ok, fit(m.ic.Here, 1))
+		return th.FG(theme.Secondary, fit(m.ic.Here, 1))
+	}
+	if m.ic.Name == "ascii" {
+		return th.FG(theme.Dim, ".")
 	}
 	return th.FG(theme.Dim, "·")
 }
@@ -297,8 +324,10 @@ func dashStages(s *state.Session, mc *state.MergeCheck) [5]int {
 		st[0] = stFail
 	case s.Report != nil && (s.Report.Status == "done" || s.Report.Status == "review"):
 		st[0] = stOK
-	default:
+	case s.State == state.Running || s.State == state.Creating || s.State == state.Waiting:
 		st[0] = stRun
+	default: // idle or done without a report: nothing says it is under way
+		st[0] = stNone
 	}
 	// PR
 	switch {
@@ -376,19 +405,150 @@ func mergeCond(mc *state.MergeCheck, name string) bool {
 
 var stageNames = [5]string{"impl", "PR", "CI", "review", "merge"}
 
-// stagesLine is "impl ✓ › PR ✓ › CI ✗ › review · › merge ·", or the
-// marks alone ("✓ ✓ ✗ · ·") when that does not fit in room.
-func (m *model) stagesLine(st [5]int, room int) string {
-	dim := func(s string) string { return m.th.FG(theme.Dim, s) }
-	var long, short []string
+// stageRole is the color of a stage's mark: done green, failing red,
+// under way yellow, ready to merge secondary (the person's turn, like
+// done and merged in Sessions), not yet dim.
+func stageRole(st int) theme.Role {
+	switch st {
+	case stOK:
+		return theme.Ok
+	case stFail:
+		return theme.Err
+	case stRun:
+		return theme.Warn
+	case stReady:
+		return theme.Secondary
+	}
+	return theme.Dim
+}
+
+// stageBar draws the five stages as a bar, two cells a stage when wide
+// (one when not), so how far a session got reads at a glance: ▰ in the
+// stage's color for done / under way / failing / ready, ▱ for not yet.
+// ▰ ▱ are Neutral width (never East Asian Ambiguous), so fonts that draw
+// ambiguous glyphs wide keep the row in line. Without color the bar could
+// not tell done from failing, and the ascii icon set (or ascii glyphs)
+// asks for ASCII: both get the marks instead ("✓✓✗··", "vvx..").
+func (m *model) stageBar(st [5]int, wide bool) string {
+	var b strings.Builder
+	if m.th.Mode == theme.None || !m.dashGlyphs() {
+		for _, x := range st {
+			b.WriteString(m.stageMark(x))
+		}
+		return b.String()
+	}
+	cell := "▰"
+	if wide {
+		cell = "▰▰"
+	}
+	for _, x := range st {
+		c := cell
+		if x == stNone {
+			c = strings.Repeat("▱", w(cell))
+		}
+		b.WriteString(m.th.FG(stageRole(x), c))
+	}
+	return b.String()
+}
+
+// condNames are the merge conditions (merge.check) in words a person
+// reads; pekoed's names (merge_state …) stay in the unfolded detail.
+var condNames = map[string]string{
+	"land": "land", "review": "review", "ci": "CI", "merge_state": "mergeable", "conflicts": "conflicts", "after": "after",
+}
+
+func condName(n string) string {
+	if s, ok := condNames[n]; ok {
+		return s
+	}
+	return n
+}
+
+// stagePhrase says where a session is in words, in the color of what it
+// means: merged, ready to merge, the first failing stage, the first stage
+// under way, or what it waits for. The emoji goes before it when
+// dashEmoji.
+func (m *model) stagePhrase(s *state.Session, st [5]int, mc *state.MergeCheck) string {
+	p, _ := m.stagePhraseCond(s, st, mc)
+	return p
+}
+
+// stagePhraseCond is stagePhrase and the merge condition it names
+// ("needs review" → "review"), "" when it names none.
+func (m *model) stagePhraseCond(s *state.Session, st [5]int, mc *state.MergeCheck) (string, string) {
+	say := func(emoji string, r theme.Role, text string) (string, string) {
+		return m.dashEmo(emoji) + m.th.FG(r, text), ""
+	}
+	if dashLanded(s) {
+		return say("🎉", theme.Dim, "merged")
+	}
+	if st[4] == stReady {
+		return say("🚀", theme.Secondary, "ready to merge")
+	}
+	if s.State == state.Waiting {
+		return say("🙋", theme.Warn, "waits for you")
+	}
+	fail := [5]string{"blocked", "PR closed", "CI failed", "changes requested", ""}
+	run := [5]string{"working", "landing", "CI running", "", ""}
 	for i, x := range st {
-		long = append(long, dim(stageNames[i]+" ")+m.stageMark(x))
-		short = append(short, m.stageMark(x))
+		if x == stFail && fail[i] != "" {
+			return say("🚧", theme.Err, fail[i])
+		}
 	}
-	if l := strings.Join(long, dim(" › ")); w(l) <= room {
-		return l
+	for i, x := range st {
+		if x == stRun && run[i] != "" {
+			e := "⏳"
+			if i == 0 {
+				e = "🔨"
+			}
+			return say(e, theme.Warn, run[i])
+		}
 	}
-	return strings.Join(short, " ")
+	if mc != nil && s.PR > 0 && len(mc.Missing) > 0 {
+		p, _ := say("👀", theme.Warn, "needs "+condName(mc.Missing[0]))
+		return p, mc.Missing[0]
+	}
+	if st[0] == stNone {
+		return say("💤", theme.Dim, "no report yet")
+	}
+	if s.PR == 0 {
+		return say("📦", theme.Text, "ready to land")
+	}
+	return say("⏳", theme.Text, "waiting")
+}
+
+// stageWhy is pekoed's own words for a missing merge condition: the one
+// the phrase names ("needs review" → "独立レビューの報告がない"), or else the
+// first one the phrase does not already say (CI running or failing is in
+// the phrase), with its name: "review: レビューした 17b962a と PR の HEAD
+// ea9697f が違う". It is what tells "no review yet" from "reviewed an
+// older commit".
+func stageWhy(st [5]int, mc *state.MergeCheck, named string) string {
+	if mc == nil || mc.Ready {
+		return ""
+	}
+	for _, n := range mc.Missing {
+		if n == "ci" && (st[2] == stRun || st[2] == stFail) {
+			continue
+		}
+		if named != "" && n != named {
+			continue
+		}
+		for _, c := range mc.Conds {
+			if c.Name != n || c.OK {
+				continue
+			}
+			d := firstLine(inboxText(c.Detail))
+			switch {
+			case n == named:
+				return d
+			case d == "":
+				return condName(n)
+			}
+			return condName(n) + ": " + d
+		}
+	}
+	return ""
 }
 
 // ---- drawing ----
@@ -427,8 +587,34 @@ func (m *model) viewDash(width, height int) []string {
 	return m.box(width, height, boxOpt{title: title, rows: rows[d.top:], focused: f})
 }
 
+// dashGlyphs: the dashboard may draw its pictures (the stage bar, emoji).
+// Not with the ascii icon set, nor with [mascot] glyphs = "ascii" (set,
+// or measured: the terminal draws ambiguous glyphs wide), which ask for
+// plain characters.
+func (m *model) dashGlyphs() bool {
+	return m.ic.Name != "ascii" && (m.tapi.r == nil || !m.tapi.r.ASCII())
+}
+
+// dashEmo is an emoji and a space before a word, or nothing when the
+// dashboard draws no pictures. Only emoji that are East Asian Wide
+// (Emoji_Presentation) are used: every terminal and the width code agree
+// they take two cells, so the rows stay in line. Text-default symbols
+// (⚙ 🛠 ☺ …) are not, as fonts and terminals disagree on their width.
+func (m *model) dashEmo(e string) string {
+	if !m.dashGlyphs() {
+		return ""
+	}
+	return e + " "
+}
+
 // dashRows draws the dashboard body cw cells wide; keys[i] is the item
 // drawn on rows[i] (its row or what it unfolds), "" for the rest.
+//
+// What a person acts on comes first and loudest: the overview's "needs
+// you" line, the inbox. Then what is moving (the pipeline, merged ones
+// dimmed at its end), then the records (requests, sends, decided), whose
+// rows are quieter. Each section opens with an emoji, a bold name and a
+// rule across the width, so the eye finds the sections first.
 func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	th := m.th
 	d := &m.dash
@@ -440,20 +626,28 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	focused := m.focus == pAgent
 	dim := func(s string) string { return th.FG(theme.Dim, s) }
 	add := func(s string) { rows, keys = append(rows, row{Text: s}), append(keys, "") }
-	section := func(name, summary string) {
+	section := func(emoji, name, summary string) {
 		if len(rows) > 0 {
 			add("")
 		}
-		h := th.Bold(theme.Text, name)
+		h := m.dashEmo(emoji) + th.Bold(theme.Text, name)
 		if summary != "" {
 			h += "  " + summary
 		}
+		if gap := cw - w(h) - 1; gap >= 3 {
+			h += " " + th.FG(theme.Border, strings.Repeat("─", gap))
+		}
 		add(fit(h, cw))
 	}
-	none := func(s string) { add(dim("  " + s)) }
-	item := func(key, text string, more []string) {
+	none := func(s string) { add(fit(dim("  "+s), cw)) }
+	// item draws a row that can be chosen, the lines that always go with
+	// it (sub) and, unfolded, more
+	item := func(key, text string, sub, more []string) {
 		rows = append(rows, row{Text: fit(text, cw), Sel: focused && key == d.sel})
 		keys = append(keys, key)
+		for _, l := range sub {
+			rows, keys = append(rows, row{Text: fit(l, cw)}), append(keys, key)
+		}
 		if d.open[key] {
 			for _, l := range more {
 				rows, keys = append(rows, row{Text: fit("      "+l, cw)}), append(keys, key)
@@ -467,9 +661,10 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		}
 		return theme.Ago(now.Sub(t))
 	}
+	wide := cw >= 70 // room for the long stage bar and names
 
 	// overview
-	section("Overview", "")
+	section("🧭", "Overview", "")
 	for _, l := range m.dashOverview(cw - 2) {
 		add(fit("  "+l, cw))
 	}
@@ -481,10 +676,15 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			open++
 		}
 	}
-	section("Inbox", dim(fmt.Sprintf("%d open · ↵ answer · o link", open)))
-	if open == 0 {
-		none("nothing to answer")
+	sum := dim("0 open")
+	if open > 0 {
+		sum = th.Bold(theme.Warn, fmt.Sprintf("%d open", open)) + dim(" · ↵ answer · o link")
 	}
+	section("📬", "Inbox", sum)
+	if open == 0 {
+		none(m.dashEmo("🍵") + "nothing to answer · time for a cup of tea")
+	}
+	kindEmoji := map[string]string{"login": "🔑", "approve": "✋", "decision": "🤔", "merge": "🚀"}
 	for _, k := range dashKinds {
 		var group []*state.InboxItem
 		for i := range m.inbox {
@@ -495,45 +695,41 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		if len(group) == 0 {
 			continue
 		}
-		add(fit("  "+th.FG(theme.Warn, k.label)+dim(fmt.Sprintf(" %d", len(group))), cw))
+		r := theme.Warn
+		if k.key == "merge" {
+			r = theme.Secondary
+		}
+		add(fit("  "+m.dashEmo(kindEmoji[k.key])+th.Bold(r, k.label)+dim(fmt.Sprintf(" %d", len(group))), cw))
 		for _, it := range group {
 			who := clip(inboxText(it.From), 16)
 			if it.About != "" && it.About != it.From {
-				who += dim(" · " + clip(inboxText(it.About), 16))
+				who += dim(" · " + clip(inboxText(it.About), 22))
 			}
-			head := fmt.Sprintf("    #%d ", it.ID) + who + "  "
+			head := "    " + dim(fmt.Sprintf("#%d ", it.ID)) + who + "  "
 			tail := "  " + dim(fit(ago(it.CreatedAt), 4))
 			room := max(cw-w(head)-w(tail), 1)
-			item(fmt.Sprintf("inbox:%d", it.ID), head+fit(firstLine(inboxText(it.Question)), room)+tail, nil)
+			item(fmt.Sprintf("inbox:%d", it.ID), head+th.FG(theme.Text, fit(firstLine(inboxText(it.Question)), room))+tail, nil, nil)
 		}
 	}
 
 	// pipeline
-	section("Pipeline", dim("impl › PR › CI › review › merge"))
 	groups := m.dashGroups()
-	if len(groups) == 0 {
-		none("no sessions")
+	moving := 0
+	for _, g := range groups {
+		if !g.merged {
+			moving += len(g.sessions)
+		}
 	}
+	section("🚦", "Pipeline", dim(fmt.Sprintf("%d moving · ", moving)+strings.Join(stageNames[:], " › ")))
+	if len(groups) == 0 {
+		none(m.dashEmo("🌱") + "no sessions yet · ask tapi for something")
+	}
+	slugW := min(max(cw/3, 8), 30)
 	for _, g := range groups {
 		add(fit("  "+m.dashGroupHead(g, cw-2), cw))
 		for _, s := range g.sessions {
 			mc := m.dash.merge[s.Slug]
 			key := "s:" + s.Slug
-			lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
-			slugW := min(max(cw/4, 8), 24)
-			head := "    " + th.FG(lk.Role, fit(lk.Icon, 1)) + " " + fit(s.Slug, slugW) + " "
-			room := max(cw-w(head), 1)
-			tail := "" // what is missing comes before the stage names
-			if s.PR > 0 {
-				tail += dim(fmt.Sprintf("  #%d", s.PR))
-			}
-			if mc != nil && s.PR > 0 && !mc.Ready && len(mc.Missing) > 0 {
-				tail += "  " + th.FG(theme.Warn, "needs "+strings.Join(mc.Missing, ", "))
-			}
-			if mc != nil && mc.Inbox > 0 {
-				tail += dim(fmt.Sprintf("  inbox #%d", mc.Inbox))
-			}
-			line := m.stagesLine(dashStages(s, mc), room-w(tail)) + tail
 			var more []string
 			if mc != nil {
 				for _, c := range mc.Conds {
@@ -541,7 +737,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 					if !c.OK {
 						mark = m.stageMark(stFail)
 					}
-					more = append(more, mark+" "+fit(c.Name, 11)+" "+dim(inboxText(c.Detail)))
+					more = append(more, mark+" "+fit(condName(c.Name), 10)+" "+dim(inboxText(c.Detail)))
 				}
 			}
 			if s.Report != nil {
@@ -550,18 +746,49 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			if len(more) == 0 {
 				more = append(more, dim("nothing more yet"))
 			}
-			item(key, head+fit(line, room), more)
+			if g.merged { // a record: one quiet line
+				line := "    " + th.FG(theme.Ok, fit(m.ic.Check, 1)) + " " + dim(fit(s.Slug, slugW)+" merged")
+				if s.PR > 0 {
+					line += dim(fmt.Sprintf("  #%d", s.PR))
+				}
+				item(key, line, nil, more)
+				continue
+			}
+			lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
+			head := "    " + th.FG(lk.Role, fit(lk.Icon, 1)) + " " + th.FG(theme.Text, fit(s.Slug, slugW)) + " "
+			st := dashStages(s, mc)
+			phrase, named := m.stagePhraseCond(s, st, mc)
+			line := m.stageBar(st, wide) + "  " + phrase
+			if s.PR > 0 {
+				line += dim(fmt.Sprintf("  #%d", s.PR))
+			}
+			if mc != nil && mc.Inbox > 0 {
+				line += dim(fmt.Sprintf("  inbox #%d", mc.Inbox))
+			}
+			why := stageWhy(st, mc, named)
+			if why != "" && w(head)+w(line)+2+w(why) <= cw {
+				line, why = line+"  "+dim(why), ""
+			}
+			var sub []string
+			if why != "" { // pekoed's words on a line of their own, under the bar
+				ind := w(head) // under the bar, or further left when it would not fit there
+				if ind+w(why) > cw {
+					ind = 6
+				}
+				sub = append(sub, strings.Repeat(" ", ind)+dim(why))
+			}
+			item(key, head+line, sub, more)
 		}
 	}
 
 	// requests
-	section("Requests", dim(fmt.Sprintf("%d open", len(d.ledger))))
+	section("📝", "Requests", dim(fmt.Sprintf("%d open", len(d.ledger))))
 	if len(d.ledger) == 0 {
 		none("no open requests")
 	}
 	for i := range d.ledger {
 		e := &d.ledger[i]
-		head := fmt.Sprintf("  #%d ", e.ID)
+		head := "  " + dim(fmt.Sprintf("#%d ", e.ID))
 		tail := "  " + dim(fit(ago(e.At), 4))
 		room := max(cw-w(head)-w(tail), 1)
 		var more []string
@@ -570,28 +797,33 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		}
 		for _, slug := range m.requestSessions(e) {
 			if _, s := m.find(slug); s != nil {
-				more = append(more, fit(slug, 20)+" "+m.stagesLine(dashStages(s, d.merge[slug]), max(cw-30, 1)))
+				st := dashStages(s, d.merge[slug])
+				more = append(more, fit(slug, 20)+" "+m.stageBar(st, false)+" "+m.stagePhrase(s, st, d.merge[slug]))
 			} else {
 				more = append(more, fit(slug, 20)+" "+dim("gone"))
 			}
 		}
 		text := head + fit(firstLine(inboxText(e.Text)), room) + tail
-		item(fmt.Sprintf("req:%d", e.ID), text, more)
+		item(fmt.Sprintf("req:%d", e.ID), text, nil, more)
 		if slugs := m.requestSessions(e); len(slugs) > 0 && !d.open[fmt.Sprintf("req:%d", e.ID)] {
 			add(fit("      "+dim("→ "+strings.Join(slugs, ", ")), cw))
 		}
 	}
 
 	// sends
-	section("Sends", dim("newest first · ↵ full text"))
+	section("📨", "Sends", dim("newest first · ↵ full text"))
 	if len(d.sends) == 0 {
 		none("nothing sent yet")
 	}
 	for i := range d.sends {
 		r := &d.sends[i]
-		head := "  " + dim(fit(ago(r.At), 4)) + " " + clip(inboxText(r.From), 14) + dim(" → ") + clip(inboxText(r.To), 18) + " " + dim(r.Kind) + "  "
+		toW := 18
+		if wide {
+			toW = 26
+		}
+		head := "  " + dim(fit(ago(r.At), 4)) + " " + dim(clip(inboxText(r.From), 14)+" → ") + clip(inboxText(r.To), toW) + " " + dim(r.Kind) + "  "
 		if !r.OK {
-			head += th.FG(theme.Err, "failed") + " "
+			head += th.FG(theme.Err, fit(m.ic.Fail, 1)+" failed") + " "
 		}
 		room := max(cw-w(head), 1)
 		var more []string
@@ -601,20 +833,20 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		if r.Error != "" {
 			more = append(more, th.FG(theme.Err, inboxText(r.Error)))
 		}
-		item(fmt.Sprintf("send:%d", r.ID), head+fit(firstLine(inboxText(r.Text)), room), more)
+		item(fmt.Sprintf("send:%d", r.ID), head+dim(fit(sendGist(inboxText(r.Text)), room)), nil, more)
 	}
 
 	// what tapi decided
-	section("Decided", dim("fyi · what the agents chose themselves"))
+	section("💡", "Decided", dim("fyi · what the agents chose themselves"))
 	if len(d.fyi) == 0 {
 		none("nothing yet")
 	}
 	for i := range d.fyi {
 		it := &d.fyi[i]
-		head := fmt.Sprintf("  #%d ", it.ID) + clip(inboxText(it.From), 14) + "  "
+		head := "  " + dim(fmt.Sprintf("#%d ", it.ID)) + clip(inboxText(it.From), 14) + "  "
 		chose := ""
 		if a := it.Answer; a != nil && a.Choice != nil && *a.Choice >= 0 && *a.Choice < len(it.Options) {
-			chose = dim(" → ") + clip(inboxText(it.Options[*a.Choice]), 30)
+			chose = dim(" → ") + th.FG(theme.Text, clip(inboxText(it.Options[*a.Choice]), 30))
 		}
 		tail := "  " + dim(fit(ago(it.CreatedAt), 4))
 		room := max(cw-w(head)-w(chose)-w(tail), 1)
@@ -628,17 +860,44 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		for _, l := range it.Links {
 			more = append(more, webLink(l))
 		}
-		item(fmt.Sprintf("fyi:%d", it.ID), head+fit(firstLine(inboxText(it.Question)), room)+chose+tail, more)
+		item(fmt.Sprintf("fyi:%d", it.ID), head+dim(fit(firstLine(inboxText(it.Question)), room))+chose+tail, nil, more)
 	}
 	return rows, keys
 }
 
-// dashOverview: running · waiting · to merge · PRs open · inbox · requests,
-// on as many lines of room cells as it takes.
+// sendGist is the line of a send that says what it is about: prompts
+// usually open with a markdown heading ("## 何を"), which says nothing, so
+// the first line that is not a heading; the first heading when there is
+// nothing else.
+func sendGist(text string) string {
+	first := ""
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		if h := strings.TrimLeft(l, "#"); h != l && (h == "" || h[0] == ' ') {
+			if first == "" {
+				first = strings.TrimSpace(h)
+			}
+			continue
+		}
+		return l
+	}
+	return first
+}
+
+// dashOverview: what needs the person first (the inbox's open questions,
+// the PRs ready to merge), loud; then running · waiting · to merge · PRs
+// open · requests, quiet; on as many lines of room cells as it takes. A
+// session reviewing someone else's PR is not counted.
 func (m *model) dashOverview(room int) []string {
 	th := m.th
-	var run, wait, merge, prs int
-	for _, s := range m.dashPipeline() {
+	var run, wait, merge, prs, ready int
+	for _, s := range m.sessions {
+		if s.PRReview {
+			continue
+		}
 		switch s.State {
 		case state.Running, state.Creating:
 			run++
@@ -650,6 +909,9 @@ func (m *model) dashOverview(room int) []string {
 		}
 		if s.PR > 0 && s.State != state.Landed && (s.PRStatus == nil || s.PRStatus.State == "OPEN") {
 			prs++
+			if mc := m.dash.merge[s.Slug]; mc != nil && mc.Ready {
+				ready++
+			}
 		}
 	}
 	inbox := 0
@@ -658,40 +920,66 @@ func (m *model) dashOverview(room int) []string {
 			inbox++
 		}
 	}
-	part := func(n int, word string, r theme.Role) string {
-		if n != 1 {
-			word = strings.Replace(word, "PR ", "PRs ", 1)
-			if word == "request" {
-				word = "requests"
-			}
+	plural := func(n int, one, many string) string {
+		if n == 1 {
+			return one
 		}
+		return many
+	}
+	part := func(n int, word string, r theme.Role) string {
 		if n == 0 {
 			return th.FG(theme.Dim, fmt.Sprintf("%d %s", n, word))
 		}
-		return th.FG(r, fmt.Sprint(n)) + " " + word
+		return th.FG(r, fmt.Sprint(n)) + " " + th.FG(theme.Dim, word)
 	}
 	sep := th.FG(theme.Dim, " · ")
-	var lines []string
-	cur := ""
-	for _, p := range []string{
-		part(run, "running", theme.Text), part(wait, "waiting", theme.Warn), part(merge, "to merge", theme.Ok),
-		part(prs, "PR open", theme.Text), part(inbox, "in the inbox", theme.Warn), part(len(m.dash.ledger), "request", theme.Text),
-	} {
-		switch {
-		case cur == "":
-			cur = p
-		case w(cur)+w(sep)+w(p) <= room:
-			cur += sep + p
-		default:
-			lines, cur = append(lines, cur), p
+	// the person's turn: loud when there is something, a calm line when not
+	var loud []string
+	if inbox > 0 {
+		loud = append(loud, m.dashEmo("🙋")+th.Bold(theme.Warn, fmt.Sprint(inbox))+" "+th.FG(theme.Text, plural(inbox, "question", "questions")+" to answer"))
+	}
+	if ready > 0 {
+		loud = append(loud, m.dashEmo("🚀")+th.Bold(theme.Secondary, fmt.Sprint(ready))+" "+th.FG(theme.Text, plural(ready, "PR", "PRs")+" ready to merge"))
+	}
+	var parts []string
+	if len(loud) == 0 {
+		parts = append(parts, m.dashEmo("🍵")+th.FG(theme.Ok, "nothing needs you")+th.FG(theme.Dim, " · all quiet"))
+	} else {
+		parts = append(parts, strings.Join(loud, "   "))
+	}
+	lines := []string{}
+	flow := func(ps []string) {
+		cur := ""
+		for _, p := range ps {
+			switch {
+			case cur == "":
+				cur = p
+			case w(cur)+w(sep)+w(p) <= room:
+				cur += sep + p
+			default:
+				lines, cur = append(lines, cur), p
+			}
+		}
+		if cur != "" {
+			lines = append(lines, cur)
 		}
 	}
-	return append(lines, cur)
+	flow(parts)
+	flow([]string{
+		part(run, "running", theme.Ok), part(wait, "waiting", theme.Warn), part(merge, "to merge", theme.Secondary),
+		part(prs, plural(prs, "PR open", "PRs open"), theme.Text),
+		part(len(m.dash.ledger), plural(len(m.dash.ledger), "request", "requests"), theme.Text),
+	})
+	return lines
 }
 
-// dashGroupHead names a group: who asked, and the request.
+// dashGroupHead names a group: who asked, and the request (its number and
+// the start of its first line; the whole text is in Requests).
 func (m *model) dashGroupHead(g dashGroup, room int) string {
 	th := m.th
+	if g.merged {
+		return fit(m.dashEmo("🎉")+th.FG(theme.Dim, fmt.Sprintf("merged · %d", len(g.sessions))), room)
+	}
 	who := "from " + inboxText(g.parent)
 	switch g.parent {
 	case "+tapi":
@@ -703,11 +991,13 @@ func (m *model) dashGroupHead(g dashGroup, room int) string {
 	}
 	head := th.FG(theme.Text, who)
 	if g.request > 0 {
-		req := fmt.Sprintf(" · request #%d", g.request)
+		req := fmt.Sprintf(" · #%d", g.request)
 		if e := m.ledgerEntry(g.request); e != nil {
-			req += " " + firstLine(inboxText(e.Text))
+			if t := firstLine(inboxText(e.Text)); t != "" {
+				req += " " + fit(t, min(max(room-w(head)-w(req)-1, 1), 32))
+			}
 		}
-		head += th.FG(theme.Dim, req)
+		head += th.FG(theme.Dim, strings.TrimRight(req, " "))
 	}
 	return fit(head, room)
 }
