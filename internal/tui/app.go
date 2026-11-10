@@ -155,6 +155,7 @@ type model struct {
 
 	tapi  *tapiState // the mascot (tapi.go)
 	chat  chatState  // tapi chat in the main panel (chat.go)
+	dash  dashState  // the dashboard on the tapi row (dashboard.go)
 	order *ptyOrder  // keys reach the ptys in the order typed (order.go); a pointer so the tour can copy the model
 
 	spinning bool     // the 80 ms spinner tick is scheduled
@@ -493,6 +494,9 @@ func (m *model) onSelChange() tea.Cmd {
 		m.window = engine.WinAgent
 	}
 	cmds = append(cmds, m.fetchScreen(), m.loadChanges(cur))
+	if m.dashShown() {
+		cmds = append(cmds, m.loadDash()) // the dashboard reads pekoed now, not at the next tick
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -662,7 +666,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.window == winPR && m.current() != nil && time.Since(m.pr.at) >= prRefresh {
 			cmds = append(cmds, m.prFollow())
 		}
-		cmds = append(cmds, m.maybePermission(), m.escalate())
+		cmds = append(cmds, m.maybePermission(), m.escalate(), m.dashTick())
 		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
@@ -698,6 +702,10 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case inboxMsg:
 		m.onInboxList(msg)
+		return m, nil
+
+	case dashMsg:
+		m.onDash(msg)
 		return m, nil
 
 	case inboxAnswerMsg:
@@ -994,7 +1002,11 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		m.progress[p.Slug] = p.Steps
 		return nil
 	case "inbox.updated":
+		m.dash.stale = true // a fyi, or a merge item that moved
 		return m.onInboxEvent(ev.Data)
+	case "ledger.updated", "ledger.removed":
+		m.dash.stale = true
+		return nil
 	case "session.output":
 		var p struct {
 			Slug string `json:"slug"`
@@ -1296,6 +1308,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 		}
 		if m.window == winPreview && !m.issueShown() {
 			return m.keyPreview(key)
+		}
+		if m.dashShown() {
+			return m.keyDash(key)
 		}
 		return m.keyAgent(key)
 	}
@@ -1712,6 +1727,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
 	if inAgent && m.chat.open {
 		return m.chatMouse(ev, x, y)
+	}
+	if inAgent && m.dashShown() {
+		return m.dashMouse(ev, x, y)
 	}
 	if inAgent && m.window == winPR {
 		switch {
