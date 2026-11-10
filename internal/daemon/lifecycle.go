@@ -203,6 +203,7 @@ func (d *Daemon) purge(s *state.Session) {
 // purgeFiles is purge after the session is forgotten: the picks, errors,
 // attachments, preview and agent settings kept outside its row.
 func (d *Daemon) purgeFiles(s *state.Session) {
+	d.recordSession(s, nil, true) // what stats keeps of it (stats.go)
 	// picks addressed to this session go with it (no leftovers)
 	if picks, err := d.DB.Picks(1000); err == nil {
 		for _, pk := range picks {
@@ -530,6 +531,7 @@ func (d *Daemon) finishLanding(slug string) error {
 	if s.State == state.Landed { // finished by a run that started earlier
 		return nil
 	}
+	merged := time.Now() // when pekoe saw it merged, before the teardown's minutes
 	_ = d.Eng.KillSession(slug)
 	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {
 		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
@@ -544,10 +546,13 @@ func (d *Daemon) finishLanding(slug string) error {
 			log.Printf("remove worktree %s: %v", s.Path, err)
 		}
 	}
-	d.update(slug, func(x *state.Session) {
+	landed, _ := d.update(slug, func(x *state.Session) {
 		x.State, x.Landing, x.Dev, x.Stopped = state.Landed, false, false, true
 		landedPRMerged(x)
 	})
+	if landed != nil {
+		d.recordSession(landed, &merged, false) // stats.go
+	}
 	return nil
 }
 

@@ -89,6 +89,10 @@ var agentMethods = map[string]string{
 	// merge evidence: a computation over session.list (pr_status, overlaps,
 	// after) and report.list, both open already; runs nothing
 	"merge.check": "the hub agent and the dashboards read what a session still lacks before it may be merged; read only, from what session.list and report.list show",
+	// counts only: dates, repository names, slugs, PR numbers and token
+	// sums, no word an agent wrote; the transcripts it reads are the ones
+	// the hooks already make pekoed read (readTokens), only the new lines
+	"stats": "tapi chat and the hub agent answer how many PRs merged and how many tokens were used (`pekoe stats`); counts only, no agent text; reads only the new lines of the transcripts the hooks named",
 }
 
 // humanMethods: every other registered method, with why an agent may not

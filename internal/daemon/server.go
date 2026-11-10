@@ -217,6 +217,7 @@ type Daemon struct {
 	// the inbox (inbox.go)
 	inboxMu      sync.Mutex           // reads and writes of an item, one at a time
 	ledgerMu     sync.Mutex           // changes of a ledger entry, one at a time (ledger.go)
+	usageMu      sync.Mutex           // one count of transcript usage at a time (stats.go)
 	inboxDeliver sync.Map             // asker -> *sync.Mutex: one delivery at a time
 	inboxTick    atomic.Bool          // deliverAllInbox is running
 	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
@@ -627,6 +628,7 @@ func (d *Daemon) registerHandlers() {
 		"pr.seen":               bind(d.hPRSeen),
 		"pr.failed_log":         bind(d.hFailedLog),
 		"merge.check":           bind(d.hMergeCheck),
+		"stats":                 bind(d.hStats),
 		"pick.list":             bind(d.hPickList),
 		"pick.send":             bind(d.hPickSend),
 		"pick.discard":          bind(d.hPickDiscard),

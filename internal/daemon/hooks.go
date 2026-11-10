@@ -251,6 +251,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 			d.kickConflicts()
 		}
 		go d.readTokens(slug, hp.TranscriptPath)
+		go d.noteTranscript(slug, hp.TranscriptPath)
 	case "Notification":
 		kind := classifyNotification(hp)
 		if kind == "" {
@@ -391,6 +392,7 @@ func (d *Daemon) onStop(slug string, hp hookPayload) {
 		s.State, s.WaitKind, s.PendingTool = state.Done, "", nil
 	})
 	go d.readTokens(slug, hp.TranscriptPath)
+	go d.noteTranscript(slug, hp.TranscriptPath)
 	d.refreshDiffstat(slug)
 	if s != nil && !asking {
 		go d.runTest(slug)
