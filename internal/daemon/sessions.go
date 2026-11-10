@@ -651,6 +651,34 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// promptArgMax is the longest quoted prompt put on the agent's command line.
+// tmux refuses a command over its message size (about 16 KB, less in older
+// versions, and the environment shares it); longer prompts go via a file.
+const promptArgMax = 4 << 10
+
+// writePromptFile keeps a long initial prompt in pekoe's data directory
+// (0600) for the agent's shell to read once.
+func writePromptFile(slug, prompt string) (string, error) {
+	dir := filepath.Join(paths.DataDir(), "prompts")
+	if err := paths.Ensure(dir); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, slug+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(prompt); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 // spawnAgent starts the agent window. resume = claude session id to resume
 // ("continue" = most recent in cwd).
 func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
@@ -678,7 +706,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	case resume != "" && ag.Resume != "":
 		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", shellQuote(resume))
 	}
-	pasteLater := ""
+	pasteLater, promptFile := "", ""
 	if prompt != "" {
 		if ag.Prompt == "paste" {
 			pasteLater = prompt
@@ -687,7 +715,19 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 			// starts with "-" is the prompt, not options such as
 			// --permission-mode or --settings (claude and codex both take
 			// "--"; an agent that doesn't can use prompt = "paste")
-			cmd += " -- " + shellQuote(prompt)
+			arg := shellQuote(prompt)
+			if len(arg) > promptArgMax {
+				// too long for tmux's command line ("command too long"):
+				// the shell reads it from a file, so the agent still gets
+				// the same argument
+				f, err := writePromptFile(slug, prompt)
+				if err != nil {
+					return err
+				}
+				promptFile = f
+				arg = `"$(cat ` + shellQuote(f) + `; rm -f ` + shellQuote(f) + `)"`
+			}
+			cmd += " -- " + arg
 		}
 	}
 	env := append([]string{}, s.Env...)
@@ -701,6 +741,9 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	// the TUI can offer restart instead of typing into nothing
 	full := cmd + `; printf '\n[pekoe] agent exited (%s). ↵ restart · x close\n' "$?"`
 	if err := d.Eng.Spawn(engine.Spawn{Slug: slug, Window: engine.WinAgent, Dir: s.Path, Env: env, Command: full, Width: w, Height: h}); err != nil {
+		if promptFile != "" {
+			os.Remove(promptFile)
+		}
 		return err
 	}
 	d.update(slug, func(x *state.Session) {
