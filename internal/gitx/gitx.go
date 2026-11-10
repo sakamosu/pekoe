@@ -408,6 +408,9 @@ func MergeBase(dir, a, b string) (string, error) {
 	return Run(dir, "merge-base", "--end-of-options", a, b)
 }
 
+// beforeRemove runs between RestoreSnapshot's diff and its removes (tests).
+var beforeRemove func()
+
 // RestoreSnapshot makes the working tree match commit (undo a prompt).
 // Files that exist now but not in the snapshot are deleted.
 func RestoreSnapshot(dir, commit string) error {
@@ -421,9 +424,21 @@ func RestoreSnapshot(dir, commit string) error {
 		return err
 	}
 	f := strings.Split(string(out), "\x00")
+	// Removed through an os.Root of dir: the agent can swap a directory on
+	// the way for a symlink between the diff and the remove, and a plain
+	// os.Remove would follow it out of the worktree (~/.zshrc for
+	// a/.zshrc). The root refuses any path that leaves dir, race or not.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if beforeRemove != nil {
+		beforeRemove()
+	}
 	for i := 0; i+1 < len(f); i += 2 {
 		if f[i] == "A" { // added after the snapshot
-			_ = os.Remove(filepath.Join(dir, f[i+1]))
+			_ = root.Remove(f[i+1])
 		}
 	}
 	_, err = Run(dir, "restore", "--source="+commit, "--worktree", "--", ":/")
