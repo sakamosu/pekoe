@@ -72,7 +72,7 @@ func TestChatOpenTypeLeave(t *testing.T) {
 	m, f, _ := chatModel(t)
 	runCmd(m, m.onKey(key("t")))
 	out := checkSize(t, m, "chat")
-	if !strings.Contains(out, "[4] tapi chat · claude · typing") || !strings.Contains(out, "tapi says hello") || strings.Contains(out, "the session's agent") {
+	if !strings.Contains(out, "[4] tapi the orchestrator · claude · typing") || !strings.Contains(out, "tapi says hello") || strings.Contains(out, "the session's agent") {
 		t.Fatalf("chat window:\n%s", out)
 	}
 	if !strings.Contains(out, "TAPI") || !strings.Contains(out, "^q leave") {
@@ -99,7 +99,7 @@ func TestChatOpenTypeLeave(t *testing.T) {
 	if m.chat.open || m.typing || m.focus != pSessions {
 		t.Fatalf("after prefix: open %v typing %v focus %d", m.chat.open, m.typing, m.focus)
 	}
-	if out := checkSize(t, m, "closed"); strings.Contains(out, "tapi chat") || !strings.Contains(out, "the session's agent") {
+	if out := checkSize(t, m, "closed"); strings.Contains(out, "tapi the orchestrator") || !strings.Contains(out, "the session's agent") {
 		t.Fatalf("closed:\n%s", out)
 	}
 
@@ -205,7 +205,7 @@ func TestChatWaitsInBar(t *testing.T) {
 	runCmd(m, m.onKey(key("t")))
 	m.chat.info.State, m.chat.info.WaitKind = state.Waiting, "permission"
 	out := checkSize(t, m, "open")
-	if strings.Contains(out, "chat waits") || !strings.Contains(out, "tapi chat · claude · permission") {
+	if strings.Contains(out, "chat waits") || !strings.Contains(out, "tapi the orchestrator · claude · permission") {
 		t.Fatalf("open:\n%s", out)
 	}
 	if n := strings.Count(out, m.tapi.r.Line(m.tapi.r.Eyes("wait"))); n > 1 {
@@ -243,7 +243,7 @@ func TestChatLayout(t *testing.T) {
 		t.Fatalf("tapi.open %v, want %dx%d", op, aw, ah)
 	}
 	out := checkSize(t, m, "zoomed chat")
-	if !strings.Contains(out, "[4] tapi chat") || strings.Contains(out, "Sessions") || !strings.Contains(out, "zoom ^q z") {
+	if !strings.Contains(out, "[4] tapi the orchestrator") || strings.Contains(out, "Sessions") || !strings.Contains(out, "zoom ^q z") {
 		t.Fatalf("zoomed chat:\n%s", out)
 	}
 	if !strings.Contains(out, "^q leave  ^q z unzoom  ^q < > width") {
@@ -268,7 +268,7 @@ func TestChatLayout(t *testing.T) {
 	if rs := f.find("tapi.resize"); rs[len(rs)-1]["width"] != float64(aw2) {
 		t.Fatalf("tapi pty not refitted after unzoom: %v (want %d)", rs[len(rs)-1], aw2)
 	}
-	if out := checkSize(t, m, "unzoomed chat"); !strings.Contains(out, "Sessions") || !strings.Contains(out, "[4] tapi chat") {
+	if out := checkSize(t, m, "unzoomed chat"); !strings.Contains(out, "Sessions") || !strings.Contains(out, "[4] tapi the orchestrator") {
 		t.Fatalf("unzoomed chat:\n%s", out)
 	}
 
@@ -294,7 +294,7 @@ func TestChatLayout(t *testing.T) {
 	if m.chat.open || !m.zoomed() || m.focus != pAgent {
 		t.Fatalf("leave zoomed: open %v zoom %v focus %d", m.chat.open, m.zoomed(), m.focus)
 	}
-	if out := checkSize(t, m, "left zoomed"); strings.Contains(out, "tapi chat") {
+	if out := checkSize(t, m, "left zoomed"); strings.Contains(out, "tapi the orchestrator") {
 		t.Fatalf("left zoomed:\n%s", out)
 	}
 }
