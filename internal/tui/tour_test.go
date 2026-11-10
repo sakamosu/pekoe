@@ -790,3 +790,20 @@ func TestTourLangNotRecordedUnlessPicked(t *testing.T) {
 		}
 	}
 }
+
+// Caps Lock on: L / H / Q go on, back and skip like l / h / q, and never
+// switch the language
+func TestTourCapsLock(t *testing.T) {
+	m := tourModel(t, "none", 120, 40) // Japanese locale
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	press(m, "L")
+	press(m, "L")
+	press(m, "H")
+	if m.tour == nil || m.tour.step != 1 || m.tour.lang != tourJa {
+		t.Fatalf("L L H: step %d lang %s", m.tour.step, m.tour.lang)
+	}
+	press(m, "Q")
+	if m.tour != nil {
+		t.Fatal("Q did not end the tour")
+	}
+}

@@ -3,9 +3,10 @@ package tui
 // The tutorial: coach marks over the TUI. One step puts one element of the
 // screen in focus (a panel, the state column, a dialog) and explains it in a
 // card next to it; ↵ / → / l / space go on, ← / h / backspace back, esc / q
-// skip, L switches between English and Japanese and stays on the step. It
-// starts by itself the first time pekoe runs (paths.TutorialFile records
-// that it was seen, skipped or not, and the language picked with L) and
+// skip (L / H / Q too: Caps Lock on), tab switches between English and
+// Japanese and stays on the step. It starts by itself the first time pekoe
+// runs (paths.TutorialFile records that it was seen, skipped or not, and the
+// language picked with tab) and
 // again with H or :tutorial.
 //
 // The language: the one recorded, else the environment (LC_ALL, then
@@ -50,8 +51,10 @@ import (
 )
 
 const (
-	tourKey     = "H" // replays the tutorial from any panel
-	tourLangKey = "L" // switches the tour's language, in the tour only
+	tourKey = "H" // replays the tutorial from any panel
+	// tourLangKey switches the tour's language, in the tour only; not a
+	// letter: Caps Lock turns l (next) into L
+	tourLangKey = "tab"
 	// tourKeep bounds the messages kept while the tour runs; past it they
 	// are dropped (the reload at the end brings the state back anyway)
 	tourKeep = 2000
@@ -277,12 +280,12 @@ func (m *model) tourUpdate(msg tea.Msg) tea.Cmd {
 func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 	for _, k := range keys {
 		switch k.String() {
-		case "enter", "right", "l", " ":
+		case "enter", "right", "l", "L", " ": // L, H, Q: Caps Lock is on
 			if m.tour.step == len(tourSteps)-1 {
 				return m.endTour() // Done
 			}
 			m.tourGo(m.tour.step + 1)
-		case "left", "h", "backspace":
+		case "left", "h", "H", "backspace":
 			if m.tour.step > 0 {
 				m.tourGo(m.tour.step - 1)
 			}
@@ -293,7 +296,7 @@ func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 			} else {
 				m.tour.lang = tourJa
 			}
-		case "esc", "q":
+		case "esc", "q", "Q":
 			return m.endTour()
 		case "ctrl+c":
 			cmd := m.endTour()
