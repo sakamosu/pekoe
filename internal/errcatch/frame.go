@@ -92,20 +92,25 @@ func Resolve(root string, f Frame) (string, bool) {
 	} else {
 		cands = append(cands, filepath.Join(root, file))
 	}
-	realRoot, _ := filepath.EvalSymlinks(root)
+	// Judge the file the path ends up at, not the path: a link in the
+	// worktree (x.js -> ~/.local/share/pekoe/human-token, or a linked
+	// directory) must not pass for the project's own code, or its lines
+	// would land in the excerpt. The root's own links (/var vs /private/var
+	// on macOS) are resolved too, so they still match.
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
 	for _, c := range cands {
-		c = filepath.Clean(c)
-		if st, err := os.Stat(c); err != nil || st.IsDir() {
+		realC, err := filepath.EvalSymlinks(filepath.Clean(c))
+		if err != nil {
 			continue
 		}
-		if rel, ok := inside(root, c); ok {
-			return rel, true
+		if st, err := os.Stat(realC); err != nil || !st.Mode().IsRegular() {
+			continue
 		}
-		// /var vs /private/var (macOS) and other symlinked roots
-		if realC, err := filepath.EvalSymlinks(c); err == nil && realRoot != "" {
-			if rel, ok := inside(realRoot, realC); ok {
-				return rel, true
-			}
+		if rel, ok := inside(realRoot, realC); ok {
+			return rel, true
 		}
 	}
 	return "", false

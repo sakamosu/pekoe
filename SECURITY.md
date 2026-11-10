@@ -12,7 +12,7 @@ pekoe is maintained by one person in their spare time, so there is no guaranteed
 
 pekoe runs coding agents that execute commands with your user's permissions, so the interesting boundaries are the ones between those agents (or other local processes, or other devices) and the operations meant for a human. Examples of what is in scope:
 
-- **pekoed's unix socket** (`~/.local/share/pekoe/pekoed.sock`): an agent or another local process getting around the human-only checks
+- **pekoed's unix socket** (`~/.local/share/pekoe/pekoed.sock`): an agent or another local process getting around the human-only checks. pekoed runs outside the agents' sandbox, so without the human token only the few methods agents need are open (the list is under "人間だけの操作" in [docs/api.md](docs/api.md)); any way to make pekoed run a command or read a file outside the agent's reach through them, or to call another method without the token, is in scope
 - **The human token** (`~/.local/share/pekoe/human-token`): ways it leaks to agents (for example through their environment), or human-only operations that work without it
 - **The HTTP endpoint on 127.0.0.1** used by the Chrome extension: requests from web pages or other origins that are accepted, or token checks that can be bypassed
 - **The Web UI** (`-tags web` builds only, served over the tailnet with tsnet): access by users or devices not in `allow_users` / `allow_devices`, or actions beyond what it is meant to allow

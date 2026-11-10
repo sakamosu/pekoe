@@ -26,7 +26,7 @@ worktree 作成 → ファイルのコピー → setup → ポート割り当て
 ## 前提の確認
 
 - 対象リポジトリの中で実行する(`pekoe new` は cwd のリポジトリに worktree を作る)
-- 設定がまだなければ `pekoe new` が素の worktree を作るだけになる。setup が要りそうなリポジトリなら、先に `pekoe init --print` で下書きを作ってユーザーに見せ、書き込みはユーザーに端末で `pekoe init` を実行してもらう(設定の書き込みは人間だけの操作で、エージェントからは断られる)
+- 設定がまだなければ `pekoe new` が素の worktree を作るだけになる。setup が要りそうなリポジトリなら、ユーザーに端末で `pekoe init` を実行してもらう(下書きを見て選び、書き込む。設定の下書き・書き込みは人間だけの操作で、エージェントからは断られる)。必要なら、リポジトリを読んで setup に要りそうなコマンドを先に伝えてよい
 - デーモンは自動で起動するので、普段は気にしなくていい
 
 ## セッションを作る
@@ -74,7 +74,7 @@ EOF
 
 ## 人間だけの操作
 
-pekoed は、許可待ちへの回答(`pekoe answer`)・生キー・設定の書き込み(`pekoe init` の書き込み)・`pekoe dev`・run 窓でのコマンド実行・`pekoe daemon stop`(`restart` も)を、人間用トークン(`human-token`)を付けた呼び出しにしか許さない。エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
+pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send` と hooks の `pekoe event` だけ。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・`pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `rm` / `land` / `issues` / `conflicts`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
 - ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code の sandbox でトークンのファイルを読めなくすることを勧める(設定例は pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)

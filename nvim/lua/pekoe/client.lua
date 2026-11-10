@@ -267,9 +267,8 @@ function M.request(method, params, cb)
     params = vim.empty_dict()
   end
   local req = { id = id, method = method, params = params }
-  if method ~= "subscribe" then
-    req.token = M.human_token()
-  end
+  -- subscribe too: without the token pekoed sends only session events
+  req.token = M.human_token()
   local line = vim.json.encode(req) .. "\n"
   local wrapped = cb and function(err, res)
     local ok, e = pcall(cb, err, res)

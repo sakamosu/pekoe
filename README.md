@@ -197,7 +197,7 @@ pekoe                                                 # TUI
 - `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
-- `answer`, `dev`, writing with `init`, `daemon stop` / `daemon restart` and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
+- Of the commands that talk to pekoed, agents can use only `ls`, `new` and `send` (and `event`, for the hooks) without the token. The others (`answer`, `dev`, `init`, `open`, `review`, `rm`, `land`, `issues`, `conflicts`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
 
 ## TUI
 
@@ -305,7 +305,7 @@ Register with `claude mcp add pekoe -- pekoe mcp`. The tools are `open_in_editor
 
 ### Letting agents use pekoe: permissions
 
-Agents run as the same user, so they can connect to pekoed's socket. pekoed allows "operations a human decides and performs on the spot" (answering permission prompts, raw keys, typing into tapi chat, writing settings, running commands with `dev` or in the run window, stopping the daemon) only for calls that carry the `human-token`. The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. The methods are listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
+Agents run as the same user, so they can connect to pekoed's socket. pekoed runs outside the agents' sandbox, so without the `human-token` it allows only what agents need: `pekoe event` from the hooks, `pekoe ls`, `pekoe new` and `pekoe send` for the hub (the skill; `send` only into an agent's input box and not while it shows a permission dialog), and the MCP server's `session_list` and `open_in_editor`. Everything else (answering permission prompts, raw keys, typing into tapi chat, drafting and writing settings, running commands with `dev`, in the run window or the review surface, looking at other sessions' screens, diffs or error excerpts, stopping the daemon, …) needs the token. The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. Which method is which is listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
 
 But an agent running as the same user can read files. Use these two together:
 
@@ -418,7 +418,7 @@ agent = "claude"            # a name from [agents.*]; agents other than claude g
 enable = true               # false hides both
 ```
 
-`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
+`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks`. `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 
 ## Where data lives (your repositories stay clean)
 

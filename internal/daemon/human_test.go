@@ -98,6 +98,16 @@ func TestHumanOnlyMethodsNeedToken(t *testing.T) {
 		{"run.start", map[string]any{"slug": "main", "command": "true"}},
 		{"dev.toggle", map[string]any{"slug": "main"}},
 		{"daemon.stop", map[string]any{"kill_agents": true}},
+		// added after the deny list and missed by it: run nvim, read
+		// excerpts, return the login URL or the extension's token
+		{"review.surface", map[string]any{"slug": "main"}},
+		{"error.get", map[string]any{"id": 1}},
+		{"error.send", map[string]any{"id": 1}},
+		{"web.status", nil},
+		{"ext.info", nil},
+		{"session.screen", map[string]any{"slug": "main"}},
+		{"session.open", map[string]any{"path": repo, "resume": "new"}},
+		{"daemon.status", nil},
 	} {
 		for _, tok := range []string{"", "wrong-" + d.humanToken} {
 			if e := c.call(tc.method, tc.params, tok); !strings.Contains(e, "only a person can do this") {
@@ -130,10 +140,20 @@ func TestAgentMethodsWithoutToken(t *testing.T) {
 	d, fe, repo := setup(t)
 	waitingSession(t, d, repo)
 	c := dialPipe(t, d)
-	for _, m := range []string{"session.list", "daemon.status"} {
-		if e := c.call(m, nil, ""); e != "" {
+	for _, m := range []string{"session.list", "repo.resolve"} {
+		params := map[string]any{}
+		if m == "repo.resolve" {
+			params = map[string]any{"repo": repo, "cwd": repo}
+		}
+		if e := c.call(m, params, ""); e != "" {
 			t.Errorf("%s: %s", m, e)
 		}
+	}
+	if e := c.call("session.get", map[string]any{"slug": "main"}, ""); e != "" {
+		t.Errorf("session.get: %s", e)
+	}
+	if e := c.call("no.such", nil, ""); !strings.Contains(e, "unknown method") {
+		t.Errorf("unknown method: error = %q", e)
 	}
 	before := sentCount(fe)
 	if e := c.call("session.send", map[string]any{"slug": "main", "text": "2", "submit": true}, ""); !strings.Contains(e, "waiting for a permission answer") {
@@ -186,5 +206,74 @@ func TestAgentMethodsWithoutToken(t *testing.T) {
 	}
 	if got := sentSince(fe, before); len(got) != 0 {
 		t.Fatalf("held sends reached the engine: %v", got)
+	}
+}
+
+// Every registered method is either open to agents or human-only, on
+// purpose: a new method fails here until someone puts it in one of the two
+// lists (and authorize refuses it to agents meanwhile).
+func TestEveryMethodClassified(t *testing.T) {
+	d, _, _ := setup(t)
+	for m := range d.handlers {
+		_, a := agentMethods[m]
+		_, h := humanMethods[m]
+		switch {
+		case a && h:
+			t.Errorf("%s is in both agentMethods and humanMethods", m)
+		case !a && !h:
+			t.Errorf("%s is in neither agentMethods nor humanMethods (human.go): decide whether an agent may call it without the human token", m)
+		}
+	}
+	for _, list := range []map[string]string{agentMethods, humanMethods} {
+		for m := range list {
+			if _, ok := d.handlers[m]; !ok {
+				t.Errorf("%s is classified but not registered", m)
+			}
+		}
+	}
+}
+
+// A subscription without the token gets only the session events: not
+// other sessions' clipboard (term.passthrough), picks, errors or review
+// text.
+func TestSubscribeWithoutTokenGetsSessionEvents(t *testing.T) {
+	d, _, _ := setup(t)
+	conns := func() map[*conn]bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		out := map[*conn]bool{}
+		for c := range d.conns {
+			out[c] = true
+		}
+		return out
+	}
+	newConn := func(tok string) *conn {
+		before := conns()
+		c := dialPipe(t, d)
+		if e := c.call("subscribe", map[string]any{"events": []string{"*"}}, tok); e != "" {
+			t.Fatal(e)
+		}
+		for k := range conns() {
+			if !before[k] {
+				return k
+			}
+		}
+		t.Fatal("no connection")
+		return nil
+	}
+	agent := newConn("")
+	for _, ev := range []string{"term.passthrough", "pick.received", "error.updated", "review.answer", "editor.open", "tapi.output"} {
+		if agent.wants(ev) {
+			t.Errorf("agent subscription receives %s", ev)
+		}
+	}
+	for _, ev := range []string{"session.updated", "session.progress"} {
+		if !agent.wants(ev) {
+			t.Errorf("agent subscription misses %s", ev)
+		}
+	}
+	human := newConn(d.humanToken)
+	if !human.wants("term.passthrough") || !human.wants("editor.open") {
+		t.Error("human subscription misses events")
 	}
 }

@@ -53,6 +53,7 @@ type conn struct {
 	c      net.Conn
 	mu     sync.Mutex
 	subs   []string
+	human  bool // a subscribe carried the human token: every event, not only agentEvents
 	closed bool
 }
 
@@ -76,6 +77,9 @@ func (c *conn) send(v any) {
 func (c *conn) wants(ev string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !c.human && !agentEvent(ev) {
+		return false
+	}
 	for _, s := range c.subs {
 		if s == "*" || strings.HasPrefix(ev, s) {
 			return true
@@ -318,8 +322,10 @@ func (d *Daemon) serve(nc net.Conn) {
 			if len(p.Events) == 0 {
 				p.Events = []string{"*"}
 			}
+			human := d.isHuman(req.Token)
 			c.mu.Lock()
 			c.subs = append(c.subs, p.Events...)
+			c.human = c.human || human
 			c.mu.Unlock()
 			c.send(Response{ID: req.ID, Result: nil})
 			continue

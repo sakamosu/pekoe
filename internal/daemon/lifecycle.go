@@ -545,7 +545,6 @@ type surfaceP struct {
 	Slug   string `json:"slug"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
-	RTP    string `json:"rtp"`
 }
 
 // hReviewSurface swaps the right pane to nvim (claude keeps running in its
@@ -563,15 +562,16 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 		return nil, nil
 	}
 	cmd := "nvim"
-	rtp := p.RTP
-	if rtp == "" {
-		rtp = nvimPluginDir()
-	}
-	if rtp != "" {
-		// after the user's config: plugin managers like lazy.nvim reset rtp at startup
-		cmd += " -c " + shellQuote("set rtp+="+rtp+" | runtime plugin/pekoe.lua")
-	}
 	env := append(append([]string{}, s.Env...), "PEKOE_SESSION="+p.Slug, "PEKOE_REVIEW=1", "PEKOE_SOCK="+paths.Socket())
+	// The plugin directory is pekoed's own, never the caller's: nvim reads
+	// "|" in an Ex command as a separator ("set rtp+=/x | !cmd" would run
+	// cmd outside the agent's sandbox). It reaches nvim through the
+	// environment, so no path is spliced into the command. After the
+	// user's config: plugin managers like lazy.nvim reset rtp at startup.
+	if rtp := nvimPluginDir(); rtp != "" {
+		env = append(env, "PEKOE_NVIM_PLUGIN="+rtp)
+		cmd += " -c " + shellQuote(`lua vim.opt.rtp:append(vim.env.PEKOE_NVIM_PLUGIN); vim.cmd.runtime("plugin/pekoe.lua")`)
+	}
 	return nil, d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinReview, Dir: s.Path, Env: env, Command: cmd, Width: p.Width, Height: p.Height})
 }
 
