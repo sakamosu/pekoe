@@ -411,9 +411,18 @@ func prForBranch(dir, branch string) int {
 }
 
 func (d *Daemon) finishLanding(slug string) error {
+	// one at a time per session: watchMerges starts every 2 minutes, and
+	// a slow teardown must not run twice in the same worktree
+	if _, busy := d.finishing.LoadOrStore(slug, true); busy {
+		return nil
+	}
+	defer d.finishing.Delete(slug)
 	s, err := d.snapshot(slug)
 	if err != nil {
 		return err
+	}
+	if s.State == state.Landed { // finished by a run that started earlier
+		return nil
 	}
 	_ = d.Eng.KillSession(slug)
 	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {

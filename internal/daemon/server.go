@@ -182,6 +182,7 @@ type Daemon struct {
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling atomic.Bool          // watchPRStatus is running
+	finishing sync.Map             // slug -> finishLanding is running for it
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
