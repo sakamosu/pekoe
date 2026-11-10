@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -171,5 +174,24 @@ func TestTapiResetKeepsLedger(t *testing.T) {
 	v := call[Tapi](t, d, "tapi.get", nil)
 	if v.LedgerOpen != 1 || v.InboxOpen != 0 {
 		t.Fatalf("tapi after reset: %+v", v)
+	}
+	// the fresh tapi is told to read the ledger first, and what was left
+	ask(t, d, TapiSlug, map[string]any{"question": "どっち?", "kind": "decision", "options": []string{"A", "B"}})
+	call[Tapi](t, d, "tapi.open", nil)
+	b, err := os.ReadFile(filepath.Join(paths.TapiDir(), "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(b)
+	for _, want := range []string{"## 最初にすること", "`pekoe --json ledger`", "`pekoe --json inbox`", "台帳の open な依頼 1 件、受信箱の未回答 1 件", "--request <台帳の id>", "pekoe-orchestrate"} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("CLAUDE.md lacks %q", want)
+		}
+	}
+	if strings.Contains(doc, "CSV を直して") {
+		t.Error("CLAUDE.md carries the ledger's words")
+	}
+	if !strings.Contains(tapiPersona, "統括役") || !strings.Contains(tapiPersona, "pekoe --json ledger") {
+		t.Error("the persona does not say tapi orchestrates")
 	}
 }
