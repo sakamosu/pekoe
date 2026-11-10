@@ -389,3 +389,10 @@ short = "pekoe cleanup(TUI は :cleanup)で片付けの候補を消す"
 detail = "landed・マージ済み・長く止まった([cleanup] stale_after、既定 72h)セッションを、未コミット・未 push の数つきで出す。--rm <slug> か --rm --landed で確かめて消す(エージェントは landed だけ)。"
 keys = ["pekoe cleanup", "--rm", "--landed", "--stale", "[cleanup]"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
+id = "stats"
+short = "pekoe stats で日ごとのマージ数とトークンを見る"
+detail = "pekoe が見届けたマージと、エージェント(サブエージェント・tapi も)が使ったトークンを日付・リポジトリごとに出す。rm した分も残り、動いている分はその時点まで。--days N(既定 7)、--repo R。"
+keys = ["pekoe stats", "--days"]
+docs = ["docs/orchestration.md", "docs/api.md"]

@@ -186,6 +186,7 @@ pekoe                                                 # TUI
 | `pekoe ask-human <question> [--option O]... [--recommend N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context -] [--wait]` | エージェントが人に判断・承認・手作業を頼む(判断の受信箱)。pekoed が問いの元のセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突)を自分で付ける。答えは `--wait`(や `pekoe wait --on inbox`)で待っていれば返り値で、待っていなければ手が空いたときに入力欄に `[pekoe inbox #N] 答え: …` と届く(許可ダイアログが出ている間は届けない) |
 | `pekoe inbox [<id>] [--all]` / `pekoe inbox answer <id> [<n>] [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは「マージした」「待つ」「差し戻す」(メモがセッションに届く)。pekoed はマージしない |
 | `pekoe ledger [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger reopen\|rm <id>` | 依頼の台帳。tapi chat に打った文は pekoed が open で記録し、tapi が `--request` でセッションと結び、`done --evidence <PR>`・`drop --note <理由>`・`close --as chat`(依頼ではなかった)で閉じる。`pekoe tapi reset` でも消えない。開き直す(`reopen`)・消す(`rm`)のは人だけ |
+| `pekoe stats [--days N] [--repo R] [--json]` | ローカルの日付・リポジトリごとの、マージした PR の数と使ったトークン(既定は直近 7 日)。マージは pekoe が land を見届けたもの。トークンはエージェントの Claude Code の transcript(サブエージェント・tapi chat も)から、input・output・cache 書き込み・cache 読み出しの種類別に足す。rm したセッションの分も残り、動いているセッションはその時点までを数える。料金には換算しない。数だけなので、エージェントも token なしで読める |
 | `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止 |
 | `pekoe undo <slug> [n]` | 最後(か n 番目)のプロンプトの変更を取り消す |
 | `pekoe answer <slug> allow\|deny\|always` | 許可待ちに答える |
@@ -334,7 +335,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### エージェントに pekoe を使わせるときの権限
 
-エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)・`pekoe land`(origin のあるリポジトリだけ)・`pekoe rm`(landed のセッションだけ。下)・`pekoe wait`・`pekoe reports`・`pekoe inbox`(一覧)・`pekoe cleanup`(一覧。worktree の git status を読むのは worktree ごとに 10 秒に 1 回まで)、tapi chat の `pekoe ledger`(一覧と閉じる・結ぶ。tapi の窓からだけ)、作業セッションの `pekoe report`(自分のセッションの分だけ)、エージェントの `pekoe ask-human`(人への問い。答えるのは人だけ)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、`dev` や run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token なしの `rm` が消せるのは landed のセッションだけ。PR のマージを検知した時点で pekoed が teardown と worktree の削除を済ませているので、残っているのは pekoe の記録だけで、コードは base のブランチにある。ほかの状態のセッションの `rm` は worktree と未コミットの変更を消すので人間だけの操作のまま。`rm --force` と、worktree が残っている(削除に失敗した)landed のセッションも同じ。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
+エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)・`pekoe land`(origin のあるリポジトリだけ)・`pekoe rm`(landed のセッションだけ。下)・`pekoe wait`・`pekoe reports`・`pekoe inbox`(一覧)・`pekoe stats`(数だけ)・`pekoe cleanup`(一覧。worktree の git status を読むのは worktree ごとに 10 秒に 1 回まで)、tapi chat の `pekoe ledger`(一覧と閉じる・結ぶ。tapi の窓からだけ)、作業セッションの `pekoe report`(自分のセッションの分だけ)、エージェントの `pekoe ask-human`(人への問い。答えるのは人だけ)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、`dev` や run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token なしの `rm` が消せるのは landed のセッションだけ。PR のマージを検知した時点で pekoed が teardown と worktree の削除を済ませているので、残っているのは pekoe の記録だけで、コードは base のブランチにある。ほかの状態のセッションの `rm` は worktree と未コミットの変更を消すので人間だけの操作のまま。`rm --force` と、worktree が残っている(削除に失敗した)landed のセッションも同じ。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
 
 ただし同じユーザーのエージェントはファイルを読めてしまう。そこで次の 2 つで守る。
 
@@ -385,7 +386,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
          "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
          "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
          "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
-         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)",
+         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)", "Bash(pekoe --json stats *)",
          "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)", "Bash(pekoe --json cleanup)", "Bash(pekoe dev *)"
        ]
      }
