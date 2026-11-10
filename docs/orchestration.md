@@ -380,6 +380,15 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 - 受信箱に項目が増えたらトースト 1 回(`✉ feat-pagination asks: …`。文は 40 文字で切る)。`approve` と `login` は wait と同じエスカレーションに乗せる。`fyi` は知らせない
 - `[orchestrator] notify = "quiet"` で今の弱い知らせ方に戻せる
 
+実装(internal/tui/notify.go。既定は `notify = "escalate"`、それ以外の値も escalate):
+
+- **受信箱は `approve` / `login` だけでなく `decision` もエスカレーションに乗せた**: どの種類でも、問いを出したエージェントは答えまで止まる(`ask-human --wait` か、次の手を答えに頼っている)。種類で分けると、人が離れている間に判断待ちだけが黙って溜まる。乗せるのは「エージェントが待っている問い」= 未回答・`fyi` でない・`from` が `human` でない(人が自分で出した問いは誰も待たない)もの
+- **トースト**: tapi の wait と受信箱の問いは、セッションの wait と同じ顔つきのトースト(5 秒)にした。受信箱の問いは今までメッセージ行に出していたもの(`✉ feat-x asks: …(40 文字) · ]a`)をトーストに移した(両方に出すと同じ文が 2 か所に並ぶ)。quiet ではメッセージ行のまま。人が出した問い・`fyi` もメッセージ行
+- **バーの声**: セッションの wait / error が無いとき、tapi の wait(`tapi needs you · t`)、無ければ待たれている問い(1 件なら `✉ feat-x asks · ]a`、複数なら `✉ 2 questions · ]a`)。30 秒で点滅は待ち始め(tapi は `state_since`、問いは `created_at`)から数える。セッションの wait があるときはセッションが優先(バーは 1 つしか言えない。tapi と問いはトーストと通知で別に知らせる)
+- **OS 通知**: ターミナルにフォーカスが無いとき、待ち始めから 2 分で 1 回ずつ(`tapi needs you` / `feat-x asks: …(60 文字)`)。tapi の分は tapi chat を開いていても出す(開いたまま離席していることがある)
+- quiet は統括役にする前と同じ: tapi はバーの `chat waits · t` だけ(セッションの wait より弱い)、受信箱は新しい問いのメッセージ行 1 回だけ
+- 残すもの: `]a` の巡回に tapi の許可待ちを入れるか(tapi の行の作業で決める)
+
 ### Web UI
 
 docs/tapi-chat.md の「Web UI には出さない」を見直す。iPhone から tapi に話しかけ、受信箱に答えられるようにする(段階 3)。

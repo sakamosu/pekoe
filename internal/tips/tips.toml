@@ -146,6 +146,13 @@ keys = ["pekoe ask-human", "--option", "--recommend", "--kind", "--wait"]
 docs = ["docs/api.md", "docs/orchestration.md"]
 
 [[tip]]
+id = "orchestrator-notify"
+short = "tapi と受信箱の待ちもセッションの wait と同じに知らせる"
+detail = "tapi の許可待ちや、エージェントが答えを待つ受信箱の問いは、トースト → 30 秒で点滅 → 2 分で OS 通知。[orchestrator] notify = \"quiet\" で最下行・メッセージ行だけに戻る。"
+keys = ["[orchestrator]"]
+docs = ["docs/orchestration.md", "docs/mascot.md"]
+
+[[tip]]
 id = "inbox"
 short = "pekoe inbox で受信箱を見て、inbox answer で答える"
 detail = "エージェントが人に頼んだことの一覧。pekoe inbox <id> で 1 件を詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ。エージェントからは断られる)。--all で答えたものも出る。"
