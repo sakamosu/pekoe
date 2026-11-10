@@ -26,6 +26,7 @@ A terminal tool for running several coding agents in parallel, one per git workt
 ## Status and requirements
 
 - **A personal tool.** It is built for the author's daily use; configuration, API and commands may still change (no compatibility promises)
+- **Not public yet.** The repository is still private while it is being prepared for release under MIT. Until it goes public, downloading releases and `pekoe update` need a GitHub account that can read it (see [From a release](#from-a-release-prebuilt-binaries))
 - **Developed and tested on macOS** (in Ghostty). Linux builds are published too, but parts of them are untested. Things that assume macOS:
   - APFS clones (`cp -c`) for `[worktree] clone`. On other file systems it falls back to a plain copy
   - `make install-launchd`, and `pekoe daemon restart` for a pekoed run by launchd (`launchctl`)
@@ -104,17 +105,17 @@ make install-launchd    # optional: start pekoed at login
 
 ### From a release (prebuilt binaries)
 
-GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. The repository is public, so you can download them with `gh` or curl without a token (for the Web UI build, add `_web` before `.tar.gz`):
+GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. The repository is not public yet (it is being prepared for release), so for now you need a GitHub account that can read it: download with `gh` after `gh auth login` (for the Web UI build, add `_web` before `.tar.gz`). Once it is public, no access to the repository will be needed: curl works without a token, and `gh` with any logged-in account:
 
 ```sh
 ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest version (or ver=<version>)
 gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # use your <os>_<arch>
-# without gh, with curl:
+# without gh, with curl (only once the repository is public; while it is private these URLs return 404):
 #   ver=$(curl -fsSL https://api.github.com/repos/sakamosu/pekoe/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
-gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # built by this repository's workflow?
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # built by this repository's workflow? (only releases made after it is public have provenance)
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -123,7 +124,7 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached to releases made by `release.yml` while the repository is public; releases from before it went public don't have it, so `gh attestation verify` fails for those versions.
+`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached only to releases that `release.yml` makes while the repository is public (on a private repository, attestations need GitHub Enterprise Cloud, so `release.yml` skips them). The repository is still private, so the current releases have no provenance and `gh attestation verify` fails for them; releases made after it goes public will have it.
 
 An archive contains `bin/pekoe`, `bin/pekoed` (→ pekoe), `share/pekoe/nvim/`, `share/pekoe/extension/`, `contrib/launchd/`, plus `README.md`, `README.ja.md`, `LICENSE` and `THIRD_PARTY_LICENSES` (licenses of the dependencies, see [License](#license)). `bin/pekoe` looks for `../share/pekoe/nvim` relative to its real location, so with the symlinks above the nvim plugin is found as is. To start it with launchd, run `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` and then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`.
 
@@ -140,13 +141,13 @@ pekoe update --version vX.Y.Z --force   # a specific version (--force to go back
 `pekoe update` takes the latest GitHub release (`releases/latest`, excluding drafts and prereleases) and picks the archive for the current OS, architecture and build (the `_web` archive if the current pekoe has the Web UI).
 
 - Nothing happens if the current version is the latest or newer. A `make install` version (`git describe`, e.g. `0.1.0-59-g3761d74`) counts as "59 commits after 0.1.0". Versions that can't be compared, such as `dev`, ask first
-- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. If the release has provenance (an attestation), it is also checked with `gh attestation verify` (for old releases from before the repository went public, which have none, it only warns)
+- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. If the release has provenance (an attestation), it is also checked with `gh attestation verify` (releases made while the repository is private, which includes every release so far, have none, so it only warns)
 - Only the real file of the running pekoe (after following symlinks), the `pekoed` next to it, and `<prefix>/share/pekoe/nvim` and `extension` are replaced. Nothing else in `~/.local/share/pekoe` (such as `state.db`) is touched. Binaries are written next to the old ones and renamed; if something fails halfway, what was replaced is restored
 - With a `make install`, `nvim` / `extension` are links into the repository, so they are replaced by directories with the release's contents (the repository isn't written to; it asks first; `make install` again brings the links back)
 - If the current pekoe has the Web UI and the release has no `_web` archive, it refuses (install the default build with `--no-web`, or build from source with `make install WEB=1`)
 - It refuses locations it can't write to and installs made by a package manager such as Homebrew
 - At the end it prints the old and new versions and, if pekoed is running, asks whether to `pekoe daemon restart`. If the Chrome extension was replaced, reload it in `chrome://extensions`
-- No token is needed. If `$GITHUB_TOKEN` / `$GH_TOKEN`, or else `gh auth token`, is available it is sent, which raises the GitHub API rate limit (without a token, 60 requests per hour; if you hit it, wait a while or `gh auth login`)
+- It sends a GitHub token if it finds one: `$GITHUB_TOKEN` / `$GH_TOKEN`, or else `gh auth token`. While the repository is private (it is not public yet), a token that can read it is required; without one GitHub answers HTTP 404 and `pekoe update` tells you to `gh auth login`. Once it is public, no token will be needed, and one only raises the GitHub API rate limit (without a token, 60 requests per hour; if you hit it, wait a while or `gh auth login`)
 - Replacing is for humans only. Inside an agent's session (`$PEKOE_SESSION` is set) or where `human-token` can't be read, it refuses with `only a person can do this`. `--check` works for anyone
 
 The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`. The project's own `.claude/` is never touched. Check with `pekoe hooks status`; remove only pekoe's hooks with `pekoe hooks uninstall`.

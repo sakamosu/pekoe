@@ -358,8 +358,9 @@ func (u *updater) download(ctx context.Context, a *selfupdate.Asset, file string
 }
 
 // checkProvenance verifies the build provenance when the release has one.
-// Releases made while the repository was private have none (release.yml
-// attests only a public one), so a missing one is a warning.
+// Releases made while the repository is private have none (release.yml
+// attests only a public one; it is not public yet), so a missing one is a
+// warning.
 func (u *updater) checkProvenance(ctx context.Context, file, sum string) error {
 	has, err := u.gh.HasAttestation(ctx, sum)
 	switch {
@@ -367,7 +368,7 @@ func (u *updater) checkProvenance(ctx context.Context, file, sum string) error {
 		fmt.Fprintf(u.err, "warning: could not look up the build provenance (%v); checked the SHA-256 only\n", err)
 		return nil
 	case !has:
-		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made before the repository went public have none); checked the SHA-256 only\n")
+		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made while the repository was private have none); checked the SHA-256 only\n")
 		return nil
 	case u.attest == nil:
 		fmt.Fprintf(u.err, "warning: the release has a build provenance, but gh is not installed to verify it; checked the SHA-256 only\n")
