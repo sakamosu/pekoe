@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
@@ -391,5 +393,21 @@ func TestPermissionModalFollowsSession(t *testing.T) {
 	tool, _ := got[0]["expect"].(map[string]any)["tool"].(map[string]any)
 	if got[0]["answer"] != "allow" || tool["name"] != "Bash" || tool["input"] != "rm -rf build" {
 		t.Fatalf("session.answer %v", got[0])
+	}
+}
+
+// The wheel over a full-screen program without mouse support (less in the
+// run window) scrolls that window: the Up/Down go to it, not the agent.
+func TestAltScreenWheelGoesToShownWindow(t *testing.T) {
+	m, f, _ := chatModel(t)
+	m.window = engine.WinRun
+	m.focus, m.typing = pAgent, true
+	m.screen = &engine.Screen{Lines: []string{"commit abc"}, Width: 100, Height: 30, AltScreen: true}
+	m.screenOf = "api-1"
+	x0, y0 := m.agentOrigin()
+	runCmd(m, m.onMouse(tea.MouseMsg{X: x0 + 1, Y: y0 + 1, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}))
+	got := f.find("session.keys")
+	if len(got) != 1 || got[0]["window"] != engine.WinRun {
+		t.Fatalf("session.keys %v", got)
 	}
 }

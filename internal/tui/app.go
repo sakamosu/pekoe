@@ -1726,9 +1726,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			}
 			s := m.current()
 			if s != nil && m.screen.AltScreen {
-				slug := s.Slug
+				slug, win := s.Slug, m.window
 				return m.inOrder(func() error {
-					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "keys": []string{k}}, nil)
+					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{k}}, nil)
 					return nil
 				})
 			}
