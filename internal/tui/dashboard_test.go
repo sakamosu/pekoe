@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"pekoe/internal/client"
 	"pekoe/internal/state"
 )
 
@@ -180,4 +182,38 @@ func TestDashboardWidths(t *testing.T) {
 		}
 		checkSize(t, m, label+" scrolled")
 	}
+}
+
+// A change while the dashboard reads is not lost; a new report or PR
+// summary on a session marks it to be read again (merge.check reads them).
+func TestDashboardStale(t *testing.T) {
+	m, _ := dashModel(t)
+	m.dash.at = time.Now()
+	cmd := m.loadDash()
+	m.dash.stale = true // a ledger event while reading
+	m.Update(cmd())
+	if !m.dash.stale {
+		t.Fatal("the change during the read was dropped")
+	}
+	m.dash.stale = false
+	s := *m.sessions[1]
+	s.Report = &state.ReportSummary{ID: 99, Status: "done"}
+	m.onEvent(sessionEv(t, "session.updated", &s))
+	if !m.dash.stale {
+		t.Fatal("a new report did not mark the dashboard stale")
+	}
+	m.dash.stale = false
+	m.onEvent(sessionEv(t, "session.updated", &s))
+	if m.dash.stale {
+		t.Fatal("the same session again marked it stale")
+	}
+}
+
+func sessionEv(t *testing.T, name string, s *state.Session) client.Event {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client.Event{Event: name, Data: b}
 }

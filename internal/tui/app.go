@@ -938,6 +938,9 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		for _, x := range m.sessions {
 			if x.Slug == s.Slug {
 				prev = x.State
+				if dashMoved(x, &s) {
+					m.dash.stale = true // merge.check reads the report and the PR
+				}
 			}
 		}
 		m.tapiOnSession(prev, &s, curSlug)

@@ -73,7 +73,7 @@ func (m *model) loadDash() tea.Cmd {
 	if m.dash.loading {
 		return nil
 	}
-	m.dash.loading = true
+	m.dash.loading, m.dash.stale = true, false // a change while reading marks it again
 	cl := m.cl
 	return func() tea.Msg {
 		var out dashMsg
@@ -97,7 +97,7 @@ func (m *model) loadDash() tea.Cmd {
 
 func (m *model) onDash(msg dashMsg) {
 	d := &m.dash
-	d.loading, d.stale, d.at = false, false, time.Now()
+	d.loading, d.at = false, time.Now()
 	d.ledger, d.sends, d.fyi = msg.ledger, msg.sends, msg.fyi
 	d.merge = map[string]*state.MergeCheck{}
 	for i := range msg.merge {
@@ -350,6 +350,19 @@ func dashStages(s *state.Session, mc *state.MergeCheck) [5]int {
 		st[4] = stNone
 	}
 	return st
+}
+
+// dashMoved: what merge.check reads of a session changed (a new report,
+// the PR summary, landing or its state), so the dashboard reads it again.
+func dashMoved(old, cur *state.Session) bool {
+	rid := func(s *state.Session) int64 {
+		if s.Report == nil {
+			return 0
+		}
+		return s.Report.ID
+	}
+	return rid(old) != rid(cur) || old.PR != cur.PR || old.Landing != cur.Landing || old.State != cur.State ||
+		!old.PRStatus.Same(cur.PRStatus) || len(old.Overlaps) != len(cur.Overlaps)
 }
 
 func mergeCond(mc *state.MergeCheck, name string) bool {
