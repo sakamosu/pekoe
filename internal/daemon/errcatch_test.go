@@ -15,6 +15,7 @@ import (
 
 	"pekoe/internal/engine"
 	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -255,5 +256,24 @@ func TestConsoleLimits(t *testing.T) {
 	d.guard(d.httpConsole)(w, r)
 	if w.Code != http.StatusBadRequest || len(kept(4103)) != 0 {
 		t.Fatalf("big body: %d", w.Code)
+	}
+}
+
+// rm of fix-login leaves the attachments of fix-login-page alone.
+func TestRemoveAttachmentsOnlyOwn(t *testing.T) {
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	dir := paths.ErrorsDir("r")
+	os.MkdirAll(dir, 0o755)
+	for _, f := range []string{"fix-login-0001.md", "fix-login-page-0003.md", "fix-login-2-0004.md"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+	}
+	removeAttachments("r", "fix-login")
+	if _, err := os.Stat(filepath.Join(dir, "fix-login-0001.md")); !os.IsNotExist(err) {
+		t.Fatal("own attachment kept")
+	}
+	for _, f := range []string{"fix-login-page-0003.md", "fix-login-2-0004.md"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Fatalf("%s of another session removed", f)
+		}
 	}
 }
