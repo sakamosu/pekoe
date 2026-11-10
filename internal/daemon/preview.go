@@ -84,7 +84,8 @@ type Capturer interface {
 type previewSlot struct {
 	mu    sync.Mutex // serializes captures of one session
 	p     *Preview
-	again bool // a capture was asked for while one was running
+	again bool   // a capture was asked for while one was running
+	repo  string // repo-id of the session it was made for
 }
 
 type previewer struct {
@@ -120,6 +121,9 @@ func (d *Daemon) slot(s *state.Session) *previewSlot {
 	pv.mu.Lock()
 	defer pv.mu.Unlock()
 	sl := pv.slots[s.Slug]
+	if sl != nil && sl.repo != s.RepoID {
+		sl = nil // the slug now names a session of another repository
+	}
 	if sl == nil {
 		p := &Preview{Path: "/"}
 		if b, err := os.ReadFile(filepath.Join(previewDir(s), "preview.json")); err == nil {
@@ -132,7 +136,7 @@ func (d *Daemon) slot(s *state.Session) *previewSlot {
 		if p.Before != nil && !fileExists(p.Before.File) {
 			p.Before = nil
 		}
-		sl = &previewSlot{p: p}
+		sl = &previewSlot{p: p, repo: s.RepoID}
 		pv.slots[s.Slug] = sl
 	}
 	sl.p.Slug, sl.p.Port = s.Slug, s.Port
@@ -141,6 +145,18 @@ func (d *Daemon) slot(s *state.Session) *previewSlot {
 		sl.p.Width, sl.p.Height = previewMobileW, previewMobileH
 	}
 	return sl
+}
+
+// dropPreview forgets a removed session's preview: the slot in memory and
+// its screenshots on disk (a new session of the same slug starts empty).
+func (d *Daemon) dropPreview(s *state.Session) {
+	pv := d.pv()
+	pv.mu.Lock()
+	delete(pv.slots, s.Slug)
+	pv.mu.Unlock()
+	if err := os.RemoveAll(previewDir(s)); err != nil {
+		log.Printf("preview %s: %v", s.Slug, err)
+	}
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

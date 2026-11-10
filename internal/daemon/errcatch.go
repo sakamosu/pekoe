@@ -244,10 +244,14 @@ func (d *Daemon) sendAttachment(slug, repoID string, body func(n int) string, in
 }
 
 // removeAttachments deletes a removed session's error files.
+// attachRestRe is what follows the slug in one of its attachments: only the
+// number (fix-login must not take fix-login-page-0003.md along).
+var attachRestRe = regexp.MustCompile(`^-\d+\.md$`)
+
 func removeAttachments(repoID, slug string) {
 	files, _ := filepath.Glob(filepath.Join(paths.ErrorsDir(repoID), slug+"-*.md"))
 	for _, f := range files {
-		if attachNumRe.MatchString(strings.TrimPrefix(filepath.Base(f), slug)) {
+		if attachRestRe.MatchString(strings.TrimPrefix(filepath.Base(f), slug)) {
 			os.Remove(f)
 		}
 	}

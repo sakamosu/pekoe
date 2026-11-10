@@ -149,7 +149,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `review.reject` | `{slug, hunk_id, text?}` | 差し戻し(コメントとして溜まる) |
 | `review.comment` | `{slug, path, line, hunk_id?, text}` | `{id}` |
 | `review.comment.delete` | `{slug, id}` | |
-| `review.ask` | `{slug, hunk_id, question?}` | エージェントに意図を聞く。返事は `review.answer` イベント |
+| `review.ask` | `{slug, hunk_id, question?}` | エージェントに意図を聞く。返事は `review.answer` イベント。エージェントがターンの途中(running・waiting)なら断る |
 | `review.flush` | `{slug}` | 未送信コメントを 1 通にまとめて pty(PR なら GitHub review)へ。レビュー地点 `review-<n>` を記録 |
 | `review.risks` | `{slug}` | 門番エージェントの結果 `[{path, line, text}]` |
 | `pick.list` | `{slug?}` | `[Pick]` |

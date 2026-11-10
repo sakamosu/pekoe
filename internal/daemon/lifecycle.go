@@ -137,13 +137,22 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			}
 		}
 	}
+	d.purge(s)
+	d.emit("session.removed", s)
+	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
+}
+
+// purge drops everything pekoe keeps about a session (not its worktree):
+// the row and its prompts, reviews, comments and risks, the picks, errors,
+// attachments and preview addressed to it.
+func (d *Daemon) purge(s *state.Session) {
 	// out of memory and state.db together, before anything else can save it
 	// again (an update racing with rm used to write it back: see persist)
-	d.forget(p.Slug)
+	d.forget(s.Slug)
 	// picks addressed to this session go with it (no leftovers)
 	if picks, err := d.DB.Picks(1000); err == nil {
 		for _, pk := range picks {
-			if pk.Slug == p.Slug && pk.RepoID == s.RepoID {
+			if pk.Slug == s.Slug && pk.RepoID == s.RepoID {
 				os.Remove(pk.File)
 				if pk.Image != "" {
 					os.Remove(pk.Image)
@@ -152,10 +161,9 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			}
 		}
 	}
-	d.catch.Forget(p.Slug)
-	removeAttachments(s.RepoID, p.Slug)
-	d.emit("session.removed", s)
-	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
+	d.catch.Forget(s.Slug)
+	removeAttachments(s.RepoID, s.Slug)
+	d.dropPreview(s)
 }
 
 // ---- dev server ----
@@ -403,9 +411,18 @@ func prForBranch(dir, branch string) int {
 }
 
 func (d *Daemon) finishLanding(slug string) error {
+	// one at a time per session: watchMerges starts every 2 minutes, and
+	// a slow teardown must not run twice in the same worktree
+	if _, busy := d.finishing.LoadOrStore(slug, true); busy {
+		return nil
+	}
+	defer d.finishing.Delete(slug)
 	s, err := d.snapshot(slug)
 	if err != nil {
 		return err
+	}
+	if s.State == state.Landed { // finished by a run that started earlier
+		return nil
 	}
 	_ = d.Eng.KillSession(slug)
 	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {

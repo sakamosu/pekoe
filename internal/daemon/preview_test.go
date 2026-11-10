@@ -269,3 +269,54 @@ func TestChromeCaptureReal(t *testing.T) {
 		t.Fatalf("closed port: %v", err)
 	}
 }
+
+// rm takes the preview with it: a new session of the same slug must not
+// show (or keep retaking) the removed one's screenshots.
+func TestRmForgetsPreview(t *testing.T) {
+	d, _, s := previewSetup(t, true)
+	call[Preview](t, d, "preview.capture", map[string]any{"slug": s.Slug})
+	call[Preview](t, d, "preview.watch", map[string]any{"slug": s.Slug, "on": true})
+	dir := paths.PreviewDir(s.RepoID, s.Slug)
+	if _, err := os.Stat(filepath.Join(dir, "preview.json")); err != nil {
+		t.Fatal(err)
+	}
+	call[any](t, d, "worktree.rm", map[string]any{"slug": s.Slug, "force": true})
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("screenshots left behind: %v", err)
+	}
+	n := call[state.Session](t, d, "session.open", map[string]any{"path": s.Path, "resume": "new"})
+	if n.Slug != s.Slug {
+		t.Fatalf("slug %s, want %s", n.Slug, s.Slug)
+	}
+	p := call[Preview](t, d, "preview.get", map[string]any{"slug": n.Slug})
+	if p.After != nil || p.N != 0 || p.Watch {
+		t.Fatalf("new session got the old preview: %+v", p)
+	}
+}
+
+// A slot made for another repository's session of the same slug is not
+// reused.
+func TestPreviewSlotFollowsRepo(t *testing.T) {
+	d, _, s := previewSetup(t, true)
+	call[Preview](t, d, "preview.capture", map[string]any{"slug": s.Slug})
+	other := s
+	other.RepoID = "other-repo"
+	if p := d.previewSnapshot(d.slot(&other)); p.After != nil || p.N != 0 {
+		t.Fatalf("slot of another repository reused: %+v", p)
+	}
+}
+
+// When Chrome dies, its last stderr line is the error even if it was
+// written after the debugging pipe closed (stderr was read before Chrome
+// had been waited for: a data race, and the reason was lost).
+func TestChromeExitShowsLastStderrLine(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "chrome")
+	os.WriteFile(bin, []byte("#!/bin/sh\nexec 4>&-\nsleep 0.3\necho 'FATAL: sandbox broke' >&2\nexit 1\n"), 0o755)
+	t.Setenv("PEKOE_CHROME", bin)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := chromeCapturer{}.Capture(ctx, CaptureReq{URL: "http://localhost:1/", Out: filepath.Join(t.TempDir(), "x.png"), Width: 10, Height: 10})
+	if err == nil || !strings.Contains(err.Error(), "FATAL: sandbox broke") {
+		t.Fatalf("want Chrome's last line, got %v", err)
+	}
+}

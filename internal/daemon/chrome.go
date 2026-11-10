@@ -127,8 +127,18 @@ func (chromeCapturer) Capture(ctx context.Context, r CaptureReq) error {
 	if err != nil && ctx.Err() != nil {
 		return fmt.Errorf("headless Chrome timed out on %s", r.URL)
 	}
-	if err != nil && strings.Contains(err.Error(), "Chrome exited") && stderr.Len() > 0 {
-		return fmt.Errorf("headless Chrome exited: %s", lastLine(stderr.String()))
+	if err != nil && strings.Contains(err.Error(), "Chrome exited") {
+		// the pipe's EOF can come before Chrome's last stderr line: the
+		// Builder is written by exec's copier until Wait returns
+		select {
+		case <-exited:
+		case <-time.After(2 * time.Second):
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+		if stderr.Len() > 0 {
+			return fmt.Errorf("headless Chrome exited: %s", lastLine(stderr.String()))
+		}
 	}
 	_, _ = c.call("", "Browser.close", nil)
 	return err

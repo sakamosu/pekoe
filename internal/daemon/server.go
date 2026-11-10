@@ -49,28 +49,79 @@ type Event struct {
 	Data  any    `json:"data"`
 }
 
+// connQueue is how many messages may wait for a connection's writer.
+const connQueue = 4096
+
+// conn is one client connection. Everything written to it goes through one
+// queue and one writer goroutine, so messages arrive in the order they were
+// queued (a goroutine per message let two session.updated swap, leaving the
+// client on the older state).
 type conn struct {
 	c      net.Conn
-	mu     sync.Mutex
+	mu     sync.Mutex // subs, human, closed
 	subs   []string
 	human  bool // a subscribe carried the human token: every event, not only agentEvents
 	closed bool
+	out    chan []byte
+	done   chan struct{} // closed with the connection
 }
 
+func newConn(nc net.Conn) *conn {
+	c := &conn{c: nc, out: make(chan []byte, connQueue), done: make(chan struct{})}
+	go c.writer()
+	return c
+}
+
+func (c *conn) writer() {
+	for {
+		select {
+		case <-c.done:
+			return
+		case b := <-c.out:
+			c.c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if _, err := c.c.Write(b); err != nil {
+				c.shut()
+				return
+			}
+		}
+	}
+}
+
+// shut closes the connection (once).
+func (c *conn) shut() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.closed {
+		c.closed = true
+		close(c.done)
+		c.c.Close()
+	}
+}
+
+// send queues a response; it waits for room (a client that reads nothing
+// for 5 seconds is dropped, as a blocked write was before).
 func (c *conn) send(v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed {
-		return
+	b = append(b, '\n')
+	select {
+	case c.out <- b:
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		c.shut()
 	}
-	c.c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if _, err := c.c.Write(append(b, '\n')); err != nil {
-		c.closed = true
-		c.c.Close()
+}
+
+// event queues an event line; when the queue is full the event is dropped
+// (the client drops events it cannot keep up with too, and the periodic
+// session.updated catches up).
+func (c *conn) event(b []byte) {
+	select {
+	case c.out <- b:
+	case <-c.done:
+	default:
 	}
 }
 
@@ -107,6 +158,7 @@ type Daemon struct {
 	tapiMu      sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
 	tapi        tapiState  // tapi chat, in memory only (tapi.go; under mu)
 	saveMu      sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
+	evMu        sync.Mutex // held from a change under mu to its emit, so events go out in change order
 	sessions    map[string]*state.Session
 	conns       map[*conn]bool
 	cancels     map[string]context.CancelFunc // creating sessions
@@ -130,6 +182,8 @@ type Daemon struct {
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling atomic.Bool          // watchPRStatus is running
+	finishing sync.Map             // slug -> finishLanding is running for it
+	tests     testRuns             // [hooks] test runs (hooks.go)
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
@@ -289,7 +343,7 @@ func (d *Daemon) releaseLock() {
 }
 
 func (d *Daemon) serve(nc net.Conn) {
-	c := &conn{c: nc}
+	c := newConn(nc)
 	d.mu.Lock()
 	d.conns[c] = true
 	d.mu.Unlock()
@@ -297,10 +351,7 @@ func (d *Daemon) serve(nc net.Conn) {
 		d.mu.Lock()
 		delete(d.conns, c)
 		d.mu.Unlock()
-		c.mu.Lock()
-		c.closed = true
-		c.mu.Unlock()
-		nc.Close()
+		c.shut()
 	}()
 	sc := bufio.NewScanner(nc)
 	sc.Buffer(make([]byte, 64*1024), 64*1024*1024)
@@ -378,11 +429,19 @@ func (d *Daemon) emit(ev string, data any) {
 		cs = append(cs, c)
 	}
 	d.mu.Unlock()
-	msg := Event{Event: ev, Data: data}
+	var line []byte
 	for _, c := range cs {
-		if c.wants(ev) {
-			go c.send(msg)
+		if !c.wants(ev) {
+			continue
 		}
+		if line == nil {
+			b, err := json.Marshal(Event{Event: ev, Data: data})
+			if err != nil {
+				return
+			}
+			line = append(b, '\n')
+		}
+		c.event(line)
 	}
 }
 

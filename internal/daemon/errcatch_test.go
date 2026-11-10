@@ -15,6 +15,7 @@ import (
 
 	"pekoe/internal/engine"
 	"pekoe/internal/errcatch"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -255,5 +256,63 @@ func TestConsoleLimits(t *testing.T) {
 	d.guard(d.httpConsole)(w, r)
 	if w.Code != http.StatusBadRequest || len(kept(4103)) != 0 {
 		t.Fatalf("big body: %d", w.Code)
+	}
+}
+
+// rm of fix-login leaves the attachments of fix-login-page alone.
+func TestRemoveAttachmentsOnlyOwn(t *testing.T) {
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	dir := paths.ErrorsDir("r")
+	os.MkdirAll(dir, 0o755)
+	for _, f := range []string{"fix-login-0001.md", "fix-login-page-0003.md", "fix-login-2-0004.md"} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
+	}
+	removeAttachments("r", "fix-login")
+	if _, err := os.Stat(filepath.Join(dir, "fix-login-0001.md")); !os.IsNotExist(err) {
+		t.Fatal("own attachment kept")
+	}
+	for _, f := range []string{"fix-login-page-0003.md", "fix-login-2-0004.md"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Fatalf("%s of another session removed", f)
+		}
+	}
+}
+
+// An error the page logs while the bulk send is pasting the file was not in
+// the file: it stays in the Browser panel and its card stays open.
+func TestSendErrorsKeepsErrorsThatCameDuringTheSend(t *testing.T) {
+	d, fe, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	d.token = "secret"
+	post := func(body string) {
+		r := httptest.NewRequest("POST", "/console", strings.NewReader(body))
+		r.Header.Set("Origin", "chrome-extension://x")
+		r.Header.Set("Authorization", "Bearer secret")
+		d.guard(d.httpConsole)(httptest.NewRecorder(), r)
+	}
+	url := fmt.Sprintf("http://localhost:%d/list", s.Port)
+	post(fmt.Sprintf(`{"url":%q,"errors":[{"message":"Error: one","stack":"Error: one\n    at f (http://localhost:%d/src/f.ts:1:1)"}]}`, url, s.Port))
+	var once sync.Once
+	fe.mu.Lock()
+	fe.onText = func(string) {
+		once.Do(func() {
+			time.Sleep(5 * time.Millisecond)
+			post(fmt.Sprintf(`{"url":%q,"errors":[{"message":"Error: late","stack":"Error: late\n    at g (http://localhost:%d/src/g.ts:1:1)"}]}`, url, s.Port))
+		})
+	}
+	fe.mu.Unlock()
+	res := call[map[string]any](t, d, "browser.send_errors", map[string]any{"port": s.Port})
+	if res["sent"].(float64) != 1 {
+		t.Fatalf("sent: %+v", res)
+	}
+	d.mu.Lock()
+	left := append([]ConsoleError(nil), d.errors[s.Port]...)
+	d.mu.Unlock()
+	if len(left) != 1 || left[0].Message != "Error: late" {
+		t.Fatalf("the late error must stay in the panel: %+v", left)
+	}
+	open := call[[]errcatch.Report](t, d, "error.list", map[string]any{"slug": s.Slug})
+	if len(open) != 1 || open[0].Message != "Error: late" {
+		t.Fatalf("the late error's card must stay open: %+v", open)
 	}
 }

@@ -20,16 +20,17 @@ import (
 
 // fakeEngine records what would be written to the pty.
 type fakeEngine struct {
-	mu    sync.Mutex
-	sent  []string
-	wins  map[string]bool
-	sizes map[string][2]int // window -> pty size: spawn, then resizes
-	out   chan engine.Output
-	lines []string          // what Capture returns (nil: "x")
-	dead  map[string]bool   // window -> its process exited (Capture says Dead)
-	exits map[string][2]int // window -> exit status, signal (after exit)
-	delay time.Duration     // Spawn takes this long (races)
-	spawn map[string]engine.Spawn
+	mu     sync.Mutex
+	sent   []string
+	wins   map[string]bool
+	sizes  map[string][2]int // window -> pty size: spawn, then resizes
+	out    chan engine.Output
+	lines  []string          // what Capture returns (nil: "x")
+	dead   map[string]bool   // window -> its process exited (Capture says Dead)
+	exits  map[string][2]int // window -> exit status, signal (after exit)
+	onText func(text string) // called on every SendText (tests that act mid-send)
+	delay  time.Duration     // Spawn takes this long (races)
+	spawn  map[string]engine.Spawn
 }
 
 func newFake() *fakeEngine {
@@ -59,7 +60,15 @@ func (f *fakeEngine) rec(s string) error {
 	f.mu.Unlock()
 	return nil
 }
-func (f *fakeEngine) SendText(slug, w, t string) error { return f.rec("text:" + t) }
+func (f *fakeEngine) SendText(slug, w, t string) error {
+	f.mu.Lock()
+	hook := f.onText
+	f.mu.Unlock()
+	if hook != nil {
+		hook(t)
+	}
+	return f.rec("text:" + t)
+}
 func (f *fakeEngine) SendKeys(slug, w string, k ...string) error {
 	return f.rec("keys:" + strings.Join(k, ","))
 }

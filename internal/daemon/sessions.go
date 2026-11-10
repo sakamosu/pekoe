@@ -97,10 +97,14 @@ func (d *Daemon) forget(slug string) {
 
 // update mutates a session under the lock, persists it and emits events.
 func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, error) {
+	// evMu: two updates racing must emit in the order they changed the
+	// session, or a client is left showing the older copy
+	d.evMu.Lock()
 	d.mu.Lock()
 	s, ok := d.sessions[slug]
 	if !ok {
 		d.mu.Unlock()
+		d.evMu.Unlock()
 		return nil, fmt.Errorf("no such session: %s", slug)
 	}
 	prev := s.State
@@ -110,7 +114,6 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	}
 	c := d.copyLocked(s)
 	d.mu.Unlock()
-	d.persist(s)
 	d.emit("session.updated", c)
 	if c.State != prev {
 		switch c.State {
@@ -119,6 +122,10 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 		case state.Done:
 			d.emit("session.done", c)
 		}
+	}
+	d.evMu.Unlock()
+	d.persist(s)
+	if c.State != prev {
 		d.previewOnState(c, prev)
 	}
 	return c, nil
@@ -298,7 +305,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
 	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
-	if s, err := d.get(slug); err == nil && s.State != state.Landed {
+	old, err := d.snapshot(slug)
+	if err == nil && old.State != state.Landed {
 		return nil, fmt.Errorf("session %s already exists", slug)
 	}
 	agent := p.Agent
@@ -324,6 +332,13 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
+	}
+	if old != nil {
+		// a landed session of this slug is replaced: its prompts, reviews
+		// and comments must not carry over (undo would pick its last prompt,
+		// whose snapshot ref landing deleted)
+		d.purge(old)
+		d.emit("session.removed", old)
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
 	if err != nil {
@@ -359,6 +374,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 }
 
 func (d *Daemon) stepUpdate(slug string, i int, status, detail string, started time.Time) {
+	d.evMu.Lock()
+	defer d.evMu.Unlock()
 	d.mu.Lock()
 	steps := d.progress[slug]
 	if i < len(steps) {
@@ -390,6 +407,7 @@ func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, sto
 		if pct > 99 {
 			pct = 99
 		}
+		d.evMu.Lock()
 		d.mu.Lock()
 		if steps := d.progress[slug]; i < len(steps) && steps[i].Status == "running" {
 			steps[i].Progress = pct
@@ -399,6 +417,7 @@ func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, sto
 		cp := append([]Step(nil), d.progress[slug]...)
 		d.mu.Unlock()
 		d.emit("session.progress", map[string]any{"slug": slug, "steps": cp})
+		d.evMu.Unlock()
 	}
 }
 
@@ -632,6 +651,34 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// promptArgMax is the longest quoted prompt put on the agent's command line.
+// tmux refuses a command over its message size (about 16 KB, less in older
+// versions, and the environment shares it); longer prompts go via a file.
+const promptArgMax = 4 << 10
+
+// writePromptFile keeps a long initial prompt in pekoe's data directory
+// (0600) for the agent's shell to read once.
+func writePromptFile(slug, prompt string) (string, error) {
+	dir := filepath.Join(paths.DataDir(), "prompts")
+	if err := paths.Ensure(dir); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, slug+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.WriteString(prompt); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 // spawnAgent starts the agent window. resume = claude session id to resume
 // ("continue" = most recent in cwd).
 func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
@@ -659,7 +706,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	case resume != "" && ag.Resume != "":
 		cmd = strings.ReplaceAll(ag.Resume, "{{session_id}}", shellQuote(resume))
 	}
-	pasteLater := ""
+	pasteLater, promptFile := "", ""
 	if prompt != "" {
 		if ag.Prompt == "paste" {
 			pasteLater = prompt
@@ -668,7 +715,19 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 			// starts with "-" is the prompt, not options such as
 			// --permission-mode or --settings (claude and codex both take
 			// "--"; an agent that doesn't can use prompt = "paste")
-			cmd += " -- " + shellQuote(prompt)
+			arg := shellQuote(prompt)
+			if len(arg) > promptArgMax {
+				// too long for tmux's command line ("command too long"):
+				// the shell reads it from a file, so the agent still gets
+				// the same argument
+				f, err := writePromptFile(slug, prompt)
+				if err != nil {
+					return err
+				}
+				promptFile = f
+				arg = `"$(cat ` + shellQuote(f) + `; rm -f ` + shellQuote(f) + `)"`
+			}
+			cmd += " -- " + arg
 		}
 	}
 	env := append([]string{}, s.Env...)
@@ -682,6 +741,9 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	// the TUI can offer restart instead of typing into nothing
 	full := cmd + `; printf '\n[pekoe] agent exited (%s). ↵ restart · x close\n' "$?"`
 	if err := d.Eng.Spawn(engine.Spawn{Slug: slug, Window: engine.WinAgent, Dir: s.Path, Env: env, Command: full, Width: w, Height: h}); err != nil {
+		if promptFile != "" {
+			os.Remove(promptFile)
+		}
 		return err
 	}
 	d.update(slug, func(x *state.Session) {
@@ -800,7 +862,13 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	d.mu.Unlock()
 	agent := p.Agent
 	if agent == "" {
+		agent = repo.Config.Agent
+	}
+	if agent == "" {
 		agent = "claude"
+	}
+	if _, ok := d.Global.Agents[agent]; !ok {
+		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
 	past := []pastSession{}
 	if agent == "claude" {
@@ -862,15 +930,23 @@ type adoptCandidate struct {
 	Cwd       string `json:"cwd"`
 	Where     string `json:"where"` // tty or tmux target
 	SessionID string `json:"session_id"`
+	Skip      string `json:"skip,omitempty"` // why it is left alone (not stopped)
 }
+
+// findAgents lists agent processes (swapped in tests).
+var findAgents = findAgentProcesses
 
 // hAdopt finds agents started by hand in other tabs (or tmux sessions on the
 // default server). A process cannot move between ptys, so adopting means
 // stopping it and resuming the same Claude Code session inside pekoe.
 func (d *Daemon) hAdopt(p adoptP) (any, error) {
-	cands := findAgentProcesses()
+	cands := findAgents()
 	if p.Path != "" {
-		top, _ := gitx.Toplevel(p.Path)
+		top, err := gitx.Toplevel(p.Path)
+		if err != nil {
+			// an empty top would match every agent on the machine
+			return nil, fmt.Errorf("%s is not inside a git repository", p.Path)
+		}
 		var f []adoptCandidate
 		for _, c := range cands {
 			if c.Cwd == top || strings.HasPrefix(c.Cwd, top+"/") {
@@ -879,29 +955,46 @@ func (d *Daemon) hAdopt(p adoptP) (any, error) {
 		}
 		cands = f
 	}
-	d.mu.Lock()
-	managed := map[string]bool{}
-	for _, s := range d.sessions {
-		managed[s.Path] = true
-	}
-	d.mu.Unlock()
-	var free []adoptCandidate
+	var free, skipped []adoptCandidate
+	byTop := map[string][]adoptCandidate{}
+	var tops []string
 	for _, c := range cands {
 		top, err := gitx.Toplevel(c.Cwd)
-		if err != nil || managed[top] {
+		if err != nil || d.managedPath(top) {
 			continue
 		}
 		c.Cwd = top
+		if byTop[top] == nil {
+			tops = append(tops, top)
+		}
+		byTop[top] = append(byTop[top], c)
+	}
+	for _, top := range tops {
+		cs := byTop[top]
+		if len(cs) > 1 {
+			// one worktree holds one session, and which conversation each
+			// process has cannot be told apart: stop none of them
+			for _, c := range cs {
+				c.Skip = fmt.Sprintf("%d agents in this worktree: quit all but one first", len(cs))
+				skipped = append(skipped, c)
+			}
+			continue
+		}
+		c := cs[0]
 		if ps := pastClaudeSessions(top); len(ps) > 0 {
 			c.SessionID = ps[0].ID
 		}
 		free = append(free, c)
 	}
 	if !p.Confirm {
-		return map[string]any{"candidates": free}, nil
+		return map[string]any{"candidates": free, "skipped": skipped}, nil
 	}
 	var adopted []*state.Session
 	for _, c := range free {
+		if d.managedPath(c.Cwd) { // opened meanwhile: leave the process running
+			log.Printf("adopt %s: already managed", c.Cwd)
+			continue
+		}
 		if proc, err := os.FindProcess(c.PID); err == nil {
 			_ = proc.Signal(os.Interrupt)
 			time.Sleep(500 * time.Millisecond)
@@ -918,6 +1011,18 @@ func (d *Daemon) hAdopt(p adoptP) (any, error) {
 		}
 	}
 	return adopted, nil
+}
+
+// managedPath reports whether a session already lives in the worktree.
+func (d *Daemon) managedPath(top string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range d.sessions {
+		if s.Path == top {
+			return true
+		}
+	}
+	return false
 }
 
 func orNew(id string) string {
@@ -1410,6 +1515,10 @@ func (d *Daemon) hReviewNext(p fromP) (any, error) {
 
 // ---- restore after daemon restart ----
 
+// worktreeMissing starts the error restore gives a session whose worktree
+// is gone (it resumes the session if the directory comes back).
+const worktreeMissing = "worktree missing: "
+
 func (d *Daemon) restore() {
 	list, err := d.DB.Sessions()
 	if err != nil {
@@ -1440,8 +1549,15 @@ func (d *Daemon) restore() {
 		if _, err := os.Stat(s.Path); err != nil {
 			d.update(s.Slug, func(x *state.Session) {
 				x.State = state.Failed
-				x.Error = "worktree missing: " + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
+				x.Error = worktreeMissing + s.Path + " (pekoe rm " + s.Slug + " to forget it)"
 			})
+			continue
+		}
+		// A session whose creation failed (setup hook, a worktree that was
+		// not ours) never got its agent: starting one now would run it in a
+		// half-made or foreign directory and wipe the error. Only the
+		// failure above (the worktree was away) is undone once it is back.
+		if s.State == state.Failed && !strings.HasPrefix(s.Error, worktreeMissing) {
 			continue
 		}
 		d.refreshBranch(s.Slug)
