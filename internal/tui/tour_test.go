@@ -753,3 +753,40 @@ func TestTourLangHint(t *testing.T) {
 		}
 	}
 }
+
+// Leaving the tour without L records no language: the locale decides the
+// next one (a language picked before stays)
+func TestTourLangNotRecordedUnlessPicked(t *testing.T) {
+	for _, c := range []struct{ record, lang, next, title string }{
+		// English locale, never picked; the locale turns Japanese: Japanese
+		{"", "", "ja_JP.UTF-8", "pekoe へようこそ"},
+		// Japanese picked before: it stays, whatever the locale
+		{`{"seen_at":"2026-01-01T00:00:00Z","lang":"ja"}`, tourJa, "en_US.UTF-8", "pekoe へようこそ"},
+	} {
+		tourLocale(t, "", "", "en_US.UTF-8")
+		path := filepath.Join(t.TempDir(), "tutorial.json")
+		if c.record != "" {
+			if err := os.WriteFile(path, []byte(c.record), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m := tapiModel(t, "none", config.Mascot{})
+		m.width, m.height = 120, 40
+		m.initTour(path)
+		m.Update(key(tourKey))
+		press(m, "esc")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var r tourRecord
+		if json.Unmarshal(b, &r) != nil || r.Lang != c.lang || r.SeenAt.IsZero() {
+			t.Errorf("record %s, want lang %q", b, c.lang)
+		}
+		tourLocale(t, "", "", c.next)
+		m.Update(key(tourKey))
+		if got := tourStepTitle(m); got != c.title {
+			t.Errorf("record %q, then %s: next tour in %q", c.record, c.next, got)
+		}
+	}
+}

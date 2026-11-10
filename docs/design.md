@@ -344,7 +344,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | Claude Code の hooks | `~/.claude/settings.json` | ユーザー側に書き、全リポジトリに一括で効く。プロジェクト側 `.claude/` は触らない |
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | pekoe が削除していい領域はこの配下だけ |
 | 見せた tip の記録 | `~/.local/share/pekoe/tips.json` | TUI と `pekoe tip`(tapi chat)で共通。一巡したら空からやり直す |
-| チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。最後に使った言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(なければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
+| チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。ツアー中に切り替えて選んだ言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(選んでいなければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
 | ポート台帳・DB 名・セッション ID・状態 | `~/.local/share/pekoe/state.db`(SQLite) | デーモンの外部記憶。再起動後の復元に使う |
 | デーモンの socket | `~/.local/share/pekoe/pekoed.sock` | TUI・CLI・nvim が繋ぐ |
 | デーモンのロック | `~/.local/share/pekoe/pekoed.lock` | 動いている pekoed が `flock` で持つ。1 つの state.db に pekoed は 1 つ |

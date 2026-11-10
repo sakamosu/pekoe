@@ -5,7 +5,7 @@ package tui
 // card next to it; ↵ / → / l / space go on, ← / h / backspace back, esc / q
 // skip, L switches between English and Japanese and stays on the step. It
 // starts by itself the first time pekoe runs (paths.TutorialFile records
-// that it was seen, skipped or not, and the language it was left in) and
+// that it was seen, skipped or not, and the language picked with L) and
 // again with H or :tutorial.
 //
 // The language: the one recorded, else the environment (LC_ALL, then
@@ -72,6 +72,7 @@ const (
 type tourState struct {
 	step    int       // index into tourSteps
 	lang    string    // tourJa or tourEn
+	picked  bool      // lang was switched with the key: recorded at the end
 	saved   model     // the real model, put back when the tour ends
 	pending []tea.Msg // arrived during the tour, replayed at the end
 }
@@ -127,7 +128,7 @@ func tourEnvLang(getenv func(string) string) string {
 
 type tourRecord struct {
 	SeenAt time.Time `json:"seen_at"`
-	Lang   string    `json:"lang,omitempty"` // the language the tour was left in; older records have none
+	Lang   string    `json:"lang,omitempty"` // the language picked with the key; none: the environment decides
 }
 
 // initTour reads the record at path ("" keeps none: the tour never starts
@@ -208,8 +209,10 @@ func (m *model) endTour() tea.Cmd {
 	m.frame, m.spinning = live.frame, live.spinning
 	m.guard = live.guard
 	m.msg, m.msgErr, m.msgAt = live.msg, live.msgErr, live.msgAt
-	m.tourLang = t.lang // the next tour starts in it
-	if err := saveTourSeen(m.tourPath, t.lang); err != nil {
+	if t.picked { // only a language picked is kept; otherwise the locale decides next time
+		m.tourLang = t.lang
+	}
+	if err := saveTourSeen(m.tourPath, m.tourLang); err != nil {
 		m.setMsg("tutorial: "+err.Error(), true)
 	}
 	var cmds []tea.Cmd
@@ -284,6 +287,7 @@ func (m *model) tourKeys(keys []tea.KeyMsg) tea.Cmd {
 				m.tourGo(m.tour.step - 1)
 			}
 		case tourLangKey: // the other language, same step
+			m.tour.picked = true
 			if m.tour.lang == tourJa {
 				m.tour.lang = tourEn
 			} else {
