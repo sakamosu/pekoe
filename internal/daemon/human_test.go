@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // sockClient talks to d.serve over an in-memory pipe, like a client of the
@@ -109,6 +111,11 @@ func TestHumanOnlyMethodsNeedToken(t *testing.T) {
 		{"session.screen", map[string]any{"slug": "main"}},
 		{"session.open", map[string]any{"path": repo, "resume": "new"}},
 		{"daemon.status", nil},
+		// still human-only now that land is open to agents
+		{"worktree.rm", map[string]any{"slug": "main", "force": true}},
+		{"session.kill", map[string]any{"slug": "main"}},
+		{"session.undo", map[string]any{"slug": "main"}},
+		{"review.pr", map[string]any{"repo": repo, "number": 7}},
 	} {
 		for _, tok := range []string{"", "wrong-" + d.humanToken} {
 			if e := c.call(tc.method, tc.params, tok); !strings.Contains(e, "only a person can do this") {
@@ -208,6 +215,84 @@ func TestAgentMethodsWithoutToken(t *testing.T) {
 	if got := sentSince(fe, before); len(got) != 0 {
 		t.Fatalf("held sends reached the engine: %v", got)
 	}
+}
+
+// land is open to agents: an agent whose sandbox allows github.com can push
+// and open the PR itself, and merging (which starts the teardown) stays a
+// person's. In a repository without origin land would fast-forward the base
+// branch and remove the worktree at once, so that stays human-only.
+func TestAgentLand(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	gh := fakeGH(t, "OPEN")
+	s := readySession(t, d, repo, "feat/agent-land")
+	os.WriteFile(filepath.Join(s.Path, "b.txt"), []byte("b\n"), 0o644)
+	run(t, s.Path, "git", "add", ".")
+	run(t, s.Path, "git", "commit", "-qm", "b")
+	c := dialPipe(t, d)
+	if e := c.call("land", map[string]any{"slug": s.Slug}, ""); e != "" {
+		t.Fatalf("land without the token: %s", e)
+	}
+	out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
+	if !strings.Contains(string(out), "pr create --fill --head feat/agent-land --base main") {
+		t.Fatalf("gh calls: %s", out)
+	}
+	run(t, repo, "git", "--git-dir", bare, "rev-parse", "--verify", "refs/heads/feat/agent-land")
+	// not merged: nothing is torn down
+	d.watchMerges()
+	got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+	if got.State == state.Landed || !got.Landing || got.PR != 42 {
+		t.Fatalf("after land: state %s landing %v pr %d", got.State, got.Landing, got.PR)
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatalf("worktree removed before the merge: %v", err)
+	}
+}
+
+func TestAgentLandWithoutOriginRefused(t *testing.T) {
+	d, _, repo := setup(t)
+	s := readySession(t, d, repo, "feat/local")
+	os.WriteFile(filepath.Join(s.Path, "b.txt"), []byte("b\n"), 0o644)
+	run(t, s.Path, "git", "add", ".")
+	run(t, s.Path, "git", "commit", "-qm", "b")
+	rev := func() string {
+		out, err := exec.Command("git", "-C", repo, "rev-parse", "main").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	mainBefore := rev()
+	c := dialPipe(t, d)
+	if e := c.call("land", map[string]any{"slug": s.Slug}, ""); !strings.Contains(e, "only a person can do this") || !strings.Contains(e, "without origin") {
+		t.Fatalf("land without origin and token: error = %q", e)
+	}
+	if got := rev(); got != mainBefore {
+		t.Fatalf("main moved: %s → %s", mainBefore, got)
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatalf("worktree removed: %v", err)
+	}
+	if e := c.call("land", map[string]any{"slug": s.Slug}, d.humanToken); e != "" {
+		t.Fatalf("land with the token: %s", e)
+	}
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.State != state.Landed {
+		t.Fatalf("with the token: state %s, want landed", got.State)
+	}
+}
+
+// readySession starts a session on branch and waits until it is created.
+func readySession(t *testing.T, d *Daemon, repo, branch string) state.Session {
+	t.Helper()
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": branch})
+	for i := 0; i < 100 && s.State == state.Creating; i++ {
+		sleep()
+		s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+	}
+	if s.State == state.Creating {
+		t.Fatalf("%s still creating", s.Slug)
+	}
+	return s
 }
 
 // Every registered method is either open to agents or human-only, on
