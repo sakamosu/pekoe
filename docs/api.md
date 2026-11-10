@@ -419,6 +419,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 }
 ```
 
+- **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は「独立レビューの報告がない」のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
 - `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(日本語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
 - 項目: `options` は `["マージした", "待つ", "差し戻す"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
