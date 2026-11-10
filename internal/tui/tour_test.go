@@ -856,7 +856,7 @@ func TestTourOrchestratorSteps(t *testing.T) {
 			seen[title] = true
 			a := agent()
 			for _, want := range []string{"Dashboard", "Overview", "Inbox", "#12", "decide", "merge ready", "Pipeline", "from tapi · #7",
-				tourCSV, tourReady, "#131", "CI failed", "review: no independent review reported", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
+				tourCSV, tourReady, "#131", "changes requested", "review: no independent review reported", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
 				if !strings.Contains(a, want) {
 					t.Errorf("%q: no %q in [4]:\n%s", title, want, a)
 				}
