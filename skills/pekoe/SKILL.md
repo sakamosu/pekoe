@@ -9,6 +9,8 @@ pekoe は worktree ごとに Claude Code(や codex)を走らせるツール。`p
 worktree 作成 → ファイルのコピー → setup → ポート割り当て → エージェント起動まで済む。
 `git worktree add` を自分で叩かず、必ず `pekoe new` を使う(setup や env、ポート台帳が pekoe 側にあるため)。
 
+統括役(ハブ)として複数のセッションを回す・報告を `pekoe wait` で待つ・人に判断を上げるときは、pekoe-orchestrate スキルも使う。任された作業セッションの側は pekoe-work、独立レビューは pekoe-review。
+
 ## 考え方
 
 人間が入力する箇所はできるだけ絞る。人間が worktree を渡り歩いてそれぞれのエージェントに打ち込むのではなく、main のチェックアウトで動くエージェント(ハブ)がセッションを作り、指示も main から出す。
