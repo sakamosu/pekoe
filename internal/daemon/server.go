@@ -177,11 +177,15 @@ type Daemon struct {
 	killAgents  atomic.Bool // daemon.stop {kill_agents}: also stop the tmux server
 	handlers    map[string]func(json.RawMessage) (any, error)
 	testHook    func(ev string, data any) // observes events in tests
-	graphicsOK  bool                      // the attached TUI's terminal speaks Kitty graphics
-	paneW       int                       // the TUI's agent pane size (last session.resize "*"),
-	paneH       int                       // used when a client spawns without knowing it (CLI)
-	preview     *previewer                // in-terminal browser preview (preview.go)
-	cf          conflictScan              // conflict forecast (conflicts.go)
+	// portBusy says whether a session port is taken (AllocPort); nil is
+	// portBusy, which binds the port. Tests swap in one that does not bind
+	// (an agent's sandbox refuses every bind).
+	portBusy   func(int) bool
+	graphicsOK bool         // the attached TUI's terminal speaks Kitty graphics
+	paneW      int          // the TUI's agent pane size (last session.resize "*"),
+	paneH      int          // used when a client spawns without knowing it (CLI)
+	preview    *previewer   // in-terminal browser preview (preview.go)
+	cf         conflictScan // conflict forecast (conflicts.go)
 
 	prMu      sync.Mutex           // serializes PR summary updates
 	prFetched map[string]time.Time // slug -> last PR fetch (under mu)

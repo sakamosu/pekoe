@@ -233,6 +233,14 @@ func resolveRepo(dir string) (*repoInfo, error) {
 	return &repoInfo{Dir: main, ID: id, Name: gitx.RepoName(main), Config: cfg}, nil
 }
 
+// busyPort is the port check AllocPort uses: d.portBusy, or portBusy.
+func (d *Daemon) busyPort(p int) bool {
+	if d.portBusy != nil {
+		return d.portBusy(p)
+	}
+	return portBusy(p)
+}
+
 func portBusy(p int) bool {
 	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p))
 	if err != nil {
@@ -356,7 +364,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		d.purge(old)
 		d.emit("session.removed", old)
 	}
-	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
+	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, d.busyPort)
 	if err != nil {
 		return nil, err
 	}
@@ -920,7 +928,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if _, err := d.get(slug); err == nil {
 		slug = d.uniqueSlug(paths.Slug(filepath.Base(top)), repo.ID+"#", repo.Name)
 	}
-	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
+	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, d.busyPort)
 	if err != nil {
 		return nil, err
 	}

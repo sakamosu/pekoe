@@ -558,7 +558,7 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 			return nil, err
 		}
 	}
-	port, _ := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, portBusy)
+	port, _ := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, d.busyPort)
 	s := &state.Session{
 		Slug: slug, Branch: local, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir, Path: path,
 		Agent: "claude", State: state.Done, StateSince: time.Now(), CreatedAt: time.Now(), Port: port,
