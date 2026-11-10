@@ -245,6 +245,11 @@ func (cl *Client) CallTimeout(method string, params any, out any, timeout time.D
 		params = map[string]any{}
 	}
 	req := map[string]any{"id": id, "method": method, "params": params}
+	if who := os.Getenv("PEKOE_SESSION"); who != "" {
+		// what this process says it is; pekoed tells who called from the
+		// process itself and keeps this only to show a mismatch
+		req["session"] = who
+	}
 	cl.mu.Lock()
 	if cl.human && cl.token == "" {
 		// read once it exists (a pekoed from before the token may have

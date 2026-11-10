@@ -10,6 +10,9 @@
 //	pekoe event <Hook>         called by Claude Code hooks (stdin JSON)
 //	pekoe review [<slug>|gh#N] open the review surface
 //	pekoe land <slug> / pekoe rm <slug> [--force]
+//	pekoe report <summary> --status done   a session reports its work
+//	pekoe reports [<slug>]     the reports, newest first
+//	pekoe wait [--mine] [--since CURSOR]  until something happens to sessions
 //	pekoe dev <slug>           start/stop the dev server on the session port
 //	pekoe undo <slug> [n]      throw away the changes of the last (or n-th) prompt
 //	pekoe answer <slug> allow|deny|always
@@ -112,6 +115,12 @@ func main() {
 		if _, _, err = parseCmd("ext", args); err == nil {
 			err = cmdExt()
 		}
+	case "report":
+		err = cmdReport(args)
+	case "reports":
+		err = cmdReports(args)
+	case "wait":
+		err = cmdWait(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -180,6 +189,12 @@ func usage() {
   pekoe review [<slug> | gh#N [--repo R]]
   pekoe land <slug>             rebase → test → gh pr create (teardown after merge)
   pekoe rm <slug> [--force]     teardown → delete worktree
+  pekoe report <summary> --status done|blocked|progress|review [--evidence E]...
+                               a session reports its work (run by its agent)
+  pekoe reports [<slug>] [--json]   the sessions' reports, newest first
+  pekoe wait [--mine] [--slug S] [--on KINDS] [--since CURSOR] [--timeout 30m] [--json]
+                               block until something happens to sessions; pass the
+                               returned cursor to the next wait's --since
   pekoe dev <slug>              toggle the dev server on the session's port
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always
