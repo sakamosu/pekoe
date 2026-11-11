@@ -518,8 +518,9 @@ func prForBranch(dir, branch string) int {
 }
 
 func (d *Daemon) finishLanding(slug string) error {
-	// one at a time per session: watchMerges starts every 2 minutes, and
-	// a slow teardown must not run twice in the same worktree
+	// one at a time per session: watchMerges (at start and every 2 minutes)
+	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
+	// slow teardown must not run twice in the same worktree
 	if _, busy := d.finishing.LoadOrStore(slug, true); busy {
 		return nil
 	}
@@ -579,6 +580,13 @@ func (d *Daemon) watchPRs() {
 	}
 }
 
+// landMerged finishes the landing of a session whose PR was seen merged.
+func (d *Daemon) landMerged(slug string) {
+	if err := d.finishLanding(slug); err != nil {
+		log.Printf("land %s: %v", slug, err)
+	}
+}
+
 // watchMerges detects merged PRs of landing sessions and tears them down.
 func (d *Daemon) watchMerges() {
 	d.mu.Lock()
@@ -604,9 +612,7 @@ func (d *Daemon) watchMerges() {
 		}
 		json.Unmarshal(out, &v)
 		if v.State == "MERGED" {
-			if err := d.finishLanding(s.Slug); err != nil {
-				log.Printf("land %s: %v", s.Slug, err)
-			}
+			d.landMerged(s.Slug)
 		}
 	}
 }

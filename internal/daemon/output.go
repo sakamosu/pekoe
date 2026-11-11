@@ -188,6 +188,9 @@ func (d *Daemon) flushOutputEvents() {
 func (d *Daemon) tickLoop() {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
+	// a PR merged while pekoed was down (or restarting) lands now, not 2
+	// minutes into this run
+	go d.watchMerges()
 	n := 0
 	for {
 		select {
