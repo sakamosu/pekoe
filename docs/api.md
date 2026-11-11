@@ -418,14 +418,14 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
   "ready": false,
   "conds": [
     {"name": "land", "ok": true, "detail": "pekoe land done (PR #42)"},
-    {"name": "review", "ok": false, "detail": "diff changed from reviewed 1b2c3d4 to PR HEAD 3f2a1b0 (needs a new review)"},
+    {"name": "review", "ok": false, "detail": "no independent review reported"},
     {"name": "ci", "ok": true, "detail": "all 5 passed"},
     {"name": "merge_state", "ok": true, "detail": "CLEAN"},
     {"name": "conflicts", "ok": true, "detail": "no conflicts forecast"},
     {"name": "after", "ok": false, "detail": "feat-a is running"}
   ],
   "missing": ["review", "after"],     // 揃っていない条件の name(conds の順)
-  "review_stale": true,               // 最新のレビューは pass だが、PR の HEAD がレビューしたものと中身の違う変更になっている(再レビューが要る)。無ければ省く
+  "review_stale": false,              // 最新のレビューは pass だが、PR の HEAD がレビューしたものと中身の違う変更になっている(再レビューが要る)。無ければ省く
   "inbox": 0                          // 開いている根拠の項目の id(merge.check だけ。無ければ省く)
 }
 ```
