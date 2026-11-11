@@ -64,7 +64,7 @@ The secrets live in a GitHub Environment named `release`, which the `goreleaser`
 2. Add required reviewers, and limit its deployment tags to `v*`, so a tag push waits for approval before the job can read the secrets
 3. Add the secrets below as environment secrets of `release`, not as repository secrets (repository secrets are readable by any workflow without approval)
 
-Required reviewers on a private repository need GitHub Enterprise; on Free, Pro and Team they work only on public repositories. Environments themselves (and their secrets and tag rules) need Pro or above on a private repository. While the repository is private, either wait until it is public or accept that the tag rule is the only protection.
+Required reviewers on a private repository need GitHub Enterprise; on Free, Pro and Team they work only on public repositories. Environments themselves (and their secrets and tag rules) need Pro or above on a private repository. On a private repository (a private copy, say) without those plans, either make it public or accept that the tag rule is the only protection.
 
 | Secret | What |
 |---|---|
