@@ -34,7 +34,7 @@ A cozy home for your coding agents. — with tapi, your little companion
   - TUI の `b`(ポートを Chrome で開く)は `open -a "Google Chrome"`
   - `pekoe adopt` はプロセスの cwd を `lsof` で調べる
 - **主な対象は Claude Code**(hooks で状態を受け取る)。codex・opencode なども `[agents.*]` で使えるが、状態は画面から推し量るだけ
-- **必要なもの:** tmux 3.3+、git。ソースから入れるなら Go 1.27.4+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使う)。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)
+- **必要なもの:** tmux 3.3+、git、動かすエージェント(Claude Code。codex・opencode なども可)。Linux では pekoe 自身の sandbox に bubblewrap(`bwrap`)、Claude Code の sandbox に bubblewrap と socat([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。ソースから入れるなら Go 1.27.4+(`make` は `GOTOOLCHAIN=local` で手元の Go だけを使う)。任意: gh(issue・land・PR ビュー・PR レビュー)、Neovim 0.10+(レビュー面)、Chrome(拡張・TUI 内プレビュー)、Tailscale(Web UI)
 - **ターミナル層は tmux。** libghostty-vt の自前 mux([docs/design.md](docs/design.md) のフェーズ 5)は未着手で、やらない選択もある。Kitty graphics のパススルーは、右ペインを文字として描き直す tmux エンジンでは通せない(TUI 内プレビューの画像は pekoe 自身が Kitty graphics で描く)
 
 ## 構成
@@ -124,7 +124,7 @@ pekoe version
 
 `checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリースから付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。
 
-署名の準備ができた版から、macOS 向けのバイナリ(darwin のアーカイブの `bin/pekoe`)は Developer ID Application 証明書で署名し、Apple の公証を通している。`codesign -dv ~/.local/opt/pekoe/bin/pekoe` で `TeamIdentifier` が見える。それより前のリリースは `Signature=adhoc`(Go リンカのアドホック署名だけ)になる。
+macOS 向けのバイナリはまだ署名していない。`release.yml` には darwin のバイナリ(darwin の 2 つのアーカイブの `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出す準備があるが、署名用の secrets をまだ用意していないので、今までのリリース(v0.1.0〜v0.3.0)はどれも Go リンカのアドホック署名だけ: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Signature=adhoc` と出す。署名したリリースからは `TeamIdentifier` が見える。
 
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`README.ja.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
@@ -141,7 +141,7 @@ pekoe update --version vX.Y.Z --force   # 特定の版に(古くなるときは 
 `pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
 
 - 今の版が最新以上なら何もしない。`make install` の版(`git describe` の `0.1.0-59-g3761d74`)は「0.1.0 より 59 コミット先」として比べる。`dev` など比べられない版のときは確認する
-- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめる(リポジトリが private だったときに作ったリリース、つまり v0.1.0〜v0.3.0 は来歴がないので、警告だけ出す)
+- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめ、通らなければ何も入れ替えない(`gh` が入っていなければ警告だけ。リポジトリが private だったときに作ったリリース、つまり v0.1.0〜v0.3.0 は来歴がないので、警告だけ出す)
 - 入れ替えるのは、今動いている pekoe の実体(シンボリックリンクをたどった先)、隣の `pekoed`、`<prefix>/share/pekoe/nvim` と `extension` だけ。`~/.local/share/pekoe` の他のもの(`state.db` など)には触らない。バイナリは隣に書いてから rename し、途中で失敗したら入れ替えた分を戻す
 - `make install` で入れたときの `nvim` / `extension` はリポジトリへのリンクなので、リンクをリリースの中身のディレクトリに置き換える(リポジトリには書き込まない。確認を出す。`make install` し直せばリンクに戻る)
 - Web UI 入りの pekoe で、リリースに `_web` のアーカイブがないときは断る(`--no-web` で既定のビルドを入れるか、`make install WEB=1` でソースから入れる)
@@ -179,14 +179,14 @@ pekoe                                                 # TUI
 | `pekoe conflicts [--repo R]` | 衝突予報。同じファイルを触っているセッションのペアと、衝突するか(`git merge-tree`) |
 | `pekoe send <slug> <text> [--no-enter]` | pty に文字を送る(既定で Enter を足す。`-` で stdin) |
 | `pekoe review [<slug> \| gh#N [--repo R]]` | レビュー面。引数なしなら次のレビュー待ち。`gh#N` で人の PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`。マージ検出後に teardown と worktree 削除。エージェントも呼べる(マージは人間が決める) |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`。マージ検出後(pekoed が PR を 1 分ほどごとに見る)に teardown と worktree 削除。エージェントも呼べる(マージは人間が決める) |
 | `pekoe cleanup [--all\|--repo R] [--stale 72h]` / `pekoe cleanup --rm <slug>… \| --rm --landed [--force] [--yes]` | 片付けの候補の一覧。landed のセッション(pekoe の記録だけが残っている)、`pekoe land` を通さずに GitHub で PR がマージされたセッション(worktree が残っている)、`[cleanup] stale_after`(72h)より長く止まっている(done・idle・failed など)セッションを、未コミットのファイルとどのリモートにもないコミットの数と一緒に出す。`--rm` は名指ししたもの(`--landed` は landed のものすべて)を、`pekoe rm` と同じく確認してから消す。エージェントは一覧を出せるが、消せるのは landed だけ。自動では何も消さない。TUI では `:cleanup` |
 | `pekoe rm <slug> [--force] [--yes]` | teardown → worktree 削除(`~/worktrees` 配下のみ。外のものはセッションを忘れるだけ)。エージェントは landed のセッションを一覧から消すときだけ使える |
-| `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]...` | セッションのエージェントが作業の結果を残す(`-` で stdin)。どのセッションの報告かは pekoed が呼び出したプロセスから決める(`$PEKOE_SESSION` の名乗りは食い違いを出すだけ)。証拠のパスや URL は文字列として残すだけで pekoed は読まない |
+| `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]... [--verdict pending\|pass\|fail --reviewed-sha SHA]` | セッションのエージェントが作業の結果を残す(`-` で stdin)。`--status review` に `--verdict` と `--reviewed-sha` を付けると、そのコミットへの独立レビューの結果を残す(レビュー中は `pending`。マージの根拠になるのは `pass` だけ)。どのセッションの報告かは pekoed が呼び出したプロセスから決める(`$PEKOE_SESSION` の名乗りは食い違いを出すだけ)。証拠のパスや URL は文字列として残すだけで pekoed は読まない |
 | `pekoe reports [<slug>] [--limit N]` | 報告を新しい順に(エージェントが書いた文は区切りで囲んで出す)。最新のものは `pekoe --json ls` の `report` にも出る |
 | `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | セッションに何か起きるまで待つ(報告・`done`・`waiting`・`idle`・`failed`・`pr`・`landed`・`removed`)。`--mine` は自分が `pekoe new` で作ったセッションだけ。返った `cursor` を次の `--since` に渡すと取りこぼさない。pekoed を再起動すると `reset` が返るので `pekoe --json ls` から読み直す。報告なしで done になったものは `(no report)` と出る |
-| `pekoe ask-human <question> [--option O]... [--recommend N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context -] [--wait]` | エージェントが人に判断・承認・手作業を頼む(判断の受信箱)。pekoed が問いの元のセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突)を自分で付ける。答えは `--wait`(や `pekoe wait --on inbox`)で待っていれば返り値で、待っていなければ手が空いたときに入力欄に `[pekoe inbox #N] 答え: …` と届く(許可ダイアログが出ている間は届けない) |
-| `pekoe inbox [<id>] [--all]` / `pekoe inbox answer <id> [<n>] [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは `merged`・`wait`・`send back`(メモがセッションに届く)。pekoed はマージしない |
+| `pekoe ask-human <question> [--option O]... [--recommend N] [--decided N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context TEXT\|-] [--link URL]... [--wait [--timeout 30m]]` / `pekoe ask-human --wait <id>` | エージェントが人に判断・承認・手作業を頼む(判断の受信箱)。`--decided` は自分で選んだ選択肢を残す(`fyi` と一緒に)。`--wait <id>` は前に出した問いの答えを待つ。pekoed が問いの元のセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突)を自分で付ける。答えは `--wait`(や `pekoe wait --on inbox`)で待っていれば返り値で、待っていなければ手が空いたときに入力欄に `[pekoe inbox #N] 答え: …` と届く(許可ダイアログが出ている間は届けない) |
+| `pekoe inbox [<id>] [--all] [--mine]` / `pekoe inbox answer <id> [<n>] [--note …]` / `pekoe inbox dismiss\|withdraw <id> [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。問いを出したエージェントは自分の問いを取り下げられる(`withdraw`)。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは `merged`・`wait`・`send back`(メモがセッションに届く)。pekoed はマージしない |
 | `pekoe ledger [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger reopen\|rm <id>` | 依頼(`ledger`)。tapi chat に打った文は pekoed が open で記録し、tapi が `--request` でセッションと結び、`done --evidence <PR>`・`drop --note <理由>`・`close --as chat`(依頼ではなかった)で閉じる。`pekoe tapi reset` でも消えない。開き直す(`reopen`)・消す(`rm`)のは人だけ |
 | `pekoe stats [--days N] [--repo R] [--json]` | ローカルの日付・リポジトリごとの、マージした PR の数と使ったトークン(既定は直近 7 日)。マージは pekoe が land を見届けたもの。トークンはエージェントの Claude Code の transcript(サブエージェント・tapi chat も)から、input・output・cache 書き込み・cache 読み出しの種類別に足す。rm したセッションの分も残り、動いているセッションはその時点までを数える。料金には換算しない。数だけなので、エージェントも token なしで読める |
 | `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止 |
@@ -200,16 +200,16 @@ pekoe                                                 # TUI
 | `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
 | `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける |
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
-| `pekoe tapi [reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
+| `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `inbox` `ledger` `land` `dev` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
+- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
-- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・`report`・`reports`・`wait`・`conflicts`・`cleanup`(一覧。`--rm` は `rm` と同じく landed だけ)(と hooks 用の `event`)だけで、`conflicts` は計算し直しが 10 秒に 1 回まで(それ以内は前の予報が返る)、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・`dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
+- pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・自分のセッションの `dev`・`report`・`reports`・`wait`・`ask-human`・`inbox`(一覧と、自分の問いの `withdraw`)・`ledger`(tapi chat だけ。`reopen` / `rm` は除く)・`stats`・`conflicts`・`cleanup`(一覧。`--rm` は `rm` と同じく landed だけ)(と hooks 用の `event`)だけで、`conflicts` は計算し直しが 10 秒に 1 回まで(それ以内は前の予報が返る)、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・ほかのセッションの `dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
 
 ## TUI
 
@@ -231,7 +231,7 @@ pekoe                                                 # TUI
 | キー | 動作 |
 | --- | --- |
 | `j` `k` / `↵` | セッションか tapi の行を選ぶ(端で折り返す。`g` で一番上の tapi の行へ)/ 右ペインに入って入力(`^q` 以外のキーはすべてエージェントへ)。tapi の行の `↵` は tapi chat を開く |
-| `^q` | 入力から抜けて Sessions に戻る(`[keys] prefix` で変更可)。左のパネルをクリックしても抜けられる |
+| `^q` / `^q` `h` `l` | 入力から抜けて Sessions に戻る(`[keys] prefix` で変更可)。左のパネルをクリックしても抜けられる / 左のパネル・右ペインにフォーカス |
 | `i` / `h` `Esc` | Agent パネルで入力を始める / 左に戻る |
 | `^q` `z` | 右ペイン(4)を全幅にして左ペインを隠す / もう一度で戻す。入力中に押せば入力に戻る |
 | `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に残り、再起動後の TUI と CLI から起動するエージェントの幅も同じになる。100 列未満(縦並び)では効かない |
@@ -337,7 +337,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ### エージェントに pekoe を使わせるときの権限
 
-エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)・`pekoe land`(origin のあるリポジトリだけ)・`pekoe rm`(landed のセッションだけ。下)・`pekoe wait`・`pekoe reports`・`pekoe inbox`(一覧)・`pekoe stats`(数だけ)・`pekoe cleanup`(一覧。worktree の git status を読むのは worktree ごとに 10 秒に 1 回まで)、tapi chat の `pekoe ledger`(一覧と閉じる・結ぶ。tapi の窓からだけ)、作業セッションの `pekoe report`(自分のセッションの分だけ)、エージェントの `pekoe ask-human`(人への問い。答えるのは人だけ)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、`dev` や run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token なしの `rm` が消せるのは landed のセッションだけ。PR のマージを検知した時点で pekoed が teardown と worktree の削除を済ませているので、残っているのは pekoe の記録だけで、コードは base のブランチにある。ほかの状態のセッションの `rm` は worktree と未コミットの変更を消すので人間だけの操作のまま。`rm --force` と、worktree が残っている(削除に失敗した)landed のセッションも同じ。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
+エージェントは同じユーザーで動くので、pekoed のソケットにつなげる。pekoed はエージェントの sandbox の外で動くので、`human-token` を付けない呼び出しに許すのはエージェントに要るものだけにしている: hooks の `pekoe event`、ハブ(スキル)の `pekoe ls`・`pekoe new`・`pekoe send`(相手の入力欄にだけ、許可ダイアログが出ていないときだけ)・`pekoe land`(origin のあるリポジトリだけ)・`pekoe rm`(landed のセッションだけ。下)・`pekoe wait`・`pekoe reports`・`pekoe inbox`(一覧)・`pekoe stats`(数だけ)・`pekoe conflicts`・`pekoe cleanup`(一覧。worktree の git status を読むのは worktree ごとに 10 秒に 1 回まで)、tapi chat の `pekoe ledger`(一覧と閉じる・結ぶ。tapi の窓からだけ)、作業セッションの `pekoe report` と `pekoe dev`(自分のセッションの分だけ)、エージェントの `pekoe ask-human`(人への問い。答えるのは人だけ。自分の問いは `withdraw` で取り下げられる)、MCP サーバーの `session_list`・`open_in_editor`。それ以外(許可待ちへの回答、生キー、tapi chat への入力、設定の下書きと書き込み、ほかのセッションの `dev` の起動、run 窓・レビュー面でのコマンド実行、他のセッションの画面・差分・エラーの抜粋を見ること、デーモンの停止など)はすべて token が要る。token なしの `rm` が消せるのは landed のセッションだけ。PR のマージを検知した時点で pekoed が teardown と worktree の削除を済ませているので、残っているのは pekoe の記録だけで、コードは base のブランチにある。ほかの状態のセッションの `rm` は worktree と未コミットの変更を消すので人間だけの操作のまま。`rm --force` と、worktree が残っている(削除に失敗した)landed のセッションも同じ。token は `~/.local/share/pekoe/human-token`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/human-token`、0600)にあり、TUI・CLI・Neovim が読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。メソッドごとの分類は [docs/api.md](docs/api.md) の「人間だけの操作」。
 
 ただし同じユーザーのエージェントはファイルを読めてしまう。そこで次の 2 つで守る。
 
@@ -501,9 +501,13 @@ enable = true               # false で sandbox なしに動かす(使えない�
 | チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json`(消すと次の起動でまた出る) |
 | tapi chat の稼働ディレクトリ | `~/.local/share/pekoe/tapi/`(会話の記録は Claude Code の `~/.claude/projects/` 側。`pekoe tapi reset` で消える) |
 | 人間用トークン(許可待ちへの回答などに要る。エージェントに読ませない) | `~/.local/share/pekoe/human-token` |
+| pekoe が各エージェントに渡す Claude Code の設定(sandbox) | `~/.local/share/pekoe/agent-settings/<slug>.json` |
+| スキルの文(`pekoe skills install`) | `~/.local/share/pekoe/skills/` |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
+
+`$XDG_CONFIG_HOME`・`$XDG_DATA_HOME` があれば `~/.config/pekoe`・`~/.local/share/pekoe` の代わりに `$XDG_CONFIG_HOME/pekoe`・`$XDG_DATA_HOME/pekoe` を使う。`$PEKOE_HOME` があれば設定は `$PEKOE_HOME/config`、データは `$PEKOE_HOME/share` に、`$PEKOE_WORKTREES` があれば worktree はその下に置く(下の `scripts/sandbox.sh` はこれで隔離する)。
 
 ## 開発
 
