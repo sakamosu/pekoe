@@ -26,6 +26,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pekoe/internal/daemon"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -39,6 +40,20 @@ const (
 	dashFYI     = 10 // fyi items shown
 )
 
+// stats (merges and tokens, docs/api.md「集計(stats)」) is read apart from
+// the rest: pekoed reads what is new in every live session's transcript
+// before it sums, so it costs more than the other reads. The numbers move
+// slowly (a merge is seen at most every 2 minutes by watchMerges; tokens
+// are mostly counted already by the hooks), so every dashStatsRefresh is
+// fresh enough, and opening the dashboard reads them again unless the last
+// read is younger than dashStatsOpen (moving over the tapi row with j/k
+// does not read them each time).
+const (
+	dashStatsRefresh = 30 * time.Second
+	dashStatsOpen    = 5 * time.Second
+	dashStatsDays    = 7
+)
+
 // dashState is the dashboard's data and cursor.
 type dashState struct {
 	ledger  []state.LedgerEntry
@@ -48,6 +63,11 @@ type dashState struct {
 	at      time.Time // the last read came back
 	loading bool
 	stale   bool // something changed since the last read
+
+	stats        *daemon.Stats // the last stats read that came back fine
+	statsErr     string        // why the last stats read failed ("" when it did not)
+	statsAt      time.Time     // the last stats read came back
+	statsLoading bool
 
 	sel  string          // key of the chosen row
 	open map[string]bool // unfolded rows
@@ -105,17 +125,58 @@ func (m *model) onDash(msg dashMsg) {
 	}
 }
 
-// dashTick reads again while the dashboard is on screen: soon after a
-// change, otherwise every dashRefresh.
-func (m *model) dashTick() tea.Cmd {
-	if !m.dashShown() || m.dash.loading {
+// dashStatsMsg is a stats read: the numbers, or why there are none.
+type dashStatsMsg struct {
+	st  *daemon.Stats
+	err error
+}
+
+// loadDashStats reads the last dashStatsDays days of stats (every
+// repository, tapi chat included) when the last read is at least age old.
+func (m *model) loadDashStats(age time.Duration) tea.Cmd {
+	d := &m.dash
+	if d.statsLoading || (!d.statsAt.IsZero() && time.Since(d.statsAt) < age) {
 		return nil
 	}
-	since := time.Since(m.dash.at)
-	if m.dash.at.IsZero() || since >= dashRefresh || (m.dash.stale && since >= dashSoon) {
-		return m.loadDash()
+	d.statsLoading = true
+	cl := m.cl
+	return func() tea.Msg {
+		if cl == nil {
+			return dashStatsMsg{err: fmt.Errorf("not connected to pekoed")}
+		}
+		var st daemon.Stats
+		if err := cl.Call("stats", map[string]any{"days": dashStatsDays}, &st); err != nil {
+			return dashStatsMsg{err: err}
+		}
+		return dashStatsMsg{st: &st}
 	}
-	return nil
+}
+
+// onDashStats keeps a failed read's reason; the numbers of the last good
+// read are dropped with it, so a failure never looks like today's count.
+func (m *model) onDashStats(msg dashStatsMsg) {
+	d := &m.dash
+	d.statsLoading, d.statsAt = false, time.Now()
+	if msg.err != nil {
+		d.stats, d.statsErr = nil, msg.err.Error()
+		return
+	}
+	d.stats, d.statsErr = msg.st, ""
+}
+
+// dashTick reads again while the dashboard is on screen: soon after a
+// change, otherwise every dashRefresh; stats every dashStatsRefresh.
+func (m *model) dashTick() tea.Cmd {
+	if !m.dashShown() {
+		return nil
+	}
+	var cmds []tea.Cmd
+	since := time.Since(m.dash.at)
+	if !m.dash.loading && (m.dash.at.IsZero() || since >= dashRefresh || (m.dash.stale && since >= dashSoon)) {
+		cmds = append(cmds, m.loadDash())
+	}
+	cmds = append(cmds, m.loadDashStats(dashStatsRefresh))
+	return tea.Batch(cmds...)
 }
 
 // ---- rows ----
@@ -1000,7 +1061,136 @@ func (m *model) dashOverview(room int) []string {
 		part(prs, plural(prs, "PR open", "PRs open"), theme.Text),
 		part(len(m.dash.ledger), plural(len(m.dash.ledger), "request", "requests"), theme.Text),
 	})
+	flow(m.dashStatsToday())
+	if l := m.dashStatsWeek(room); l != "" {
+		lines = append(lines, l)
+	}
 	return lines
+}
+
+// dashStatsToday is today's merges and tokens (pekoed's local date), in
+// parts the overview flows onto its lines: the merges first; then the
+// tokens by kind, output and cache write (what the work made and wrote)
+// plain, cache read and input (cache read is most of the sum, re-reading
+// the same context) quiet, so the sum of everything does not drown out
+// what changed. A failed read says so instead of numbers; a day with
+// nothing yet says that.
+func (m *model) dashStatsToday() []string {
+	th := m.th
+	dim := func(s string) string { return th.FG(theme.Dim, s) }
+	head := m.dashEmo("📊") + th.Bold(theme.Text, "today") + "  "
+	d := &m.dash
+	switch {
+	case d.statsErr != "":
+		return []string{head + th.FG(theme.Err, "stats unavailable") + dim(" · "+firstLine(inboxText(d.statsErr)))}
+	case d.stats == nil:
+		return []string{head + dim("stats loading…")}
+	}
+	var merged int
+	var tok state.Usage
+	for _, r := range d.stats.Rows {
+		if r.Day == d.stats.To {
+			merged += r.Merged
+			tok.Add(r.Tokens)
+		}
+	}
+	if merged == 0 && tok.Total() == 0 {
+		return []string{head + dim("no merges · no tokens recorded yet")}
+	}
+	mp := dim("0 merged")
+	if merged > 0 {
+		mp = th.Bold(theme.Ok, fmt.Sprint(merged)) + " " + dim("merged")
+	}
+	kind := func(word string, n int64, r theme.Role) string {
+		return dim(word+" ") + th.FG(r, shortTokens(n))
+	}
+	return []string{
+		head + mp,
+		kind("out", tok.Output, theme.Text),
+		kind("cache write", tok.CacheCreation, theme.Text),
+		kind("cache read", tok.CacheRead, theme.Dim),
+		kind("in", tok.Input, theme.Dim),
+	}
+}
+
+// dashStatsWeek is the merges of the last days, oldest first, in the
+// stage bar's words: a ▰ for each merge (scaled down when a day has more
+// than fit), ▱ for the rest of the day's cells, so busy and quiet days
+// read at a glance; then the sum. Without pictures (ascii) each day is its
+// count. "" until stats came back fine.
+func (m *model) dashStatsWeek(room int) string {
+	st := m.dash.stats
+	if st == nil || m.dash.statsErr != "" {
+		return ""
+	}
+	from, err1 := time.ParseInLocation("2006-01-02", st.From, time.Local)
+	to, err2 := time.ParseInLocation("2006-01-02", st.To, time.Local)
+	if err1 != nil || err2 != nil || to.Before(from) {
+		return ""
+	}
+	byDay := map[string]int{}
+	for _, r := range st.Rows {
+		byDay[r.Day] += r.Merged
+	}
+	var counts []int
+	most := 0
+	for t := from; !t.After(to) && len(counts) < 31; t = t.AddDate(0, 0, 1) {
+		n := byDay[t.Format("2006-01-02")]
+		counts = append(counts, n)
+		most = max(most, n)
+	}
+	th := m.th
+	dim := func(s string) string { return th.FG(theme.Dim, s) }
+	head := m.dashEmo("📅") + th.Bold(theme.Text, fmt.Sprintf("%d days", len(counts))) + "  "
+	total := "  " + th.FG(theme.Text, fmt.Sprint(st.Merged)) + " " + dim("merged")
+	var b strings.Builder
+	if !m.dashGlyphs() {
+		for i, n := range counts {
+			if i > 0 {
+				b.WriteString(" ")
+			}
+			if n == 0 {
+				b.WriteString(dim("0"))
+			} else {
+				b.WriteString(th.FG(theme.Ok, fmt.Sprint(n)))
+			}
+		}
+		return head + b.String() + total
+	}
+	// cells a day: as many as the busiest day needs, up to 4, and what the
+	// room leaves (one a day, unspaced, at the least)
+	gaps := len(counts) - 1
+	cells := clampi(min((room-w(head)-w(total)-gaps)/max(len(counts), 1), 4, max(most, 1)), 1, 4)
+	for i, n := range counts {
+		if i > 0 && cells > 1 {
+			b.WriteString(" ")
+		}
+		fill := n
+		if most > cells {
+			fill = (n*cells + most - 1) / most // a day with a merge keeps a ▰
+		}
+		if fill > 0 {
+			b.WriteString(th.FG(theme.Ok, strings.Repeat("▰", fill)))
+		}
+		if fill < cells {
+			b.WriteString(dim(strings.Repeat("▱", cells-fill)))
+		}
+	}
+	return head + b.String() + total
+}
+
+// shortTokens shortens a token count like pekoe stats does: 950, 12.3k,
+// 4.56M, 1.23G.
+func shortTokens(n int64) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprint(n)
+	case n < 1_000_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1e3)
+	case n < 1_000_000_000:
+		return fmt.Sprintf("%.2fM", float64(n)/1e6)
+	}
+	return fmt.Sprintf("%.2fG", float64(n)/1e9)
 }
 
 // dashGroupHead names a group: who asked, and the request (its number and

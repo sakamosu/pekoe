@@ -202,6 +202,13 @@ keys = ["4"]
 docs = ["docs/orchestration.md"]
 
 [[tip]]
+id = "dashboard-stats"
+short = "ダッシュボードの概要に今日のマージ数とトークンが出る"
+detail = "📊 today に今日のマージ数とトークン(out と cache write を主に、cache read と in は控えめに)、📅 7 days に直近 7 日のマージ数を ▰▱ で 1 日ずつ。pekoe stats と同じ数で、30 秒ごとに読み直す。"
+keys = ["4", "pekoe stats"]
+docs = ["docs/orchestration.md", "docs/api.md"]
+
+[[tip]]
 id = "dashboard-review-stage"
 short = "工程表の review は独立レビューの最中も見える"
 detail = "pekoe report --status review --verdict pending で 🔍 in review。pass で済み、fail で review failed。PR の後に中身が変われば needs re-review、rebase で SHA が変わっただけなら合格のまま。"

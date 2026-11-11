@@ -458,8 +458,14 @@ func tourDash(now time.Time) dashState {
 		return state.MergeCond{Name: name, OK: true, Detail: detail}
 	}
 	no := func(name, detail string) state.MergeCond { return state.MergeCond{Name: name, Detail: detail} }
+	day := func(back int) string { return now.AddDate(0, 0, -back).Format("2006-01-02") }
 	return dashState{
 		at: now,
+		stats: &daemon.Stats{From: day(6), To: day(0), Merged: 6, Rows: []daemon.StatsRow{
+			{Day: day(0), Repo: tourRepo.Name, Merged: 1, Tokens: state.Usage{Input: 2100, Output: 64300, CacheCreation: 318000, CacheRead: 7_420_000}},
+			{Day: day(1), Repo: tourRepo.Name, Merged: 2}, {Day: day(3), Repo: tourRepo.Name, Merged: 1}, {Day: day(4), Repo: tourRepo.Name, Merged: 2},
+		}},
+		statsAt: now,
 		ledger: []state.LedgerEntry{
 			{ID: 5, At: ago(2 * time.Hour), Text: "The cart total ignores the discount code", Status: "open", Sessions: []string{tourReady}},
 			{ID: 6, At: ago(95 * time.Minute), Text: "Add a full-text search API for the search page", Status: "open", Sessions: []string{tourDone}},
