@@ -58,7 +58,13 @@ GoReleaser's `notarize.macos` (`.goreleaser.yaml`) signs the darwin binaries of 
 
 If `MACOS_SIGN_P12` is unset or empty (forks, a local `goreleaser release --snapshot --clean`), this step is skipped and the binaries keep the Go linker's ad-hoc signature, as before.
 
-The secrets live in a GitHub Environment named `release`, which the `goreleaser` job in `release.yml` uses. Give the environment required reviewers (Settings → Environments → `release`), and preferably limit its deployment tags to `v*`, so a tag push waits for approval before the job can read them.
+The secrets live in a GitHub Environment named `release`, which the `goreleaser` job in `release.yml` uses. Set it up before adding the secrets:
+
+1. Create the environment first (Settings → Environments → New environment → `release`). If a tag push runs `release.yml` before it exists, GitHub creates it on the fly with no protection rules, and the release is built unsigned (no secrets)
+2. Add required reviewers, and limit its deployment tags to `v*`, so a tag push waits for approval before the job can read the secrets
+3. Add the secrets below as environment secrets of `release`, not as repository secrets (repository secrets are readable by any workflow without approval)
+
+Required reviewers on a private repository need GitHub Enterprise; on Free, Pro and Team they work only on public repositories. Environments themselves (and their secrets and tag rules) need Pro or above on a private repository. While the repository is private, either wait until it is public or accept that the tag rule is the only protection.
 
 | Secret | What |
 |---|---|
