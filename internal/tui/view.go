@@ -445,7 +445,7 @@ func homeTilde(p string) string {
 		return p
 	}
 	h = strings.TrimSuffix(h, "/")
-	if p == h || strings.HasPrefix(p, h+"/") { // not /Users/yukiX for /Users/yuki
+	if p == h || strings.HasPrefix(p, h+"/") { // not /Users/aliceX for /Users/alice
 		return "~" + strings.TrimPrefix(p, h)
 	}
 	return p
