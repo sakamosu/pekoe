@@ -43,7 +43,7 @@ const (
 // stats (merges and tokens, docs/api.md「集計(stats)」) is read apart from
 // the rest: pekoed reads what is new in every live session's transcript
 // before it sums, so it costs more than the other reads. The numbers move
-// slowly (a merge is seen at most every 2 minutes by watchMerges; tokens
+// slowly (a merge is seen at most once a minute by the PR poller; tokens
 // are mostly counted already by the hooks), so every dashStatsRefresh is
 // fresh enough, and opening the dashboard reads them again unless the last
 // read is younger than dashStatsOpen (moving over the tapi row with j/k

@@ -89,7 +89,7 @@ func cleanupKind(s *state.Session, now time.Time, staleAfter time.Duration) stri
 		return CleanupLanded
 	case s.Landing:
 		// pekoe land made the PR and waits for a person to merge it;
-		// watchMerges will tear it down
+		// pekoed tears it down once it sees the merge
 		return ""
 	case s.PRStatus != nil && s.PRStatus.State == "MERGED":
 		return CleanupMerged

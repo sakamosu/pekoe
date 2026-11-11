@@ -24,7 +24,7 @@ package daemon
 // itself is asked again when the conditions come back.
 //
 // pekoed merges nothing (決まったこと 1): the answers are "マージした" (the
-// person merged it on GitHub; watchMerges notices), "待つ", and "差し戻す"
+// person merged it on GitHub; the PR poller notices), "待つ", and "差し戻す"
 // with a note, which is typed into the session's window as an inbox answer
 // is (inbox.go: idle or done, no permission prompt, checked twice).
 //

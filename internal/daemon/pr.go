@@ -449,9 +449,17 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 		d.mu.Unlock()
 		return
 	}
-	prev := s.PRStatus
+	prev, landing := s.PRStatus, s.Landing
 	d.prFetched[slug] = time.Now()
 	d.mu.Unlock()
+	if landing && next.State == "MERGED" {
+		// pekoe land's PR got merged: land it now rather than at watchMerges'
+		// next round (every 2 minutes). Polling stops at MERGED, so this is
+		// the one chance; the teardown can take minutes, so not on the
+		// poller's goroutine. finishLanding runs once per session even when
+		// watchMerges starts it too.
+		defer func() { go d.landMerged(slug) }()
+	}
 	if prev != nil && !seen {
 		next.Attention, next.AttentionAt = append([]string(nil), prev.Attention...), prev.AttentionAt
 	}
@@ -481,7 +489,7 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 }
 
 // landedPRMerged marks a landed session's PR as merged. A session lands
-// only when watchMerges saw its PR merged (or, without origin, with no PR
+// only when pekoed saw its PR merged (or, without origin, with no PR
 // at all), and polling stops at landed, so the summary would otherwise stay
 // at what it was last fetched before the merge: CI running, CI passed.
 // It reports whether it changed anything. Called under the session's lock
@@ -525,9 +533,9 @@ const prPollEvery = 60 * time.Second
 
 // watchPRStatus refreshes the summary of every open PR at most once a
 // minute (sessions whose PR view is open are kept fresh by pr.view). It also
-// notices merges and closes of any session, landing or not; tearing down
-// stays with watchMerges (landing sessions only). No gh, or gh without auth:
-// nothing happens.
+// notices merges and closes of any session, landing or not; a landing
+// session's merge starts its teardown right away (applyPRStatus), other
+// sessions are left as they are. No gh, or gh without auth: nothing happens.
 func (d *Daemon) watchPRStatus() {
 	if !d.prPolling.CompareAndSwap(false, true) {
 		return

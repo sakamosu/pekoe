@@ -388,7 +388,7 @@ func (d *Daemon) hLand(p slugP) (any, error) { return d.land(p, false) }
 // agent whose sandbox allows github.com could push and run gh pr create
 // itself, so pushing the session's branch and opening its PR is no more
 // than it can do; merging stays a person's decision, and the teardown
-// waits for that merge (watchMerges). A repository without origin is
+// waits for that merge (the PR poller or watchMerges sees it). A repository without origin is
 // different: land fast-forwards the base branch in the main checkout and
 // removes the worktree right away, with nobody merging, so that stays
 // human-only. The check sits in land itself, where it reads origin, so
@@ -518,8 +518,9 @@ func prForBranch(dir, branch string) int {
 }
 
 func (d *Daemon) finishLanding(slug string) error {
-	// one at a time per session: watchMerges starts every 2 minutes, and
-	// a slow teardown must not run twice in the same worktree
+	// one at a time per session: watchMerges (at start and every 2 minutes)
+	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
+	// slow teardown must not run twice in the same worktree
 	if _, busy := d.finishing.LoadOrStore(slug, true); busy {
 		return nil
 	}
@@ -579,6 +580,13 @@ func (d *Daemon) watchPRs() {
 	}
 }
 
+// landMerged finishes the landing of a session whose PR was seen merged.
+func (d *Daemon) landMerged(slug string) {
+	if err := d.finishLanding(slug); err != nil {
+		log.Printf("land %s: %v", slug, err)
+	}
+}
+
 // watchMerges detects merged PRs of landing sessions and tears them down.
 func (d *Daemon) watchMerges() {
 	d.mu.Lock()
@@ -604,9 +612,7 @@ func (d *Daemon) watchMerges() {
 		}
 		json.Unmarshal(out, &v)
 		if v.State == "MERGED" {
-			if err := d.finishLanding(s.Slug); err != nil {
-				log.Printf("land %s: %v", s.Slug, err)
-			}
+			d.landMerged(s.Slug)
 		}
 	}
 }
