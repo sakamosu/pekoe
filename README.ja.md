@@ -26,7 +26,7 @@ A cozy home for your coding agents. — with tapi, your little companion
 ## 状況と動作環境
 
 - **個人のツール。** 作者が毎日使うために作っていて、設定・API・コマンドはまだ変わりうる(互換は約束しない)
-- **まだ公開していない。** MIT で公開する準備中で、リポジトリは今は private。公開するまでは、リリースを落とすのにも `pekoe update` にも、リポジトリを読める GitHub アカウントが要る([リリースから](#リリースからビルド済みバイナリ))
+- **MIT ライセンス**([ライセンス](#ライセンス))。リリースを落とすのにも(curl なら)`pekoe update` にも、GitHub のアカウントは要らない([リリースから](#リリースからビルド済みバイナリ))
 - **macOS で開発・確認している**(ターミナルは Ghostty)。Linux 向けのビルドも配っているが、確かめていない部分がある。macOS 前提の箇所:
   - `[worktree] clone` の APFS クローン(`cp -c`)。ほかのファイルシステムでは普通のコピーになる
   - `make install-launchd` と、launchd で動いている pekoed の `pekoe daemon restart`(`launchctl`)
@@ -103,17 +103,17 @@ make install-launchd    # 任意: ログイン時に pekoed を起動
 
 ### リリースから(ビルド済みバイナリ)
 
-GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。リポジトリはまだ公開していない(公開準備中)ので、今はリポジトリを読める GitHub アカウントが要る: `gh auth login` してから `gh` で落とす(Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す)。公開後は、リポジトリを読める権限は要らなくなる: curl ならトークンなしで、`gh` ならどのアカウントでログインしていても落とせる:
+GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。`gh`(どのアカウントでログインしていてもよい。Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す)か、トークンなしの curl で落とす:
 
 ```sh
 ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # 最新の版(特定の版なら ver=<version>)
 gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # darwin_arm64 は手元の <os>_<arch> に
-# gh がなければ curl で(公開後だけ。private のあいだはこの URL は 404 になる):
+# gh がなければ curl で:
 #   ver=$(curl -fsSL https://api.github.com/repos/sakamosu/pekoe/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
-gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # このリポジトリのワークフローがビルドしたか(来歴があるのは公開後のリリースだけ)
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # このリポジトリのワークフローがビルドしたか(v0.1.0〜v0.3.0 には来歴がない)
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -122,7 +122,7 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。リポジトリはまだ private なので、今あるリリースには来歴がなく、`gh attestation verify` が通らない。公開後に作るリリースからは付く。
+`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリースから付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。
 
 署名の準備ができた版から、macOS 向けのバイナリ(darwin のアーカイブの `bin/pekoe`)は Developer ID Application 証明書で署名し、Apple の公証を通している。`codesign -dv ~/.local/opt/pekoe/bin/pekoe` で `TeamIdentifier` が見える。それより前のリリースは `Signature=adhoc`(Go リンカのアドホック署名だけ)になる。
 
@@ -141,13 +141,13 @@ pekoe update --version vX.Y.Z --force   # 特定の版に(古くなるときは 
 `pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
 
 - 今の版が最新以上なら何もしない。`make install` の版(`git describe` の `0.1.0-59-g3761d74`)は「0.1.0 より 59 コミット先」として比べる。`dev` など比べられない版のときは確認する
-- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめる(リポジトリが private のあいだに作ったリリース、つまり今あるリリースはすべて来歴がないので、警告だけ出す)
+- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめる(リポジトリが private だったときに作ったリリース、つまり v0.1.0〜v0.3.0 は来歴がないので、警告だけ出す)
 - 入れ替えるのは、今動いている pekoe の実体(シンボリックリンクをたどった先)、隣の `pekoed`、`<prefix>/share/pekoe/nvim` と `extension` だけ。`~/.local/share/pekoe` の他のもの(`state.db` など)には触らない。バイナリは隣に書いてから rename し、途中で失敗したら入れ替えた分を戻す
 - `make install` で入れたときの `nvim` / `extension` はリポジトリへのリンクなので、リンクをリリースの中身のディレクトリに置き換える(リポジトリには書き込まない。確認を出す。`make install` し直せばリンクに戻る)
 - Web UI 入りの pekoe で、リリースに `_web` のアーカイブがないときは断る(`--no-web` で既定のビルドを入れるか、`make install WEB=1` でソースから入れる)
 - 書き込めない場所や Homebrew などのパッケージマネージャーが入れたものは断る
 - 終わると新旧の版を出し、pekoed が動いていれば `pekoe daemon restart` するか聞く。Chrome 拡張を入れ替えたら `chrome://extensions` で再読み込みする
-- GitHub のトークンが見つかれば付けて呼ぶ: `$GITHUB_TOKEN` / `$GH_TOKEN`、なければ `gh auth token`。リポジトリが private のあいだ(まだ公開していない)は、リポジトリを読めるトークンが要る。ないと GitHub が HTTP 404 を返し、`pekoe update` は `gh auth login` するよう案内する。公開後はトークンは要らなくなり、付けると GitHub API のレート制限が緩くなるだけ(トークンなしは 1 時間に 60 回まで。超えたらしばらく待つか `gh auth login` する)
+- GitHub のトークンが見つかれば付けて呼ぶ: `$GITHUB_TOKEN` / `$GH_TOKEN`、なければ `gh auth token`。トークンは要らず、付けると GitHub API のレート制限が緩くなるだけ(トークンなしは 1 時間に 60 回まで。超えたらしばらく待つか `gh auth login` する)。private の複製から取るときは、リポジトリを読めるトークンが要る。ないと GitHub が HTTP 404 を返し、`pekoe update` は `gh auth login` するよう案内する
 - 入れ替えは人間だけの操作。エージェントのセッションの中(`$PEKOE_SESSION` がある)や `human-token` を読めないところからは `only a person can do this` で断る。`--check` は誰でも使える
 
 hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけ。プロジェクト側の `.claude/` は触らない。`pekoe hooks status` で確認、`pekoe hooks uninstall` で pekoe の分だけ外す。

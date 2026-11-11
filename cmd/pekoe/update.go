@@ -359,8 +359,8 @@ func (u *updater) download(ctx context.Context, a *selfupdate.Asset, file string
 
 // checkProvenance verifies the build provenance when the release has one.
 // Releases made while the repository is private have none (release.yml
-// attests only a public one; it is not public yet), so a missing one is a
-// warning.
+// attests only a public one; v0.1.0 to v0.3.0 were made while it was
+// private), so a missing one is a warning.
 func (u *updater) checkProvenance(ctx context.Context, file, sum string) error {
 	has, err := u.gh.HasAttestation(ctx, sum)
 	switch {
