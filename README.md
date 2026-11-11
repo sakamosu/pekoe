@@ -126,7 +126,7 @@ pekoe version
 
 `checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached only to releases that `release.yml` makes while the repository is public (on a private repository, attestations need GitHub Enterprise Cloud, so `release.yml` skips them). Provenance starts with the releases made after the repository went public; v0.1.0 to v0.3.0 were made while it was private, so they have no provenance and `gh attestation verify` fails for them.
 
-The macOS binaries are not signed yet. `release.yml` is ready to sign the darwin binaries (`bin/pekoe` in both darwin archives) with a Developer ID Application certificate and have Apple notarize them, but the signing secrets are not set up, so every release so far (v0.1.0 to v0.3.0) carries only the Go linker's ad-hoc signature: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` shows `Signature=adhoc`. Once releases are signed, it shows the `TeamIdentifier` instead.
+The macOS binaries are not signed yet. `release.yml` is ready to sign the darwin binaries (`bin/pekoe` in every darwin archive, default and `_web`) with a Developer ID Application certificate and have Apple notarize them, but the signing secrets are not set up, so every release so far (v0.1.0 to v0.3.0) carries only the Go linker's ad-hoc signature: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` shows `Signature=adhoc`. Once releases are signed, it shows the `TeamIdentifier` instead.
 
 An archive contains `bin/pekoe`, `bin/pekoed` (→ pekoe), `share/pekoe/nvim/`, `share/pekoe/extension/`, `contrib/launchd/`, plus `README.md`, `README.ja.md`, `LICENSE` and `THIRD_PARTY_LICENSES` (licenses of the dependencies, see [License](#license)). `bin/pekoe` looks for `../share/pekoe/nvim` relative to its real location, so with the symlinks above the nvim plugin is found as is. To start it with launchd, run `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` and then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`.
 
@@ -509,7 +509,7 @@ enable = true               # false runs them without one (where none works, the
 | Per-prompt snapshots / review points | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>` (never pushed, not in `git log`) |
 | Worktrees | `~/worktrees/<repo>/<slug>` (pekoe only deletes under here) |
 
-`$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` move `~/.config/pekoe` and `~/.local/share/pekoe` (to `$XDG_CONFIG_HOME/pekoe` and `$XDG_DATA_HOME/pekoe`). `$PEKOE_HOME` puts settings in `$PEKOE_HOME/config` and data in `$PEKOE_HOME/share`, and `$PEKOE_WORKTREES` moves the worktrees (as `scripts/sandbox.sh` does, below).
+`$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` move `~/.config/pekoe` and `~/.local/share/pekoe` (to `$XDG_CONFIG_HOME/pekoe` and `$XDG_DATA_HOME/pekoe`). `$PEKOE_HOME` puts settings in `$PEKOE_HOME/config`, data in `$PEKOE_HOME/share` and worktrees in `$PEKOE_HOME/worktrees`, and `$PEKOE_WORKTREES` moves the worktrees anywhere (as `scripts/sandbox.sh` does, below).
 
 ## Development
 

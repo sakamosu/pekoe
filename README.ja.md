@@ -124,7 +124,7 @@ pekoe version
 
 `checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリースから付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。
 
-macOS 向けのバイナリはまだ署名していない。`release.yml` には darwin のバイナリ(darwin の 2 つのアーカイブの `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出す準備があるが、署名用の secrets をまだ用意していないので、今までのリリース(v0.1.0〜v0.3.0)はどれも Go リンカのアドホック署名だけ: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Signature=adhoc` と出す。署名したリリースからは `TeamIdentifier` が見える。
+macOS 向けのバイナリはまだ署名していない。`release.yml` には darwin のバイナリ(darwin のすべてのアーカイブ(既定と `_web`)の `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出す準備があるが、署名用の secrets をまだ用意していないので、今までのリリース(v0.1.0〜v0.3.0)はどれも Go リンカのアドホック署名だけ: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Signature=adhoc` と出す。署名したリリースからは `TeamIdentifier` が見える。
 
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`README.ja.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 
@@ -507,7 +507,7 @@ enable = true               # false で sandbox なしに動かす(使えない�
 | プロンプト単位スナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず `git log` にも出ない) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が消すのはこの配下だけ) |
 
-`$XDG_CONFIG_HOME`・`$XDG_DATA_HOME` があれば `~/.config/pekoe`・`~/.local/share/pekoe` の代わりに `$XDG_CONFIG_HOME/pekoe`・`$XDG_DATA_HOME/pekoe` を使う。`$PEKOE_HOME` があれば設定は `$PEKOE_HOME/config`、データは `$PEKOE_HOME/share` に、`$PEKOE_WORKTREES` があれば worktree はその下に置く(下の `scripts/sandbox.sh` はこれで隔離する)。
+`$XDG_CONFIG_HOME`・`$XDG_DATA_HOME` があれば `~/.config/pekoe`・`~/.local/share/pekoe` の代わりに `$XDG_CONFIG_HOME/pekoe`・`$XDG_DATA_HOME/pekoe` を使う。`$PEKOE_HOME` があれば設定は `$PEKOE_HOME/config`、データは `$PEKOE_HOME/share`、worktree は `$PEKOE_HOME/worktrees` に置き、`$PEKOE_WORKTREES` があれば worktree はその下に置く(下の `scripts/sandbox.sh` はこれで隔離する)。
 
 ## 開発
 
