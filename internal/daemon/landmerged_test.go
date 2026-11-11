@@ -42,7 +42,10 @@ func waitLanded(t *testing.T, d *Daemon, slug string) state.Session {
 	t.Helper()
 	var s state.Session
 	for i := 0; i < 200; i++ {
-		if s = call[state.Session](t, d, "session.get", map[string]any{"slug": slug}); s.State == state.Landed {
+		s = call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
+		// and finishLanding has returned (it records stats after landing):
+		// nothing touches the DB after the test closes it
+		if _, busy := d.finishing.Load(slug); s.State == state.Landed && !busy {
 			return s
 		}
 		sleep10ms()

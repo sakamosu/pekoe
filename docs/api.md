@@ -436,7 +436,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - 項目: `options` は `["マージした", "待つ", "差し戻す"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
 - **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)は、同じ HEAD で条件が戻ればもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
-- **答え**: `マージした`(0)と `待つ`(1)は記録だけ(マージの検知は今までどおり `watchMerges`)。`差し戻す`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+- **答え**: `マージした`(0)と `待つ`(1)は記録だけ(マージの検知は今までどおり pekoed のポーリング。下の「PR の状態のポーリング」)。`差し戻す`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
 
 ### 片付けの候補(cleanup)
 
@@ -516,7 +516,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 ```
 
 - **トークン**: hooks(PostToolUse・Stop。tapi chat も)が渡す `transcript_path` の Claude Code の transcript から、assistant の行の `message.usage` を種類別(`input_tokens`・`output_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens`)に足す。Claude Code は 1 つのメッセージを content block ごとに複数行に書き、どの行にも同じ usage が付くので、同じ `message.id` が続く行は 1 回だけ数える。サブエージェントの transcript(`<transcript から .jsonl を除いたもの>/subagents/*.jsonl`)も同じセッションに足す。行はその `timestamp` のローカルの日付に入るので、日付をまたいで動いたセッションは両方の日に出る。どこまで読んだか(バイト位置と最後のメッセージの id)を state.db の `usage_cursors` に、日ごとの和を `usage_days` に残し、次は増えた行だけを読む(1 回に 32 MiB まで、書きかけの最後の行は次に回す)。`stats` を呼ぶと、動いているセッションと tapi の分をその時点まで読んでから数える。`Session.tokens`(直前の文脈の大きさ)とは別の数で、そちらの意味は変えていない
-- **マージ**: pekoe が landed にしたとき(`watchMerges` が PR のマージを見て teardown するとき、origin のないリポジトリの land)に `session_log` に記録する。マージの日時は pekoed がマージを見た時刻(PR の状態のポーリングが PR ごとに 60 秒に 1 回なので、最大 1 分ほど遅れる。pekoed が止まっていた間のマージは、起動直後の `watchMerges` が見た時刻)。GitHub に問い合わせて過去のマージを遡ることはしない(pekoe が見届けたものだけ)。他人の PR のレビュー(`pekoe review gh#N`)は数えない
+- **マージ**: pekoe が landed にしたとき(PR の状態のポーリングか `watchMerges` が PR のマージを見て teardown するとき、origin のないリポジトリの land)に `session_log` に記録する。マージの日時は pekoed がマージを見た時刻(PR の状態のポーリングが PR ごとに 60 秒に 1 回なので、1 分強遅れることがある。pekoed が止まっていた間のマージは、起動直後の `watchMerges` が見た時刻)。GitHub に問い合わせて過去のマージを遡ることはしない(pekoe が見届けたものだけ)。他人の PR のレビュー(`pekoe review gh#N`)は数えない
 - **残す記録**: `session_log` は slug・リポジトリ(名前と repo-id)・ブランチ・PR 番号・作成日時・マージ日時・終了日時(landed になった時刻。land せずに rm したら rm の時刻)。セッションが landed になったときと rm されたとき(`worktree.rm`・landed の slug を `session.new` で置き換えたとき)に書き、rm の前に transcript の残りを読む。トークンの累計は `usage_days` の和。セッションの 1 生は slug と作成日時で区別するので、同じ slug を後で使い直しても別の記録になる。rm では読み位置(`usage_cursors`)だけを消し、日ごとの和と記録は残す
 - **token なしで読める**: 数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない(`session.list` で見えるものより少ない)。読む transcript は hooks が渡したもの(`readTokens` が既に読んでいるもの)の増えた行だけで、新しく何かを動かしたり、ほかのファイルを読んだりはしない。tapi chat が「今日いくつマージした? どれくらい使った?」に答えるために要る
 - **数の確かさ**: `transcript_path` は hooks の payload の値で、`session.event` は token なしで誰でも送れる。ほかのファイルを名乗られるとそのセッションの数が増えうる(通常のファイルで `.jsonl` で終わるものだけを読み、中身は数として足すだけ)。重複を除くのは同じファイルで続く同じ `message.id` の行だけなので、Claude Code が resume や fork で履歴を別の transcript に写したときは、写された分を二重に数えうる(pekoe の再開は `--resume` で同じファイルに続けるので、通常は起きない)。hooks の無いエージェント(codex など)のトークンは数えられない。料金への換算はしない
@@ -633,7 +633,7 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
 
 `session.updated` は `pr_status` が変わったときだけ出る(取得時刻だけの変化では出ない)。gh が無い・未認証のときはポーリングを静かに飛ばす。
 
-PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは最大でおよそ 1 分。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
+PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは 1 分強まで(15 秒ごとに見て、PR ごとに 60 秒空ける)。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
 
 ### ErrorReport オブジェクト
 

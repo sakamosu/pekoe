@@ -388,7 +388,7 @@ func (d *Daemon) hLand(p slugP) (any, error) { return d.land(p, false) }
 // agent whose sandbox allows github.com could push and run gh pr create
 // itself, so pushing the session's branch and opening its PR is no more
 // than it can do; merging stays a person's decision, and the teardown
-// waits for that merge (watchMerges). A repository without origin is
+// waits for that merge (the PR poller or watchMerges sees it). A repository without origin is
 // different: land fast-forwards the base branch in the main checkout and
 // removes the worktree right away, with nobody merging, so that stays
 // human-only. The check sits in land itself, where it reads origin, so
