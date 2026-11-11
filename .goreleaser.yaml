@@ -45,6 +45,27 @@ builds:
     ldflags:
       - -s -w -X pekoe/internal/daemon.Version={{.Version}}
 
+# darwin のバイナリ(両 build の arm64・amd64)に Developer ID Application 証明書で署名し、Apple の公証に出す。
+# quill を使うので ubuntu のランナーでできる。ビルドの直後・アーカイブの前に走るので、
+# アーカイブの中身・checksums.txt・来歴(attestation)はどれも署名済みのバイナリに対するものになる。
+# MACOS_SIGN_P12 が無い(fork やローカルの --snapshot)ときは丸ごととばし、Go リンカのアドホック署名のまま。
+# 証明書と API キーは base64 にした中身を環境変数で渡す(作り方は CONTRIBUTING.md の「Cutting a release」)。
+# 単体のバイナリには公証のチケットを留め付け(staple)できないので、Gatekeeper は初回にオンラインで確かめる。
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [pekoe, pekoe-web]
+      sign:
+        certificate: "{{.Env.MACOS_SIGN_P12}}"
+        password: "{{.Env.MACOS_SIGN_PASSWORD}}"
+      notarize:
+        issuer_id: "{{.Env.MACOS_NOTARY_ISSUER_ID}}"
+        key_id: "{{.Env.MACOS_NOTARY_KEY_ID}}"
+        key: "{{.Env.MACOS_NOTARY_KEY}}"
+        # 結果が出るまで待ち、却下されたらリリースを止める。20m が上限(API のトークンの寿命)
+        wait: true
+        timeout: 20m
+
 archives:
   - id: pekoe
     ids: [pekoe]

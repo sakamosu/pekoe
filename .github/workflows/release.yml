@@ -22,6 +22,8 @@ env:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    # 署名・公証の secrets(MACOS_*)はこの Environment に置く。承認者を付けて、承認されたタグの実行だけが読めるようにする
+    environment: release
     permissions:
       contents: write # Release を作ってアーカイブを上げる
       id-token: write # 来歴(attestation)の署名に Sigstore の証明書を取る
@@ -59,6 +61,13 @@ jobs:
           goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # darwin のバイナリの署名と公証(.goreleaser.yaml の notarize)。
+          # MACOS_SIGN_P12 が無ければ空になり、署名せずにビルドする
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
       # checksums.txt に載ったアーカイブごとに SLSA のビルド来歴を付ける。
       # 確かめ方は README の「リリースから」(gh attestation verify)。
       # private リポジトリでは GitHub Enterprise Cloud でないと使えないので、公開しているときだけ
