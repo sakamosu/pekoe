@@ -160,7 +160,7 @@ function waitBody(s, box) {
     row.append(deny, allow);
     box.append(row);
   } else if (s.wait_kind === "question") {
-    box.append(el("div", "msg", "質問です。開いて画面を見ながら、キーパッドか send で答えてください。"));
+    box.append(el("div", "msg", "a question: open it and answer with the keypad or send, watching the screen"));
   }
 }
 
@@ -292,13 +292,13 @@ function renderTarget(s) {
   const to = $("d-to"), note = $("d-send-note");
   const isTapi = current === TAPI;
   to.classList.toggle("tapi", isTapi);
-  $("d-text").placeholder = isTapi ? "tapi に頼む(送る前に全文を確かめます)" : "一言の指示を送る";
+  $("d-text").placeholder = isTapi ? "ask tapi (you check the whole text before it is sent)" : "send a short instruction";
   if (isTapi) {
     $("d-to-slug").textContent = "tapi";
-    $("d-to-repo").textContent = s ? "統括役 · 全リポジトリ" : tapi && tapi.started ? "has exited" : "is not started";
+    $("d-to-repo").textContent = s ? "orchestrator · all repositories" : tapi && tapi.started ? "has exited" : "is not started";
     let why = "";
-    if (tapi && !tapi.sendable) why = "tapi への送信には config.toml の [web] allow_devices が要ります(端末を絞っているときだけ送れます)";
-    else if (s && s.answerable) why = "tapi は許可を待っています: 端末(pekoe TUI)で答えるまで送れません";
+    if (tapi && !tapi.sendable) why = "sending to tapi needs [web] allow_devices in config.toml (only when devices are restricted)";
+    else if (s && s.answerable) why = "tapi is waiting for a permission: answer it in the terminal (pekoe TUI) before sending";
     note.textContent = why;
     note.hidden = !why;
     to.classList.toggle("gone", !s);
@@ -323,7 +323,7 @@ function renderTapiHead() {
   renderKeypad(t);
   head.append(tapiLine());
   const l2 = el("div", "line2");
-  l2.append(document.createTextNode("統括役 · 全リポジトリを読み、セッションを作って任せる"));
+  l2.append(document.createTextNode("orchestrator · reads every repository, starts sessions and hands work to them"));
   head.append(l2);
   if (busy) return;
   ask.replaceChildren();
@@ -332,10 +332,10 @@ function renderTapiHead() {
   const body = el("div", "body");
   if (t.answerable) {
     const w = el("div", "also");
-    w.append(el("span", "ic", "⚠"), document.createTextNode(" tapi は許可を待っています。allow / deny は Web には出しません: 端末(pekoe TUI)で答えてください。それまで send とキーは止まります。"));
+    w.append(el("span", "ic", "⚠"), document.createTextNode(" tapi is waiting for a permission. allow / deny is not offered on the web: answer it in the terminal (pekoe TUI). send and the keys are off until then."));
     body.append(w);
   } else if (t.wait_kind === "question") {
-    body.append(el("div", "msg", "質問です。画面を見ながら、キーパッドか send で答えてください。"));
+    body.append(el("div", "msg", "a question: answer with the keypad or send, watching the screen"));
   }
   if (t.last_message) body.append(el("div", "msg", t.last_message));
   ask.append(body);
@@ -581,7 +581,7 @@ function openTapiSheet(text) {
     return;
   }
   if (!tapi.sendable) {
-    toast("tapi への送信には [web] allow_devices が要ります");
+    toast("sending to tapi needs [web] allow_devices");
     return;
   }
   busy = true;
@@ -789,7 +789,7 @@ function inboxCard(it) {
     b.type = "button";
     b.setAttribute("role", "radio");
     b.append(el("span", "num", String(i + 1)), el("span", "otext", o));
-    if (it.recommend === i) b.append(el("span", "rec", "推奨(エージェント)"));
+    if (it.recommend === i) b.append(el("span", "rec", "recommended (agent)"));
     b.addEventListener("click", () => {
       d.choice = d.choice === i ? null : i;
       d.changed = false;
@@ -808,7 +808,7 @@ function inboxCard(it) {
   const ta = el("textarea", "note");
   ta.rows = 2;
   ta.maxLength = 4000;
-  ta.placeholder = (it.options || []).length ? "note (optional; 差し戻す needs one)" : "answer in words";
+  ta.placeholder = (it.options || []).length ? "note (optional; send back needs one)" : "answer in words";
   ta.value = d.note;
   ta.addEventListener("input", () => {
     d.note = ta.value;
@@ -877,7 +877,7 @@ function openInboxSheet(it) {
   $("isheet-to").textContent = it.from + (it.about && it.about !== it.from ? " · about " + it.about : "");
   $("isheet-q").textContent = it.question;
   const a = [];
-  if (d.choice !== null) a.push(d.choice + 1 + ". " + it.options[d.choice] + (it.recommend === d.choice ? "  (推奨(エージェント)と同じ)" : ""));
+  if (d.choice !== null) a.push(d.choice + 1 + ". " + it.options[d.choice] + (it.recommend === d.choice ? "  (same as the agent recommended)" : ""));
   if (note) a.push("note: " + note);
   $("isheet-a").textContent = a.join("\n");
   $("isheet-warn").hidden = false;
@@ -919,7 +919,7 @@ async function doInboxAnswer() {
 
 // ---- overview: counts, tapi, and every session's flow (read only) ----
 
-const STEP_NAMES = { impl: "実装", pr: "PR", ci: "CI", review: "レビュー", merge: "マージ" };
+const STEP_NAMES = { impl: "impl", pr: "PR", ci: "CI", review: "review", merge: "merge" };
 const STEP_LOOK = { done: ["✓", "ok"], now: ["●", "warn"], fail: ["✗", "err"], todo: ["○", "dim"] };
 let overviewSig = "";
 
@@ -998,7 +998,7 @@ function flowRow(f) {
   const notes = el("div", "miss");
   if (f.merge) {
     if (f.merge.ready) {
-      notes.append(el("div", "r-ok", "✓ 根拠が揃った · 人のマージ待ち" + (f.merge.inbox ? " (inbox #" + f.merge.inbox + ")" : "")));
+      notes.append(el("div", "r-ok", "✓ evidence ready · waiting for a person to merge" + (f.merge.inbox ? " (inbox #" + f.merge.inbox + ")" : "")));
     }
     for (const c of f.merge.conds || []) {
       if (c.ok) continue;

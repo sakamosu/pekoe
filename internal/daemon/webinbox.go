@@ -299,7 +299,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case s.State == state.Failed || s.Error != "":
 		step("impl", stepFail, firstLine(s.Error))
 	case s.Report != nil && s.Report.Status == "blocked":
-		step("impl", stepFail, "blocked(報告 #"+strconv.FormatInt(s.Report.ID, 10)+")")
+		step("impl", stepFail, "blocked (report #"+strconv.FormatInt(s.Report.ID, 10)+")")
 	default:
 		step("impl", stepNow, string(s.State))
 	}
@@ -314,13 +314,13 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case c != nil && c.OK:
 		step("review", stepDone, c.Detail)
 	case rv != nil && rv.Verdict == "pending":
-		step("review", stepNow, fmt.Sprintf("独立レビューの最中(報告 #%d)", rv.ID))
+		step("review", stepNow, fmt.Sprintf("independent review in progress (report #%d)", rv.ID))
 	case rv != nil && rv.Verdict != "pass":
-		step("review", stepFail, fmt.Sprintf("報告 #%d が %s", rv.ID, rv.Verdict))
+		step("review", stepFail, fmt.Sprintf("report #%d is %s", rv.ID, rv.Verdict))
 	case c != nil && rv != nil:
 		step("review", stepNow, c.Detail) // passed, but not this HEAD
 	case rv != nil:
-		step("review", stepDone, fmt.Sprintf("報告 #%d で pass", rv.ID))
+		step("review", stepDone, fmt.Sprintf("pass in report #%d", rv.ID))
 	default:
 		step("review", stepTodo, "")
 	}
@@ -332,7 +332,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case s.PR == 0:
 		step("pr", stepTodo, "")
 	case ps != nil && ps.State == "CLOSED":
-		step("pr", stepFail, fmt.Sprintf("#%d は閉じられた", s.PR))
+		step("pr", stepFail, fmt.Sprintf("#%d was closed", s.PR))
 	default:
 		step("pr", stepDone, fmt.Sprintf("#%d", s.PR))
 	}
@@ -344,15 +344,15 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case merged:
 		step("ci", stepDone, "")
 	case ps == nil:
-		step("ci", stepNow, "PR の状態をまだ読んでいない")
+		step("ci", stepNow, "PR status not read yet")
 	case ps.Fail > 0:
-		step("ci", stepFail, fmt.Sprintf("%d 件失敗", ps.Fail))
+		step("ci", stepFail, fmt.Sprintf("%d failed", ps.Fail))
 	case ps.Pending > 0:
-		step("ci", stepNow, fmt.Sprintf("%d 件が終わっていない", ps.Pending))
+		step("ci", stepNow, fmt.Sprintf("%d pending", ps.Pending))
 	case ps.Pass > 0:
-		step("ci", stepDone, fmt.Sprintf("%d 件すべて成功", ps.Pass))
+		step("ci", stepDone, fmt.Sprintf("all %d passed", ps.Pass))
 	default:
-		step("ci", stepTodo, "CI のチェックがない")
+		step("ci", stepTodo, "no CI checks")
 	}
 
 	// マージ: the person merges (pekoed never does)
@@ -360,7 +360,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case merged:
 		step("merge", stepDone, "")
 	case f.Merge != nil && f.Merge.Ready:
-		step("merge", stepNow, "根拠が揃った: 人のマージ待ち")
+		step("merge", stepNow, "evidence ready: waiting for a person to merge")
 	default:
 		step("merge", stepTodo, "")
 	}

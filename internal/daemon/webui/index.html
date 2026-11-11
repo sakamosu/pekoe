@@ -41,7 +41,7 @@
 <main id="inbox" hidden>
   <section class="panel focus">
     <div class="ttl"><span class="name">◆ Inbox</span> <span id="i-count"></span></div>
-    <div class="cap">pekoe が読んだ事実とリンクを先に、エージェントの文を後に出します。推奨はエージェントの意見で、選ばれてはいません。</div>
+    <div class="cap">pekoe's facts and links come first, the agent's words after. A recommendation is the agent's opinion and is not preselected.</div>
     <div id="i-rows" aria-live="polite"></div>
   </section>
 </main>
@@ -57,7 +57,7 @@
     <a class="btn key small open-tapi" id="o-tapi-open" href="#/tapi">talk to tapi ›</a>
   </section>
   <section class="panel focus">
-    <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">実装 → レビュー → PR → CI → マージ</span></div>
+    <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">impl → review → PR → CI → merge</span></div>
     <div id="o-flow"></div>
   </section>
 </main>
@@ -77,13 +77,13 @@
     </div>
     <pre id="d-screen" tabindex="0"></pre>
   </section>
-  <section class="card keypad" id="d-keys" hidden aria-label="質問メニューのキー">
-    <div class="keys-cap"><span class="ic r-warn">?</span>質問のメニュー · 押すとすぐ送ります</div>
+  <section class="card keypad" id="d-keys" hidden aria-label="question menu keys">
+    <div class="keys-cap"><span class="ic r-warn">?</span>question menu · a key is sent as soon as you press it</div>
     <div class="keys-grid">
-      <button type="button" class="btn key" data-key="Left" aria-label="左">←</button>
-      <button type="button" class="btn key" data-key="Up" aria-label="上">↑</button>
-      <button type="button" class="btn key" data-key="Down" aria-label="下">↓</button>
-      <button type="button" class="btn key" data-key="Right" aria-label="右">→</button>
+      <button type="button" class="btn key" data-key="Left" aria-label="left">←</button>
+      <button type="button" class="btn key" data-key="Up" aria-label="up">↑</button>
+      <button type="button" class="btn key" data-key="Down" aria-label="down">↓</button>
+      <button type="button" class="btn key" data-key="Right" aria-label="right">→</button>
     </div>
     <div class="keys-grid three">
       <button type="button" class="btn key" data-key="Tab">Tab</button>
@@ -108,13 +108,13 @@
   </section>
   <form class="send" id="d-send" autocomplete="off">
     <div class="to" id="d-to" aria-live="polite">
-      <span class="to-k">送り先</span>
+      <span class="to-k">to</span>
       <span class="to-slug" id="d-to-slug"></span>
       <span class="to-repo" id="d-to-repo"></span>
     </div>
     <div class="send-note" id="d-send-note" hidden></div>
     <div class="send-row">
-      <textarea id="d-text" rows="2" maxlength="4000" placeholder="一言の指示を送る" enterkeyhint="send" aria-describedby="d-to"></textarea>
+      <textarea id="d-text" rows="2" maxlength="4000" placeholder="send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
       <button type="submit" class="btn key" id="d-send-btn">send</button>
     </div>
   </form>
@@ -158,8 +158,8 @@
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tsheet-title">
     <h2 id="tsheet-title">send to tapi</h2>
     <div class="sheet-cap">to — the orchestrator, not one session</div>
-    <div class="target">tapi(統括役)</div>
-    <div class="sheet-warn">⚠ tapi は全リポジトリを読み、セッションを作って任せます。セッション 1 つへの send より重い指示です。全文を読んでから送ってください。</div>
+    <div class="target">tapi (orchestrator)</div>
+    <div class="sheet-warn">⚠ tapi reads every repository, starts sessions and hands work to them: heavier than a send to one session. Read all of it before sending.</div>
     <div class="sheet-cap" id="tsheet-cap">text — all of it, as it will be typed</div>
     <pre class="input whole" id="tsheet-text"></pre>
     <div class="row">

@@ -72,14 +72,14 @@ func TestMergeEvidenceReady(t *testing.T) {
 		t.Fatalf("items: %+v", its)
 	}
 	it := its[0]
-	if it.Kind != "approve" || it.From != callerPekoed || !strings.HasPrefix(it.Question, "#42 をマージしてよい根拠が揃いました") ||
-		strings.Join(it.Options, ",") != "マージした,待つ,差し戻す" || it.Recommend != nil {
+	if it.Kind != "approve" || it.From != callerPekoed || !strings.HasPrefix(it.Question, "evidence ready to merge #42") ||
+		strings.Join(it.Options, ",") != "merged,wait,send back" || it.Recommend != nil {
 		t.Fatalf("item: %+v", it)
 	}
 	if f := it.Facts; f == nil || f.PR != 42 || f.PRStatus == nil || f.PRStatus.HeadSHA != mergeHead || f.Merge == nil || !f.Merge.Ready {
 		t.Fatalf("facts: %+v", it.Facts)
 	}
-	if !strings.Contains(it.Context, "review: 報告 #") || !strings.Contains(it.Context, "作者のセッションの中のレビュー") {
+	if !strings.Contains(it.Context, "review: pass in report #") || !strings.Contains(it.Context, "reviewed in the author's session") {
 		t.Fatalf("context: %q", it.Context)
 	}
 	if c := mergeCheckOf(t, d); c.Inbox != it.ID {
@@ -149,7 +149,7 @@ func TestMergeEvidenceHeadMoved(t *testing.T) {
 		t.Fatalf("still open: %+v", its)
 	}
 	got := inboxGet(t, d, first.ID)
-	if got.Status != state.InboxWithdrawn || got.Answer == nil || got.Answer.By != callerPekoed || !strings.Contains(got.Answer.Note, "HEAD が動いた") {
+	if got.Status != state.InboxWithdrawn || got.Answer == nil || got.Answer.By != callerPekoed || !strings.Contains(got.Answer.Note, "PR HEAD moved") {
 		t.Fatalf("withdrawn: %+v %+v", got, got.Answer)
 	}
 	review(t, d, "pass", mergeHead2)
@@ -169,7 +169,7 @@ func TestMergeEvidenceBreaksAndAnswered(t *testing.T) {
 	first := mergeItems(t, d, "open")[0]
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.Fail = 1; x.PRStatus = &c })
 	d.checkMerges()
-	if g := inboxGet(t, d, first.ID); g.Status != state.InboxWithdrawn || !strings.Contains(g.Answer.Note, "ci: 1 件失敗") {
+	if g := inboxGet(t, d, first.ID); g.Status != state.InboxWithdrawn || !strings.Contains(g.Answer.Note, "ci: 1 failed") {
 		t.Fatalf("withdrawn: %+v", g.Answer)
 	}
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.Fail = 0; x.PRStatus = &c })
@@ -181,7 +181,7 @@ func TestMergeEvidenceBreaksAndAnswered(t *testing.T) {
 	call[any](t, d, "inbox.answer", map[string]any{"id": its[0].ID, "rev": inboxGet(t, d, its[0].ID).Rev, "choice": mergeWait})
 	d.checkMerges()
 	if n := len(mergeItems(t, d, "open")); n != 0 {
-		t.Fatalf("asked again after 待つ: %d", n)
+		t.Fatalf("asked again after wait: %d", n)
 	}
 	// merged on GitHub: watchMerges lands it, nothing is left open
 	d.setState("main", state.Landed, "")
@@ -199,12 +199,12 @@ func TestMergeEvidenceWithdrawnOnLanded(t *testing.T) {
 	it := mergeItems(t, d, "open")[0]
 	d.update("main", func(x *state.Session) { x.State, x.Landing = state.Landed, false })
 	d.checkMerges()
-	if g := inboxGet(t, d, it.ID); g.Status != state.InboxWithdrawn || !strings.Contains(g.Answer.Note, "マージされた") {
+	if g := inboxGet(t, d, it.ID); g.Status != state.InboxWithdrawn || !strings.Contains(g.Answer.Note, "PR merged") {
 		t.Fatalf("withdrawn: %+v", g.Answer)
 	}
 }
 
-// Completion criterion: 差し戻す sends the note to the session, through
+// Completion criterion: send back sends the note to the session, through
 // the inbox's typing path (idle, no permission prompt); it needs a note.
 func TestMergeEvidenceSendBack(t *testing.T) {
 	d, fe := mergeSetup(t)
@@ -234,15 +234,50 @@ func TestMergeEvidenceSendBack(t *testing.T) {
 	if len(rs) == 0 || rs[0].From != callerPekoed || rs[0].To != "main" || rs[0].Kind != "inbox" || !rs[0].OK {
 		t.Fatalf("send log: %+v", rs)
 	}
-	// the answers that send nothing: マージした, 待つ
+	// the answers that send nothing: merged, wait
 	if inboxRecipient(&state.InboxItem{From: callerPekoed, Kind: "approve", About: "main", Status: state.InboxAnswered,
 		Answer: &state.InboxAnswer{Choice: intp(mergeMerged)}}) != "" {
-		t.Fatal("マージした is sent somewhere")
+		t.Fatal("merged is sent somewhere")
 	}
 	// not asked again for the same head
 	d.checkMerges()
 	if n := len(mergeItems(t, d, "open")); n != 0 {
-		t.Fatalf("asked again after 差し戻す: %d", n)
+		t.Fatalf("asked again after send back: %d", n)
+	}
+}
+
+// A merge item asked before the choices were in English (state.db keeps
+// its Japanese options) is read by its choice's index, as before: send
+// back still needs a note and still sends it to the session.
+func TestMergeEvidenceSendBackOldOptions(t *testing.T) {
+	d, fe := mergeSetup(t)
+	d.checkMerges()
+	it := mergeItems(t, d, "open")[0]
+	old, err := d.DB.InboxGet(it.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old.Question, old.Options = "#42 をマージしてよい根拠が揃いました(main・HEAD 0123456)", []string{"マージした", "待つ", "差し戻す"}
+	if err := d.DB.SaveInbox(old); err != nil {
+		t.Fatal(err)
+	}
+	if err := callErr(d, "inbox.answer", map[string]any{"id": it.ID, "rev": old.Rev, "choice": mergeSendBack}); err == nil || !strings.Contains(err.Error(), "needs a note") {
+		t.Fatalf("without a note: %v", err)
+	}
+	d.setState("main", state.Idle, "")
+	n := len(fe.sent)
+	g := call[state.InboxItem](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": inboxGet(t, d, it.ID).Rev, "choice": mergeSendBack, "note": "テストを足して"})
+	if g.Status != state.InboxAnswered || !mergeSentBack(&g) {
+		t.Fatalf("answered: %+v", g)
+	}
+	waitFor(t, func() bool { return inboxGet(t, d, it.ID).Delivery == state.DeliveryDelivered })
+	if got := sentSince(fe, n); len(got) != 2 || !strings.Contains(got[0], "人が PR #42 のマージを差し戻しました(メモ: テストを足して)") {
+		t.Fatalf("typed:\n%s", strings.Join(got, "\n"))
+	}
+	// an old item answered 待つ sends nothing
+	if inboxRecipient(&state.InboxItem{From: callerPekoed, Kind: "approve", About: "main", Status: state.InboxAnswered,
+		Options: []string{"マージした", "待つ", "差し戻す"}, Answer: &state.InboxAnswer{Choice: intp(mergeWait)}}) != "" {
+		t.Fatal("待つ is sent somewhere")
 	}
 }
 
@@ -268,7 +303,7 @@ func TestMergeEvidenceReviewPending(t *testing.T) {
 	d, _ := mergeSetup(t)
 	review(t, d, "pending", mergeHead)
 	c := mergeCheckOf(t, d)
-	if c.Ready || strings.Join(c.Missing, ",") != "review" || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "独立レビューの最中") {
+	if c.Ready || strings.Join(c.Missing, ",") != "review" || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "independent review in progress") {
 		t.Fatalf("check: %+v", c)
 	}
 	if s, _ := d.snapshot("main"); s.Review == nil || s.Review.Verdict != "pending" || s.Report.Status != "review" {
@@ -317,21 +352,21 @@ func TestMergeEvidenceRebasedReview(t *testing.T) {
 	review(t, d, "pass", reviewed[:10])
 
 	c := mergeCheckOf(t, d)
-	if !c.Ready || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "差分の中身が同じ") {
+	if !c.Ready || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "a rebase with the same diff") {
 		t.Fatalf("rebased: %+v", c)
 	}
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = changed; x.PRStatus = &c })
 	c = mergeCheckOf(t, d)
-	if c.Ready || !c.ReviewStale || strings.Join(c.Missing, ",") != "review" || !strings.Contains(c.Conds[1].Detail, "再レビューが要る") {
+	if c.Ready || !c.ReviewStale || strings.Join(c.Missing, ",") != "review" || !strings.Contains(c.Conds[1].Detail, "needs a new review") {
 		t.Fatalf("changed: %+v", c)
 	}
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = elsewhere; x.PRStatus = &c })
-	if c = mergeCheckOf(t, d); c.Ready || !c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "再レビューが要る") {
+	if c = mergeCheckOf(t, d); c.Ready || !c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "needs a new review") {
 		t.Fatalf("elsewhere: %+v", c)
 	}
 	// a head pekoed cannot read (pushed from elsewhere) is not carried
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = mergeHead2; x.PRStatus = &c })
-	if c = mergeCheckOf(t, d); c.Ready || !strings.Contains(c.Conds[1].Detail, "比べられなかった") {
+	if c = mergeCheckOf(t, d); c.Ready || !strings.Contains(c.Conds[1].Detail, "could not compare") {
 		t.Fatalf("unknown head: %+v", c)
 	}
 }
