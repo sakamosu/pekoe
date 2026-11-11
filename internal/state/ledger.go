@@ -1,6 +1,6 @@
 package state
 
-// The ledger (docs/orchestration.md "6. 依頼の台帳"): what a person asked
+// The ledger (docs/orchestration.md "6. 依頼(ledger)"): what a person asked
 // tapi chat for, followed until it is done. Every prompt a person types
 // into tapi is recorded open (tapi closes the small talk as chat); the
 // entries outlive tapi's conversation (tapi.reset does not touch them), so

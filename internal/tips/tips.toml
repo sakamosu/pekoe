@@ -175,8 +175,8 @@ docs = ["docs/api.md"]
 
 [[tip]]
 id = "ledger"
-short = "tapi に頼んだことは pekoe ledger の台帳に残る"
-detail = "tapi に打った文は台帳に open で入り、tapi が new --request でセッションと結び、済んだら閉じる。リセットしても残り、新しい tapi は台帳から続ける。開き直す・消すのは人だけ(reopen / rm)。"
+short = "tapi に頼んだことは依頼(pekoe ledger)として残る"
+detail = "tapi に打った文は open の依頼として記録され、tapi が new --request でセッションと結び、済んだら閉じる。リセットしても残り、新しい tapi は残った依頼から続ける。開き直す・消すのは人だけ(reopen / rm)。"
 keys = ["pekoe ledger", "pekoe new --request", "--request", "--as"]
 docs = ["docs/tapi-chat.md", "docs/api.md"]
 

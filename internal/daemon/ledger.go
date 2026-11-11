@@ -1,6 +1,6 @@
 package daemon
 
-// The ledger (docs/orchestration.md "6. 依頼の台帳"): every prompt a person
+// The ledger (docs/orchestration.md "6. 依頼(ledger)"): every prompt a person
 // types into tapi chat is recorded open, from the UserPromptSubmit hook of
 // tapi's own window (never from what a caller claims to be: an entry is
 // what tapi reads back as "the person asked for this"), and followed until
