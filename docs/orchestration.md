@@ -238,7 +238,7 @@ pekoe inbox answer 12 1 [--note "…"]    # 人だけ
 }
 ```
 
-- **kind**: `decision`(選ぶ)・`approve`(取り消せない・外に出る操作の承認)・`login`(人の手作業。選択肢は「済んだ」「できない」に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。答えを要さず `answered` で作られ、ダッシュボードの「tapi が決めたこと」に出る。統括役の「判断の記録」はこれ)
+- **kind**: `decision`(選ぶ)・`approve`(取り消せない・外に出る操作の承認)・`login`(人の手作業。選択肢は `done`・`can't` に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。答えを要さず `answered` で作られ、ダッシュボードの「tapi が決めたこと」に出る。統括役の「判断の記録」はこれ)
 - **facts は pekoed が付ける**: `about` のセッションの今の状態を pekoed が自分で読んで付ける(エージェントは書けない)。人はまず facts とリンク先(実際の差分・PR)を見て、エージェントの文は意見として読む
 - **答えの届け方**(未決事項 U8): 依頼元が `ask-human --wait` か `wait --on inbox` で待っていればその返り値で渡す(`delivery: waited`)。待っていなければ、依頼元のエージェントの入力欄が空いたとき(idle か done で、`promptUp` でなく、tapi なら人が入力中でない)に pty に 1 行送る: `[pekoe inbox #12] 答え: 1「変える」(メモ: …)`。許可待ちの間は送らずキューに置き、空いたら送る(配送の確認は `session.send` のトークンなしの経路と同じ 2 回)。依頼元が `human` か `unknown` なら送らない
 - 上限: question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件。呼び出し元ごとに未回答 10 件まで(超えたら断り、エージェントには「まとめて 1 件にする」よう返す)
@@ -250,7 +250,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 
 - **添字**: API の `recommend`・`decided`・`choice` は 0 始まり、CLI(`--recommend 1`・`inbox answer 12 1`)と画面は 1 始まり。`--recommend` / `--decided` は選択肢の文でも渡せる
 - **facts と rev**: 未回答の項目の facts は `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変われば `rev` を上げる。答えは読み直した後の `rev` と比べるので、人が見た後に HEAD が動いた・CI が落ちたものは `look again` で断られる(TUI のモーダルは選択を外して「変わった」と出す)。facts の `report` は id・状態・時刻・HEAD だけにした(要約はエージェントの文で、事実ではない)。`state`・`base`・`git_blocked`・`gone`(セッションが消えた)を足した
-- **kind**: `approve` は選択肢を省くと「承認する」「承認しない」。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
+- **kind**: `approve` は選択肢を省くと `approve`・`decline`。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
 - **取り除く文字**: 制御文字・ANSI に加えて、見えない書式文字(bidi の上書き・ゼロ幅。Unicode の Cf)も落とす(画面で文の順序を入れ替えられる)。TUI は描く前にもう一度落とす
 - **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
 - **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と 1 分ずつの `wait` を繰り返す)
@@ -258,7 +258,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作るので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
 - **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない
 - **CLI**: `pekoe ask-human --wait` は真偽のフラグにした(問いと一緒なら出してから待つ、`--wait <id>` なら前に出したものを待つ。`--timeout` は `wait` と同じく 1 時間まで)。`pekoe inbox <id>`(1 件を詳しく)・`pekoe inbox withdraw`・`pekoe inbox dismiss`・`pekoe inbox --mine` を足した。`inbox answer` の `--rev` は省くと今の rev(`pekoe inbox` が rev を出す)
-- **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は「推奨(エージェント)」と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
+- **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は `recommended (agent)` と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
 
 ### 5. 送信の記録
 
@@ -407,7 +407,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(U9 は (a)。仕様の正は docs/web.md「tapi chat の扱い」と API の表):
 
-- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi 統括役 · 全リポジトリ」と warn の色で出し、send を押すと必ず確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む。全文はシートの中でスクロールして読める
+- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi orchestrator · all repositories」と warn の色で出し、send を押すと必ず確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む。全文はシートの中でスクロールして読める
 - **`allow_devices`**: 設定が無ければ `POST /api/tapi/send` は 403 で、送信欄は理由を出して押せない。画面とキーパッドは指示にならないので `allow_devices` が無くても出す。`GET /api/tapi` に `sendable`(送れるか)と `answerable`(許可待ちか)を足した
 - **確認**: 送信はセッションの send と同じ関数(`webReadText`: 空・4000 文字超・制御文字は 400)を通し、tapi が許可待ち(hook の状態)なら 409。`tapi.send` 自身が打つ前と Enter の直前に hook の状態と画面(`promptUp`)を見直すので、画面に許可メニューが出ていても 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったもの・断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番かと、本文の最初の 200 文字を出す(全文は送信の記録。ログはエージェントの sandbox から読めるので切る)。TUI からの `tapi.send` は今までどおり記録しない
@@ -442,8 +442,8 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | 区画 | 中身 |
 | --- | --- |
 | 概要 | 動いている・待っている・レビュー待ちのセッション数、開いている PR、受信箱の未回答、台帳の残り、今日のマージ数とトークン・直近 7 日のマージ数(`stats`) |
-| 受信箱 | 種類別(承認・判断・ログイン・マージ待ち)。選んで ↵ で答えるモーダル(facts とリンクを先に、エージェントの文を後に。推奨は「推奨(エージェント)」と書き、既定の選択にしない)。`o` でリンク先(PR)を開く |
-| 工程表 | セッションごとに 1 行で `実装 → レビュー → PR → CI → マージ`(作業の順。段階 3 で main の CI)。`state`・`report`・`review`・`pr`・`pr_status`・報告の `verdict` から作る。依頼元(`parent`)と依頼(`request`)でまとめる |
+| 受信箱 | 種類別(承認・判断・ログイン・マージ待ち)。選んで ↵ で答えるモーダル(facts とリンクを先に、エージェントの文を後に。推奨は `recommended (agent)` と書き、既定の選択にしない)。`o` でリンク先(PR)を開く |
+| 工程表 | セッションごとに 1 行で `impl → review → PR → CI → merge`(作業の順。段階 3 で main の CI)。`state`・`report`・`review`・`pr`・`pr_status`・報告の `verdict` から作る。依頼元(`parent`)と依頼(`request`)でまとめる |
 | 自分の依頼 | 台帳の open な依頼と、結んだセッションの工程 |
 | 送信の記録 | tapi(と main)が誰に何を頼んだか。新しい順に 1 行ずつ、↵ で全文 |
 | tapi が決めたこと | `fyi` の項目 |
@@ -458,7 +458,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **見た目**(人が答える・マージする > 進行中 > 終わったもの・記録 の順に目に入るように): 区画は絵文字・太字の名前・罫線の見出しで始める(`🧭 Overview` `📬 Inbox` `🚦 Pipeline` `📝 Requests` `📨 Sends` `💡 Decided`)。絵文字は 2 セル幅が揺れない East Asian Wide のものだけで、`icons = "ascii"` か `[mascot] glyphs = "ascii"` では出さない(docs/ui-guidelines.md「ダッシュボードの例外」)。顔は出さず、空のときは一言(`🍵 nothing to answer · time for a cup of tea`)
 - **概要**: 1 行目は人の番のもの(`🙋 2 questions to answer`・`🚀 1 PR ready to merge`(`merge.check` の `ready`)を太字で。どちらもなければ `🍵 nothing needs you · all quiet`)。2 行目は running(作成中を含む)・waiting・to merge(`landing` で landed でない)・開いている PR・台帳の open を控えめに。受信箱の未回答は `fyi` を除く。他人の PR のレビューのセッション(`pr_review`)は数えず、工程表にも出さない。幅が足りなければ折り返す。続けて `stats`(`days: 7`、全リポジトリと tapi chat)の 2 行: `📊 today  2 merged · out 85.0k · cache write 410.0k · cache read 9.80M · in 1.2k`(今日 = pekoed のローカルの日付 `to` の行の和。トークンは種類別に、作業が書いた output と cache write を主に、合計の大半を占める cache read と input を dim に。合計は出さない。どちらも 0 なら `no merges · no tokens recorded yet`)と `📅 7 days  ▱▱ ▱▱ ▱▱ ▰▱ ▱▱ ▱▱ ▰▰  3 merged`(古い日から 1 日ずつ、マージ 1 件に ▰ 1 つ、残りは ▱。1 日のセル数はいちばん多い日の数まで・最大 4・幅が足りなければ 1 で詰める。4 件を超える日があれば縮め、1 件の日も ▰ を 1 つ残す。ascii では日ごとの数 `0 0 0 1 0 0 2`)。読めなければ(古い pekoed・エラー)`stats unavailable · <理由>` だけにし、前に読めた数は残さない(今日の数と見誤らないように)。`stats` は動いているセッションの transcript の増えた分を読んでから数えるので、ほかの読み込み(10 秒ごと)とは別に、tapi の行を選んだとき(前の読み込みから 5 秒以上)と 30 秒ごとにだけ読む。マージは PR の状態のポーリング(PR ごとに 1 分に 1 回)でしか見えず、トークンも hooks がほぼ数え済みなので、30 秒で足りる
 - **受信箱**: login(🔑)→ approve(✋)→ decide(🤔)→ merge ready(🚀。`from: pekoed` の approve。根拠の項目)の順に種類ごとにまとめ、各項目は `#id`・誰から(`about` が違えばそれも)・問いの 1 行・経過時間
-- **工程表**: 依頼元(`+tapi` → `human` → セッション → その他)と依頼(`request` の順、なしは最後。台帳にあれば依頼の番号と 1 行目の頭を見出しに。全文は Requests にある)でまとめ、マージ済み(landed か PR が MERGED)は最後の `🎉 merged · 3` にまとめて dim の 1 行(`✓ feat-x merged #13`)にする。リポジトリ本体のチェックアウト(`path` が `repo_dir` と同じ、main セッション)は自分の PR を作らないので出さない(概要の数には入る)。セッションごとに `▰▰▰▰▰▰▰▰▱▱  ⏳ CI running  #121`: 実装 → レビュー → PR → CI → マージ のバー(pekoe-work の順: 独立レビューは PR の前)(広ければ 1 工程 2 セル、狭ければ 1 セル)と、今どこにいるかの語と、`#42`・開いている根拠の項目(`inbox #13`)。バーの色は済み ok・進行中 warn・失敗 err・マージしてよい secondary・まだ dim(▱)。色なしと ascii では印(`✓✓✓✗·` / `vvvx.`。✓ 済み・✗ 失敗・PR ビューの check の pending と同じ印で進行中と再レビュー待ち・`·` まだ・▶ マージしてよい)。語は merged → ready to merge → waits for you(waiting)→ 最初の失敗(blocked・review failed / changes requested・PR closed・CI failed)→ needs re-review(下)→ 最初の進行中(working・in review・landing・CI running)→ 足りない条件(`needs review`。条件の名前は land・review・CI・mergeable・conflicts・after と読める語にする)→ no report yet → needs review(PR がなくレビューもまだ)→ ready to land の順で最初に当たるもの。続けて、足りない条件の pekoed の `detail` を出す(語が名指した条件ならその `detail`、そうでなければ語が言っていない最初の条件を `review: レビューした 17b962a と PR の HEAD ea9697f が違う` のように名前つきで。CI が進行中・失敗なら ci は、レビュー中なら review は語が言っているので飛ばす)。行に入らなければバーの下の行に出す。「レビューがまだ」と「古いコミットをレビューした」を見分けられるように。impl は PR があるか、独立レビューを頼んだ(`review` がある)か、報告が done / review で済み、報告が blocked か failed で失敗、報告がなく running・creating・waiting なら進行中、報告がなく idle・done なら「まだ」(`no report yet`)。review は最新の `status: review` の報告(`Session.review`)で決める: `verdict: pending`(作者がレビューを頼んだ印。pekoe-work スキル)で進行中(`🔍 in review`)、pass で済み、fail で失敗(`review failed`)。GitHub の changes requested も失敗。PR があれば `merge.check` の `review` の条件が揃って済み。pass でも PR の HEAD がレビューした変更と中身の違うものになっていれば(`review_stale`)黄色で `👀 needs re-review` と出し、理由(「レビューした … から PR の HEAD … で差分の中身が変わった」)を添える。land の rebase で SHA が変わっただけなら合格を引き継いで済み(docs/api.md「rebase の後の合格の引き継ぎ」)。CI は `pr_status` の pass / fail / pending。merge は landed か PR が MERGED で済み
+- **工程表**: 依頼元(`+tapi` → `human` → セッション → その他)と依頼(`request` の順、なしは最後。台帳にあれば依頼の番号と 1 行目の頭を見出しに。全文は Requests にある)でまとめ、マージ済み(landed か PR が MERGED)は最後の `🎉 merged · 3` にまとめて dim の 1 行(`✓ feat-x merged #13`)にする。リポジトリ本体のチェックアウト(`path` が `repo_dir` と同じ、main セッション)は自分の PR を作らないので出さない(概要の数には入る)。セッションごとに `▰▰▰▰▰▰▰▰▱▱  ⏳ CI running  #121`: `impl → review → PR → CI → merge` のバー(pekoe-work の順: 独立レビューは PR の前)(広ければ 1 工程 2 セル、狭ければ 1 セル)と、今どこにいるかの語と、`#42`・開いている根拠の項目(`inbox #13`)。バーの色は済み ok・進行中 warn・失敗 err・マージしてよい secondary・まだ dim(▱)。色なしと ascii では印(`✓✓✓✗·` / `vvvx.`。✓ 済み・✗ 失敗・PR ビューの check の pending と同じ印で進行中と再レビュー待ち・`·` まだ・▶ マージしてよい)。語は merged → ready to merge → waits for you(waiting)→ 最初の失敗(blocked・review failed / changes requested・PR closed・CI failed)→ needs re-review(下)→ 最初の進行中(working・in review・landing・CI running)→ 足りない条件(`needs review`。条件の名前は land・review・CI・mergeable・conflicts・after と読める語にする)→ no report yet → needs review(PR がなくレビューもまだ)→ ready to land の順で最初に当たるもの。続けて、足りない条件の pekoed の `detail` を出す(語が名指した条件ならその `detail`、そうでなければ語が言っていない最初の条件を `review: レビューした 17b962a と PR の HEAD ea9697f が違う` のように名前つきで。CI が進行中・失敗なら ci は、レビュー中なら review は語が言っているので飛ばす)。行に入らなければバーの下の行に出す。「レビューがまだ」と「古いコミットをレビューした」を見分けられるように。impl は PR があるか、独立レビューを頼んだ(`review` がある)か、報告が done / review で済み、報告が blocked か failed で失敗、報告がなく running・creating・waiting なら進行中、報告がなく idle・done なら「まだ」(`no report yet`)。review は最新の `status: review` の報告(`Session.review`)で決める: `verdict: pending`(作者がレビューを頼んだ印。pekoe-work スキル)で進行中(`🔍 in review`)、pass で済み、fail で失敗(`review failed`)。GitHub の changes requested も失敗。PR があれば `merge.check` の `review` の条件が揃って済み。pass でも PR の HEAD がレビューした変更と中身の違うものになっていれば(`review_stale`)黄色で `👀 needs re-review` と出し、理由(「レビューした … から PR の HEAD … で差分の中身が変わった」)を添える。land の rebase で SHA が変わっただけなら合格を引き継いで済み(docs/api.md「rebase の後の合格の引き継ぎ」)。CI は `pr_status` の pass / fail / pending。merge は landed か PR が MERGED で済み
 - 実装: 「レビュー中」を pekoed が知る手段は、報告の要約を文で読むのではなく、`report.post` の `verdict: pending` にした。スキルで `--status progress` を残す案は、ほかの途中経過と見分けるのに要約を読むことになるので採らなかった。新しい status を足す案より、合否と同じ `status: review` に載せたほうが「最新のレビュー」の扱い(`merge.check` と `Session.review`)が 1 つで済み、pending は pass ではないので根拠を緩めない
 - **送信の記録・fyi**: 新しい順に 1 行(時刻・`from → to`・`kind`・本文の 1 行。本文の 1 行はマークダウンの見出し(`## 何を`)を飛ばした最初の行で、見出ししかなければ最初の見出しの文。送れなかったものは `✗ failed`)。fyi は `→` の後に決めた選択肢を出す。区画の名前は `Decided`(tapi に限らず、`fyi` を出したエージェントの分を全部出す)
 - **エージェントの文**: 問い・依頼・送信の本文・報告の要約・選択肢・`detail` は受信箱のモーダルと同じ `inboxText`(ANSI・制御文字・見えない書式文字を落とす)を通してテキストとしてだけ描く。リンクは OSC 8 にするのが http / https だけ(`webLink`)
@@ -469,10 +469,10 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(仕様の正は docs/web.md「受信箱(Inbox タブ)の扱い」と API の表):
 
-- **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は「推奨(エージェント)」と書くだけで選ばない。選ぶ(選択肢のない問いはメモを書く)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
+- **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は `recommended (agent)` と書くだけで選ばない。選ぶ(選択肢のない問いはメモを書く)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
 - **rev**: 送るのはカードを描いたときの `rev`。3 秒ごとの更新で `rev` が上がったら選択を外して「changed while you looked」と出す(TUI と同じ)。メモを打っている間と確認シートを開いている間は描き直さない(打った文が消えないように)ので、その間に変わったものは pekoed が 409 で断り、ページは選択を外して出し直す
 - **API**: `GET /api/inbox`・`POST /api/inbox/{id}/answer`(`inbox.answer` の「the item changed; look again」と「答え済み」を 409、無い id を 404、それ以外の誤りを 400 に分けるため、`inbox.go` のエラーを `errors.Is` で見分けられるようにした。文面は変えていない)・`GET /api/tapi`・`GET /api/overview`。答えずに閉じる(`dismiss`)は Web に出さなかった(答えずに閉じると依頼元は「閉じられた」だけを受け取る。外出先で答えられないものは置いておけばよい)
-- **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・台帳)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。台帳の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `実装 → レビュー → PR → CI → マージ` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない
+- **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・台帳)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。台帳の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `impl → review → PR → CI → merge` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない
 - **tapi**: `pending_tool` は返さない(tapi の許可への allow / deny は Web に出さない: U9)。Claude のセッション ID と稼働ディレクトリも返さない。tapi への送信・画面・キーパッドは上の「Web UI」(統括役の節)の「実装:」
 - **HTML として解釈されない**: ページは今までどおり `textContent` だけで入れ、リンクは `http(s)` だけを `<a>` にする。`<script>` などを含む問い・背景・選択肢・`javascript:` のリンクが JSON に生のタグとして出ないこと、`app.js` に HTML を作る入口(`innerHTML` など)がないことをテストで確かめる
 
@@ -544,7 +544,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 - TUI のダッシュボードの窓(実装済み。上の「ダッシュボード」→「TUI」の「実装:」)
 - Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)(実装済み。受信箱・概要は「ダッシュボード」→「Web UI」、tapi への送信は統括役の「Web UI」の「実装:」)
-- **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目「#42 をマージしてよい根拠が揃いました」を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは「マージした」「待つ」「差し戻す(メモ)」で、差し戻しはメモをセッションに送る
+- **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed)が揃ったら `from: pekoed`・`kind: approve` の項目 `evidence ready to merge #42 (…)` を作る。揃っていないものは工程表に何が足りないかを出す。**pekoed はマージしない**(決まったこと 1)。答えは `merged`・`wait`・`send back`(メモ)で、差し戻しはメモをセッションに送る
 - tapi への配送(`[orchestrator] deliver`)(後回しに決めた。段階 3 はこれを除いて実装済み)
 - `conflicts.list` をトークンなしに(実装済み)
 
@@ -555,8 +555,8 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **review は作者のセッションに付いた報告だけを見る(制限)**: `report.post` は呼び出し元のセッションにしか書けないので、数えるのはそのセッションに付いた報告(作業セッションの中のサブエージェント、U3 の (a))だけ。別のセッション(`pekoe new review/<slug>`、U3 の (b))が出した合格はレビューのセッションに付き、数えない。そのとき `review` は揃わず、根拠の項目は作られない(マージは人が項目なしでできるので、止まるのは知らせだけ)。広げなかった理由: 別のセッションの合格を数えるには「どのレビューのセッションが、どの作業のセッションのレビューか」を pekoed が確かめる結び付け(`--base` のブランチ・`parent`・`after` のどれで結ぶか、他人が勝手に合格を付けられないか)が要り、それは U3 の (b) をまだ使っていない今は決めようがない。U3 の (b) を実際に使い始めてから決める
 - **ci**: チェックが 1 件もない PR は「揃っていない」にした。チェックがないことは CI が緑の根拠にならない(人は項目なしでもマージできる)
 - **conflicts**: 衝突予報は open なセッション同士の計算なので、止めた(`x`)セッションは予報が消え、この条件は揃って見える
-- **取り消しと作り直し**: 条件が崩れた・HEAD が動いた・landed になった・消えた項目は pekoed が `withdrawn` にする。人が答えた PR・HEAD には作り直さない(「待つ」と答えたものを 10 秒ごとに出し直さない)。pekoed が自分で取り消したもの(CI の再実行・衝突予報の揺れ)は、同じ HEAD でも条件が戻れば作り直す。「重ねて作らない」は開いている項目を 1 件にすることと読んだ
-- **差し戻し**: 受信箱の答えの配送(`deliverInbox`)の宛先を「問いを出した呼び出し元」から「答えを受け取る相手」に広げ、pekoed の項目に「差し戻す」と答えたときだけ `about` のセッションに打つ。メモは必須
+- **取り消しと作り直し**: 条件が崩れた・HEAD が動いた・landed になった・消えた項目は pekoed が `withdrawn` にする。人が答えた PR・HEAD には作り直さない(`wait` と答えたものを 10 秒ごとに出し直さない)。pekoed が自分で取り消したもの(CI の再実行・衝突予報の揺れ)は、同じ HEAD でも条件が戻れば作り直す。「重ねて作らない」は開いている項目を 1 件にすることと読んだ
+- **差し戻し**: 受信箱の答えの配送(`deliverInbox`)の宛先を「問いを出した呼び出し元」から「答えを受け取る相手」に広げ、pekoed の項目に `send back` と答えたときだけ `about` のセッションに打つ。メモは必須
 - **何が足りないか**: `merge.check`(token なし。`session.list` と `report.list` で見えるものの計算だけ)。同じ判定を `facts.merge` にも入れたので、受信箱のどの項目からも「今の根拠」が読める。TUI のダッシュボード・Web UI の工程表はこれを使う(別の PR)。CLI は足していない
 
 完了条件:

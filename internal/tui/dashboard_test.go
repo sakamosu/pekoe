@@ -64,9 +64,9 @@ func dashModel(t *testing.T) (*model, *fakePekoed) {
 	m.inbox = []state.InboxItem{
 		{ID: 12, Rev: 1, Kind: "decision", From: "feat-csv", About: "feat-csv", Status: state.InboxOpen, Question: "ページングを変えてよい? " + hostile,
 			Options: []string{"変える", "今のまま"}, Links: []string{"https://github.com/me/app/pull/42"}, CreatedAt: now},
-		{ID: 13, Rev: 1, Kind: "approve", From: "pekoed", About: "feat-csv", Status: state.InboxOpen, Question: "#42 をマージしてよい根拠が揃いました",
-			Options: []string{"マージした", "待つ", "差し戻す"}, CreatedAt: now},
-		{ID: 14, Rev: 1, Kind: "login", From: "fix-ci", Status: state.InboxOpen, Question: "gh auth login をお願いします", Options: []string{"済んだ", "できない"}, CreatedAt: now},
+		{ID: 13, Rev: 1, Kind: "approve", From: "pekoed", About: "feat-csv", Status: state.InboxOpen, Question: "evidence ready to merge #42",
+			Options: []string{"merged", "wait", "send back"}, CreatedAt: now},
+		{ID: 14, Rev: 1, Kind: "login", From: "fix-ci", Status: state.InboxOpen, Question: "gh auth login をお願いします", Options: []string{"done", "can't"}, CreatedAt: now},
 	}
 	m.focus, m.sel = pSessions, 0
 	runCmd(m, m.onKey(key("k"))) // the first session → the tapi row

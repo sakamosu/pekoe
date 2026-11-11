@@ -385,7 +385,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 ```
 
 - 添字(`recommend`・`decided`・`choice`)は 0 始まり。CLI と画面は 1 始まりで出す
-- `kind`: `decision`(選ぶ。選択肢なしなら答えはメモで)・`approve`(選択肢を省くと「承認する」「承認しない」)・`login`(人の手作業。選択肢は「済んだ」「できない」に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。`answered` で作られ、`answer.by` は呼び出し元)。選択肢が 1 つだけのものは断る
+- `kind`: `decision`(選ぶ。選択肢なしなら答えはメモで)・`approve`(選択肢を省くと `approve`・`decline`)・`login`(人の手作業。選択肢は `done`・`can't` に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。`answered` で作られ、`answer.by` は呼び出し元)。選択肢が 1 つだけのものは断る
 - `from` は呼び出し元(上の「呼び出し元の識別」)の窓。窓がなく token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
 - 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
 - **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
@@ -400,7 +400,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 
 ### マージしてよいかの根拠
 
-pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を作り、人のマージを待っている)を 10 秒ごとに見て、下の条件が全部揃ったら受信箱に `from: "pekoed"`・`kind: "approve"` の項目を 1 件作る: `#42 をマージしてよい根拠が揃いました(feat-csv・HEAD 3f2a1b0)`。**pekoed はマージしない**(`gh pr merge` などを呼ばない。マージは人が GitHub でする)。
+pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を作り、人のマージを待っている)を 10 秒ごとに見て、下の条件が全部揃ったら受信箱に `from: "pekoed"`・`kind: "approve"` の項目を 1 件作る: `evidence ready to merge #42 (feat-csv · HEAD 3f2a1b0)`。**pekoed はマージしない**(`gh pr merge` などを呼ばない。マージは人が GitHub でする)。
 
 | 条件(`name`) | 揃っている |
 | --- | --- |
@@ -409,7 +409,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 | `ci` | PR の HEAD のチェックが 1 件以上あり、失敗も実行中もない |
 | `merge_state` | `pr_status.merge_state` が `CLEAN` |
 | `conflicts` | 衝突予報(`overlaps`)に `conflict` がない(自動で合わさる重なりはよい) |
-| `after` | `after` のセッションがすべて `landed`(`pekoe rm` された相手は「無い」で揃わない) |
+| `after` | `after` のセッションがすべて `landed`(`pekoe rm` された相手は `is gone` で揃わない) |
 
 ```jsonc
 // MergeCheck(merge.check の要素、InboxItem.facts.merge)
@@ -417,12 +417,12 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
   "slug": "feat-csv", "pr": 42, "pr_head": "3f2a…",
   "ready": false,
   "conds": [
-    {"name": "land", "ok": true, "detail": "pekoe land 済み(PR #42)"},
-    {"name": "review", "ok": false, "detail": "レビューした 1b2c3d4 と PR の HEAD 3f2a1b0 が違う"},
-    {"name": "ci", "ok": true, "detail": "5 件すべて成功"},
+    {"name": "land", "ok": true, "detail": "pekoe land done (PR #42)"},
+    {"name": "review", "ok": false, "detail": "no independent review reported"},
+    {"name": "ci", "ok": true, "detail": "all 5 passed"},
     {"name": "merge_state", "ok": true, "detail": "CLEAN"},
-    {"name": "conflicts", "ok": true, "detail": "衝突の予報なし"},
-    {"name": "after", "ok": false, "detail": "feat-a が running"}
+    {"name": "conflicts", "ok": true, "detail": "no conflicts forecast"},
+    {"name": "after", "ok": false, "detail": "feat-a is running"}
   ],
   "missing": ["review", "after"],     // 揃っていない条件の name(conds の順)
   "review_stale": false,              // 最新のレビューは pass だが、PR の HEAD がレビューしたものと中身の違う変更になっている(再レビューが要る)。無ければ省く
@@ -430,13 +430,13 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 }
 ```
 
-- **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は「独立レビューの報告がない」のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
+- **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は `no independent review reported` のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
 - **rebase の後の合格の引き継ぎ**: `pekoe land` は `origin/<base>` に rebase してから push するので、レビューした後に land すると PR の HEAD の SHA が変わる。`reviewed_sha` と PR の HEAD が違うとき、pekoed はレビューしたコミットの変更(base(`origin/<base>`、無ければ `<base>`)との merge-base から)を、PR の HEAD の merge-base に rebase と同じ 3-way マージで載せ直し(`git merge-tree --write-tree`。worktree にも ref にも触らない)、できた tree が PR の HEAD の tree と完全に一致したときだけ合格を引き継ぐ(`detail` は「… は rebase し直しただけで差分の中身が同じ」)。ファイル・バイト・場所のどれかが違えば(同じ行を文脈の同じ別の場所に足したものも)、載せ直しが衝突すれば揃わず、`review_stale: true` で「再レビューが要る」と出る。PR の HEAD がこの worktree に無い(よそから push された)など比べられないときも揃わない(安全側)。結果はコミットの組ごとに覚える。引き継ぐのは「レビューした変更と同じ変更」であることまでで、新しい base との組み合わせは CI が確かめる
-- `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(日本語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
-- 項目: `options` は `["マージした", "待つ", "差し戻す"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
+- `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(英語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
+- 項目: `options` は `["merged", "wait", "send back"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
 - **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)は、同じ HEAD で条件が戻ればもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
-- **答え**: `マージした`(0)と `待つ`(1)は記録だけ(マージの検知は今までどおり pekoed のポーリング。下の「PR の状態のポーリング」)。`差し戻す`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+- **答え**: `merged`(0)と `wait`(1)は記録だけ(マージの検知は今までどおり pekoed のポーリング。下の「PR の状態のポーリング」)。`send back`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
 
 ### 片付けの候補(cleanup)
 
@@ -726,7 +726,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], at}` |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤りは 400 |
 | `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と台帳の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
-| `GET /api/overview` | — | 件数と、セッションごとの工程(`実装 → レビュー → PR → CI → マージ`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
+| `GET /api/overview` | — | 件数と、セッションごとの工程(`impl → review → PR → CI → merge`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
 

@@ -4,11 +4,11 @@ Mac で pekoed を動かしたまま、外出先の iPhone(Tailscale アプリ�
 
 - セッション一覧(状態つき。許可待ちは一番上に、カードで)
 - 許可待ちへの allow / deny(ツールの要約と、エージェントが画面に出している許可ダイアログを見せ、押す前に確認を挟む。`always` は出さない)
-- `send`(一言の指示を送る。allow / deny で答える許可待ちの間は送れない)
+- `send`(短い指示を送る。allow / deny で答える許可待ちの間は送れない)
 - 質問(AskUserQuestion などの択一・複数選択メニュー)へのキーパッド(← ↑ ↓ → / Tab ⇧Tab Space / 1〜9 / Esc Enter。質問待ちのときだけ出る)
 - エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
 - 判断の受信箱への回答(Inbox タブ。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
-- 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `実装 → レビュー → PR → CI → マージ` と、マージしてよいかの根拠の足りない条件)
+- 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `impl → review → PR → CI → merge` と、マージしてよいかの根拠の足りない条件)
 - tapi chat(統括役)の画面・質問へのキーパッド・`send`(送る前に宛先と全文の確認シート。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
 
 賢さは pekoed にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。
@@ -124,7 +124,7 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 docs/orchestration.md の「受信箱で人を誘導する」への対策を、TUI のモーダルと同じ並びで Web にも当てる。
 
 - 1 件のカードは上から、pekoed が読んだ事実(`facts`: セッション・状態・ブランチ・HEAD・差分・PR と CI・レビューの判定・`merge_state`・テスト・衝突予報・最新の報告・マージしてよいかの条件)とリンク → エージェントの文(`from`、名乗りが違えば警告、問い・背景・選択肢)の順に出す
-- 推奨は選択肢の横に「推奨(エージェント)」と書くだけで、選んだ状態にしない。何も選ばない(選択肢のない問いならメモが空の)うちは `answer…` を押せない
+- 推奨は選択肢の横に `recommended (agent)` と書くだけで、選んだ状態にしない。何も選ばない(選択肢のない問いならメモが空の)うちは `answer…` を押せない
 - `answer…` で確認シートを開き、宛先(問いを出したエージェント)・問い・選んだもの・メモを並べてから送る
 - 送るのは、カードを描いたときの `rev`。pekoed は `inbox.answer` の中で事実を読み直して比べるので、見た後に HEAD が動いた・CI が落ちた・別の端末で答えた項目は 409 になり、ページは選択を外して「changed while you looked」と出す。3 秒ごとの更新で `rev` が上がったときも、選択を外して同じ表示にする
 - 答えは `answer.by: human`・`answer.via: web:<端末名>` で残り、誰がどの端末で何番を選んだかを pekoed のログに出す
@@ -136,7 +136,7 @@ docs/orchestration.md の「受信箱で人を誘導する」への対策を、T
 tapi は全リポジトリを読み、`pekoe new` でセッションを作って任せる。tapi への send はセッション 1 つへの send より重い(iPhone が全リポジトリへの指示の入口になる)ので、セッションの send の確認に次を足す。
 
 - **`allow_devices` が要る**: `[web] allow_devices` を設定していないと `POST /api/tapi/send` は 403(`allow_users` の誰かの別の端末から tapi に指示させない)。ページは送信欄に理由を出して send を押せなくする。画面とキーパッドは指示にならないので、`allow_devices` が無くても出す
-- **確認シート**: send を押すと必ずシートを挟む。宛先が tapi(統括役、全リポジトリ)であることと、打たれる文の全体(文字数・行数つき、シートの中でスクロール)を見せ、`send to tapi` を押したときだけ送る。送信欄の宛先も「tapi 統括役 · 全リポジトリ」を warn の色で出す
+- **確認シート**: send を押すと必ずシートを挟む。宛先が tapi(統括役、全リポジトリ)であることと、打たれる文の全体(文字数・行数つき、シートの中でスクロール)を見せ、`send to tapi` を押したときだけ送る。送信欄の宛先も「tapi orchestrator · all repositories」を warn の色で出す
 - **確認はセッションと同じ**: 本文は前後の空白を落として 1〜4000 文字、改行・タブ以外の制御文字は 400。tapi が許可待ち(hook の状態)なら 409。`tapi.send` が打つ前と Enter の直前に hook の状態と画面の許可メニュー(`promptUp`)を見直し、出ていれば 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったものと、断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録(`send.log`)に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番か・本文の最初の 200 文字を出す(全文は送信の記録。ログは同じユーザーのエージェントから読めるので切る)。`allow_devices` で断ったものはログにだけ出る
 - **キーパッド**: tapi が質問待ちのときだけ、セッションと同じキー(`Up Down Left Right Tab BTab Space Enter Escape 0`〜`9`、1 回 8 個まで)。許可待ちのときと、画面に許可メニューが出ているとき(hook は偽れるので画面で見る)は 409
@@ -179,7 +179,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
 | `GET /api/inbox` | — | `{items: [InboxItem], at}`。未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。InboxItem は docs/api.md のまま |
-| `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・「差し戻す」にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
+| `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
 | `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
 | `POST /api/tapi/send` | `{text}` | `{ok: true, send: <送信の記録の id>}`。`tapi.send`(`submit: true`)。text はセッションの send と同じ(1〜4000 文字、制御文字は 400)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |

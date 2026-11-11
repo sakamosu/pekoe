@@ -3,7 +3,7 @@ package daemon
 // Merge evidence (docs/orchestration.md 段階 3「マージしてよいかの根拠」):
 // pekoed looks at the sessions it landed (pushed, PR open, waiting for a
 // person to merge) and, once every condition holds, puts one item in the
-// inbox, from pekoed, kind approve: "#42 をマージしてよい根拠が揃いました".
+// inbox, from pekoed, kind approve: "evidence ready to merge #42".
 // The conditions are a fixed computation over what pekoed already keeps:
 //
 //   - land: pekoe land made the PR (Session.landing), and it is open
@@ -23,8 +23,8 @@ package daemon
 // pekoed does not ask again until the head moves; an item pekoed withdrew
 // itself is asked again when the conditions come back.
 //
-// pekoed merges nothing (決まったこと 1): the answers are "マージした" (the
-// person merged it on GitHub; the PR poller notices), "待つ", and "差し戻す"
+// pekoed merges nothing (決まったこと 1): the answers are "merged" (the
+// person merged it on GitHub; the PR poller notices), "wait", and "send back"
 // with a note, which is typed into the session's window as an inbox answer
 // is (inbox.go: idle or done, no permission prompt, checked twice).
 //
@@ -50,7 +50,7 @@ const (
 	mergeSendBack = 2
 )
 
-var mergeOptions = []string{"マージした", "待つ", "差し戻す"}
+var mergeOptions = []string{"merged", "wait", "send back"}
 
 // mergeable: the session has a PR of its own that has not been merged yet
 // (the merge conditions are about it).
@@ -63,7 +63,7 @@ func isMergeItem(it *state.InboxItem) bool {
 	return it.From == callerPekoed && it.Kind == "approve"
 }
 
-// mergeSentBack: a person answered a merge item with "差し戻す"; the note
+// mergeSentBack: a person answered a merge item with "send back"; the note
 // goes to the session.
 func mergeSentBack(it *state.InboxItem) bool {
 	a := it.Answer
@@ -93,68 +93,68 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 
 	switch {
 	case s.PRReview:
-		add("land", false, "他人の PR のレビュー(このセッションの PR ではない)")
+		add("land", false, "reviewing someone else's PR (not this session's)")
 	case s.State == state.Landed:
-		add("land", false, "landed(マージ済み)")
+		add("land", false, "landed (merged)")
 	case s.PR == 0:
-		add("land", false, "PR がない(pekoe land がまだ)")
+		add("land", false, "no PR (pekoe land not run yet)")
 	case !s.Landing:
-		add("land", false, "PR #%d はあるが pekoe land がまだ", s.PR)
+		add("land", false, "PR #%d exists but pekoe land not run yet", s.PR)
 	case ps != nil && ps.State != "" && ps.State != "OPEN":
-		add("land", false, "PR #%d は %s", s.PR, ps.State)
+		add("land", false, "PR #%d is %s", s.PR, ps.State)
 	default:
-		add("land", true, "pekoe land 済み(PR #%d)", s.PR)
+		add("land", true, "pekoe land done (PR #%d)", s.PR)
 	}
 
 	rv := d.latestReview(s.Slug)
 	switch {
 	case rv == nil:
-		add("review", false, "独立レビューの報告がない")
+		add("review", false, "no independent review reported")
 	case rv.Verdict == "pending":
-		add("review", false, "独立レビューの最中(報告 #%d・%s)", rv.ID, shortSHA(rv.ReviewedSHA))
+		add("review", false, "independent review in progress (report #%d · %s)", rv.ID, shortSHA(rv.ReviewedSHA))
 	case rv.Verdict != "pass":
-		add("review", false, "最新のレビュー(報告 #%d)が %s", rv.ID, rv.Verdict)
+		add("review", false, "latest review (report #%d) is %s", rv.ID, rv.Verdict)
 	case rv.ReviewedSHA == "":
-		add("review", false, "最新のレビュー(報告 #%d)に reviewed_sha がない", rv.ID)
+		add("review", false, "latest review (report #%d) has no reviewed_sha", rv.ID)
 	case c.PRHead == "":
-		add("review", false, "PR の HEAD をまだ読んでいない(レビューは %s)", shortSHA(rv.ReviewedSHA))
+		add("review", false, "PR HEAD not read yet (review is of %s)", shortSHA(rv.ReviewedSHA))
 	case !strings.HasPrefix(c.PRHead, rv.ReviewedSHA):
 		switch d.sameChange(s, rv.ReviewedSHA, c.PRHead) {
 		case changeSame:
-			add("review", true, "報告 #%d で pass(%s・%s)。PR の HEAD %s は rebase し直しただけで差分の中身が同じ", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
+			add("review", true, "pass in report #%d (%s · %s); PR HEAD %s is a rebase with the same diff", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
 		case changeDiffers:
 			c.ReviewStale = true
-			add("review", false, "レビューした %s から PR の HEAD %s で差分の中身が変わった(再レビューが要る)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
+			add("review", false, "diff changed from reviewed %s to PR HEAD %s (needs a new review)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
 		default:
 			c.ReviewStale = true
-			add("review", false, "レビューした %s と PR の HEAD %s が違う(差分の中身を比べられなかった)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
+			add("review", false, "reviewed %s differs from PR HEAD %s (could not compare the diffs)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
 		}
 	default:
-		add("review", true, "報告 #%d で pass(%s・%s)", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
+		add("review", true, "pass in report #%d (%s · %s)", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
 	}
 
 	switch {
 	case ps == nil:
-		add("ci", false, "PR の状態をまだ読んでいない")
+		add("ci", false, "PR status not read yet")
 	case ps.Fail > 0:
-		add("ci", false, "%d 件失敗", ps.Fail)
+		add("ci", false, "%d failed", ps.Fail)
 	case ps.Pending > 0:
-		add("ci", false, "%d 件が終わっていない", ps.Pending)
+		add("ci", false, "%d pending", ps.Pending)
 	case ps.Pass == 0:
-		add("ci", false, "CI のチェックがない")
+		add("ci", false, "no CI checks")
 	default:
-		add("ci", true, "%d 件すべて成功", ps.Pass)
+		add("ci", true, "all %d passed", ps.Pass)
 	}
 
 	switch {
 	case ps == nil:
-		add("merge_state", false, "PR の状態をまだ読んでいない")
+		add("merge_state", false, "PR status not read yet")
 	case ps.MergeState != "CLEAN":
 		ms := ps.MergeState
 		if ms == "" {
-			ms = "不明"
+			ms = "unknown"
 		}
-		add("merge_state", false, "merge_state が %s", ms)
+		add("merge_state", false, "merge_state is %s", ms)
 	default:
 		add("merge_state", true, "CLEAN")
 	}
@@ -173,11 +173,11 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 	}
 	switch {
 	case len(conflicts) > 0:
-		add("conflicts", false, "衝突の予報: %s", strings.Join(conflicts, "、"))
+		add("conflicts", false, "conflicts forecast: %s", strings.Join(conflicts, "; "))
 	case len(overlaps) > 0:
-		add("conflicts", true, "衝突の予報なし(%s と重なるが自動で合わさる)", strings.Join(overlaps, "・"))
+		add("conflicts", true, "no conflicts forecast (overlaps %s, merges cleanly)", strings.Join(overlaps, ", "))
 	default:
-		add("conflicts", true, "衝突の予報なし")
+		add("conflicts", true, "no conflicts forecast")
 	}
 
 	var notYet []string
@@ -185,18 +185,18 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 		ds, err := d.snapshot(dep)
 		switch {
 		case err != nil:
-			notYet = append(notYet, dep+" が無い")
+			notYet = append(notYet, dep+" is gone")
 		case ds.State != state.Landed:
-			notYet = append(notYet, fmt.Sprintf("%s が %s", dep, ds.State))
+			notYet = append(notYet, fmt.Sprintf("%s is %s", dep, ds.State))
 		}
 	}
 	switch {
 	case len(notYet) > 0:
-		add("after", false, "%s", strings.Join(notYet, "、"))
+		add("after", false, "%s", strings.Join(notYet, "; "))
 	case len(s.After) > 0:
-		add("after", true, "%s が landed", strings.Join(s.After, "・"))
+		add("after", true, "%s landed", strings.Join(s.After, ", "))
 	default:
-		add("after", true, "先に済ませるセッションなし")
+		add("after", true, "no sessions to land first")
 	}
 
 	c.Ready = len(c.Missing) == 0
@@ -205,9 +205,9 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 
 func reviewBy(s *state.Session, rv *state.Report) string {
 	if rv.By == s.Slug {
-		return "作者のセッションの中のレビュー"
+		return "reviewed in the author's session"
 	}
-	return rv.By + " のレビュー"
+	return "reviewed by " + rv.By
 }
 
 // What sameChange found.
@@ -319,11 +319,11 @@ func (d *Daemon) checkMerges() {
 	}
 	// items about sessions that are not waiting for a merge any more
 	for slug, it := range open {
-		note := "pekoe land の後ではなくなった"
+		note := "no longer after pekoe land"
 		if s, err := d.snapshot(slug); err != nil {
-			note = "セッションが無くなった"
+			note = "session is gone"
 		} else if s.State == state.Landed {
-			note = "PR がマージされた(landed)"
+			note = "PR merged (landed)"
 		}
 		d.withdrawMerge(it.ID, note)
 	}
@@ -338,12 +338,12 @@ func (d *Daemon) syncMerge(s *state.Session, it *state.InboxItem) {
 		switch {
 		case c.PR != rec.PR || c.PRHead != rec.Head:
 			if c.PRHead != rec.Head {
-				d.withdrawMerge(it.ID, fmt.Sprintf("PR の HEAD が動いた(%s → %s)", shortSHA(rec.Head), shortSHA(c.PRHead)))
+				d.withdrawMerge(it.ID, fmt.Sprintf("PR HEAD moved (%s → %s)", shortSHA(rec.Head), shortSHA(c.PRHead)))
 			} else {
-				d.withdrawMerge(it.ID, fmt.Sprintf("PR が変わった(#%d → #%d)", rec.PR, c.PR))
+				d.withdrawMerge(it.ID, fmt.Sprintf("PR changed (#%d → #%d)", rec.PR, c.PR))
 			}
 		case !c.Ready:
-			d.withdrawMerge(it.ID, "根拠が崩れた: "+mergeDetails(c))
+			d.withdrawMerge(it.ID, "evidence no longer holds: "+mergeDetails(c))
 			return
 		default:
 			return // still holds
@@ -368,7 +368,7 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 	now := time.Now()
 	it := &state.InboxItem{
 		Kind: "approve", From: callerPekoed, About: s.Slug,
-		Question: fmt.Sprintf("#%d をマージしてよい根拠が揃いました(%s・HEAD %s)", c.PR, s.Slug, shortSHA(c.PRHead)),
+		Question: fmt.Sprintf("evidence ready to merge #%d (%s · HEAD %s)", c.PR, s.Slug, shortSHA(c.PRHead)),
 		Options:  append([]string(nil), mergeOptions...),
 		Links:    []string{},
 		Rev:      1, Status: state.InboxOpen, Delivery: state.DeliveryNone, CreatedAt: now, UpdatedAt: now,
@@ -378,11 +378,11 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 		it.Links = append(it.Links, it.Facts.PRURL)
 	}
 	var b strings.Builder
-	b.WriteString("pekoed が確かめた条件:\n")
+	b.WriteString("conditions pekoed checked:\n")
 	for _, x := range c.Conds {
 		fmt.Fprintf(&b, "- %s: %s\n", x.Name, x.Detail)
 	}
-	b.WriteString("pekoed はマージしない。マージは GitHub で人がする。「差し戻す」はメモをセッションに送る")
+	b.WriteString("pekoed does not merge: a person merges on GitHub. \"send back\" sends the note to the session")
 	it.Context = b.String()
 	d.inboxMu.Lock()
 	err := d.DB.AddInbox(it)

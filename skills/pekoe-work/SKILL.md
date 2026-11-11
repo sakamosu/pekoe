@@ -62,7 +62,7 @@ pekoe report - --status done < report.md     # 長文は stdin
 
 - 自分で決められること(実装の方針、どちらの書き方にするか)は決めて進め、報告に書く
 - 依頼元の判断が要る(完了条件が矛盾している、範囲を広げないと直らない): `pekoe report - --status blocked` に、何が分かっていて何を決めてほしいかを書いて止まる
-- 人にしかできないこと(ログイン、認証情報、外部サービスの設定、許可の変更)だけは `pekoe --json ask-human "<頼むこと>" --kind login`(問いは自分のセッションに付き、pekoed がブランチ・差分などの事実を添える)。答え(「済んだ」「できない」)は `pekoe --json ask-human --wait <id>` で待つか、止まっていれば入力欄に `[pekoe inbox #<id>] 答え: …` の 1 行で届く。要らなくなったら `pekoe --json inbox withdraw <id>`
+- 人にしかできないこと(ログイン、認証情報、外部サービスの設定、許可の変更)だけは `pekoe --json ask-human "<頼むこと>" --kind login`(問いは自分のセッションに付き、pekoed がブランチ・差分などの事実を添える)。答え(`done`・`can't`)は `pekoe --json ask-human --wait <id>` で待つか、止まっていれば入力欄に `[pekoe inbox #<id>] 答え: …` の 1 行で届く。要らなくなったら `pekoe --json inbox withdraw <id>`
 - sandbox で断られた(書き込み・ネットワーク)ら回避しない。何が断られたかを `--status blocked` で報告する
 
 ## やらないこと

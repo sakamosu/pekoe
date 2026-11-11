@@ -293,7 +293,7 @@ func (im *inboxModal) view() []string {
 			}
 			row := mark + th.Bold(theme.Secondary, fmt.Sprint(i+1)) + "  " + clip(inboxText(o), cw-30)
 			if it.Recommend != nil && *it.Recommend == i {
-				row += "  " + th.FG(theme.Dim, "推奨(エージェント)")
+				row += "  " + th.FG(theme.Dim, "recommended (agent)")
 			}
 			lines = append(lines, row)
 		}

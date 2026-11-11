@@ -74,7 +74,7 @@ func TestInboxModal(t *testing.T) {
 	if facts < 0 || words < facts || strings.Index(view, "ページング") < words {
 		t.Fatalf("order:\n%s", view)
 	}
-	if !strings.Contains(view, "推奨(エージェント)") || strings.Contains(view, "› ") {
+	if !strings.Contains(view, "recommended (agent)") || strings.Contains(view, "› ") {
 		t.Fatalf("recommendation preselected or unlabelled:\n%s", view)
 	}
 	if strings.Contains(raw, "\x1b[2J") || strings.Contains(raw, "‮") {

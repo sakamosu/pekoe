@@ -57,7 +57,7 @@ func TestInboxPost(t *testing.T) {
 		t.Fatalf("facts: %+v", it.Facts)
 	}
 	// login has fixed choices; fyi is closed from the start
-	if l := ask(t, d, "main", map[string]any{"question": "gh auth login をお願いします", "kind": "login"}); strings.Join(l.Options, ",") != "済んだ,できない" {
+	if l := ask(t, d, "main", map[string]any{"question": "gh auth login をお願いします", "kind": "login"}); strings.Join(l.Options, ",") != "done,can't" {
 		t.Fatalf("login: %+v", l.Options)
 	}
 	f := ask(t, d, TapiSlug, map[string]any{"question": "lint を直す PR は分けた", "kind": "fyi", "options": []string{"分ける", "まとめる"}, "decided": 0})

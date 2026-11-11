@@ -870,7 +870,7 @@ func TestTourOrchestratorSteps(t *testing.T) {
 			if !ok || im.it.ID != 12 || im.sel != -1 {
 				t.Fatalf("%q: modal %T", title, m.modal)
 			}
-			for _, want := range []string{"Inbox #12", "pekoe read", "feat-csv-export", "Dates in the CSV", "推奨(エージェント)"} {
+			for _, want := range []string{"Inbox #12", "pekoe read", "feat-csv-export", "Dates in the CSV", "recommended (agent)"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("%q: no %q:\n%s", title, want, out)
 				}

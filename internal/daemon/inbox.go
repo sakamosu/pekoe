@@ -59,8 +59,8 @@ var inboxKinds = map[string]bool{"decision": true, "approve": true, "login": tru
 // Fixed choices: login is a person's chore, done or not; approve without
 // options of its own is yes or no.
 var (
-	loginOptions   = []string{"済んだ", "できない"}
-	approveOptions = []string{"承認する", "承認しない"}
+	loginOptions   = []string{"done", "can't"}
+	approveOptions = []string{"approve", "decline"}
 )
 
 // cleanInbox drops ANSI sequences, control characters (line breaks and
@@ -193,7 +193,7 @@ func cleanInboxPost(p inboxPostP) (*state.InboxItem, error) {
 	switch p.Kind {
 	case "login":
 		if len(opts) > 0 || p.Recommend != nil {
-			return nil, errors.New("inbox.post: login has fixed choices (済んだ / できない): no options or recommend")
+			return nil, errors.New("inbox.post: login has fixed choices (done / can't): no options or recommend")
 		}
 		opts = append([]string(nil), loginOptions...)
 	case "approve":
@@ -482,7 +482,7 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 		case len(it.Options) == 0 && note == "":
 			return errors.New("inbox.answer: this question has no options; answer with a note")
 		case isMergeItem(it) && *p.Choice == mergeSendBack && note == "":
-			return errors.New("inbox.answer: 差し戻す needs a note (it is sent to the session)")
+			return errors.New("inbox.answer: send back needs a note (it is sent to the session)")
 		}
 		it.Status = state.InboxAnswered
 		it.Answer = &state.InboxAnswer{Choice: p.Choice, Note: note, By: callerHuman, Via: who.Via, At: time.Now()}
