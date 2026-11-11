@@ -57,7 +57,7 @@
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
-  | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼の台帳を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼の台帳」) |
+  | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼(ledger)」) |
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
@@ -179,7 +179,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "parent": "+tapi",               // session.new の呼び出し元(上の「呼び出し元の識別」): +tapi | <slug> | human | unknown。session.new 以外で作ったもの(open・adopt・review.pr)は空
   "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"}, // 最新の報告(summary は 1 行目、200 文字まで)
   "review": {"id": 15, "verdict": "pending", "reviewed_sha": "3f2a…", "at": "…"}, // 最新の status: review の報告(pending = レビュー中・pass・fail)。後に別の報告が来ても残る。無ければ省略
-  "request": 4,                    // 結んだ台帳の依頼(pekoe new --request、ledger.link)。無ければ省略
+  "request": 4,                    // 結んだ依頼の id(pekoe new --request、ledger.link)。無ければ省略
   "after": ["feat-api"]            // このセッションが後に来るセッションの slug(session.new の after)。記録と表示だけで、起動は止めない
 }
 ```
@@ -199,7 +199,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, prompt?, base?, request?: id, after?: [slug]}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は台帳の依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
+| `session.new` | `{repo, branch, from?, agent?, prompt?, base?, request?: id, after?: [slug]}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
@@ -222,7 +222,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `inbox.withdraw` | `{id, note?}` | `InboxItem`。token なしでは自分が出したものだけ |
 | `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。人だけ。`rev` が今のものと違えば `… the item changed; look again` |
 | `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
-| `ledger.list` | `{status?: "open"\|"all", since?: id}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼の台帳」)。token なしでは tapi の窓からだけ |
+| `ledger.list` | `{status?: "open"\|"all", since?: id}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼(ledger)」)。token なしでは tapi の窓からだけ |
 | `ledger.close` | `{id, as: "done"\|"dropped"\|"chat", evidence?: [string], note?}` | `LedgerEntry`。`dropped` は `note` が要る。`open` のものだけ。token なしでは tapi の窓からだけ |
 | `ledger.link` | `{id, slug}` | `LedgerEntry`。セッションを依頼に結ぶ(`Session.request` も入る)。`open` のものだけ。token なしでは tapi の窓からだけ |
 | `ledger.reopen` | `{id}` | `LedgerEntry`。人だけ(閉じたものを開き直す) |
@@ -470,7 +470,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **`unpushed` の数え方**: `HEAD` から届き、リモート追跡ブランチ(`--remotes`)にも base との merge-base にも無いコミット。GitHub で squash merge されてリモートのブランチが消えたあとでも、PR の head(`pr_status.head_sha`)まではマージ済みとして数えない。base が分からないときはリモートに無いコミットをすべて数える(少なく見せるより多く見せる)
 - 自動では何も消さない。pekoed がローカルのブランチ(`git branch`)を消すこともない(`pekoe rm` と同じ)
 
-### 依頼の台帳(ledger)
+### 依頼(ledger)
 
 人が tapi chat に頼んだことを、完了まで追う(`pekoe ledger`)。state.db の `ledger` の表に残り、`tapi.reset` でも `pekoe rm` でも消えない。
 
@@ -487,12 +487,12 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 }
 ```
 
-- **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても台帳には入れない(台帳の文は tapi が「人に頼まれたこと」として読むため)。人が打ったのではないもの(pekoed 自身が tapi の入力欄に打った `[pekoe` で始まる受信箱の答え、Claude Code がバックグラウンドのタスク(tapi の `pekoe wait` など)の完了を新しいターンとして渡す `<task-notification>` で始まる文)と空の入力は入れない。どちらも前後の空白を除いた先頭で見て、人が打った文の途中に出てくるだけなら記録する。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
+- **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても依頼としては記録しない(依頼の文は tapi が「人に頼まれたこと」として読むため)。人が打ったのではないもの(pekoed 自身が tapi の入力欄に打った `[pekoe` で始まる受信箱の答え、Claude Code がバックグラウンドのタスク(tapi の `pekoe wait` など)の完了を新しいターンとして渡す `<task-notification>` で始まる文)と空の入力は入れない。どちらも前後の空白を除いた先頭で見て、人が打った文の途中に出てくるだけなら記録する。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
 - **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`)
 - **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているときは、セッションを作らずに断る
 - **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり戻したりできないように
-- token なしでは `ledger.*` はすべて tapi の窓からだけ(main セッションのハブは台帳を使わない。docs/orchestration.md の U13)
-- 台帳か受信箱が変わると `tapi.updated` も出る(`Tapi.ledger_open` / `inbox_open`)
+- token なしでは `ledger.*` はすべて tapi の窓からだけ(main セッションのハブは依頼(ledger)を使わない。docs/orchestration.md の U13)
+- 依頼か受信箱が変わると `tapi.updated` も出る(`Tapi.ledger_open` / `inbox_open`)
 
 ### 集計(stats)
 
@@ -523,7 +523,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 
 ### Tapi オブジェクト
 
-tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで、セッションではないので `session.*` には出てこない(`session.list` に載らず、tapi 自身の状態は state.db にも保存しない(台帳は上の「依頼の台帳」)。Web UI は `GET /api/tapi` で状態・最後の返事・件数だけを読み、送ることはできない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
+tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで、セッションではないので `session.*` には出てこない(`session.list` に載らず、tapi 自身の状態は state.db にも保存しない(依頼は上の「依頼(ledger)」)。Web UI は `GET /api/tapi` で状態・最後の返事・件数だけを読み、送ることはできない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
 
 ```jsonc
 {
@@ -538,13 +538,13 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
   "claude_session_id": "…",
   "state_since": "2026-11-08T21:37:30+09:00",
   "inbox_open": 2,                         // 受信箱の未回答(全員の分)
-  "ledger_open": 1                         // 台帳の open な依頼
+  "ledger_open": 1                         // open の依頼の件数
 }
 ```
 
-- tapi は統括役(docs/orchestration.md「tapi を統括役にする」)。pekoed が稼働ディレクトリに書く `CLAUDE.md` / `AGENTS.md` と `--append-system-prompt` の人格に、自分では編集せずセッションに任せること・会話の最初に `pekoe --json ledger`・`inbox`・`ls` を読むことを書き、`CLAUDE.md` の末尾に起動した時点の台帳・受信箱・任せたセッションの件数(中身は書かない)を入れる
+- tapi は統括役(docs/orchestration.md「tapi を統括役にする」)。pekoed が稼働ディレクトリに書く `CLAUDE.md` / `AGENTS.md` と `--append-system-prompt` の人格に、自分では編集せずセッションに任せること・会話の最初に `pekoe --json ledger`・`inbox`・`ls` を読むことを書き、`CLAUDE.md` の末尾に起動した時点の依頼・受信箱・任せたセッションの件数(中身は書かない)を入れる
 - Claude Code の tapi には、セッションと同じ `--settings` に加えて、`--add-dir` で読ませている各リポジトリと `~/worktrees`(まだ無くても。シンボリックリンクを解いたものも)を `sandbox.filesystem.denyWrite` と `permissions.deny` の `Edit(...)` に入れる。Bash でも Edit / Write でも書けない。稼働ディレクトリは書ける。`[agents.<tapi の agent>] sandbox = false` ならこれも渡さない(ほかのエージェントにも渡さない)
-- `tapi.reset` は会話だけを消し、台帳・受信箱・報告・送信の記録(state.db)には触らない
+- `tapi.reset` は会話だけを消し、依頼・受信箱・報告・送信の記録(state.db)には触らない
 
 ### KnownRepo オブジェクト
 
@@ -678,7 +678,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `browser.updated` | `[tabs]` |
 | `error.updated` | `{report: ErrorReport, fresh}`(`fresh` は新規か、送信・無視後の再発。回数の更新や送信・無視では false) |
 | `editor.open` | `{path, line, note, slug}` |
-| `tapi.updated` | `Tapi`(受信箱・台帳の件数が変わったときも) |
+| `tapi.updated` | `Tapi`(受信箱・依頼の件数が変わったときも) |
 | `tapi.output` | `{}`(tapi chat の画面更新の合図。30ms で間引く) |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 
@@ -725,7 +725,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409。改行・タブ以外の制御文字を含むと 400 |
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], at}` |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤りは 400 |
-| `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と台帳の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
+| `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と依頼の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
 | `GET /api/overview` | — | 件数と、セッションごとの工程(`impl → review → PR → CI → merge`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。

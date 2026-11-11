@@ -187,7 +187,7 @@ func TestTapiResetKeepsLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := string(b)
-	for _, want := range []string{"## 最初にすること", "`pekoe --json ledger`", "`pekoe --json inbox`", "台帳の open な依頼 1 件、受信箱の未回答 1 件", "--request <台帳の id>", "pekoe-orchestrate"} {
+	for _, want := range []string{"## 最初にすること", "`pekoe --json ledger`", "`pekoe --json inbox`", "open の依頼 1 件、受信箱の未回答 1 件", "--request <依頼の id>", "pekoe-orchestrate"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("CLAUDE.md lacks %q", want)
 		}

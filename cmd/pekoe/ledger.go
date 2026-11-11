@@ -1,6 +1,6 @@
 package main
 
-// ledger (docs/orchestration.md "6. 依頼の台帳"): what a person asked tapi
+// ledger (docs/orchestration.md "6. 依頼(ledger)"): what a person asked tapi
 // chat for. pekoed records every prompt typed into tapi; tapi reads the
 // open ones back (after a reset too), ties sessions to them and closes
 // them. Reopening and deleting are a person's.
