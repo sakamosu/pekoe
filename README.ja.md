@@ -518,7 +518,6 @@ scripts/sandbox.sh      # 今のソースで隔離した pekoed を立ててサ�
 
 - コード(Go・Neovim プラグイン・Chrome 拡張・Web UI・スクリプト)は [MIT](LICENSE)
 - ロゴ画像 `docs/images/pekoe-logo.webp` は ChatGPT(AI)で生成したもので、MIT の対象外
-- `docs/mock.html` に同梱しているフォント JetBrains Mono は SIL Open Font License 1.1。ライセンス文はファイル内にある
 - リリースのバイナリは依存ライブラリ(と Go の標準ライブラリ)を静的リンクしている。それらの著作権表示とライセンス文は、アーカイブの `THIRD_PARTY_LICENSES` にまとめてある(既定ビルドと Web UI 入りで依存が違うので中身も違う)
 
 ## 貢献

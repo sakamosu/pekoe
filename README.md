@@ -520,7 +520,6 @@ This lets you try things without touching your real pekoed or tmux server. More 
 
 - The code (Go, the Neovim plugin, the Chrome extension, the Web UI, scripts) is [MIT](LICENSE)
 - The logo image `docs/images/pekoe-logo.webp` was generated with ChatGPT (AI) and is not covered by the MIT license
-- The JetBrains Mono font bundled in `docs/mock.html` is under the SIL Open Font License 1.1; the license text is in the file
 - Release binaries statically link their dependencies (and Go's standard library). Their copyright notices and license texts are collected in `THIRD_PARTY_LICENSES` in each archive (the default and Web UI builds have different dependencies, so the contents differ)
 
 ## Contributing
