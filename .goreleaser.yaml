@@ -117,6 +117,59 @@ archives:
       - src: contrib/launchd/*
         dst: contrib/launchd
 
+# Homebrew の tap(sakamosu/homebrew-tap。brew install sakamosu/tap/pekoe)に置く cask。
+# GoReleaser v2 では brews(formula)は非推奨で homebrew_casks が後継なので cask にする。
+# ここでは dist/homebrew/Casks/pekoe.rb を作るだけ(skip_upload: true)。tap に書くのは release.yml で、
+# 下書きを公開した後(scripts/homebrew-tap.sh)。goreleaser が書くと、下書きの間に(attest が落ちて
+# 公開されなくても)tap が落とせない URL を指してしまうのと、HOMEBREW_TAP_TOKEN や tap が無いときに
+# リリースごと落ちないようにするため。配るのは既定のビルドだけ(_web は入れない)。
+#
+# 配置: cask はアーカイブを Caskroom/pekoe/<ver>/ に展開する。GoReleaser はラッパーのディレクトリ
+# (pekoe_<ver>_<os>_<arch>/)から binaries だけを rename で外に出すので、そのままだと bin/pekoe と
+# share/pekoe が別々の場所になり、bin/pekoe が ../share/pekoe/nvim を見つけられない。
+# そこで custom_block(cask の先頭に出る = GoReleaser の rename より先に走る)で bin・share・contrib を
+# まとめて外に出す(GoReleaser の rename は元が無ければ何もしない)。
+# 結果は Caskroom/pekoe/<ver>/{bin/pekoe,bin/pekoed,share/pekoe,contrib/launchd} で、
+# $(brew --prefix)/bin/pekoe → Caskroom/…/bin/pekoe の symlink を pekoe が辿って ../share/pekoe を見つける。
+#
+# quarantine: brew は cask で落としたものに com.apple.quarantine を付ける。未署名(ad-hoc 署名)の
+# バイナリだと Gatekeeper に止められるので、postflight で外す。署名・公証済みでも外して害はない
+# (公証のチケットを留め付けられない単体バイナリが初回にオンラインで確かめられるのを省くだけ)。
+homebrew_casks:
+  - name: pekoe
+    ids: [pekoe]
+    repository:
+      owner: sakamosu
+      name: homebrew-tap
+    skip_upload: true
+    homepage: https://github.com/sakamosu/pekoe
+    description: Run coding agents in parallel, one per git worktree, from a terminal UI
+    binaries:
+      - bin/pekoe
+      - bin/pekoed
+    dependencies:
+      - formula: tmux
+      - formula: git
+    custom_block: |
+      rename "pekoe_*/bin", "bin"
+      rename "pekoe_*/share", "share"
+      rename "pekoe_*/contrib", "contrib"
+    hooks:
+      post:
+        # Homebrew の install steps DSL(任意の Ruby ではない)。{{ .StagedPath }} は GoReleaser が
+        # Homebrew のトークン {{staged_path}} に置き換える。外せなくてもインストールは止めない
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}"], must_succeed: false
+          end
+    caveats: |
+      pekoe hooks install    # add pekoe's hooks to ~/.claude/settings.json
+      To start pekoed at login with launchd (macOS):
+        mkdir -p ~/Library/LaunchAgents ~/.local/share/pekoe
+        sed -e "s|PEKOE_BIN|#{HOMEBREW_PREFIX}/bin/pekoe|" -e "s|HOME|$HOME|g" #{staged_path}/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist
+        launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist
+      After brew upgrade, run `pekoe daemon restart` to switch pekoed to the new binary.
+
 checksum:
   name_template: checksums.txt
 

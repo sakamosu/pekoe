@@ -69,10 +69,11 @@ func (p Plan) Links() []Dir {
 var ErrManaged = errors.New("installed by a package manager")
 
 // Check refuses a binary that a package manager owns (Homebrew's Cellar
-// is writable by the user, so writability alone does not tell) and places
+// and Caskroom are writable by the user, so writability alone does not
+// tell; /usr/local/Caskroom on an Intel Mac has no "/homebrew/") and places
 // pekoe cannot write to, before anything is downloaded.
 func (p Plan) Check() error {
-	for _, m := range []string{"/Cellar/", "/homebrew/", "/nix/store/", "/snap/"} {
+	for _, m := range []string{"/Cellar/", "/Caskroom/", "/homebrew/", "/nix/store/", "/snap/"} {
 		if strings.Contains(p.Exe, m) {
 			return fmt.Errorf("%s: %w; update it with that package manager (e.g. brew upgrade), not pekoe update", p.Exe, ErrManaged)
 		}

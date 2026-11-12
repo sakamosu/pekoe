@@ -101,6 +101,21 @@ pekoe skills install    # 任意: pekoe のスキルを ~/.claude/skills にリ�
 make install-launchd    # 任意: ログイン時に pekoed を起動
 ```
 
+### Homebrew で
+
+v0.4.0 から、macOS と Linux(arm64 / amd64)では tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap) から既定のビルド(Web UI なし)を入れられる。tmux と git も依存として入る:
+
+```sh
+brew install sakamosu/tap/pekoe
+pekoe hooks install     # ~/.claude/settings.json に hooks を追加(書く前に確認し、バックアップを残す)
+brew upgrade pekoe      # 更新(pekoe update は Homebrew で入れたものを断る)。そのあと pekoe daemon restart
+```
+
+- リリースのアーカイブ(`pekoe_<ver>_<os>_<arch>.tar.gz`)から作った cask。`$(brew --prefix)/Caskroom/pekoe/<ver>/` にアーカイブと同じ配置(`bin/`・`share/pekoe/`・`contrib/launchd/`)で展開し、`pekoe`・`pekoed` を `$(brew --prefix)/bin` にリンクする。pekoe はそのリンクを辿るので、`share/pekoe` の nvim プラグインと Chrome 拡張もそのまま見つかる
+- Web UI が要るなら、リリースから `_web` のアーカイブを入れる(下)か、`make install WEB=1` でビルドする
+- macOS は brew が落としたものに quarantine の印を付け、Gatekeeper は印の付いた未署名のバイナリを開かせない。macOS 向けのバイナリはまだ署名していない(下)ので、cask はインストールの後にこの印を外す
+- ログイン時に pekoed を起動するなら、`brew info pekoe` に launchd のコマンドが出る。`brew services` は cask では使えない
+
 ### リリースから(ビルド済みバイナリ)
 
 GitHub Release に darwin / linux × arm64 / amd64 のビルドを置いている。`pekoe_<ver>_<os>_<arch>.tar.gz` が既定ビルド(Web UI なし)、`pekoe_<ver>_<os>_<arch>_web.tar.gz` が Web UI 入り(`-tags web`。[docs/web.md](docs/web.md))で、中の配置は同じ。`gh`(どのアカウントでログインしていてもよい。Web UI 入りなら名前の `.tar.gz` の前に `_web` を足す)か、トークンなしの curl で落とす:
