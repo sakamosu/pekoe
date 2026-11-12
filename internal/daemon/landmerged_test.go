@@ -26,12 +26,7 @@ func landingSetup(t *testing.T) (d *Daemon, count string) {
 	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte(cfg), 0o644)
 	for _, b := range []string{"feat/x", "feat/y"} {
 		s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": b})
-		for i := 0; i < 100; i++ {
-			if s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); s.State != state.Creating {
-				break
-			}
-			sleep()
-		}
+		waitCreated(t, d, s.Slug)
 	}
 	d.update("feat-x", func(x *state.Session) { x.Landing, x.PR = true, 42 })
 	d.update("feat-y", func(x *state.Session) { x.PR = 42 })
@@ -40,18 +35,20 @@ func landingSetup(t *testing.T) (d *Daemon, count string) {
 
 func waitLanded(t *testing.T, d *Daemon, slug string) state.Session {
 	t.Helper()
-	var s state.Session
-	for i := 0; i < 200; i++ {
-		s = call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
+	// a deadline in time, not in rounds: under load the teardown, git
+	// worktree remove and the stats can take seconds
+	for end := time.Now().Add(30 * time.Second); ; sleep10ms() {
+		s := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
 		// and finishLanding has returned (it records stats after landing):
 		// nothing touches the DB after the test closes it
-		if _, busy := d.finishing.Load(slug); s.State == state.Landed && !busy {
+		_, busy := d.finishing.Load(slug)
+		if s.State == state.Landed && !busy {
 			return s
 		}
-		sleep10ms()
+		if time.Now().After(end) {
+			t.Fatalf("%s not landed: %s (finishLanding running: %v)", slug, s.State, busy)
+		}
 	}
-	t.Fatalf("%s not landed: %s", slug, s.State)
-	return s
 }
 
 func teardowns(count string) []string {

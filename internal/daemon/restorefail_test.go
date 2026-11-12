@@ -17,13 +17,7 @@ func TestRestoreLeavesFailedSessionAlone(t *testing.T) {
 	os.MkdirAll(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos"), 0o755)
 	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte("[hooks]\nsetup = [\"false\"]\n"), 0o644)
 	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
-	var s state.Session
-	for i := 0; i < 100; i++ {
-		if s = call[state.Session](t, d, "session.get", map[string]any{"slug": "feat-x"}); s.State != state.Creating {
-			break
-		}
-		sleep()
-	}
+	s := waitCreated(t, d, "feat-x")
 	if s.State != state.Failed {
 		t.Fatalf("setup should fail: %+v", s)
 	}
