@@ -360,9 +360,26 @@ main { padding: 4px 10px 8px; }
 .seg button:last-child[aria-pressed="true"] { border-left: 1px solid var(--primary); }
 .c-why { color: var(--warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
-.chat { position: relative; }
+/* the page while tapi chat shows: the bar on top, the composer at the
+   bottom, the log takes all between (no fixed sum to subtract). It follows
+   the visual viewport (--vvh / --vvt, app.js fitViewport), so the composer
+   sits right above the software keyboard; the bottom inset (home
+   indicator) is kept unless the keyboard covers it */
+body.chat-on {
+  position: fixed; left: 0; right: 0; top: var(--vvt, 0px);
+  height: 100vh; height: 100dvh; height: var(--vvh, 100dvh); min-height: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+body.chat-on.kb { padding-bottom: 0; }
+body.chat-on > .bar { flex: none; }
+body.chat-on > .who { display: none; }
+body.chat-on #detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.chat-on #d-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.chat-on #d-send { flex: none; margin-top: 10px; }
+
+.chat { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat .log {
-  height: calc(100vh - 290px); height: calc(100dvh - 290px); min-height: 280px;
+  flex: 1; min-height: 0;
   overflow-y: auto; padding: 6px 10px 12px;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
