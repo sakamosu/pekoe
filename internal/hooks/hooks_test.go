@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlanKeepsOtherHooksAndIsIdempotent(t *testing.T) {
@@ -77,7 +78,7 @@ func TestApplyKeepsSymlink(t *testing.T) {
 	if !strings.Contains(string(b), "pekoe event") {
 		t.Fatalf("hooks did not reach the link's target: %s", b)
 	}
-	if left, _ := filepath.Glob(filepath.Join(dots, "*.pekoe-tmp")); len(left) > 0 {
+	if left, _ := filepath.Glob(filepath.Join(dots, "*pekoe-tmp*")); len(left) > 0 {
 		t.Fatalf("tmp left behind: %v", left)
 	}
 }
@@ -126,5 +127,55 @@ func TestIsOurs(t *testing.T) {
 		if got := isOurs(map[string]any{"command": c}); got != want {
 			t.Errorf("isOurs(%q) = %v, want %v", c, got, want)
 		}
+	}
+}
+
+// A symlink planted at the old fixed temporary name (or at the backup's
+// name) is not written through: the temporary file is a new one
+// (os.CreateTemp) and the backup must not exist yet.
+func TestApplyIgnoresPlantedLinks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	path := filepath.Join(dir, "settings.json")
+	os.WriteFile(path, []byte(`{"model":"opus"}`), 0o600)
+	victim := filepath.Join(t.TempDir(), "victim")
+	os.WriteFile(victim, []byte("keep"), 0o600)
+	if err := os.Symlink(victim, path+".pekoe-tmp"); err != nil {
+		t.Fatal(err)
+	}
+	p, before, after, _, err := Plan("/usr/local/bin/pekoe", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(p, before, after); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep" {
+		t.Fatalf("written through the planted link: %q", b)
+	}
+	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
+		t.Fatalf("settings.json is not a regular file: %v", err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "pekoe event") {
+		t.Fatalf("hooks not written: %s", b)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".settings.json.pekoe-tmp-*")); len(left) > 0 {
+		t.Fatalf("tmp left behind: %v", left)
+	}
+
+	// the backup's name taken by a link: written next to it, not through it
+	os.WriteFile(path, []byte(`{"model":"opus"}`), 0o600)
+	p, before, after, _, _ = Plan("/usr/local/bin/pekoe", false)
+	stamp := path + ".pekoe-backup-" + time.Now().Format("20060102-150405")
+	os.Symlink(victim, stamp)
+	backup, err := Apply(p, before, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep" {
+		t.Fatalf("backup written through the planted link: %q", b)
+	}
+	if backup == stamp {
+		t.Fatalf("backup reused the planted name %s", backup)
 	}
 }
