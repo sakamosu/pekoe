@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"pekoe/internal/config"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
@@ -535,5 +537,69 @@ func TestAgentRmRechecksUnderLock(t *testing.T) {
 	}
 	if got, err := d.get(s.Slug); err != nil || got != &n {
 		t.Fatalf("replacement gone: %v", err)
+	}
+}
+
+// Without the token, session.new starts only an agent pekoe sandboxes (a
+// Claude Code agent with sandbox on), or the agent the caller runs itself;
+// with the token any agent starts.
+func TestAgentNewOnlySandboxedAgents(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/known"}) // pekoe knows the repository
+	off := false
+	d.Global.Agents["codex"] = config.Agent{Command: "codex", Prompt: "arg"}
+	d.Global.Agents["claude-raw"] = config.Agent{Command: "claude --model x", Prompt: "arg", Sandbox: &off}
+	d.Global.Agents["claude-fast"] = config.Agent{Command: "/usr/local/bin/claude --model y", Prompt: "arg"}
+
+	hub := agentAs("feat-known") // a claude session
+	for _, name := range []string{"codex", "claude-raw"} {
+		err := callAsErr(d, hub, "session.new", map[string]any{"repo": repo, "branch": "feat/" + name, "agent": name})
+		if err == nil || !errors.Is(err, ErrHumanOnly) || !strings.Contains(err.Error(), "does not sandbox") || !strings.Contains(err.Error(), "TUI") {
+			t.Fatalf("%s without the token: err = %v", name, err)
+		}
+	}
+	for _, name := range []string{"", "claude", "claude-fast"} {
+		callAs[state.Session](t, d, hub, "session.new", map[string]any{"repo": repo, "branch": "feat/ok-" + name + "x", "agent": name})
+	}
+	// an unknown agent is hNew's error, as before
+	if err := callAsErr(d, hub, "session.new", map[string]any{"repo": repo, "branch": "feat/nope", "agent": "nope"}); err == nil || !strings.Contains(err.Error(), "unknown agent") {
+		t.Fatalf("unknown agent: %v", err)
+	}
+	// the repository's default agent counts as asked for
+	writeRepoConfig(t, d, repo, "agent = \"codex\"\n")
+	if err := callAsErr(d, hub, "session.new", map[string]any{"repo": repo, "branch": "feat/default"}); !errors.Is(err, ErrHumanOnly) {
+		t.Fatalf("repository default codex without the token: err = %v", err)
+	}
+	writeRepoConfig(t, d, repo, "")
+
+	// a codex session may start another codex session: nothing it cannot do already
+	cx := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/codex", "agent": "codex"})
+	callAs[state.Session](t, d, agentAs(cx.Slug), "session.new", map[string]any{"repo": repo, "branch": "feat/codex2", "agent": "codex"})
+	if err := callAsErr(d, agentAs(cx.Slug), "session.new", map[string]any{"repo": repo, "branch": "feat/raw", "agent": "claude-raw"}); !errors.Is(err, ErrHumanOnly) {
+		t.Fatalf("codex starting claude-raw: %v", err)
+	}
+	// a caller in no window gets only sandboxed agents
+	if err := callAsErr(d, agentAs(""), "session.new", map[string]any{"repo": repo, "branch": "feat/anon", "agent": "codex"}); !errors.Is(err, ErrHumanOnly) {
+		t.Fatalf("unknown caller starting codex: %v", err)
+	}
+	// tapi runs the agent [tapi] names
+	d.Global.Tapi.Agent = "codex"
+	callAs[state.Session](t, d, agentAs(TapiSlug), "session.new", map[string]any{"repo": repo, "branch": "feat/tapi-codex", "agent": "codex"})
+
+	// a person starts any agent
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/raw", "agent": "claude-raw"})
+}
+
+// session.new's from is gh#N, N an issue number; anything else (a URL
+// pekoed's gh would follow to another repository) is refused.
+func TestNewFromOnlyIssueNumber(t *testing.T) {
+	d, _, repo := setup(t)
+	for _, from := range []string{"gh#https://github.com/o/private/issues/1", "gh#0", "gh#01", "gh#12345678901", "gh#-1", "gh#1 2", "12", "#12", "gh#"} {
+		if err := callErr(d, "session.new", map[string]any{"repo": repo, "branch": "feat/x", "from": from}); err == nil || !strings.Contains(err.Error(), "gh#N") {
+			t.Fatalf("from %q: err = %v", from, err)
+		}
+	}
+	if !fromIssueRe.MatchString("gh#1234567890") || !fromIssueRe.MatchString("gh#7") {
+		t.Fatal("gh#N refused")
 	}
 }

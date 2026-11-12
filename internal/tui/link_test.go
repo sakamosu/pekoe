@@ -81,3 +81,34 @@ func TestAgentLinkAtMatchesView(t *testing.T) {
 	}
 	t.Fatal("link not drawn")
 }
+
+// Only http and https links with a host reach open / xdg-open; the refusal
+// names the URL (quoted) and why.
+func TestCheckWebURL(t *testing.T) {
+	for _, u := range []string{"https://github.com/o/r/pull/1", "http://localhost:3000/x", "HTTPS://Example.com"} {
+		if err := checkWebURL(u); err != nil {
+			t.Errorf("%q refused: %v", u, err)
+		}
+	}
+	for _, u := range []string{
+		"file:///Users/me/worktrees/r/x.command",
+		"vscode://file/x", "javascript:alert(1)", "ssh://h", "x-apple.systempreferences:",
+		"https:///nohost", "http:/x", "-a Calculator", "/Applications/Calculator.app", "github.com/o/r",
+		"https://a.test/\x1b]8;;\x07",
+	} {
+		err := checkWebURL(u)
+		if err == nil {
+			t.Errorf("%q opened", u)
+			continue
+		}
+		if !strings.Contains(err.Error(), "only http and https") || strings.ContainsRune(err.Error(), 0x1b) {
+			t.Errorf("%q: message %q", u, err)
+		}
+	}
+	if err := checkWebURL("file:///tmp/x.command"); !strings.Contains(err.Error(), `"file:///tmp/x.command"`) || !strings.Contains(err.Error(), "file: links") {
+		t.Errorf("file: message %q", err)
+	}
+	if err := openURL("file:///tmp/x.command"); err == nil {
+		t.Error("openURL opened a file: URL")
+	}
+}

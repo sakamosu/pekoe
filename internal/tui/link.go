@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -115,14 +117,40 @@ func (m *model) linkClick(ev tea.MouseMsg, u string) tea.Cmd {
 	return nil
 }
 
-// openURL hands a URL to the OS default handler (open / xdg-open).
+// openURL hands a URL to the OS default handler (open / xdg-open), when it
+// is an http or https link (checkWebURL). Agents print the links pekoe opens,
+// and an OSC 8 link shows any text over its URI: a file:// URI, or a scheme
+// some app registered, would have open start a program outside the agent's
+// sandbox (a script the agent wrote in its worktree, say).
 func openURL(u string) error {
-	if u == "" || strings.HasPrefix(u, "-") {
+	if u == "" {
 		return nil
+	}
+	if err := checkWebURL(u); err != nil {
+		return err
 	}
 	name := "xdg-open"
 	if runtime.GOOS == "darwin" {
 		name = "open"
 	}
 	return exec.Command(name, u).Run()
+}
+
+// checkWebURL refuses what openURL does not open: anything but an http or https
+// URL with a host. The error shows the URL as it is (quoted: it may hold
+// characters a terminal would act on) and why it stays closed.
+func checkWebURL(u string) error {
+	p, err := url.Parse(u)
+	if err == nil && (p.Scheme == "http" || p.Scheme == "https") && p.Host != "" && !strings.HasPrefix(u, "-") {
+		return nil
+	}
+	shown := u
+	if len(shown) > 200 {
+		shown = shown[:200] + "…"
+	}
+	why := "not a web link"
+	if err == nil && p.Scheme != "" && p.Scheme != "http" && p.Scheme != "https" {
+		why = p.Scheme + ": links could start a program"
+	}
+	return fmt.Errorf("not opened: pekoe opens only http and https links (%s): %q", why, shown)
 }

@@ -470,7 +470,7 @@ docs = ["README.ja.md#エージェントに-pekoe-を使わせるときの権限
 [[tip]]
 id = "click-links"
 short = "エージェントの画面の URL はクリックで開ける"
-detail = "pekoe がマウスを握るので ⌘ クリックは届かないが、OSC 8 のリンクや素の URL を左クリックすれば pekoe が開く。PR ビュー・Issues・ダッシュボードも同じ。左のパネルのクリックは ^q と同じく入力から抜ける。"
+detail = "pekoe がマウスを握るので ⌘ クリックは届かないが、OSC 8 のリンクや素の URL は左クリックで開く(http(s) だけ)。PR ビュー・Issues・ダッシュボードも同じ。左のパネルのクリックは ^q と同じく入力から抜ける。"
 keys = ["^q"]
 docs = ["README.ja.md#tui"]
 

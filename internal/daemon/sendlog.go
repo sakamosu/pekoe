@@ -34,7 +34,7 @@ func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 	case who.Human():
 		res, err = d.hNew(p)
 	default:
-		res, err = d.hAgentNew(p)
+		res, err = d.hAgentNew(who, p)
 	}
 	if s, ok := res.(*state.Session); ok && s != nil && err == nil && p.Request != 0 {
 		// the entry was open a moment ago; if tapi closed it since, the
