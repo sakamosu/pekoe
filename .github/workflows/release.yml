@@ -1,4 +1,6 @@
-# v* タグの push で GoReleaser がクロスビルドして GitHub Release を作る(.goreleaser.yaml)。
+# v* タグの push で GoReleaser がクロスビルドして GitHub Release を下書きで作り(.goreleaser.yaml)、
+# アーカイブに来歴(attestation)を付けてから公開する。どこかで落ちたら下書きのまま残り、公開されない。
+# immutable releases を有効にすると公開した後はアセットを足せないので、公開は最後にする。
 # アクションはコミット SHA で固定する(コメントの版は Dependabot が SHA と一緒に上げる)。
 name: release
 
@@ -25,7 +27,7 @@ jobs:
     # 署名・公証の secrets(MACOS_*)はこの Environment に置く。承認者を付けて、承認されたタグの実行だけが読めるようにする
     environment: release
     permissions:
-      contents: write # Release を作ってアーカイブを上げる
+      contents: write # Release を作ってアーカイブを上げ、公開する
       id-token: write # 来歴(attestation)の署名に Sigstore の証明書を取る
       attestations: write # 来歴を保存する
     steps:
@@ -55,7 +57,7 @@ jobs:
       # goreleaser がビルドする pekoe 側は go.mod の版(GOTOOLCHAIN=local)のまま。
       - name: Install goreleaser
         run: GOTOOLCHAIN=auto go install "github.com/goreleaser/goreleaser/v2@${GORELEASER_VERSION}"
-      - name: Release
+      - name: Release (draft)
         run: |
           goreleaser check
           goreleaser release --clean
@@ -71,7 +73,21 @@ jobs:
       # checksums.txt に載ったアーカイブごとに SLSA のビルド来歴を付ける。
       # 確かめ方は README の「リリースから」(gh attestation verify)。
       # private リポジトリでは GitHub Enterprise Cloud でないと使えないので、公開しているときだけ
+      # pekoe update は v0.4.0 以降のリリースに来歴が無いと止まる(selfupdate.ProvenanceFrom)。
       - if: ${{ !github.event.repository.private }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
+      # ここまで通ったら下書きを公開する。プレリリース(vX.Y.Z-rc.1 など。goreleaser の prerelease: auto)は
+      # Latest にしない。下書きは make_latest を持てないので、公開するときに付ける。
+      - name: Publish the release
+        run: |
+          if [ "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = true ]; then
+            gh release edit "$TAG" --draft=false
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
