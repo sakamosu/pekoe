@@ -37,8 +37,10 @@ type updater struct {
 	tty      bool // stdin is a terminal (questions can be answered)
 	out, err io.Writer
 
-	// attest runs `gh attestation verify`; nil when gh is not installed
-	attest func(file, repo string) error
+	// attest runs `gh attestation verify` (selfupdate.AttestArgs); nil
+	// when gh cannot, with noAttest saying why
+	attest   func(file, repo, tag string) error
+	noAttest string
 	// daemonRunning: a pekoed answers on the socket
 	daemonRunning func() bool
 	// restart runs `<new pekoe> daemon restart`
@@ -47,7 +49,10 @@ type updater struct {
 
 type updateOpts struct {
 	check, yes, force, noWeb bool
-	version                  string // --version vX.Y.Z; "" for the latest
+	// allowUnverified: go on when a release that must carry a build
+	// provenance has none, or gh attestation verify rejects it
+	allowUnverified bool
+	version         string // --version vX.Y.Z; "" for the latest
 }
 
 func newUpdater() *updater {
@@ -85,9 +90,17 @@ func newUpdater() *updater {
 			return cmd.Run()
 		},
 	}
-	if _, err := exec.LookPath("gh"); err == nil {
-		u.attest = func(file, repo string) error {
-			cmd := exec.Command("gh", "attestation", "verify", file, "-R", repo)
+	// gh attestation verify reads the attestations through the API as the
+	// gh user (or $GH_TOKEN / $GITHUB_TOKEN): without a login it cannot,
+	// which is the same as no gh (a warning, not a failed verification)
+	switch _, err := exec.LookPath("gh"); {
+	case err != nil:
+		u.noAttest = "gh is not installed"
+	case tok == "":
+		u.noAttest = "gh is not logged in (gh auth login)"
+	default:
+		u.attest = func(file, repo, tag string) error {
+			cmd := exec.Command("gh", selfupdate.AttestArgs(file, repo, tag)...)
 			cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 			return cmd.Run()
 		}
@@ -123,6 +136,8 @@ func cmdUpdate(args []string) error {
 		force:   f["force"] != "",
 		noWeb:   f["no-web"] != "",
 		version: f["version"],
+
+		allowUnverified: f["allow-unverified"] != "",
 	})
 }
 
@@ -313,7 +328,7 @@ func (u *updater) run(ctx context.Context, o updateOpts) error {
 		return fmt.Errorf("%s: SHA-256 %s does not match %s (%s); nothing was replaced", archive.Name, got, selfupdate.ChecksumsName, want)
 	}
 	u.printf("checked SHA-256 against %s\n", selfupdate.ChecksumsName)
-	if err := u.checkProvenance(ctx, file, got); err != nil {
+	if err := u.checkProvenance(ctx, file, got, rel.TagName, o.allowUnverified); err != nil {
 		return err
 	}
 	staged := filepath.Join(tmp, "staged")
@@ -357,27 +372,52 @@ func (u *updater) download(ctx context.Context, a *selfupdate.Asset, file string
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// checkProvenance verifies the build provenance when the release has one.
-// Releases made while the repository is private have none (release.yml
-// attests only a public one; v0.1.0 to v0.3.0 were made while it was
-// private), so a missing one is a warning.
-func (u *updater) checkProvenance(ctx context.Context, file, sum string) error {
+// checkProvenance verifies the build provenance of the downloaded archive.
+//
+// checksums.txt sits in the same release as the archive, so whoever can
+// replace one can replace the other; the provenance is what ties the
+// archive to release.yml building the tag. Releases from
+// selfupdate.ProvenanceFrom on are attested by release.yml, so for them a
+// missing provenance (or one that cannot be looked up) stops the update,
+// as a rejected one does for any release; --allow-unverified goes on after
+// a warning. Older releases (v0.1.0 to v0.3.0, made while the repository
+// was private) have none: a warning, as before. Without gh (or a gh
+// login) the signature cannot be checked: a warning too, once GitHub says
+// it keeps a provenance for this very file.
+func (u *updater) checkProvenance(ctx context.Context, file, sum, tag string, allow bool) error {
+	need := selfupdate.NeedsProvenance(tag)
+	name := filepath.Base(file)
+	stop := func(why string) error {
+		if allow {
+			fmt.Fprintf(u.err, "warning: %s; going on anyway (--allow-unverified): checked the SHA-256 only\n", why)
+			return nil
+		}
+		return fmt.Errorf("%s; nothing was replaced.\n"+
+			"  checksums.txt is in the same release as the archive, so it cannot tell a replaced archive from a genuine one;\n"+
+			"  the build provenance (attestation) is what shows that %s of %s built it from the tag %s.\n"+
+			"  If you have checked the release yourself (https://github.com/%s/releases/tag/%s), you can go on with only the SHA-256 checked\n"+
+			"  by running pekoe update again with --allow-unverified added", why, selfupdate.SignerWorkflow, u.gh.Repo, tag, u.gh.Repo, tag)
+	}
 	has, err := u.gh.HasAttestation(ctx, sum)
 	switch {
+	case err != nil && need:
+		return stop(fmt.Sprintf("could not look up the build provenance of %s (%v), which releases from %s on have", name, err, selfupdate.ProvenanceFrom))
 	case err != nil:
 		fmt.Fprintf(u.err, "warning: could not look up the build provenance (%v); checked the SHA-256 only\n", err)
 		return nil
+	case !has && need:
+		return stop(fmt.Sprintf("%s has no build provenance (attestation), which releases from %s on have", name, selfupdate.ProvenanceFrom))
 	case !has:
-		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made while the repository was private have none); checked the SHA-256 only\n")
+		fmt.Fprintf(u.err, "warning: no build provenance (attestation) for this release (releases made while the repository was private, before %s, have none); checked the SHA-256 only\n", selfupdate.ProvenanceFrom)
 		return nil
 	case u.attest == nil:
-		fmt.Fprintf(u.err, "warning: the release has a build provenance, but gh is not installed to verify it; checked the SHA-256 only\n")
+		fmt.Fprintf(u.err, "warning: GitHub keeps a build provenance for %s, but %s to verify its signature; checked the SHA-256 only (install gh and run gh auth login to verify it)\n", name, u.noAttest)
 		return nil
 	}
-	if err := u.attest(file, u.gh.Repo); err != nil {
-		return fmt.Errorf("gh attestation verify %s: %w; nothing was replaced", filepath.Base(file), err)
+	if err := u.attest(file, u.gh.Repo, tag); err != nil {
+		return stop(fmt.Sprintf("gh attestation verify %s failed (%v)", name, err))
 	}
-	u.printf("verified the build provenance (gh attestation verify)\n")
+	u.printf("verified the build provenance (gh attestation verify: %s, %s)\n", selfupdate.SignerWorkflow, tag)
 	return nil
 }
 

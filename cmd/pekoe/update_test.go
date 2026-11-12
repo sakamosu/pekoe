@@ -30,10 +30,14 @@ type fakeGitHub struct {
 	assets   map[string][]byte
 	requests int
 	auth     map[string]bool
+	// attested: SHA-256s GitHub keeps a build provenance for;
+	// attestStatus, when set, is the answer to every attestation lookup
+	attested     map[string]bool
+	attestStatus int
 }
 
 func newFakeGitHub(t *testing.T, tag string) *fakeGitHub {
-	f := &fakeGitHub{tag: tag, assets: map[string][]byte{}, auth: map[string]bool{}}
+	f := &fakeGitHub{tag: tag, assets: map[string][]byte{}, auth: map[string]bool{}, attested: map[string]bool{}}
 	f.srv = testenv.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.requests++
 		f.auth[r.Header.Get("Authorization")] = true
@@ -50,6 +54,16 @@ func newFakeGitHub(t *testing.T, tag string) *fakeGitHub {
 			}
 			rel["assets"] = assets
 			json.NewEncoder(w).Encode(rel)
+		case strings.HasPrefix(r.URL.Path, "/repos/owner/repo/attestations/sha256:"):
+			if f.attestStatus != 0 {
+				http.Error(w, `{"message":"Server Error"}`, f.attestStatus)
+				return
+			}
+			if !f.attested[strings.TrimPrefix(r.URL.Path, "/repos/owner/repo/attestations/sha256:")] {
+				http.Error(w, `{"message":"Not Found"}`, 404)
+				return
+			}
+			w.Write([]byte(`{"attestations":[{"bundle":{}}]}`))
 		case strings.HasPrefix(r.URL.Path, "/assets/") && r.Header.Get("Accept") == "application/octet-stream":
 			b, ok := f.assets[strings.TrimPrefix(r.URL.Path, "/assets/")]
 			if !ok {
@@ -368,5 +382,101 @@ func TestUpdateRefusesPackageManager(t *testing.T) {
 	err := u.run(context.Background(), updateOpts{yes: true})
 	if !errors.Is(err, selfupdate.ErrManaged) {
 		t.Fatalf("err %v", err)
+	}
+}
+
+// attest marks the release's darwin/arm64 default archive as attested.
+func (f *fakeGitHub) attest(t *testing.T) {
+	s := sha256.Sum256(f.assets[selfupdate.ArchiveName(f.tag, "darwin", "arm64", false)])
+	f.attested[hex.EncodeToString(s[:])] = true
+}
+
+func TestUpdateProvenance(t *testing.T) {
+	verifyErr := errors.New("exit status 1")
+	for _, c := range []struct {
+		name         string
+		tag          string
+		attested     bool
+		attestStatus int
+		gh           string // "ok", "fail", or "" for no gh
+		allow        bool
+		updates      bool
+		msg          string // in the output or the error
+	}{
+		// v0.4.0 on: release.yml attests them, so what cannot be verified stops
+		{"new verified", "v0.4.0", true, 0, "ok", false, true, "verified the build provenance"},
+		{"new rejected", "v0.4.0", true, 0, "fail", false, false, "--allow-unverified"},
+		{"new missing", "v0.4.0", false, 0, "ok", false, false, "has no build provenance"},
+		{"new prerelease missing", "v0.5.0-rc.1", false, 0, "ok", false, false, "has no build provenance"},
+		{"new lookup fails", "v0.4.0", false, 500, "ok", false, false, "could not look up"},
+		// gh cannot check the signature: a warning, as before
+		{"new no gh", "v0.4.0", true, 0, "", false, true, "gh is not installed"},
+		// --allow-unverified goes on after a warning
+		{"new rejected allowed", "v0.4.0", true, 0, "fail", true, true, "going on anyway (--allow-unverified)"},
+		{"new missing allowed", "v0.4.0", false, 0, "ok", true, true, "going on anyway (--allow-unverified)"},
+		{"new lookup fails allowed", "v0.4.0", false, 500, "ok", true, true, "going on anyway"},
+		// v0.1.0 to v0.3.0 have none: a warning, as before
+		{"old missing", "v0.3.0", false, 0, "ok", false, true, "no build provenance"},
+		{"old lookup fails", "v0.3.0", false, 500, "", false, true, "could not look up"},
+		{"old no gh", "v0.3.0", false, 0, "", false, true, "no build provenance"},
+		// a provenance that is there but rejected stops any release
+		{"old rejected", "v0.3.0", true, 0, "fail", false, false, "gh attestation verify"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			gh := newFakeGitHub(t, c.tag)
+			gh.add(t, false, "new default")
+			if c.attested {
+				gh.attest(t)
+			}
+			gh.attestStatus = c.attestStatus
+			p := newTestPrefix(t)
+			u := newTestUpdater(t, gh, p, "0.1.0", false)
+			var verified []string
+			switch c.gh {
+			case "":
+				u.noAttest = "gh is not installed"
+			default:
+				u.attest = func(file, repo, tag string) error {
+					verified = append(verified, filepath.Base(file)+" "+repo+" "+tag)
+					if c.gh == "fail" {
+						return verifyErr
+					}
+					return nil
+				}
+			}
+			err := u.run(context.Background(), updateOpts{yes: true, allowUnverified: c.allow})
+			text := u.out.String()
+			if err != nil {
+				text += err.Error()
+			}
+			t.Logf("output:\n%s", text)
+			if !strings.Contains(text, c.msg) {
+				t.Errorf("%q not in %q", c.msg, text)
+			}
+			if c.updates {
+				if err != nil {
+					t.Fatalf("err %v\n%s", err, text)
+				}
+				if got := mustRead(t, p.exe); got != "new default" {
+					t.Errorf("binary %q", got)
+				}
+			} else {
+				if err == nil {
+					t.Fatalf("updated:\n%s", text)
+				}
+				if !strings.Contains(err.Error(), "nothing was replaced") || !strings.Contains(err.Error(), "--allow-unverified") {
+					t.Errorf("err does not say what happened and how to go on: %v", err)
+				}
+				p.unchanged(t)
+			}
+			if c.attested && c.gh != "" {
+				want := selfupdate.ArchiveName(c.tag, "darwin", "arm64", false) + " owner/repo " + c.tag
+				if len(verified) != 1 || verified[0] != want {
+					t.Errorf("verified %q, want %q", verified, want)
+				}
+			} else if len(verified) != 0 {
+				t.Errorf("verified %q without a provenance", verified)
+			}
+		})
 	}
 }
