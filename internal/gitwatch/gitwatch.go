@@ -77,7 +77,37 @@ func Take(commonDir string) Snapshot {
 			}
 		}
 	}
+	takeHooksPath(s, commonDir, &n)
 	return s
+}
+
+// takeHooksPath adds the files of the directory core.hooksPath names in
+// the repository's config (husky: .husky/_, in the main checkout, which a
+// command in the hooks sandbox can write too), keyed "hooksPath <value>/…".
+// A relative path is the main checkout's (commonDir's parent): what the
+// git you run there follows.
+func takeHooksPath(s Snapshot, commonDir string, n *int) {
+	v := s["config: core.hookspath"]
+	if i := strings.LastIndex(v, " | "); i >= 0 {
+		v = v[i+3:] // the last value wins
+	}
+	if v == "" || v == "/dev/null" {
+		return
+	}
+	dir := v
+	if strings.HasPrefix(dir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		dir = filepath.Join(home, dir[2:])
+	} else if !filepath.IsAbs(dir) {
+		dir = filepath.Join(filepath.Dir(commonDir), dir)
+	}
+	if filepath.Clean(dir) == filepath.Join(commonDir, "hooks") {
+		return // watched already
+	}
+	takeHooks(s, dir, "hooksPath "+v, n, 0)
 }
 
 // takeGitDir adds gitDir's hooks and config under the prefix rel ("" for

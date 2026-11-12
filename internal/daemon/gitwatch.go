@@ -62,6 +62,7 @@ type gitRun struct {
 	hook   string
 	before gitwatch.Snapshot
 	start  time.Time
+	born   time.Time // when the watch began (start moves with each dev check)
 }
 
 // gitDirOf is the session's repository's own git directory ("" unknown).
@@ -85,7 +86,8 @@ func (d *Daemon) startGitWatch(s *state.Session, hook string) *gitRun {
 	if dir == "" {
 		return nil
 	}
-	r := &gitRun{dir: dir, slug: s.Slug, hook: hook, start: time.Now(), before: gitwatch.Take(dir)}
+	now := time.Now()
+	r := &gitRun{dir: dir, slug: s.Slug, hook: hook, start: now, born: now, before: gitwatch.Take(dir)}
 	w := &d.gitw
 	w.mu.Lock()
 	w.seq++
@@ -197,6 +199,10 @@ var gitChangeOptions = []string{"expected (git hook installer): keep it", "not e
 
 // ---- dev servers ----
 
+// devWatchGrace: a dev watch is not ended for a window that is not there
+// yet (dev.toggle starts the watch, then spawns the window and sets Dev).
+const devWatchGrace = 15 * time.Second
+
 // startDevWatch watches s's dev server from now on (replacing a watch it
 // had).
 func (d *Daemon) startDevWatch(s *state.Session) {
@@ -218,10 +224,17 @@ func (d *Daemon) startDevWatch(s *state.Session) {
 
 // endDevWatch looks at slug's dev server's repository once more and stops
 // watching it.
-func (d *Daemon) endDevWatch(slug string) {
+func (d *Daemon) endDevWatch(slug string) { d.endDevWatchOf(slug, nil) }
+
+// endDevWatchOf is endDevWatch when slug's watch is still only (nil: any).
+func (d *Daemon) endDevWatchOf(slug string, only *gitRun) {
 	w := &d.gitw
 	w.mu.Lock()
 	r := w.dev[slug]
+	if only != nil && r != only {
+		w.mu.Unlock()
+		return // a new dev server started meanwhile
+	}
 	delete(w.dev, slug)
 	w.mu.Unlock()
 	if r != nil {
@@ -260,20 +273,25 @@ func (d *Daemon) checkDevWatches() {
 		}
 	}
 	d.gitw.mu.Lock()
-	var check []*gitRun
-	var ended []string
+	watched := map[string]*gitRun{}
 	for slug, r := range d.gitw.dev {
-		if running[slug] {
-			check = append(check, r)
-		} else {
-			ended = append(ended, slug)
-		}
+		watched[slug] = r
 	}
 	d.gitw.mu.Unlock()
+	var check []*gitRun
+	ended := map[string]*gitRun{}
+	for slug, r := range watched {
+		switch {
+		case running[slug] || d.Eng.Alive(slug, engine.WinDev):
+			check = append(check, r)
+		case time.Since(r.born) > devWatchGrace:
+			ended[slug] = r
+		}
+	}
 	for _, r := range check {
 		d.checkGitRun(r, false)
 	}
-	for _, slug := range ended {
-		d.endDevWatch(slug)
+	for slug, r := range ended {
+		d.endDevWatchOf(slug, r)
 	}
 }

@@ -157,3 +157,28 @@ func TestModuleDirs(t *testing.T) {
 		t.Fatalf("modules: %v", ms)
 	}
 }
+
+// The directory core.hooksPath names (husky: .husky/_ in the main
+// checkout, relative to it) is watched like hooks/.
+func TestHooksPathWatched(t *testing.T) {
+	g := gitDir(t)
+	repo := filepath.Dir(g)
+	write(t, filepath.Join(repo, ".husky", "_", "pre-commit"), "#!/bin/sh\n. h\n", 0o755)
+	write(t, filepath.Join(g, "config"), "[core]\n\thooksPath = .husky/_\n", 0o644)
+	before := Take(g)
+	if v := before["hooksPath .husky/_/pre-commit"]; !strings.HasPrefix(v, "file, executable, ") {
+		t.Fatalf("hooksPath dir not watched: %v", before)
+	}
+	write(t, filepath.Join(repo, ".husky", "_", "pre-commit"), "#!/bin/sh\ncurl evil\n", 0o755)
+	write(t, filepath.Join(repo, ".husky", "_", "post-checkout"), "#!/bin/sh\n", 0o755)
+	if got := keys(Diff(before, Take(g))); got != "hooksPath .husky/_/post-checkout,hooksPath .husky/_/pre-commit" {
+		t.Fatalf("changes: %s", got)
+	}
+	// /dev/null (pekoed's own git) and the default place add nothing
+	write(t, filepath.Join(g, "config"), "[core]\n\thooksPath = /dev/null\n", 0o644)
+	for k := range Take(g) {
+		if strings.HasPrefix(k, "hooksPath") {
+			t.Fatalf("watched %s", k)
+		}
+	}
+}

@@ -128,3 +128,33 @@ func TestGitWatchOverlappingRunsReportOnce(t *testing.T) {
 		t.Fatalf("re-done change not reported: %d items", n)
 	}
 }
+
+// A dev watch whose window is not there yet (dev.toggle starts the watch
+// before it spawns the window) is not ended by the tick; one whose window
+// is gone after the grace is, with a last look.
+func TestGitWatchDevGrace(t *testing.T) {
+	d, _, repo := setup(t)
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	d.startDevWatch(&s)
+	d.checkDevWatches()
+	d.gitw.mu.Lock()
+	r := d.gitw.dev[s.Slug]
+	d.gitw.mu.Unlock()
+	if r == nil {
+		t.Fatal("a fresh dev watch was ended")
+	}
+	run(t, repo, "git", "config", "core.pager", "evil")
+	d.gitw.mu.Lock()
+	r.born = r.born.Add(-2 * devWatchGrace)
+	d.gitw.mu.Unlock()
+	d.checkDevWatches()
+	d.gitw.mu.Lock()
+	_, still := d.gitw.dev[s.Slug]
+	d.gitw.mu.Unlock()
+	if still {
+		t.Fatal("the watch of a gone dev server stayed")
+	}
+	if its := gitWatchItems(t, d); len(its) != 1 || !strings.Contains(its[0].Context, "core.pager = evil") {
+		t.Fatalf("items: %+v", its)
+	}
+}
