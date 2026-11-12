@@ -191,12 +191,21 @@ type IconSet struct {
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func IconsFromEnv() string {
+	g, err := config.LoadGlobal()
+	if err != nil {
+		return IconsName("")
+	}
+	return IconsName(g.Theme.Icons)
+}
+
+// IconsName is the icon set to use for [theme] icons = cfg: $PEKOE_ICONS
+// first, nerd when neither is set.
+func IconsName(cfg string) string {
 	if v := os.Getenv("PEKOE_ICONS"); v != "" {
 		return v
 	}
-	g, err := config.LoadGlobal()
-	if err == nil && g.Theme.Icons != "" {
-		return g.Theme.Icons
+	if cfg != "" {
+		return cfg
 	}
 	return "nerd"
 }

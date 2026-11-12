@@ -16,7 +16,7 @@ const webBuilt = false
 var errNoWebBuild = errors.New("this pekoe is built without the web UI (Tailscale); rebuild with: make install WEB=1")
 
 func (d *Daemon) startWeb() {
-	if !d.Global.Web.Enable {
+	if !d.cfg().Web.Enable {
 		d.web.set(func(s *webStatus) { *s = webStatus{State: "off"} })
 		return
 	}

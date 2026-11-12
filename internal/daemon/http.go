@@ -73,7 +73,7 @@ func (d *Daemon) startHTTP() error {
 	mux.HandleFunc("/pick", d.guard(d.httpPick))
 	mux.HandleFunc("/console", d.guard(d.httpConsole))
 	mux.HandleFunc("/tabs", d.guard(d.httpTabs))
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", d.Global.HTTP.Port))
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", d.cfg().HTTP.Port))
 	if err != nil {
 		return err
 	}
@@ -225,7 +225,7 @@ func (d *Daemon) receivePick(in pickIn) (*state.Pick, error) {
 		return nil, err
 	}
 	d.emit("pick.received", pk)
-	if slug != "" && d.Global.AutoSendOn() && strings.TrimSpace(in.Instruction) != "" {
+	if slug != "" && d.cfg().AutoSendOn() && strings.TrimSpace(in.Instruction) != "" {
 		if _, err := d.hPickSend(pickSendP{ID: pk.ID}); err == nil {
 			pk, _ = d.DB.PickByID(pk.ID)
 		}

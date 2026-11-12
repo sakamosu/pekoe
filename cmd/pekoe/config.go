@@ -181,7 +181,25 @@ editing:
 	}
 	keep = true // renamed: nothing left to remove
 	fmt.Fprintln(out, "saved", path)
+	fmt.Fprintln(out, appliesNote(orig, b))
 	return nil
+}
+
+// appliesNote says when the saved settings take effect: pekoed (and the
+// TUI through it) reads config.toml again within a second; a few settings
+// wait for a restart (config.RestartNeeded, against the file as it was).
+func appliesNote(before, after []byte) string {
+	next, err := config.ParseGlobal(after)
+	if err != nil {
+		return "pekoed keeps the settings it runs with until the file reads"
+	}
+	note := "a running pekoed and TUI take it up within a second"
+	if prev, err := config.ParseGlobal(before); err == nil {
+		if r := config.RestartNeeded(prev, next); len(r) > 0 {
+			note += "; " + strings.Join(r, ", ") + " apply after pekoe daemon restart"
+		}
+	}
+	return note
 }
 
 func printProblems(out io.Writer, ps []config.Problem) {

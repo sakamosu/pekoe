@@ -490,6 +490,8 @@ enable = true               # false で両方とも出さない
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
 
+保存した変更は再起動なしで効く: pekoed が変更から 1 秒以内に `config.toml` を読み直し、TUI も続く。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` まで起動したときの値のまま(TUI のメッセージ行と `pekoe daemon status` に名前が出る)。読めないファイルなら設定は前のままで、TUI が理由を出す。知らないキーや受け付けない値は `pekoe config check` で分かる([コマンド](#コマンド))。
+
 `[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` を書ける。`sandbox`(既定 `true`)は `command` が `claude` で始まるものにだけ効く([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
 
 ## データの置き場(リポジトリを汚さない)

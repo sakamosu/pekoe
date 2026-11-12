@@ -129,7 +129,7 @@ func (d *Daemon) onOutput(o engine.Output) {
 	} else {
 		delete(st.osc, o.Window)
 	}
-	agent := d.Global.Agents[s.Agent]
+	agent := d.cfg().Agents[s.Agent]
 	hooks := agent.Hooks
 	d.mu.Unlock()
 
@@ -199,6 +199,7 @@ func (d *Daemon) tickLoop() {
 		case <-t.C:
 		}
 		n++
+		d.reloadConfig() // config.toml changed: take it up (config.go)
 		d.fallbackDetect()
 		if n%30 == 0 {
 			d.mu.Lock()
@@ -245,7 +246,7 @@ func (d *Daemon) fallbackDetect() {
 		}
 		// agents with hooks are read from the screen only before their first
 		// hook arrives (Claude Code's folder trust dialog precedes all hooks)
-		if d.Global.Agents[s.Agent].Hooks && s.ClaudeSessionID != "" {
+		if d.cfg().Agents[s.Agent].Hooks && s.ClaudeSessionID != "" {
 			continue
 		}
 		quiet := now.Sub(st.lastOut)
@@ -274,7 +275,7 @@ func (d *Daemon) fallbackDetect() {
 			})
 			continue
 		}
-		if d.Global.Agents[d.sessionAgent(slug)].Hooks {
+		if d.cfg().Agents[d.sessionAgent(slug)].Hooks {
 			continue
 		}
 		if yesNoRe.MatchString(text) {

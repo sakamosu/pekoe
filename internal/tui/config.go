@@ -11,8 +11,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"pekoe/internal/config"
+	"pekoe/internal/daemon"
+	"pekoe/internal/theme"
 )
 
 // configKey follows the prefix: <prefix> , edits config.toml.
@@ -66,4 +72,61 @@ func (m *model) onConfigEdited(msg configEditedMsg) tea.Cmd {
 	}
 	// bubbletea turns the mouse off for the command and leaves it off
 	return tea.EnableMouseCellMotion
+}
+
+// configLoadedMsg: pekoed saw config.toml change (config.reloaded) and the
+// TUI read it again.
+type configLoadedMsg struct {
+	g       *config.Global
+	err     error
+	restart []string // settings pekoed takes up only after a restart
+}
+
+// reloadConfig reads config.toml again after pekoed said it changed. The
+// TUI reads the file itself (as at start): the event carries no settings.
+func (m *model) reloadConfig(ev daemon.ConfigReload) tea.Cmd {
+	return func() tea.Msg {
+		g, err := config.LoadGlobal()
+		return configLoadedMsg{g: g, err: err, restart: ev.Restart}
+	}
+}
+
+// applyConfig puts the settings read into use: most are read where they
+// are used (keys, review, notify …); the theme, the icons, the mascot, the
+// tips and the animation are set up here again.
+func (m *model) applyConfig(msg configLoadedMsg) tea.Cmd {
+	if msg.err != nil || msg.g == nil {
+		m.setMsg(fmt.Sprintf("config.toml not applied, the settings in use stay: %v", msg.err), true)
+		return nil
+	}
+	old, g := m.g, msg.g
+	m.g = g
+	themed := !reflect.DeepEqual(old.Theme, g.Theme)
+	if themed {
+		m.th = theme.Load(&g.Theme)
+		m.ic = theme.Icons(theme.IconsName(g.Theme.Icons))
+	}
+	if themed || !reflect.DeepEqual(old.Mascot, g.Mascot) {
+		m.buildTapi(nil)
+	}
+	if old.TipsOn() != g.TipsOn() {
+		m.initTips(m.tipsPath)
+	}
+	var cmds []tea.Cmd
+	if g.AnimateOn() && m.tapi.focused {
+		if !m.spinning {
+			m.spinning = true
+			cmds = append(cmds, spin(true))
+		}
+		if !m.tapi.ticking {
+			m.tapi.ticking = true
+			cmds = append(cmds, tapiTick())
+		}
+	}
+	text := "config.toml applied"
+	if len(msg.restart) > 0 {
+		text += " · " + strings.Join(msg.restart, ", ") + " apply after pekoe daemon restart"
+	}
+	m.setMsg(text, false)
+	return tea.Batch(cmds...)
 }

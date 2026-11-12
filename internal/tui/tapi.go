@@ -53,6 +53,7 @@ type tapiState struct {
 	toasted    map[string]bool
 	notified   map[string]bool
 	splash     bool
+	glyphs     string // what "auto" glyphs measured at start ("" not measured): kept on a reload
 	// PR reactions (tapi_pr.go)
 	prs         map[string]*mascot.PR // the summary tapi saw last, per session
 	prToasted   map[string]time.Time
@@ -86,9 +87,17 @@ func (m *model) newTapi() *tapiState {
 // measure the width of ● first (before the TUI takes the terminal).
 func (m *model) buildTapi(tty *os.File) {
 	c := m.g.Mascot
+	glyphs := mascot.DetectGlyphs(c.Glyphs, m.ic.Name, tty)
+	switch {
+	case c.Glyphs != "" && c.Glyphs != "auto" || m.ic.Name == "ascii":
+	case tty != nil:
+		m.tapi.glyphs = glyphs
+	case m.tapi.glyphs != "":
+		glyphs = m.tapi.glyphs // a reload cannot measure: the TUI owns the terminal
+	}
 	m.tapi.r = mascot.New(mascot.Options{
 		Shape:   mascot.DetectShape(c.Shape),
-		Glyphs:  mascot.DetectGlyphs(c.Glyphs, m.ic.Name, tty),
+		Glyphs:  glyphs,
 		Light:   c.LightPalette(),
 		Colors:  c.Colors,
 		Dim:     m.th.Color(theme.Dim),

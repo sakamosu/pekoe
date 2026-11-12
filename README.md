@@ -492,6 +492,8 @@ enable = true               # false hides both
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
 ```
 
+Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
+
 `[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks` `sandbox`. `sandbox` (default `true`) applies only when `command` starts with `claude` ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 
 ## Where data lives (your repositories stay clean)

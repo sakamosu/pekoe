@@ -359,7 +359,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if agent == "" {
 		agent = "claude"
 	}
-	if _, ok := d.Global.Agents[agent]; !ok {
+	if _, ok := d.cfg().Agents[agent]; !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
 	base := p.Base
@@ -387,7 +387,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		d.purge(old)
 		d.emit("session.removed", old)
 	}
-	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, d.busyPort)
+	port, err := d.DB.AllocPort(repo.ID, slug, d.cfg().Ports.Base, d.busyPort)
 	if err != nil {
 		return nil, err
 	}
@@ -750,7 +750,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	if err != nil {
 		return err
 	}
-	ag := d.Global.Agents[s.Agent]
+	ag := d.cfg().Agents[s.Agent]
 	cmd := ag.Command
 	if resume != "" && resume != "continue" && !validSessionID(resume) {
 		log.Printf("spawn %s: ignoring malformed session id to resume", slug)
@@ -936,7 +936,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if agent == "" {
 		agent = "claude"
 	}
-	if _, ok := d.Global.Agents[agent]; !ok {
+	if _, ok := d.cfg().Agents[agent]; !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
 	past := []pastSession{}
@@ -955,7 +955,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if _, err := d.get(slug); err == nil {
 		slug = d.uniqueSlug(paths.Slug(filepath.Base(top)), repo.ID+"#", repo.Name)
 	}
-	port, err := d.DB.AllocPort(repo.ID, slug, d.Global.Ports.Base, d.busyPort)
+	port, err := d.DB.AllocPort(repo.ID, slug, d.cfg().Ports.Base, d.busyPort)
 	if err != nil {
 		return nil, err
 	}
@@ -1355,7 +1355,7 @@ func (d *Daemon) hAnswer(p answerP) (any, error) {
 	if p.Expect != nil && !sameTool(s.PendingTool, p.Expect.Tool) {
 		return nil, errPromptChanged
 	}
-	ag := d.Global.Agents[s.Agent]
+	ag := d.cfg().Agents[s.Agent]
 	var spec string
 	switch p.Answer {
 	case "allow", "y", "yes":

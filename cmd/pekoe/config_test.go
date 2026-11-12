@@ -171,6 +171,18 @@ func TestConfigEditChangedMeanwhile(t *testing.T) {
 	}
 }
 
+func TestAppliesNote(t *testing.T) {
+	if n := appliesNote(nil, []byte("[http]\nport = 1\n[web]\nhostname = \"x\"\n[theme]\nmode = \"ansi\"\n")); !strings.HasSuffix(n, "; http.port, web apply after pekoe daemon restart") {
+		t.Errorf("restart: %q", n)
+	}
+	if n := appliesNote(nil, []byte("[theme]\nmode = \"ansi\"\n")); n != "a running pekoed and TUI take it up within a second" {
+		t.Errorf("live: %q", n)
+	}
+	if n := appliesNote(nil, []byte("[theme\n")); !strings.Contains(n, "until the file reads") {
+		t.Errorf("broken: %q", n)
+	}
+}
+
 func TestConfigCheck(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

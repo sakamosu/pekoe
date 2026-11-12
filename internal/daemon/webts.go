@@ -34,7 +34,7 @@ const webBuilt = true
 // without an auth key waits for a login: the URL goes to pekoed's log and
 // to `pekoe web`.
 func (d *Daemon) startWeb() {
-	cfg := d.Global.Web
+	cfg := d.cfg().Web
 	if !cfg.Enable {
 		d.web.set(func(s *webStatus) { *s = webStatus{State: "off"} })
 		return
@@ -162,7 +162,7 @@ func (d *Daemon) serveWeb(ctx context.Context, srv *tsnet.Server, lc *local.Clie
 		}
 		c()
 	}
-	log.Printf("web: serving %s (allow_users %s)", strings.Join(webURLs(srv.CertDomains()), " "), strings.Join(d.Global.Web.AllowUsers, ", "))
+	log.Printf("web: serving %s (allow_users %s)", strings.Join(webURLs(srv.CertDomains()), " "), strings.Join(d.cfg().Web.AllowUsers, ", "))
 	hs := &http.Server{Handler: h, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 	mu.Lock()
 	*out = hs

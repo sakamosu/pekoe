@@ -149,7 +149,13 @@ type Daemon struct {
 	// changeSame caches merge.go's sameChange per repo and pair of commits
 	changeSame sync.Map
 	Eng        engine.Engine
+	// Global is config.toml as pekoed uses it now: replaced (never changed
+	// in place) when the file changes (config.go). Read it with cfg().
 	Global     *config.Global
+	cfgMu      sync.RWMutex
+	started    *config.Global // what pekoed started with ([http], [web], [sandbox] stay)
+	cfgRaw     []byte         // config.toml's contents behind Global
+	cfgRestart []string       // settings changed that wait for a restart
 	// sbx wraps the commands that come from a worktree (internal/sandbox)
 	sbx     *sandbox.Sandbox
 	ln      net.Listener
@@ -235,7 +241,7 @@ func New() (*Daemon, error) {
 			log.Printf("permissions of %s: %v", dir, err)
 		}
 	}
-	g, err := config.LoadGlobal()
+	g, raw, err := config.ReadGlobal()
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +263,7 @@ func New() (*Daemon, error) {
 		return nil, fmt.Errorf("human token: %w", err)
 	}
 	d := &Daemon{
-		DB: db, Global: g, lock: lock, authKey: takeAuthKeyEnv(), humanToken: humanToken,
+		DB: db, Global: g, started: g, cfgRaw: raw, lock: lock, authKey: takeAuthKeyEnv(), humanToken: humanToken,
 		sbx:       sandbox.New(sandbox.DefaultPolicy(g.Web.StateDir), g.Sandbox.On()),
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
@@ -550,7 +556,11 @@ func (d *Daemon) registerHandlers() {
 			d.mu.Lock()
 			n := len(d.sessions)
 			d.mu.Unlock()
-			return map[string]any{"pid": os.Getpid(), "version": Version, "sessions": n, "http_port": d.Global.HTTP.Port, "socket": paths.Socket()}, nil
+			st := map[string]any{"pid": os.Getpid(), "version": Version, "sessions": n, "http_port": d.cfg().HTTP.Port, "socket": paths.Socket()}
+			if r := d.configRestart(); len(r) > 0 {
+				st["config_restart"] = r // config.toml changed these: they wait for a restart
+			}
+			return st, nil
 		},
 		"daemon.stop": func(raw json.RawMessage) (any, error) {
 			var p struct {
@@ -566,7 +576,7 @@ func (d *Daemon) registerHandlers() {
 			return nil, nil
 		},
 		"ext.info": func(json.RawMessage) (any, error) {
-			return map[string]any{"port": d.Global.HTTP.Port, "token": d.token}, nil
+			return map[string]any{"port": d.cfg().HTTP.Port, "token": d.token}, nil
 		},
 		"web.status": func(json.RawMessage) (any, error) {
 			st := d.web.get()

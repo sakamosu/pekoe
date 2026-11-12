@@ -36,6 +36,7 @@ type tipState struct {
 // initTips opens the shown-tips record at path ("" keeps it in memory).
 func (m *model) initTips(path string) {
 	m.tip = tipState{}
+	m.tipsPath = path
 	if m.g.TipsOn() {
 		m.tip.shown = tips.Open(path)
 	}

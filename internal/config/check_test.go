@@ -178,3 +178,19 @@ func mustDur(t *testing.T, s string) time.Duration {
 	}
 	return d
 }
+
+func TestRestartNeeded(t *testing.T) {
+	run, _ := ParseGlobal([]byte("[http]\nport = 5000\n"))
+	next, _ := ParseGlobal([]byte("[http]\nport = 5001\n[sandbox]\nenable = false\n[theme]\nmode = \"ansi\"\n[web]\nallow_users = [\"a@b\"]\n"))
+	if got := strings.Join(RestartNeeded(run, next), ","); got != "http.port,web,sandbox" {
+		t.Errorf("RestartNeeded = %s", got)
+	}
+	k := KeepRunning(run, next)
+	if k.HTTP.Port != 5000 || !k.Sandbox.On() || len(k.Web.AllowUsers) != 0 || k.Theme.Mode != "ansi" {
+		t.Errorf("KeepRunning: %+v", k)
+	}
+	same, _ := ParseGlobal([]byte("[http]\nport = 5000\n[cleanup]\nstale_after = \"1h\"\n"))
+	if r := RestartNeeded(run, same); r != nil {
+		t.Errorf("live settings need a restart: %v", r)
+	}
+}

@@ -1345,6 +1345,9 @@ func cmdDaemon(args []string) error {
 			return nil
 		}
 		fmt.Printf("pekoed %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
+		if r, ok := st["config_restart"].([]any); ok && len(r) > 0 {
+			fmt.Printf("config.toml changed %v: they apply after pekoe daemon restart\n", r)
+		}
 		return nil
 	}
 	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}

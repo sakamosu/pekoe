@@ -60,7 +60,7 @@ func (d *Daemon) agentSecrets() (files, dirs []string) {
 	db := paths.StateDB()
 	files = []string{paths.HumanTokenFile(), paths.TokenFile(), db, db + "-wal", db + "-shm"}
 	dirs = []string{paths.WebStateDir(), paths.ConfigDir()}
-	if sd := d.Global.Web.StateDir; sd != "" {
+	if sd := d.cfg().Web.StateDir; sd != "" {
 		dirs = append(dirs, sd)
 	}
 	return files, dirs
