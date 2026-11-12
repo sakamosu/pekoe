@@ -214,9 +214,16 @@ func TestInstallWithoutShareDir(t *testing.T) {
 }
 
 func TestCheckRefuses(t *testing.T) {
-	p := Plan{Exe: "/opt/homebrew/Cellar/pekoe/0.1.0/bin/pekoe"}
-	if err := p.Check(); !errors.Is(err, ErrManaged) {
-		t.Errorf("homebrew: %v", err)
+	for _, exe := range []string{
+		"/opt/homebrew/Cellar/pekoe/0.1.0/bin/pekoe",
+		// the cask (brew install sakamosu/tap/pekoe), Apple Silicon and Intel
+		"/opt/homebrew/Caskroom/pekoe/0.4.0/bin/pekoe",
+		"/usr/local/Caskroom/pekoe/0.4.0/bin/pekoe",
+		"/home/linuxbrew/.linuxbrew/Caskroom/pekoe/0.4.0/bin/pekoe",
+	} {
+		if err := (Plan{Exe: exe}).Check(); !errors.Is(err, ErrManaged) {
+			t.Errorf("homebrew %s: %v", exe, err)
+		}
 	}
 	if os.Geteuid() == 0 {
 		t.Skip("root writes anywhere")
@@ -226,7 +233,7 @@ func TestCheckRefuses(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "pekoe"), []byte("x"), 0o755)
 	os.Chmod(dir, 0o555)
 	defer os.Chmod(dir, 0o755)
-	p = Plan{Exe: filepath.Join(dir, "pekoe")}
+	p := Plan{Exe: filepath.Join(dir, "pekoe")}
 	if err := p.Check(); err == nil || !strings.Contains(err.Error(), "cannot write") {
 		t.Errorf("read-only: %v", err)
 	}
