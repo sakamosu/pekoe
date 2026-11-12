@@ -1,6 +1,7 @@
 # v* タグの push で GoReleaser がクロスビルドして GitHub Release を下書きで作り(.goreleaser.yaml)、
 # アーカイブに来歴(attestation)を付けてから公開する。どこかで落ちたら下書きのまま残り、公開されない。
-# immutable releases を有効にすると公開した後はアセットを足せないので、公開は最後にする。
+# immutable releases を有効にすると公開した後はアセットを足せないので、リリースを触るのは公開が最後。
+# 公開の後に Homebrew の tap に cask を書く(scripts/homebrew-tap.sh。トークンや tap が無ければ飛ばす)。
 # アクションはコミット SHA で固定する(コメントの版は Dependabot が SHA と一緒に上げる)。
 name: release
 
@@ -81,13 +82,27 @@ jobs:
       # ここまで通ったら下書きを公開する。プレリリース(vX.Y.Z-rc.1 など。goreleaser の prerelease: auto)は
       # Latest にしない。下書きは make_latest を持てないので、公開するときに付ける。
       - name: Publish the release
+        id: publish
         run: |
-          if [ "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = true ]; then
+          pre="$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)"
+          if [ "$pre" = true ]; then
             gh release edit "$TAG" --draft=false
           else
             gh release edit "$TAG" --draft=false --latest
           fi
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+      # goreleaser が作った cask(dist/homebrew/Casks/pekoe.rb、.goreleaser.yaml の homebrew_casks)を
+      # Homebrew の tap(sakamosu/homebrew-tap)に書く。公開の後にする(公開前だと tap が落とせない URL を指す)。
+      # HOMEBREW_TAP_TOKEN(tap にだけ書ける fine-grained PAT。release Environment の secret)が無いときと、
+      # tap が見えない(404)ときは警告を出して飛ばし、ジョブは通す。cask の中身は step summary に残る。
+      # プレリリースは tap に書かない(brew install は正式リリースだけを入れる)
+      - name: Update the Homebrew tap
+        if: ${{ steps.publish.outputs.prerelease != 'true' }}
+        run: scripts/homebrew-tap.sh dist/homebrew/Casks/pekoe.rb "$TAG"
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           TAG: ${{ github.ref_name }}
