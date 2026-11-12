@@ -159,7 +159,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "run": "gh auth login",          // run 窓(TUI の !)のコマンド。閉じると消える
   "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
   "issue": 12,                     // --from gh#N で作ったときの issue 番号
-  "pr_status": {                   // PR の要約(60 秒ごとにポーリング。PR ビューを開いている間は 15 秒)
+  "pr_status": {                   // PR の要約(60 秒ごと(`[pr] poll_every`)にポーリング。PR ビューを開いている間は 15 秒)
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
     "pass": 5, "fail": 1, "pending": 0,   // checks の数
@@ -192,7 +192,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 
 | method | params | result |
 | --- | --- | --- |
-| `daemon.status` | — | `{pid, version, sessions, http_port}` |
+| `daemon.status` | — | `{pid, version, sessions, http_port, config_restart?}`。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
 | `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
 | `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
@@ -633,7 +633,7 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
 
 `session.updated` は `pr_status` が変わったときだけ出る(取得時刻だけの変化では出ない)。gh が無い・未認証のときはポーリングを静かに飛ばす。
 
-PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは 1 分強まで(15 秒ごとに見て、PR ごとに 60 秒空ける)。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
+PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒(`[pr] poll_every`。下限 30 秒)に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは 1 分強まで(15 秒ごとに見て、PR ごとに 60 秒空ける)。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
 
 ### ErrorReport オブジェクト
 
@@ -681,6 +681,15 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `tapi.updated` | `Tapi`(受信箱・依頼の件数が変わったときも) |
 | `tapi.output` | `{}`(tapi chat の画面更新の合図。30ms で間引く) |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
+| `config.reloaded` | `{error?, restart?: [name]}`(config.toml が変わって読み直した。`error` があれば読めず、前の設定のまま。ファイルの中身は載せない。token つきの購読にだけ届く) |
+
+### config.toml の再読み込み
+
+pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前と違えば再起動なしで読み直して `config.reloaded` を出す。書くのは `pekoe config edit`(pekoed を通さない。エージェントの sandbox からは `~/.config/pekoe` を読み書きできず、RPC で書けるようにするとその抜け道になる)か人の手で、pekoed は読むだけ。TUI は `config.reloaded` を受けて自分でファイルを読み直す(テーマ・アイコン・マスコット・TIPS・アニメーションを作り直し、ほかは使うたびに読む)。
+
+- すぐ効く: `[theme]` `[mascot]` `[tips]` `animate` `[picks]` `[orchestrator]` `[notify]` `[cleanup]` `[pr]`(次のポーリングから) `[keys]` `[review]` `[agents.*]` `[tapi]`(次に tapi chat を始めるとき) `[ports]`(次に割り当てるポートから)
+- 再起動まで効かない(`config.RestartNeeded`): `[http] port`(待ち受け)・`[web]`(tsnet と sandbox の拒否リスト)・`[sandbox]`(hooks と git の包み方)。pekoed は起動したときの値のまま動き、変わった名前を `config.reloaded` の `restart` と `daemon.status` の `config_restart` に出す(`pekoe daemon status` と TUI のメッセージ行にも)。元の値に戻せば消える
+- 読めない(構文エラー・型の違い): 前の設定のまま動き続け、`error` 付きの `config.reloaded` を出し、ログに理由を書く。TUI はファイルを自分で読んで理由をメッセージ行に出す。ファイルが消えたら既定値に戻る
 
 ## 2. HTTP(Chrome 拡張)
 

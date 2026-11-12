@@ -131,7 +131,7 @@ func (d *Daemon) hCleanup(p cleanupP) (any, error) { return d.cleanupList(p, tru
 func (d *Daemon) hAgentCleanup(p cleanupP) (any, error) { return d.cleanupList(p, false) }
 
 func (d *Daemon) cleanupList(p cleanupP, fresh bool) (*CleanupList, error) {
-	stale := d.Global.Cleanup.Stale()
+	stale := d.cfg().Cleanup.Stale()
 	if p.StaleAfter != "" {
 		v, err := time.ParseDuration(p.StaleAfter)
 		if err != nil || v <= 0 {

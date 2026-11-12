@@ -23,6 +23,7 @@
 //	pekoe mcp                  MCP server (stdio) for agents
 //	pekoe daemon start|stop|restart|status|run
 //	pekoe tapi [reset]         tapi chat (TUI: t): state, or forget the conversation
+//	pekoe config edit|check|show|path   config.toml
 //	pekoe update [--check] [--version vX.Y.Z]  replace pekoe with a GitHub release
 package main
 
@@ -152,6 +153,8 @@ func main() {
 		err = cmdTapi(args)
 	case "tip", "tips":
 		err = cmdTip(args)
+	case "config":
+		err = cmdConfig(args)
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
@@ -233,6 +236,9 @@ func usage() {
                                the conversation
   pekoe tip [<id>] [--list] [--doc PATH]
                                a tip about pekoe, one not shown yet ([tips])
+  pekoe config edit|check|show|path
+                               config.toml: open it in $EDITOR (checked on save),
+                               check it, the settings in use, its path
   pekoe daemon start|stop|restart|status
                                restart: stop, wait, start the installed binary
                                (after make install; agents keep running)
@@ -1339,6 +1345,9 @@ func cmdDaemon(args []string) error {
 			return nil
 		}
 		fmt.Printf("pekoed %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
+		if r, ok := st["config_restart"].([]any); ok && len(r) > 0 {
+			fmt.Printf("config.toml changed %v: they apply after pekoe daemon restart\n", r)
+		}
 		return nil
 	}
 	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}

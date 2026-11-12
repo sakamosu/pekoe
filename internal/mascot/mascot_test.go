@@ -145,10 +145,18 @@ func TestAggregate(t *testing.T) {
 		{"landed ignored", []*state.Session{sess("a", state.Landed, ago(time.Second))}, nil, active, Idle, "no sessions"},
 	}
 	for _, c := range cases {
-		s := Aggregate(c.ss, c.seen, now, c.active)
+		s := Aggregate(c.ss, c.seen, now, c.active, 3*time.Minute)
 		if s.Mood != c.mood || s.Speech() != c.speech {
 			t.Errorf("%s: mood=%s speech=%q, want %s %q", c.name, s.Mood, s.Speech(), c.mood, c.speech)
 		}
+	}
+	// [mascot] sleep_after
+	ss := []*state.Session{sess("a", state.Idle, ago(time.Minute))}
+	if s := Aggregate(ss, nil, now, ago(time.Minute), 30*time.Second); s.Mood != Sleep {
+		t.Errorf("sleep_after 30s: %s", s.Mood)
+	}
+	if s := Aggregate(ss, nil, now, ago(time.Minute), 10*time.Minute); s.Mood != Idle {
+		t.Errorf("sleep_after 10m: %s", s.Mood)
 	}
 }
 

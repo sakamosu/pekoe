@@ -24,7 +24,6 @@ import (
 
 const (
 	tapiFrame = 400 * time.Millisecond
-	toastFor  = 5 * time.Second
 	splashFor = time.Second
 )
 
@@ -53,6 +52,7 @@ type tapiState struct {
 	toasted    map[string]bool
 	notified   map[string]bool
 	splash     bool
+	glyphs     string // what "auto" glyphs measured at start ("" not measured): kept on a reload
 	// PR reactions (tapi_pr.go)
 	prs         map[string]*mascot.PR // the summary tapi saw last, per session
 	prToasted   map[string]time.Time
@@ -86,9 +86,17 @@ func (m *model) newTapi() *tapiState {
 // measure the width of ● first (before the TUI takes the terminal).
 func (m *model) buildTapi(tty *os.File) {
 	c := m.g.Mascot
+	glyphs := mascot.DetectGlyphs(c.Glyphs, m.ic.Name, tty)
+	switch {
+	case c.Glyphs != "" && c.Glyphs != "auto" || m.ic.Name == "ascii":
+	case tty != nil:
+		m.tapi.glyphs = glyphs
+	case m.tapi.glyphs != "":
+		glyphs = m.tapi.glyphs // a reload cannot measure: the TUI owns the terminal
+	}
 	m.tapi.r = mascot.New(mascot.Options{
 		Shape:   mascot.DetectShape(c.Shape),
-		Glyphs:  mascot.DetectGlyphs(c.Glyphs, m.ic.Name, tty),
+		Glyphs:  glyphs,
 		Light:   c.LightPalette(),
 		Colors:  c.Colors,
 		Dim:     m.th.Color(theme.Dim),
@@ -227,7 +235,7 @@ func (m *model) escalate() tea.Cmd {
 	now := time.Now()
 	var b strings.Builder
 	for _, s := range m.sessions {
-		if s.State != state.Waiting || now.Sub(s.StateSince) < mascot.WaitNotifyAfter {
+		if s.State != state.Waiting || now.Sub(s.StateSince) < m.g.Notify.OS() {
 			continue
 		}
 		key := s.Slug + "|" + s.StateSince.String()
@@ -265,7 +273,7 @@ func notifySeq(title, body string) string {
 // ---- frames ----
 
 func (m *model) summary() mascot.Summary {
-	sum := mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive)
+	sum := mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive, m.g.Mascot.Sleep())
 	sum.Cloudy = m.cloudy()
 	return sum
 }
@@ -322,7 +330,7 @@ func (m *model) barTapi(width int) string {
 		eyes = m.tapi.r.CloudyEyes()
 	}
 	face := m.tapi.r.Line(eyes)
-	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= mascot.WaitBlinkAfter && m.animating() && m.tapi.frame%4 == 3 {
+	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= m.g.Notify.Blink() && m.animating() && m.tapi.frame%4 == 3 {
 		text = strings.Repeat(" ", w(text)) // 3 shown : 1 hidden, 1.6 s
 	}
 	text = clip(text, max(width/2-6, 4))

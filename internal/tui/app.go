@@ -163,6 +163,7 @@ type model struct {
 
 	tour     *tourState // the tutorial, while it runs (tour.go)
 	tourPath string     // where seeing the tutorial is recorded; "" in tests
+	tipsPath string     // where the tips shown are recorded; "" in tests
 	tourAuto bool       // start the tutorial once the screen is up (first run)
 	tourLang string     // the language the next tour starts in (tourJa, tourEn); "" goes by the environment
 }
@@ -831,6 +832,12 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case evMsg:
 		return m, m.onEvent(client.Event(msg))
 
+	case configEditedMsg:
+		return m, m.onConfigEdited(msg)
+
+	case configLoadedMsg:
+		return m, m.applyConfig(msg)
+
 	case layoutSettledMsg:
 		return m, m.layoutSettled(msg.seq)
 
@@ -931,6 +938,12 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 		return cmd
 	}
 	switch ev.Event {
+	case "config.reloaded":
+		var r daemon.ConfigReload
+		if json.Unmarshal(ev.Data, &r) != nil {
+			return nil
+		}
+		return m.reloadConfig(r)
 	case "session.created", "session.updated", "session.waiting", "session.done":
 		var s state.Session
 		if json.Unmarshal(ev.Data, &s) != nil {
@@ -1179,6 +1192,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 				}
 			}
 			return cmd
+		}
+		if k.String() == configKey {
+			return m.editConfig()
 		}
 		// after ^q left typing, any other key is a plain key: l still lands
 		if !fromTyping {

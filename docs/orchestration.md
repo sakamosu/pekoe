@@ -377,9 +377,10 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 
 統括役になると、tapi が人を待っているのを見落とす方が困る。今の「バーの声だけ」(docs/tapi-chat.md「気づかせ方」)を変える:
 
-- tapi の許可待ち・質問待ちは、セッションの wait と同じエスカレーション(0 秒: 顔と台詞 → 30 秒: 点滅 → 2 分: OS 通知。docs/mascot.md)に乗せる。台詞は `tapi needs you · t`
+- tapi の許可待ち・質問待ちは、セッションの wait と同じエスカレーション(0 秒: 顔と台詞 → 30 秒: 点滅 → 2 分: OS 通知。間合いは `[notify]` の `blink_after` / `os_after` / `toast_for` で、セッションと共通。docs/mascot.md)に乗せる。台詞は `tapi needs you · t`
 - 受信箱に項目が増えたらトースト 1 回(`? feat-pagination asks: …`。文は 40 文字で切る)。`approve` と `login` は wait と同じエスカレーションに乗せる。`fyi` は知らせない
 - `[orchestrator] notify = "quiet"` で今の弱い知らせ方に戻せる
+- 実装: `[orchestrator] notify` は tapi と受信箱の問いを「どう」知らせるか(escalate / quiet)を決め、`[notify]`(`toast_for` / `blink_after` / `os_after`)は「いつ」を決める。間合いはセッションの wait と共通で、quiet のときは tapi と問いには使わない。節を分けたのは、セッションの wait の間合いが統括役と関係なく効くため
 
 実装(internal/tui/notify.go。既定は `notify = "escalate"`、それ以外の値も escalate):
 

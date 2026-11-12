@@ -198,6 +198,12 @@ var specs = map[string]spec{
 	"tapi":       {use: "pekoe tapi [status|reset] [--json]   tapi chat (TUI: t)"},
 	"tapi reset": {use: "pekoe tapi reset [--yes]   end tapi chat and forget its conversation", bools: []string{"yes"}},
 
+	"config":       {use: "pekoe config edit|check|show|path   config.toml: open it in $EDITOR, check it, print the settings in use, its path"},
+	"config edit":  {use: "pekoe config edit   open config.toml in $EDITOR (vi); checked when the editor closes"},
+	"config check": {use: "pekoe config check [--json]   syntax, unknown keys and values pekoe does not take"},
+	"config show":  {use: "pekoe config show [--json]   the settings in use, defaults filled in (secrets hidden)"},
+	"config path":  {use: "pekoe config path [--json]   where config.toml is"},
+
 	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
 
 	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web"}, vals: []string{"version"}},

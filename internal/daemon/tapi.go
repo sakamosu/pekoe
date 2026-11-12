@@ -70,7 +70,7 @@ func (d *Daemon) tapiView() *Tapi {
 	t := d.tapi
 	d.mu.Unlock()
 	v := &Tapi{
-		Agent: d.Global.Tapi.Agent, Dir: paths.TapiDir(),
+		Agent: d.cfg().Tapi.Agent, Dir: paths.TapiDir(),
 		State: t.state, WaitKind: t.waitKind, PendingTool: t.pending,
 		LastMessage: t.lastMessage, ClaudeSessionID: t.sessionID, StateSince: t.since,
 	}
@@ -456,8 +456,8 @@ type tapiSizeP struct {
 
 // tapiSpawn (re)starts tapi's window. Callers hold tapiMu.
 func (d *Daemon) tapiSpawn(w, h int) error {
-	name := d.Global.Tapi.Agent
-	ag, ok := d.Global.Agents[name]
+	name := d.cfg().Tapi.Agent
+	ag, ok := d.cfg().Agents[name]
 	if !ok {
 		return fmt.Errorf("[tapi] agent %q is not defined in [agents]", name)
 	}

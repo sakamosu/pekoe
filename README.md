@@ -204,11 +204,12 @@ pekoe                                                 # TUI
 | `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server (`$PEKOE_TMUX_SOCKET`). **On the default socket `pekoe` this stops every agent.** For cleaning up sandboxes |
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat's state (with the ledger's and the inbox's open counts) / stop it and forget the conversation (same as `T` in the TUI; the ledger and the inbox stay) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | Introduce one pekoe feature (a tip not shown yet, see [Tips](#tips)). `<id>` for that tip, `--list` for all, `--doc` prints the doc a tip points to (bundled in the binary) |
+| `pekoe config edit\|check\|show\|path` | `config.toml`: `edit` opens it in `$EDITOR` (`vi` when unset) and checks it when the editor closes; with a problem it asks to edit again, save anyway or quit without saving (like visudo). A missing file is created. `check` lists syntax errors, unknown keys and values pekoe does not take (exit code 1 when there are any). `show` prints the settings in use with the defaults filled in (`[web] auth_key` hidden). `path` prints where the file is. They read and write the file themselves, never through pekoed (in the TUI: `^q ,`) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | Replace pekoe with the latest GitHub release ([Updating](#updating)). `--check` only looks for a newer version. Humans only |
 | `pekoe version` | Version |
 
 - `R` can be a repo-id, a short name (the name in `~/worktrees/<name>`) or a path. Commands that take a slug also accept `<repo>/<slug>`
-- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `daemon status` `update --check`). It can go before or after the subcommand
+- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check`). It can go before or after the subcommand
 - `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
 - `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
 - Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send`, `land`, `rm` of a landed session, `dev` of their own session, `report`, `reports`, `wait`, `ask-human`, `inbox` (the list, and `withdraw` of their own question), `ledger` (tapi chat only; not `reopen` / `rm`), `stats`, `conflicts` and `cleanup` (the list; `--rm` only of landed sessions, as `rm`) (and `event`, for the hooks) without the token; `conflicts` is recomputed at most every 10 seconds (within that the last forecast comes back), `report` only for the caller's own session (refused from outside a pekoe window), `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only), `land` only in a repository with an origin (without one, land fast-forwards the base branch right away), and `rm` only on a landed session whose worktree is already gone, without `--force`. The others (`answer`, `dev` of another session, `init`, `open`, `review`, `rm` of any other session, `issues`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
@@ -237,6 +238,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `i` / `h` `Esc` | Start typing in the Agent panel / go back left |
 | `^q` `z` | Make the right pane (4) full width and hide the left / again to restore. Pressed while typing, you return to typing |
 | `^q` `<` `>` / `^q` `=` | Narrow / widen the left pane by 4 columns / reset to the default (40%). Width and zoom are kept in `~/.local/share/pekoe/layout.json`, so the TUI after a restart and agents started from the CLI get the same width. Has no effect below 100 columns (stacked layout) |
+| `^q` `,` | Edit `config.toml` (`pekoe config edit` in this terminal; the TUI comes back when the editor closes) |
 | `n` | New worktree + session |
 | `t` / `T` | Open tapi chat and talk to it ([tapi chat](#tapi-chat)) / reset tapi chat (asks first) |
 | `w` | Choose a repository |
@@ -250,7 +252,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `u` `R` | Undo the last prompt / restart the agent (resume) |
 | `s` `i` `↵` | Send / ignore / show details of an error card (errors pekoed found in the dev server or browser). While a card is shown, typing is `a` |
 | `x` `D` | End the session (keep the worktree) / delete the worktree (asks first) |
-| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `ext` `tutorial` `q`) |
+| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
 | `:cleanup` | The cleanup list (`pekoe cleanup`): landed, merged and long-stopped sessions with their warnings (uncommitted files, unpushed commits, an open PR). `space` marks one, `a` marks every landed one, `D` removes the marked ones (or the selected one) after a confirm that names each worktree it deletes and repeats the warnings |
 | `H` | Tutorial again (also `:tutorial`, see [Tutorial](#tutorial)) |
 | `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |
@@ -441,7 +443,7 @@ gatekeeper = "claude -p 'list risky spots as path:line: text'"   # gets the diff
 
 Variables are `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`. setup runs in order and stops at the first failure, shown in red in the left pane. When a value is put into a `[hooks]` command, values containing characters the shell treats specially (spaces, `$`, `` ` ``, `;` and so on) are single-quoted and passed as one word (ordinary values like `feat/x` are left as they are). pekoe adds the quotes when needed, so **do not put `{{…}}` inside quotes of your own** (`createdb app_{{branch}}`, not `createdb "app_{{branch}}"`: inside double quotes the single quotes do nothing). `pekoe new` refuses branch names with characters the shell treats specially (`$` `(` `)` `;` `|` `{` `}`, spaces and so on). Values in `[env]` are never quoted.
 
-`~/.config/pekoe/config.toml` (global):
+`~/.config/pekoe/config.toml` (global; `pekoe config edit` or `^q ,` in the TUI opens it, `pekoe config show` prints every setting with the value in use):
 
 ```toml
 animate = true              # animate state icons
@@ -470,6 +472,7 @@ shape   = "auto"            # auto | round (sextant blocks) | block (quadrant bl
 glyphs  = "auto"            # auto (measures the width of ●) | unicode | narrow (● as 🞄) | ascii
 palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
 splash  = true              # splash screen at startup
+sleep_after = "3m"          # tapi falls asleep when every session is idle and no key was pressed for this long (at least 10s)
 [mascot.colors]             # override hi / bd / sh / eye
 bd = "#e4c49a"
 [agents.claude]
@@ -482,6 +485,12 @@ deny    = "n"
 agent = "claude"            # a name from [agents.*]; agents other than claude get no --add-dir (cwd only)
 [orchestrator]              # tapi as the orchestrator (docs/orchestration.md)
 notify = "escalate"         # tapi waiting and the inbox's questions escalate like a session's wait (toast → blink → desktop notification) | "quiet": bottom line / message line only
+[notify]                    # when the TUI tells you something waits (a session's wait; tapi's and the inbox's too unless notify = "quiet")
+toast_for   = "5s"          # how long a toast shows (PR reactions too; at least 1s)
+blink_after = "30s"         # the bottom line's speech blinks after a wait this long (at least 1s)
+os_after    = "2m"          # a desktop notification after a wait this long, while the terminal is not focused (at least 10s)
+[pr]                        # pekoed's polling of the sessions' PRs
+poll_every  = "1m"          # ask GitHub about each open PR at most this often (at least 30s)
 [cleanup]                   # pekoe cleanup / :cleanup
 stale_after = "72h"         # list a stopped session (done, idle, failed …) as stale after this long without a change (a Go duration)
 [tips]                      # tips (4's empty view and tapi chat's greeting)
@@ -489,6 +498,10 @@ enable = true               # false hides both
 [sandbox]                   # commands from worktrees ([hooks], gatekeeper) and pekoed's git run in a sandbox
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
 ```
+
+The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
+
+Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
 
 `[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks` `sandbox`. `sandbox` (default `true`) applies only when `command` starts with `claude` ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 

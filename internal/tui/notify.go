@@ -80,7 +80,7 @@ func (m *model) waitToast(slug string, mood mascot.Mood, text string) {
 	if c := t.toast; c != nil && c.react != nil && time.Now().Before(c.until) {
 		m.queueReaction(queuedReaction{r: *c.react, at: time.Now(), dur: time.Until(c.until)})
 	}
-	t.toast = &toast{slug: slug, mood: mood, text: text, until: time.Now().Add(toastFor)}
+	t.toast = &toast{slug: slug, mood: mood, text: text, until: time.Now().Add(m.g.Notify.Toast())}
 }
 
 // tapiOnChat runs on tapi.updated: tapi starting to wait behind its closed
@@ -98,7 +98,7 @@ func (m *model) tapiOnChat() {
 }
 
 // orchNotify is escalate's part for tapi and the inbox: the OS
-// notifications of waits left alone for WaitNotifyAfter, once each.
+// notifications of waits left alone for [notify] os_after, once each.
 func (m *model) orchNotify(now time.Time) []string {
 	if m.quietNotify() {
 		return nil
@@ -113,11 +113,11 @@ func (m *model) orchNotify(now time.Time) []string {
 	}
 	// tapi's chat may be open in a terminal nobody looks at: escalate is
 	// only called while it is not focused
-	if v := m.chat.info; m.tapiWaiting() && now.Sub(v.StateSince) >= mascot.WaitNotifyAfter && once("+tapi|"+v.StateSince.String()) {
+	if v := m.chat.info; m.tapiWaiting() && now.Sub(v.StateSince) >= m.g.Notify.OS() && once("+tapi|"+v.StateSince.String()) {
 		out = append(out, "tapi needs you")
 	}
 	for _, it := range m.inboxWaits() {
-		if now.Sub(it.CreatedAt) >= mascot.WaitNotifyAfter && once(fmt.Sprintf("inbox|%d", it.ID)) {
+		if now.Sub(it.CreatedAt) >= m.g.Notify.OS() && once(fmt.Sprintf("inbox|%d", it.ID)) {
 			out = append(out, it.From+" asks: "+clip(inboxText(firstLine(it.Question)), 60))
 		}
 	}

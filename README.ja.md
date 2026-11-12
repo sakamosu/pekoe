@@ -202,11 +202,12 @@ pekoe                                                 # TUI
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
+| `pekoe config edit\|check\|show\|path` | `config.toml` の入口。`edit` は `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめる。間違いがあれば、開き直す・そのまま保存・保存せずにやめるを聞く(visudo と同じ形)。ファイルが無ければ作る。`check` は構文エラー・知らないキー・受け付けない値を出す(あれば終了コード 1)。`show` は既定値込みの今の設定(`[web] auth_key` は伏せる)。`path` は置き場所。どれも pekoed を通さず自分でファイルを読み書きする(TUI では `^q ,`) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
+- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
 - pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・自分のセッションの `dev`・`report`・`reports`・`wait`・`ask-human`・`inbox`(一覧と、自分の問いの `withdraw`)・`ledger`(tapi chat だけ。`reopen` / `rm` は除く)・`stats`・`conflicts`・`cleanup`(一覧。`--rm` は `rm` と同じく landed だけ)(と hooks 用の `event`)だけで、`conflicts` は計算し直しが 10 秒に 1 回まで(それ以内は前の予報が返る)、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・ほかのセッションの `dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
@@ -235,6 +236,7 @@ pekoe                                                 # TUI
 | `i` / `h` `Esc` | Agent パネルで入力を始める / 左に戻る |
 | `^q` `z` | 右ペイン(4)を全幅にして左ペインを隠す / もう一度で戻す。入力中に押せば入力に戻る |
 | `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に残り、再起動後の TUI と CLI から起動するエージェントの幅も同じになる。100 列未満(縦並び)では効かない |
+| `^q` `,` | `config.toml` を編集する(この端末で `pekoe config edit`。エディタを閉じると TUI に戻る) |
 | `n` | 新しい worktree + セッション |
 | `t` / `T` | tapi chat を開いて話しかける([tapi chat](#tapi-chat))/ tapi chat をリセット(確認あり) |
 | `w` | リポジトリを選ぶ |
@@ -248,7 +250,7 @@ pekoe                                                 # TUI
 | `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `ext` `tutorial` `q`) |
+| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
 | `:cleanup` | 片付けの一覧(`pekoe cleanup`)。landed・マージ済み・止まって長いセッションを警告(未コミットのファイル・push していないコミット・開いている PR)つきで出す。`space` で 1 つ選び、`a` で landed をすべて選び、`D` で選んだもの(なければカーソルのもの)を消す。消す前の確認に、消す worktree と警告をもう一度出す |
 | `H` | チュートリアルをもう一度(`:tutorial` でも。[チュートリアル](#チュートリアル)) |
 | `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
@@ -439,7 +441,7 @@ gatekeeper = "claude -p '危ない箇所を path:line: text で挙げて'"   # d
 
 変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`。setup は順に実行し、失敗したら止めて左ペインに赤で出す。`[hooks]` のコマンドに埋めるとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は単引用符で囲んで 1 語として渡す(`feat/x` のような普通の値はそのまま)。pekoe が必要なときに囲むので、**`{{…}}` を自分で引用符で囲まないこと**(`createdb "app_{{branch}}"` ではなく `createdb app_{{branch}}`。二重引用符の中では単引用符が効かない)。ブランチ名は、シェルが特別に扱う文字(`$` `(` `)` `;` `|` `{` `}` 空白など)を含むものを `pekoe new` が断る。`[env]` の値には引用符を付けない。
 
-`~/.config/pekoe/config.toml`(全体):
+`~/.config/pekoe/config.toml`(全体。`pekoe config edit` か TUI の `^q ,` で開き、`pekoe config show` で既定値込みの今の設定が見られる):
 
 ```toml
 animate = true              # 状態アイコンのアニメーション
@@ -468,6 +470,7 @@ shape   = "auto"            # auto | round(六分ブロック) | block(四分ブ
 glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
 palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
+sleep_after = "3m"          # 全セッションが idle でキー入力もなくこれだけ経つと tapi が眠る(下限 10s)
 [mascot.colors]             # hi / bd / sh / eye を上書き
 bd = "#e4c49a"
 [agents.claude]
@@ -480,6 +483,12 @@ deny    = "n"
 agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
 [orchestrator]              # 統括役としての tapi(docs/orchestration.md)
 notify = "escalate"         # tapi の許可待ちと受信箱の問いを、セッションの wait と同じに知らせる(トースト → 点滅 → OS 通知)| "quiet": 最下行・メッセージ行だけ
+[notify]                    # 待ちの知らせの間合い(セッションの wait。notify = "quiet" でなければ tapi と受信箱の問いも)
+toast_for   = "5s"          # トーストを出しておく長さ(PR の反応も。下限 1s)
+blink_after = "30s"         # 待ちがこれだけ続くと最下行の台詞が点滅する(下限 1s)
+os_after    = "2m"          # 待ちがこれだけ続くと、ターミナルにフォーカスが無ければ OS の通知(下限 10s)
+[pr]                        # pekoed がセッションの PR を見に行く間合い
+poll_every  = "1m"          # 開いている PR ごとに、GitHub に問い合わせるのはこれに 1 回まで(下限 30s)
 [cleanup]                   # pekoe cleanup / :cleanup
 stale_after = "72h"         # 止まっている(done・idle・failed など)セッションを、状態が変わらずにこれだけ経ったら stale として出す(Go の duration)
 [tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
@@ -487,6 +496,10 @@ enable = true               # false で両方とも出さない
 [sandbox]                   # worktree から来るコマンド([hooks]・門番)と pekoed の git を sandbox で動かす
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
+
+時間の設定(`[notify]`・`[mascot] sleep_after`・`[pr] poll_every`・`[cleanup] stale_after`)は Go の duration(`30s`・`2m`・`1h30m`)。空や読めない値は既定値、下限より短ければ下限になる。
+
+保存した変更は再起動なしで効く: pekoed が変更から 1 秒以内に `config.toml` を読み直し、TUI も続く。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` まで起動したときの値のまま(TUI のメッセージ行と `pekoe daemon status` に名前が出る)。読めないファイルなら設定は前のままで、TUI が理由を出す。知らないキーや受け付けない値は `pekoe config check` で分かる([コマンド](#コマンド))。
 
 `[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` を書ける。`sandbox`(既定 `true`)は `command` が `claude` で始まるものにだけ効く([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
 

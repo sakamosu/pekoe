@@ -307,8 +307,8 @@ func toWebSession(s *state.Session) webSession {
 // the same colors (and the user's [theme.colors]) as the terminal.
 func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
 	var cfg *config.Theme
-	if d.Global != nil {
-		cfg = &d.Global.Theme
+	if g := d.cfg(); g != nil {
+		cfg = &g.Theme
 	}
 	p := theme.WebPalette(cfg)
 	var b strings.Builder
