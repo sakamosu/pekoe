@@ -714,7 +714,9 @@ func (d *Daemon) runTest(slug string) {
 	// its result (it tested code that has changed since)
 	ctx, run := d.tests.start(slug)
 	d.update(slug, func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
+	watched := d.watchGit(s, "test")
 	out, err := d.shell(ctx, s.Path, s.Env, cmd, 20*time.Minute)
+	watched()
 	if !d.tests.finish(slug, run) {
 		return
 	}
@@ -762,7 +764,9 @@ func (d *Daemon) runGatekeeper(slug string) {
 	c := execCommand(ctx, argv[0], argv[1:]...)
 	c.Dir = s.Path
 	c.Stdin = bytes.NewReader(diff)
+	watched := d.watchGit(s, "gatekeeper")
 	out, err := c.Output()
+	watched()
 	if err != nil {
 		log.Printf("gatekeeper %s: %v", slug, err)
 	}

@@ -230,6 +230,7 @@ type Daemon struct {
 	webBases     sync.Map             // repo dir -> https://host/owner/name ("" none)
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
+	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
 }
 
 func New() (*Daemon, error) {

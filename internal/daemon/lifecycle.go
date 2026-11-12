@@ -92,7 +92,10 @@ func (d *Daemon) teardown(s *state.Session) error {
 	v := d.vars(s)
 	for _, c := range cfg.Hooks.Teardown {
 		cmd := v.ExpandShell(c)
-		if out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
+		watched := d.watchGit(s, "teardown")
+		out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute)
+		watched()
+		if err != nil {
 			return fmt.Errorf("teardown %q: %v\n%s", cmd, err, tail(out, 10))
 		}
 	}
@@ -233,6 +236,7 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	}
 	if d.Eng.Alive(p.Slug, engine.WinDev) {
 		_ = d.Eng.Kill(p.Slug, engine.WinDev)
+		d.endDevWatch(p.Slug)
 		return d.update(p.Slug, func(x *state.Session) { x.Dev = false })
 	}
 	cfg := d.repoConfig(s)
@@ -247,7 +251,9 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dev server %w", err)
 	}
+	d.startDevWatch(s)
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
+		d.endDevWatch(p.Slug)
 		return nil, err
 	}
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
@@ -439,7 +445,9 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
 		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
+		watched := d.watchGit(s, "test (land)")
 		out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
+		watched()
 		if errors.Is(err, sandbox.ErrUnavailable) {
 			return nil, fmt.Errorf("tests %w", err)
 		}
@@ -776,6 +784,7 @@ func (d *Daemon) hWindowKill(p windowP) (any, error) {
 		_, _ = d.hReviewEnd(slugP{Slug: p.Slug})
 	}
 	if p.Window == engine.WinDev {
+		d.endDevWatch(p.Slug)
 		d.update(p.Slug, func(s *state.Session) { s.Dev = false })
 	}
 	if p.Window == engine.WinRun {
