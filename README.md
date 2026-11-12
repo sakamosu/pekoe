@@ -407,7 +407,7 @@ The Web UI and the Chrome extension are human entry points that don't go through
 
 ### From an iPhone (Web UI)
 
-Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens over HTTPS as a node of its own on your tailnet (`https://pekoe.<tailnet>.ts.net/`). All it can do is list sessions, allow / deny permission prompts (with confirmation; `always` isn't offered), `send`, show the agent's screen (in color), answer the inbox (pekoed's facts and links first, then the agent's words; the recommendation is labelled as the agent's and never preselected; a confirmation sheet before sending, and an item that changed since you looked is refused), an Overview tab (counts, tapi's state, and every session's flow `impl → review → PR → CI → merge` with what is still missing for the merge, read only), and talking to tapi (its screen, the keypad for its questions, and `send`; sending to tapi needs `allow_devices` and always shows a confirmation sheet with the target and the whole text first; tapi's own permission prompts are answered at the terminal, never from the web). No port is opened on localhost, and every connection is checked against `allow_users` with Tailscale's WhoIs.
+Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens over HTTPS as a node of its own on your tailnet (`https://pekoe.<tailnet>.ts.net/`). All it can do is list sessions, allow / deny permission prompts (with confirmation; `always` isn't offered), `send`, show the agent's screen (in color), answer the inbox (pekoed's facts and links first, then the agent's words; the recommendation is labelled as the agent's and never preselected; a confirmation sheet before sending, and an item that changed since you looked is refused), an Overview tab (counts, tapi's state, and every session's flow `impl → review → PR → CI → merge` with what is still missing for the merge, read only), and talking to tapi (its screen, the keypad for its questions, and `send`; sending to tapi needs `allow_devices` and by default shows a confirmation sheet with the target and the whole text first (`confirm_tapi_send = false` turns it off); tapi's own permission prompts are answered at the terminal, never from the web). No port is opened on localhost, and every connection is checked against `allow_users` with Tailscale's WhoIs.
 
 1. Enable MagicDNS and HTTPS on your tailnet, write `[web]`, and restart pekoed
 2. Open the login URL shown by `pekoe web` to join the tailnet (or use `TS_AUTHKEY`)
@@ -462,6 +462,7 @@ enable        = true
 allow_users   = ["you@github"]      # Tailscale login names
 allow_devices = ["iphone-15"]       # optional: only these devices
 hostname      = "pekoe"             # machine name on the tailnet
+confirm_tapi_send = true            # confirmation sheet before a send to tapi; false sends at once (no restart needed)
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
