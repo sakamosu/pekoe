@@ -557,20 +557,16 @@ func TestReviewEnd(t *testing.T) {
 	}
 }
 
-// stop sends a Stop hook and waits for its (asynchronous) handling.
+// stop sends a Stop hook and waits for its (asynchronous) handling: onStop
+// sets the state first and the diffstat after it (git), so the state alone
+// does not say it is over.
 func stop(t *testing.T, d *Daemon, slug string, payload map[string]any) {
 	t.Helper()
-	before := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
 	event(t, d, "Stop", slug, payload)
-	for i := 0; i < 100; i++ {
-		s := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
-		if s.State != before.State || s.State == state.Done || s.State == state.Reviewing && i > 10 {
-			if s.State == state.Done || s.State == state.Reviewing {
-				time.Sleep(50 * time.Millisecond) // let diffstat settle
-				return
-			}
+	for end := time.Now().Add(30 * time.Second); d.stopping.Load() != 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the Stop hook is still being handled")
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 
