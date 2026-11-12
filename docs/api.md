@@ -41,7 +41,7 @@
   | --- | --- |
   | `session.event` | エージェントのフック(`pekoe event`) |
   | `session.list` / `session.get` | `pekoe ls`、MCP の `session_list` |
-  | `session.new` | ハブのエージェントの `pekoe new`(既知のリポジトリだけ。下) |
+  | `session.new` | ハブのエージェントの `pekoe new`(既知のリポジトリと、sandbox の付くエージェントか呼び出し元と同じエージェントだけ。下) |
   | `session.send` | ハブのエージェントの `pekoe send`(制限つき。下) |
   | `repo.resolve` | `pekoe ls` / `pekoe new --repo` がリポジトリを決める |
   | `editor.open` | MCP の `open_in_editor`(nvim へのイベントを出すだけ) |
@@ -67,6 +67,8 @@
 - `dev.toggle` は token なしでは、呼び出し元の窓のセッション(下の「呼び出し元の識別」)の dev server だけを起動・停止する(`hAgentDevToggle`)。エージェントの sandbox はポートを listen できないので、UI を確かめるには pekoed に dev server を立ててもらうしかない。動かすのはリポジトリの設定の `[hooks] dev` で、Stop のたびに誰でも走らせられる `[hooks] test` と同じく hooks の sandbox で動く(下の「hooks の sandbox」)ので、新しい実行の経路は増えない。別の slug は `dev.toggle: a session starts or stops only its own dev server (<自分>, not <相手>): only a person can do this`、窓に当たらない呼び出し(`unknown`)は `pekoe cannot tell which session is calling` で断る。tapi chat の窓からも断る。1 セッションに dev server は 1 つ(動いていれば止める)は token つきと同じ
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
 - `session.new` は token なしでは、pekoe が既に知っているリポジトリ(`repo.list` に出るもの)で、知っているディレクトリと同じ場所のときだけ受け付け、セッションはその知っているディレクトリから作る。repo-id は origin の URL から決まり、エージェントが作ったクローンでも同じ id になるので、ディレクトリも見る。新しいリポジトリの登録は人間だけの操作(pekoed はそこで git を動かし、エージェントが自作したリポジトリの設定の filter / merge ドライバは、sandbox が使えない環境では外で動く)
+- `session.new` は token なしでは、起動するエージェント(`agent`、無ければリポジトリの `agent`、それも無ければ `claude`)を、pekoe の sandbox が付くもの(コマンドが Claude Code で `[agents.<name>] sandbox` が false でないもの。`--settings` を付ける判定と同じ)か、呼び出し元の窓のエージェントと同じ名前のもの(tapi なら `[tapi] agent`)に限る。プロンプトは呼び出し元が書くので、sandbox の付かないエージェント(codex・opencode など)で起動すると、呼び出し元の sandbox の外でその文を動かすことになる。それ以外は `session.new with agent "codex": pekoe does not sandbox that agent …; start that session from the TUI or your own terminal: only a person can do this …` で断り、何も作らない。人(token あり)は今までどおりどのエージェントでも作れる
+- `session.new` の `from` は `gh#N`(N は 1〜10 桁の数、先頭は 0 でない)だけ受け付ける(token の有無によらない)。pekoed は人の gh 認証で `gh issue view N` を動かすので、URL を渡して別のリポジトリの issue を読ませない。それ以外は `from "…": give an issue of this repository as gh#N` で断る
 - `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(人の答えを含む `inbox.updated`、他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
 - 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・`state.db`(と `-wal` / `-shm`)・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」

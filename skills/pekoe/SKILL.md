@@ -43,7 +43,7 @@ EOF
 - `--json` を付ける。付けないと setup 完了まで進捗を追い続けて戻ってこない。`--json` なら作成を受け付けた時点でセッション情報(`slug` `path` `port` など)を返す
 - ブランチ名は `feat/` `fix/` `chore/` `docs/` などで始めた kebab-case。slug はブランチ名の `/` を `-` にしたもの(`feat/csv-export` → `feat-csv-export`)
 - GitHub issue から始めるときは `--from gh#128`。issue 本文が初期プロンプトになる(`--prompt` を足せば追加指示になる)
-- codex など別エージェントに任せるときは `--agent codex`
+- codex など別エージェントに任せるときは `--agent codex`。ただしエージェント(token なし)から作れるのは、pekoe の sandbox が付くエージェント(sandbox が on の Claude Code)と自分と同じエージェントだけ。codex などは `only a person can do this` で断られるので、人に TUI か端末で作ってもらう
 - 派生元ブランチを変えたいときは `--base <branch>`
 
 ### tapi chat から作るとき

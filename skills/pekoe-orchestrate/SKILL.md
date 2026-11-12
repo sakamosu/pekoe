@@ -60,7 +60,7 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 pekoe-work スキルの手順で進め、終わったら(詰まったら)pekoe report で報告する。
 ```
 
-- codex などスキルを読めないエージェント(`--agent codex`)には、「最後に」を pekoe-work の要点に置き換える: 実装 → テスト → 自分で差分を読み直す → コミット → `pekoe land <slug>` → `pekoe report "<要約>" --status done --evidence <PR の URL>`。何も実行せずに「直した」と言わない、詰まったら `pekoe report - --status blocked` に理由を書く
+- codex などスキルを読めないエージェント(`--agent codex`。pekoe の sandbox が付かないので、ハブが Claude Code なら作れない。人に作ってもらい、プロンプトは下のとおりにする)には、「最後に」を pekoe-work の要点に置き換える: 実装 → テスト → 自分で差分を読み直す → コミット → `pekoe land <slug>` → `pekoe report "<要約>" --status done --evidence <PR の URL>`。何も実行せずに「直した」と言わない、詰まったら `pekoe report - --status blocked` に理由を書く
 - 危ない変更(認証・課金・データの移行)は、作業セッションとは別に独立レビューのセッションを作る(`pekoe new review/<slug> --base <作業のブランチ>`、プロンプトで pekoe-review スキルを使わせる)
 
 ## 待ち方
