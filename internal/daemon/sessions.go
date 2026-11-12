@@ -557,7 +557,9 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	for _, c := range repo.Config.Hooks.Setup {
 		cmd := vars.ExpandShell(c)
 		if !run("setup:"+c, func() error {
+			watched := d.watchGit(s, "setup")
 			out, err := d.shell(ctx, s.Path, env, cmd, 30*time.Minute)
+			watched()
 			if err != nil {
 				return fmt.Errorf("%v\n%s", err, tail(out, 20))
 			}

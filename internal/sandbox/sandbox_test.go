@@ -285,21 +285,88 @@ func TestDefaultPolicy(t *testing.T) {
 	os.MkdirAll(bin, 0o755)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"relative")
 	t.Setenv("TMUX_TMPDIR", "/tmp/tt")
+	ccd := filepath.Join(home, "ccd")
+	t.Setenv("CLAUDE_CONFIG_DIR", ccd)
 	p := DefaultPolicy(filepath.Join(home, "elsewhere", "tsnet"))
-	for _, want := range []string{"share/human-token", "share/http-token", "share/tsnet", "config/config.toml", "elsewhere/tsnet"} {
+	for _, want := range []string{"share/human-token", "share/http-token", "share/tsnet", "config/config.toml", "elsewhere/tsnet",
+		"share/state.db", "share/state.db-wal", "share/state.db-shm"} {
 		if !slices.Contains(p.DenyRead, filepath.Join(home, want)) {
 			t.Fatalf("DenyRead lacks %s: %v", want, p.DenyRead)
 		}
 	}
-	for _, want := range []string{"share", "config", ".zshrc", ".claude/settings.json", ".gitconfig", "bin"} {
-		if !slices.Contains(p.DenyWrite, filepath.Join(home, want)) {
-			t.Fatalf("DenyWrite lacks %s: %v", want, p.DenyWrite)
+	// Claude Code's: what runs or instructs the next agent, in ~/.claude
+	// and in $CLAUDE_CONFIG_DIR alike
+	claude := []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "rules", "output-styles", "CLAUDE.md"}
+	want := []string{"share", "config", ".zshrc", ".gitconfig", "bin", ".claude.json", "ccd/.claude.json"}
+	for _, c := range claude {
+		want = append(want, filepath.Join(".claude", c), filepath.Join("ccd", c))
+	}
+	for _, w := range want {
+		if !slices.Contains(p.DenyWrite, filepath.Join(home, w)) {
+			t.Fatalf("DenyWrite lacks %s: %v", w, p.DenyWrite)
 		}
+	}
+	// what a `claude -p` gatekeeper writes, and git's own directories
+	// (husky), stay writable
+	for _, ok := range []string{".claude/projects", ".claude", "repo/.git/hooks", "repo/.git/config"} {
+		if slices.Contains(p.DenyWrite, filepath.Join(home, ok)) {
+			t.Fatalf("DenyWrite has %s: %v", ok, p.DenyWrite)
+		}
+	}
+	if !slices.Contains(p.DenyConnect, filepath.Join(home, "share", "nvim")) {
+		t.Fatalf("DenyConnect lacks the review surface's nvim sockets: %v", p.DenyConnect)
 	}
 	if os.Getuid() != 0 && slices.Contains(p.DenyWrite, "/usr/bin") {
 		t.Fatalf("an unwritable PATH directory: %v", p.DenyWrite)
 	}
 	if runtime.GOOS != "windows" && !slices.Contains(p.DenyConnect, filepath.Join("/tmp/tt", "tmux-"+strconv.Itoa(os.Getuid()))) {
 		t.Fatalf("DenyConnect: %v", p.DenyConnect)
+	}
+}
+
+// DefaultPolicy in the real sandbox: Claude Code's config that runs later
+// and state.db are closed; what a build, `claude -p` or husky writes
+// (~/.claude/projects, a repository's .git/hooks and .git/config) is not.
+func TestRealDefaultPolicyClaudeAndGit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PEKOE_HOME", filepath.Join(home, "pk"))
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	data := filepath.Join(home, "pk", "share")
+	os.MkdirAll(data, 0o700)
+	os.WriteFile(filepath.Join(data, "state.db"), []byte("PROMPTS\n"), 0o600)
+	os.MkdirAll(filepath.Join(home, ".claude", "skills"), 0o755)
+	os.WriteFile(filepath.Join(home, ".claude.json"), []byte("{}\n"), 0o600)
+	git := filepath.Join(home, "repo", ".git")
+	os.MkdirAll(filepath.Join(git, "hooks"), 0o755)
+	os.WriteFile(filepath.Join(git, "config"), []byte("[core]\n"), 0o644)
+	s := realSandbox(t, DefaultPolicy(""))
+	script := `cat "$D/state.db"; echo x > "$H/.claude.json"; echo x > "$H/.claude/skills/evil"; mkdir -p "$H/.claude/hooks";
+mkdir -p "$H/.claude/projects" && echo ok > "$H/.claude/projects/t" && echo projects-ok;
+echo '#!/bin/sh' > "$G/hooks/pre-commit" && echo hooks-ok; echo '[core] hooksPath = .husky' >> "$G/config" && echo config-ok`
+	argv, err := s.Wrap([]string{"/bin/sh", "-c", script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command(argv[0], argv[1:]...)
+	c.Env = append(os.Environ(), "D="+data, "H="+home, "G="+git)
+	out, _ := c.CombinedOutput()
+	o := string(out)
+	if strings.Contains(o, "PROMPTS") {
+		t.Fatalf("state.db readable:\n%s", o)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".claude.json")); string(b) != "{}\n" {
+		t.Fatalf("~/.claude.json written:\n%s", o)
+	}
+	for _, p := range []string{".claude/skills/evil", ".claude/hooks"} {
+		if _, err := os.Stat(filepath.Join(home, p)); err == nil {
+			t.Fatalf("~/%s written:\n%s", p, o)
+		}
+	}
+	for _, okay := range []string{"projects-ok", "hooks-ok", "config-ok"} {
+		if !strings.Contains(o, okay) {
+			t.Fatalf("%s missing: what builds and husky write is blocked:\n%s", okay, o)
+		}
 	}
 }

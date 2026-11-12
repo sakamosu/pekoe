@@ -196,3 +196,29 @@ func TestTapiCannotWriteRepos(t *testing.T) {
 		}
 	}
 }
+
+// The submodules' git directories (modules/…, nested ones included) get
+// the same denyWrite as the repository's own: a `git status` in the main
+// checkout runs git in them.
+func TestClaudeSandboxSettingsSubmodules(t *testing.T) {
+	d, _, repo := setup(t)
+	gitDir := filepath.Join(repo, ".git")
+	for _, m := range []string{"modules/lib", "modules/lib/modules/deep"} {
+		os.MkdirAll(filepath.Join(gitDir, m, "hooks"), 0o755)
+		os.WriteFile(filepath.Join(gitDir, m, "HEAD"), []byte("x\n"), 0o644)
+		os.WriteFile(filepath.Join(gitDir, m, "config"), []byte("[core]\n"), 0o644)
+	}
+	c := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
+	for _, m := range []string{"modules/lib", "modules/lib/modules/deep"} {
+		for _, f := range []string{"config", "config.worktree", "hooks"} {
+			p := realpath(filepath.Join(gitDir, m, f))
+			if !slices.Contains(c.Sandbox.Filesystem.DenyWrite, p) {
+				t.Errorf("denyWrite lacks %s", p)
+			}
+		}
+	}
+	// the git directory itself stays writable (commits)
+	if slices.Contains(c.Sandbox.Filesystem.DenyWrite, realpath(filepath.Join(gitDir, "modules"))) {
+		t.Error("modules/ itself denied")
+	}
+}

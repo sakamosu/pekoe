@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,7 +92,10 @@ func (d *Daemon) teardown(s *state.Session) error {
 	v := d.vars(s)
 	for _, c := range cfg.Hooks.Teardown {
 		cmd := v.ExpandShell(c)
-		if out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute); err != nil {
+		watched := d.watchGit(s, "teardown")
+		out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 10*time.Minute)
+		watched()
+		if err != nil {
 			return fmt.Errorf("teardown %q: %v\n%s", cmd, err, tail(out, 10))
 		}
 	}
@@ -231,6 +236,7 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	}
 	if d.Eng.Alive(p.Slug, engine.WinDev) {
 		_ = d.Eng.Kill(p.Slug, engine.WinDev)
+		d.endDevWatch(p.Slug)
 		return d.update(p.Slug, func(x *state.Session) { x.Dev = false })
 	}
 	cfg := d.repoConfig(s)
@@ -245,7 +251,9 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("dev server %w", err)
 	}
+	d.startDevWatch(s)
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
+		d.endDevWatch(p.Slug)
 		return nil, err
 	}
 	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
@@ -437,7 +445,9 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
 		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
+		watched := d.watchGit(s, "test (land)")
 		out, err := d.shell(context.Background(), s.Path, s.Env, cmd, 30*time.Minute)
+		watched()
 		if errors.Is(err, sandbox.ErrUnavailable) {
 			return nil, fmt.Errorf("tests %w", err)
 		}
@@ -699,6 +709,11 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 		return nil, nil
 	}
 	cmd := "nvim"
+	if sock := nvimSocket(p.Slug); sock != "" {
+		// its server socket where the hooks sandbox cannot connect
+		// (paths.NvimDir), not in $TMPDIR
+		cmd += " --listen " + shellQuote(sock)
+	}
 	env := append(append([]string{}, s.Env...), "PEKOE_SESSION="+p.Slug, "PEKOE_REVIEW=1", "PEKOE_SOCK="+paths.Socket())
 	// The plugin directory is pekoed's own, never the caller's: nvim reads
 	// "|" in an Ex command as a separator ("set rtp+=/x | !cmd" would run
@@ -710,6 +725,28 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 		cmd += " -c " + shellQuote(`lua vim.opt.rtp:append(vim.env.PEKOE_NVIM_PLUGIN); vim.cmd.runtime("plugin/pekoe.lua")`)
 	}
 	return nil, d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinReview, Dir: s.Path, Env: env, Command: cmd, Width: p.Width, Height: p.Height})
+}
+
+// nvimSocket is the review surface's nvim server socket for slug, in
+// paths.NvimDir; a socket left by an nvim that is gone is removed. "": the
+// directory cannot be made or the path is too long for a unix socket
+// (nvim then makes its own in $TMPDIR, as before).
+func nvimSocket(slug string) string {
+	dir := paths.NvimDir()
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
+		log.Printf("review surface: %v", err)
+		return ""
+	}
+	sum := sha256.Sum256([]byte(slug))
+	sock := filepath.Join(dir, hex.EncodeToString(sum[:])[:12]+".sock")
+	if len(sock) >= 100 { // sun_path: 104 bytes on macOS
+		log.Printf("review surface: %s is too long for a socket; nvim makes its own", sock)
+		return ""
+	}
+	if fi, err := os.Lstat(sock); err == nil && fi.Mode()&os.ModeSocket != 0 {
+		os.Remove(sock) // the review window is not alive (checked by the caller)
+	}
+	return sock
 }
 
 func nvimPluginDir() string {
@@ -747,6 +784,7 @@ func (d *Daemon) hWindowKill(p windowP) (any, error) {
 		_, _ = d.hReviewEnd(slugP{Slug: p.Slug})
 	}
 	if p.Window == engine.WinDev {
+		d.endDevWatch(p.Slug)
 		d.update(p.Slug, func(s *state.Session) { s.Dev = false })
 	}
 	if p.Window == engine.WinRun {

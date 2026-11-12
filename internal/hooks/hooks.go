@@ -6,7 +6,9 @@ package hooks
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -167,8 +169,17 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 		return
 	}
 	if len(before) > 0 {
-		backup = fmt.Sprintf("%s.pekoe-backup-%s", path, time.Now().Format("20060102-150405"))
-		if err = os.WriteFile(backup, before, 0o600); err != nil {
+		// O_EXCL: a name made in advance (a symlink to elsewhere) is not
+		// written through
+		stamp := fmt.Sprintf("%s.pekoe-backup-%s", path, time.Now().Format("20060102-150405"))
+		backup = stamp
+		for i := 2; ; i++ {
+			if err = writeNew(backup, before); !errors.Is(err, fs.ErrExist) || i > 9 {
+				break
+			}
+			backup = fmt.Sprintf("%s-%d", stamp, i) // twice in one second
+		}
+		if err != nil {
 			return
 		}
 	}
@@ -178,12 +189,40 @@ func Apply(path string, before, after []byte) (backup string, err error) {
 	if t, e := filepath.EvalSymlinks(path); e == nil {
 		target = t
 	}
-	tmp := target + ".pekoe-tmp"
-	if err = os.WriteFile(tmp, after, 0o600); err != nil {
+	// a new file with a name nobody could know beforehand, next to target
+	// (so the rename stays on one file system)
+	f, err := os.CreateTemp(filepath.Dir(target), "."+filepath.Base(target)+".pekoe-tmp-*")
+	if err != nil {
+		return
+	}
+	tmp := f.Name()
+	defer func() {
+		if err != nil {
+			os.Remove(tmp)
+		}
+	}()
+	if _, err = f.Write(after); err != nil {
+		f.Close()
+		return
+	}
+	if err = f.Close(); err != nil {
 		return
 	}
 	err = os.Rename(tmp, target)
 	return
+}
+
+// writeNew writes b to a file that must not exist yet (0600).
+func writeNew(path string, b []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Installed reports whether every pekoe hook is present.

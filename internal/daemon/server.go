@@ -230,10 +230,11 @@ type Daemon struct {
 	webBases     sync.Map             // repo dir -> https://host/owner/name ("" none)
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
+	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
 }
 
 func New() (*Daemon, error) {
-	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir()); err != nil {
+	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir(), paths.NvimDir()); err != nil {
 		return nil, err
 	}
 	// files written by versions that used 0644 / 0755

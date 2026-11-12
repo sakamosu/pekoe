@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"pekoe/internal/gitwatch"
 	"pekoe/internal/gitx"
 	"pekoe/internal/paths"
 )
@@ -67,9 +68,12 @@ func (d *Daemon) agentSecrets() (files, dirs []string) {
 }
 
 // gitProtected are the files of the repositories' git directories that
-// name commands git runs (config, config.worktree, hooks): an agent that
+// name commands git runs (config, config.worktree, hooks), and the same in
+// the git directories of the submodules already there (modules/…: a `git
+// status` in the main checkout runs git in each submodule): an agent that
 // commits writes the git directory, but must not change these, which the
-// git you run yourself would follow.
+// git you run yourself would follow. A session's own worktree keeps its
+// submodules in worktrees/<id>/modules, which stays writable.
 func gitProtected(repoDirs []string) (files, dirs []string) {
 	for _, r := range repoDirs {
 		if r == "" {
@@ -79,8 +83,10 @@ func gitProtected(repoDirs []string) (files, dirs []string) {
 		if err != nil || cd == "" {
 			cd = filepath.Join(r, ".git")
 		}
-		files = append(files, filepath.Join(cd, "config"), filepath.Join(cd, "config.worktree"))
-		dirs = append(dirs, filepath.Join(cd, "hooks"))
+		for _, g := range append([]string{cd}, gitwatch.ModuleDirs(cd)...) {
+			files = append(files, filepath.Join(g, "config"), filepath.Join(g, "config.worktree"))
+			dirs = append(dirs, filepath.Join(g, "hooks"))
+		}
 	}
 	return files, dirs
 }

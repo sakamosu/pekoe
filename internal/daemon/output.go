@@ -232,6 +232,9 @@ func (d *Daemon) tickLoop() {
 		if n%10 == 7 {
 			go d.checkMerges() // merge evidence in the inbox
 		}
+		if n%10 == 9 {
+			go d.checkDevWatches() // .git/hooks and config under running dev servers (gitwatch.go)
+		}
 	}
 }
 
