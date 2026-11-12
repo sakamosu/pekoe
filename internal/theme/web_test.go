@@ -26,3 +26,26 @@ func TestWebPalette(t *testing.T) {
 		t.Fatalf("bad values taken: %v", p)
 	}
 }
+
+// bubble_me is secondary at select's depth: #003643 for the default, and a
+// [theme.colors] secondary carries it along (same hue, L0.30, C0.07).
+func TestBubbleMeFollowsSecondary(t *testing.T) {
+	if p := WebPalette(nil); p[BubbleMeKey] != "#003643" {
+		t.Fatalf("default bubble_me: %q", p[BubbleMeKey])
+	}
+	p := WebPalette(&config.Theme{Colors: map[string]string{"secondary": "#ff8800"}})
+	got := p[BubbleMeKey]
+	if got == "#003643" || !hexRe.MatchString(got) {
+		t.Fatalf("bubble_me did not follow secondary: %q", got)
+	}
+	rgb, _ := parseHex(got)
+	o, s := toOKLCH(rgb), toOKLCH(must("#ff8800"))
+	if d := o.H - s.H; d > 6 || d < -6 || o.L < 0.28 || o.L > 0.33 {
+		t.Fatalf("bubble_me %s: L %.3f h %.1f, secondary h %.1f", got, o.L, o.H, s.H)
+	}
+	// a value that is not #rrggbb is not taken: the default's bubble
+	p = WebPalette(&config.Theme{Colors: map[string]string{"secondary": "cyan"}})
+	if p[BubbleMeKey] != "#003643" {
+		t.Fatalf("bad secondary: %q", p[BubbleMeKey])
+	}
+}

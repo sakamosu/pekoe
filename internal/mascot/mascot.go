@@ -128,6 +128,32 @@ var (
 	PaletteLight = Palette{Hi: "#b9825e", Bd: "#8a5538", Sh: "#6e432c", Eye: "#f6e7cf"}
 )
 
+// PaletteFor is the body palette as [mascot] sets it: D (or E when light)
+// with the colors overrides (hi bd sh eye, or their long names) on top.
+// The TUI and the web UI's title face (/theme.css) both paint with it.
+func PaletteFor(light bool, colors map[string]string) Palette {
+	p := PaletteDark
+	if light {
+		p = PaletteLight
+	}
+	for k, v := range colors {
+		if v == "" {
+			continue
+		}
+		switch k {
+		case "hi", "highlight":
+			p.Hi = v
+		case "bd", "body":
+			p.Bd = v
+		case "sh", "shadow":
+			p.Sh = v
+		case "eye":
+			p.Eye = v
+		}
+	}
+	return p
+}
+
 type accents struct{ work, wait, done, err string }
 
 var (
@@ -160,24 +186,9 @@ type Renderer struct {
 // face color with a background behind it.
 func New(o Options) *Renderer {
 	noColor := o.NoColor || lipgloss.ColorProfile() == termenv.Ascii
-	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteDark, acc: accentDark, dim: o.Dim, noColor: noColor}
+	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteFor(o.Light, o.Colors), acc: accentDark, dim: o.Dim, noColor: noColor}
 	if o.Light {
-		r.pal, r.acc = PaletteLight, accentLight
-	}
-	for k, v := range o.Colors {
-		if v == "" {
-			continue
-		}
-		switch k {
-		case "hi", "highlight":
-			r.pal.Hi = v
-		case "bd", "body":
-			r.pal.Bd = v
-		case "sh", "shadow":
-			r.pal.Sh = v
-		case "eye":
-			r.pal.Eye = v
-		}
+		r.acc = accentLight
 	}
 	if r.shape != "block" {
 		r.shape = "round"
