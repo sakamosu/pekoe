@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -34,10 +35,13 @@ import (
 
 	"pekoe/internal/config"
 	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/termstyle"
 	"pekoe/internal/theme"
 )
+
+var webHexRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
 
 //go:embed webui
 var webFiles embed.FS
@@ -116,6 +120,7 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	sendable := len(lowerSet(o.cfg.AllowDevices)) > 0
 	mux.HandleFunc("GET /api/tapi", d.webTapi(sendable))
 	mux.HandleFunc("GET /api/tapi/screen", d.webTapiScreen)
+	mux.HandleFunc("GET /api/tapi/transcript", d.webTapiTranscript)
 	mux.HandleFunc("POST /api/tapi/send", d.webTapiSend(sendable))
 	mux.HandleFunc("POST /api/tapi/keys", d.webTapiKeys)
 	mux.HandleFunc("GET /api/overview", d.webOverview)
@@ -320,7 +325,25 @@ func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
 	if end == "" {
 		end = p[string(theme.Primary)] // solid focus border, as in the TUI
 	}
-	fmt.Fprintf(&b, "  --primary-end: %s;\n}\n", end)
+	fmt.Fprintf(&b, "  --primary-end: %s;\n", end)
+	fmt.Fprintf(&b, "  --bubble-me: %s;\n", p[theme.BubbleMeKey])
+	// tapi's face in the chat title, painted as the TUI paints pearl1
+	var mc config.Mascot
+	if d.Global != nil {
+		mc = d.Global.Mascot
+	}
+	pal := mascot.PaletteFor(mc.LightPalette(), mc.Colors)
+	def := mascot.PaletteFor(mc.LightPalette(), nil)
+	for _, c := range []struct{ name, v, def string }{
+		{"bd", pal.Bd, def.Bd}, {"sh", pal.Sh, def.Sh}, {"eye", pal.Eye, def.Eye},
+	} {
+		v := strings.ToLower(c.v)
+		if !webHexRe.MatchString(v) {
+			v = c.def // only #rrggbb goes into CSS
+		}
+		fmt.Fprintf(&b, "  --tapi-%s: %s;\n", c.name, v)
+	}
+	b.WriteString("}\n")
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(b.String()))

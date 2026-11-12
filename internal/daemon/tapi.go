@@ -60,6 +60,9 @@ type tapiState struct {
 	since       time.Time
 	outPending  bool // output arrived since the last tapi.output
 	lastEmit    time.Time
+	// transcript: the transcript_path tapi's hooks last named (only one
+	// in tapi's Claude Code project directory: tapiTranscriptOK)
+	transcript string
 }
 
 func newTapiState() tapiState { return tapiState{state: state.Idle, since: time.Now()} }
@@ -118,6 +121,12 @@ func (d *Daemon) tapiUpdate(f func(t *tapiState)) {
 func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 	if hook == "PostToolUse" || hook == "Stop" {
 		go d.noteTranscript(TapiSlug, hp.TranscriptPath) // stats.go
+	}
+	if hp.TranscriptPath != "" && tapiTranscriptOK(hp.TranscriptPath) {
+		// a new conversation (/clear) names a new file: the chat follows it
+		d.mu.Lock()
+		d.tapi.transcript = hp.TranscriptPath
+		d.mu.Unlock()
 	}
 	switch hook {
 	case "SessionStart":
@@ -554,6 +563,71 @@ func (d *Daemon) hTapiReset(struct{}) (any, error) {
 	v := d.tapiView()
 	d.emit("tapi.updated", v)
 	return v, nil
+}
+
+// tapiTranscriptOK: path is a conversation in tapi's Claude Code project
+// directory. session.event needs no token, so any process of the user can
+// name +tapi with any transcript_path: the chat reads nothing else.
+func tapiTranscriptOK(path string) bool {
+	if !filepath.IsAbs(path) || !strings.HasSuffix(path, ".jsonl") ||
+		!validSessionID(strings.TrimSuffix(filepath.Base(path), ".jsonl")) {
+		return false
+	}
+	dir := filepath.Clean(filepath.Dir(path))
+	for _, p := range tapiProjectDirs() {
+		if dir == filepath.Clean(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// tapiTranscript is the conversation tapi chat shows: the one its hooks
+// last named, else (pekoed restarted since, or no hook yet) the newest in
+// its project directory. "" when there is none.
+func (d *Daemon) tapiTranscript() string {
+	d.mu.Lock()
+	p := d.tapi.transcript
+	d.mu.Unlock()
+	if p != "" {
+		return p
+	}
+	var best string
+	var bestAt time.Time
+	for _, dir := range tapiProjectDirs() {
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			p := filepath.Join(dir, e.Name())
+			if !e.Type().IsRegular() || !tapiTranscriptOK(p) {
+				continue
+			}
+			if fi, err := e.Info(); err == nil && fi.ModTime().After(bestAt) {
+				best, bestAt = p, fi.ModTime()
+			}
+		}
+	}
+	return best
+}
+
+type tapiTranscriptP struct {
+	After string `json:"after"`
+}
+
+// hTapiTranscript is tapi.transcript: tapi chat's conversation as chat
+// items (transcript.go), after a cursor. Human only: it is tapi's words.
+func (d *Daemon) hTapiTranscript(p tapiTranscriptP) (any, error) {
+	if err := d.tapiNeedsWindow(); err != nil {
+		return nil, err
+	}
+	path := d.tapiTranscript()
+	if path == "" {
+		return nil, errNoTranscript
+	}
+	page, err := readChat(path, p.After)
+	if err != nil {
+		return nil, err
+	}
+	return page, nil
 }
 
 func (d *Daemon) tapiNeedsWindow() error {

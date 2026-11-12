@@ -661,6 +661,7 @@ func (d *Daemon) registerHandlers() {
 		"tapi.restart":          bind(d.hTapiRestart),
 		"tapi.reset":            bind(d.hTapiReset),
 		"tapi.screen":           bind(d.hTapiScreen),
+		"tapi.transcript":       bind(d.hTapiTranscript),
 		"tapi.send":             bind(func(p tapiSendP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiSend(p) }),
 		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
