@@ -118,7 +118,7 @@ git は設定に書かれたコマンドを動かす(`git status` のたびの `
 
 - sandbox が使えないとき(sandbox-exec や bwrap が無い・動かない、`[sandbox] enable = false`)は、hooks と違って git は**そのまま動かす**(git が止まると pekoe が使えない)。1 と 2 は効くが、3 で塞いでいるもの(filter・merge ドライバ、`lfs.*`、ローカルの origin の相手側のフック)は残る。エージェントがリポジトリの `.git/config` に書けるか、自分で作ったリポジトリを `pekoe new --repo` に渡せば、それらが sandbox の外で走る。pekoed のログに `git: running without a sandbox (…)` と出る
 - 対象外: 人間が自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン、本体のチェックアウトでの git)。エージェントが書いた `.git` ファイルや `.git/config` はそのまま読まれる。`git_blocked` が出たら、その worktree で git を動かす前に `.git` を確かめる。本体の `.git/config`・`.git/hooks` をエージェントに書かせない設定(Claude Code なら `sandbox.filesystem.denyWrite`)もあわせて使う
-- `gh auth token`(`pekoe update`)と `gh attestation verify -R` は git を動かさないので素のまま
+- `gh auth token`(`pekoe update`)と `gh attestation verify -R … --signer-workflow … --source-ref …` は git を動かさないので素のまま
 
 ### send と許可ダイアログ
 

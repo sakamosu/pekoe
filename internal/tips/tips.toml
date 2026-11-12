@@ -384,6 +384,13 @@ keys = ["pekoe update", "--check"]
 docs = ["README.ja.md#更新"]
 
 [[tip]]
+id = "update-provenance"
+short = "pekoe update は v0.4.0 以降の来歴(attestation)を確かめる"
+detail = "v0.4.0 以降は、来歴が無い・gh attestation verify が通らないと何も入れ替えずに止まる(gh が無い・未ログインなら警告だけ)。リリースを自分で確かめて続けるなら --allow-unverified。"
+keys = ["pekoe update", "--allow-unverified"]
+docs = ["README.ja.md#更新"]
+
+[[tip]]
 id = "hook-sandbox"
 short = "[hooks] の test・setup・dev と門番は sandbox の中で動く"
 detail = "human-token を読めない sandbox で動かす(macOS は sandbox-exec、Linux は bwrap)。使えなければ hooks は動かさない。pekoed の git も sandbox で動く(無ければ素のまま)。[sandbox] enable = false で外せる。"

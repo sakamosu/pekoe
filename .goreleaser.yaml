@@ -1,4 +1,5 @@
 # pekoe のリリースビルド。v* タグの push で .github/workflows/release.yml が回す。
+# Release は下書きで作る(下の release:)。来歴を付けて公開するのは release.yml。
 # 手元で試すには: goreleaser release --snapshot --clean(dist/ にアーカイブができる)
 #
 # 配るのは 2 種類: 既定ビルド(Tailscale のコードなし)の pekoe_<ver>_<os>_<arch>.tar.gz と、
@@ -129,6 +130,13 @@ changelog:
       - "^Merge pull request"
       - "^Merge branch"
 
+# 下書き(draft)で作ってアーカイブと checksums.txt を全部上げるところまでが goreleaser。
+# release.yml が来歴(attestation)を付けてから公開する(gh release edit --draft=false)。
+# immutable releases を有効にしたリポジトリでは、公開した後のリリースにアセットを足せず、
+# 書き換えもできない。下書きの間は足せるので、全部そろえてから公開する。
+# attest が落ちたら下書きのまま残る(公開されない)。やり直すときは workflow を再実行すれば、
+# replace_existing_draft で同じ名前の下書きを消して作り直す。
 release:
-  draft: false
+  draft: true
+  replace_existing_draft: true
   prerelease: auto

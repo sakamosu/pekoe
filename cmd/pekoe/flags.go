@@ -206,7 +206,7 @@ var specs = map[string]spec{
 
 	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
 
-	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web"}, vals: []string{"version"}},
+	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web", "allow-unverified"}, vals: []string{"version"}},
 }
 
 // parseCmd parses args against the named spec.

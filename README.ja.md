@@ -113,7 +113,8 @@ gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
-gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # このリポジトリのワークフローがビルドしたか(v0.1.0〜v0.3.0 には来歴がない)
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe \
+  --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref "refs/tags/v$ver"   # release.yml がこのタグからビルドしたか(v0.1.0〜v0.3.0 には来歴がない)
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -122,7 +123,7 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリースから付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。
+`checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリース(v0.4.0 以降)から付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。`--signer-workflow` と `--source-ref` で、このリポジトリの他のワークフローや他のブランチではなく、`release.yml` がそのタグからビルドしたことまで確かめる。`release.yml` はリリースを下書きで作り、アーカイブに来歴を付けてから公開するので、公開されたリリース(v0.4.0 以降)には必ず来歴がある。
 
 macOS 向けのバイナリはまだ署名していない。`release.yml` には darwin のバイナリ(darwin のすべてのアーカイブ(既定と `_web`)の `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出す準備があるが、署名用の secrets をまだ用意していないので、今までのリリース(v0.1.0〜v0.3.0)はどれも Go リンカのアドホック署名だけ: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Signature=adhoc` と出す。署名したリリースからは `TeamIdentifier` が見える。
 
@@ -136,12 +137,16 @@ macOS 向けのバイナリはまだ署名していない。`release.yml` には
 pekoe update --check    # 新しいリリースがあるか見るだけ(誰でも使える)
 pekoe update            # 最新のリリースに入れ替える
 pekoe update --version vX.Y.Z --force   # 特定の版に(古くなるときは --force)
+pekoe update --allow-unverified         # 来歴を確かめられなくても続ける(下を参照)
 ```
 
 `pekoe update` は GitHub の最新リリース(`releases/latest`。draft と prerelease は除く)を取り、今の pekoe と同じ OS・アーキテクチャ・ビルド(Web UI 入りなら `_web` のアーカイブ)を選ぶ。
 
 - 今の版が最新以上なら何もしない。`make install` の版(`git describe` の `0.1.0-59-g3761d74`)は「0.1.0 より 59 コミット先」として比べる。`dev` など比べられない版のときは確認する
-- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。来歴(attestation)があるリリースなら `gh attestation verify` でも確かめ、通らなければ何も入れ替えない(`gh` が入っていなければ警告だけ。リポジトリが private だったときに作ったリリース、つまり v0.1.0〜v0.3.0 は来歴がないので、警告だけ出す)
+- `checksums.txt` の SHA-256 と照らし、合わなければ何も入れ替えない。`checksums.txt` は同じ Release にあるので、アーカイブが本物かはビルド来歴(attestation)で確かめる: `gh attestation verify --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref refs/tags/<tag>`
+  - v0.4.0 以降(`release.yml` が来歴を付けてから公開する)は、来歴が無い・照会できない・`gh attestation verify` が通らないとき、何も入れ替えずに止まる。止まった理由はメッセージに出る。リリースを自分で確かめた上で続けるなら `--allow-unverified`(警告を出して、SHA-256 だけで続ける)
+  - `gh` が入っていない・ログインしていない(`gh auth login`、または `GH_TOKEN` / `GITHUB_TOKEN`)ときは署名を確かめられない。GitHub がそのアーカイブの来歴を持っていれば、警告だけ出して続ける
+  - v0.1.0〜v0.3.0 はリポジトリが private だったときに作ったので来歴がなく、今までどおり警告だけ出す(来歴があるのに検証に通らなければ、どの版でも止まる)
 - 入れ替えるのは、今動いている pekoe の実体(シンボリックリンクをたどった先)、隣の `pekoed`、`<prefix>/share/pekoe/nvim` と `extension` だけ。`~/.local/share/pekoe` の他のもの(`state.db` など)には触らない。バイナリは隣に書いてから rename し、途中で失敗したら入れ替えた分を戻す
 - `make install` で入れたときの `nvim` / `extension` はリポジトリへのリンクなので、リンクをリリースの中身のディレクトリに置き換える(リポジトリには書き込まない。確認を出す。`make install` し直せばリンクに戻る)
 - Web UI 入りの pekoe で、リリースに `_web` のアーカイブがないときは断る(`--no-web` で既定のビルドを入れるか、`make install WEB=1` でソースから入れる)
