@@ -75,7 +75,7 @@ func DefaultPolicy(webStateDir string) Policy {
 // writable: a `claude -p` gatekeeper writes them.
 func claudeAutorun(dir string) []string {
 	var out []string
-	for _, rel := range []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "CLAUDE.md"} {
+	for _, rel := range []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "rules", "output-styles", "CLAUDE.md"} {
 		out = append(out, filepath.Join(dir, rel))
 	}
 	return out

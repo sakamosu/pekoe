@@ -296,7 +296,7 @@ func TestDefaultPolicy(t *testing.T) {
 	}
 	// Claude Code's: what runs or instructs the next agent, in ~/.claude
 	// and in $CLAUDE_CONFIG_DIR alike
-	claude := []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "CLAUDE.md"}
+	claude := []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "rules", "output-styles", "CLAUDE.md"}
 	want := []string{"share", "config", ".zshrc", ".gitconfig", "bin", ".claude.json", "ccd/.claude.json"}
 	for _, c := range claude {
 		want = append(want, filepath.Join(".claude", c), filepath.Join("ccd", c))
