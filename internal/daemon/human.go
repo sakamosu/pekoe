@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 
+	"pekoe/internal/config"
 	"pekoe/internal/engine"
 	"pekoe/internal/paths"
 )
@@ -39,7 +40,7 @@ var agentMethods = map[string]string{
 	"session.event": "the agents' hooks (`pekoe event`)",
 	"session.list":  "`pekoe ls`, the MCP server's session_list",
 	"session.get":   "one entry of session.list",
-	"session.new":   "the hub agent hands work to a new session (`pekoe new`); hAgentNew limits it to known repositories",
+	"session.new":   "the hub agent hands work to a new session (`pekoe new`); hAgentNew limits it to known repositories and sandboxed agents (or the caller's own)",
 	"session.send":  "the hub agent's follow-up instructions (`pekoe send`); authorizeSend limits it",
 	"repo.resolve":  "`pekoe ls` / `pekoe new --repo` find the repository",
 	"editor.open":   "the MCP server's open_in_editor (only an event for nvim)",
@@ -259,7 +260,11 @@ func (d *Daemon) authorize(req Request, who *Caller) error {
 // its origin URL, which an agent's own clone can copy, so the directory has
 // to match too; the session is then made from the known directory, not
 // from the path the agent passed (which could be a link it retargets).
-func (d *Daemon) hAgentNew(p newP) (any, error) {
+//
+// The agent it starts is limited too (agentMayStart): the prompt is the
+// caller's, so an agent that gets no sandbox from pekoe would run the
+// caller's words outside the sandbox the caller is in.
+func (d *Daemon) hAgentNew(who *Caller, p newP) (any, error) {
 	if p.Repo == "" {
 		return d.hNew(p) // "repo path required"
 	}
@@ -269,11 +274,49 @@ func (d *Daemon) hAgentNew(p newP) (any, error) {
 	}
 	for _, k := range d.knownRepos() {
 		if k.ID == repo.ID && k.Dir != "" && realpath(k.Dir) == realpath(repo.Dir) {
+			if err := d.agentMayStart(who, newAgentName(p.Agent, repo)); err != nil {
+				return nil, err
+			}
 			p.Repo = k.Dir
 			return d.hNew(p)
 		}
 	}
 	return nil, fmt.Errorf("session.new in %s, a repository pekoe does not know yet (start its first session yourself, from the TUI or your own terminal): %w", repo.Dir, ErrHumanOnly)
+}
+
+// agentMayStart: without the human token, session.new starts only an agent
+// pekoe puts in its sandbox (a Claude Code command whose [agents.<name>]
+// sandbox is not false, the test withAgentSandbox makes), or the agent the
+// caller itself runs (no more than the caller can already do). An agent
+// name pekoe does not know is left to hNew ("unknown agent").
+func (d *Daemon) agentMayStart(who *Caller, name string) error {
+	ag, ok := d.cfg().Agents[name]
+	if !ok || agentSandboxed(ag) {
+		return nil
+	}
+	if mine := d.callerAgent(who); mine != "" && mine == name {
+		return nil
+	}
+	return fmt.Errorf("session.new with agent %q: pekoe does not sandbox that agent (only a Claude Code agent with sandbox on gets one), so an agent may start it only when it runs that agent itself; start that session from the TUI or your own terminal: %w", name, ErrHumanOnly)
+}
+
+// agentSandboxed: withAgentSandbox gives the agent pekoe's sandbox settings.
+func agentSandboxed(ag config.Agent) bool { return ag.SandboxOn() && isClaude(ag.Command) }
+
+// callerAgent is the agent name of the session (or tapi) whose window the
+// caller runs in ("" when none).
+func (d *Daemon) callerAgent(who *Caller) string {
+	switch slug := who.Pane(); slug {
+	case "":
+		return ""
+	case TapiSlug:
+		return d.cfg().Tapi.Agent
+	default:
+		if s, err := d.snapshot(slug); err == nil {
+			return s.Agent
+		}
+		return ""
+	}
 }
 
 // authorizeSend: sending text stays open to agents (a hub agent hands work

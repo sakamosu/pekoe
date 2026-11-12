@@ -299,6 +299,21 @@ type Step struct {
 	Elapsed  int64  `json:"elapsed_ms"`
 }
 
+// fromIssueRe is session.new's from: an issue number of the repository.
+var fromIssueRe = regexp.MustCompile(`^gh#[1-9][0-9]{0,9}$`)
+
+// newAgentName is the agent session.new starts: the one asked for, else
+// the repository's, else claude.
+func newAgentName(asked string, repo *repoInfo) string {
+	if asked != "" {
+		return asked
+	}
+	if repo.Config.Agent != "" {
+		return repo.Config.Agent
+	}
+	return "claude"
+}
+
 type newP struct {
 	Repo   string `json:"repo"`
 	Branch string `json:"branch"`
@@ -335,6 +350,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Branch == "" {
 		return nil, errors.New("branch required")
 	}
+	p.From = strings.TrimSpace(p.From)
+	if p.From != "" && !fromIssueRe.MatchString(p.From) {
+		// it goes to gh issue view: a number, not a URL of another repository
+		return nil, fmt.Errorf("from %q: give an issue of this repository as gh#N (N a number)", p.From)
+	}
 	if err := gitx.CheckBranchName(p.Branch); err != nil {
 		return nil, err
 	}
@@ -352,13 +372,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err == nil && old.State != state.Landed {
 		return nil, fmt.Errorf("session %s already exists", slug)
 	}
-	agent := p.Agent
-	if agent == "" {
-		agent = repo.Config.Agent
-	}
-	if agent == "" {
-		agent = "claude"
-	}
+	agent := newAgentName(p.Agent, repo)
 	if _, ok := d.cfg().Agents[agent]; !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
@@ -929,13 +943,7 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 		}
 	}
 	d.mu.Unlock()
-	agent := p.Agent
-	if agent == "" {
-		agent = repo.Config.Agent
-	}
-	if agent == "" {
-		agent = "claude"
-	}
+	agent := newAgentName(p.Agent, repo)
 	if _, ok := d.cfg().Agents[agent]; !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
