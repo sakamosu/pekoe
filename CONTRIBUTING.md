@@ -45,6 +45,7 @@ Pushing a `v*` tag makes GitHub Actions (`.github/workflows/release.yml`) do the
 2. Create the release **as a draft** with the archives, `checksums.txt` and a changelog since the previous tag (`release.draft: true`; GoReleaser uploads every asset to the draft)
 3. Attach build provenance (an attestation, `actions/attest`) to each archive listed in `checksums.txt`
 4. Publish the draft (`gh release edit <tag> --draft=false`, with `--latest` unless it is a prerelease such as `vX.Y.Z-rc.1`)
+5. Write the Homebrew cask to the tap `sakamosu/homebrew-tap` (`scripts/homebrew-tap.sh`; not for a prerelease). See "Homebrew tap" below
 
 Publishing comes last because, with immutable releases on (below), assets can't be added to or replaced in a published release, and because `pekoe update` refuses a release from v0.4.0 on (`selfupdate.ProvenanceFrom`) that has no provenance: a published release should never be without one. To retry a failed run, re-run the workflow: `release.replace_existing_draft` deletes the draft of the same name and starts over. If you give up on a tag instead, delete its draft by hand (Releases → the draft → Delete).
 
@@ -100,6 +101,23 @@ To make them:
 3. Delete the local `.p12` / `.p8` copies you don't need, or keep them somewhere safe
 
 To check a release: `codesign -dv bin/pekoe` should show `Authority=Developer ID Application: …` and a `TeamIdentifier` (instead of `Signature=adhoc`).
+
+### Homebrew tap
+
+`brew install sakamosu/tap/pekoe` installs a cask from the tap repository `sakamosu/homebrew-tap`. GoReleaser generates it (`homebrew_casks` in `.goreleaser.yaml`, written to `dist/homebrew/Casks/pekoe.rb`) from the default build's archives only (no `_web`), with `skip_upload: true`: GoReleaser doesn't push it. The last step of `release.yml` does, after the release is published, with `scripts/homebrew-tap.sh`, so the tap never points at a draft whose archives can't be downloaded yet (or ever, if attest fails).
+
+- It is a cask, not a formula: GoReleaser v2 deprecates `brews` (formulae) in favor of `homebrew_casks`
+- The cask moves `bin/`, `share/` and `contrib/` out of the archive's top directory (the `rename` lines in `custom_block`), so that `Caskroom/pekoe/<ver>/bin/pekoe` finds `../share/pekoe` the same way as an unpacked archive. GoReleaser by itself only moves the binaries out
+- After installing, it removes macOS's quarantine mark (`postflight_steps`), because Gatekeeper refuses an unsigned binary that has it. It does no harm once the binaries are signed and notarized
+- If `HOMEBREW_TAP_TOKEN` is empty or the tap answers HTTP 404 (it doesn't exist yet, or the token can't read it), the step only warns and the job passes: a release can be cut before the tap is ready. Other errors (no write permission, say) fail the job, but the release is already published by then, and re-running the workflow would try to make it again. In both cases the job's summary has the cask, so put it into the tap by hand as `Casks/pekoe.rb` once the problem is fixed
+- To look at the cask locally: `goreleaser release --snapshot --clean --skip=publish`, then `dist/homebrew/Casks/pekoe.rb`
+
+Set it up once (before the first release that should reach Homebrew):
+
+1. Create the public repository `sakamosu/homebrew-tap` (the `homebrew-` prefix is what lets `brew` find it as `sakamosu/tap`). Initialize it with a README so that it has a default branch; the cask goes into `Casks/` on that branch
+2. Create a fine-grained personal access token (Settings → Developer settings → Personal access tokens → Fine-grained tokens): Resource owner `sakamosu`, Repository access "Only select repositories" → `sakamosu/homebrew-tap` only, Repository permissions → Contents: Read and write (Metadata: Read-only comes with it), nothing else. Give it an expiration and note when to renew it
+3. Add it as the secret `HOMEBREW_TAP_TOKEN` of the `release` Environment (Settings → Environments → `release` → Environment secrets), next to the signing secrets, not as a repository secret: only an approved `v*` tag run can then read it
+4. After the next release, check the job's "Update the Homebrew tap" step and `brew install sakamosu/tap/pekoe` (or `brew upgrade pekoe`)
 
 ### Installing goreleaser
 

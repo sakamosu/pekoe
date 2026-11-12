@@ -103,6 +103,21 @@ pekoe skills install    # optional: link pekoe's skills from ~/.claude/skills (a
 make install-launchd    # optional: start pekoed at login
 ```
 
+### With Homebrew
+
+From v0.4.0 on, macOS and Linux (arm64 / amd64) can install the default build (no Web UI) from the tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap). tmux and git come along as dependencies:
+
+```sh
+brew install sakamosu/tap/pekoe
+pekoe hooks install     # add hooks to ~/.claude/settings.json (asks first, keeps a backup)
+brew upgrade pekoe      # update (pekoe update refuses a Homebrew install), then pekoe daemon restart
+```
+
+- It is a cask made from the release archive (`pekoe_<ver>_<os>_<arch>.tar.gz`). It is unpacked into `$(brew --prefix)/Caskroom/pekoe/<ver>/` with the archive's layout (`bin/`, `share/pekoe/`, `contrib/launchd/`), and `pekoe` / `pekoed` are linked into `$(brew --prefix)/bin`. pekoe follows that link, so the nvim plugin and the Chrome extension in `share/pekoe` are found as is
+- For the Web UI, install the `_web` archive from a release (below) or build with `make install WEB=1`
+- macOS marks what brew downloads as quarantined, and Gatekeeper refuses an unsigned binary with that mark. The macOS binaries are not signed yet (see below), so the cask removes the mark after installing
+- To start pekoed at login, `brew info pekoe` shows the launchd commands. `brew services` doesn't work with a cask
+
 ### From a release (prebuilt binaries)
 
 GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. Download with `gh` (any logged-in account; for the Web UI build, add `_web` before `.tar.gz`), or with curl without a token:
