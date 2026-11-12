@@ -1365,12 +1365,20 @@ function updateJump() {
 }
 
 // fitComposer: in tapi chat the box grows with its lines (up to its
-// max-height, 30vh); elsewhere it keeps its own (resizable) height
+// max-height, 30vh). Elsewhere it keeps its own (resizable) height: only
+// the height set here is taken back when leaving tapi.
 function fitComposer() {
   const ta = $("d-text");
+  if (current !== TAPI) {
+    if (ta.dataset.fit) {
+      ta.style.height = "";
+      delete ta.dataset.fit;
+    }
+    return;
+  }
   ta.style.height = "";
-  if (current !== TAPI) return;
   ta.style.height = Math.max(ta.scrollHeight + 2, 44) + "px"; // + the border
+  ta.dataset.fit = "1";
 }
 
 // fitViewport: tapi chat fills what can be seen. On iOS the software
@@ -1380,6 +1388,7 @@ function fitComposer() {
 function fitViewport() {
   const vv = window.visualViewport;
   if (!vv || !document.body.classList.contains("chat-on")) return;
+  if (vv.scale > 1.01) return; // pinch-zoomed: keep the page as it was, let it pan
   const r = document.documentElement.style;
   r.setProperty("--vvh", vv.height + "px");
   r.setProperty("--vvt", vv.offsetTop + "px");
