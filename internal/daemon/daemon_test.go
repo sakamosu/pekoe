@@ -203,8 +203,34 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	// ports are free unless a test says otherwise: the real check binds
 	// them, which an agent's sandbox refuses
 	d.portBusy = func(int) bool { return false }
-	t.Cleanup(func() { d.DB.Close(); d.releaseLock() })
+	t.Cleanup(func() { waitCreations(t, d); d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
+}
+
+// waitCreations ends the sessions still being made when a test returns:
+// session.new makes them in the background (runNew), which would otherwise
+// go on writing the worktree and the DB while the cleanup closes the DB and
+// removes the temp dirs ("directory not empty"). runNew is done when its
+// cancel is gone from d.cancels.
+func waitCreations(t *testing.T, d *Daemon) {
+	t.Helper()
+	d.mu.Lock()
+	for _, cancel := range d.cancels {
+		cancel()
+	}
+	d.mu.Unlock()
+	for end := time.Now().Add(30 * time.Second); ; sleep10ms() {
+		d.mu.Lock()
+		n := len(d.cancels)
+		d.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		if time.Now().After(end) {
+			t.Errorf("%d session(s) still being made after the test", n)
+			return
+		}
+	}
 }
 
 func call[T any](t *testing.T, d *Daemon, method string, params any) T {
@@ -531,20 +557,16 @@ func TestReviewEnd(t *testing.T) {
 	}
 }
 
-// stop sends a Stop hook and waits for its (asynchronous) handling.
+// stop sends a Stop hook and waits for its (asynchronous) handling: onStop
+// sets the state first and the diffstat after it (git), so the state alone
+// does not say it is over.
 func stop(t *testing.T, d *Daemon, slug string, payload map[string]any) {
 	t.Helper()
-	before := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
 	event(t, d, "Stop", slug, payload)
-	for i := 0; i < 100; i++ {
-		s := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
-		if s.State != before.State || s.State == state.Done || s.State == state.Reviewing && i > 10 {
-			if s.State == state.Done || s.State == state.Reviewing {
-				time.Sleep(50 * time.Millisecond) // let diffstat settle
-				return
-			}
+	for end := time.Now().Add(30 * time.Second); d.stopping.Load() != 0; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the Stop hook is still being handled")
 		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 

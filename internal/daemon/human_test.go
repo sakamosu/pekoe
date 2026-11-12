@@ -288,14 +288,7 @@ func TestAgentLandWithoutOriginRefused(t *testing.T) {
 func readySession(t *testing.T, d *Daemon, repo, branch string) state.Session {
 	t.Helper()
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": branch})
-	for i := 0; i < 100 && s.State == state.Creating; i++ {
-		sleep()
-		s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
-	}
-	if s.State == state.Creating {
-		t.Fatalf("%s still creating", s.Slug)
-	}
-	return s
+	return waitCreated(t, d, s.Slug)
 }
 
 // Every registered method is either open to agents or human-only, on

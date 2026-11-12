@@ -69,16 +69,17 @@ func previewSetup(t *testing.T, listening bool) (*Daemon, *fakeCapturer, state.S
 // waitPreview polls until cond holds for the session's preview.
 func waitPreview(t *testing.T, d *Daemon, slug string, cond func(p Preview) bool) Preview {
 	t.Helper()
-	var p Preview
-	for i := 0; i < 200; i++ {
-		p = call[Preview](t, d, "preview.get", map[string]any{"slug": slug})
+	// a deadline in time, not in rounds: under load one capture (the fake
+	// encodes a 1280x800 PNG) can take seconds
+	for end := time.Now().Add(30 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		p := call[Preview](t, d, "preview.get", map[string]any{"slug": slug})
 		if cond(p) {
 			return p
 		}
-		time.Sleep(10 * time.Millisecond)
+		if time.Now().After(end) {
+			t.Fatalf("preview never settled: %+v", p)
+		}
 	}
-	t.Fatalf("preview never settled: %+v", p)
-	return p
 }
 
 func TestPreviewAutoRetakeOnStop(t *testing.T) {

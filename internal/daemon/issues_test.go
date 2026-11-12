@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/gitx"
 	"pekoe/internal/state"
@@ -136,16 +137,20 @@ func TestIssuesUnavailable(t *testing.T) {
 	}
 }
 
+// waitCreated waits until session.new has made slug (or failed). The
+// deadline is in time, not in rounds: under load git worktree add, the
+// setup hooks and the snapshot can take seconds.
 func waitCreated(t *testing.T, d *Daemon, slug string) state.Session {
 	t.Helper()
-	var s state.Session
-	for i := 0; i < 100; i++ {
-		if s = call[state.Session](t, d, "session.get", map[string]any{"slug": slug}); s.State != state.Creating {
-			break
+	for end := time.Now().Add(30 * time.Second); ; sleep10ms() {
+		s := call[state.Session](t, d, "session.get", map[string]any{"slug": slug})
+		if s.State != state.Creating {
+			return s
 		}
-		sleep()
+		if time.Now().After(end) {
+			t.Fatalf("%s still creating", slug)
+		}
 	}
-	return s
 }
 
 func TestIssuesMatchSessions(t *testing.T) {

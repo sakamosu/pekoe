@@ -277,7 +277,11 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		if hook == "SubagentStop" {
 			break
 		}
-		go d.onStop(slug, hp)
+		d.stopping.Add(1)
+		go func() {
+			defer d.stopping.Add(-1)
+			d.onStop(slug, hp)
+		}()
 	case "SessionEnd":
 		d.update(slug, func(s *state.Session) {
 			if s.State == state.Running || s.State == state.Waiting {

@@ -180,13 +180,13 @@ func TestTapiHooks(t *testing.T) {
 
 func waitFor(t *testing.T, ok func() bool) {
 	t.Helper()
-	for i := 0; i < 200; i++ {
-		if ok() {
-			return
+	// a deadline in time, not in rounds: under load what it waits for (git
+	// several times, a hook) can take seconds
+	for end := time.Now().Add(30 * time.Second); !ok(); sleep10ms() {
+		if time.Now().After(end) {
+			t.Fatal("timed out")
 		}
-		sleep10ms()
 	}
-	t.Fatal("timed out")
 }
 
 // The session.* methods (which the web UI calls) do not reach tapi.
