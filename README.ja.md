@@ -202,11 +202,12 @@ pekoe                                                 # TUI
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
+| `pekoe config edit\|check\|show\|path` | `config.toml` の入口。`edit` は `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめる。間違いがあれば、開き直す・そのまま保存・保存せずにやめるを聞く(visudo と同じ形)。ファイルが無ければ作る。`check` は構文エラー・知らないキー・受け付けない値を出す(あれば終了コード 1)。`show` は既定値込みの今の設定(`[web] auth_key` は伏せる)。`path` は置き場所。どれも pekoed を通さず自分でファイルを読み書きする(TUI では `^q ,`) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
-- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
+- `--json` で機械可読に出す(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check`)。サブコマンドの前後どちらにも書ける
 - `--help` / `-h` は使い方を出すだけで何もしない(終了コード 0)。知らないフラグや値のない `--repo` はエラー(終了コード 2)。`-` で始まる文字列を位置引数にするときは `--` の後に書く(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は hooks から呼ばれる内部用。失敗しても常に終了コード 0
 - pekoed につなぐコマンドのうち、エージェントが token なしで使えるのは `ls`・`new`・`send`・`land`・landed のセッションの `rm`・自分のセッションの `dev`・`report`・`reports`・`wait`・`ask-human`・`inbox`(一覧と、自分の問いの `withdraw`)・`ledger`(tapi chat だけ。`reopen` / `rm` は除く)・`stats`・`conflicts`・`cleanup`(一覧。`--rm` は `rm` と同じく landed だけ)(と hooks 用の `event`)だけで、`conflicts` は計算し直しが 10 秒に 1 回まで(それ以内は前の予報が返る)、`report` は自分のセッションの分だけ(pekoe の窓の外から呼ぶと断られる)、`new` は pekoe が既に知っているリポジトリ(セッションがある・あった、または `repos/<id>.toml` がある)でだけ(新しいリポジトリで最初のセッションを作るのは人間だけの操作)、`land` は origin のあるリポジトリでだけ、`rm` は worktree が消えた landed のセッションに `--force` なしでだけ使える(origin がないと land はその場で base を fast-forward する)。ほか(`answer`・ほかのセッションの `dev`・`init`・`open`・`review`・ほかの状態の `rm`・`issues`・`daemon` など)と `update`(`--check` 以外)は人間だけの操作で、`human-token` を読める端末からしか通らない(エージェントからは断られる。[エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`send` は誰でも使えるが、相手に許可ダイアログが出ている間は断る(人間の `send` も、Enter つきなら打つ前と Enter の直前に確かめる)
@@ -235,6 +236,7 @@ pekoe                                                 # TUI
 | `i` / `h` `Esc` | Agent パネルで入力を始める / 左に戻る |
 | `^q` `z` | 右ペイン(4)を全幅にして左ペインを隠す / もう一度で戻す。入力中に押せば入力に戻る |
 | `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に残り、再起動後の TUI と CLI から起動するエージェントの幅も同じになる。100 列未満(縦並び)では効かない |
+| `^q` `,` | `config.toml` を編集する(この端末で `pekoe config edit`。エディタを閉じると TUI に戻る) |
 | `n` | 新しい worktree + セッション |
 | `t` / `T` | tapi chat を開いて話しかける([tapi chat](#tapi-chat))/ tapi chat をリセット(確認あり) |
 | `w` | リポジトリを選ぶ |
@@ -248,7 +250,7 @@ pekoe                                                 # TUI
 | `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `ext` `tutorial` `q`) |
+| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
 | `:cleanup` | 片付けの一覧(`pekoe cleanup`)。landed・マージ済み・止まって長いセッションを警告(未コミットのファイル・push していないコミット・開いている PR)つきで出す。`space` で 1 つ選び、`a` で landed をすべて選び、`D` で選んだもの(なければカーソルのもの)を消す。消す前の確認に、消す worktree と警告をもう一度出す |
 | `H` | チュートリアルをもう一度(`:tutorial` でも。[チュートリアル](#チュートリアル)) |
 | `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
@@ -439,7 +441,7 @@ gatekeeper = "claude -p '危ない箇所を path:line: text で挙げて'"   # d
 
 変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`。setup は順に実行し、失敗したら止めて左ペインに赤で出す。`[hooks]` のコマンドに埋めるとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は単引用符で囲んで 1 語として渡す(`feat/x` のような普通の値はそのまま)。pekoe が必要なときに囲むので、**`{{…}}` を自分で引用符で囲まないこと**(`createdb "app_{{branch}}"` ではなく `createdb app_{{branch}}`。二重引用符の中では単引用符が効かない)。ブランチ名は、シェルが特別に扱う文字(`$` `(` `)` `;` `|` `{` `}` 空白など)を含むものを `pekoe new` が断る。`[env]` の値には引用符を付けない。
 
-`~/.config/pekoe/config.toml`(全体):
+`~/.config/pekoe/config.toml`(全体。`pekoe config edit` か TUI の `^q ,` で開き、`pekoe config show` で既定値込みの今の設定が見られる):
 
 ```toml
 animate = true              # 状態アイコンのアニメーション

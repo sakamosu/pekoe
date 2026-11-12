@@ -213,11 +213,29 @@ func DefaultAgents() map[string]Agent {
 }
 
 func LoadGlobal() (*Global, error) {
+	g, _, err := ReadGlobal()
+	return g, err
+}
+
+// ReadGlobal is LoadGlobal that also returns the bytes it read (nil when
+// there is no file): what a reload compares the file with next time.
+func ReadGlobal() (*Global, []byte, error) {
+	b, err := os.ReadFile(paths.GlobalConfig())
+	if err != nil {
+		b = nil // missing (or unreadable, as before): the defaults
+	}
+	g, err := ParseGlobal(b)
+	if err != nil {
+		return nil, b, fmt.Errorf("%s: %w", paths.GlobalConfig(), err)
+	}
+	return g, b, nil
+}
+
+// ParseGlobal reads config.toml's contents and fills in the defaults.
+func ParseGlobal(b []byte) (*Global, error) {
 	g := &Global{}
-	if b, err := os.ReadFile(paths.GlobalConfig()); err == nil {
-		if _, err := toml.Decode(string(b), g); err != nil {
-			return nil, fmt.Errorf("%s: %w", paths.GlobalConfig(), err)
-		}
+	if _, err := toml.Decode(string(b), g); err != nil {
+		return nil, err
 	}
 	if g.HTTP.Port == 0 {
 		g.HTTP.Port = 47777

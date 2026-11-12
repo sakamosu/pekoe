@@ -831,6 +831,9 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case evMsg:
 		return m, m.onEvent(client.Event(msg))
 
+	case configEditedMsg:
+		return m, m.onConfigEdited(msg)
+
 	case layoutSettledMsg:
 		return m, m.layoutSettled(msg.seq)
 
@@ -1179,6 +1182,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 				}
 			}
 			return cmd
+		}
+		if k.String() == configKey {
+			return m.editConfig()
 		}
 		// after ^q left typing, any other key is a plain key: l still lands
 		if !fromTyping {

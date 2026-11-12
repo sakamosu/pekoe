@@ -375,6 +375,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す) |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。pekoed にはつながらない |
+| `pekoe config edit\|check\|show\|path` | `config.toml` の入口(`internal/config` の `Check`・`Effective`)。`edit` は visudo と同じ形: 同じディレクトリの一時ファイルを `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめ、問題があれば開き直す・そのまま保存・やめるを聞き、置き換えは rename 1 回(読む側が書きかけを見ない)。リンクならリンク先を置き換える。編集中に元のファイルが変わっていたら上書きしてよいか聞く。`check` は構文エラー(fatal)と、知らないキー(`toml.MetaData.Undecoded`)・受け付けない値(警告)。`show` は既定値込み、`[web] auth_key` は伏せる。どれも pekoed にはつながらない(`~/.config/pekoe` はエージェントの sandbox から読み書きできない。RPC にするとその抜け道になる) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える(`internal/selfupdate`。README「更新」)。人間だけ(`$PEKOE_SESSION` があるか `human-token` を読めなければ断る)。`--check` は見るだけで誰でも使える。pekoed にはつながらない(終わった後に `pekoe daemon restart` を聞くだけ) |
 
 **TUI キーバインド**(vim 風。すべて設定で変更可)
@@ -408,6 +409,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | prefix + `h` `l` | 左ペインと右ペインのフォーカス移動(右ペインにフォーカス中はキーがすべて claude に渡る) |
 | prefix + `z` | 右ペインのズーム(全幅にして左ペインを隠す)の切り替え。左のパネルにフォーカスを移すとズームは解ける |
 | prefix + `<` `>` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(端末幅の 40%、34〜56 列)に戻す。ズーム中ならズームを解いてから調整。左ペインは 34 列、右ペインの pty は 20 列が下限。幅は割合で `layout.json`(データディレクトリ)に保存し、描画はすぐ変え、tmux と pty の resize はキーが 200ms 止まってから 1 回だけ送る。100 列未満では効かない |
+| prefix + `,` / `:config` | `config.toml` を編集する。TUI が端末を手放して(`tea.Exec`)この端末で `pekoe config edit` を走らせ、エディタと保存後の確認が終わったら戻る。設定の読み書きは pekoed を通さない。既存の tmux popup の仕組みは無い(TUI は tmux の中で動くとは限らない)ので、エディタは TUI の端末で開く |
 
 **tapi の行(TUI)** — [1] Sessions の一番上(リポジトリの見出しより上)に、`orchestrator` の見出しと tapi の行を常に出す(docs/tapi-chat.md「Sessions の先頭の行」)。見出しはリポジトリの見出しと同じ形(名前と罫線)で、少しだけ目立たせる: 名前はいつも text(リポジトリの見出しは今のリポジトリ以外 dim)、罫線は太い `━`(リポジトリは `─`)。新しい色は使わない(色には意味がある。docs/ui-guidelines.md)ので、none モードでも罫線の太さで見分けられる。見出しは選べない(`j` `k` で飛ばし、クリックしても選択は動かない)。`/` の絞り込みの対象外。選択位置 `m.sel` はセッションの添字のままで、tapi の行は -1 で表すので、セッション向けのキーは選択中のセッションが無いのと同じく何もしない。[1] の行はクリックでも選べる。
 
