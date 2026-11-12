@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -699,6 +701,11 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 		return nil, nil
 	}
 	cmd := "nvim"
+	if sock := nvimSocket(p.Slug); sock != "" {
+		// its server socket where the hooks sandbox cannot connect
+		// (paths.NvimDir), not in $TMPDIR
+		cmd += " --listen " + shellQuote(sock)
+	}
 	env := append(append([]string{}, s.Env...), "PEKOE_SESSION="+p.Slug, "PEKOE_REVIEW=1", "PEKOE_SOCK="+paths.Socket())
 	// The plugin directory is pekoed's own, never the caller's: nvim reads
 	// "|" in an Ex command as a separator ("set rtp+=/x | !cmd" would run
@@ -710,6 +717,28 @@ func (d *Daemon) hReviewSurface(p surfaceP) (any, error) {
 		cmd += " -c " + shellQuote(`lua vim.opt.rtp:append(vim.env.PEKOE_NVIM_PLUGIN); vim.cmd.runtime("plugin/pekoe.lua")`)
 	}
 	return nil, d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinReview, Dir: s.Path, Env: env, Command: cmd, Width: p.Width, Height: p.Height})
+}
+
+// nvimSocket is the review surface's nvim server socket for slug, in
+// paths.NvimDir; a socket left by an nvim that is gone is removed. "": the
+// directory cannot be made or the path is too long for a unix socket
+// (nvim then makes its own in $TMPDIR, as before).
+func nvimSocket(slug string) string {
+	dir := paths.NvimDir()
+	if err := os.MkdirAll(dir, paths.DirPerm); err != nil {
+		log.Printf("review surface: %v", err)
+		return ""
+	}
+	sum := sha256.Sum256([]byte(slug))
+	sock := filepath.Join(dir, hex.EncodeToString(sum[:])[:12]+".sock")
+	if len(sock) >= 100 { // sun_path: 104 bytes on macOS
+		log.Printf("review surface: %s is too long for a socket; nvim makes its own", sock)
+		return ""
+	}
+	if fi, err := os.Lstat(sock); err == nil && fi.Mode()&os.ModeSocket != 0 {
+		os.Remove(sock) // the review window is not alive (checked by the caller)
+	}
+	return sock
 }
 
 func nvimPluginDir() string {

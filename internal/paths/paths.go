@@ -133,6 +133,13 @@ func TapiDir() string { return filepath.Join(DataDir(), "tapi") }
 // ~/.claude/skills.
 func SkillsDir() string { return filepath.Join(DataDir(), "skills") }
 
+// NvimDir holds the server sockets of the review surface's nvim (nvim
+// --listen): pekoed's hooks sandbox cannot connect to sockets here, and
+// the agents' sandbox lets them reach pekoed's socket only. Without
+// --listen nvim would make one in $TMPDIR, which a command in the hooks
+// sandbox could use to run anything outside it.
+func NvimDir() string { return filepath.Join(DataDir(), "nvim") }
+
 // LockFile is held (flock) by the one pekoed serving this data directory.
 func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 

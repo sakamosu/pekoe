@@ -14,18 +14,28 @@ import (
 // worktree. webStateDir is [web] state_dir (the tsnet node's keys).
 //
 // Read: the secrets — the human token, the Chrome extension's HTTP token,
-// the tsnet state, and config.toml ([web] auth_key).
+// the tsnet state, and config.toml ([web] auth_key) — and state.db (with
+// its -wal and -shm: other sessions' prompts, review comments, reports and
+// the inbox, which agents read only through pekoed's API, filtered by
+// caller; the agents' own sandbox denies it too).
 //
 // Write: pekoe's data and config directories (else the command could turn
 // the sandbox off, change the hooks, or replace the token), and places
 // whose contents run later outside any sandbox: shell startup files, git's
-// and Claude Code's settings, launch agents, editor and tmux config, and
-// the user-writable directories on $PATH (pekoed runs git, gh and tmux
-// from there). This list cannot be complete: the sandbox is aimed at the
-// secrets, not at everything a command running as the user could do.
+// and Claude Code's settings (~/.claude.json's MCP servers, skills, hooks,
+// plugins, agents, commands and CLAUDE.md as well, in ~/.claude and in
+// $CLAUDE_CONFIG_DIR), launch agents, editor and tmux config, and the
+// user-writable directories on $PATH (pekoed runs git, gh and tmux from
+// there). This list cannot be complete: the sandbox is aimed at the
+// secrets, not at everything a command running as the user could do. The
+// repositories' .git/hooks and .git/config stay writable (husky and
+// pre-commit install themselves there); pekoed watches them instead
+// (internal/gitwatch).
 //
 // Connect: the user's tmux servers (pekoe's among them): through one, a
-// command could open a window that runs outside the sandbox.
+// command could open a window that runs outside the sandbox; and the
+// sockets of the review surface's nvim (NvimDir). Other unix sockets
+// (Docker, ssh-agent …) stay reachable: builds and tests use them.
 func DefaultPolicy(webStateDir string) Policy {
 	p := Policy{
 		DenyRead: []string{
@@ -33,6 +43,7 @@ func DefaultPolicy(webStateDir string) Policy {
 			paths.TokenFile(),
 			paths.WebStateDir(),
 			paths.GlobalConfig(),
+			paths.StateDB(), paths.StateDB() + "-wal", paths.StateDB() + "-shm",
 		},
 		DenyWrite: []string{paths.DataDir(), paths.ConfigDir()},
 	}
@@ -43,13 +54,31 @@ func DefaultPolicy(webStateDir string) Policy {
 		for _, rel := range homeAutorun {
 			p.DenyWrite = append(p.DenyWrite, filepath.Join(home, rel))
 		}
+		p.DenyWrite = append(p.DenyWrite, claudeAutorun(filepath.Join(home, ".claude"))...)
+		p.DenyWrite = append(p.DenyWrite, filepath.Join(home, ".claude.json"))
+	}
+	if c := os.Getenv("CLAUDE_CONFIG_DIR"); filepath.IsAbs(c) {
+		p.DenyWrite = append(p.DenyWrite, claudeAutorun(c)...)
+		p.DenyWrite = append(p.DenyWrite, filepath.Join(c, ".claude.json"))
 	}
 	if z := os.Getenv("ZDOTDIR"); filepath.IsAbs(z) {
 		p.DenyWrite = append(p.DenyWrite, z)
 	}
 	p.DenyWrite = append(p.DenyWrite, writablePathDirs(os.Getenv("PATH"))...)
-	p.DenyConnect = append(p.DenyConnect, tmuxDir())
+	p.DenyConnect = append(p.DenyConnect, tmuxDir(), paths.NvimDir())
 	return p
+}
+
+// claudeAutorun are what Claude Code reads from its config directory dir
+// (~/.claude or $CLAUDE_CONFIG_DIR) that run commands or instruct the next
+// agent it starts. projects/ (transcripts, memory) and the caches stay
+// writable: a `claude -p` gatekeeper writes them.
+func claudeAutorun(dir string) []string {
+	var out []string
+	for _, rel := range []string{"settings.json", "settings.local.json", "skills", "hooks", "plugins", "agents", "commands", "CLAUDE.md"} {
+		out = append(out, filepath.Join(dir, rel))
+	}
+	return out
 }
 
 // homeAutorun are files and directories below $HOME whose contents get run
@@ -60,7 +89,6 @@ var homeAutorun = []string{
 	".config/fish", ".config/zsh",
 	".gitconfig", ".config/git",
 	".ssh",
-	".claude/settings.json", ".claude/settings.local.json",
 	".tmux.conf", ".config/tmux",
 	".vimrc", ".config/nvim",
 	"Library/LaunchAgents",

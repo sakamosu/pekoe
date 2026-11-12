@@ -233,7 +233,7 @@ type Daemon struct {
 }
 
 func New() (*Daemon, error) {
-	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir()); err != nil {
+	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir(), paths.NvimDir()); err != nil {
 		return nil, err
 	}
 	// files written by versions that used 0644 / 0755

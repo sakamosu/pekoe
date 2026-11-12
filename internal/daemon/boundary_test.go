@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"pekoe/internal/engine"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
+	"pekoe/internal/testenv"
 )
 
 // review.surface must not take a runtime path from the caller: nvim reads
@@ -68,5 +70,38 @@ func TestPromptAfterResumeIsNotAnOption(t *testing.T) {
 	}
 	if got := fe.spawned(s.Slug, engine.WinAgent).Command; !strings.HasPrefix(got, "claude --continue"+settingsFlag(s.Slug)+" -- '-x'") {
 		t.Fatalf("continue: %s", got)
+	}
+}
+
+// The review surface's nvim listens in pekoe's data directory (NvimDir,
+// where the hooks sandbox cannot connect), not in $TMPDIR; a socket left
+// by an nvim that is gone does not stop the next one.
+func TestReviewSurfaceNvimSocket(t *testing.T) {
+	d, fe, repo := setup(t)
+	bin := t.TempDir()
+	os.WriteFile(filepath.Join(bin, "nvim"), []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	// a short data directory: socket paths are limited (~104 bytes)
+	t.Setenv("PEKOE_HOME", testenv.ShortDir(t, "pk"))
+	sock := nvimSocket(s.Slug)
+	if sock == "" || filepath.Dir(sock) != paths.NvimDir() {
+		t.Fatalf("socket %q not in %s", sock, paths.NvimDir())
+	}
+	if fi, err := os.Stat(paths.NvimDir()); err != nil || fi.Mode().Perm() != paths.DirPerm {
+		t.Fatalf("NvimDir: %v %v", fi, err)
+	}
+	if nvimSocket("other") == sock {
+		t.Fatal("two sessions share a socket")
+	}
+	call[any](t, d, "review.surface", map[string]any{"slug": s.Slug, "width": 80, "height": 24})
+	sp := fe.spawned(s.Slug, engine.WinReview)
+	if !strings.HasPrefix(sp.Command, "nvim --listen "+shellQuote(sock)) {
+		t.Fatalf("command: %s", sp.Command)
+	}
+	// too long a path: nvim picks its own, as before
+	t.Setenv("PEKOE_HOME", filepath.Join(t.TempDir(), strings.Repeat("x", 100)))
+	if got := nvimSocket(s.Slug); got != "" {
+		t.Fatalf("over-long socket path used: %s", got)
 	}
 }
