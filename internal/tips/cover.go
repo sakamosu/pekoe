@@ -42,7 +42,6 @@ var NoTip = map[string]string{
 	// subcommands
 	"pekoe ls":     "基本の一覧。README の最初に出てくる",
 	"pekoe rm":     "後片付け。TUI の D と同じで、tip にするほどの発見がない",
-	"pekoe answer": "許可待ちには TUI の Permission モーダルか Web UI で答えるのが主で、CLI はスクリプト用",
 	"pekoe attach": "デバッグ用(tmux の窓に直接 attach)",
 	"pekoe hooks":  "インストール時に一度だけ使う",
 	"pekoe event":  "hooks から呼ばれる内部用",
@@ -50,12 +49,10 @@ var NoTip = map[string]string{
 	"pekoe tip":    "TIPS 自身。tapi chat が使う",
 
 	// config.toml
-	"[http]":    "Chrome 拡張の port。pekoe ext の tip で足りる",
-	"[theme]":   "見た目の好み。README の設定の節で足りる",
-	"[mascot]":  "見た目の好み。README の設定の節で足りる",
-	"[ports]":   "ポート台帳の開始番号。困ったときに設定の節を見れば足りる",
-	"[animate]": "見た目の好み(最上位のキー animate)",
-	"[tips]":    "TIPS 自身。止め方は README の TIPS の節に書いてある",
+	"[http]":  "Chrome 拡張の port。pekoe ext の tip で足りる",
+	"[theme]": "見た目の好み。README の設定の節で足りる",
+	"[ports]": "ポート台帳の開始番号。困ったときに設定の節を見れば足りる",
+	"[tips]":  "TIPS 自身。止め方は README の TIPS の節に書いてある",
 }
 
 var (
