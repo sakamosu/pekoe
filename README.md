@@ -115,7 +115,8 @@ gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
-gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe   # built by this repository's workflow? (v0.1.0 to v0.3.0 have no provenance)
+gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe \
+  --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref "refs/tags/v$ver"   # built by release.yml from this tag? (v0.1.0 to v0.3.0 have no provenance)
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -124,7 +125,7 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached only to releases that `release.yml` makes while the repository is public (on a private repository, attestations need GitHub Enterprise Cloud, so `release.yml` skips them). Provenance starts with the releases made after the repository went public; v0.1.0 to v0.3.0 were made while it was private, so they have no provenance and `gh attestation verify` fails for them.
+`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached only to releases that `release.yml` makes while the repository is public (on a private repository, attestations need GitHub Enterprise Cloud, so `release.yml` skips them). Provenance starts with the releases made after the repository went public (v0.4.0 on); v0.1.0 to v0.3.0 were made while it was private, so they have no provenance and `gh attestation verify` fails for them. `--signer-workflow` and `--source-ref` make sure it was `release.yml` building that very tag (not another workflow or branch of the repository). `release.yml` creates the release as a draft, attests the archives, and only then publishes it, so a published release (v0.4.0 on) always has its provenance.
 
 The macOS binaries are not signed yet. `release.yml` is ready to sign the darwin binaries (`bin/pekoe` in every darwin archive, default and `_web`) with a Developer ID Application certificate and have Apple notarize them, but the signing secrets are not set up, so every release so far (v0.1.0 to v0.3.0) carries only the Go linker's ad-hoc signature: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` shows `Signature=adhoc`. Once releases are signed, it shows the `TeamIdentifier` instead.
 
@@ -138,12 +139,16 @@ The default build contains no Tailscale code at all. After reinstalling, run `pe
 pekoe update --check    # only check whether there is a newer release (anyone can run it)
 pekoe update            # replace pekoe with the latest release
 pekoe update --version vX.Y.Z --force   # a specific version (--force to go back)
+pekoe update --allow-unverified         # go on even if the build provenance can't be verified (see below)
 ```
 
 `pekoe update` takes the latest GitHub release (`releases/latest`, excluding drafts and prereleases) and picks the archive for the current OS, architecture and build (the `_web` archive if the current pekoe has the Web UI).
 
 - Nothing happens if the current version is the latest or newer. A `make install` version (`git describe`, e.g. `0.1.0-59-g3761d74`) counts as "59 commits after 0.1.0". Versions that can't be compared, such as `dev`, ask first
-- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. If the release has provenance (an attestation), it is also checked with `gh attestation verify`, and nothing is replaced if that fails (without `gh` installed it only warns; releases made while the repository was private, v0.1.0 to v0.3.0, have none, so it only warns)
+- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. `checksums.txt` sits in the same release, so the build provenance (attestation) is what shows the archive is genuine: it is checked with `gh attestation verify --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref refs/tags/<tag>`
+  - From v0.4.0 on (`release.yml` attests every release before publishing it), nothing is replaced if the release has no provenance, if it can't be looked up, or if `gh attestation verify` fails. The message says why. If you have checked the release yourself, `--allow-unverified` goes on with only the SHA-256 checked (after a warning)
+  - Without `gh` installed or logged in (`gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN`), the signature can't be verified: if GitHub keeps a provenance for the archive, it only warns and goes on
+  - v0.1.0 to v0.3.0 were made while the repository was private and have no provenance: it only warns, as before (a provenance that is there but fails verification stops it for any version)
 - Only the real file of the running pekoe (after following symlinks), the `pekoed` next to it, and `<prefix>/share/pekoe/nvim` and `extension` are replaced. Nothing else in `~/.local/share/pekoe` (such as `state.db`) is touched. Binaries are written next to the old ones and renamed; if something fails halfway, what was replaced is restored
 - With a `make install`, `nvim` / `extension` are links into the repository, so they are replaced by directories with the release's contents (the repository isn't written to; it asks first; `make install` again brings the links back)
 - If the current pekoe has the Web UI and the release has no `_web` archive, it refuses (install the default build with `--no-web`, or build from source with `make install WEB=1`)
