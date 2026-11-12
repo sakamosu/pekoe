@@ -304,10 +304,15 @@ function renderTarget(s) {
     note.textContent = why;
     note.hidden = !why;
     to.classList.toggle("gone", !s);
+    // while tapi runs the row is left out (the log gets the room): the
+    // confirm sheet is what shows the send goes to tapi. When tapi is not
+    // running it stays, to say why nothing can be sent
+    to.hidden = !!s;
     $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending;
     return;
   }
   note.hidden = true;
+  to.hidden = false;
   $("d-to-slug").textContent = current || "";
   $("d-to-repo").textContent = s ? [s.repo, s.branch !== s.slug ? s.branch : ""].filter(Boolean).join(" · ") : "is gone";
   to.classList.toggle("gone", !s);
@@ -612,7 +617,10 @@ async function doTapiSend() {
     await api("/api/tapi/send", { text });
     drafts.delete(TAPI);
     const ta = $("d-text");
-    if (current === TAPI && ta.value.trim() === text) ta.value = "";
+    if (current === TAPI && ta.value.trim() === text) {
+      ta.value = "";
+      fitComposer();
+    }
     toast("sent → tapi", true);
     // ● until it shows up in the transcript (✓)
     chat.pending.push({ text, at: Date.now() });
@@ -1097,6 +1105,7 @@ const chat = {
   held: false, // a redraw waits for a selection to go
   open: new Set(), // tool lists and long bubbles opened ("t<i>" / "m<i>")
   pending: [], // sent from here, not in the transcript yet: {text, at}
+  stuck: true, // the log is at its bottom (kept when the log is resized)
 };
 let chatChoice = "chat"; // the switch: chat | screen
 try {
@@ -1355,6 +1364,29 @@ function updateJump() {
   $("c-jump").hidden = tapiMode() !== "chat" || atBottom(log);
 }
 
+// fitComposer: in tapi chat the box grows with its lines (up to its
+// max-height, 30vh); elsewhere it keeps its own (resizable) height
+function fitComposer() {
+  const ta = $("d-text");
+  ta.style.height = "";
+  if (current !== TAPI) return;
+  ta.style.height = Math.max(ta.scrollHeight + 2, 44) + "px"; // + the border
+}
+
+// fitViewport: tapi chat fills what can be seen. On iOS the software
+// keyboard does not shrink the layout viewport (nor 100dvh); it shrinks the
+// visual viewport and pans it. So the page takes its height and offset,
+// and the composer stays right above the keyboard.
+function fitViewport() {
+  const vv = window.visualViewport;
+  if (!vv || !document.body.classList.contains("chat-on")) return;
+  const r = document.documentElement.style;
+  r.setProperty("--vvh", vv.height + "px");
+  r.setProperty("--vvt", vv.offsetTop + "px");
+  // the keyboard covers the home indicator: no bottom inset above it
+  document.body.classList.toggle("kb", document.documentElement.clientHeight - vv.height > 120);
+}
+
 function toBottom() {
   const log = $("c-log");
   log.scrollTop = log.scrollHeight;
@@ -1503,6 +1535,8 @@ function applyTapiMode() {
   $("d-screen-box").hidden = chatOn;
   $("d-head-panel").hidden = chatOn;
   $("d-panel").classList.toggle("chat-panel", chatOn);
+  document.body.classList.toggle("chat-on", chatOn);
+  if (chatOn) fitViewport();
   const why = $("c-why");
   why.hidden = !isTapi || chatOn || chatChoice !== "chat" || chat.ok !== false;
   why.textContent = why.hidden ? "" : "chat unavailable: " + chat.why;
@@ -1612,6 +1646,8 @@ function route() {
   if (!current) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
   ta.value = (current && drafts.get(current)) || "";
   for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
+  if (view !== "detail") document.body.classList.remove("chat-on");
+  fitComposer();
   $("tabs").hidden = view === "detail";
   for (const v of ["list", "inbox", "overview"]) {
     const t = $("t-" + v);
@@ -1683,7 +1719,22 @@ document.addEventListener("selectionchange", () => {
 });
 $("c-v-chat").addEventListener("click", () => chooseTapiView("chat"));
 $("c-v-screen").addEventListener("click", () => chooseTapiView("screen"));
-$("c-log").addEventListener("scroll", updateJump, { passive: true });
+$("c-log").addEventListener("scroll", () => {
+  chat.stuck = atBottom($("c-log"));
+  updateJump();
+}, { passive: true });
+// the log gets shorter when the composer grows, the note shows or the
+// keyboard opens: if it was at the bottom, keep the newest in sight
+if (window.ResizeObserver) {
+  new ResizeObserver(() => {
+    if (chat.stuck && !$("c-chat").hidden) toBottom();
+  }).observe($("c-log"));
+}
+$("d-text").addEventListener("input", fitComposer);
+if (window.visualViewport) {
+  visualViewport.addEventListener("resize", fitViewport);
+  visualViewport.addEventListener("scroll", fitViewport);
+}
 $("c-jump").addEventListener("click", () => {
   const log = $("c-log");
   log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
