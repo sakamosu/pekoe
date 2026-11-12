@@ -142,6 +142,17 @@ tapi は全リポジトリを読み、`pekoe new` でセッションを作って
 - **キーパッド**: tapi が質問待ちのときだけ、セッションと同じキー(`Up Down Left Right Tab BTab Space Enter Escape 0`〜`9`、1 回 8 個まで)。許可待ちのときと、画面に許可メニューが出ているとき(hook は偽れるので画面で見る)は 409
 - **allow / deny は無い**: tapi の許可待ちに答える API は無い(`/api/tapi/` に answer は無く、`/api/sessions/+tapi/…` は `session.*` が `+tapi` を拒むので届かない)。許可待ちの間、ページは「端末(pekoe TUI)で答える」とだけ出し、send とキーも止める
 
+#### 吹き出し(chat)と画面(screen)
+
+tapi chat のパネルは既定で会話を LINE のような吹き出しで出す。タイトルの右の `chat | screen` で、今までの端末の画面(pause つき)に切り替えられる(選んだ方は端末のブラウザに残る)。
+
+- **データ**: 会話は画面ではなく Claude Code の transcript から取る。tapi の hook が渡す `transcript_path` を pekoed が覚え(`tapi.transcript`、人間だけ)、ページは `GET /api/tapi/transcript?after=<cursor>` で 2 秒ごとに差分を取る。覚えるのは tapi の Claude Code のプロジェクトディレクトリ(`~/.claude/projects/<tapi の cwd>/`)の中の `<id>.jsonl` だけ。`session.event` は token なしで誰でも `+tapi` を名乗れるので、ほかのパスは読まない。pekoed を再起動して hook がまだ来ていないときは、同じディレクトリのいちばん新しい transcript を読む
+- **返すもの**: 人のテキスト・tapi のテキスト・ツールの名前と主な引数 1 つ(許可待ちの要約と同じく 200 バイトで切る。AskUserQuestion は問いと選択肢の見出し)・ターンの所要時間と時刻だけ。tool_result(`type: user` の行に入っているものも)・thinking・システムの注入(system-reminder・compact の要約・スラッシュコマンドとその出力・`!` のコマンド・task-notification など)・サブエージェントの行は返さない。pekoe が打った行(`[pekoe inbox #3] …`)は人の発言と分けて返し、ページは dim の 1 行で出す
+- **差分**: カーソルは `<会話の id>:<読んだバイト数>`。書きかけの行は次に回す。最初の読み込みは transcript の最後の 6 MB・400 件まで(それより前は `earlier`)。`/clear` などで hook が別のファイルを渡すと会話が変わったとみなし、ページは `new conversation` の区切りを入れて続ける
+- **描画**: エージェントの文は信用しない(受信箱と同じ)。`textContent` と自前の最小のマークダウン(見出し・リスト・チェックボックス・インラインコード・コードブロック)だけで組み、リンクは張らない。15 行を超える返事は畳んで `more › +N lines`。ツール呼び出しは吹き出しの間の dim の 1 行(`› 4 tools · Read docs/x.md · …`)で、タップで名前と引数の一覧を開く(結果の中身は出さない)
+- **状態**: run 中は左に Braille のスピナーと `thinking · 12s`、許可待ちはペインの中のカード(端末で答える)、質問は tapi の吹き出しの下にキーパッドのカード。送信の確認シートはそのまま。送った文は transcript に現れるまで `●`(secondary)、現れたら `✓`
+- **落とし方**: tapi が起動していない(409)・transcript が無い(404)・読めないときは画面(screen)に切り替え、画面の上に理由を出す。読めるようになれば吹き出しに戻る
+
 ### keys(キーパッド)の扱い
 
 AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・数字・Enter で操作するもので、文字を打ち込む send では答えられない(複数の質問がタブで並び、最後に Submit)。そこで質問待ちのときだけ、決まったキーを送るキーパッドを出す。
@@ -182,6 +193,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
 | `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
+| `GET /api/tapi/transcript?after=<cursor>` | — | `ChatPage`: `{conversation, cursor, items: [{kind: human\|pekoe\|agent\|tool\|turn, text?, name?, input?, question?, ms?, at}], reset?, new_conversation?, earlier?}`。上の「吹き出し(chat)と画面(screen)」。404: transcript が無い / 409: tapi が起動していない |
 | `POST /api/tapi/send` | `{text}` | `{ok: true, send: <送信の記録の id>}`。`tapi.send`(`submit: true`)。text はセッションの send と同じ(1〜4000 文字、制御文字は 400)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
 | `POST /api/tapi/keys` | `{keys: ["Down", …]}` | `{ok: true}`。セッションの keys と同じキー・個数。409: tapi が質問待ちでない・許可待ち・画面に許可メニュー・起動していない |
 | `GET /api/overview` | — | `{counts, groups, at}`。下の「Overview」 |
