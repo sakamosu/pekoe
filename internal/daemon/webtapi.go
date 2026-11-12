@@ -7,7 +7,8 @@ package daemon
 // session:
 //   - it is refused unless [web] allow_devices narrows the web UI to named
 //     devices (a stray device of the same user cannot instruct tapi)
-//   - the page shows a confirm sheet first (to: tapi, the whole text)
+//   - the page shows a confirm sheet first (to: tapi, the whole text),
+//     unless [web] confirm_tapi_send = false (ConfirmSend below)
 //   - what was sent, by whom and from which device goes to pekoed's log
 //     and the send log (to: +tapi)
 // There is no allow/deny for tapi's permission prompts here: those stay at
@@ -50,6 +51,11 @@ type webTapi struct {
 	Answerable bool `json:"answerable"`
 	// Sendable: [web] allow_devices is set, so the web UI may send to tapi.
 	Sendable bool `json:"sendable"`
+	// ConfirmSend: [web] confirm_tapi_send (default true): the page puts
+	// a send through the confirm sheet. Read on every request, so a saved
+	// config.toml applies without a restart. pekoed's checks of the send
+	// are the same either way.
+	ConfirmSend bool `json:"confirm_send"`
 }
 
 func (d *Daemon) webTapiView(sendable bool) webTapi {
@@ -58,9 +64,10 @@ func (d *Daemon) webTapiView(sendable bool) webTapi {
 		Started: t.Started, Alive: t.Alive, State: t.State, WaitKind: t.WaitKind,
 		StateSince: t.StateSince, LastMessage: t.LastMessage,
 		InboxOpen: t.InboxOpen, LedgerOpen: t.LedgerOpen,
-		Look:       toWebLook(theme.Look(theme.WebIcons(), t.State, 0, false)),
-		Answerable: tapiAnswerable(t.State, t.WaitKind),
-		Sendable:   sendable,
+		Look:        toWebLook(theme.Look(theme.WebIcons(), t.State, 0, false)),
+		Answerable:  tapiAnswerable(t.State, t.WaitKind),
+		Sendable:    sendable,
+		ConfirmSend: d.cfg().Web.ConfirmTapiSendOn(),
 	}
 }
 

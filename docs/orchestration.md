@@ -408,7 +408,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(U9 は (a)。仕様の正は docs/web.md「tapi chat の扱い」と API の表):
 
-- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi orchestrator · all repositories」と warn の色で出し、send を押すと必ず確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む。全文はシートの中でスクロールして読める
+- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi orchestrator · all repositories」と warn の色で出し、send を押すと確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む(既定は必ず。`[web] confirm_tapi_send = false` で人が切れる。`GET /api/tapi` の `confirm_send` で知らせ、再起動は要らない)。全文はシートの中でスクロールして読める
 - **`allow_devices`**: 設定が無ければ `POST /api/tapi/send` は 403 で、送信欄は理由を出して押せない。画面とキーパッドは指示にならないので `allow_devices` が無くても出す。`GET /api/tapi` に `sendable`(送れるか)と `answerable`(許可待ちか)を足した
 - **確認**: 送信はセッションの send と同じ関数(`webReadText`: 空・4000 文字超・制御文字は 400)を通し、tapi が許可待ち(hook の状態)なら 409。`tapi.send` 自身が打つ前と Enter の直前に hook の状態と画面(`promptUp`)を見直すので、画面に許可メニューが出ていても 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったもの・断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番かと、本文の最初の 200 文字を出す(全文は送信の記録。ログはエージェントの sandbox から読めるので切る)。TUI からの `tapi.send` は今までどおり記録しない
@@ -493,7 +493,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | **独立レビューの限界** | レビュアーは作者と別の文脈(サブエージェントか別セッション)で、合否を SHA つきで残し、pekoed は SHA が報告時の HEAD と同じかを facts に出す | レビュアーも同じ UID・同じ認証情報のエージェントで、作者のブランチの文(コード・コメント)を読む。作者側がインジェクションされていれば、その文でレビュアーも崩れうる。v1 で「レビュー合格」を根拠に自動で何かを進めない理由の一つ(マージは人) |
 | **記録に秘密が残る**(送信の記録・依頼に、人が打った秘密やトークンが入る) | state.db をエージェントの sandbox の `denyRead` に足す(今はエージェントが直接読める)。トークンなしの `send.log` は自分が関わる記録だけ、`ledger.list` は tapi だけ | state.db は平文。人がパスワードを `send` しない |
 | **前例の汚染**(注入された `fyi` が後の判断の前例になる) | 前例にするのは人が答えた項目(`answer.by == human`)だけとスキルに書く。`fyi` はダッシュボードで人が見られる | スキルに従わないエージェントは止められない |
-| **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる) | docs/web.md の脅威モデルに 1 項目足す: セッション 1 つへの send と重みが違うので、送る前に確認シート(宛先が tapi であること、文の全体)を挟む。`allow_devices` を設定していないときは tapi への送信を断る(未決事項 U9)。送った内容と端末を pekoed のログと送信の記録に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(上の行)を超えることはできない |
+| **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる) | docs/web.md の脅威モデルに 1 項目足す: セッション 1 つへの send と重みが違うので、送る前に確認シート(宛先が tapi であること、文の全体)を挟む(既定。`[web] confirm_tapi_send = false` で人が切れる。切ると誤送信・端末を拾われたときの守りが `allow_devices` と端末のロックだけになる)。`allow_devices` を設定していないときは tapi への送信を断る(未決事項 U9)。送った内容と端末を pekoed のログと送信の記録に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(上の行)を超えることはできない |
 
 ## 段階
 

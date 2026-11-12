@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -301,5 +303,40 @@ func TestWebTapiTranscript(t *testing.T) {
 	call[Tapi](t, d, "tapi.reset", nil)
 	if code, _, _ := tapiChat(t, h, ""); code != http.StatusConflict {
 		t.Fatalf("after reset (not started): %d", code)
+	}
+}
+
+// [web] confirm_tapi_send reaches the page in GET /api/tapi: true unset,
+// and a saved config.toml switches it without a restart.
+func TestWebTapiConfirmSend(t *testing.T) {
+	d, _, h := webTapiSetup(t, "iphone")
+	get := func() webTapi {
+		t.Helper()
+		var v webTapi
+		w := doWeb(t, h, webReq{path: "/api/tapi", from: ipPhone})
+		if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		if !strings.Contains(w.Body.String(), `"confirm_send":`) {
+			t.Fatalf("no confirm_send: %s", w.Body)
+		}
+		return v
+	}
+	if v := get(); !v.ConfirmSend {
+		t.Fatalf("default: %+v", v)
+	}
+	if err := os.WriteFile(paths.GlobalConfig(), []byte("[web]\nconfirm_tapi_send = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.reloadConfig()
+	if v := get(); v.ConfirmSend {
+		t.Fatalf("confirm_tapi_send = false: %+v", v)
+	}
+	if r := d.configRestart(); len(r) != 0 {
+		t.Fatalf("waits for a restart: %v", r)
+	}
+	// the send itself is checked the same way
+	if w := doWeb(t, h, tapiSendReq(ipPhone, "feat-csv を作って")); w.Code != 200 {
+		t.Fatalf("send: %d %s", w.Code, w.Body)
 	}
 }

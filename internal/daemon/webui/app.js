@@ -294,7 +294,7 @@ function renderTarget(s) {
   const isTapi = current === TAPI;
   to.classList.toggle("tapi", isTapi);
   $("d-send").classList.toggle("chat", isTapi);
-  $("d-text").placeholder = isTapi ? "ask tapi (you check the whole text before it is sent)" : "send a short instruction";
+  $("d-text").placeholder = !isTapi ? "send a short instruction" : tapiConfirm() ? "ask tapi (you check the whole text before it is sent)" : "ask tapi";
   if (isTapi) {
     $("d-to-slug").textContent = "tapi";
     $("d-to-repo").textContent = s ? "orchestrator · all repositories" : tapi && tapi.started ? "has exited" : "is not started";
@@ -305,7 +305,8 @@ function renderTarget(s) {
     note.hidden = !why;
     to.classList.toggle("gone", !s);
     // while tapi runs the row is left out (the log gets the room): the
-    // confirm sheet is what shows the send goes to tapi. When tapi is not
+    // confirm sheet (or, with confirm_tapi_send = false, the chat view
+    // itself) is what shows the send goes to tapi. When tapi is not
     // running it stays, to say why nothing can be sent
     to.hidden = !!s;
     $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending;
@@ -577,12 +578,19 @@ async function doSend(ev) {
   if (current) renderTarget(detailTarget());
 }
 
-// ---- send to tapi: always through a sheet with the whole text ----
+// ---- send to tapi: through a sheet with the whole text ----
 // tapi acts on every repository, so its send weighs more than one
 // session's: the sheet says the target is tapi and shows every character
 // that will be typed. The text is fixed when the sheet opens.
+// [web] confirm_tapi_send = false (tapi.confirm_send) leaves the sheet out
+// and sends at once; pekoed checks the send the same way either way. An
+// older pekoed without the field gets the sheet.
 
-let tsend = null; // the text in the sheet
+let tsend = null; // the text in the sheet (or being sent without one)
+
+function tapiConfirm() {
+  return !tapi || tapi.confirm_send !== false;
+}
 
 function openTapiSheet(text) {
   if (!tapiUp()) {
@@ -593,8 +601,12 @@ function openTapiSheet(text) {
     toast("sending to tapi needs [web] allow_devices");
     return;
   }
-  busy = true;
   tsend = text;
+  if (!tapiConfirm()) {
+    doTapiSend();
+    return;
+  }
+  busy = true;
   $("tsheet-cap").textContent = "text — all of it, as it will be typed (" + [...text].length + " chars, " + text.split("\n").length + " lines)";
   $("tsheet-text").textContent = text;
   $("tsheet-text").scrollTop = 0;
@@ -613,6 +625,7 @@ async function doTapiSend() {
   if (text == null || sending) return;
   $("tsheet-ok").disabled = true;
   sending = true;
+  $("d-send-btn").disabled = true; // no second send while this one is out
   try {
     await api("/api/tapi/send", { text });
     drafts.delete(TAPI);

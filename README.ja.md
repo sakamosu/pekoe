@@ -405,7 +405,7 @@ Web UI と Chrome 拡張はソケットを通らない人間の入口なので�
 
 ### iPhone から(Web UI)
 
-`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)・受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に出す。推奨は `recommended (agent)` と書いて選んだ状態にしない。送る前に確認シートを挟み、見た後に内容が変わった項目は断られる)・Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。読むだけ)・tapi への話しかけ(画面・質問へのキーパッド・`send`。tapi への送信は `allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む。tapi の許可待ちへの allow / deny は Web に出さず端末で答える)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
+`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)・受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に出す。推奨は `recommended (agent)` と書いて選んだ状態にしない。送る前に確認シートを挟み、見た後に内容が変わった項目は断られる)・Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。読むだけ)・tapi への話しかけ(画面・質問へのキーパッド・`send`。tapi への送信は `allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む(既定。`confirm_tapi_send = false` で切れる)。tapi の許可待ちへの allow / deny は Web に出さず端末で答える)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
 
 1. tailnet で MagicDNS と HTTPS を有効にし、`[web]` を書いて pekoed を再起動
 2. `pekoe web` に出るログイン URL を開いて tailnet に参加(`TS_AUTHKEY` でもよい)
@@ -460,6 +460,7 @@ enable        = true
 allow_users   = ["you@github"]      # Tailscale のログイン名
 allow_devices = ["iphone-15"]       # 任意。この端末だけに絞る
 hostname      = "pekoe"             # tailnet のマシン名
+confirm_tapi_send = true            # tapi への send の前に確認シート。false ですぐ送る(再起動は要らない)
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii

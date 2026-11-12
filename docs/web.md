@@ -9,7 +9,7 @@ Mac で pekoed を動かしたまま、外出先の iPhone(Tailscale アプリ�
 - エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
 - 判断の受信箱への回答(Inbox タブ。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
 - 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `impl → review → PR → CI → merge` と、マージしてよいかの根拠の足りない条件)
-- tapi chat(統括役)の画面・質問へのキーパッド・`send`(送る前に宛先と全文の確認シート。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
+- tapi chat(統括役)の画面・質問へのキーパッド・`send`(送る前に宛先と全文の確認シート。既定は必ず挟み、`confirm_tapi_send = false` で切れる。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
 
 賢さは pekoed にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。
 
@@ -70,11 +70,12 @@ allow_users   = ["you@github"]       # Tailscale のログイン名(admin consol
 allow_devices = ["iphone-15"]        # 任意。この端末だけに絞る(admin console の Machines の名前)
 # state_dir   = "~/.local/share/pekoe/tsnet"   # 既定。$PEKOE_HOME があればその share/tsnet。~ か絶対パスで
 # auth_key    = "tskey-auth-…"        # 初回参加用。環境変数 TS_AUTHKEY でもよい
+# confirm_tapi_send = true           # 既定。false で tapi への send の確認シートを出さない(下の「tapi chat の扱い」)
 ```
 
 - `allow_users` が空なら起動しない(誰も入れないサーバーを立てても意味がないので、エラーにして `pekoe web` に出す)
 - `allow_devices` は強く勧める(下の脅威モデルを参照)
-- 設定を変えたら pekoed を再起動する(`pekoe daemon restart`。エージェントは tmux の中で動き続ける)
+- 設定を変えたら pekoed を再起動する(`pekoe daemon restart`。エージェントは tmux の中で動き続ける)。`confirm_tapi_send` だけは再起動なしで、保存すると次の `GET /api/tapi`(数秒以内)から効く
 
 ### 初回の tailnet 参加
 
@@ -136,7 +137,8 @@ docs/orchestration.md の「受信箱で人を誘導する」への対策を、T
 tapi は全リポジトリを読み、`pekoe new` でセッションを作って任せる。tapi への send はセッション 1 つへの send より重い(iPhone が全リポジトリへの指示の入口になる)ので、セッションの send の確認に次を足す。
 
 - **`allow_devices` が要る**: `[web] allow_devices` を設定していないと `POST /api/tapi/send` は 403(`allow_users` の誰かの別の端末から tapi に指示させない)。ページは送信欄に理由を出して send を押せなくする。画面とキーパッドは指示にならないので、`allow_devices` が無くても出す
-- **確認シート**: send を押すと必ずシートを挟む。宛先が tapi(統括役、全リポジトリ)であることと、打たれる文の全体(文字数・行数つき、シートの中でスクロール)を見せ、`send to tapi` を押したときだけ送る。宛先はこのシートで見せるので、tapi が動いている間は送信欄の上に宛先の行を出さない(その分をログに回す)。tapi が起動していない・終了しているときだけ、送れない理由として「tapi is not started / has exited」の行を出す
+- **確認シート**: 既定は send を押すと必ずシートを挟む(`[web] confirm_tapi_send = false` で切れる。下の段落)。宛先が tapi(統括役、全リポジトリ)であることと、打たれる文の全体(文字数・行数つき、シートの中でスクロール)を見せ、`send to tapi` を押したときだけ送る。宛先はこのシートで見せるので、tapi が動いている間は送信欄の上に宛先の行を出さない(その分をログに回す)。tapi が起動していない・終了しているときだけ、送れない理由として「tapi is not started / has exited」の行を出す
+- **確認シートを切る**: `[web] confirm_tapi_send = false` にすると、send を押したらシートを挟まずにそのまま送る(送信中は send を押せない。送った文は同じく `●` → `✓`)。ほかの守り(`allow_devices` が無ければ 403、許可待ち・制御文字は断る、送信の記録と pekoed のログ、allow / deny を出さない)は変わらない。切ると、誤送信(押し間違い・書きかけの送信)と、ロックの解けた端末を拾われたときの守りが `allow_devices` と端末の画面ロックだけになる。設定の保存で再起動なしに切り替わる(ページは `GET /api/tapi` の `confirm_send` を見る)。セッションへの send・許可の allow / deny・受信箱の確認シートはこの設定で変わらない
 - **確認はセッションと同じ**: 本文は前後の空白を落として 1〜4000 文字、改行・タブ以外の制御文字は 400。tapi が許可待ち(hook の状態)なら 409。`tapi.send` が打つ前と Enter の直前に hook の状態と画面の許可メニュー(`promptUp`)を見直し、出ていれば 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったものと、断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録(`send.log`)に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番か・本文の最初の 200 文字を出す(全文は送信の記録。ログは同じユーザーのエージェントから読めるので切る)。`allow_devices` で断ったものはログにだけ出る
 - **キーパッド**: tapi が質問待ちのときだけ、セッションと同じキー(`Up Down Left Right Tab BTab Space Enter Escape 0`〜`9`、1 回 8 個まで)。許可待ちのときと、画面に許可メニューが出ているとき(hook は偽れるので画面で見る)は 409
@@ -150,7 +152,7 @@ tapi chat のパネルは既定で会話を LINE のような吹き出しで出�
 - **返すもの**: 人のテキスト・tapi のテキスト・ツールの名前と主な引数 1 つ(許可待ちの要約と同じく 200 バイトで切る。AskUserQuestion は問いと選択肢の見出し)・ターンの所要時間と時刻だけ。tool_result(`type: user` の行に入っているものも)・thinking・システムの注入(system-reminder・compact の要約・スラッシュコマンドとその出力・`!` のコマンド・task-notification など)・サブエージェントの行は返さない。pekoe が打った行(`[pekoe inbox #3] …`)は人の発言と分けて返し、ページは dim の 1 行で出す
 - **差分**: カーソルは `<会話の id>:<読んだバイト数>`。書きかけの行は次に回す。最初の読み込みは transcript の最後の 6 MB・400 件まで(それより前は `earlier`)。`/clear` などで hook が別のファイルを渡すと会話が変わったとみなし、ページは `new conversation` の区切りを入れて続ける
 - **描画**: エージェントの文は信用しない(受信箱と同じ)。`textContent` と自前の最小のマークダウン(見出し・リスト・チェックボックス・インラインコード・コードブロック)だけで組み、リンクは張らない。15 行を超える返事は畳んで `more › +N lines`。ツール呼び出しは吹き出しの間の dim の 1 行(`› 4 tools · Read docs/x.md · …`)で、タップで名前と引数の一覧を開く(結果の中身は出さない)
-- **状態**: run 中は左に Braille のスピナーと `thinking · 12s`、許可待ちはペインの中のカード(端末で答える)、質問は tapi の吹き出しの下にキーパッドのカード。送信の確認シートはそのまま。送った文は transcript に現れるまで `●`(secondary)、現れたら `✓`
+- **状態**: run 中は左に Braille のスピナーと `thinking · 12s`、許可待ちはペインの中のカード(端末で答える)、質問は tapi の吹き出しの下にキーパッドのカード。送信の確認シートはそのまま(`confirm_tapi_send = false` なら挟まない)。送った文は transcript に現れるまで `●`(secondary)、現れたら `✓`
 - **レイアウト**: 送信欄(テキスト欄と send)は画面の最下部に固定し、ログは上のバーと送信欄の間を全部使う(固定の高さを差し引かない)。iPhone の下端の safe area は空け、ソフトウェアキーボードが出たら visual viewport に合わせて送信欄をキーボードのすぐ上に置く(iOS はキーボードで layout viewport も `100dvh` も縮めないので、`visualViewport` の高さと位置をページに写す)。テキスト欄は行に合わせて画面の 30% まで伸びる。いちばん下を見ているときは、送信欄が伸びた・許可待ちの理由が出た・キーボードが出たときも最新の吹き出しが見えたままになる。セッションの詳細画面はこれまでどおり(送信欄は画面の流れの中)
 - **落とし方**: tapi が起動していない(409)・transcript が無い(404)・読めないときは画面(screen)に切り替え、画面の上に理由を出す。読めるようになれば吹き出しに戻る
 
@@ -175,7 +177,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | **キーパッドで許可メニューを操作する** | keys は `wait_kind == question` のときだけ受け付け、許可待ち(`answerable`)では 409。状態は hook が知らせるもので、エージェントは token なしの `session.event` で AskUserQuestion の PreToolUse を偽り、本物の許可ダイアログを question に見せかけられるので、agent 窓の画面の下に許可メニュー(send と同じ判定: 「Do you want to …」と「1. Yes」)が出ていれば question でも 409。許可メニューに数字や ↓ + Enter を送れると「Yes, and don't ask again」(= always)を選べてしまうので、許可は allow / deny だけのまま。送れるキーも矢印・Tab・Space・数字・Enter・Esc に絞り、`C-c` などの修飾キーや任意の文字列は送れない(エージェントを止める・シェルに文字を流し込むといった、メニュー操作以上のことをさせない) | Claude Code は AskUserQuestion の PreToolUse の直後に permission_prompt の Notification も送る。これを question のまま扱うのは、待ちの対象(`pending_tool`)がまだ AskUserQuestion のときだけで、別のツールの PreToolUse が来ていれば permission になる。pekoe が質問と判断した直後(AskUserQuestion の PreToolUse)から、エージェントが答えを受け取るまでの間に別の許可ダイアログに切り替わると、その間に送ったキーはそちらに当たりうる。hook が状態を変えるまでの短い窓で、1 回に送るのも 1 キー。質問の文が「Do you want to …」で選択肢の 1 が「Yes…」の AskUserQuestion は許可メニューと見分けられないので、キーパッドでは答えられない(TUI で答える) |
 | **許可ダイアログに send の文字や Enter が入る** | 許可メニューは最初の 1 文字を選択肢として受け取り(「2…」は「Yes, and don't ask again」= always)、Enter は選ばれている「Yes」を確定する。そこで send は、許可ダイアログが出ている間は打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が question 以外)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。判定は 1 つ(`promptUp`)で、どこから来たかで確かめる時点が変わる: token なしのソケット(ハブのエージェント)は `submit` の有無にかかわらず、受け付けた時と打つ直前(セッションごとの送信ロックの中)の 2 回確かめて断り、先頭が数字の文字列は断る(エージェントは自分の許可ダイアログが出る時刻を決められるので、確認と打鍵の間を狙って「2」を入れられないように)。token あり(TUI・CLI・Neovim)・Web UI・Chrome 拡張(ピックやエラーの送信)は `submit` つきの送信を、打つ前と Enter の直前の 2 回確かめ、打つ前なら何も送らず、打った後なら Enter だけ送らない(文字は入力欄に残る。Web は 409)。エラー文はどれも `<slug> is waiting for a permission answer: …` で、そのあとに何が起きたか(何も送っていない / 打ったが Enter は送っていない)を続ける。Web は send の前に `answerable` でも 409 を返す | 2 回目の確認から Enter が届くまでの数ミリ秒の間にダイアログが出ると、Enter はそれを確定しうる(許可は 1 回分で、always にはならない)。token なしの送信で、打つ直前の確認から文字が届くまでの数ミリ秒にダイアログが出ると、途中の文字がメニューに入りうる(先頭の数字は断るので、先頭の 1 文字で always が選ばれることはない)。token ありの `submit` なしの送信(TUI がユーザーの打鍵として送るペースト)は止めない。画面の判定は Claude Code と `[y/n]` 形式の文言に合わせたもので、ほかのエージェントの見た目の違うダイアログは hook の状態でしか止められない |
 | **受信箱の文で Web UI を乗っ取る・誘導する**(エージェントが問い・背景・選択肢・リンクに HTML やスクリプト、`javascript:` の URL を書く) | API は JSON だけを返し(`encoding/json` は `<` `>` `&` を `\u003c` などにする、`nosniff`)、ページは文字列を `textContent` で入れて HTML を組み立てない(`app.js` に `innerHTML` などの HTML を作る入口がないことをテストで確かめる)。リンクは `http` / `https` で始まり空白や `<>"\` を含まないものだけを `<a rel="noopener noreferrer">` にし、ほかは文字のまま出す。CSP(インライン script なし)はそのまま。誘導には上の「受信箱(Inbox タブ)の扱い」(事実が先、推奨を既定にしない、確認シート、`rev`) | 人が事実とリンク先を見ずに答えれば誘導は通る(TUI と同じ) |
-| **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる。tapi は全リポジトリを読み、`gh` などを動かし、セッションを作って任せる) | セッション 1 つへの send と重みが違うので、`allow_devices` を設定していないときは tapi への送信を断る(403)。送る前に必ず確認シート(宛先が tapi であること、文の全体)を挟む(宛先を見せるのはこのシート。送信欄の上の宛先の行は tapi が動いていないときだけ出す)。許可待ちの間・制御文字はセッションの send と同じに断る。tapi の許可待ちへの allow / deny は Web に出さない(許可は端末の前で)。送った内容と端末を pekoed のログ(本文は 200 文字まで)と送信の記録(全文)に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(ファイルを書けない sandbox・許可は端末で)を超えることはできないが、tapi がセッションを作れば、そのセッションは worktree に書ける(セッションの許可待ちも Web から allow できる)。気づいたら admin console でその端末を外す |
+| **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる。tapi は全リポジトリを読み、`gh` などを動かし、セッションを作って任せる) | セッション 1 つへの send と重みが違うので、`allow_devices` を設定していないときは tapi への送信を断る(403)。送る前に確認シート(宛先が tapi であること、文の全体)を挟む(宛先を見せるのはこのシート。送信欄の上の宛先の行は tapi が動いていないときだけ出す)。既定は必ず挟む。`confirm_tapi_send = false` で切れる。切ると誤送信・端末を拾われたときの守りが `allow_devices` と端末のロックだけになる。許可待ちの間・制御文字はセッションの send と同じに断る。tapi の許可待ちへの allow / deny は Web に出さない(許可は端末の前で)。送った内容と端末を pekoed のログ(本文は 200 文字まで)と送信の記録(全文)に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(ファイルを書けない sandbox・許可は端末で)を超えることはできないが、tapi がセッションを作れば、そのセッションは worktree に書ける(セッションの許可待ちも Web から allow できる)。気づいたら admin console でその端末を外す |
 | **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send / 質問へのキー操作・受信箱への回答ができる(`allow_devices` で絞っていれば tapi への send も。上の行)。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
 | **Certificate Transparency ログ** | — | HTTPS 証明書を取ると、`pekoe.<tailnet>.ts.net` という名前が CT ログ(誰でも検索できる公開ログ)に載る。tailnet 名(`tail1234` のようなランダム名か、自分で付けた名前)とホスト名が世に出る。tailnet の外からは到達できないので中身は見えないが、名前に秘密を含めない。気になるなら `hostname` を目立たないものにし、tailnet 名はランダムのものを使う |
 | **Funnel での公開** | `ListenFunnel` を呼ばない。tsnet は起動時に serve 設定を空にする | — |
@@ -192,7 +194,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
 | `GET /api/inbox` | — | `{items: [InboxItem], at}`。未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。InboxItem は docs/api.md のまま |
 | `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
-| `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
+| `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable, confirm_send}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること、`confirm_send` は `[web] confirm_tapi_send`(既定 true。false ならページは確認シートを挟まずに送る。リクエストごとに今の設定を読むので再起動は要らない)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
 | `GET /api/tapi/transcript?after=<cursor>` | — | `ChatPage`: `{conversation, cursor, items: [{kind: human\|pekoe\|agent\|tool\|turn, text?, name?, input?, question?, ms?, at}], reset?, new_conversation?, earlier?}`。上の「吹き出し(chat)と画面(screen)」。404: transcript が無い / 409: tapi が起動していない |
 | `POST /api/tapi/send` | `{text}` | `{ok: true, send: <送信の記録の id>}`。`tapi.send`(`submit: true`)。text はセッションの send と同じ(1〜4000 文字、制御文字は 400)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
