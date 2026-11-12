@@ -421,7 +421,7 @@ docs = ["docs/mascot.md", "README.ja.md#設定"]
 [[tip]]
 id = "session-marks"
 short = "Sessions の行の印で PR・エラー・テストが分かる"
-detail = "ブランチの後ろに #42 と PR の状態の印(ci pass・ci fail・changes など)、err は pekoed が拾ったエラー、• は見ていない出力か PR の動き(PR の分は p で消える)。右端は +追加 -削除 とテストの ✓ ✗。"
+detail = "ブランチの後ろに #42 と PR の状態のアイコン(CI の成否・changes・merged)、err は pekoed が拾ったエラー、• は見ていない出力か PR の動き(PR の分は p で消える)。右端は +追加 -削除 とテストの ✓ ✗。"
 keys = ["p"]
 docs = ["docs/ui-guidelines.md#状態の表現", "README.ja.md#tui"]
 
