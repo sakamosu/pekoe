@@ -115,7 +115,7 @@ state_dir = "rel/dir"
 		`mascot.palette: "blue"`,
 		"mascot.colors.nose: unknown color",
 		`mascot.colors.eye: "black" is not a color`,
-		`review.surface: "vim"`,
+		`review.surface: "vim" is not one of nvim | tui (the built-in tui surface is used)`,
 		`orchestrator.notify: "loud"`,
 		`cleanup.stale_after: "3 days" is not a positive Go duration`,
 		`tapi.agent: "gemini" is not in [agents.*] (claude, codex, mine, opencode)`,

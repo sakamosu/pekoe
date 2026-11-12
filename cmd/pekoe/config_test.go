@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"pekoe/internal/config"
+	"pekoe/internal/paths"
 )
 
 // editor writes each of contents in turn, one per time it is opened.
@@ -180,6 +181,19 @@ func TestAppliesNote(t *testing.T) {
 	}
 	if n := appliesNote(nil, []byte("[theme\n")); !strings.Contains(n, "until the file reads") {
 		t.Errorf("broken: %q", n)
+	}
+}
+
+// an unreadable config.toml is an error for show, not the defaults
+func TestConfigShowUnreadable(t *testing.T) {
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	os.MkdirAll(filepath.Dir(paths.GlobalConfig()), 0o700)
+	os.WriteFile(paths.GlobalConfig(), []byte("animate = false\n"), 0o000)
+	if _, err := os.ReadFile(paths.GlobalConfig()); err == nil {
+		t.Skip("running as a user who reads mode 000 files")
+	}
+	if err := showConfig(&bytes.Buffer{}); err == nil {
+		t.Fatal("show printed the defaults for an unreadable file")
 	}
 }
 

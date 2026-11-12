@@ -96,7 +96,9 @@ func Check(b []byte) []Problem {
 		hexColor(add, "mascot.colors."+k, g.Mascot.Colors[k])
 	}
 
-	oneOf("review.surface", g.Review.Surface, false, "nvim", "tui")
+	if s := g.Review.Surface; s != "" && s != "nvim" && s != "tui" {
+		add("review.surface", "%q is not one of nvim | tui (the built-in tui surface is used)", s)
+	}
 	oneOf("orchestrator.notify", g.Orchestrator.Notify, true, "escalate", "quiet")
 	if s := strings.TrimSpace(g.Cleanup.StaleAfter); s != "" {
 		if d, err := time.ParseDuration(s); err != nil || d <= 0 {

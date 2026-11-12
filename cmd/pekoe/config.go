@@ -254,6 +254,11 @@ func checkConfig(path string, out io.Writer) error {
 // showConfig prints the settings in use: config.toml with the defaults
 // filled in and secrets hidden.
 func showConfig(out io.Writer) error {
+	// LoadGlobal reads an unreadable file (an agent's sandbox) as no file:
+	// show must not print the defaults as the settings in use
+	if _, err := os.ReadFile(paths.GlobalConfig()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	g, err := config.LoadGlobal()
 	if err != nil {
 		return err
@@ -271,7 +276,7 @@ func showConfig(out io.Writer) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(v)
 	}
-	fmt.Fprintf(out, "# the settings in use: %s with the defaults filled in\n\n", paths.GlobalConfig())
+	fmt.Fprintf(out, "# the settings in use: %s with the defaults filled in\n# (a value pekoe config check warns about is shown as written, but pekoe falls back as the warning says)\n\n", paths.GlobalConfig())
 	_, err = out.Write(b)
 	return err
 }
