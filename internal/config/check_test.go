@@ -232,3 +232,44 @@ func TestDurations(t *testing.T) {
 		}
 	}
 }
+
+// [web] confirm_tapi_send: unset is true, false reads as false, check knows
+// the key, show spells it out, and a change applies without a restart.
+func TestConfirmTapiSend(t *testing.T) {
+	def, err := ParseGlobal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !def.Web.ConfirmTapiSendOn() {
+		t.Error("unset: want true")
+	}
+	src := "[web]\nconfirm_tapi_send = false\n"
+	off, err := ParseGlobal([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Web.ConfirmTapiSendOn() {
+		t.Error("confirm_tapi_send = false: want false")
+	}
+	if ps := Check([]byte(src)); len(ps) != 0 {
+		t.Errorf("check: %s", problems(ps))
+	}
+	b, _ := EncodeTOML(Effective(def))
+	if !strings.Contains(string(b), "confirm_tapi_send = true") {
+		t.Errorf("show: no confirm_tapi_send = true in\n%s", b)
+	}
+	if r := RestartNeeded(def, off); r != nil {
+		t.Errorf("confirm_tapi_send needs a restart: %v", r)
+	}
+	if k := KeepRunning(def, off); k.Web.ConfirmTapiSendOn() {
+		t.Error("KeepRunning did not take confirm_tapi_send up")
+	}
+	// the rest of [web] still waits for a restart, and keeps its value
+	both, _ := ParseGlobal([]byte("[web]\nconfirm_tapi_send = false\nhostname = \"x\"\n"))
+	if r := strings.Join(RestartNeeded(def, both), ","); r != "web" {
+		t.Errorf("RestartNeeded = %s", r)
+	}
+	if k := KeepRunning(def, both); k.Web.Hostname == "x" || k.Web.ConfirmTapiSendOn() {
+		t.Errorf("KeepRunning: %+v", k.Web)
+	}
+}

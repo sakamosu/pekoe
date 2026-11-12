@@ -108,7 +108,15 @@ type Web struct {
 	AllowDevices []string `toml:"allow_devices"`
 	StateDir     string   `toml:"state_dir"` // tsnet state, default <data>/tsnet
 	AuthKey      string   `toml:"auth_key"`  // first join only; TS_AUTHKEY works too
+	// ConfirmTapiSend: a send to tapi from the web UI goes through a confirm
+	// sheet with the whole text (default true). false sends at once; the
+	// other guards (allow_devices, the send log) stay. Taken up without a
+	// restart (reload.go).
+	ConfirmTapiSend *bool `toml:"confirm_tapi_send"`
 }
+
+// ConfirmTapiSendOn: confirm_tapi_send, unset is true.
+func (w Web) ConfirmTapiSendOn() bool { return w.ConfirmTapiSend == nil || *w.ConfirmTapiSend }
 
 // Tapi is [tapi]: the tapi chat agent (docs/tapi-chat.md).
 type Tapi struct {
