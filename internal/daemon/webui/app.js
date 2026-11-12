@@ -1357,9 +1357,11 @@ function chatView(items, pending, name, onToggle) {
 // ---- tapi chat: the page around chatView ----
 
 // tapiMode: what the panel shows now. chat when chosen and the transcript
-// reads; the screen otherwise (tapi not started, no transcript).
+// reads (or is still being read the first time: "loading" in the chat, not
+// the screen for a moment); the screen otherwise (tapi not started, no
+// transcript).
 function tapiMode() {
-  return chatChoice === "chat" && chat.ok === true && tapiUp() ? "chat" : "screen";
+  return chatChoice === "chat" && chat.ok !== false && tapiUp() ? "chat" : "screen";
 }
 
 function selectingIn(node) {
@@ -1420,7 +1422,7 @@ function toBottom() {
 function renderChat(force) {
   if (current !== TAPI) return;
   const log = $("c-log");
-  const sig = chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier;
+  const sig = chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier + "|" + chat.ok;
   if (!force && sig === chat.sig) return;
   if (selectingIn(log)) {
     chat.held = true; // copying: redraw when the selection goes
@@ -1433,7 +1435,10 @@ function renderChat(force) {
   const items = $("c-items");
   items.replaceChildren();
   if (chat.earlier) items.append(el("div", "divider", "earlier messages: see screen"));
-  if (!chat.items.length && !chat.pending.length) items.append(el("div", "empty", "no messages yet"));
+  if (!chat.items.length && !chat.pending.length) {
+    // empty only once the transcript has been read; before that, loading
+    items.append(el("div", "empty", chat.ok === true ? "no messages yet" : "loading…"));
+  }
   items.append(chatView(chat.items, chat.pending, "tapi", () => renderChat(true)));
   if (stick) toBottom();
   else log.scrollTop = top;
@@ -1686,7 +1691,9 @@ function route() {
     chat.sig = chat.tailSig = "";
     renderDetailHead();
     if (current === TAPI) {
-      $("c-items").replaceChildren();
+      // renderDetailHead has drawn the bubbles read so far (chat.sig was
+      // cleared above): keep them in sight while this read brings what is new
+      toBottom();
       refreshChat().then(() => current === TAPI && toBottom());
     }
     refreshScreen();
