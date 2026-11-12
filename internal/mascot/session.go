@@ -10,11 +10,6 @@ import (
 const (
 	// DoneFade: an unseen done returns to idle after this long (in the bar).
 	DoneFade = 10 * time.Second
-	// SleepAfter: every session idle (and no input) for this long → sleep.
-	SleepAfter = 3 * time.Minute
-	// WaitBlinkAfter / WaitNotifyAfter: wait escalation.
-	WaitBlinkAfter  = 30 * time.Second
-	WaitNotifyAfter = 2 * time.Minute
 )
 
 // seenSince: the user looked at the session after its state last changed.
@@ -71,8 +66,10 @@ type Summary struct {
 }
 
 // Aggregate picks the most urgent mood across all sessions, regardless of
-// which one is shown. lastActive is the last key press or pekoed event.
-func Aggregate(ss []*state.Session, seen map[string]time.Time, now, lastActive time.Time) Summary {
+// which one is shown. lastActive is the last key press or pekoed event;
+// every session idle and nothing happening for sleepAfter ([mascot]
+// sleep_after) is sleep.
+func Aggregate(ss []*state.Session, seen map[string]time.Time, now, lastActive time.Time, sleepAfter time.Duration) Summary {
 	sum := Summary{Mood: Idle, Total: len(ss)}
 	latest := time.Time{}
 	for _, s := range ss {
@@ -95,7 +92,7 @@ func Aggregate(ss []*state.Session, seen map[string]time.Time, now, lastActive t
 			sum.Since = s.StateSince
 		}
 	}
-	if sum.Mood == Idle && now.Sub(lastActive) >= SleepAfter && now.Sub(latest) >= SleepAfter {
+	if sum.Mood == Idle && now.Sub(lastActive) >= sleepAfter && now.Sub(latest) >= sleepAfter {
 		sum.Mood = Sleep
 	}
 	return sum

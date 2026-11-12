@@ -25,6 +25,9 @@ func Effective(g *Global) *Global {
 	c.Sandbox.Enable = on(g.Sandbox.Enable)
 	c.Mascot.Splash = on(g.Mascot.Splash)
 	c.Cleanup.StaleAfter = fmtDur(g.Cleanup.Stale())
+	c.Notify = Notify{BlinkAfter: fmtDur(g.Notify.Blink()), OSAfter: fmtDur(g.Notify.OS()), ToastFor: fmtDur(g.Notify.Toast())}
+	c.Mascot.SleepAfter = fmtDur(g.Mascot.Sleep())
+	c.PR.PollEvery = fmtDur(g.PR.Poll())
 	if c.Orchestrator.Notify == "" || !c.Orchestrator.QuietNotify() {
 		c.Orchestrator.Notify = "escalate"
 	}

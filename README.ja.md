@@ -470,6 +470,7 @@ shape   = "auto"            # auto | round(六分ブロック) | block(四分ブ
 glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
 palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
+sleep_after = "3m"          # 全セッションが idle でキー入力もなくこれだけ経つと tapi が眠る(下限 10s)
 [mascot.colors]             # hi / bd / sh / eye を上書き
 bd = "#e4c49a"
 [agents.claude]
@@ -482,6 +483,12 @@ deny    = "n"
 agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir なし(cwd だけ)
 [orchestrator]              # 統括役としての tapi(docs/orchestration.md)
 notify = "escalate"         # tapi の許可待ちと受信箱の問いを、セッションの wait と同じに知らせる(トースト → 点滅 → OS 通知)| "quiet": 最下行・メッセージ行だけ
+[notify]                    # 待ちの知らせの間合い(セッションの wait。notify = "quiet" でなければ tapi と受信箱の問いも)
+toast_for   = "5s"          # トーストを出しておく長さ(PR の反応も。下限 1s)
+blink_after = "30s"         # 待ちがこれだけ続くと最下行の台詞が点滅する(下限 1s)
+os_after    = "2m"          # 待ちがこれだけ続くと、ターミナルにフォーカスが無ければ OS の通知(下限 10s)
+[pr]                        # pekoed がセッションの PR を見に行く間合い
+poll_every  = "1m"          # 開いている PR ごとに、GitHub に問い合わせるのはこれに 1 回まで(下限 30s)
 [cleanup]                   # pekoe cleanup / :cleanup
 stale_after = "72h"         # 止まっている(done・idle・failed など)セッションを、状態が変わらずにこれだけ経ったら stale として出す(Go の duration)
 [tips]                      # TIPS(4 の空き表示と tapi chat のあいさつ)
@@ -489,6 +496,8 @@ enable = true               # false で両方とも出さない
 [sandbox]                   # worktree から来るコマンド([hooks]・門番)と pekoed の git を sandbox で動かす
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
+
+時間の設定(`[notify]`・`[mascot] sleep_after`・`[pr] poll_every`・`[cleanup] stale_after`)は Go の duration(`30s`・`2m`・`1h30m`)。空や読めない値は既定値、下限より短ければ下限になる。
 
 保存した変更は再起動なしで効く: pekoed が変更から 1 秒以内に `config.toml` を読み直し、TUI も続く。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` まで起動したときの値のまま(TUI のメッセージ行と `pekoe daemon status` に名前が出る)。読めないファイルなら設定は前のままで、TUI が理由を出す。知らないキーや受け付けない値は `pekoe config check` で分かる([コマンド](#コマンド))。
 

@@ -194,3 +194,41 @@ func TestRestartNeeded(t *testing.T) {
 		t.Errorf("live settings need a restart: %v", r)
 	}
 }
+
+// [notify], [mascot] sleep_after and [pr] poll_every: the default when
+// unset or unreadable, the minimum below it; check names both cases
+func TestDurations(t *testing.T) {
+	g, err := ParseGlobal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Notify.Blink() != 30*time.Second || g.Notify.OS() != 2*time.Minute || g.Notify.Toast() != 5*time.Second || g.Mascot.Sleep() != 3*time.Minute || g.PR.Poll() != time.Minute {
+		t.Fatalf("defaults: %v %v %v %v %v", g.Notify.Blink(), g.Notify.OS(), g.Notify.Toast(), g.Mascot.Sleep(), g.PR.Poll())
+	}
+	src := "[notify]\nblink_after = \"10s\"\nos_after = \"1s\"\ntoast_for = \"soon\"\n[mascot]\nsleep_after = \"10m\"\n[pr]\npoll_every = \"5s\"\n"
+	if g, err = ParseGlobal([]byte(src)); err != nil {
+		t.Fatal(err)
+	}
+	if g.Notify.Blink() != 10*time.Second || g.Notify.OS() != 10*time.Second || g.Notify.Toast() != 5*time.Second || g.Mascot.Sleep() != 10*time.Minute || g.PR.Poll() != 30*time.Second {
+		t.Fatalf("set: %v %v %v %v %v", g.Notify.Blink(), g.Notify.OS(), g.Notify.Toast(), g.Mascot.Sleep(), g.PR.Poll())
+	}
+	got := problems(Check([]byte(src)))
+	for _, want := range []string{
+		"notify.os_after: 1s is below the minimum 10s (10s is used)",
+		`notify.toast_for: "soon" is not a positive Go duration like 30s or 2m (5s is used)`,
+		"pr.poll_every: 5s is below the minimum 30s (30s is used)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "blink_after") || strings.Contains(got, "sleep_after") {
+		t.Errorf("good values flagged:\n%s", got)
+	}
+	b, _ := EncodeTOML(Effective(g))
+	for _, want := range []string{`blink_after = "10s"`, `os_after = "10s"`, `toast_for = "5s"`, `sleep_after = "10m"`, `poll_every = "30s"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("show lacks %q", want)
+		}
+	}
+}

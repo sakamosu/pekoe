@@ -76,6 +76,14 @@ type Mascot struct {
 	Palette string            `toml:"palette"` // dark (D) | light (E)
 	Colors  map[string]string `toml:"colors"`  // hi bd sh eye
 	Splash  *bool             `toml:"splash"`
+	// SleepAfter: every session idle and no key pressed for this long, and
+	// tapi falls asleep (a Go duration; DefaultSleepAfter, at least MinSleepAfter)
+	SleepAfter string `toml:"sleep_after"`
+}
+
+// Sleep is sleep_after as a duration.
+func (m Mascot) Sleep() time.Duration {
+	return durSetting(m.SleepAfter, DefaultSleepAfter, MinSleepAfter)
 }
 
 func (m Mascot) SplashOn() bool { return m.Splash == nil || *m.Splash }
@@ -117,6 +125,65 @@ type Tapi struct {
 // other value is "escalate".
 type Orchestrator struct {
 	Notify string `toml:"notify"`
+}
+
+// Notify is [notify]: when the TUI tells you that something waits for you
+// (docs/mascot.md). A session's wait (and, unless [orchestrator] notify is
+// "quiet", tapi's wait and the inbox's questions) shows a toast for
+// toast_for, makes the bar's speech blink after blink_after and becomes an
+// OS notification after os_after while the terminal is not focused. PR
+// reactions show for toast_for too. Go durations; empty or unreadable is
+// the default, below the minimum is the minimum.
+type Notify struct {
+	BlinkAfter string `toml:"blink_after"`
+	OSAfter    string `toml:"os_after"`
+	ToastFor   string `toml:"toast_for"`
+}
+
+// The defaults and minimums of the durations in config.toml.
+const (
+	DefaultBlinkAfter = 30 * time.Second
+	MinBlinkAfter     = time.Second
+	DefaultOSAfter    = 2 * time.Minute
+	MinOSAfter        = 10 * time.Second
+	DefaultToastFor   = 5 * time.Second
+	MinToastFor       = time.Second
+	DefaultSleepAfter = 3 * time.Minute
+	MinSleepAfter     = 10 * time.Second
+	// [pr] poll_every: each open PR is asked about (gh pr view) at most
+	// this often. Below 30 s it would mostly spend the GitHub API's rate
+	// limit (the polling itself runs every 15 s).
+	DefaultPRPollEvery = time.Minute
+	MinPRPollEvery     = 30 * time.Second
+)
+
+func (n Notify) Blink() time.Duration {
+	return durSetting(n.BlinkAfter, DefaultBlinkAfter, MinBlinkAfter)
+}
+
+func (n Notify) OS() time.Duration { return durSetting(n.OSAfter, DefaultOSAfter, MinOSAfter) }
+
+func (n Notify) Toast() time.Duration {
+	return durSetting(n.ToastFor, DefaultToastFor, MinToastFor)
+}
+
+// PR is [pr]: pekoed's polling of the sessions' PRs (daemon/pr.go).
+type PR struct {
+	PollEvery string `toml:"poll_every"`
+}
+
+func (p PR) Poll() time.Duration {
+	return durSetting(p.PollEvery, DefaultPRPollEvery, MinPRPollEvery)
+}
+
+// durSetting reads a Go duration from config.toml: def when empty or not
+// a positive duration, min when below it.
+func durSetting(s string, def, min time.Duration) time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(s))
+	if err != nil || d <= 0 {
+		return def
+	}
+	return max(d, min)
 }
 
 // QuietNotify: notify = "quiet".
@@ -189,7 +256,9 @@ type Global struct {
 	} `toml:"picks"`
 
 	Orchestrator Orchestrator `toml:"orchestrator"`
+	Notify       Notify       `toml:"notify"`
 	Cleanup      Cleanup      `toml:"cleanup"`
+	PR           PR           `toml:"pr"`
 }
 
 func DefaultAgents() map[string]Agent {

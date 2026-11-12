@@ -529,10 +529,8 @@ func (d *Daemon) hPRSeen(p slugP) (any, error) {
 
 // ---- background polling ----
 
-const prPollEvery = 60 * time.Second
-
-// watchPRStatus refreshes the summary of every open PR at most once a
-// minute (sessions whose PR view is open are kept fresh by pr.view). It also
+// watchPRStatus refreshes the summary of every open PR at most once per
+// [pr] poll_every (a minute by default; sessions whose PR view is open are kept fresh by pr.view). It also
 // notices merges and closes of any session, landing or not; a landing
 // session's merge starts its teardown right away (applyPRStatus), other
 // sessions are left as they are. No gh, or gh without auth: nothing happens.
@@ -544,7 +542,7 @@ func (d *Daemon) watchPRStatus() {
 	if !ghAvailable() {
 		return
 	}
-	now := time.Now()
+	now, every := time.Now(), d.cfg().PR.Poll()
 	d.mu.Lock()
 	var due []state.Session
 	for slug, s := range d.sessions {
@@ -554,7 +552,7 @@ func (d *Daemon) watchPRStatus() {
 		if s.PRStatus != nil && s.PRStatus.State != "OPEN" {
 			continue
 		}
-		if now.Sub(d.prFetched[slug]) < prPollEvery {
+		if now.Sub(d.prFetched[slug]) < every {
 			continue
 		}
 		due = append(due, *s)

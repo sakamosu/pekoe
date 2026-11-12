@@ -104,6 +104,29 @@ func Check(b []byte) []Problem {
 		}
 	}
 
+	durs := []struct {
+		key, v   string
+		def, min time.Duration
+	}{
+		{"notify.blink_after", g.Notify.BlinkAfter, DefaultBlinkAfter, MinBlinkAfter},
+		{"notify.os_after", g.Notify.OSAfter, DefaultOSAfter, MinOSAfter},
+		{"notify.toast_for", g.Notify.ToastFor, DefaultToastFor, MinToastFor},
+		{"mascot.sleep_after", g.Mascot.SleepAfter, DefaultSleepAfter, MinSleepAfter},
+		{"pr.poll_every", g.PR.PollEvery, DefaultPRPollEvery, MinPRPollEvery},
+	}
+	for _, c := range durs {
+		s := strings.TrimSpace(c.v)
+		if s == "" {
+			continue
+		}
+		switch d, err := time.ParseDuration(s); {
+		case err != nil || d <= 0:
+			add(c.key, "%q is not a positive Go duration like 30s or 2m (%s is used)", c.v, fmtDur(c.def))
+		case d < c.min:
+			add(c.key, "%s is below the minimum %s (%s is used)", s, fmtDur(c.min), fmtDur(c.min))
+		}
+	}
+
 	agents := DefaultAgents()
 	for _, name := range sortedKeys(g.Agents) {
 		a := g.Agents[name]

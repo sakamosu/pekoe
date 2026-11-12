@@ -410,3 +410,10 @@ short = "^q , で config.toml をエディタで開く"
 detail = "pekoe config edit と同じ($EDITOR、無ければ vi)。保存すると中身を確かめ、知らないキーや受け付けない値があれば開き直すか聞く。pekoe config show で既定値込みの今の設定、check で確かめるだけ。"
 keys = ["^q ,", "pekoe config"]
 docs = ["README.ja.md#設定"]
+
+[[tip]]
+id = "notify-timing"
+short = "待ちの知らせの間合いは [notify] で変えられる"
+detail = "トーストの長さ toast_for(5s)、台詞の点滅 blink_after(30s)、OS 通知 os_after(2m)。[mascot] sleep_after(3m)で tapi が眠るまで、[pr] poll_every(1m、下限 30s)で PR を見る間隔。保存すれば再起動なしで効く。"
+keys = ["[notify]", "[pr]"]
+docs = ["docs/mascot.md", "README.ja.md#設定"]

@@ -159,7 +159,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "run": "gh auth login",          // run 窓(TUI の !)のコマンド。閉じると消える
   "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
   "issue": 12,                     // --from gh#N で作ったときの issue 番号
-  "pr_status": {                   // PR の要約(60 秒ごとにポーリング。PR ビューを開いている間は 15 秒)
+  "pr_status": {                   // PR の要約(60 秒ごと(`[pr] poll_every`)にポーリング。PR ビューを開いている間は 15 秒)
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
     "pass": 5, "fail": 1, "pending": 0,   // checks の数
@@ -633,7 +633,7 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
 
 `session.updated` は `pr_status` が変わったときだけ出る(取得時刻だけの変化では出ない)。gh が無い・未認証のときはポーリングを静かに飛ばす。
 
-PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは 1 分強まで(15 秒ごとに見て、PR ごとに 60 秒空ける)。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
+PR の状態のポーリング(`watchPRStatus`。`OPEN` の PR を PR ごとに 60 秒(`[pr] poll_every`。下限 30 秒)に 1 回。`pr.view` も同じ扱い)が `landing` のセッション(pekoe land が PR を作った)の PR を `MERGED` と見たら、その回で landed にする後片付け(teardown と worktree の削除)を別のゴルーチンで始める。マージから landed までの遅れは 1 分強まで(15 秒ごとに見て、PR ごとに 60 秒空ける)。`MERGED` になった PR は次から取りに行かないので、取りこぼした分(pekoed が止まっていた間のマージなど)は `watchMerges`(`landing` のセッションごとに `gh pr view <番号> --json state` を 1 回。pekoed の起動直後に 1 回と、その後 2 分ごと)が拾う。両方から同時に始まっても、後片付けはセッションごとに 1 回しか走らない。`landing` でないセッション(pekoe land を通さずにマージされたもの)は `pr_status.state` が `MERGED` になるだけで、後片付けはしない(`cleanup.list` の `merged` の候補になる)。
 
 ### ErrorReport オブジェクト
 
@@ -687,7 +687,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 
 pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前と違えば再起動なしで読み直して `config.reloaded` を出す。書くのは `pekoe config edit`(pekoed を通さない。エージェントの sandbox からは `~/.config/pekoe` を読み書きできず、RPC で書けるようにするとその抜け道になる)か人の手で、pekoed は読むだけ。TUI は `config.reloaded` を受けて自分でファイルを読み直す(テーマ・アイコン・マスコット・TIPS・アニメーションを作り直し、ほかは使うたびに読む)。
 
-- すぐ効く: `[theme]` `[mascot]` `[tips]` `animate` `[picks]` `[orchestrator]` `[cleanup]` `[keys]` `[review]` `[agents.*]` `[tapi]`(次に tapi chat を始めるとき) `[ports]`(次に割り当てるポートから)
+- すぐ効く: `[theme]` `[mascot]` `[tips]` `animate` `[picks]` `[orchestrator]` `[notify]` `[cleanup]` `[pr]`(次のポーリングから) `[keys]` `[review]` `[agents.*]` `[tapi]`(次に tapi chat を始めるとき) `[ports]`(次に割り当てるポートから)
 - 再起動まで効かない(`config.RestartNeeded`): `[http] port`(待ち受け)・`[web]`(tsnet と sandbox の拒否リスト)・`[sandbox]`(hooks と git の包み方)。pekoed は起動したときの値のまま動き、変わった名前を `config.reloaded` の `restart` と `daemon.status` の `config_restart` に出す(`pekoe daemon status` と TUI のメッセージ行にも)。元の値に戻せば消える
 - 読めない(構文エラー・型の違い): 前の設定のまま動き続け、`error` 付きの `config.reloaded` を出し、ログに理由を書く。TUI はファイルを自分で読んで理由をメッセージ行に出す。ファイルが消えたら既定値に戻る
 

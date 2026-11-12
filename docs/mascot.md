@@ -99,10 +99,10 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 | z（sleep） | 4秒に1回、右上へ `z` → `z` → `Z` → 無 |
 | done の戻し | セッションを表示したら即時、未表示でも 10 秒で idle |
 | error の戻し | 表示するまで保持。時間では消えない |
-| sleep へ | 全セッションが 3 分以上 idle。キー入力か pekoed のイベントで起きる |
-| トースト | 5 秒で消える。任意キーでも消える。同じセッションについては再表示しない |
+| sleep へ | 全セッションが 3 分以上 idle(`[mascot] sleep_after`)。キー入力か pekoed のイベントで起きる |
+| トースト | 5 秒(`[notify] toast_for`。PR の反応のうち普通のものも)で消える。任意キーでも消える。同じセッションについては再表示しない |
 | スプラッシュ | 1 秒かキー入力で消える |
-| wait のエスカレーション | 0 秒：顔と台詞 → 30 秒：台詞を点滅 → 2 分：OS 通知（OSC 777 または OSC 9。Ghostty 非フォーカス時のみ）。tapi の wait と受信箱の問いも同じ(上の「ステータスバーの台詞(tapi・受信箱)」。通知は `tapi needs you` / `feat-x asks: …`、それぞれ 1 回) |
+| wait のエスカレーション | 0 秒：顔と台詞 → 30 秒(`[notify] blink_after`)：台詞を点滅 → 2 分(`[notify] os_after`)：OS 通知（OSC 777 または OSC 9。Ghostty 非フォーカス時のみ）。tapi の wait と受信箱の問いも同じ(上の「ステータスバーの台詞(tapi・受信箱)」。通知は `tapi needs you` / `feat-x asks: …`、それぞれ 1 回) |
 
 ```mermaid
 stateDiagram-v2

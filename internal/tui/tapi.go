@@ -24,7 +24,6 @@ import (
 
 const (
 	tapiFrame = 400 * time.Millisecond
-	toastFor  = 5 * time.Second
 	splashFor = time.Second
 )
 
@@ -236,7 +235,7 @@ func (m *model) escalate() tea.Cmd {
 	now := time.Now()
 	var b strings.Builder
 	for _, s := range m.sessions {
-		if s.State != state.Waiting || now.Sub(s.StateSince) < mascot.WaitNotifyAfter {
+		if s.State != state.Waiting || now.Sub(s.StateSince) < m.g.Notify.OS() {
 			continue
 		}
 		key := s.Slug + "|" + s.StateSince.String()
@@ -274,7 +273,7 @@ func notifySeq(title, body string) string {
 // ---- frames ----
 
 func (m *model) summary() mascot.Summary {
-	sum := mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive)
+	sum := mascot.Aggregate(m.sessions, m.tapi.seen, time.Now(), m.tapi.lastActive, m.g.Mascot.Sleep())
 	sum.Cloudy = m.cloudy()
 	return sum
 }
@@ -331,7 +330,7 @@ func (m *model) barTapi(width int) string {
 		eyes = m.tapi.r.CloudyEyes()
 	}
 	face := m.tapi.r.Line(eyes)
-	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= mascot.WaitBlinkAfter && m.animating() && m.tapi.frame%4 == 3 {
+	if sum.Mood == mascot.Wait && time.Since(sum.Since) >= m.g.Notify.Blink() && m.animating() && m.tapi.frame%4 == 3 {
 		text = strings.Repeat(" ", w(text)) // 3 shown : 1 hidden, 1.6 s
 	}
 	text = clip(text, max(width/2-6, 4))

@@ -472,6 +472,7 @@ shape   = "auto"            # auto | round (sextant blocks) | block (quadrant bl
 glyphs  = "auto"            # auto (measures the width of ●) | unicode | narrow (● as 🞄) | ascii
 palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
 splash  = true              # splash screen at startup
+sleep_after = "3m"          # tapi falls asleep when every session is idle and no key was pressed for this long (at least 10s)
 [mascot.colors]             # override hi / bd / sh / eye
 bd = "#e4c49a"
 [agents.claude]
@@ -484,6 +485,12 @@ deny    = "n"
 agent = "claude"            # a name from [agents.*]; agents other than claude get no --add-dir (cwd only)
 [orchestrator]              # tapi as the orchestrator (docs/orchestration.md)
 notify = "escalate"         # tapi waiting and the inbox's questions escalate like a session's wait (toast → blink → desktop notification) | "quiet": bottom line / message line only
+[notify]                    # when the TUI tells you something waits (a session's wait; tapi's and the inbox's too unless notify = "quiet")
+toast_for   = "5s"          # how long a toast shows (PR reactions too; at least 1s)
+blink_after = "30s"         # the bottom line's speech blinks after a wait this long (at least 1s)
+os_after    = "2m"          # a desktop notification after a wait this long, while the terminal is not focused (at least 10s)
+[pr]                        # pekoed's polling of the sessions' PRs
+poll_every  = "1m"          # ask GitHub about each open PR at most this often (at least 30s)
 [cleanup]                   # pekoe cleanup / :cleanup
 stale_after = "72h"         # list a stopped session (done, idle, failed …) as stale after this long without a change (a Go duration)
 [tips]                      # tips (4's empty view and tapi chat's greeting)
@@ -491,6 +498,8 @@ enable = true               # false hides both
 [sandbox]                   # commands from worktrees ([hooks], gatekeeper) and pekoed's git run in a sandbox
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
 ```
+
+The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
 
 Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
 

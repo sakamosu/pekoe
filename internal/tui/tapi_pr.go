@@ -59,14 +59,15 @@ type queuedReaction struct {
 	dur time.Duration
 }
 
-func reactionFor(e mascot.PREvent) time.Duration {
+// reactionFor: how long a PR reaction shows; toast is [notify] toast_for.
+func reactionFor(e mascot.PREvent, toast time.Duration) time.Duration {
 	switch {
 	case e == mascot.PRCIRunning:
 		return runningFor
 	case e.Celebrates():
 		return celebrateFor
 	}
-	return toastFor
+	return toast
 }
 
 // tapiOnPR compares the session's PR summary with the one tapi saw last.
@@ -100,7 +101,7 @@ func (m *model) tapiOnPR(s *state.Session) {
 // toast or a more important PR toast.
 func (m *model) showReaction(r mascot.Reaction, now time.Time) {
 	t := m.tapi
-	q := queuedReaction{r: r, at: now, dur: reactionFor(r.Event)}
+	q := queuedReaction{r: r, at: now, dur: reactionFor(r.Event, m.g.Notify.Toast())}
 	cur := t.toast
 	switch {
 	case cur == nil || now.After(cur.until):
