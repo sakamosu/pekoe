@@ -559,6 +559,19 @@ func TestWebTheme(t *testing.T) {
 	if strings.Contains(css, "display") {
 		t.Fatalf("a bad color got into the CSS:\n%s", css)
 	}
+	// the chat: bubble_me from secondary, tapi's face from [mascot]
+	for _, want := range []string{"--bubble-me: #003643;", "--tapi-bd: #e4c49a;", "--tapi-sh: #c7a57c;", "--tapi-eye: #2b201c;"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("theme.css lacks %q:\n%s", want, css)
+		}
+	}
+	d.Global.Theme.Colors = map[string]string{"secondary": "#ff8800"}
+	d.Global.Mascot.Colors = map[string]string{"bd": "#AABBCC", "eye": "url(x)"}
+	css = doWeb(t, h, webReq{path: "/theme.css", from: ipPhone}).Body.String()
+	if strings.Contains(css, "--bubble-me: #003643;") || !strings.Contains(css, "--tapi-bd: #aabbcc;") ||
+		!strings.Contains(css, "--tapi-eye: #2b201c;") || strings.Contains(css, "url(") {
+		t.Fatalf("overrides:\n%s", css)
+	}
 	waitingSession(t, d, repo)
 	w = doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone})
 	var res struct{ Sessions []webSession }

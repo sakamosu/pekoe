@@ -118,6 +118,31 @@ func (d *Daemon) webTapiScreen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"slug": TapiSlug, "rows": rows, "lines": plainOf(rows), "dead": sc.Dead})
 }
 
+// webTapiTranscript is tapi.transcript after ?after=<cursor>: the chat
+// view's new items (transcript.go). 409 when tapi is not started, 404 when
+// there is no transcript to read: the page shows the screen instead.
+func (d *Daemon) webTapiTranscript(w http.ResponseWriter, r *http.Request) {
+	if !d.tapiStarted() {
+		http.Error(w, errTapiNotStarted.Error(), http.StatusConflict)
+		return
+	}
+	after := r.URL.Query().Get("after")
+	if len(after) > 200 {
+		http.Error(w, "bad cursor", http.StatusBadRequest)
+		return
+	}
+	res, err := d.Call("tapi.transcript", mustJSON(tapiTranscriptP{After: after}))
+	if errors.Is(err, errNoTranscript) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		webErr(w, err)
+		return
+	}
+	writeJSON(w, res)
+}
+
 // webTapiSend is tapi.send with submit, after the same checks as a
 // session's send (400 for control characters, 409 while a permission
 // prompt is up), and only when allow_devices is set (403).

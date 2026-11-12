@@ -63,19 +63,37 @@
 </main>
 
 <main id="detail" hidden>
-  <section class="panel">
+  <section class="panel" id="d-head-panel">
     <div class="ttl"><span class="name" id="d-kind">◆ Session</span></div>
     <div class="head" id="d-head"></div>
   </section>
   <section class="card" id="d-ask" hidden></section>
-  <section class="panel focus screen-panel">
-    <div class="ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
-    <div class="screen-tools">
-      <button type="button" class="btn key small" id="d-pause" aria-pressed="false">❚❚ pause</button>
-      <span id="d-live"></span>
-      <span class="at" id="d-at"></span>
+  <section class="panel focus screen-panel" id="d-panel">
+    <div class="ttl" id="d-ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
+    <!-- tapi chat: the face, the title, its state and the chat | screen switch -->
+    <div class="ttl chat-ttl" id="c-ttl" hidden>
+      <span class="name"><span class="face" id="c-face" aria-hidden="true"></span> <span class="t">tapi chat</span> <span class="state" id="c-state"></span></span>
+      <span class="seg" role="group" aria-label="view">
+        <button type="button" id="c-v-chat" aria-pressed="true">chat</button>
+        <button type="button" id="c-v-screen" aria-pressed="false">screen</button>
+      </span>
     </div>
-    <pre id="d-screen" tabindex="0"></pre>
+    <div class="chat" id="c-chat" hidden>
+      <div class="log" id="c-log" role="log" tabindex="0">
+        <div id="c-items"></div>
+        <div id="c-tail"></div>
+      </div>
+      <button type="button" class="jump" id="c-jump" hidden><span class="r-secondary">↓</span> latest</button>
+    </div>
+    <div class="screen-box" id="d-screen-box">
+      <div class="screen-tools">
+        <button type="button" class="btn key small" id="d-pause" aria-pressed="false">❚❚ pause</button>
+        <span id="d-live"></span>
+        <span class="c-why" id="c-why" hidden></span>
+        <span class="at" id="d-at"></span>
+      </div>
+      <pre id="d-screen" tabindex="0"></pre>
+    </div>
   </section>
   <section class="card keypad" id="d-keys" hidden aria-label="question menu keys">
     <div class="keys-cap"><span class="ic r-warn">?</span>question menu · a key is sent as soon as you press it</div>

@@ -61,7 +61,7 @@
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
-- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
+- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`tapi.transcript`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(下の「PR の状態のポーリング」が `MERGED` を見たその回、または `watchMerges` の早い方)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
 - `dev.toggle` は token なしでは、呼び出し元の窓のセッション(下の「呼び出し元の識別」)の dev server だけを起動・停止する(`hAgentDevToggle`)。エージェントの sandbox はポートを listen できないので、UI を確かめるには pekoed に dev server を立ててもらうしかない。動かすのはリポジトリの設定の `[hooks] dev` で、Stop のたびに誰でも走らせられる `[hooks] test` と同じく hooks の sandbox で動く(下の「hooks の sandbox」)ので、新しい実行の経路は増えない。別の slug は `dev.toggle: a session starts or stops only its own dev server (<自分>, not <相手>): only a person can do this`、窓に当たらない呼び出し(`unknown`)は `pekoe cannot tell which session is calling` で断る。tapi chat の窓からも断る。1 セッションに dev server は 1 つ(動いていれば止める)は token つきと同じ
@@ -279,6 +279,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `tapi.restart` | `{width?, height?}` | `Tapi`。窓を作り直す(エージェントが終了した後の ↵。Claude Code は `--continue` で同じ会話を続ける) |
 | `tapi.reset` | — | `Tapi`。窓を閉じ、Claude Code の会話の記録(`~/.claude/projects/<tapi の cwd>/`)を消す。次の `tapi.open` は新しい会話 |
 | `tapi.screen` | — | `session.screen` と同じ形(起動前はエラー) |
+| `tapi.transcript` | `{after?: cursor}` | `ChatPage`(docs/web.md の「吹き出し(chat)と画面(screen)」)。tapi の hook が渡した transcript(tapi の Claude Code のプロジェクトディレクトリの中だけ)を、人・tapi のテキスト・ツールの名前と主な引数・ターンの所要時間に絞って、カーソルの後ろから返す。tool_result・thinking・システムの注入は返さない。人間だけ |
 | `tapi.send` | `{text, submit?}` | `session.send` と同じ |
 | `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
 | `tapi.resize` | `{width, height}` | pty サイズ変更(`session.resize "*"` でも合わせる) |
@@ -523,7 +524,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 
 ### Tapi オブジェクト
 
-tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで、セッションではないので `session.*` には出てこない(`session.list` に載らず、tapi 自身の状態は state.db にも保存しない(依頼は上の「依頼(ledger)」)。Web UI は `GET /api/tapi` で状態・最後の返事・件数だけを読み、送ることはできない)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
+tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで、セッションではないので `session.*` には出てこない(`session.list` に載らず、tapi 自身の状態は state.db にも保存しない(依頼は上の「依頼(ledger)」)。Web UI は `GET /api/tapi` で状態・最後の返事・件数を、`tapi.transcript` で会話を読む。送るのは docs/web.md の「tapi chat の扱い」の確認を経たものだけ)。tmux の窓は `+tapi~agent`、hook は `$PEKOE_SESSION=+tapi`(`+` はセッションの slug に現れない)か、cwd が tapi の稼働ディレクトリの中なら tapi に振り分ける。
 
 ```jsonc
 {
@@ -735,6 +736,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], at}` |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤りは 400 |
 | `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と依頼の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
+| `GET /api/tapi/transcript?after=<cursor>` | — | `tapi.transcript`(吹き出しの差分)。404: transcript が無い / 409: tapi が起動していない |
 | `GET /api/overview` | — | 件数と、セッションごとの工程(`impl → review → PR → CI → merge`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。

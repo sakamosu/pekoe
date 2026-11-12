@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -231,5 +233,73 @@ func TestWebTapiNoAllowDeny(t *testing.T) {
 	// and /api/tapi does not show what the prompt is about
 	if body := doWeb(t, h, webReq{path: "/api/tapi", from: ipPhone}).Body.String(); strings.Contains(body, "gh pr merge") {
 		t.Fatalf("pending tool shown: %s", body)
+	}
+}
+
+// tapiHook sends one of tapi's hooks (session.event needs no token).
+func tapiHook(t *testing.T, d *Daemon, hook, transcript string) {
+	t.Helper()
+	call[map[string]any](t, d, "session.event", map[string]any{"hook": hook, "session": TapiSlug,
+		"payload": map[string]any{"hook_event_name": hook, "transcript_path": transcript}})
+}
+
+func tapiChat(t *testing.T, h http.Handler, after string) (int, ChatPage, string) {
+	t.Helper()
+	w := doWeb(t, h, webReq{path: "/api/tapi/transcript?after=" + url.QueryEscape(after), from: ipPhone})
+	var p ChatPage
+	json.Unmarshal(w.Body.Bytes(), &p)
+	return w.Code, p, w.Body.String()
+}
+
+// The chat view reads the conversation tapi's hooks name, only from tapi's
+// Claude Code project directory, without tool results, thinking or system
+// injections; /clear (a new file) is a new conversation.
+func TestWebTapiTranscript(t *testing.T) {
+	d, _, h := webTapiSetup(t)
+	// nothing written yet: the page shows the screen
+	if code, _, body := tapiChat(t, h, ""); code != http.StatusNotFound {
+		t.Fatalf("no transcript: %d %s", code, body)
+	}
+	dir := tapiProjectDirs()[0]
+	conv := filepath.Join(dir, "aaaa-1111.jsonl")
+	writeChat(t, conv, chatFixture)
+	// a transcript_path outside tapi's project directory is never read,
+	// whoever names +tapi
+	outside := filepath.Join(t.TempDir(), "bbbb-2222.jsonl")
+	writeChat(t, outside, []string{`{"type":"user","message":{"role":"user","content":"OUTSIDE_SECRET"}}`})
+	for _, p := range []string{outside, dir + "/../x/cccc.jsonl", filepath.Join(dir, "sub", "dddd.jsonl"), "relative.jsonl"} {
+		tapiHook(t, d, "PostToolUse", p)
+	}
+	code, p1, body := tapiChat(t, h, "")
+	if code != 200 || strings.Contains(body, "OUTSIDE_SECRET") || p1.Conversation != "aaaa-1111" {
+		t.Fatalf("newest in tapi's directory: %d %s", code, body)
+	}
+	for _, secret := range []string{"TOOL_RESULT", "THINK_SECRET", "META_SECRET", "REMINDER_SECRET", "COMPACT_SECRET", "TASK_SECRET"} {
+		if strings.Contains(body, secret) {
+			t.Errorf("%s in the response", secret)
+		}
+	}
+	if len(p1.Items) != 6 || p1.Items[0].Kind != "human" {
+		t.Fatalf("items: %s", body)
+	}
+	// nothing new
+	if _, p2, _ := tapiChat(t, h, p1.Cursor); len(p2.Items) != 0 || p2.Reset {
+		t.Fatalf("after the cursor: %+v", p2)
+	}
+	// /clear: SessionStart names a new file, not written yet
+	next := filepath.Join(dir, "eeee-3333.jsonl")
+	tapiHook(t, d, "SessionStart", next)
+	_, p3, _ := tapiChat(t, h, p1.Cursor)
+	if !p3.NewConversation || len(p3.Items) != 0 || p3.Conversation != "eeee-3333" {
+		t.Fatalf("after /clear: %+v", p3)
+	}
+	writeChat(t, next, chatFixture[1:2])
+	if _, p4, _ := tapiChat(t, h, p3.Cursor); len(p4.Items) != 1 || p4.NewConversation {
+		t.Fatalf("first words of the new conversation: %+v", p4)
+	}
+	// after a reset the hooks' path is forgotten
+	call[Tapi](t, d, "tapi.reset", nil)
+	if code, _, _ := tapiChat(t, h, ""); code != http.StatusConflict {
+		t.Fatalf("after reset (not started): %d", code)
 	}
 }

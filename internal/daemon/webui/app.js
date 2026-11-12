@@ -13,7 +13,7 @@ let tapi = null; // /api/tapi: tapi's state and the inbox / ledger counts
 // TAPI is tapi chat in the detail view (#/tapi). No session slug starts
 // with "+", so it never names a session.
 const TAPI = "+tapi";
-let listTimer = 0, screenTimer = 0;
+let listTimer = 0, screenTimer = 0, chatTimer = 0;
 let busy = false;
 let sending = false; // a send is in flight
 let pressing = false; // a keypad key is in flight
@@ -260,6 +260,7 @@ function detailTarget() {
 
 function renderDetailHead() {
   $("d-kind").textContent = current === TAPI ? "◆ tapi" : "◆ Session";
+  applyTapiMode();
   if (current === TAPI) return renderTapiHead();
   const s = sessions.find((x) => x.slug === current);
   const head = $("d-head"), ask = $("d-ask");
@@ -292,6 +293,7 @@ function renderTarget(s) {
   const to = $("d-to"), note = $("d-send-note");
   const isTapi = current === TAPI;
   to.classList.toggle("tapi", isTapi);
+  $("d-send").classList.toggle("chat", isTapi);
   $("d-text").placeholder = isTapi ? "ask tapi (you check the whole text before it is sent)" : "send a short instruction";
   if (isTapi) {
     $("d-to-slug").textContent = "tapi";
@@ -327,7 +329,8 @@ function renderTapiHead() {
   head.append(l2);
   if (busy) return;
   ask.replaceChildren();
-  ask.hidden = !t || t.state !== "waiting";
+  // in chat, the permission card and the keypad sit under the last bubble
+  ask.hidden = !t || t.state !== "waiting" || tapiMode() === "chat";
   if (ask.hidden) return;
   const body = el("div", "body");
   if (t.answerable) {
@@ -429,6 +432,7 @@ function resumeIfHeld() {
 
 async function refreshScreen() {
   if (!current || screenPaused) return;
+  if (current === TAPI && tapiMode() === "chat") return; // the chat reads the transcript
   if (holdScreen()) {
     if (!screenHeld) {
       screenHeld = true;
@@ -610,7 +614,14 @@ async function doTapiSend() {
     const ta = $("d-text");
     if (current === TAPI && ta.value.trim() === text) ta.value = "";
     toast("sent → tapi", true);
+    // ● until it shows up in the transcript (✓)
+    chat.pending.push({ text, at: Date.now() });
+    if (current === TAPI && tapiMode() === "chat") {
+      renderChat(true);
+      toBottom();
+    }
     setTimeout(refreshScreen, 600);
+    setTimeout(refreshChat, 600);
   } catch (e) {
     toast("tapi: " + e.message);
   }
@@ -644,6 +655,7 @@ async function pressKey(key) {
   renderKeypad(s);
   try {
     await api(apiBase(slug) + "/keys", { keys: [key] });
+    if (slug === TAPI) setTimeout(refreshChat, 700);
     setTimeout(refreshScreen, 150);
     setTimeout(refreshScreen, 700);
     if (key === "Enter" || key === "Escape") setTimeout(refresh, 700);
@@ -1059,6 +1071,525 @@ async function refreshOverview() {
   }
 }
 
+// ---- tapi chat: the conversation as bubbles ----
+// pekoed reads tapi's Claude Code transcript (/api/tapi/transcript): the
+// person's words, tapi's words, the tools it called (name and one main
+// argument) and how long each turn took; never tool results or thinking.
+// tapi's words are untrusted (as the inbox): they go into the DOM with
+// textContent, through a small markdown of our own (headings, lists,
+// checkboxes, inline code; no links, no HTML). chatView takes items and a
+// name, not tapi: a session's transcript can use it later.
+
+const CHAT_FOLD = 15; // lines shown before "more"
+const CHAT_KEEP = 1500; // items kept in the page
+const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+const chat = {
+  cursor: "",
+  items: [], // ChatItem, and {kind: "conv"} where a new conversation starts
+  earlier: false, // older items were left out
+  ok: null, // the transcript reads (null: not asked yet)
+  why: "", // why it does not
+  loading: false,
+  sig: "", // what is in #c-items
+  tailSig: "", // what is in #c-tail
+  held: false, // a redraw waits for a selection to go
+  open: new Set(), // tool lists and long bubbles opened ("t<i>" / "m<i>")
+  pending: [], // sent from here, not in the transcript yet: {text, at}
+};
+let chatChoice = "chat"; // the switch: chat | screen
+try {
+  if (localStorage.getItem("pekoe.tapiView") === "screen") chatChoice = "screen";
+} catch (e) { /* no storage: chat */ }
+let spinTimer = 0, blinkTimer = 0, blinkEyes = "";
+
+const pad2 = (n) => String(n).padStart(2, "0");
+function hm(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? "" : pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function dayKey(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? "" : d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+}
+function dayLabel(iso) {
+  const d = new Date(iso);
+  return d.getMonth() + 1 + "/" + d.getDate() + " " + DAYS[d.getDay()];
+}
+function dur(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m" + pad2(s % 60) + "s";
+  return Math.floor(s / 3600) + "h" + pad2(Math.floor(s / 60) % 60) + "m";
+}
+
+// mdInline: `code` as code, the rest as text
+function mdInline(parent, s) {
+  const re = /`([^`\n]+)`/g;
+  let at = 0, m;
+  while ((m = re.exec(s))) {
+    if (m.index > at) parent.append(txt(s.slice(at, m.index)));
+    parent.append(el("code", null, m[1]));
+    at = re.lastIndex;
+  }
+  if (at < s.length) parent.append(txt(s.slice(at)));
+}
+
+// mdLines: a naive markdown, one element per line. Headings, list markers
+// and checkboxes (dim, monospace), inline code, fenced code (monospace, as
+// written). Nothing becomes a link.
+function mdLines(lines) {
+  const frag = document.createDocumentFragment();
+  let fence = null;
+  for (const ln of lines) {
+    if (/^\s*```/.test(ln)) {
+      if (fence) fence = null;
+      else frag.append((fence = el("pre", "fence")));
+      continue;
+    }
+    if (fence) {
+      fence.append(txt((fence.childNodes.length ? "\n" : "") + ln));
+      continue;
+    }
+    const h = ln.match(/^ {0,3}#{1,6}\s+(.*)$/);
+    if (h) {
+      const e = el("div", "h");
+      mdInline(e, h[1].replace(/\s+#+\s*$/, ""));
+      frag.append(e);
+      continue;
+    }
+    const line = el("div", "l");
+    const m = ln.match(/^(\s*)([-*+]|\d{1,3}[.)])\s+(\[[ xX]\]\s+)?(.*)$/);
+    if (m) {
+      if (m[1]) line.append(txt(m[1]));
+      const num = /\d/.test(m[2]);
+      const mark = m[3] ? (num ? m[2] + " " : "- ") + m[3].trim() : num ? m[2] : "•";
+      line.append(el("span", "cb", mark), txt(" "));
+      mdInline(line, m[4]);
+    } else {
+      mdInline(line, ln);
+    }
+    frag.append(line);
+  }
+  // a fence opened on the last line shown (folded) has nothing in it yet
+  for (const f of frag.querySelectorAll(".fence")) if (!f.childNodes.length) f.remove();
+  return frag;
+}
+
+// mdBody: the agent's words; past CHAT_FOLD lines folded behind "more"
+function mdBody(text, key, onToggle) {
+  const box = el("div", "md");
+  const lines = String(text).split("\n");
+  const long = lines.length > CHAT_FOLD;
+  const open = chat.open.has(key);
+  box.append(mdLines(long && !open ? lines.slice(0, CHAT_FOLD) : lines));
+  if (long) {
+    const b = el("button", "more");
+    b.type = "button";
+    if (open) b.append(el("span", "r-secondary", "less ‹"));
+    else b.append(el("span", "r-secondary", "more ›"), txt("  +" + (lines.length - CHAT_FOLD) + " lines"));
+    b.addEventListener("click", () => {
+      if (chat.open.has(key)) chat.open.delete(key);
+      else chat.open.add(key);
+      onToggle();
+    });
+    box.append(b);
+  }
+  return box;
+}
+
+function bubbleLine(body, meta) {
+  const line = el("div", "line");
+  const b = el("div", "bubble");
+  b.append(body);
+  line.append(b);
+  if (meta) line.append(meta);
+  return line;
+}
+
+// metaOf: the time under a bubble, with ✓ (sent) / ● (not in the
+// transcript yet) for the person's, the turn's length for the agent's
+function metaOf(top, topRole, at) {
+  const m = el("div", "meta");
+  if (top) m.append(topRole ? colored(topRole, top) : txt(top), el("br"));
+  m.append(txt(hm(at)));
+  return m;
+}
+
+// chatBlocks groups items into what is drawn: day lines, the person's
+// turns, the agent's turns (tool lines and bubbles), pekoe's lines.
+function chatBlocks(items, pending) {
+  const out = [];
+  let day = "", cur = null;
+  const dayOf = (at) => {
+    const k = dayKey(at);
+    if (k && k !== day) {
+      day = k;
+      out.push({ type: "day", label: dayLabel(at) });
+      cur = null;
+    }
+  };
+  items.forEach((it, i) => {
+    if (it.kind === "conv") {
+      out.push({ type: "conv" });
+      cur = null;
+      return;
+    }
+    if (it.kind === "turn") {
+      if (cur && cur.type === "agent") cur.ms = it.ms;
+      return;
+    }
+    dayOf(it.at);
+    if (it.kind === "pekoe") {
+      out.push({ type: "pekoe", text: it.text, at: it.at });
+      cur = null;
+    } else if (it.kind === "human") {
+      if (!cur || cur.type !== "me") out.push((cur = { type: "me", msgs: [] }));
+      cur.msgs.push({ text: it.text, at: it.at, sent: true });
+    } else if (it.kind === "agent" || it.kind === "tool") {
+      if (!cur || cur.type !== "agent" || cur.ms) out.push((cur = { type: "agent", parts: [], ms: 0 }));
+      const last = cur.parts[cur.parts.length - 1];
+      if (it.kind === "agent") cur.parts.push({ type: "text", text: it.text, at: it.at, i });
+      else if (it.name === "AskUserQuestion" && it.question) cur.parts.push({ type: "ask", text: it.question, at: it.at, i });
+      else if (last && last.type === "tools") last.list.push(it);
+      else cur.parts.push({ type: "tools", list: [it], i });
+    }
+  });
+  for (const p of pending) {
+    dayOf(p.at);
+    if (!cur || cur.type !== "me") out.push((cur = { type: "me", msgs: [] }));
+    cur.msgs.push({ text: p.text, at: p.at, sent: false });
+  }
+  return out;
+}
+
+function toolsLine(list, key, onToggle) {
+  const frag = document.createDocumentFragment();
+  const open = chat.open.has(key);
+  const b = el("button", "tools");
+  b.type = "button";
+  b.setAttribute("aria-expanded", String(open));
+  const words = list.map((t) => (t.name + " " + (t.input || "")).trim()).join(" · ");
+  b.append(el("span", "ic", open ? "⌄" : "›"), txt(list.length + (list.length === 1 ? " tool · " : " tools · ") + words));
+  b.addEventListener("click", () => {
+    if (chat.open.has(key)) chat.open.delete(key);
+    else chat.open.add(key);
+    onToggle();
+  });
+  frag.append(b);
+  if (open) {
+    const box = el("div", "tool-list");
+    for (const t of list) {
+      const r = el("div");
+      r.append(el("span", "n", t.name), txt(t.input ? " " + t.input : ""));
+      box.append(r);
+    }
+    frag.append(box);
+  }
+  return frag;
+}
+
+// chatView draws items (and the person's unsent words) for an agent called
+// name. onToggle redraws after a fold opens or closes.
+function chatView(items, pending, name, onToggle) {
+  const frag = document.createDocumentFragment();
+  for (const bl of chatBlocks(items, pending)) {
+    if (bl.type === "day") {
+      frag.append(el("div", "divider", bl.label));
+    } else if (bl.type === "conv") {
+      frag.append(el("div", "divider", "new conversation"));
+    } else if (bl.type === "pekoe") {
+      const p = el("div", "sysline", bl.text);
+      p.title = bl.text;
+      frag.append(p);
+    } else if (bl.type === "me") {
+      const turn = el("div", "turn me");
+      bl.msgs.forEach((m, j) => {
+        const last = j === bl.msgs.length - 1;
+        const body = el("div", "plain", m.text);
+        turn.append(bubbleLine(body, last ? metaOf(m.sent ? "✓" : "●", m.sent ? "" : "secondary", m.at) : null));
+      });
+      frag.append(turn);
+    } else {
+      const turn = el("div", "turn agent");
+      const who = el("div", "who");
+      who.append(el("span", "ic", "◆"), txt(name));
+      turn.append(who);
+      const lastText = bl.parts.map((p) => p.type !== "tools").lastIndexOf(true);
+      bl.parts.forEach((p, j) => {
+        if (p.type === "tools") {
+          turn.append(toolsLine(p.list, "t" + p.i, onToggle));
+          return;
+        }
+        const body = mdBody(p.text, "m" + p.i, onToggle);
+        const meta = j === lastText ? metaOf(bl.ms ? dur(bl.ms) : "", "", p.at) : null;
+        turn.append(bubbleLine(body, meta));
+      });
+      frag.append(turn);
+    }
+  }
+  return frag;
+}
+
+// ---- tapi chat: the page around chatView ----
+
+// tapiMode: what the panel shows now. chat when chosen and the transcript
+// reads; the screen otherwise (tapi not started, no transcript).
+function tapiMode() {
+  return chatChoice === "chat" && chat.ok === true && tapiUp() ? "chat" : "screen";
+}
+
+function selectingIn(node) {
+  const sel = document.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+  return node.contains(sel.anchorNode) || node.contains(sel.focusNode);
+}
+
+function atBottom(log) {
+  return log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+}
+
+function updateJump() {
+  const log = $("c-log");
+  $("c-jump").hidden = tapiMode() !== "chat" || atBottom(log);
+}
+
+function toBottom() {
+  const log = $("c-log");
+  log.scrollTop = log.scrollHeight;
+  updateJump();
+}
+
+// renderChat redraws the bubbles when something changed, keeping the place
+// when scrolled up and following the newest when at the bottom.
+function renderChat(force) {
+  if (current !== TAPI) return;
+  const log = $("c-log");
+  const sig = chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier;
+  if (!force && sig === chat.sig) return;
+  if (selectingIn(log)) {
+    chat.held = true; // copying: redraw when the selection goes
+    return;
+  }
+  chat.held = false;
+  const stick = atBottom(log);
+  const top = log.scrollTop;
+  chat.sig = sig;
+  const items = $("c-items");
+  items.replaceChildren();
+  if (chat.earlier) items.append(el("div", "divider", "earlier messages: see screen"));
+  if (!chat.items.length && !chat.pending.length) items.append(el("div", "empty", "no messages yet"));
+  items.append(chatView(chat.items, chat.pending, "tapi", () => renderChat(true)));
+  if (stick) toBottom();
+  else log.scrollTop = top;
+  updateJump();
+}
+
+// renderChatTail: what tapi is doing now, under the last bubble: working
+// (a spinner), a permission prompt (answered at the terminal) or a
+// question (the keypad).
+function renderChatTail() {
+  const tail = $("c-tail");
+  const t = detailTarget();
+  const pad = $("d-keys");
+  const sig = t ? [t.state, t.wait_kind, t.answerable, t.state_since, t.answerable ? ago(t.state_since) : ""].join("|") : "-";
+  const log = $("c-log");
+  const stick = atBottom(log);
+  let moved = false;
+  if (sig !== chat.tailSig) {
+    chat.tailSig = sig;
+    moved = true;
+    tail.replaceChildren();
+    if (t && t.answerable) {
+      const card = el("div", "card wait-card");
+      card.setAttribute("role", "status");
+      const head = el("div", "chead");
+      head.append(el("span", "ic r-secondary", "◆"), el("b", null, "tapi asks for a permission"), colored("warn", "● wait " + ago(t.state_since), "st"));
+      card.append(head, el("div", "foot", "answer it in the terminal (pekoe TUI) · allow / deny is not on the web. send and the keys are off until then."));
+      tail.append(card);
+    } else if (t && t.state === "running") {
+      const row = el("div", "turn agent");
+      const typing = el("span", "typing");
+      typing.append(el("span", "spin r-ok", SPIN[0]), el("span", "r-dim think", "thinking · " + ago(t.state_since)));
+      row.append(bubbleLine(typing, null));
+      tail.append(row);
+    }
+  }
+  // the keypad lives under the question while in chat, else in its place
+  if (tapiMode() === "chat" && questionUp(t)) {
+    if (pad.parentNode !== tail) {
+      tail.append(pad);
+      pad.hidden = false; // renderKeypad agrees: questionUp(t)
+      moved = true;
+    }
+  } else if (pad.parentNode !== $("detail")) {
+    $("d-panel").after(pad);
+  }
+  if (moved && stick) toBottom();
+  clearInterval(spinTimer);
+  const spin = tail.querySelector(".spin");
+  if (spin && t) {
+    let i = 0;
+    spinTimer = setInterval(() => {
+      spin.textContent = SPIN[++i % SPIN.length];
+      if (i % 12 === 0) tail.querySelector(".think").textContent = "thinking · " + ago(t.state_since);
+    }, 80);
+  }
+}
+
+// ---- the face: ▐◕ ◕▌ as the TUI's pearl1 ----
+// Body and eye colors never change (theme.css: --tapi-bd / -sh / -eye);
+// the state is the eyes' shape and the word after the title.
+
+const EYE_CLASS = { "●": "e-dot", "◕": "e-puppy" };
+
+function setFace(eyes) {
+  const face = $("c-face");
+  const [a, , b] = [...eyes];
+  const cell = (g) => el("i", EYE_CLASS[g] || null, g);
+  face.replaceChildren(cell(a), el("i", null, " "), cell(b));
+}
+
+function tapiEyes() {
+  if (!tapi || !tapi.started || !tapi.alive) return "- -";
+  if (tapi.state === "running") return "● ●";
+  if (tapi.state === "waiting") return "◕ ◕";
+  return "• •";
+}
+
+// blink (docs/mascot.md): idle / work show "- -" for one frame every 4–6 s
+function faceBlink(eyes) {
+  if (eyes === blinkEyes) return;
+  blinkEyes = eyes;
+  clearTimeout(blinkTimer);
+  setFace(eyes);
+  if (eyes !== "• •" && eyes !== "● ●") return;
+  const next = () => {
+    blinkTimer = setTimeout(() => {
+      if (blinkEyes !== eyes || current !== TAPI) return;
+      setFace("- -");
+      blinkTimer = setTimeout(() => {
+        if (blinkEyes !== eyes) return;
+        setFace(eyes);
+        next();
+      }, 150);
+    }, 4000 + Math.random() * 2000);
+  };
+  next();
+}
+
+function renderChatTitle() {
+  faceBlink(tapiEyes());
+  let word = "";
+  if (!tapi) word = "not readable";
+  else if (!tapi.started) word = "not started";
+  else if (!tapi.alive) word = "exited";
+  else word = (tapi.look && tapi.look.word) || tapi.state;
+  $("c-state").textContent = "· " + word;
+  const mode = tapiMode();
+  $("c-v-chat").setAttribute("aria-pressed", String(mode === "chat"));
+  $("c-v-screen").setAttribute("aria-pressed", String(mode === "screen"));
+}
+
+// applyTapiMode shows the chat or the screen (and, for a session, the
+// screen with its own title).
+function applyTapiMode() {
+  const isTapi = current === TAPI;
+  const chatOn = isTapi && tapiMode() === "chat";
+  $("c-ttl").hidden = !isTapi;
+  $("d-ttl").hidden = isTapi;
+  $("c-chat").hidden = !chatOn;
+  $("d-screen-box").hidden = chatOn;
+  $("d-head-panel").hidden = chatOn;
+  $("d-panel").classList.toggle("chat-panel", chatOn);
+  const why = $("c-why");
+  why.hidden = !isTapi || chatOn || chatChoice !== "chat" || chat.ok !== false;
+  why.textContent = why.hidden ? "" : "chat unavailable: " + chat.why;
+  if (isTapi) {
+    renderChatTitle();
+    renderChatTail();
+  } else {
+    clearInterval(spinTimer);
+    clearTimeout(blinkTimer);
+    blinkEyes = "";
+    if ($("d-keys").parentNode !== $("detail")) $("d-panel").after($("d-keys"));
+  }
+  if (chatOn) renderChat(false);
+  else if (current) updateJump();
+}
+
+function chooseTapiView(v) {
+  chatChoice = v;
+  try {
+    localStorage.setItem("pekoe.tapiView", v);
+  } catch (e) { /* not kept */ }
+  const was = $("c-chat").hidden;
+  renderDetailHead(); // the head and the wait card belong to the screen view
+  if (v === "chat") {
+    refreshChat();
+    if (was && !$("c-chat").hidden) toBottom();
+  } else {
+    screenSig = "";
+    refreshScreen();
+  }
+}
+
+// refreshChat reads what is new after the cursor. A new conversation
+// (/clear) keeps the old bubbles above a divider.
+async function refreshChat() {
+  if (current !== TAPI || chat.loading) return;
+  chat.loading = true;
+  const wasMode = tapiMode();
+  try {
+    const r = await api("/api/tapi/transcript?after=" + encodeURIComponent(chat.cursor));
+    if (current !== TAPI) return;
+    if (r.reset) {
+      if (r.new_conversation && chat.items.length) {
+        chat.items.push({ kind: "conv" });
+      } else {
+        chat.items = [];
+        chat.open.clear();
+        chat.earlier = !!r.earlier;
+      }
+    }
+    for (const it of r.items || []) {
+      if (it && typeof it === "object" && typeof it.kind === "string") chat.items.push(it);
+    }
+    if (chat.items.length > CHAT_KEEP) {
+      chat.items = chat.items.slice(-CHAT_KEEP);
+      chat.open.clear();
+      chat.earlier = true;
+    }
+    chat.cursor = String(r.cursor || "");
+    // the person's words that came through are no longer "not sent"
+    const seen = new Set(chat.items.filter((it) => it.kind === "human").slice(-20).map((it) => it.text));
+    const old = Date.now() - 5 * 60 * 1000;
+    chat.pending = chat.pending.filter((p) => !seen.has(p.text) && p.at > old);
+    chat.ok = true;
+    chat.why = "";
+  } catch (e) {
+    chat.ok = false;
+    chat.why = e.message;
+  } finally {
+    chat.loading = false;
+  }
+  if (current !== TAPI) return;
+  const mode = tapiMode();
+  if (mode !== wasMode) {
+    applyTapiMode();
+    if (mode === "chat") toBottom();
+    else {
+      screenSig = "";
+      refreshScreen();
+    }
+  } else if (mode === "chat") {
+    renderChat(false);
+  } else {
+    applyTapiMode(); // the reason next to the screen
+  }
+}
+
 // ---- routing & polling ----
 
 function go(slug) {
@@ -1094,7 +1625,12 @@ function route() {
     screenSig = "";
     screenPaused = screenHeld = false;
     renderScreenState();
+    chat.sig = chat.tailSig = "";
     renderDetailHead();
+    if (current === TAPI) {
+      $("c-items").replaceChildren();
+      refreshChat().then(() => current === TAPI && toBottom());
+    }
     refreshScreen();
   } else if (view === "list") {
     renderList();
@@ -1110,15 +1646,18 @@ function route() {
 function schedule() {
   clearInterval(listTimer);
   clearInterval(screenTimer);
+  clearInterval(chatTimer);
   if (document.hidden) return;
   listTimer = setInterval(refresh, 3000);
   if (current) screenTimer = setInterval(refreshScreen, 2500);
+  if (current === TAPI) chatTimer = setInterval(refreshChat, 2000);
 }
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     refresh();
     if (current) refreshScreen();
+    if (current === TAPI) refreshChat();
   }
   schedule();
 });
@@ -1139,6 +1678,16 @@ for (const b of $("d-keys").querySelectorAll("button[data-key]")) {
   b.addEventListener("click", () => pressKey(b.dataset.key));
 }
 document.addEventListener("selectionchange", resumeIfHeld);
+document.addEventListener("selectionchange", () => {
+  if (chat.held && !selectingIn($("c-log"))) renderChat(true);
+});
+$("c-v-chat").addEventListener("click", () => chooseTapiView("chat"));
+$("c-v-screen").addEventListener("click", () => chooseTapiView("screen"));
+$("c-log").addEventListener("scroll", updateJump, { passive: true });
+$("c-jump").addEventListener("click", () => {
+  const log = $("c-log");
+  log.scrollTo({ top: log.scrollHeight, behavior: "smooth" });
+});
 {
   const pre = $("d-screen");
   pre.addEventListener("pointerdown", () => (screenTouch = true));
