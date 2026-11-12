@@ -35,6 +35,15 @@ func inboxGet(t *testing.T, d *Daemon, id int64) state.InboxItem {
 
 func sentText(fe *fakeEngine, sub string) bool { return strings.Contains(fe.last(), sub) }
 
+// deliverUntil runs the delivery tick until ok. An answer, a tapi send and
+// going idle each start a delivery of their own in the background (go
+// d.deliverInbox); while one to the same window runs, a tick to it returns
+// at once (TryLock) and the next tick delivers, as in pekoed.
+func deliverUntil(t *testing.T, d *Daemon, ok func() bool) {
+	t.Helper()
+	waitFor(t, func() bool { d.deliverAllInbox(); return ok() })
+}
+
 func TestInboxPost(t *testing.T) {
 	d, _, _ := inboxSetup(t)
 	who := agentAs("main")
@@ -239,7 +248,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 	d.mu.Unlock()
 
 	n := len(fe.sent)
-	d.deliverAllInbox()
+	deliverUntil(t, d, func() bool { return len(sentSince(fe, n)) >= 2 })
 	want := "text:[pekoe inbox #" + itoa(it.ID) + "] 答え: 1「A」(メモ: A で) 詳しくは pekoe --json inbox " + itoa(it.ID)
 	got := sentSince(fe, n)
 	if len(got) != 2 || got[0] != want || got[1] != "keys:Enter" {
@@ -331,10 +340,7 @@ func TestInboxAnswerToTapi(t *testing.T) {
 	d.mu.Lock()
 	d.typedAt = map[string]time.Time{}
 	d.mu.Unlock()
-	d.deliverAllInbox()
-	if !sentText(fe, "答え: 2「B」") {
-		t.Fatalf("not typed into tapi chat:\n%s", fe.last())
-	}
+	deliverUntil(t, d, func() bool { return sentText(fe, "答え: 2「B」") })
 }
 
 // inbox.updated reaches only subscribers with the token (it carries a
