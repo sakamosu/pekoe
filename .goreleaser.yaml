@@ -164,7 +164,8 @@ homebrew_casks:
           end
     caveats: |
       pekoe hooks install    # add pekoe's hooks to ~/.claude/settings.json
-      To start pekoed at login with launchd:
+      To start pekoed at login with launchd (macOS):
+        mkdir -p ~/Library/LaunchAgents ~/.local/share/pekoe
         sed -e "s|PEKOE_BIN|#{HOMEBREW_PREFIX}/bin/pekoe|" -e "s|HOME|$HOME|g" #{staged_path}/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist
         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist
       After brew upgrade, run `pekoe daemon restart` to switch pekoed to the new binary.
