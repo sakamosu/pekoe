@@ -10,11 +10,17 @@ package tui
 //     preedit (the terminal sends nothing until it commits), so a pause in
 //     the keys is how "not typing / not converting" is told
 //   - for popupGrace after it shows, every key is dropped
-//   - "skip" is chosen first: Enter alone skips; Esc skips too. A key the
-//     dialog does not know (typing meant for somewhere else) goes back to
-//     skip and waits popupGrace again, and Enter within popupConfirm of
-//     choosing ("1⏎" typed in one go for an agent's own prompt) asks for
-//     Enter again
+//   - "skip" is chosen first: Enter alone skips; Esc skips too. Any key
+//     but choosing, answering and skipping (typing meant for somewhere
+//     else; link, dismiss and go-to-session are left to ]a, and a note is
+//     taken only once an option is chosen) goes back to skip and waits
+//     popupGrace again, and Enter within popupConfirm of choosing or of
+//     closing the note ("1⏎" typed in one go for an agent's own prompt)
+//     asks for Enter again. A question with no options is only skipped
+//     here (its answer is a note: ]a)
+//   - "merge" (here and from ]a, inbox.go mergeChoice) takes Enter twice:
+//     the second popupConfirm after the first, any other key in between
+//     takes it back to skip
 //   - it does not come up while the terminal is not focused, and the
 //     pause counts from when focus comes back
 // One at a time, oldest first. Each comes up once: skipped (or answered
