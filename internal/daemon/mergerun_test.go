@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -388,34 +390,88 @@ func TestMergeRunFromWeb(t *testing.T) {
 }
 
 // gh pr merge that does not end in time: stopped, and the item says the
-// outcome is unknown (GitHub may have merged it), not "not merged".
+// outcome is unknown (GitHub may have merged it), not "not merged". The
+// send log says so too. A child of gh that still holds its output does not
+// keep the merge from ending.
 func TestMergeRunTimeout(t *testing.T) {
 	d, _, ghd, it := mergeRunSetup(t)
-	old := mergeRunTimeout
-	mergeRunTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { mergeRunTimeout = old })
-	os.WriteFile(filepath.Join(ghd, "merge-slow"), nil, 0o644)
+	oldRun, oldWait := mergeRunTimeout, mergeWaitDelay
+	mergeRunTimeout, mergeWaitDelay = 300*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { mergeRunTimeout, mergeWaitDelay = oldRun, oldWait })
+	os.WriteFile(filepath.Join(ghd, "merge-hang"), nil, 0o644)
+	t.Cleanup(func() { // the children outlive gh: stop them
+		b, _ := os.ReadFile(filepath.Join(ghd, "hang.pids"))
+		for _, f := range strings.Fields(string(b)) {
+			if pid, err := strconv.Atoi(f); err == nil {
+				syscall.Kill(pid, syscall.SIGKILL)
+			}
+		}
+	})
+	start := time.Now()
 	answerMerge(t, d, it.ID)
 	run := waitMergeEnd(t, d, it.ID)
-	if run.State != state.MergeFailed || !strings.HasPrefix(run.Detail, "unknown: gh pr merge took over") {
+	if took := time.Since(start); took > 15*time.Second {
+		t.Fatalf("merge ended after %s: waited on gh's children", took)
+	}
+	if b, _ := os.ReadFile(filepath.Join(ghd, "hang.pids")); len(strings.Fields(string(b))) != 2 {
+		t.Fatalf("fake gh did not leave its children: %q", b)
+	}
+	want := "unknown: gh pr merge took over 300ms and was stopped; GitHub may have merged it"
+	if run.State != state.MergeFailed || !strings.HasPrefix(run.Detail, want) {
 		t.Fatalf("run: %+v", run)
+	}
+	rs := call[[]state.SendRecord](t, d, "send.log", nil)
+	if len(rs) == 0 || rs[0].Kind != "merge" || rs[0].OK || !strings.HasPrefix(rs[0].Error, want) {
+		t.Fatalf("send log: %+v", rs)
+	}
+}
+
+// gh pr merge runs in the main checkout of the repository, not in the
+// session's worktree.
+func TestMergeRunInMainCheckout(t *testing.T) {
+	d, _, ghd, it := mergeRunSetup(t)
+	other, _ := d.snapshot("feat-a")
+	d.update("main", func(x *state.Session) { x.Path = other.Path })
+	s, _ := d.snapshot("main")
+	if s.Path == s.RepoDir {
+		t.Fatalf("worktree is the main checkout: %s", s.Path)
+	}
+	answerMerge(t, d, it.ID)
+	if run := waitMergeEnd(t, d, it.ID); run.State != state.MergeMerged {
+		t.Fatalf("run: %+v", run)
+	}
+	b, _ := os.ReadFile(filepath.Join(ghd, "merge.cwd"))
+	want, _ := filepath.EvalSymlinks(s.RepoDir)
+	if got := strings.TrimSpace(string(b)); got != want {
+		t.Fatalf("gh pr merge ran in %q, want %q (worktree %s)", got, want, s.Path)
 	}
 }
 
 // An origin whose owner or name gh would read as a flag or an @file is no
 // GitHub repository: nothing is read or merged.
 func TestMergeRunOddOrigin(t *testing.T) {
-	d, _, ghd, it := mergeRunSetup(t)
-	s, _ := d.snapshot("main")
-	run(t, s.RepoDir, "git", "remote", "set-url", "origin", "git@github.com:@etc/passwd")
-	d.webBases.Delete(s.RepoDir)
-	n := len(ghLog(ghd))
-	answerMerge(t, d, it.ID)
-	r := waitMergeEnd(t, d, it.ID)
-	if r.State != state.MergeFailed || !strings.Contains(r.Detail, "no GitHub repository in origin") {
-		t.Fatalf("run: %+v", r)
-	}
-	if l := ghLog(ghd); len(l) != n {
-		t.Fatalf("gh ran: %q", l[n:])
+	for _, origin := range []string{
+		"git@github.com:@etc/passwd",
+		"https://github.com/../app.git",
+		"https://github.com/./app.git",
+		"https://github.com/me/...git",
+		"https://github.com/me/..git",
+		"git@github.com:../...git",
+	} {
+		t.Run(origin, func(t *testing.T) {
+			d, _, ghd, it := mergeRunSetup(t)
+			s, _ := d.snapshot("main")
+			run(t, s.RepoDir, "git", "remote", "set-url", "origin", origin)
+			d.webBases.Delete(s.RepoDir)
+			n := len(ghLog(ghd))
+			answerMerge(t, d, it.ID)
+			r := waitMergeEnd(t, d, it.ID)
+			if r.State != state.MergeFailed || !strings.Contains(r.Detail, "no GitHub repository in origin") {
+				t.Fatalf("run: %+v (repo %q)", r, d.ghRepo(s))
+			}
+			if l := ghLog(ghd); len(l) != n {
+				t.Fatalf("gh ran: %q", l[n:])
+			}
+		})
 	}
 }

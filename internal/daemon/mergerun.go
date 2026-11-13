@@ -48,6 +48,17 @@ const (
 // mergeRunTimeout is how long gh pr merge may take (tests shorten it).
 var mergeRunTimeout = 2 * time.Minute
 
+// mergeWaitDelay is how long pekoed waits, after gh pr merge was stopped,
+// for its output pipes to close (a child of gh may hold them); then they
+// are closed and the merge ends anyway (tests shorten it).
+var mergeWaitDelay = 5 * time.Second
+
+// mergeTimedOut is the outcome of a gh pr merge that was stopped: GitHub
+// may have merged it, so neither merged nor not merged.
+func mergeTimedOut() string {
+	return fmt.Sprintf("unknown: gh pr merge took over %s and was stopped; GitHub may have merged it: look at the PR (a merge that went through lands as usual)", mergeRunTimeout)
+}
+
 // mergeMethod is how s's repository merges ([merge] method of its
 // repos/<id>.toml; merge by default).
 func (d *Daemon) mergeMethod(s *state.Session) (string, error) {
@@ -62,10 +73,16 @@ func (d *Daemon) mergeMethod(s *state.Session) (string, error) {
 // says ("" when it says none).
 // Each part is a plain name: nothing gh would read as a flag or, after
 // -F, as "@file".
+// "." and ".." are no owner or name either.
 func (d *Daemon) ghRepo(s *state.Session) string {
 	r := strings.TrimPrefix(d.webBase(s.RepoDir), "https://")
 	if !ghRepoRe.MatchString(r) {
 		return ""
+	}
+	for _, p := range strings.Split(r, "/")[1:] {
+		if p == "." || p == ".." {
+			return ""
+		}
 	}
 	return r
 }
@@ -168,7 +185,10 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	cancel()
 	rec2 := &state.SendRecord{At: time.Now(), From: callerPekoed, To: s.Slug, Kind: "merge", Via: it.Answer.Via, OK: err == nil,
 		Text: fmt.Sprintf("gh %s (inbox #%d, answered by %s)", strings.Join(args, " "), it.ID, it.Answer.By)}
-	if err != nil {
+	switch {
+	case timedOut:
+		rec2.Error = mergeTimedOut()
+	case err != nil:
 		rec2.Error = cutRunes(err.Error(), mergeDetailMax)
 	}
 	if e := d.DB.AddSend(rec2); e != nil {
@@ -178,7 +198,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	case timedOut:
 		// gh was stopped while GitHub may have merged it: not told merged,
 		// and not told it did not merge either
-		end(state.MergeFailed, "unknown: gh pr merge took over %s and was stopped; look at the PR (a merge that went through lands as usual)", mergeRunTimeout)
+		end(state.MergeFailed, "%s", mergeTimedOut())
 		return
 	case err != nil:
 		end(state.MergeFailed, "not merged: %s", cutRunes(cleanInbox(err.Error(), false), mergeDetailMax))
@@ -258,13 +278,15 @@ func fetchPRViewOf(ctx context.Context, dir, repo string, number int) (*PRView, 
 }
 
 // ghMerge is gh without prompts (it never waits on a terminal); the error
-// carries gh's stderr.
+// carries gh's stderr. Once ctx is done it returns within mergeWaitDelay,
+// even when a child of gh still holds its output.
 func ghMerge(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	c, err := ghCommand(ctx, dir, args...)
 	if err != nil {
 		return nil, err
 	}
 	c.Env = append(c.Env, "GH_PROMPT_DISABLED=1")
+	c.WaitDelay = mergeWaitDelay
 	out, err := c.Output()
 	if err != nil {
 		msg := err.Error()
