@@ -7,8 +7,10 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"pekoe"
+	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/paths"
 	"pekoe/internal/tips"
@@ -16,7 +18,9 @@ import (
 
 // cmdTip prints a tip (internal/tips). Without arguments it is the next one
 // not shown yet, recorded in paths.TipsFile() like the TUI's (tapi chat's
-// greeting uses this). It never talks to pekoed.
+// greeting uses this): pekoed picks and records it (tips.next), since an
+// agent's sandbox cannot write pekoe's data directory; without a pekoed
+// (or an older one) the CLI does it itself. It never starts pekoed.
 func cmdTip(args []string) error {
 	f, pos, err := parseCmd("tip", args)
 	if err != nil {
@@ -59,9 +63,14 @@ func cmdTip(args []string) error {
 		fmt.Println("tips are off ([tips] enable = false)")
 		return nil
 	}
-	t, err := tips.Open(paths.TipsFile()).Next()
-	if err != nil { // still a tip: only the record failed (a sandbox, say)
-		fmt.Fprintln(os.Stderr, "pekoe: tips: not recorded:", err)
+	t, on := nextTip()
+	if !on { // pekoed read config.toml, which a sandbox may hide from us
+		if jsonOut {
+			printJSON(map[string]any{"enabled": false})
+			return nil
+		}
+		fmt.Println("tips are off ([tips] enable = false)")
+		return nil
 	}
 	if jsonOut {
 		printJSON(map[string]any{"enabled": true, "tip": t})
@@ -69,6 +78,31 @@ func cmdTip(args []string) error {
 	}
 	printTip(os.Stdout, t, prefix)
 	return nil
+}
+
+// nextTip asks pekoed for the next tip (tips.next) and falls back to
+// recording it here when pekoed cannot be reached or does not know the
+// method. on is false when pekoed says [tips] enable = false.
+func nextTip() (t tips.Tip, on bool) {
+	if cl, err := client.Dial(); err == nil {
+		defer cl.Close()
+		var r struct {
+			Enabled bool      `json:"enabled"`
+			Tip     *tips.Tip `json:"tip"`
+		}
+		err := cl.CallTimeout("tips.next", nil, &r, 5*time.Second)
+		switch {
+		case err == nil && !r.Enabled:
+			return tips.Tip{}, false
+		case err == nil && r.Tip != nil:
+			return *r.Tip, true
+		}
+	}
+	t, err := tips.Open(paths.TipsFile()).Next()
+	if err != nil { // still a tip: only the record failed (a sandbox, say)
+		fmt.Fprintln(os.Stderr, "pekoe: tips: not recorded:", err)
+	}
+	return t, true
 }
 
 func withPrefix(s, prefix string) string {

@@ -93,7 +93,10 @@ var agentMethods = map[string]string{
 	// counts only: dates, repository names, slugs, PR numbers and token
 	// sums, no word an agent wrote; the transcripts it reads are the ones
 	// the hooks already make pekoed read (readTokens), only the new lines
-	"stats": "tapi chat and the hub agent answer how many PRs merged and how many tokens were used (`pekoe stats`); counts only, no agent text; reads only the new lines of the transcripts the hooks named",
+	// a tip: pekoed picks it from the built-in list and writes only
+	// tips.json (the ids shown), which tapi chat's sandbox cannot write
+	"tips.next": "tapi chat's greeting (`pekoe tip`): the next built-in tip, recorded in tips.json like the TUI's; no params, writes only that file",
+	"stats":     "tapi chat and the hub agent answer how many PRs merged and how many tokens were used (`pekoe stats`); counts only, no agent text; reads only the new lines of the transcripts the hooks named",
 }
 
 // humanMethods: every other registered method, with why an agent may not

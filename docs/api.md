@@ -57,6 +57,7 @@
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
+  | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する) |
   | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼(ledger)」) |
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
@@ -280,6 +281,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
 | `merge.check` | `{slug?}` | `[MergeCheck]`(slug 順)。landed でない自分の PR のセッション(他人の PR のレビューを除く)ごとに、マージしてよいかの条件の何が揃っていて何が足りないか。`slug` を渡すとそのセッションだけ(下の「マージしてよいかの根拠」) |
+| `tips.next` | — | `{enabled, tip?: Tip}`。まだ見せていない tip を 1 つ選び、`tips.json`(TUI の空き表示・`pekoe tip` と共通の記録)に書いて返す。`[tips] enable = false` なら `{enabled: false}` で何も書かない。`Tip` は `pekoe --json tip --list` の 1 件と同じ形(`id`・`short`・`detail`・`keys`・`docs`)。書けなかったらエラー |
 | `stats` | `{days?: 7, repo?}` | `Stats`(下の「集計(stats)」)。ローカルの日付で今日を含む `days` 日(1〜3660)・リポジトリごとのマージ数とトークン。`repo` はリポジトリの名前(マージの記録は repo-id でも当たるが、トークンは名前でだけ絞るので、CLI は名前に直して渡す。省くと全部。tapi chat の分も) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"\|"run"}` | レビュー面 / dev server / run のウィンドウを閉じる(run は `run.close` と同じ) |

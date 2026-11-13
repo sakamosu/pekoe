@@ -74,3 +74,43 @@ func TestTipCommand(t *testing.T) {
 		t.Fatalf("off: %q", out)
 	}
 }
+
+// With a pekoed, `pekoe tip` takes the tip pekoed picked and recorded
+// (tips.next): tapi chat's sandbox cannot write tips.json itself. pekoed's
+// [tips] enable wins (the sandbox may hide config.toml from the CLI), and a
+// pekoed without tips.next leaves it to the CLI as before.
+func TestTipAsksPekoed(t *testing.T) {
+	fd := startFakeDaemon(t)
+	jsonOut = false
+	zoom, _ := tips.ByID("zoom")
+	set := func(res any, e string) {
+		fd.mu.Lock()
+		fd.results = map[string]any{"tips.next": res}
+		fd.errs = map[string]string{"tips.next": e}
+		fd.mu.Unlock()
+	}
+	set(map[string]any{"enabled": true, "tip": zoom}, "")
+	out, err := capture(t, func() error { return cmdTip(nil) })
+	if err != nil || !strings.HasPrefix(out, "[zoom] ^q z") {
+		t.Fatalf("pekoe tip: %v\n%s", err, out)
+	}
+	if c := fd.calls(); len(c) != 1 || c[0] != "tips.next" {
+		t.Fatalf("calls %v", c)
+	}
+	if _, err := os.Stat(paths.TipsFile()); !os.IsNotExist(err) {
+		t.Fatalf("the CLI wrote tips.json itself: %v", err)
+	}
+
+	set(map[string]any{"enabled": false}, "")
+	if out, _ = capture(t, func() error { return cmdTip(nil) }); out != "tips are off ([tips] enable = false)\n" {
+		t.Fatalf("off: %q", out)
+	}
+
+	set(nil, "unknown method: tips.next")
+	out, err = capture(t, func() error { return cmdTip(nil) })
+	b, _ := os.ReadFile(paths.TipsFile())
+	var rec struct{ Seen []string }
+	if err != nil || json.Unmarshal(b, &rec) != nil || len(rec.Seen) != 1 || !strings.HasPrefix(out, "["+rec.Seen[0]+"]") {
+		t.Fatalf("an older pekoed: %v\n%s\nrecord %s", err, out, b)
+	}
+}
