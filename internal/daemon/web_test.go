@@ -46,6 +46,11 @@ const (
 func webSetup(t *testing.T, devices ...string) (*Daemon, *fakeEngine, string, http.Handler) {
 	t.Helper()
 	d, fe, repo := setup(t)
+	return d, fe, repo, testWebHandler(d, devices...)
+}
+
+// testWebHandler is d's web handler on the fake tailnet (webSetup's).
+func testWebHandler(d *Daemon, devices ...string) http.Handler {
 	net := fakeTailnet{
 		ipPhone:  {Login: "me@github", Device: "iphone"},
 		ipLaptop: {Login: "Me@GitHub", Device: "laptop"},
@@ -60,7 +65,7 @@ func webSetup(t *testing.T, devices ...string) (*Daemon, *fakeEngine, string, ht
 		hosts: func() []string { return []string{webHost + "."} },
 		local: func(ip netip.Addr) bool { return ip.String() == ipMac || ip.IsLoopback() },
 	})
-	return d, fe, repo, h
+	return h
 }
 
 // waitingSession puts "main" into a permission prompt for `Bash pnpm migrate`.

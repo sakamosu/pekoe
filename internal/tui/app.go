@@ -84,6 +84,7 @@ type model struct {
 	// ]a visits the open ones not visited this round first
 	inbox        []state.InboxItem
 	inboxToasted map[int64]bool
+	mergeToasted map[int64]string // inbox id -> the merge state last told (inbox.go)
 	inboxVisited map[int64]bool
 	attnRound    map[string]bool // sessions ]a went to this round
 

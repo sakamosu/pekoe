@@ -440,7 +440,7 @@ func tourInbox(now time.Time) []state.InboxItem {
 		{
 			ID: 13, Rev: 1, Kind: "approve", From: "pekoed", About: tourReady, Status: state.InboxOpen, CreatedAt: now.Add(-15 * time.Minute),
 			Question: "#131 is ready to merge (fix-cart-total · HEAD 3f9c2e1)",
-			Options:  []string{"merged", "wait", "send back"},
+			Options:  []string{"merge", "wait", "send back"},
 			Links:    []string{"https://github.com/acme/webapp/pull/131"},
 			Facts: &state.InboxFacts{Slug: tourReady, State: state.Done, Branch: "fix/cart-total", Base: "main",
 				Head: "3f9c2e1b88", Diffstat: state.Stat{Added: 23, Deleted: 6, Files: 2}, PR: 131,

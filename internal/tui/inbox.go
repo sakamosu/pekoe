@@ -69,6 +69,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 	if m.inboxToasted == nil {
 		m.inboxToasted = map[int64]bool{}
 	}
+	m.toastMerge(it)
 	i := m.inboxIndex(it.ID)
 	if it.Status == state.InboxOpen {
 		if i >= 0 {
@@ -107,6 +108,31 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// toastMerge says how pekoed's merge on a person's "merge" goes: under
+// way, merged, or not merged and why (once per state).
+func (m *model) toastMerge(it state.InboxItem) {
+	a := it.Answer
+	if a == nil || a.Merge == nil || it.From != "pekoed" {
+		return
+	}
+	r := a.Merge
+	if m.mergeToasted == nil {
+		m.mergeToasted = map[int64]string{}
+	}
+	if m.mergeToasted[it.ID] == r.State {
+		return
+	}
+	m.mergeToasted[it.ID] = r.State
+	switch r.State {
+	case state.MergeRunning:
+		m.setMsg(fmt.Sprintf("merging PR #%d (%s) · checking again first", r.PR, it.About), false)
+	case state.MergeMerged:
+		m.setMsg(fmt.Sprintf("✓ pekoed merged PR #%d (%s)", r.PR, it.About), false)
+	case state.MergeFailed:
+		m.setMsg(fmt.Sprintf("✗ PR #%d (%s) %s", r.PR, it.About, inboxText(r.Detail)), true)
+	}
 }
 
 func (m *model) inboxIndex(id int64) int {
@@ -436,7 +462,9 @@ func (m *model) onInboxAnswer(msg inboxAnswerMsg) tea.Cmd {
 		return nil
 	}
 	m.modal = nil
-	m.setMsg(fmt.Sprintf("answered inbox #%d", msg.id), false)
+	if m.mergeToasted[msg.id] == "" {
+		m.setMsg(fmt.Sprintf("answered inbox #%d", msg.id), false)
+	}
 	return nil
 }
 

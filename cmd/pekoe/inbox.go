@@ -257,6 +257,9 @@ func cmdInbox(args []string) error {
 		return nil
 	}
 	fmt.Printf("inbox #%d %s\n", it.ID, it.Status)
+	if a := it.Answer; a != nil && a.Merge != nil {
+		fmt.Printf("%s; see how it goes with: pekoe inbox %d\n", mergeRunLine(a.Merge), it.ID)
+	}
 	return nil
 }
 
@@ -346,6 +349,9 @@ func printInboxItem(it state.InboxItem, full bool) {
 			s += " · delivery " + it.Delivery
 		}
 		fmt.Println(s)
+		if r := a.Merge; r != nil {
+			fmt.Println("  " + mergeRunLine(r))
+		}
 	}
 	if it.Recommend != nil {
 		fmt.Printf("  the agent recommends %d (its opinion)\n", *it.Recommend+1)
@@ -362,4 +368,16 @@ func printInboxItem(it state.InboxItem, full bool) {
 		text += "\n\n" + it.Context
 	}
 	fmt.Println(untrusted.Fence("text", text))
+}
+
+// mergeRunLine is pekoed's merge on a person's "merge" (pekoed's words).
+func mergeRunLine(r *state.MergeRun) string {
+	s := fmt.Sprintf("merge by pekoed: %s · PR #%d · HEAD %s", r.State, r.PR, short(r.Head))
+	if r.Method != "" {
+		s += " · " + r.Method
+	}
+	if r.Detail != "" {
+		s += " · " + r.Detail
+	}
+	return s
 }

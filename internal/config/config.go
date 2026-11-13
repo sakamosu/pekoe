@@ -42,7 +42,31 @@ type Repo struct {
 	Hooks    Hooks             `toml:"hooks"`
 	Env      map[string]string `toml:"env"`
 	Review   Review            `toml:"review"`
+	Merge    Merge             `toml:"merge"`
 	Agent    string            `toml:"agent"`
+}
+
+// Merge is [merge] of a repository: how pekoed merges a PR when a person
+// answers "merge" to the merge evidence in the inbox.
+type Merge struct {
+	Method string `toml:"method"` // merge (default) | squash | rebase
+}
+
+// MergeMethods are the methods gh pr merge takes (--merge, --squash, --rebase).
+var MergeMethods = []string{"merge", "squash", "rebase"}
+
+// MergeMethod is the method in use: merge when unset, an error when it is
+// none of MergeMethods.
+func (m Merge) MergeMethod() (string, error) {
+	if m.Method == "" {
+		return "merge", nil
+	}
+	for _, x := range MergeMethods {
+		if m.Method == x {
+			return x, nil
+		}
+	}
+	return "", fmt.Errorf("[merge] method must be merge, squash or rebase (got %q)", m.Method)
 }
 
 type Agent struct {

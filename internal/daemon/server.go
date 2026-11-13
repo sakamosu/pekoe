@@ -229,6 +229,7 @@ type Daemon struct {
 	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
 	webBases     sync.Map             // repo dir -> https://host/owner/name ("" none)
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
+	mergeRuns    sync.Map             // slug -> state.MergeRun: pekoed's latest merge on a person's answer (mergerun.go)
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
 	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
 }
