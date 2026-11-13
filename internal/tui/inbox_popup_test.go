@@ -548,3 +548,29 @@ func TestInboxPopupStrayKeys(t *testing.T) {
 		t.Fatalf("dismissed: %v", cs.calls)
 	}
 }
+
+// The item read again on opening comes back newer while "merge" waits for
+// its second Enter: the confirmation was on what was there before, so it
+// is taken back.
+func TestInboxMergeConfirmReread(t *testing.T) {
+	m := wrapModel(t, "feat-x")
+	m.onInboxList(nil)
+	inboxEv(t, m, mergeItem(7))
+	m.openInbox(m.inbox[0])
+	im := m.modal.(*inboxModal)
+	im.key(key("1"))
+	im.key(key("enter"))
+	if !im.confirm || !im.opened {
+		t.Fatalf("%+v", im)
+	}
+	it := mergeItem(7)
+	it.Rev = 2
+	inboxEv(t, m, it)
+	pastConfirm(im)
+	if im.confirm || im.it.Rev != 2 {
+		t.Fatalf("still confirming after the item changed: %+v", im)
+	}
+	if cmd := im.key(key("enter")); cmd != nil && im.sending {
+		t.Fatal("Enter answered merge on the newer item without a second Enter")
+	}
+}

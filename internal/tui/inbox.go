@@ -99,11 +99,11 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 			m.modal = nil
 			m.setMsg(fmt.Sprintf("inbox #%d was %s elsewhere", it.ID, it.Status), false)
 		case it.Status == state.InboxOpen && it.Rev > im.it.Rev:
-			im.it = it
+			im.it, im.confirm = it, false // a merge confirmed on what was there before: choose again
 			if im.opened {
 				im.opened = false // the read on opening: what the person sees first
 			} else {
-				im.changed, im.sel, im.confirm = true, -1, false // choose again, on what is there now
+				im.changed, im.sel = true, -1 // choose again, on what is there now
 			}
 		case it.Status == state.InboxOpen:
 			im.opened = false
