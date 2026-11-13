@@ -181,6 +181,13 @@ keys = ["[orchestrator]"]
 docs = ["docs/orchestration.md", "docs/mascot.md"]
 
 [[tip]]
+id = "inbox-popup"
+short = "受信箱の新しい問いは、その場で答える画面が出る"
+detail = "エージェントが答えを待つ問いが来ると、キーが 2 秒止まったときに答える画面が出る。最初は skip を選んであり、esc か ↵ で飛ばすと受信箱に残る(]a)。[orchestrator] inbox_popup = false で止まる。"
+keys = ["[orchestrator]", "]a"]
+docs = ["docs/orchestration.md", "README.ja.md"]
+
+[[tip]]
 id = "inbox"
 short = "pekoe inbox で受信箱を見て、inbox answer で答える"
 detail = "エージェントが人に頼んだことの一覧。pekoe inbox <id> で 1 件を詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ。エージェントからは断られる)。--all で答えたものも出る。"
