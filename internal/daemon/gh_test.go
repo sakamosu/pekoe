@@ -28,7 +28,13 @@ echo "$@" >> ` + log + `
 case "$1 $2" in
   "pr create") echo "https://github.com/me/app/pull/42" ;;
   "pr merge")
-    if [ -f ` + filepath.Join(dir, "merge-slow") + ` ]; then sleep 5; fi
+    pwd -P >> ` + filepath.Join(dir, "merge.cwd") + `
+    if [ -f ` + filepath.Join(dir, "merge-hang") + ` ]; then
+      # children that keep gh's stdout and stderr open after gh is stopped
+      sleep 60 & echo $! >> ` + filepath.Join(dir, "hang.pids") + `
+      sleep 60 & echo $! >> ` + filepath.Join(dir, "hang.pids") + `
+      wait
+    fi
     if [ -f ` + filepath.Join(dir, "merge-fail") + ` ]; then cat ` + filepath.Join(dir, "merge-fail") + ` >&2; exit 1; fi
     if [ -f ` + filepath.Join(dir, "pr-merged.json") + ` ]; then cp ` + filepath.Join(dir, "pr-merged.json") + ` ` + filepath.Join(dir, "pr.json") + `; fi ;;
   "pr view")
