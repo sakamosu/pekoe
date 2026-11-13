@@ -18,6 +18,7 @@ import (
 type prFixture struct {
 	State, Merge, Decision string
 	Head                   string // headRefOid (default ABCDEF…)
+	Base                   string // baseRefName (default main)
 	Checks                 []map[string]any
 	Reviews                []map[string]any
 	Threads                []map[string]any
@@ -44,6 +45,9 @@ func (f prFixture) writeAs(t *testing.T, ghDir, name string) {
 		}
 		return v
 	}
+	if f.Base == "" {
+		f.Base = "main"
+	}
 	if f.Head == "" {
 		f.Head = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
 	}
@@ -58,7 +62,7 @@ func (f prFixture) writeAs(t *testing.T, ghDir, name string) {
 	pr := map[string]any{
 		"number": 42, "title": "Add CSV export", "body": "## Summary", "url": "https://github.com/me/app/pull/42",
 		"state": f.State, "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": f.Merge,
-		"reviewDecision": decision, "baseRefName": "main", "headRefName": "feat/csv", "headRefOid": f.Head,
+		"reviewDecision": decision, "baseRefName": f.Base, "headRefName": "feat/csv", "headRefOid": f.Head,
 		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
 		"reviews":       map[string]any{"nodes": nz(f.Reviews)},
 		"reviewThreads": map[string]any{"nodes": nz(f.Threads)},

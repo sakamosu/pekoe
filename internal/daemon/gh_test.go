@@ -28,6 +28,7 @@ echo "$@" >> ` + log + `
 case "$1 $2" in
   "pr create") echo "https://github.com/me/app/pull/42" ;;
   "pr merge")
+    if [ -f ` + filepath.Join(dir, "merge-slow") + ` ]; then sleep 5; fi
     if [ -f ` + filepath.Join(dir, "merge-fail") + ` ]; then cat ` + filepath.Join(dir, "merge-fail") + ` >&2; exit 1; fi
     if [ -f ` + filepath.Join(dir, "pr-merged.json") + ` ]; then cp ` + filepath.Join(dir, "pr-merged.json") + ` ` + filepath.Join(dir, "pr.json") + `; fi ;;
   "pr view")

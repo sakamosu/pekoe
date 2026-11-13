@@ -172,9 +172,10 @@ func TestMergeRunChecksAgain(t *testing.T) {
 			f.Checks = append(f.Checks, actionsCheck("e2e", "IN_PROGRESS", "", 1, 6))
 			return f
 		}, "ci: 1 pending"},
-		"not clean":  {func() prFixture { f := greenPR(mergeHead); f.Merge = "BLOCKED"; return f }, "merge_state is BLOCKED"},
-		"head moved": {func() prFixture { return greenPR(mergeHead2) }, "PR HEAD moved (0123456 → 89abcde)"},
-		"closed":     {func() prFixture { f := greenPR(mergeHead); f.State = "CLOSED"; return f }, "land: PR #42 is CLOSED"},
+		"not clean":    {func() prFixture { f := greenPR(mergeHead); f.Merge = "BLOCKED"; return f }, "merge_state is BLOCKED"},
+		"head moved":   {func() prFixture { return greenPR(mergeHead2) }, "PR HEAD moved (0123456 → 89abcde)"},
+		"closed":       {func() prFixture { f := greenPR(mergeHead); f.State = "CLOSED"; return f }, "land: PR #42 is CLOSED"},
+		"base changed": {func() prFixture { f := greenPR(mergeHead); f.Base = "release"; return f }, "PR #42 goes into release now, not main"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d, _, ghd, it := mergeRunSetup(t)
@@ -383,5 +384,38 @@ func TestMergeRunFromWeb(t *testing.T) {
 	w = doWeb(t, h, webReq{path: "/api/overview", from: ipPhone})
 	if !strings.Contains(w.Body.String(), "merged by pekoed: landing") {
 		t.Fatalf("overview: %s", w.Body)
+	}
+}
+
+// gh pr merge that does not end in time: stopped, and the item says the
+// outcome is unknown (GitHub may have merged it), not "not merged".
+func TestMergeRunTimeout(t *testing.T) {
+	d, _, ghd, it := mergeRunSetup(t)
+	old := mergeRunTimeout
+	mergeRunTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { mergeRunTimeout = old })
+	os.WriteFile(filepath.Join(ghd, "merge-slow"), nil, 0o644)
+	answerMerge(t, d, it.ID)
+	run := waitMergeEnd(t, d, it.ID)
+	if run.State != state.MergeFailed || !strings.HasPrefix(run.Detail, "unknown: gh pr merge took over") {
+		t.Fatalf("run: %+v", run)
+	}
+}
+
+// An origin whose owner or name gh would read as a flag or an @file is no
+// GitHub repository: nothing is read or merged.
+func TestMergeRunOddOrigin(t *testing.T) {
+	d, _, ghd, it := mergeRunSetup(t)
+	s, _ := d.snapshot("main")
+	run(t, s.RepoDir, "git", "remote", "set-url", "origin", "git@github.com:@etc/passwd")
+	d.webBases.Delete(s.RepoDir)
+	n := len(ghLog(ghd))
+	answerMerge(t, d, it.ID)
+	r := waitMergeEnd(t, d, it.ID)
+	if r.State != state.MergeFailed || !strings.Contains(r.Detail, "no GitHub repository in origin") {
+		t.Fatalf("run: %+v", r)
+	}
+	if l := ghLog(ghd); len(l) != n {
+		t.Fatalf("gh ran: %q", l[n:])
 	}
 }

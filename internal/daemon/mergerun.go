@@ -10,9 +10,11 @@ package daemon
 //
 //	gh pr merge <n> --repo <host/owner/name> --<method> --match-head-commit <head>
 //
-// as the person's gh (outside any sandbox), so GitHub itself refuses a
-// head that moved in between. --repo comes from the main checkout's
-// origin, and keeps gh from switching or deleting local branches. No
+// as the person's gh (outside any sandbox), in the main checkout (not the
+// agent's worktree), so GitHub itself refuses a head that moved in
+// between. --repo comes from the main checkout's origin (plain names
+// only), and keeps gh from switching or deleting local branches. A PR
+// whose base changed since land is refused. No
 // --admin, no --auto: what GitHub would refuse the person is refused.
 // How it went is the item's answer.merge (running → merged | failed) and
 // merge.check's run; the merge is in the send log (kind merge). The
@@ -25,11 +27,13 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"pekoe/internal/config"
+	"pekoe/internal/gitx"
 	"pekoe/internal/state"
 )
 
@@ -38,9 +42,11 @@ var ghFound = ghAvailable
 
 const (
 	mergeReadTimeout = 30 * time.Second
-	mergeRunTimeout  = 2 * time.Minute
 	mergeDetailMax   = 500 // characters of gh's error kept on the item
 )
+
+// mergeRunTimeout is how long gh pr merge may take (tests shorten it).
+var mergeRunTimeout = 2 * time.Minute
 
 // mergeMethod is how s's repository merges ([merge] method of its
 // repos/<id>.toml; merge by default).
@@ -54,12 +60,24 @@ func (d *Daemon) mergeMethod(s *state.Session) (string, error) {
 
 // ghRepo is host/owner/name of s's repository as its main checkout's origin
 // says ("" when it says none).
+// Each part is a plain name: nothing gh would read as a flag or, after
+// -F, as "@file".
 func (d *Daemon) ghRepo(s *state.Session) string {
 	r := strings.TrimPrefix(d.webBase(s.RepoDir), "https://")
-	if strings.Count(r, "/") != 2 || strings.HasPrefix(r, "-") {
+	if !ghRepoRe.MatchString(r) {
 		return ""
 	}
 	return r
+}
+
+var ghRepoRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// prBase is the branch s's PR goes into (what land rebased onto).
+func prBase(s *state.Session) string {
+	if s.Base != "" {
+		return s.Base
+	}
+	return gitx.DefaultBase(s.RepoDir)
 }
 
 func (d *Daemon) lastMergeRun(slug string) *state.MergeRun {
@@ -117,13 +135,18 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 
 	// read the PR again, and every condition on what was read
 	ctx, cancel := context.WithTimeout(context.Background(), mergeReadTimeout)
-	v, err := fetchPRViewOf(ctx, ghDir(s), repo, s.PR)
+	v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR)
 	cancel()
 	if err != nil {
 		end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
 		return
 	}
 	d.applyPRStatus(s.Slug, v.Summary(), false)
+	if base := prBase(s); v.Base != base {
+		// the base was changed after the person looked: not what they agreed to
+		end(state.MergeFailed, "not merged: PR #%d goes into %s now, not %s", s.PR, v.Base, base)
+		return
+	}
 	if s, err = d.snapshot(it.About); err != nil {
 		end(state.MergeFailed, "not merged: session %s is gone", it.About)
 		return
@@ -140,7 +163,8 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 
 	args := []string{"pr", "merge", strconv.Itoa(s.PR), "--repo", repo, "--" + method, "--match-head-commit", run.Head}
 	ctx, cancel = context.WithTimeout(context.Background(), mergeRunTimeout)
-	_, err = ghMerge(ctx, ghDir(s), args...)
+	_, err = ghMerge(ctx, s.RepoDir, args...)
+	timedOut := err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 	cancel()
 	rec2 := &state.SendRecord{At: time.Now(), From: callerPekoed, To: s.Slug, Kind: "merge", Via: it.Answer.Via, OK: err == nil,
 		Text: fmt.Sprintf("gh %s (inbox #%d, answered by %s)", strings.Join(args, " "), it.ID, it.Answer.By)}
@@ -150,7 +174,13 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	if e := d.DB.AddSend(rec2); e != nil {
 		log.Printf("send log: %v", e)
 	}
-	if err != nil {
+	switch {
+	case timedOut:
+		// gh was stopped while GitHub may have merged it: not told merged,
+		// and not told it did not merge either
+		end(state.MergeFailed, "unknown: gh pr merge took over %s and was stopped; look at the PR (a merge that went through lands as usual)", mergeRunTimeout)
+		return
+	case err != nil:
 		end(state.MergeFailed, "not merged: %s", cutRunes(cleanInbox(err.Error(), false), mergeDetailMax))
 		return
 	}
@@ -160,7 +190,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// the poller's next round would see it within a minute; read it now so
 	// the landing starts right away
 	ctx, cancel = context.WithTimeout(context.Background(), mergeReadTimeout)
-	if v, err := fetchPRViewOf(ctx, ghDir(s), repo, s.PR); err == nil {
+	if v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR); err == nil {
 		d.applyPRStatus(s.Slug, v.Summary(), false)
 	}
 	cancel()
