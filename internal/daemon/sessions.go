@@ -831,6 +831,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	}
 	env := append([]string{}, s.Env...)
 	env = append(env, "PEKOE_SESSION="+slug, "PEKOE_SOCK="+paths.Socket(), "PEKOE=1")
+	env = claudeStayEnv(ag.Command, env)
 	if os.Getenv("PEKOE_HOME") != "" {
 		env = append(env, "PEKOE_HOME="+os.Getenv("PEKOE_HOME"))
 	}
@@ -895,13 +896,18 @@ type openP struct {
 
 // claudeProjectDir mirrors how Claude Code stores transcripts per cwd.
 func claudeProjectDir(path string) string {
-	home, _ := os.UserHomeDir()
+	enc := strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(path)
+	return filepath.Join(claudeProjectsDir(), enc)
+}
+
+// claudeProjectsDir holds one directory per starting cwd.
+func claudeProjectsDir() string {
 	base := os.Getenv("CLAUDE_CONFIG_DIR")
 	if base == "" {
+		home, _ := os.UserHomeDir()
 		base = filepath.Join(home, ".claude")
 	}
-	enc := strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(path)
-	return filepath.Join(base, "projects", enc)
+	return filepath.Join(base, "projects")
 }
 
 type pastSession struct {

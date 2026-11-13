@@ -80,6 +80,82 @@ func (d *Daemon) resolveSession(env, cwd string) string {
 	return best
 }
 
+// claimOutside is the $PEKOE_SESSION to believe from a hook that comes from
+// no pekoe window. Claude Code can move a conversation out of its window
+// (← on an empty prompt, /background): a background session of Claude
+// Code's own service carries it on, in the service's environment, that is
+// the one of whichever window first started the service, not the
+// conversation's. Its hooks then name another session's $PEKOE_SESSION
+// (docs/tapi-chat.md「窓の外に出た会話」). The conversation's file says
+// where it began: Claude Code keeps it in ~/.claude/projects/<the starting
+// cwd, encoded>/. So when transcript_path is such a file, it decides:
+// tapi's directory is tapi, a session's worktree that session, anything
+// else drops the claim (the cwd still counts in resolveSession). A
+// transcript_path elsewhere, or none, leaves the claim as it was.
+func (d *Daemon) claimOutside(claimed, transcript string) string {
+	dir, ok := claudeTranscriptDir(transcript)
+	if !ok {
+		return claimed
+	}
+	if tapiTranscriptOK(transcript) {
+		return TapiSlug
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if s, ok := d.sessions[claimed]; ok && isProjectDirOf(dir, s.Path) {
+		return claimed
+	}
+	best := ""
+	for slug, s := range d.sessions {
+		// the smallest slug when two sessions share a path: the same answer
+		// for every hook
+		if isProjectDirOf(dir, s.Path) && (best == "" || slug < best) {
+			best = slug
+		}
+	}
+	if best != claimed && claimed != "" {
+		logOnce("claim:"+claimed+"\x00"+dir, "hook names %s but its conversation (%s) is %s: taken as %q", claimed, dir, orNone(best), best)
+	}
+	return best
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "no session's"
+	}
+	return s + "'s"
+}
+
+// logged keeps logOnce to one line per key (hooks come many times a turn).
+var logged sync.Map
+
+func logOnce(key, format string, args ...any) {
+	if _, dup := logged.LoadOrStore(key, true); !dup {
+		log.Printf(format, args...)
+	}
+}
+
+// claudeTranscriptDir is the project directory of a Claude Code
+// conversation file (<projects>/<encoded cwd>/<session id>.jsonl), ok only
+// for such a file.
+func claudeTranscriptDir(path string) (string, bool) {
+	if !filepath.IsAbs(path) || !strings.HasSuffix(path, ".jsonl") ||
+		!validSessionID(strings.TrimSuffix(filepath.Base(path), ".jsonl")) {
+		return "", false
+	}
+	dir := filepath.Dir(filepath.Clean(path))
+	if filepath.Dir(dir) != filepath.Clean(claudeProjectsDir()) {
+		return "", false
+	}
+	return dir, true
+}
+
+// isProjectDirOf: dir is where Claude Code keeps the conversations started
+// in path (or in its symlink-resolved name).
+func isProjectDirOf(dir, path string) bool {
+	return dir == filepath.Clean(claudeProjectDir(path)) || dir == filepath.Clean(claudeProjectDir(realpath(path)))
+}
+
 // realpath resolves symlinks (macOS /var → /private/var) even when the tail
 // of the path does not exist, by resolving the longest existing parent.
 func realpath(p string) string {
@@ -165,18 +241,26 @@ func summarizeTool(name string, input json.RawMessage) state.Tool {
 // starts its hooks itself, outside its sandbox, as children of the agent
 // process, which is in the window's process tree (caller.go). A hook from
 // no pekoe window (an agent pekoe adopted, which runs outside tmux) falls
-// back to $PEKOE_SESSION and the cwd, as before.
+// back to $PEKOE_SESSION and the cwd, as before, unless the conversation
+// says otherwise (claimOutside).
 func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 	pane := who.Pane()
+	var hp hookPayload
+	_ = json.Unmarshal(p.Payload, &hp)
+	if pane != TapiSlug && tapiTranscriptOK(hp.TranscriptPath) {
+		// tapi's conversation, running outside tapi's window: pekoe cannot
+		// tell it is tapi (the ledger refuses it), so say so
+		d.tapiNoteOutside(hp.SessionID, pane, p.Session)
+	}
 	if pane != "" {
 		p.Session = pane
+	} else {
+		p.Session = d.claimOutside(p.Session, hp.TranscriptPath)
 	}
 	res, err := d.hEvent(p)
 	if pane == TapiSlug && err == nil {
 		// a person's request to tapi (ledger.go): only from tapi's own
 		// window, never from a caller that just names it
-		var hp hookPayload
-		_ = json.Unmarshal(p.Payload, &hp)
 		if hook := p.Hook; hook == "UserPromptSubmit" || hook == "" && hp.HookEventName == "UserPromptSubmit" {
 			d.recordRequest(hp.Prompt)
 		}

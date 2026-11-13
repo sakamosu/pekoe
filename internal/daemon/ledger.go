@@ -67,7 +67,18 @@ func ledgerAllowed(who *Caller, method string) error {
 	if who.Human() || who.Pane() == TapiSlug {
 		return nil
 	}
-	return fmt.Errorf("%s: the ledger holds what a person asked tapi chat for; only tapi chat (or a person) uses it, not %s", method, who.ID())
+	return fmt.Errorf("%s: the ledger holds what a person asked tapi chat for; only tapi chat (or a person) uses it, not %s%s", method, who.ID(), outsideHint(who))
+}
+
+// outsideHint explains "unknown" to an agent that may be tapi chat run
+// outside its window (docs/tapi-chat.md「窓の外に出た会話」).
+func outsideHint(who *Caller) string {
+	if who.Human() || who.Pane() != "" {
+		return ""
+	}
+	return ". A process in no pekoe window is unknown, whatever $PEKOE_SESSION says: if this is tapi chat, " +
+		"Claude Code has moved its conversation out of tapi's window (a background session: ← on an empty prompt, /background). " +
+		"Ask the person to stop that background session in Claude Code, then to quit Claude Code in tapi's window and restart it there (↵), or to reset tapi chat (T, pekoe tapi reset)"
 }
 
 func ledgerErr(id int64, err error) error {

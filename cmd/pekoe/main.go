@@ -1394,6 +1394,15 @@ func cmdTapi(args []string) error {
 			fmt.Printf("tapi chat: %s · agent %s · %s\n", st, v.Agent, v.Dir)
 		}
 		fmt.Printf("ledger: %d open · inbox: %d open\n", v.LedgerOpen, v.InboxOpen)
+		if o := v.Outside; o != nil {
+			where := "outside every pekoe window (a Claude Code background session?)"
+			if o.Window != "" {
+				where = "in the window of " + o.Window
+			}
+			fmt.Printf("warning: tapi's conversation %s runs %s since %s: pekoe cannot tell it is tapi there.\n"+
+				"  stop it in Claude Code, then quit Claude Code in tapi's window and restart it (↵), or pekoe tapi reset\n",
+				o.ClaudeSessionID, where, o.Since.Local().Format("15:04"))
+		}
 		return nil
 	case "reset":
 		if f["yes"] == "" {
