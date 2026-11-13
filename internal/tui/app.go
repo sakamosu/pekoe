@@ -86,6 +86,8 @@ type model struct {
 	inboxToasted map[int64]bool
 	mergeToasted map[int64]string // inbox id -> the merge state last told (inbox.go)
 	inboxVisited map[int64]bool
+	popupDue     map[int64]bool  // new questions to put in front once (inbox_popup.go)
+	lastKeyAt    time.Time       // the last key typed (a popup waits for a pause)
 	attnRound    map[string]bool // sessions ]a went to this round
 
 	repos       []daemon.KnownRepo // repo.list: repositories pekoe knows (repos.go)
@@ -549,8 +551,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer m.issueSync()
 	var cmd tea.Cmd
 	// every key passes the mouse guard first, whichever screen handles it
+	if _, ok := msg.(tea.FocusMsg); ok {
+		m.lastKeyAt = time.Now() // back at the terminal: a popup waits for a pause from here
+	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		m.lastKeyAt = time.Now()
 		keys, wait := m.guard.feed(msg)
 		cmd = m.routeKeys(keys)
 		if wait {
@@ -668,7 +674,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.window == winPR && m.current() != nil && time.Since(m.pr.at) >= prRefresh {
 			cmds = append(cmds, m.prFollow())
 		}
-		cmds = append(cmds, m.maybePermission(), m.escalate(), m.dashTick())
+		cmds = append(cmds, m.maybePermission(), m.maybeInboxPopup(time.Now()), m.escalate(), m.dashTick())
 		m.tapiExpire()
 		return m, tea.Batch(cmds...)
 
@@ -882,6 +888,7 @@ func (m *model) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, rm.init()
 
 	case kittyKeyMsg:
+		m.lastKeyAt = time.Now()
 		// keys with no legacy encoding (Shift+Enter …) only matter to the pty
 		if m.typing && m.modal == nil && m.chat.open {
 			return m, m.chatKeys(map[string]any{"keys": []string{msg.name}})

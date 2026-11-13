@@ -154,10 +154,18 @@ type Tapi struct {
 // after 30 s, an OS notification after 2 min while the terminal is not
 // focused) or "quiet" (as before tapi orchestrated: tapi's wait only in the
 // bar, below a session's, and one message line per new question). Any
-// other value is "escalate".
+// other value is "escalate". InboxPopup (on by default) puts a new
+// question an agent waits on in front as the answer dialog, one at a time
+// and only while nothing else is open and nobody is typing; skipped, it
+// stays in the inbox and does not come up again. Off with notify = "quiet"
+// too.
 type Orchestrator struct {
-	Notify string `toml:"notify"`
+	Notify     string `toml:"notify"`
+	InboxPopup *bool  `toml:"inbox_popup"`
 }
+
+// InboxPopupOn: inbox_popup, unset is true.
+func (o Orchestrator) InboxPopupOn() bool { return o.InboxPopup == nil || *o.InboxPopup }
 
 // Notify is [notify]: when the TUI tells you that something waits for you
 // (docs/mascot.md). A session's wait (and, unless [orchestrator] notify is
