@@ -42,7 +42,32 @@ func (d *Daemon) webInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	its := res.([]state.InboxItem)
 	sort.SliceStable(its, func(i, j int) bool { return its[i].ID < its[j].ID })
-	writeJSON(w, map[string]any{"items": its, "at": time.Now()})
+	writeJSON(w, map[string]any{"items": its, "merges": d.recentMerges(time.Now()), "at": time.Now()})
+}
+
+const (
+	webMergesMax = 5
+	webMergesFor = 24 * time.Hour
+)
+
+// recentMerges are pekoed's merge items a person answered "merge" in the
+// last day, newest first: the merge under way, merged, or failed and why
+// (the answered item leaves the open list, this keeps it in sight).
+func (d *Daemon) recentMerges(now time.Time) []state.InboxItem {
+	its, err := d.DB.InboxList(state.InboxFilter{Status: []string{state.InboxAnswered}, From: callerPekoed, Limit: 50})
+	out := []state.InboxItem{}
+	if err != nil {
+		return out
+	}
+	for _, it := range its {
+		if a := it.Answer; isMergeItem(&it) && a != nil && a.Merge != nil && now.Sub(it.UpdatedAt) < webMergesFor {
+			out = append(out, it)
+			if len(out) == webMergesMax {
+				break
+			}
+		}
+	}
+	return out
 }
 
 type webInboxAnswerIn struct {
@@ -355,10 +380,20 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("ci", stepTodo, "no CI checks")
 	}
 
-	// マージ: the person merges (pekoed never does)
+	// マージ: the person decides; pekoed merges only on their "merge"
+	var run *state.MergeRun
+	if f.Merge != nil {
+		run = f.Merge.Run
+	}
 	switch {
 	case merged:
 		step("merge", stepDone, "")
+	case run != nil && run.State == state.MergeRunning:
+		step("merge", stepNow, "pekoed is merging (checking again first)")
+	case run != nil && run.State == state.MergeMerged:
+		step("merge", stepNow, "merged by pekoed: landing")
+	case run != nil && run.State == state.MergeFailed && (f.Merge == nil || f.Merge.Inbox == 0):
+		step("merge", stepFail, run.Detail)
 	case f.Merge != nil && f.Merge.Ready:
 		step("merge", stepNow, "evidence ready: waiting for a person to merge")
 	default:

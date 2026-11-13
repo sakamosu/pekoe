@@ -73,7 +73,7 @@ func TestMergeEvidenceReady(t *testing.T) {
 	}
 	it := its[0]
 	if it.Kind != "approve" || it.From != callerPekoed || !strings.HasPrefix(it.Question, "evidence ready to merge #42") ||
-		strings.Join(it.Options, ",") != "merged,wait,send back" || it.Recommend != nil {
+		strings.Join(it.Options, ",") != "merge,wait,send back" || it.Recommend != nil {
 		t.Fatalf("item: %+v", it)
 	}
 	if f := it.Facts; f == nil || f.PR != 42 || f.PRStatus == nil || f.PRStatus.HeadSHA != mergeHead || f.Merge == nil || !f.Merge.Ready {
@@ -236,7 +236,7 @@ func TestMergeEvidenceSendBack(t *testing.T) {
 	}
 	// the answers that send nothing: merged, wait
 	if inboxRecipient(&state.InboxItem{From: callerPekoed, Kind: "approve", About: "main", Status: state.InboxAnswered,
-		Answer: &state.InboxAnswer{Choice: intp(mergeMerged)}}) != "" {
+		Answer: &state.InboxAnswer{Choice: intp(mergeMerge)}}) != "" {
 		t.Fatal("merged is sent somewhere")
 	}
 	// not asked again for the same head

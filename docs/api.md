@@ -63,7 +63,7 @@
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
 - それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`tapi.transcript`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
-- `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める。後片付け(teardown と worktree の削除)はマージを検出してから(下の「PR の状態のポーリング」が `MERGED` を見たその回、または `watchMerges` の早い方)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
+- `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める(pekoed がマージするのは、根拠の項目に人が `merge` と答えたときだけ。下の「マージしてよいかの根拠」)。後片付け(teardown と worktree の削除)はマージを検出してから(下の「PR の状態のポーリング」が `MERGED` を見たその回、または `watchMerges` の早い方)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
 - `dev.toggle` は token なしでは、呼び出し元の窓のセッション(下の「呼び出し元の識別」)の dev server だけを起動・停止する(`hAgentDevToggle`)。エージェントの sandbox はポートを listen できないので、UI を確かめるには pekoed に dev server を立ててもらうしかない。動かすのはリポジトリの設定の `[hooks] dev` で、Stop のたびに誰でも走らせられる `[hooks] test` と同じく hooks の sandbox で動く(下の「hooks の sandbox」)ので、新しい実行の経路は増えない。別の slug は `dev.toggle: a session starts or stops only its own dev server (<自分>, not <相手>): only a person can do this`、窓に当たらない呼び出し(`unknown`)は `pekoe cannot tell which session is calling` で断る。tapi chat の窓からも断る。1 セッションに dev server は 1 つ(動いていれば止める)は token つきと同じ
 - `session.send` は token なしでも使える(ハブのエージェントが `pekoe send` で指示を渡すため)。ただし token なしでは、エージェントの窓(`window` 省略か `agent`)だけに送れて、相手に許可ダイアログが出ている間は `submit` の有無にかかわらず断る(下の「send と許可ダイアログ」)
@@ -423,7 +423,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 
 ### マージしてよいかの根拠
 
-pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を作り、人のマージを待っている)を 10 秒ごとに見て、下の条件が全部揃ったら受信箱に `from: "pekoed"`・`kind: "approve"` の項目を 1 件作る: `evidence ready to merge #42 (feat-csv · HEAD 3f2a1b0)`。**pekoed はマージしない**(`gh pr merge` などを呼ばない。マージは人が GitHub でする)。
+pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を作り、人のマージを待っている)を 10 秒ごとに見て、下の条件が全部揃ったら受信箱に `from: "pekoed"`・`kind: "approve"` の項目を 1 件作る: `evidence ready to merge #42 (feat-csv · HEAD 3f2a1b0)`。マージを決めるのは人で、pekoed がマージするのは人がこの項目に `merge` と答えたときだけ(下の「答え」。人の答えなしの自動マージはしない)。
 
 | 条件(`name`) | 揃っている |
 | --- | --- |
@@ -456,10 +456,29 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は `no independent review reported` のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
 - **rebase の後の合格の引き継ぎ**: `pekoe land` は `origin/<base>` に rebase してから push するので、レビューした後に land すると PR の HEAD の SHA が変わる。`reviewed_sha` と PR の HEAD が違うとき、pekoed はレビューしたコミットの変更(base(`origin/<base>`、無ければ `<base>`)との merge-base から)を、PR の HEAD の merge-base に rebase と同じ 3-way マージで載せ直し(`git merge-tree --write-tree`。worktree にも ref にも触らない)、できた tree が PR の HEAD の tree と完全に一致したときだけ合格を引き継ぐ(`detail` は「… は rebase し直しただけで差分の中身が同じ」)。ファイル・バイト・場所のどれかが違えば(同じ行を文脈の同じ別の場所に足したものも)、載せ直しが衝突すれば揃わず、`review_stale: true` で「再レビューが要る」と出る。PR の HEAD がこの worktree に無い(よそから push された)など比べられないときも揃わない(安全側)。結果はコミットの組ごとに覚える。引き継ぐのは「レビューした変更と同じ変更」であることまでで、新しい base との組み合わせは CI が確かめる
 - `conds` は上の表の順で常に 6 つ。`detail` は pekoed が書く 1 行(英語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
-- 項目: `options` は `["merged", "wait", "send back"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail`。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
+- 項目: `options` は `["merge", "wait", "send back"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail` と、`merge` で走るもの(方法と HEAD)。前の `merge` が失敗していればその理由も。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
-- **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)は、同じ HEAD で条件が戻ればもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
-- **答え**: `merged`(0)と `wait`(1)は記録だけ(マージの検知は今までどおり pekoed のポーリング。下の「PR の状態のポーリング」)。`send back`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+- **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)と、`merge` の答えでのマージが失敗したものは、同じ HEAD で条件が揃えばもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
+- **答え**: `merge`(0)は pekoed がマージする(下)。`wait`(1)は記録だけ。`send back`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+- **前の選択肢の項目**: この版より前に作られた項目は 0 番が `merged`(人が GitHub でマージした、の記録)。添字の意味は選択肢の文で決まり、0 番が `merge` の項目だけがマージを走らせる。前の項目に 0 と答えても、state.db に残った答えを読み直しても、何もマージしない
+- **`merge` の答え**(token つきの `inbox.answer` だけ。TUI・CLI・Web UI のどれからでも同じ。エージェントは答えられない): 答えを保存するのと同じ変更で `answer.merge` を `running` にして返し、その後ろで pekoed が:
+  1. その項目が `kv` に残した、そのセッションの最新の根拠の項目(id・PR・HEAD)であることを確かめる(違えば断る)。`gh` が無い・origin が GitHub のリポジトリを指さない・`[merge] method` が不正でも断る
+  2. PR を GitHub から読み直し(`gh api graphql`、`--repo` に当たる owner と name は main のチェックアウトの origin から)、`pr_status` を更新してから 6 つの条件をもう一度判定する。1 つでも崩れている・PR の HEAD が項目の HEAD と違う・PR の base がセッションの base(land が rebase した先)と違えば、マージしない。origin の host・owner・name は英数字と `.` `_` `-` だけのものに限る(gh がフラグや `@ファイル` と読むものを渡さない)
+  3. `gh pr merge <番号> --repo <host/owner/name> --merge|--squash|--rebase --match-head-commit <項目の HEAD>` を人の gh で、エージェントの worktree ではなく main のチェックアウトで実行する(sandbox の外。`GH_PROMPT_DISABLED=1`。`--admin`・`--auto`・`--delete-branch` は付けない。`--repo` を付けるので gh は手元のブランチに触らない)。方法はリポジトリの設定(`repos/<repo-id>.toml`)の `[merge] method`(`merge`・`squash`・`rebase`。既定 `merge`)
+  4. 結果を `answer.merge` に書いて `rev` を上げ、`inbox.updated` を出す。成功したら PR をもう一度読み、`MERGED` ならその場で後片付け(下の「PR の状態のポーリング」と同じ)を始める
+  - 実行は送信の記録に `from: pekoed, to: <slug>, kind: merge` で残る(`text` に実行した gh のコマンドと受信箱の id、`via` は答えた経路、失敗なら `ok: false` と `error`)
+  - 失敗(`failed`)はマージ済みとして扱わず、`detail` に理由(`not merged: evidence no longer holds: ci: 1 pending`・`not merged: PR HEAD moved (…)`・`not merged: gh pr merge: <GitHub の言葉>` など)。同じ HEAD で条件が揃っていれば、根拠の項目がもう一度作られる(人はもう一度 `merge` と答えられる)
+  - gh が 2 分で終わらなければ止め、`failed` の `detail` を `unknown: …` にする(GitHub がマージしたかは分からない。マージされていればポーリングが landed にする)
+  - pekoed が `running` のまま止まったら、次の起動で `failed`(`pekoed stopped during the merge …`)にする。GitHub でマージされていれば、ポーリングがいつもどおり landed にする
+
+```jsonc
+// InboxAnswer.merge(pekoed の根拠の項目に merge と答えたときだけ)、MergeCheck.run(merge.check。最後のものを、次に項目を作るまで)
+{"state": "failed",          // running | merged | failed
+ "pr": 42, "head": "3f2a…",  // --match-head-commit に渡す HEAD(項目のもの)
+ "method": "merge",          // merge | squash | rebase(決まる前に失敗したら省く)
+ "detail": "not merged: evidence no longer holds: ci: 1 pending",
+ "at": "…"}
+```
 
 ### 片付けの候補(cleanup)
 

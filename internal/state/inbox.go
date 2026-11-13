@@ -64,6 +64,27 @@ type InboxAnswer struct {
 	By     string    `json:"by"`            // human, or the asker (withdraw, fyi)
 	Via    string    `json:"via,omitempty"` // socket | web:<device>
 	At     time.Time `json:"at"`
+	// Merge is pekoed merging the PR after a person answered "merge" to
+	// its merge item (daemon/merge.go); nil for every other answer.
+	Merge *MergeRun `json:"merge,omitempty"`
+}
+
+// Merge run states.
+const (
+	MergeRunning = "running" // pekoed is checking again and running gh pr merge
+	MergeMerged  = "merged"  // GitHub merged it
+	MergeFailed  = "failed"  // not merged; Detail says why
+)
+
+// MergeRun is pekoed merging a PR on a person's answer: the head it may
+// merge (the item's), how, and how it went.
+type MergeRun struct {
+	State  string    `json:"state"` // running | merged | failed
+	PR     int       `json:"pr"`
+	Head   string    `json:"head"`             // --match-head-commit
+	Method string    `json:"method,omitempty"` // merge | squash | rebase
+	Detail string    `json:"detail,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // InboxFacts is what pekoed read itself about the session an item is
@@ -104,6 +125,9 @@ type MergeCheck struct {
 	// A head that only rebased the reviewed change carries the pass.
 	ReviewStale bool  `json:"review_stale,omitempty"`
 	Inbox       int64 `json:"inbox,omitempty"` // the open item saying it is ready (merge.check only)
+	// Run is pekoed's latest merge of this session's PR on a person's
+	// answer (running, merged or failed), until it asks again.
+	Run *MergeRun `json:"run,omitempty"`
 }
 
 // MergeCond is one condition: land | review | ci | merge_state | conflicts | after.

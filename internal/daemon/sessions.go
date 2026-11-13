@@ -263,6 +263,17 @@ func portBusy(p int) bool {
 	return false
 }
 
+// reservedSlug: names a session's window must not have, because pekoed
+// records callers by them (caller.go, inbox.go): a session called pekoed
+// would post inbox items that read as pekoed's own.
+func reservedSlug(slug string) bool {
+	switch slug {
+	case callerPekoed, callerHuman, callerUnknown:
+		return true
+	}
+	return false
+}
+
 // uniqueSlug picks the slug for a new session of a repository: base when it
 // is free or already this repository's; when another repository has it,
 // "<name>-<base>" (app-feat-x), and then -2, -3 … as before.
@@ -270,6 +281,9 @@ func (d *Daemon) uniqueSlug(base, repoID, repoName string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	free := func(slug string) bool {
+		if reservedSlug(slug) {
+			return false
+		}
 		s, ok := d.sessions[slug]
 		return !ok || s.RepoID == repoID
 	}

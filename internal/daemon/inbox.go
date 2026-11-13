@@ -109,6 +109,11 @@ func (d *Daemon) hInboxPost(who *Caller, p inboxPostP) (any, error) {
 	if from == callerUnknown {
 		return nil, errUnknownCaller("inbox.post")
 	}
+	if from == callerPekoed {
+		// a window named like pekoed itself (a session made before the name
+		// was reserved): its items would read as pekoed's own
+		return nil, errors.New("inbox.post: a session named pekoed cannot post to the inbox (rename its branch)")
+	}
 	it, err := cleanInboxPost(p)
 	if err != nil {
 		return nil, err
@@ -486,6 +491,21 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 		}
 		it.Status = state.InboxAnswered
 		it.Answer = &state.InboxAnswer{Choice: p.Choice, Note: note, By: callerHuman, Via: who.Via, At: time.Now()}
+		if mergeAsked(it, p.Choice) {
+			// pekoed merges it now (mergerun.go): saved with the answer, so
+			// the answer and "it is being merged" are one change
+			pr, head := 0, ""
+			if f := it.Facts; f != nil {
+				pr = f.PR
+				if f.Merge != nil {
+					head = f.Merge.PRHead
+				}
+			}
+			if rec := d.mergeRecordOf(it.About); rec.ID == it.ID {
+				pr, head = rec.PR, rec.Head // what pekoed asked about
+			}
+			it.Answer.Merge = &state.MergeRun{State: state.MergeRunning, PR: pr, Head: head, At: it.Answer.At}
+		}
 		return nil
 	})
 	if err != nil {
@@ -497,6 +517,9 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 		return nil, err
 	}
 	d.inboxClosed(it)
+	if a := it.Answer; a.Merge != nil {
+		d.startMerge(it)
+	}
 	return it, nil
 }
 

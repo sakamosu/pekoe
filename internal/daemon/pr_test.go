@@ -17,6 +17,8 @@ import (
 // prFixture builds the graphql answer the fake gh returns.
 type prFixture struct {
 	State, Merge, Decision string
+	Head                   string // headRefOid (default ABCDEF…)
+	Base                   string // baseRefName (default main)
 	Checks                 []map[string]any
 	Reviews                []map[string]any
 	Threads                []map[string]any
@@ -24,6 +26,12 @@ type prFixture struct {
 }
 
 func (f prFixture) write(t *testing.T, ghDir string) {
+	t.Helper()
+	f.writeAs(t, ghDir, "pr.json")
+}
+
+// writeAs writes the fixture under name in the fake gh's directory.
+func (f prFixture) writeAs(t *testing.T, ghDir, name string) {
 	t.Helper()
 	if f.State == "" {
 		f.State = "OPEN"
@@ -37,6 +45,12 @@ func (f prFixture) write(t *testing.T, ghDir string) {
 		}
 		return v
 	}
+	if f.Base == "" {
+		f.Base = "main"
+	}
+	if f.Head == "" {
+		f.Head = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	}
 	var decision any
 	if f.Decision != "" {
 		decision = f.Decision
@@ -48,14 +62,14 @@ func (f prFixture) write(t *testing.T, ghDir string) {
 	pr := map[string]any{
 		"number": 42, "title": "Add CSV export", "body": "## Summary", "url": "https://github.com/me/app/pull/42",
 		"state": f.State, "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": f.Merge,
-		"reviewDecision": decision, "baseRefName": "main", "headRefName": "feat/csv", "headRefOid": "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+		"reviewDecision": decision, "baseRefName": f.Base, "headRefName": "feat/csv", "headRefOid": f.Head,
 		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
 		"reviews":       map[string]any{"nodes": nz(f.Reviews)},
 		"reviewThreads": map[string]any{"nodes": nz(f.Threads)},
 		"comments":      map[string]any{"nodes": nz(f.Comments)},
 	}
 	b, _ := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequest": pr}}})
-	if err := os.WriteFile(filepath.Join(ghDir, "pr.json"), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ghDir, name), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

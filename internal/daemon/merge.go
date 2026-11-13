@@ -23,10 +23,16 @@ package daemon
 // pekoed does not ask again until the head moves; an item pekoed withdrew
 // itself is asked again when the conditions come back.
 //
-// pekoed merges nothing (決まったこと 1): the answers are "merged" (the
-// person merged it on GitHub; the PR poller notices), "wait", and "send back"
-// with a note, which is typed into the session's window as an inbox answer
-// is (inbox.go: idle or done, no permission prompt, checked twice).
+// The person decides to merge; pekoed merges only on that answer (決まったこと
+// 1): the answers are "merge", "wait" (recorded only) and "send back" with a
+// note, which is typed into the session's window as an inbox answer is
+// (inbox.go: idle or done, no permission prompt, checked twice). On "merge"
+// pekoed reads the PR again, checks every condition once more on what it
+// read, and runs `gh pr merge <n> --repo <origin> --<method>
+// --match-head-commit <the item's head>` itself (runMerge); anything off,
+// and it merges nothing and says why on the item (answer.merge). The
+// landing that follows is the PR poller's, as for a merge on GitHub.
+// Nothing merges without that answer: no automatic merge.
 //
 // What is still missing, per session, is merge.check: the TUI dashboard and
 // the Web UI's progress view read it.
@@ -43,14 +49,18 @@ import (
 	"pekoe/internal/state"
 )
 
-// The answers to a merge item, by index.
+// The answers to a merge item, by index. Items asked before pekoed merged
+// itself have "merged" (the person merged on GitHub) at 0: only an item
+// whose option 0 reads "merge" is merged on that answer (mergeAsked).
 const (
-	mergeMerged   = 0
+	mergeMerge    = 0
 	mergeWait     = 1
 	mergeSendBack = 2
 )
 
-var mergeOptions = []string{"merged", "wait", "send back"}
+const mergeOptionMerge = "merge"
+
+var mergeOptions = []string{mergeOptionMerge, "wait", "send back"}
 
 // mergeable: the session has a PR of its own that has not been merged yet
 // (the merge conditions are about it).
@@ -68,6 +78,13 @@ func isMergeItem(it *state.InboxItem) bool {
 func mergeSentBack(it *state.InboxItem) bool {
 	a := it.Answer
 	return isMergeItem(it) && it.Status == state.InboxAnswered && a != nil && a.Choice != nil && *a.Choice == mergeSendBack
+}
+
+// mergeAsked: choice on it asks pekoed to merge: pekoed's own merge item,
+// one that offers "merge" (not the older "merged", which only recorded).
+func mergeAsked(it *state.InboxItem, choice *int) bool {
+	return isMergeItem(it) && choice != nil && *choice == mergeMerge &&
+		len(it.Options) > mergeMerge && it.Options[mergeMerge] == mergeOptionMerge
 }
 
 func shortSHA(s string) string {
@@ -356,11 +373,26 @@ func (d *Daemon) syncMerge(s *state.Session, it *state.InboxItem) {
 		// asked about this PR and head already: ask again only if pekoed
 		// withdrew that item itself (a condition broke and came back)
 		prev, err := d.DB.InboxGet(rec.ID)
-		if err == nil && !(prev.Status == state.InboxWithdrawn && prev.Answer != nil && prev.Answer.By == callerPekoed) {
+		if err == nil && !askAgain(prev) {
 			return
 		}
 	}
 	d.askMerge(s, c)
+}
+
+// askAgain: pekoed may ask about the same PR and head as prev again: it
+// withdrew prev itself (a condition broke), or the merge a person asked
+// for there failed (the person can answer "merge" again).
+func askAgain(prev *state.InboxItem) bool {
+	a := prev.Answer
+	switch {
+	case a == nil:
+		return false
+	case prev.Status == state.InboxWithdrawn && a.By == callerPekoed:
+		return true
+	default:
+		return prev.Status == state.InboxAnswered && a.Merge != nil && a.Merge.State == state.MergeFailed
+	}
 }
 
 // askMerge puts the merge item for s in the inbox.
@@ -382,10 +414,19 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 	for _, x := range c.Conds {
 		fmt.Fprintf(&b, "- %s: %s\n", x.Name, x.Detail)
 	}
-	b.WriteString("pekoed does not merge: a person merges on GitHub. \"send back\" sends the note to the session")
-	it.Context = b.String()
+	method, err := d.mergeMethod(s)
+	if err != nil {
+		method = "? (" + err.Error() + ")"
+	}
+	if rec := d.mergeRecordOf(s.Slug); rec.ID != 0 {
+		if prev, err := d.DB.InboxGet(rec.ID); err == nil && prev.Answer != nil && prev.Answer.Merge != nil && prev.Answer.Merge.State == state.MergeFailed {
+			fmt.Fprintf(&b, "last merge (inbox #%d) failed: %s\n", prev.ID, prev.Answer.Merge.Detail)
+		}
+	}
+	fmt.Fprintf(&b, "\"merge\": pekoed checks these again and runs gh pr merge --%s --match-head-commit %s (nothing merges otherwise). \"wait\" is recorded only. \"send back\" sends the note to the session", method, shortSHA(c.PRHead))
+	it.Context = cleanInbox(b.String(), true)
 	d.inboxMu.Lock()
-	err := d.DB.AddInbox(it)
+	err = d.DB.AddInbox(it)
 	if err == nil {
 		v, _ := json.Marshal(mergeRecord{PR: c.PR, Head: c.PRHead, ID: it.ID})
 		err = d.DB.Set(mergeKey(s.Slug), string(v))
@@ -395,6 +436,7 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 		log.Printf("merge evidence %s: %v", s.Slug, err)
 		return
 	}
+	d.mergeRuns.Delete(s.Slug) // asked again: the last run is in its context
 	d.emit("inbox.updated", it)
 }
 
@@ -447,6 +489,7 @@ func (d *Daemon) hMergeCheck(p mergeCheckP) (any, error) {
 	for i := range ss {
 		c := d.mergeCheck(&ss[i])
 		c.Inbox = open[ss[i].Slug]
+		c.Run = d.lastMergeRun(ss[i].Slug)
 		out = append(out, c)
 	}
 	return out, nil

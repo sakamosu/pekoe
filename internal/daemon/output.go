@@ -191,6 +191,7 @@ func (d *Daemon) tickLoop() {
 	// a PR merged while pekoed was down (or restarting) lands now, not 2
 	// minutes into this run
 	go d.watchMerges()
+	go d.failStaleMerges() // a merge on a person's answer cut off by a stop (mergerun.go)
 	n := 0
 	for {
 		select {

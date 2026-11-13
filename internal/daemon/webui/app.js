@@ -698,6 +698,7 @@ async function pressKey(key) {
 // link becomes an anchor only when it is http(s).
 
 let inbox = []; // open items, oldest first
+let merges = []; // pekoed's merges on a person's "merge", newest first (the last day)
 let inboxSig = ""; // what is on screen
 let inboxHeld = false; // a redraw was skipped (a note being typed, the sheet open)
 let inboxTyping = false;
@@ -861,11 +862,31 @@ function inboxCard(it) {
   return card;
 }
 
+const MERGE_LOOK = { running: ["●", "warn", "merging"], merged: ["✓", "ok", "merged"], failed: ["✗", "err", "not merged"] };
+
+// mergeRow: pekoed's merge after a "merge" answer (pekoed's words only).
+function mergeRow(it) {
+  const r = it.answer.merge;
+  const [icon, role, word] = MERGE_LOOK[r.state] || ["?", "dim", r.state];
+  const row = el("div", "card");
+  const head = el("div", "line1");
+  head.append(colored(role, icon, "ic"), el("span", "name r-text", "PR #" + r.pr), colored(role, word, "word"), el("span", "age", ago(r.at)));
+  const body = el("div", "body");
+  body.append(el("div", "also", (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + " · inbox #" + it.id));
+  if (r.detail) body.append(el("div", "also " + (r.state === "failed" ? "r-err" : "r-dim"), r.detail));
+  row.append(head, body);
+  return row;
+}
+
 function renderInbox() {
   const rows = $("i-rows");
   rows.replaceChildren();
   $("i-count").textContent = inbox.length ? String(inbox.length) : "";
   for (const id of [...inboxDraft.keys()]) if (!inbox.some((it) => it.id === id)) inboxDraft.delete(id);
+  if (merges.length) {
+    rows.append(el("div", "sub", "merges by pekoed (on your \"merge\")"));
+    for (const it of merges) rows.append(mergeRow(it));
+  }
   if (!inbox.length) {
     rows.append(el("div", "empty", "nothing waits for you"));
     return;
@@ -889,9 +910,10 @@ async function refreshInbox() {
     const r = await api("/api/inbox");
     if (view !== "inbox") return;
     const items = r.items || [];
-    const sig = JSON.stringify(items);
+    const sig = JSON.stringify([items, r.merges || []]);
     if (sig === inboxSig) return;
     inbox = items;
+    merges = r.merges || [];
     inboxSig = sig;
     if (holdInbox()) inboxHeld = true;
     else renderInbox();
@@ -914,7 +936,11 @@ function openInboxSheet(it) {
   if (note) a.push("note: " + note);
   $("isheet-a").textContent = a.join("\n");
   $("isheet-warn").hidden = false;
-  $("isheet-warn").textContent = "as of rev " + d.rev + ": if the facts change before this reaches pekoe, it is refused and shown again";
+  let warn = "as of rev " + d.rev + ": if the facts change before this reaches pekoe, it is refused and shown again";
+  if (it.from === "pekoed" && it.kind === "approve" && d.choice === 0 && it.options[0] === "merge") {
+    warn = "pekoed checks the conditions again and runs gh pr merge on PR #" + ((it.facts && it.facts.pr) || "?") + " at the HEAD it asked about. " + warn;
+  }
+  $("isheet-warn").textContent = warn;
   $("isheet-ok").disabled = false;
   $("isheet").hidden = false;
 }
