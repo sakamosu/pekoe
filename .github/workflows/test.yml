@@ -1,0 +1,97 @@
+# make test を Linux と macOS で回す。本物の tmux・unix ソケット・TCP ポート・
+# pekoe の sandbox(Linux は bwrap、macOS は sandbox-exec)が要るテストも、
+# ここでは飛ばさずに走らせる。何が飛ばされたかはジョブの Summary に出す。
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # make と同じく go.mod の go 行の Go だけで動かす
+  GOTOOLCHAIN: local
+  NVIM_VERSION: v0.12.6
+  NVIM_LINUX_SHA256: 474430d53e6264f6d6dd18db42d6dc9df3a1b56ca9e88a325bbf860e1a811d87
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tmux bubblewrap lua5.4
+          # Ubuntu の neovim は 0.10 より古いので、リリースのものを入れる
+          curl -fsSLo "$RUNNER_TEMP/nvim.tar.gz" \
+            "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+          echo "${NVIM_LINUX_SHA256}  $RUNNER_TEMP/nvim.tar.gz" | sha256sum -c -
+          sudo tar -C /opt -xzf "$RUNNER_TEMP/nvim.tar.gz"
+          echo /opt/nvim-linux-x86_64/bin >> "$GITHUB_PATH"
+          # Ubuntu 24.04 の AppArmor は非特権の user namespace を塞ぎ、bwrap が
+          # 動かない。pekoe の sandbox のテストのために外す
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # プレビューのテストは既定で macOS の Chrome の場所を見る。runner の
+          # Chrome を教える
+          echo "PEKOE_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+
+      - name: Install tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux neovim lua
+
+      - name: Versions
+        run: |
+          go version
+          tmux -V
+          nvim --version | head -1
+          command -v luac python3
+          if [ "$RUNNER_OS" = Linux ]; then bwrap --version; bwrap --ro-bind / / true && echo "bwrap works"; fi
+
+      - name: make test
+        # -v で飛ばしたテストとその理由もログに残す(次の step で拾う)
+        run: |
+          set -o pipefail
+          GOFLAGS=-v make test 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      # go test -v は t.Skip の理由を "--- SKIP" の行より前に、そのテストの名前の
+      # 見出し(=== RUN / CONT / NAME)の下に出す。テストごとにログの行をためて、
+      # SKIP になったものだけ理由と一緒に出す。nvim の SKIP と probe の note も拾う
+      - name: Skipped tests
+        if: always()
+        run: |
+          log="$RUNNER_TEMP/test.log"
+          {
+            echo "## Skipped tests (${RUNNER_OS})"
+            echo '```'
+            if [ ! -f "$log" ]; then
+              echo "(make test did not run)"
+            else
+              awk '
+                /^=== (RUN|CONT|NAME|PAUSE) / { cur = $3; next }
+                /^ *--- (PASS|FAIL|SKIP): / {
+                  if ($2 == "SKIP:") { print "--- SKIP: " $3; printf "%s", buf[$3]; n++ }
+                  delete buf[$3]; next
+                }
+                /^    / && cur != "" { buf[cur] = buf[cur] $0 "\n"; next }
+                /^note: |^SKIP / { print; n++ }
+                END { if (!n) print "(none)" }
+              ' "$log"
+            fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
