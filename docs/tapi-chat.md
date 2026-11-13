@@ -6,7 +6,7 @@
 
 tapi chat は TUI からいつでも呼べる特別なエージェントで、pekoe の**統括役**([orchestration.md](orchestration.md)「tapi を統括役にする」)。
 
-- 変更の依頼は自分では書かず、`pekoe new --repo R --request <依頼の id>` でセッションを作って任せ、`pekoe wait --mine` で報告を待ち、結果を 1 通にまとめて人に返す。人に上げるのは判断と承認(受信箱)だけ
+- 変更の依頼は自分では書かず、`pekoe new --repo R --request <依頼の id>` でセッションを作って任せ、`pekoe wait --mine --on report,inbox,failed,waiting` で報告を待ち(空振りで起きてトークンを使わないよう種類を絞る)、結果を 1 通にまとめて人に返す。人に上げるのは判断と承認(受信箱)だけ
 - 特定のセッションとは関係ない単発の調査・質問、リポジトリ横断の調査(例: 抱えているリポジトリ群の dependabot アラートの様子)は、読むだけなので自分で答える
 - 自分で作業しすぎないように、リポジトリと worktree には書けない(下の「起動するコマンド」)
 
