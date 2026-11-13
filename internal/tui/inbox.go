@@ -99,7 +99,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 			m.modal = nil
 			m.setMsg(fmt.Sprintf("inbox #%d was %s elsewhere", it.ID, it.Status), false)
 		case it.Status == state.InboxOpen && it.Rev > im.it.Rev:
-			im.it = it
+			im.it, im.confirm = it, false // a merge confirmed on what was there before: choose again
 			if im.opened {
 				im.opened = false // the read on opening: what the person sees first
 			} else {
@@ -215,6 +215,18 @@ type inboxModal struct {
 	popup   bool
 	shownAt time.Time
 	selAt   time.Time // when sel last changed (a popup's Enter waits a beat after it)
+	// confirm: "merge" was chosen and Enter pressed once (mergeChoice):
+	// only another Enter, popupConfirm after confirmAt, answers; any other
+	// key takes it back
+	confirm   bool
+	confirmAt time.Time
+}
+
+// mergeChoice: answering sel to it makes pekoed merge a PR (the daemon's
+// mergeAsked: pekoed's own approve item whose option 0 reads "merge"). It
+// cannot be taken back, so Enter asks again.
+func mergeChoice(it state.InboxItem, sel int) bool {
+	return it.From == "pekoed" && it.Kind == "approve" && sel == 0 && len(it.Options) > 0 && it.Options[0] == "merge"
 }
 
 type inboxAnswerMsg struct {
@@ -231,12 +243,19 @@ func (im *inboxModal) hints() [][2]string {
 	if im.dismiss {
 		return [][2]string{{"y", "dismiss"}, {"n", "keep"}}
 	}
+	if im.confirm {
+		return [][2]string{{"↵", "merge"}, {"other keys", "cancel"}}
+	}
 	keys := [][2]string{}
 	if len(im.it.Options) > 0 {
 		keys = append(keys, [2]string{fmt.Sprintf("1-%d", len(im.it.Options)), "choose"})
 	}
-	if im.popup {
-		return append(keys, [][2]string{{"↵", "answer / skip"}, {"esc", "skip"}, {"n", "note"}, {"o", "open link"}, {"g", "go to session"}, {"x", "dismiss"}}...)
+	if im.popup { // other keys go back to skip: link, dismiss from ]a
+		keys = append(keys, [][2]string{{"↵", "answer / skip"}, {"esc", "skip"}}...)
+		if im.sel >= 0 {
+			keys = append(keys, [2]string{"n", "note"})
+		}
+		return append(keys, [2]string{"]a", "link · dismiss (after skip)"})
 	}
 	return append(keys, [][2]string{{"↵", "answer"}, {"n", "note"}, {"o", "open link"}, {"g", "go to session"}, {"x", "dismiss"}, {"esc", "later"}}...)
 }
@@ -348,6 +367,12 @@ func (im *inboxModal) view() []string {
 	switch {
 	case im.dismiss:
 		lines = append(lines, "", th.FG(theme.Warn, "dismiss without an answer? the agent is told it was closed (y / n)"))
+	case im.confirm:
+		pr := ""
+		if f := it.Facts; f != nil && f.PR > 0 {
+			pr = fmt.Sprintf(" PR #%d", f.PR)
+		}
+		lines = append(lines, "", th.Bold(theme.Warn, "  merge"+pr+"? pekoed merges it now: ↵ again to merge · any other key cancels"))
 	case im.sending:
 		lines = append(lines, "", th.FG(theme.Dim, "answering…"))
 	case im.err != "":
@@ -367,10 +392,28 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 	if im.popup && im.grace(time.Now()) {
 		return nil // a key typed for something else must not answer it
 	}
+	if im.confirm {
+		if key != "enter" {
+			im.unconfirm()
+			return nil
+		}
+		if time.Since(im.confirmAt) < popupConfirm {
+			im.confirmAt = time.Now() // Enter mashed on: wait for a pause
+			return nil
+		}
+		im.confirm = false
+		return im.send("inbox.answer", map[string]any{"id": im.it.ID, "rev": im.it.Rev, "note": im.note.String(), "choice": im.sel})
+	}
+	if im.popup && !im.noting && !popupKey(key, len(im.it.Options), im.sel) {
+		// typing meant for somewhere else: back to skip, wait again
+		im.sel, im.shownAt = -1, time.Now()
+		return nil
+	}
 	if im.noting {
 		switch key {
 		case "enter":
 			im.noting = false
+			im.selAt = time.Now() // a popup's Enter to answer waits a beat after it
 		case "esc":
 			im.noting = false
 			im.note = &input{}
@@ -455,6 +498,10 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			p["choice"] = im.sel
+			if mergeChoice(im.it, im.sel) {
+				im.confirm, im.confirmAt, im.err = true, time.Now(), ""
+				return nil
+			}
 		} else if strings.TrimSpace(im.note.String()) == "" {
 			im.err = "no options: write the answer as a note (n)"
 			return nil
@@ -467,12 +514,32 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 				im.selAt = time.Now()
 				im.err = ""
 			}
-		} else if im.popup {
-			// typing meant for somewhere else: back to skip, wait again
-			im.sel, im.shownAt = -1, time.Now()
 		}
 	}
 	return nil
+}
+
+// popupKey: a key the popup takes (choose, answer, skip, and a note once
+// an option is chosen: "send back" needs one); any other is typing meant
+// for somewhere else.
+func popupKey(key string, options, sel int) bool {
+	switch key {
+	case "esc", "q", "j", "down", "k", "up", "enter":
+		return true
+	case "n":
+		return sel >= 0
+	}
+	return len(key) == 1 && key[0] >= '1' && key[0] <= '9' && int(key[0]-'1') < options
+}
+
+// unconfirm takes the merge back: nothing is chosen (a popup is on skip
+// and waits again), nothing is answered.
+func (im *inboxModal) unconfirm() {
+	im.confirm, im.sel = false, -1
+	im.err = "merge cancelled · nothing was answered"
+	if im.popup {
+		im.shownAt = time.Now()
+	}
 }
 
 // grace: the popup came up a moment ago and takes no key yet.
@@ -511,7 +578,7 @@ func (m *model) onInboxAnswer(msg inboxAnswerMsg) tea.Cmd {
 	if msg.err != nil {
 		im.err = msg.err.Error()
 		if strings.Contains(im.err, "look again") {
-			im.sel = -1 // read it again before choosing
+			im.sel, im.confirm = -1, false // read it again before choosing
 			return m.openInboxRefresh(im)
 		}
 		return nil

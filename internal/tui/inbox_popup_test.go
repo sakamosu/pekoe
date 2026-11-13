@@ -109,6 +109,11 @@ func past(im *inboxModal) {
 	}
 }
 
+// pastConfirm puts the beat after the first Enter on merge behind it.
+func pastConfirm(im *inboxModal) {
+	im.confirmAt = time.Now().Add(-time.Minute)
+}
+
 func popupOf(t *testing.T, m *model) *inboxModal {
 	t.Helper()
 	im, ok := m.modal.(*inboxModal)
@@ -137,9 +142,13 @@ func TestInboxPopupAnswers(t *testing.T) {
 	past(im)
 	im.key(key("1"))
 	past(im)
+	if cmd := im.key(key("enter")); cmd != nil || im.sending || !im.confirm {
+		t.Fatalf("one Enter on merge answered: %v %q", im.sending, im.err)
+	}
+	pastConfirm(im)
 	cmd := im.key(key("enter"))
 	if cmd == nil || !im.sending {
-		t.Fatalf("Enter after choosing merge does not answer: %q", im.err)
+		t.Fatalf("the second Enter on merge does not answer: %q", im.err)
 	}
 	m.onInboxAnswer(cmd().(inboxAnswerMsg))
 	if m.modal != nil {
@@ -238,8 +247,8 @@ func TestInboxPopupGrace(t *testing.T) {
 	if cmd := im.key(key("enter")); cmd != nil || im.sending || !strings.Contains(im.err, "again") {
 		t.Fatalf("1⏎ in one go answered: %v %q", im.sending, im.err)
 	}
-	if cmd := im.key(key("enter")); cmd == nil || !im.sending {
-		t.Fatal("the second Enter does not answer")
+	if cmd := im.key(key("enter")); cmd != nil || im.sending || !im.confirm {
+		t.Fatal("the second Enter does not ask to confirm the merge")
 	}
 	// k goes up from the first option to skip
 	m2 := popupModel(t)
@@ -370,5 +379,198 @@ func TestInboxPopupOff(t *testing.T) {
 	m.maybeInboxPopup(time.Now())
 	if m.modal != nil {
 		t.Fatal("came up after being turned off and on")
+	}
+}
+
+// "merge" takes Enter twice, in the popup and from ]a: one Enter does not
+// answer, Enter mashed on during the beat after it does not either, any
+// other key takes it back (to skip in the popup), and the other options
+// answer on one Enter.
+func TestInboxMergeConfirm(t *testing.T) {
+	for _, popup := range []bool{true, false} {
+		open := func(t *testing.T, it state.InboxItem) (*callServer, *model, *inboxModal) {
+			cs, cl := startCallServer(t, it)
+			m := popupModel(t)
+			m.cl = cl
+			inboxEv(t, m, it)
+			if popup {
+				m.maybeInboxPopup(time.Now())
+			} else {
+				m.openInbox(m.inbox[0])
+			}
+			im := m.modal.(*inboxModal)
+			if im.popup != popup {
+				t.Fatalf("popup %v: %+v", popup, im)
+			}
+			past(im)
+			return cs, m, im
+		}
+		choose := func(im *inboxModal, k string) {
+			im.key(key(k))
+			past(im)
+		}
+
+		// one Enter, then Enter mashed on: nothing answered
+		cs, m, im := open(t, mergeItem(7))
+		choose(im, "1")
+		if cmd := im.key(key("enter")); cmd != nil || im.sending || !im.confirm {
+			t.Fatalf("popup %v: one Enter on merge: %v %v", popup, im.sending, im.confirm)
+		}
+		view := ansi.Strip(strings.Join(im.view(), "\n"))
+		if !strings.Contains(view, "merge PR #42?") || !strings.Contains(view, "↵ again to merge") {
+			t.Fatalf("popup %v: the confirmation is not shown:\n%s", popup, view)
+		}
+		for range 5 {
+			if cmd := im.key(key("enter")); cmd != nil || im.sending {
+				t.Fatalf("popup %v: Enter mashed on answered", popup)
+			}
+		}
+		if !im.confirm || len(cs.called("inbox.answer")) != 0 {
+			t.Fatalf("popup %v: %v %v", popup, im.confirm, cs.calls)
+		}
+		pastConfirm(im)
+		cmd := im.key(key("enter"))
+		if cmd == nil || !im.sending {
+			t.Fatalf("popup %v: the second Enter does not answer: %q", popup, im.err)
+		}
+		m.onInboxAnswer(cmd().(inboxAnswerMsg))
+		if got := cs.called("inbox.answer"); len(got) != 1 || !strings.Contains(got[0], `"choice":0`) || m.modal != nil {
+			t.Fatalf("popup %v: inbox.answer: %v", popup, got)
+		}
+
+		// another key while confirming takes it back: nothing chosen, nothing answered
+		for _, k := range []string{"esc", "a", "2", "j", "x", "n"} {
+			cs, m, im := open(t, mergeItem(8))
+			choose(im, "1")
+			im.key(key("enter"))
+			pastConfirm(im)
+			var kk tea.KeyMsg
+			if k == "esc" {
+				kk = key(k)
+			} else {
+				kk = runes(k)
+			}
+			if cmd := im.key(kk); cmd != nil {
+				t.Fatalf("popup %v: %s while confirming did something", popup, k)
+			}
+			if im.confirm || im.sel != -1 || im.dismiss || im.noting || m.modal != im || !strings.Contains(im.err, "cancelled") {
+				t.Fatalf("popup %v: %s while confirming: %+v", popup, k, im)
+			}
+			if popup && !im.grace(time.Now()) {
+				t.Fatalf("%s while confirming: the popup does not wait again", k)
+			}
+			past(im)
+			if cmd := im.key(key("enter")); popup {
+				if cmd == nil || im.sending { // back on skip: Enter skips
+					t.Fatalf("%s while confirming: Enter does not skip", k)
+				}
+			} else if cmd != nil || im.sending {
+				t.Fatalf("%s while confirming: Enter after it answered", k)
+			}
+			if len(cs.called("inbox.answer")) != 0 {
+				t.Fatalf("popup %v: %s while confirming answered: %v", popup, k, cs.calls)
+			}
+		}
+
+		// the other options answer on one Enter
+		for _, k := range []string{"2", "3"} {
+			cs, m, im := open(t, mergeItem(9))
+			choose(im, k)
+			if k == "3" {
+				im.key(key("n"))
+				im.key(runes("x"))
+				im.key(key("enter"))
+				past(im) // the beat after closing the note
+			}
+			cmd := im.key(key("enter"))
+			if cmd == nil || !im.sending || im.confirm {
+				t.Fatalf("popup %v: option %s on one Enter: %q", popup, k, im.err)
+			}
+			m.onInboxAnswer(cmd().(inboxAnswerMsg))
+			if got := cs.called("inbox.answer"); len(got) != 1 {
+				t.Fatalf("popup %v: option %s: %v", popup, k, got)
+			}
+		}
+	}
+	// an agent's own approve with "merge" at 0 merges nothing: one Enter
+	m := wrapModel(t, "feat-x")
+	m.onInboxList(nil)
+	it := mergeItem(10)
+	it.From = "feat-x"
+	inboxEv(t, m, it)
+	m.openInbox(m.inbox[0])
+	im := m.modal.(*inboxModal)
+	im.key(key("1"))
+	if cmd := im.key(key("enter")); cmd == nil || im.confirm {
+		t.Fatal("an agent's merge option asked to confirm")
+	}
+}
+
+// In the popup the keys besides choosing, answering and skipping (o, g, x,
+// and n with skip chosen) are typing meant for somewhere else: back to
+// skip, wait again. n once an option is chosen writes the note, and Enter
+// right after closing it waits a beat.
+func TestInboxPopupStrayKeys(t *testing.T) {
+	cs, cl := startCallServer(t, mergeItem(7))
+	m := popupModel(t)
+	m.cl = cl
+	inboxEv(t, m, mergeItem(7))
+	m.maybeInboxPopup(time.Now())
+	im := popupOf(t, m)
+	for _, k := range []string{"o", "g", "x", "n", "9"} {
+		past(im)
+		im.key(key("2"))
+		if k == "n" {
+			im.key(key("k")) // back on skip: n is not a note
+			im.key(key("k"))
+		}
+		past(im)
+		if cmd := im.key(runes(k)); cmd != nil || im.sel != -1 || im.dismiss || im.noting || m.modal != im || !im.grace(time.Now()) {
+			t.Fatalf("%s in the popup was taken: %+v", k, im)
+		}
+	}
+	past(im)
+	im.key(key("3"))
+	past(im)
+	im.key(runes("n"))
+	if !im.noting {
+		t.Fatal("n with an option chosen does not write a note")
+	}
+	im.key(runes("o")) // into the note, not a link
+	im.key(key("enter"))
+	if cmd := im.key(key("enter")); cmd != nil || im.sending {
+		t.Fatal("Enter right after closing the note answered")
+	}
+	if cmd := im.key(key("enter")); cmd == nil || !im.sending {
+		t.Fatalf("Enter does not answer: %q", im.err)
+	}
+	if len(cs.called("inbox.dismiss")) != 0 {
+		t.Fatalf("dismissed: %v", cs.calls)
+	}
+}
+
+// The item read again on opening comes back newer while "merge" waits for
+// its second Enter: the confirmation was on what was there before, so it
+// is taken back.
+func TestInboxMergeConfirmReread(t *testing.T) {
+	m := wrapModel(t, "feat-x")
+	m.onInboxList(nil)
+	inboxEv(t, m, mergeItem(7))
+	m.openInbox(m.inbox[0])
+	im := m.modal.(*inboxModal)
+	im.key(key("1"))
+	im.key(key("enter"))
+	if !im.confirm || !im.opened {
+		t.Fatalf("%+v", im)
+	}
+	it := mergeItem(7)
+	it.Rev = 2
+	inboxEv(t, m, it)
+	pastConfirm(im)
+	if im.confirm || im.it.Rev != 2 {
+		t.Fatalf("still confirming after the item changed: %+v", im)
+	}
+	if cmd := im.key(key("enter")); cmd != nil && im.sending {
+		t.Fatal("Enter answered merge on the newer item without a second Enter")
 	}
 }
