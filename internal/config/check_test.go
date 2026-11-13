@@ -273,3 +273,33 @@ func TestConfirmTapiSend(t *testing.T) {
 		t.Errorf("KeepRunning: %+v", k.Web)
 	}
 }
+
+// [orchestrator] inbox_popup: unset is true, false reads as false, check
+// knows the key, show spells it out, and it needs no restart.
+func TestInboxPopup(t *testing.T) {
+	def, err := ParseGlobal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !def.Orchestrator.InboxPopupOn() {
+		t.Error("unset: want true")
+	}
+	src := "[orchestrator]\ninbox_popup = false\n"
+	off, err := ParseGlobal([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Orchestrator.InboxPopupOn() {
+		t.Error("inbox_popup = false: want false")
+	}
+	if ps := Check([]byte(src)); len(ps) != 0 {
+		t.Errorf("check: %s", problems(ps))
+	}
+	b, _ := EncodeTOML(Effective(def))
+	if !strings.Contains(string(b), "inbox_popup = true") {
+		t.Errorf("show: no inbox_popup = true in\n%s", b)
+	}
+	if r := RestartNeeded(def, off); r != nil {
+		t.Errorf("inbox_popup needs a restart: %v", r)
+	}
+}

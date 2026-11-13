@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -81,6 +82,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		}
 		if !m.inboxToasted[it.ID] {
 			m.inboxToasted[it.ID] = true
+			m.queueInboxPopup(it)
 			text := "? " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + " · ]a"
 			if inboxHoldsUp(it) && !m.quietNotify() {
 				m.waitToast("", mascot.Wait, text) // an agent waits on it (notify.go)
@@ -208,6 +210,11 @@ type inboxModal struct {
 	opened  bool // the read on opening has not come back yet
 	sending bool
 	err     string
+	// popup: put in front on its own (inbox_popup.go), not opened with ]a.
+	// sel -1 is then "skip", keys before shownAt+popupGrace are dropped
+	popup   bool
+	shownAt time.Time
+	selAt   time.Time // when sel last changed (a popup's Enter waits a beat after it)
 }
 
 type inboxAnswerMsg struct {
@@ -228,6 +235,9 @@ func (im *inboxModal) hints() [][2]string {
 	if len(im.it.Options) > 0 {
 		keys = append(keys, [2]string{fmt.Sprintf("1-%d", len(im.it.Options)), "choose"})
 	}
+	if im.popup {
+		return append(keys, [][2]string{{"↵", "answer / skip"}, {"esc", "skip"}, {"n", "note"}, {"o", "open link"}, {"g", "go to session"}, {"x", "dismiss"}}...)
+	}
 	return append(keys, [][2]string{{"↵", "answer"}, {"n", "note"}, {"o", "open link"}, {"g", "go to session"}, {"x", "dismiss"}, {"esc", "later"}}...)
 }
 
@@ -237,6 +247,9 @@ func (im *inboxModal) view() []string {
 	cw := width - 6
 	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, fmt.Sprintf("Inbox #%d", it.ID)) +
 		th.FG(theme.Dim, " · "+it.Kind+" · from "+it.From)
+	if im.popup {
+		title += th.FG(theme.Warn, " · new")
+	}
 	if it.Claimed != "" {
 		title += " " + th.FG(theme.Warn, theme.Prefix(m.ic.Warning)+"claims to be "+clip(inboxText(it.Claimed), 20))
 	}
@@ -310,8 +323,15 @@ func (im *inboxModal) view() []string {
 			lines = append(lines, th.FG(theme.Dim, "  "+l))
 		}
 	}
-	if len(it.Options) > 0 {
+	if len(it.Options) > 0 || im.popup {
 		lines = append(lines, "")
+		if im.popup { // first and chosen: Enter right away skips
+			mark := "  "
+			if im.sel < 0 {
+				mark = th.Bold(theme.Primary, "› ")
+			}
+			lines = append(lines, mark+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, "skip · answer later from the inbox (]a)"))
+		}
 		for i, o := range it.Options {
 			mark := "  "
 			if i == im.sel {
@@ -332,6 +352,8 @@ func (im *inboxModal) view() []string {
 		lines = append(lines, "", th.FG(theme.Dim, "answering…"))
 	case im.err != "":
 		lines = append(lines, "", th.FG(theme.Err, im.err))
+	case im.popup && im.grace(time.Now()):
+		lines = append(lines, "", th.FG(theme.Dim, "a new question · keys wait a moment"))
 	}
 	return m.modalFrame(width, title, lines, im.hints(), false)
 }
@@ -341,6 +363,9 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
 	if im.sending {
 		return nil
+	}
+	if im.popup && im.grace(time.Now()) {
+		return nil // a key typed for something else must not answer it
 	}
 	if im.noting {
 		switch key {
@@ -366,14 +391,19 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 	}
 	switch key {
 	case "esc", "q":
+		if im.popup {
+			return im.skip()
+		}
 		return done(nil)
 	case "j", "down":
 		if len(im.it.Options) > 0 {
 			im.sel = min(im.sel+1, len(im.it.Options)-1)
+			im.selAt = time.Now()
 		}
 	case "k", "up":
-		if im.sel > 0 {
+		if im.sel > 0 || im.popup && im.sel == 0 { // up to skip
 			im.sel--
+			im.selAt = time.Now()
 		}
 	case "n":
 		im.noting = true
@@ -409,6 +439,15 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 		}
 		im.err = slug + " is not a session in the list"
 	case "enter":
+		if im.popup && im.sel < 0 && (len(im.it.Options) > 0 || strings.TrimSpace(im.note.String()) == "") {
+			return im.skip()
+		}
+		if im.popup && time.Since(im.selAt) < popupConfirm {
+			// "1⏎" typed in one go was meant for an agent's own prompt
+			im.err = "chosen just now: ↵ again to answer"
+			im.selAt = time.Time{}
+			return nil
+		}
 		p := map[string]any{"id": im.it.ID, "rev": im.it.Rev, "note": im.note.String()}
 		if len(im.it.Options) > 0 {
 			if im.sel < 0 {
@@ -425,11 +464,27 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			if n := int(key[0] - '1'); n < len(im.it.Options) {
 				im.sel = n
+				im.selAt = time.Now()
 				im.err = ""
 			}
+		} else if im.popup {
+			// typing meant for somewhere else: back to skip, wait again
+			im.sel, im.shownAt = -1, time.Now()
 		}
 	}
 	return nil
+}
+
+// grace: the popup came up a moment ago and takes no key yet.
+func (im *inboxModal) grace(now time.Time) bool {
+	return now.Sub(im.shownAt) < popupGrace
+}
+
+// skip closes the popup with no answer: the item stays in the inbox for
+// ]a and the bar, and does not come up again.
+func (im *inboxModal) skip() tea.Cmd {
+	im.m.setMsg(fmt.Sprintf("skipped inbox #%d · it stays in the inbox · ]a", im.it.ID), false)
+	return done(nil)
 }
 
 func (im *inboxModal) send(method string, p map[string]any) tea.Cmd {
