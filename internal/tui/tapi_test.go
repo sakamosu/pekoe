@@ -126,7 +126,8 @@ func TestSelectedRowKeepsBackground(t *testing.T) {
 
 func splashModel(t *testing.T, color, glyphs string, width, height int) *model {
 	t.Helper()
-	m := tapiModel(t, color, config.Mascot{Glyphs: glyphs})
+	// pin the shape: "auto" follows the terminal (TERM_PROGRAM, GHOSTTY_RESOURCES_DIR, …)
+	m := tapiModel(t, color, config.Mascot{Shape: "round", Glyphs: glyphs})
 	m.width, m.height = width, height
 	m.sessions = []*state.Session{{Slug: "a", Branch: "a", State: state.Running}}
 	m.tapi.splash = true
