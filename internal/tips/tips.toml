@@ -155,7 +155,7 @@ docs = ["README.ja.md#コマンド", "docs/api.md"]
 [[tip]]
 id = "wait"
 short = "pekoe wait --mine で任せたセッションの知らせを待つ"
-detail = "報告・done・許可待ち・PR の変化が起きるまで止まる(ポーリングしない)。返った cursor を次の --since に渡せば取りこぼさない。--on report,done で絞る。reset が返ったら pekoe --json ls から読み直す。"
+detail = "知らせが来るまで止まる(ポーリングしない)。返った cursor を次の --since に渡す。--on report,inbox,failed,waiting で絞れば空振りの done などで起きない。reset なら pekoe --json ls から読み直す。"
 keys = ["pekoe wait", "--mine", "--since", "--on"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 

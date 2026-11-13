@@ -360,7 +360,7 @@ const tapiDoc = `# tapi chat
 
 - **依頼**: ユーザーが tapi に打った文は、pekoe が自動で依頼として open で記録する(id は %pekoe --json ledger% で分かる)。依頼でなかったもの(雑談・お礼・その場で答えた質問)は %pekoe ledger close <id> --as chat% で閉じる。返事を書く前に、今の入力がどの依頼の id かを確かめる
 - **任せる**: 変更はすべてセッションに任せる: %pekoe --json new <ブランチ> --repo <リポジトリ> --request <依頼の id> --prompt …%。プロンプトには何を・なぜ・分かっていること・**完了条件**・やらないこと・最後に %pekoe report% で報告すること、を必ず入れる(テンプレートは pekoe-orchestrate スキル)。1 PR で済むなら 1 本、分けるのは独立にレビュー・マージできて触るファイルが重ならないときだけ。分けたものに順序があれば、後のものに %--after <先のセッションの slug>% を付けて記録する(記録と表示だけで起動は止まらない。渡せるのは今あるセッションだけなので先のものから作る)
-- **待つ**: 任せたら %pekoe --json wait --mine --since <cursor> --timeout 30m% をバックグラウンド実行(Claude Code の %run_in_background%)で待つ。ポーリングしない(%sleep% のループや %pekoe ls% の繰り返しはしない)。返った %cursor% を次の %--since% に渡す。%reset: true% なら %pekoe --json ls% を読み直す
+- **待つ**: 任せたら %pekoe --json wait --mine --on report,inbox,failed,waiting --since <cursor> --timeout 30m% をバックグラウンド実行(Claude Code の %run_in_background%)で待つ。ポーリングしない(%sleep% のループや %pekoe ls% の繰り返しはしない)。返った %cursor% を次の %--since% に渡す。%reset: true% なら %pekoe --json ls% を読み直す。%--on% で起きるのは、報告(%report%)・人の答え(%inbox%)・セッションが落ちた(%failed%)・許可ダイアログなどで止まった(%waiting%)ときだけにする。%done%・%idle%・%pr%・%landed%・%removed% はほとんどが報告の前後の空振りで、起きるたびに会話全体を読み直してトークンを使う。報告せずに止まったセッションは、%timed_out% で起きたときに %pekoe --json ls% で気づく
 - **確かめる**: 「完了」の報告を鵜呑みにしない。%evidence%(PR の URL・スクショ・ログ)と %pekoe --json ls% の %pr_status%(CI・レビュー)を見る。足りなければ %pekoe send <slug> -% で頼む
 - **閉じる**: 依頼が済んだら %pekoe ledger done <id> --evidence <PR の URL など>%。やらないことにしたら %pekoe ledger drop <id> --note "<理由>"%。後からセッションを結ぶなら %pekoe ledger link <id> <slug>%
 - **人に上げる**: 上げるのは 2 種類だけ。(1) 人にしかできないこと(ログイン、許可ダイアログへの回答、マージ、新しいリポジトリの最初のセッション、%pekoe init%)(2) 取り消せない・外に出る操作(公開・リリース、外部への送信、データの削除、課金)。上げるときは受信箱に出す: %pekoe --json ask-human "<問い>" --kind decision|approve|login --option … --about <slug>%。それ以外は自分で決め、ユーザーが過去に答えた受信箱の項目(%answer.by% が %human%)を前例にする。決めたことは %pekoe --json ask-human "<決めたこと>" --kind fyi --option … --decided …% で記録する
@@ -443,7 +443,7 @@ pekoe の機能を 1 つずつ紹介する tip の一覧が pekoe に入って�
   - ブランチ名は feat/ fix/ chore/ docs/ などで始まる kebab-case
   - 新しいエージェントはこの会話を知らない。何を・なぜ・分かっていること・完了条件・やらないことをプロンプトに込める。codex などスキルを読めないエージェント(%--agent codex%)には、「最後に」を手順そのもの(実装 → テスト → 差分の読み直し → コミット → %pekoe land <slug>% → %pekoe report "<要約>" --status done --evidence <PR の URL>%)に置き換える
 - 既存のセッションに指示を足す: %pekoe send <slug> -% に stdin で本文を渡す
-- 報告を待つ・読む: %pekoe --json wait --mine --since <cursor>%(バックグラウンドで)、%pekoe --json reports <slug>%
+- 報告を待つ・読む: %pekoe --json wait --mine --on report,inbox,failed,waiting --since <cursor>%(バックグラウンドで)、%pekoe --json reports <slug>%
 - 依頼: %pekoe --json ledger%(%--all% で閉じたものも)、%pekoe ledger done|drop|close|link …%
 - 受信箱: %pekoe --json inbox%、%pekoe --json ask-human …%、%pekoe --json ask-human --wait <id>%
 - セッションの中身を見る: %pekoe --json ls% の path を使って %git -C <path> log% / %git -C <path> diff%

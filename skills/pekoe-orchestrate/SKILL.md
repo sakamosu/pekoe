@@ -68,17 +68,20 @@ pekoe-work スキルの手順で進め、終わったら(詰まったら)pekoe r
 ポーリングしない(`sleep` のループや、`pekoe ls` を何度も叩かない)。`pekoe wait` を Claude Code のバックグラウンド実行(`run_in_background`)で走らせ、返ってくるまで何もしない。待っている間はトークンを使わない。
 
 ```sh
-pekoe --json wait --mine --timeout 30m                  # 初回(--since なしは「今から」)
-pekoe --json wait --mine --since <cursor> --timeout 30m # 2 回目から。前回の cursor を渡す
+pekoe --json wait --mine --on report,inbox,failed,waiting --timeout 30m                  # 初回(--since なしは「今から」)
+pekoe --json wait --mine --on report,inbox,failed,waiting --since <cursor> --timeout 30m # 2 回目から。前回の cursor を渡す
 ```
+
+- `--on report,inbox,failed,waiting` で、起きる理由を「報告が来た・人が答えた・セッションが落ちた・許可ダイアログや質問で止まった(報告できない)」に絞る。`done`・`idle`・`pr`・`landed`・`removed` は付けない。`done` の多くは報告の直前やレビュー待ちの空振りで、PR の CI・レビューの様子は起きたときに `pekoe --json ls` の `pr_status` で見れば足りる。起きるたびに長い会話を読み直すので、空振りはそのままトークンの無駄になる
+- 報告せずに止まったセッションは、`timed_out` で起きたときに `pekoe --json ls`(`state` が `done` / `idle` で `report` が古いもの)で気づく
 
 - 返り値は `{cursor, epoch, changes: [{seq, kind, slug, at, summary}], timed_out, reset}`。`cursor` を覚えておき、次の `wait` に必ず `--since` で渡す(取りこぼさない)。`timed_out` でも `reset` でも `cursor` は返るので、それを使う
 - `changes` の `summary` は 1 行だけ(`feat-csv: report done: …`、`feat-csv: PR #42 ci_failed` など)。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json reports <slug>` で読む
 - `reset: true` が返ったら(pekoed が再起動した・前の cursor が古すぎる)、間の変化は失われている。`pekoe --json ls` を読み直してから、返った `cursor` で待ち直す
 - `timed_out: true` なら何も起きていない。人に報告することがなければそのまま待ち直す(`--timeout` は 1h まで)
-- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)、種類を絞るなら `--on report,done,failed`(ほかに `waiting` `idle` `pr` `landed` `removed` `inbox`)
+- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)。`--on` に渡せる種類はほかに `done` `idle` `pr` `landed` `removed`(1 本のセッションの終わりを待つときなどに足す)
 - `--mine` は自分が `pekoe new` で作ったセッション(`parent` が自分)だけ。pekoe の外で起動した main のエージェントは呼び出し元が分からず `--mine` を使えないので、`--slug` で待つ
-- `feat-csv: done (no report)` は報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
+- `feat-csv: done (no report)`(`--on` に `done` を足したときに来る)や、`pekoe --json ls` で報告が無いまま `done` のものは、報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
 
 ## 報告を受けたら
 
@@ -112,7 +115,7 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 - `--recommend` / `--decided` は選択肢の番号(1 から)か、`--option` と同じ文。推奨は人には `recommended (agent)` と出るだけで、既定の選択にはならない
 - `--about` に関係するセッションの slug(`<repo>/<slug>` も可)を付ける。省くと自分のセッション。pekoed がそのセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突予報)を自分で読んで人に見せる。人が見た後に事実が変わると答えは断られ、人が見直す
 - 問いは 1 つずつ短く(問い 500 字・選択肢 6 個まで、背景は `--context` に 4000 字まで)。似た問いは 1 件にまとめる(未回答は呼び出し元ごとに 10 件まで。超えると断られる)
-- 返り値の `id` を覚えておく。答えの受け取り方は 3 通り: `pekoe --json ask-human --wait <id>`(答えが出るまで止まる。`--timeout` は 1 時間まで)、ふだんの `pekoe --json wait --mine --since <cursor>`(`inbox` の変化として自分の問いの答えだけが来る)、待っていなければ手が空いたときに入力欄に `[pekoe inbox #<id>] 答え: 1「<選択肢>」(メモ: …)` の 1 行が届く。詳しくは `pekoe --json inbox <id>` の `answer`(`choice` は 0 から数える)
+- 返り値の `id` を覚えておく。答えの受け取り方は 3 通り: `pekoe --json ask-human --wait <id>`(答えが出るまで止まる。`--timeout` は 1 時間まで)、ふだんの `pekoe --json wait --mine --on report,inbox,failed,waiting --since <cursor>`(`inbox` の変化として自分の問いの答えだけが来る)、待っていなければ手が空いたときに入力欄に `[pekoe inbox #<id>] 答え: 1「<選択肢>」(メモ: …)` の 1 行が届く。詳しくは `pekoe --json inbox <id>` の `answer`(`choice` は 0 から数える)
 - 人が答えずに閉じることもある(`status: dismissed`、入力欄には「答えずに閉じられました」)。閉じられた問いを同じ形で出し直さない
 - 状況が変わって要らなくなった問いは `pekoe --json inbox withdraw <id> --note "<理由>"` で取り下げる(自分が出したものだけ)
 - `pekoe inbox answer` / `pekoe inbox dismiss` は人だけの操作。自分で答えない(断られる)
