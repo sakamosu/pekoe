@@ -192,7 +192,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
-| `GET /api/inbox` | — | `{items: [InboxItem], at}`。未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。InboxItem は docs/api.md のまま |
+| `GET /api/inbox` | — | `{items: [InboxItem], merges: [InboxItem], at}`。`items` は未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。`merges` は人が `merge` と答えた pekoed の根拠の項目のうち、この 24 時間に変わったものを新しい順に 5 件まで(`answer.merge` でマージ中・済み・失敗と理由が分かる)。InboxItem は docs/api.md のまま |
 | `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
 | `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable, confirm_send}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること、`confirm_send` は `[web] confirm_tapi_send`(既定 true。false ならページは確認シートを挟まずに送る。リクエストごとに今の設定を読むので再起動は要らない)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
@@ -212,7 +212,7 @@ Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, rep
 | pr | PR がある | — | PR が閉じられた |
 | ci | PR のチェックがすべて成功 | 実行中・まだ読んでいない | 失敗がある |
 | review | 最新の `status: review` の報告が pass(PR があれば `merge.check` の `review` が揃っている = PR の HEAD をレビューした) | pass だが PR の HEAD と違う | 最新のレビューが pass でない |
-| merge | landed(PR がマージされた) | `merge.check` が ready(人のマージ待ち) | — |
+| merge | landed(PR がマージされた) | `merge.check` が ready(人の答え待ち)、pekoed がマージ中、pekoed がマージして landed 待ち | 人の `merge` で pekoed がマージできなかった(根拠の項目がまだ作り直されていない間。`detail` に理由) |
 
 `merge` は自分の PR があり landed でないセッションの `merge.check`(docs/api.md の「マージしてよいかの根拠」)で、ページは揃っていない条件を `detail` つきで出す。
 
