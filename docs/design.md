@@ -374,7 +374,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
 | `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す) |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
-| `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。pekoed にはつながらない |
+| `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。記録は pekoed に頼み(`tips.next`。エージェントの sandbox は `tips.json` を書けない)、pekoed が無ければ自分で書く(pekoed を起動はしない) |
 | `pekoe config edit\|check\|show\|path` | `config.toml` の入口(`internal/config` の `Check`・`Effective`)。`edit` は visudo と同じ形: 同じディレクトリの一時ファイルを `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめ、問題があれば開き直す・そのまま保存・やめるを聞き、置き換えは rename 1 回(読む側が書きかけを見ない)。リンクならリンク先を置き換える。編集中に元のファイルが変わっていたら上書きしてよいか聞く。`check` は構文エラー(fatal)と、知らないキー(`toml.MetaData.Undecoded`)・受け付けない値(警告)。`show` は既定値込み、`[web] auth_key` は伏せる。どれも pekoed にはつながらない(`~/.config/pekoe` はエージェントの sandbox から読み書きできない。RPC にするとその抜け道になる) |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]` | GitHub の最新リリースに入れ替える(`internal/selfupdate`。README「更新」)。v0.4.0 以降は来歴(attestation)を確かめられなければ止まる(`--allow-unverified` で続ける)。人間だけ(`$PEKOE_SESSION` があるか `human-token` を読めなければ断る)。`--check` は見るだけで誰でも使える。pekoed にはつながらない(終わった後に `pekoe daemon restart` を聞くだけ) |
 

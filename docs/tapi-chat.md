@@ -74,7 +74,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 - 「なんか tip ちょうだい」と頼まれたら `pekoe tip` で次の 1 つ。`--list` で一覧、`pekoe tip <id>` で特定の 1 つ(記録しない)
 - 「もっと詳しく」と聞かれたら、tip の docs 行のパスを `pekoe tip --doc <path>` で読んで普通の文で説明する。docs(README と docs/*.md、nvim/ と extension/ の README)はバイナリに同梱しているので、pekoe のリポジトリが手元に無くても読める
 - `[tips] enable = false` のとき `pekoe tip` は `tips are off` と出すだけで、tapi は頼まれない限り tip に触れない。CLAUDE.md の文面は設定によらず同じ(書き出す関数は設定を見ない)
-- `pekoe tip` は pekoed につながらず、`tips.json` を書くだけ。sandbox などで書けないときは tip を出して記録だけ諦める(stderr に一言)。Claude Code の許可リストを使っているなら `Bash(pekoe tip)` と `Bash(pekoe tip *)` を足すと、あいさつのたびに聞かれない
+- tapi chat の sandbox は DataDir(`tips.json` の置き場所)に書けないので、`pekoe tip` は選んで記録するのを pekoed に頼む(`tips.next`、docs/api.md)。`[tips] enable` も pekoed が読んだ config.toml で決まる(sandbox は config.toml を隠す)。pekoed が無い・古いときは自分で `tips.json` を書き、書けなければ tip を出して記録だけ諦める(stderr に一言)。Claude Code の許可リストを使っているなら `Bash(pekoe tip)` と `Bash(pekoe tip *)` を足すと、あいさつのたびに聞かれない
 
 ## 起動するコマンド
 
