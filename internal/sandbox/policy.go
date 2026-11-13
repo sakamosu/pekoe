@@ -54,11 +54,16 @@ func DefaultPolicy(webStateDir string) Policy {
 		for _, rel := range homeAutorun {
 			p.DenyWrite = append(p.DenyWrite, filepath.Join(home, rel))
 		}
+		for _, rel := range homeAutorunDirs {
+			p.Stubs = append(p.Stubs, Stub{Path: filepath.Join(home, rel), Dir: true})
+		}
 		p.DenyWrite = append(p.DenyWrite, claudeAutorun(filepath.Join(home, ".claude"))...)
+		p.Stubs = append(p.Stubs, claudeStubs(filepath.Join(home, ".claude"))...)
 		p.DenyWrite = append(p.DenyWrite, filepath.Join(home, ".claude.json"))
 	}
 	if c := os.Getenv("CLAUDE_CONFIG_DIR"); filepath.IsAbs(c) {
 		p.DenyWrite = append(p.DenyWrite, claudeAutorun(c)...)
+		p.Stubs = append(p.Stubs, claudeStubs(c)...)
 		p.DenyWrite = append(p.DenyWrite, filepath.Join(c, ".claude.json"))
 	}
 	if z := os.Getenv("ZDOTDIR"); filepath.IsAbs(z) {
@@ -79,6 +84,31 @@ func claudeAutorun(dir string) []string {
 		out = append(out, filepath.Join(dir, rel))
 	}
 	return out
+}
+
+// claudeStubs are claudeAutorun(dir) made empty on Linux when missing
+// (Policy.Stubs): the directories, an empty CLAUDE.md and settings files
+// of {}. Were they left missing, bwrap could only cover them by making
+// all of dir read-only (bwrapArgs), and `claude -p` creates new entries
+// there (projects/, todos/ …).
+func claudeStubs(dir string) []Stub {
+	var out []Stub
+	for _, rel := range []string{"skills", "hooks", "plugins", "agents", "commands", "rules", "output-styles"} {
+		out = append(out, Stub{Path: filepath.Join(dir, rel), Dir: true})
+	}
+	for _, rel := range []string{"settings.json", "settings.local.json"} {
+		out = append(out, Stub{Path: filepath.Join(dir, rel), Content: "{}\n"})
+	}
+	return append(out, Stub{Path: filepath.Join(dir, "CLAUDE.md")})
+}
+
+// homeAutorunDirs are the directories of homeAutorun below ~/.config that
+// are made empty on Linux when missing (Policy.Stubs), so that ~/.config
+// itself need not be read-only. An empty one changes nothing. Shell
+// startup files are not: an empty ~/.bash_profile would hide ~/.profile.
+var homeAutorunDirs = []string{
+	".config/fish", ".config/zsh", ".config/git", ".config/tmux", ".config/nvim",
+	".config/systemd/user", ".config/autostart",
 }
 
 // homeAutorun are files and directories below $HOME whose contents get run

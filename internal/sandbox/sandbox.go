@@ -59,6 +59,19 @@ type Policy struct {
 	// DenyConnect: directories whose unix sockets cannot be connected to
 	// (tmux servers, which would run a command outside the sandbox).
 	DenyConnect []string
+	// Stubs: DenyWrite paths that may be made on the host, empty, when
+	// they are missing and their parent directory exists, so that bwrap
+	// has something to bind over (Linux only; Seatbelt denies by path).
+	// Only what changes nothing by being there empty.
+	Stubs []Stub
+}
+
+// Stub is a directory, or a file with Content, that pekoed makes before
+// running a command in bwrap.
+type Stub struct {
+	Path    string
+	Dir     bool
+	Content string
 }
 
 // Sandbox wraps command lines in the platform's sandbox. The zero value
