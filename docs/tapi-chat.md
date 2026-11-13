@@ -105,7 +105,7 @@ Claude Code は会話をバックグラウンドのセッションに移せる(�
 
 pekoe の側の防ぎ方:
 
-- 予防: claude のエージェント(セッションも tapi も)を `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` で起動する(`claudeStayEnv`)。Claude Code の agent view が切れて、← で会話が窓の外に出ない。リポジトリの `env` に同じ名前があればそちらを使う(空にすれば agent view が戻る)。`/background` が止まるかは Claude Code の版による(確かめていない)
+- 予防: claude のエージェント(セッションも tapi も)を `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` で起動する(`claudeStayEnv`)。Claude Code の agent view が切れて、← で会話が窓の外に出ない。リポジトリの `env` に同じ名前があればそちらを使う(空にすれば agent view が戻る)。Claude Code 2.1.325 の設定 `disableAgentView` の説明では、これで `claude agents`・`--bg`・`/background`・オンデマンドのサービスも止まる(同じ意味の環境変数として `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` が挙がっている)
 - 振り分け: 窓の外から来た hook は、`transcript_path` の会話の場所(`~/.claude/projects/<符号化した起動時の cwd>/`)で決める(`claimOutside`)。tapi の会話なら tapi、セッションの会話ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てて cwd で決める。依頼の記録(`UserPromptSubmit`)は今までどおり tapi の窓からだけ
 - 知らせる: tapi の会話の hook が tapi の窓の外(ほかのセッションの窓も含む)から来たら、`Tapi.outside` に会話の ID・窓・名乗りを残し、pekoed のログに 1 行書く。TUI の tapi の行に `outside`、`pekoe tapi` に警告と直し方を出す。tapi を起動し直す(`tapi.open` / `restart`)と消え、まだ外で動いていれば次の hook でまた付く
 - 断るときに理由を添える: 窓に当たらない呼び出しを ledger が断るとき、tapi なら Claude Code が会話を窓の外に移したかもしれないこと、人にそのバックグラウンドのセッションを止めて tapi を起動し直してもらう(または `pekoe tapi reset`)ことを添える
