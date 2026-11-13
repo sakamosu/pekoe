@@ -246,7 +246,7 @@ docs = ["docs/orchestration.md", "docs/api.md"]
 [[tip]]
 id = "merge-from-inbox"
 short = "根拠の項目に merge と答えると pekoed が PR をマージする"
-detail = "pekoed が条件を読み直し、HEAD が項目と同じときだけ gh pr merge する。崩れていればマージせず理由を出す。方法はリポジトリの設定の [merge] method(merge・squash・rebase)。"
+detail = "pekoed が条件を読み直し、HEAD が項目と同じときだけ gh pr merge する。崩れていればマージせず理由を出す。TUI では merge は ↵ を 2 回(1 回目は確認)。方法は [merge] method。"
 keys = ["]a", "pekoe inbox answer <id>"]
 docs = ["docs/api.md", "docs/orchestration.md"]
 
