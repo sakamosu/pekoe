@@ -15,6 +15,7 @@ package daemon
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,6 +49,21 @@ type Tapi struct {
 	// and the ledger's open requests (docs/orchestration.md「永続化と寿命」)
 	InboxOpen  int `json:"inbox_open"`
 	LedgerOpen int `json:"ledger_open"`
+	// Outside: tapi's conversation sent hooks from outside tapi's window
+	// (docs/tapi-chat.md「窓の外に出た会話」); nil when not seen since tapi
+	// last started
+	Outside *TapiOutside `json:"outside,omitempty"`
+}
+
+// TapiOutside is tapi's conversation seen running outside tapi's window:
+// there pekoe cannot tell it is tapi (the ledger refuses it, its hooks name
+// someone else). Claude Code moved it out (a background session) or another
+// window resumed it.
+type TapiOutside struct {
+	ClaudeSessionID string    `json:"claude_session_id,omitempty"`
+	Window          string    `json:"window,omitempty"`  // the pekoe window it runs in ("" none)
+	Claimed         string    `json:"claimed,omitempty"` // the $PEKOE_SESSION its hooks named
+	Since           time.Time `json:"since"`
 }
 
 // tapiState is tapi chat's state in memory (under d.mu).
@@ -63,6 +79,7 @@ type tapiState struct {
 	// transcript: the transcript_path tapi's hooks last named (only one
 	// in tapi's Claude Code project directory: tapiTranscriptOK)
 	transcript string
+	outside    *TapiOutside
 }
 
 func newTapiState() tapiState { return tapiState{state: state.Idle, since: time.Now()} }
@@ -76,6 +93,10 @@ func (d *Daemon) tapiView() *Tapi {
 		Agent: d.cfg().Tapi.Agent, Dir: paths.TapiDir(),
 		State: t.state, WaitKind: t.waitKind, PendingTool: t.pending,
 		LastMessage: t.lastMessage, ClaudeSessionID: t.sessionID, StateSince: t.since,
+	}
+	if t.outside != nil {
+		o := *t.outside
+		v.Outside = &o
 	}
 	v.Started = d.tapiStarted()
 	v.Alive = v.Started && d.Eng.Alive(TapiSlug, engine.WinAgent)
@@ -114,6 +135,32 @@ func (d *Daemon) tapiUpdate(f func(t *tapiState)) {
 	if idle {
 		go d.deliverInbox(TapiSlug)
 	}
+}
+
+// tapiNoteOutside records tapi's conversation running outside tapi's
+// window (hEventAs) and says so once per conversation and window.
+func (d *Daemon) tapiNoteOutside(sessionID, window, claimed string) {
+	d.mu.Lock()
+	o := d.tapi.outside
+	if o != nil && o.ClaudeSessionID == sessionID && o.Window == window && o.Claimed == claimed {
+		d.mu.Unlock()
+		return
+	}
+	d.tapi.outside = &TapiOutside{ClaudeSessionID: sessionID, Window: window, Claimed: claimed, Since: time.Now()}
+	d.mu.Unlock()
+	where := "no pekoe window"
+	if window != "" {
+		where = "the window of " + window
+	}
+	log.Printf("tapi: its conversation %s runs in %s ($PEKOE_SESSION=%q), not in tapi's window: pekoe cannot tell it is tapi", orDash(sessionID), where, claimed)
+	d.emit("tapi.updated", d.tapiView())
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // tapiEvent moves tapi's state from a hook. Nothing else runs: no prompt
@@ -215,6 +262,28 @@ func inTapiDir(cwd string) bool {
 func isClaude(command string) bool {
 	f := strings.Fields(command)
 	return len(f) > 0 && filepath.Base(f[0]) == "claude"
+}
+
+// claudeNoAgentView turns Claude Code's agent view off.
+const claudeNoAgentView = "CLAUDE_CODE_DISABLE_AGENT_VIEW"
+
+// claudeStayEnv keeps a Claude Code agent in its pekoe window. With agent
+// view on, ← on an empty prompt hands the conversation to a background
+// session of Claude Code's own service, which runs outside the window, in
+// the service's environment: another window's $PEKOE_SESSION, so pekoe
+// takes it for someone else (docs/tapi-chat.md「窓の外に出た会話」).
+// A value the repository's env already sets is kept (an empty one turns
+// agent view back on).
+func claudeStayEnv(command string, env []string) []string {
+	if !isClaude(command) {
+		return env
+	}
+	for _, kv := range env {
+		if strings.HasPrefix(kv, claudeNoAgentView+"=") {
+			return env
+		}
+	}
+	return append(env, claudeNoAgentView+"=1")
 }
 
 // tapiAddDirs are the directories tapi may read without asking: the main
@@ -493,7 +562,7 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	if err != nil {
 		return err
 	}
-	env := []string{"PEKOE_SESSION=" + TapiSlug, "PEKOE_SOCK=" + paths.Socket(), "PEKOE=1"}
+	env := claudeStayEnv(ag.Command, []string{"PEKOE_SESSION=" + TapiSlug, "PEKOE_SOCK=" + paths.Socket(), "PEKOE=1"})
 	if os.Getenv("PEKOE_HOME") != "" {
 		env = append(env, "PEKOE_HOME="+os.Getenv("PEKOE_HOME"))
 	}
@@ -504,6 +573,7 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	}
 	d.tapiUpdate(func(t *tapiState) {
 		t.state, t.waitKind, t.pending = state.Idle, "", nil
+		t.outside = nil // seen again if the conversation is still out there
 	})
 	return nil
 }

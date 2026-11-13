@@ -311,3 +311,19 @@ func sessionRowTexts(m *model) []string {
 	}
 	return out
 }
+
+// tapi's conversation running outside its window (pekoe cannot tell it is
+// tapi there) shows as a badge on the row.
+func TestTapiRowOutsideBadge(t *testing.T) {
+	m := repoModel(t, "none", 180)
+	m.chat.info = &daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Idle, LastMessage: "hi"}
+	rows, _ := m.sessionRows(60)
+	if got := ansi.Strip(rows[1].Text); strings.Contains(got, tapiOutsideBadge) {
+		t.Errorf("badge without cause: %q", got)
+	}
+	m.chat.info.Outside = &daemon.TapiOutside{ClaudeSessionID: "c6270ea4-8ca2-41a2-8b1b-2addbec46356", Since: time.Now()}
+	rows, _ = m.sessionRows(60)
+	if got := ansi.Strip(rows[1].Text); !strings.Contains(got, tapiOutsideBadge) || !strings.Contains(got, "hi") || ansi.StringWidth(rows[1].Text) > 60 {
+		t.Errorf("outside: %q", got)
+	}
+}

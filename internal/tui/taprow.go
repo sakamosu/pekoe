@@ -111,10 +111,17 @@ func (m *model) tapiIcon(lk theme.StateLook, calm bool) string {
 
 // tapiBadges are the counts after the age: the open questions of the
 // inbox (?3) and the open requests of the ledger (☐2) once pekoed has them
-// (docs/orchestration.md 段階 1・2). None yet.
+// (docs/orchestration.md 段階 1・2). None of those yet; "outside" when
+// tapi's conversation runs outside its window (docs/tapi-chat.md
+// 「窓の外に出た会話」).
 func (m *model) tapiBadges() []string {
+	if v := m.chat.info; v != nil && v.Outside != nil {
+		return []string{m.th.FG(theme.Warn, tapiOutsideBadge)}
+	}
 	return nil
 }
+
+const tapiOutsideBadge = "outside"
 
 // tapiLastLine is the first non-empty line of tapi's last reply.
 func tapiLastLine(v *daemon.Tapi) string {
