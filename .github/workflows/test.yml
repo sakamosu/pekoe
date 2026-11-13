@@ -47,6 +47,9 @@ jobs:
           # Ubuntu 24.04 の AppArmor は非特権の user namespace を塞ぎ、bwrap が
           # 動かない。pekoe の sandbox のテストのために外す
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # プレビューのテストは既定で macOS の Chrome の場所を見る。runner の
+          # Chrome を教える
+          echo "PEKOE_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
