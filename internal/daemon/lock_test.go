@@ -265,12 +265,67 @@ func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
 		}
 	}
 	waitServing(t)
-	// old.sockID is safe to read: old's Run has returned (oldDone)
-	if got, ok := statID(paths.Socket()); !ok || got == old.sockID {
-		t.Fatalf("socket missing or still the old daemon's (exists=%v)", ok)
+	// old's Run has returned (oldDone), so its late cleanup is over: the
+	// path must still serve the winner. (Comparing with old.sockID would not
+	// do: Linux may give the winner's socket the old one's freed inode.)
+	if _, err := os.Lstat(paths.Socket()); err != nil {
+		t.Fatalf("socket missing after the old daemon exited: %v", err)
+	}
+	if !socketServes() {
+		t.Fatal("the new daemon's socket no longer serves")
 	}
 	if got := waitPidFile(fmt.Sprint(os.Getpid())); got != fmt.Sprint(os.Getpid()) {
 		t.Fatalf("pid file = %q, want the new daemon's", got)
 	}
 	stopAndWait(t, winner, winDone)
+}
+
+// stubSocketCheck makes statID report id for every path and servesAt
+// report serving, as Linux can after reusing a freed inode number.
+func stubSocketCheck(t *testing.T, id fileID, serving bool) {
+	t.Helper()
+	oldStat, oldServes := statID, servesAt
+	statID = func(string) (fileID, bool) { return id, true }
+	servesAt = func(string) bool { return serving }
+	t.Cleanup(func() { statID, servesAt = oldStat, oldServes })
+}
+
+// Another daemon's socket that got our freed inode number (same dev, ino)
+// is left alone while it serves; our own closed socket is still removed.
+func TestRemoveIfOwnedInodeReuse(t *testing.T) {
+	id := fileID{dev: 1, ino: 42}
+	for _, tc := range []struct {
+		name    string
+		serving bool
+		removed bool
+	}{
+		{"another daemon serves at a reused inode", true, false},
+		{"our own closed socket", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "s")
+			if err := os.WriteFile(p, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			stubSocketCheck(t, id, tc.serving)
+			removeIfOwned(p, id)
+			_, err := os.Lstat(p)
+			if removed := os.IsNotExist(err); removed != tc.removed {
+				t.Fatalf("removed = %v, want %v (lstat: %v)", removed, tc.removed, err)
+			}
+		})
+	}
+}
+
+// A different id is never removed, serving or not.
+func TestRemoveIfOwnedOtherID(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "s")
+	if err := os.WriteFile(p, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stubSocketCheck(t, fileID{dev: 1, ino: 43}, false)
+	removeIfOwned(p, fileID{dev: 1, ino: 42})
+	if _, err := os.Lstat(p); err != nil {
+		t.Fatalf("removed a file that is not ours: %v", err)
+	}
 }
