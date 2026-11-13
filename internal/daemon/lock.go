@@ -53,20 +53,19 @@ func acquireLock() (*os.File, error) {
 	return f, nil
 }
 
-func socketServes() bool {
-	c, err := net.DialTimeout("unix", paths.Socket(), 300*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	c.Close()
-	return true
-}
+func socketServes() bool { return servesAt(paths.Socket()) }
 
 // fileID identifies a file by device and inode, to tell "the socket I
 // created" from one another daemon created later at the same path.
+//
+// Alone it is not proof: Linux (ext4, overlayfs, tmpfs) hands a freed inode
+// number to the next file at once, so a socket created right after ours was
+// unlinked and closed can carry our very (dev, ino). removeIfOwned checks
+// more than this.
 type fileID struct{ dev, ino uint64 }
 
-func statID(p string) (fileID, bool) {
+// statID is a variable so tests can make it return a reused id.
+var statID = func(p string) (fileID, bool) {
 	fi, err := os.Lstat(p)
 	if err != nil {
 		return fileID{}, false
@@ -78,11 +77,26 @@ func statID(p string) (fileID, bool) {
 	return fileID{uint64(st.Dev), uint64(st.Ino)}, true
 }
 
-// removeIfOwned removes p only while it is still the file identified by id.
+// removeIfOwned removes the socket p only while it is still the file
+// identified by id and nothing serves it. The caller has closed its own
+// listener, so a socket that accepts a connection belongs to another daemon
+// — one that took the path over (sharing $PEKOE_SOCK) and, on Linux, may
+// have been given our freed inode number, so the id alone would match.
 func removeIfOwned(p string, id fileID) {
-	if cur, ok := statID(p); ok && cur == id {
+	if cur, ok := statID(p); ok && cur == id && !servesAt(p) {
 		_ = os.Remove(p)
 	}
+}
+
+// servesAt: whether a listener accepts connections on the unix socket p.
+// A variable so tests can answer without a real socket.
+var servesAt = func(p string) bool {
+	c, err := net.DialTimeout("unix", p, 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
 }
 
 // removePidFileIfOwned removes the pid file only while it holds our pid.
