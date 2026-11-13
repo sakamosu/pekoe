@@ -44,6 +44,7 @@ tmux のウィンドウ名と hook の振り分けには、セッションの sl
 tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook を使う(`pekoe hooks install` 済みの設定がそのまま効く)。
 
 - `resolveSession`(internal/daemon/hooks.go): `$PEKOE_SESSION` が `+tapi` なら tapi。`$PEKOE_SESSION` が無いときは、cwd が tapi の稼働ディレクトリの中なら tapi。それ以外は従来どおり
+- 窓の外から来た hook は、`transcript_path` が tapi の Claude Code の記録のディレクトリにあれば `$PEKOE_SESSION` によらず tapi(`claimOutside`。下の「窓の外に出た会話」)
 - `hEvent`: tapi に振り分けられた hook は `tapiEvent` が受け、状態だけを動かす。プロンプトのスナップショット(`refs/pekoe/…`)、diffstat、テスト、門番は動かさない
 
 | hook | tapi の状態 |
@@ -92,8 +93,24 @@ agent = "claude"   # 既定。[agents.claude-ask] などを定義していれば
   - `--settings <データディレクトリ>/agent-settings/tapi.json`(`[agents.*] sandbox` が切られていなければ): セッションと同じ sandbox の設定に、`--add-dir` で渡す各リポジトリと `~/worktrees`(まだ無くても。シンボリックリンクを解いたものも)を `sandbox.filesystem.denyWrite` と `permissions.deny` の `Edit(...)` に足したもの。Bash でも Edit / Write でも書けない。稼働ディレクトリは書ける(下書き・一時ファイル用)。`git fetch` などリポジトリに書く読み取り系のコマンドは失敗するが、統括役には要らない。Claude Code の sandbox が `--add-dir` への Bash の書き込みを許すかは版によるので、許すかどうかに関わらず塞ぐ(`denyWrite` は書ける場所より強い)
   - 会話の記録(`~/.claude/projects/<tapi の cwd を符号化したもの>/`)が残っていれば `--continue`(tmux サーバーごと落ちた後に開き直しても、リセットするまで同じ会話が続く)
 - codex など claude 以外は `--add-dir` 相当を付けない(cwd だけ)。人格は `AGENTS.md` で伝わる。再開もしない
-- 環境変数は通常のセッションと同じ(`PEKOE_SESSION=+tapi`、`PEKOE_SOCK`、`PEKOE=1`、`PEKOE_HOME`)
+- 環境変数は通常のセッションと同じ(`PEKOE_SESSION=+tapi`、`PEKOE_SOCK`、`PEKOE=1`、`PEKOE_HOME`。claude なら `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` も。下の「窓の外に出た会話」)
 - pty の大きさは TUI の右ペインの大きさ(`session.resize "*"` で覚えている値)。`session.resize "*"` は tapi の窓も合わせる
+
+## 窓の外に出た会話
+
+Claude Code は会話をバックグラウンドのセッションに移せる(空の入力欄で ←、`/background`)。移った会話は Claude Code 自身のサービス(`claude daemon`)が起動したプロセスで続き、そのプロセスは pekoe の窓(tmux)の外で、サービスの環境変数のまま動く。`$PEKOE_SESSION` などはサービスを起動した窓のもので、会話のものではない(Claude Code はバックグラウンドのセッションに会話の環境変数を引き継がない。予備のプロセスをサービスの環境で先に立てておき、そこへ渡す)。2026-11 に実際に起きた(Claude Code 2.1.325): tapi の会話が移った先のプロセスは `PEKOE_SESSION=pekoe-theme`・`PEKOE_PORT=3003` で動き、
+
+- 呼び出し元の識別(docs/api.md)では窓に当たらず `unknown`。`pekoe ledger` は `only tapi chat (or a person) uses it, not unknown` で断られた
+- hooks は窓に当たらないので `$PEKOE_SESSION` で振り分けられ、tapi の操作が pekoe-theme の `last_tool`・`claude_session_id` に載った
+
+pekoe の側の防ぎ方:
+
+- 予防: claude のエージェント(セッションも tapi も)を `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` で起動する(`claudeStayEnv`)。Claude Code の agent view が切れて、← で会話が窓の外に出ない。リポジトリの `env` に同じ名前があればそちらを使う(空にすれば agent view が戻る)。`/background` が止まるかは Claude Code の版による(確かめていない)
+- 振り分け: 窓の外から来た hook は、`transcript_path` の会話の場所(`~/.claude/projects/<符号化した起動時の cwd>/`)で決める(`claimOutside`)。tapi の会話なら tapi、セッションの会話ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てて cwd で決める。依頼の記録(`UserPromptSubmit`)は今までどおり tapi の窓からだけ
+- 知らせる: tapi の会話の hook が tapi の窓の外(ほかのセッションの窓も含む)から来たら、`Tapi.outside` に会話の ID・窓・名乗りを残し、pekoed のログに 1 行書く。TUI の tapi の行に `outside`、`pekoe tapi` に警告と直し方を出す。tapi を起動し直す(`tapi.open` / `restart`)と消え、まだ外で動いていれば次の hook でまた付く
+- 断るときに理由を添える: 窓に当たらない呼び出しを ledger が断るとき、tapi なら Claude Code が会話を窓の外に移したかもしれないこと、人にそのバックグラウンドのセッションを止めて tapi を起動し直してもらう(または `pekoe tapi reset`)ことを添える
+
+直すのは人: Claude Code の agent view(`claude agents`)で窓の外のセッションを止め、tapi の窓の Claude Code を終えて ↵ で起動し直す(`--continue` で同じ会話を続ける)か、`T` / `pekoe tapi reset`。pekoe は Claude Code のサービスやそのセッションを止めない。
 
 ## 寿命
 
@@ -118,7 +135,7 @@ agent = "claude"   # 既定。[agents.claude-ask] などを定義していれば
 | `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
 | `tapi.resize` | `{width, height}` | |
 
-`Tapi` = `{agent, dir, started, alive, state, wait_kind?, pending_tool?, last_message?, claude_session_id?, state_since, inbox_open, ledger_open}`。依頼は `ledger.*`(docs/api.md「依頼(ledger)」)。`started` は窓があるか(dead でも true)、`alive` はプロセスが動いているか。
+`Tapi` = `{agent, dir, started, alive, state, wait_kind?, pending_tool?, last_message?, claude_session_id?, state_since, inbox_open, ledger_open, outside?}`。`outside` は下の「窓の外に出た会話」。依頼は `ledger.*`(docs/api.md「依頼(ledger)」)。`started` は窓があるか(dead でも true)、`alive` はプロセスが動いているか。
 
 CLI は `pekoe tapi`(状態と依頼・受信箱の件数)と `pekoe tapi reset [--yes]`、依頼は `pekoe ledger`。
 

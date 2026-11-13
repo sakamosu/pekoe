@@ -85,7 +85,7 @@
 Claude Code のエージェントは pekoe が渡す sandbox の中で動き、tmux のソケットにはつなげない(`network.allowUnixSockets` は pekoed のソケットだけ)ので、別のセッションの窓の中にプロセスを作れない。二重 fork などで親を launchd に付け替えても `unknown` になるだけで、別のセッションには化けられない。
 
 - クライアントは `$PEKOE_SESSION` をリクエストの最上位の `session` に入れて送る(`internal/client`)。pekoed はこれを名乗り(`claimed`)として、識別したものと違うときだけ記録に残す。振り分けには使わない
-- `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
+- `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。ただし `payload.transcript_path` が Claude Code の会話のファイル(`~/.claude/projects/<符号化した起動時の cwd>/<id>.jsonl`)なら、会話が始まった場所を先に見る: tapi の稼働ディレクトリなら tapi、あるセッションの worktree ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てる(cwd では決める)。Claude Code が会話をバックグラウンドのセッションに移すと、そのプロセスは別の窓の環境変数を持って窓の外で動くため(docs/tapi-chat.md「窓の外に出た会話」)。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
 - `dev.toggle` も token なしなら窓で決める(token つきは今までどおり `slug` の相手)
 - `report.post` と `inbox.*` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告と問いは自分の窓のセッションに付く)
 
@@ -232,7 +232,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
 | `session.kill` | `{slug}` | セッション終了(worktree は残す) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
-| `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `session`(`$PEKOE_SESSION`)と `payload.cwd` |
+| `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `payload.transcript_path` の会話の場所、`session`(`$PEKOE_SESSION`)、`payload.cwd`(上の「呼び出し元の識別」) |
 | `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pending"\|"pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |
 | `report.list` | `{slug?, since?: id, limit?: 20}` | `[Report]`(新しい順。`limit` は 200 まで) |
 | `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
@@ -580,7 +580,11 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
   "claude_session_id": "…",
   "state_since": "2026-11-08T21:37:30+09:00",
   "inbox_open": 2,                         // 受信箱の未回答(全員の分)
-  "ledger_open": 1                         // open の依頼の件数
+  "ledger_open": 1,                        // open の依頼の件数
+  "outside": {                             // tapi の会話が tapi の窓の外で動いている(tapi を起動し直すまで。無ければ省く)
+    "claude_session_id": "…", "window": "", // window: 動いている pekoe の窓(空なら窓の外)
+    "claimed": "pekoe-theme", "since": "…"  // claimed: その hooks の $PEKOE_SESSION
+  }
 }
 ```
 
