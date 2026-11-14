@@ -13,6 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"pekoe/internal/theme"
 )
 
 //go:embed tapi.json
@@ -154,23 +156,49 @@ func PaletteFor(light bool, colors map[string]string) Palette {
 	return p
 }
 
-type accents struct{ work, wait, done, err string }
-
+// State accents are the TUI's state colors (theme.Look, docs/ui-guidelines.md
+// 「状態の表現」): work ok, wait warn, done secondary, error err, idle dim.
+// The renderer takes them from the theme (Options) so they follow its mode
+// and overrides; these are the default theme's truecolor values, used when
+// Options leaves a color out (tests).
 var (
-	accentDark  = accents{work: "#e8a85c", wait: "#f2d06b", done: "#93d39b", err: "#ef6f78"}
-	accentLight = accents{work: "#c2711c", wait: "#b08400", done: "#3a8a3f", err: "#c93a46"}
+	defaultWork  = lipgloss.Color("#51d75e") // theme ok
+	defaultWait  = lipgloss.Color("#edc812") // theme warn
+	defaultDone  = lipgloss.Color("#11cded") // theme secondary
+	defaultError = lipgloss.Color("#ff7172") // theme err
+	defaultDim   = lipgloss.Color("#848495") // theme dim
 )
+
+type accents struct{ work, wait, done, err lipgloss.TerminalColor }
 
 // ---- renderer ----
 
 // Options come from [mascot] in config.toml plus terminal detection.
 type Options struct {
-	Shape   string            // round | block (resolve "auto" with DetectShape first)
-	Glyphs  string            // unicode | narrow | ascii
-	Light   bool              // light theme: palette E and light accents
-	Colors  map[string]string // overrides: hi bd sh eye
-	Dim     lipgloss.TerminalColor
-	NoColor bool
+	Shape  string            // round | block (resolve "auto" with DetectShape first)
+	Glyphs string            // unicode | narrow | ascii
+	Light  bool              // light theme: palette E (the body only)
+	Colors map[string]string // overrides: hi bd sh eye
+	// State accents as the theme resolves them: Work = ok, Wait = warn,
+	// Done = secondary, Error = err, Dim = dim (idle, sleep). nil ⇒ the
+	// default theme's color.
+	Work, Wait, Done, Error lipgloss.TerminalColor
+	Dim                     lipgloss.TerminalColor
+	NoColor                 bool
+}
+
+// WithTheme fills the state accents and dim from the theme (the roles of
+// theme.Look) and goes colorless in its none mode. Every caller builds its
+// Options through this, so tapi follows the theme's mode, its
+// [theme.colors] / [theme.ansi] overrides and NO_COLOR.
+func (o Options) WithTheme(th *theme.Theme) Options {
+	o.Work = th.Color(theme.Ok)
+	o.Wait = th.Color(theme.Warn)
+	o.Done = th.Color(theme.Secondary)
+	o.Error = th.Color(theme.Err)
+	o.Dim = th.Color(theme.Dim)
+	o.NoColor = o.NoColor || th.Mode == theme.None
+	return o
 }
 
 type Renderer struct {
@@ -186,18 +214,20 @@ type Renderer struct {
 // face color with a background behind it.
 func New(o Options) *Renderer {
 	noColor := o.NoColor || lipgloss.ColorProfile() == termenv.Ascii
-	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteFor(o.Light, o.Colors), acc: accentDark, dim: o.Dim, noColor: noColor}
-	if o.Light {
-		r.acc = accentLight
+	or := func(c lipgloss.TerminalColor, def lipgloss.Color) lipgloss.TerminalColor {
+		if c == nil {
+			return def
+		}
+		return c
 	}
+	r := &Renderer{shape: o.Shape, glyphs: o.Glyphs, pal: PaletteFor(o.Light, o.Colors), noColor: noColor,
+		acc: accents{work: or(o.Work, defaultWork), wait: or(o.Wait, defaultWait), done: or(o.Done, defaultDone), err: or(o.Error, defaultError)},
+		dim: or(o.Dim, defaultDim)}
 	if r.shape != "block" {
 		r.shape = "round"
 	}
 	if r.glyphs != "ascii" && r.glyphs != "narrow" {
 		r.glyphs = "unicode"
-	}
-	if r.dim == nil {
-		r.dim = lipgloss.Color("#8d8b86")
 	}
 	return r
 }
@@ -216,13 +246,13 @@ func (r *Renderer) color(role string) lipgloss.TerminalColor {
 	case "eye":
 		return lipgloss.Color(r.pal.Eye)
 	case "w":
-		return lipgloss.Color(r.acc.work)
+		return r.acc.work
 	case "q":
-		return lipgloss.Color(r.acc.wait)
+		return r.acc.wait
 	case "d":
-		return lipgloss.Color(r.acc.done)
+		return r.acc.done
 	case "x":
-		return lipgloss.Color(r.acc.err)
+		return r.acc.err
 	case "i", "dim":
 		return r.dim
 	}

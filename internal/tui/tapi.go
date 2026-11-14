@@ -94,14 +94,13 @@ func (m *model) buildTapi(tty *os.File) {
 	case m.tapi.glyphs != "":
 		glyphs = m.tapi.glyphs // a reload cannot measure: the TUI owns the terminal
 	}
+	// the state colors of theme.Look, so tapi and the session list agree
 	m.tapi.r = mascot.New(mascot.Options{
-		Shape:   mascot.DetectShape(c.Shape),
-		Glyphs:  glyphs,
-		Light:   c.LightPalette(),
-		Colors:  c.Colors,
-		Dim:     m.th.Color(theme.Dim),
-		NoColor: m.th.Mode == theme.None,
-	})
+		Shape:  mascot.DetectShape(c.Shape),
+		Glyphs: glyphs,
+		Light:  c.LightPalette(),
+		Colors: c.Colors,
+	}.WithTheme(m.th))
 }
 
 // measureTTY returns stdin when both ends are a terminal.

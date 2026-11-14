@@ -6,10 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -254,5 +256,68 @@ func TestSplashSnapshot(t *testing.T) {
 		if want := strings.TrimPrefix(c.want, "\n"); got != want {
 			t.Errorf("%s %d:\n%s\nwant:\n%s", c.glyphs, c.width, got, want)
 		}
+	}
+}
+
+// tapi's state accents are the state colors of theme.Look (#46): work = ok,
+// wait = warn, done = secondary, error = err, idle / sleep = dim, in every
+// mode and with [theme.colors] / [theme.ansi] overrides, and a config
+// reload that changes the theme repaints tapi too.
+func TestTapiAccentsFollowTheme(t *testing.T) {
+	want := map[mascot.Mood]theme.Role{
+		mascot.Work: theme.Ok, mascot.Wait: theme.Warn, mascot.Done: theme.Secondary,
+		mascot.Error: theme.Err, mascot.Idle: theme.Dim, mascot.Sleep: theme.Dim,
+	}
+	// theme.Look agrees: the session list and tapi say the same thing
+	ic := theme.Icons("unicode")
+	for st, role := range map[state.State]theme.Role{state.Running: theme.Ok, state.Waiting: theme.Warn,
+		state.Done: theme.Secondary, state.Failed: theme.Err, state.Idle: theme.Dim} {
+		if got := theme.Look(ic, st, 0, false).Role; got != role {
+			t.Fatalf("theme.Look(%s) = %s, the table here expects %s", st, got, role)
+		}
+	}
+	check := func(name string, m *model) {
+		t.Helper()
+		for mood, role := range want {
+			if got, w := m.tapi.r.Color(mood), m.th.Color(role); got != w {
+				t.Errorf("%s: %s accent = %v, want theme %s = %v", name, mood, got, role, w)
+			}
+		}
+	}
+	for _, color := range []string{"truecolor", "ansi"} {
+		check(color, tapiModel(t, color, config.Mascot{}))
+	}
+	// light palette changes the body only, the accents stay the theme's
+	check("light", tapiModel(t, "truecolor", config.Mascot{Palette: "light"}))
+
+	m := tapiModel(t, "truecolor", config.Mascot{})
+	g := *m.g
+	g.Theme.Colors = map[string]string{"ok": "#00ff00", "secondary": "#0000ff"}
+	m.applyConfig(configLoadedMsg{g: &g})
+	check("reload truecolor", m)
+	if got := m.tapi.r.Color(mascot.Work); got != lipgloss.Color("#00ff00") {
+		t.Errorf("work after [theme.colors] ok override = %v", got)
+	}
+	if got := m.tapi.r.Color(mascot.Done); got != lipgloss.Color("#0000ff") {
+		t.Errorf("done after [theme.colors] secondary override = %v", got)
+	}
+
+	t.Setenv("PEKOE_COLOR", "ansi")
+	g2 := g
+	g2.Theme.ANSI = map[string]int{"warn": 11}
+	m.applyConfig(configLoadedMsg{g: &g2})
+	check("reload ansi", m)
+	if got := m.tapi.r.Color(mascot.Wait); got != lipgloss.Color("11") {
+		t.Errorf("wait after [theme.ansi] warn override = %v", got)
+	}
+
+	// none (NO_COLOR): no escape codes at all
+	t.Setenv("PEKOE_COLOR", "")
+	t.Setenv("NO_COLOR", "1")
+	g3 := g2
+	g3.Theme.Mode = "auto"
+	m.applyConfig(configLoadedMsg{g: &g3})
+	if out := m.tapi.r.Cell(mascot.Work) + m.tapi.r.Line(m.eyesFor(mascot.Done, false)); strings.Contains(out, "\x1b[") {
+		t.Errorf("NO_COLOR: tapi still paints: %q", out)
 	}
 }
