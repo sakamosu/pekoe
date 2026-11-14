@@ -102,12 +102,15 @@ func (m *model) onRunStarted(msg runStartedMsg) tea.Cmd {
 	return m.showRun()
 }
 
-// showRun puts the run window in the main panel, typing into it.
+// showRun puts the run window in the main panel, typing into it. tapi chat
+// goes: left open, it would keep [4] (and the typing) while the run window
+// waited unseen behind it.
 func (m *model) showRun() tea.Cmd {
 	s := m.current()
 	if s == nil {
 		return nil
 	}
+	m.chat.open = false
 	m.window = engine.WinRun
 	m.screen = nil
 	m.focus = pAgent
