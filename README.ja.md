@@ -176,20 +176,20 @@ hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `
 
 ```sh
 cd ~/src/app
-pekoe init                                            # ~/.config/pekoe/repos/<repo-id>.toml を下書き
+pekoe init                                            # ~/.config/pekoe/repos/<repo-id>.toml を下書きし、main セッションを起動
 pekoe new feat/csv --prompt "CSV エクスポートを追加"   # worktree → copy → setup → port → claude 起動
 pekoe new feat/invoice --from gh#128                  # issue 本文を初期プロンプトに
 pekoe                                                 # TUI
 ```
 
-`pekoe init` は lockfile・`.envrc`・git の無視ファイルから setup や copy を推測し、コピーする無視ファイルを番号で選ばせてから書く。手で始めたエージェントは `pekoe adopt` で、既存の worktree は `pekoe open` で取り込める。
+`pekoe init` は lockfile・`.envrc`・git の無視ファイルから setup や copy を推測し、コピーする無視ファイルを番号で選ばせてから書く。書いたら、リポジトリ本体のチェックアウトでエージェント(main セッション。`pekoe open <repo> --new` と同じ)を起動し、TUI にそのリポジトリが出るようにする。既にあれば何もしない。`--no-open` で起動しない。起動できなかったときも init は成功扱いで、`pekoe open <path> --new` で作れると出す。手で始めたエージェントは `pekoe adopt` で、既存の worktree は `pekoe open` で取り込める。
 
 ## コマンド
 
 | コマンド | すること |
 | --- | --- |
 | `pekoe` | TUI(デーモンがなければ起動) |
-| `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | リポジトリの設定を検出して下書き。`--print` は書かずに出すだけ |
+| `pekoe init [<dir>] [--yes] [--overwrite] [--print] [--no-open]` | リポジトリの設定を検出して下書きし、本体のチェックアウトに main セッションが無ければ起動する。`--print` は書かずに出すだけ、`--no-open` は書くだけで起動しない |
 | `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]` | worktree + セッション作成。setup の進み具合を出し、エージェントが起動したら戻る。`--after` はこのセッションがどれの後かを記録する(複数可。今あるセッションだけで、自分自身・循環は断る)。記録して表示するだけ([1] の行に `after feat-a`、フッターにそれぞれの状態、`pekoe --json ls` の `after`)で、起動は止めない。`--request` は tapi chat が依頼(`pekoe ledger`)とセッションを結ぶ(tapi と人だけ) |
 | `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | 既存 worktree で起動。過去の Claude Code セッションを resume するか選ぶ(`--resume` で resume、`--new` で新規) |
 | `pekoe adopt [<path>] [--yes]` | pekoe の外で動いているエージェントを止め、同じセッションを pekoe の中で resume する |

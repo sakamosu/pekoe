@@ -393,8 +393,8 @@ docs = ["README.ja.md#claude-code-スキル", "docs/orchestration.md"]
 [[tip]]
 id = "init"
 short = "pekoe init でリポジトリの設定を下書きする"
-detail = "lockfile・.envrc・git の無視ファイルから setup や copy を推測し、コピーするファイルを番号で選ばせてから書く。--print なら書かずに出すだけ。"
-keys = ["pekoe init", "--print"]
+detail = "lockfile・.envrc・無視ファイルから setup や copy を推測して書き、本体で main セッションを起動する(既にあれば何もしない)。--print は出すだけ、--no-open は起動しない。"
+keys = ["pekoe init", "--print", "--no-open"]
 docs = ["README.ja.md#クイックスタート"]
 
 [[tip]]
