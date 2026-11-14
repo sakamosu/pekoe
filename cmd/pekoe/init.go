@@ -9,6 +9,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"pekoe/internal/client"
+	"pekoe/internal/state"
 )
 
 func cmdInit(args []string) error {
@@ -82,7 +85,52 @@ func cmdInit(args []string) error {
 	} else if f["yes"] == "" && !confirm("write this config?") {
 		return nil
 	}
-	return cl.Call("init.write", map[string]any{"path": dir, "toml": toml, "overwrite": true}, nil)
+	var wrote struct {
+		RepoDir string `json:"repo_dir"`
+	}
+	if err := cl.Call("init.write", map[string]any{"path": dir, "toml": toml, "overwrite": true}, &wrote); err != nil {
+		return err
+	}
+	if f["no-open"] == "" {
+		openMainSession(cl, res.RepoID, wrote.RepoDir, dir)
+	}
+	return nil
+}
+
+// openMainSession starts the agent in the repository's main checkout (as
+// `pekoe open <repo> --new` does), so the repository shows up in the TUI
+// right after init. One that is already there is left alone (init can run
+// again), and a failure does not fail init: the config is written by then.
+func openMainSession(cl *client.Client, repoID, repoDir, dir string) {
+	fail := func(err error) {
+		at := repoDir
+		if at == "" {
+			at = dir
+		}
+		fmt.Fprintf(os.Stderr, "the main session was not started (%v); start it with `pekoe open %s --new`\n", err, at)
+	}
+	if repoDir == "" { // a pekoed from before init.write said where
+		fail(fmt.Errorf("pekoed did not say where the repository is"))
+		return
+	}
+	var ss []*state.Session
+	if err := cl.Call("session.list", map[string]any{"repo_id": repoID}, &ss); err != nil {
+		fail(err)
+		return
+	}
+	for _, s := range ss {
+		if s.Path == repoDir || s.Path == s.RepoDir {
+			fmt.Printf("main session %s is already there\n", s.Slug)
+			return
+		}
+	}
+	w, h := agentPaneSize()
+	var s state.Session
+	if err := cl.Call("session.open", map[string]any{"path": repoDir, "resume": "new", "width": w, "height": h}, &s); err != nil {
+		fail(err)
+		return
+	}
+	fmt.Printf("opened %s (%s) :%d\n", s.Slug, s.Path, s.Port)
 }
 
 func replaceCopy(toml string, sel []string) string {
