@@ -165,7 +165,7 @@ func helpTapi() string {
 		Glyphs: mascot.DetectGlyphs(g.Mascot.Glyphs, icons, nil),
 		Light:  g.Mascot.LightPalette(),
 		Colors: g.Mascot.Colors,
-	})
+	}.WithTheme(theme.Load(&g.Theme)))
 	text := []string{"pekoe v" + daemon.Version, "agents in worktrees,", "reviewed hunk by hunk"}
 	width := 0 // not a terminal: no limit
 	if tw, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && tw > 1 {

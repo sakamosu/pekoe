@@ -13,6 +13,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"pekoe/internal/theme"
 )
 
 //go:embed tapi.json
@@ -158,7 +160,7 @@ func PaletteFor(light bool, colors map[string]string) Palette {
 // 「状態の表現」): work ok, wait warn, done secondary, error err, idle dim.
 // The renderer takes them from the theme (Options) so they follow its mode
 // and overrides; these are the default theme's truecolor values, used when
-// Options leaves a color out (tests, `pekoe --help`).
+// Options leaves a color out (tests).
 var (
 	defaultWork  = lipgloss.Color("#51d75e") // theme ok
 	defaultWait  = lipgloss.Color("#edc812") // theme warn
@@ -183,6 +185,20 @@ type Options struct {
 	Work, Wait, Done, Error lipgloss.TerminalColor
 	Dim                     lipgloss.TerminalColor
 	NoColor                 bool
+}
+
+// WithTheme fills the state accents and dim from the theme (the roles of
+// theme.Look) and goes colorless in its none mode. Every caller builds its
+// Options through this, so tapi follows the theme's mode, its
+// [theme.colors] / [theme.ansi] overrides and NO_COLOR.
+func (o Options) WithTheme(th *theme.Theme) Options {
+	o.Work = th.Color(theme.Ok)
+	o.Wait = th.Color(theme.Warn)
+	o.Done = th.Color(theme.Secondary)
+	o.Error = th.Color(theme.Err)
+	o.Dim = th.Color(theme.Dim)
+	o.NoColor = o.NoColor || th.Mode == theme.None
+	return o
 }
 
 type Renderer struct {

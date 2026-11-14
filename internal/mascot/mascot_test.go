@@ -295,3 +295,21 @@ func TestDefaultAccentsAreThemeDefaults(t *testing.T) {
 		t.Error("work and done must not share a color")
 	}
 }
+
+// WithTheme takes the accents from the theme's roles, overrides included,
+// and goes colorless in none mode.
+func TestWithTheme(t *testing.T) {
+	t.Setenv("PEKOE_COLOR", "ansi")
+	th := theme.Load(&config.Theme{ANSI: map[string]int{"ok": 10}})
+	r := New(Options{}.WithTheme(th))
+	for mood, want := range map[Mood]string{Work: "10", Wait: "3", Done: "6", Error: "1", Idle: "8"} {
+		if got := r.Color(mood); got != lipgloss.Color(want) {
+			t.Errorf("ansi %s: %v, want %s", mood, got, want)
+		}
+	}
+	t.Setenv("PEKOE_COLOR", "none")
+	r = New(Options{}.WithTheme(theme.Load(&config.Theme{})))
+	if out := r.Cell(Work) + r.Line(r.Eyes(Done)); strings.Contains(out, "\x1b[") {
+		t.Errorf("none mode still paints: %q", out)
+	}
+}
