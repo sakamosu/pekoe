@@ -20,8 +20,9 @@ import (
 type fakeDaemon struct {
 	mu      sync.Mutex
 	methods []string
-	results map[string]any    // method -> result (default null)
-	errs    map[string]string // method -> error
+	results map[string]any             // method -> result (default null)
+	errs    map[string]string          // method -> error
+	params  map[string]json.RawMessage // method -> params of its last request
 }
 
 // note records something that is not a request (a test's stub), in order.
@@ -69,12 +70,17 @@ func startFakeDaemon(t *testing.T) *fakeDaemon {
 					var req struct {
 						ID     json.RawMessage `json:"id"`
 						Method string          `json:"method"`
+						Params json.RawMessage `json:"params"`
 					}
 					if json.Unmarshal(sc.Bytes(), &req) != nil {
 						continue
 					}
 					fd.mu.Lock()
 					fd.methods = append(fd.methods, req.Method)
+					if fd.params == nil {
+						fd.params = map[string]json.RawMessage{}
+					}
+					fd.params[req.Method] = req.Params
 					resp := map[string]any{"id": req.ID, "result": fd.results[req.Method]}
 					if e := fd.errs[req.Method]; e != "" {
 						resp["error"] = e

@@ -178,20 +178,20 @@ The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notifica
 
 ```sh
 cd ~/src/app
-pekoe init                                            # draft ~/.config/pekoe/repos/<repo-id>.toml
+pekoe init                                            # draft ~/.config/pekoe/repos/<repo-id>.toml, then start the main session
 pekoe new feat/csv --prompt "Add CSV export"          # worktree → copy → setup → port → start claude
 pekoe new feat/invoice --from gh#128                  # the issue body becomes the first prompt
 pekoe                                                 # TUI
 ```
 
-`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files, lets you pick by number which ignored files to copy, and then writes the file. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
+`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files, lets you pick by number which ignored files to copy, and then writes the file. Once written, it starts an agent in the repository's main checkout (the main session, as `pekoe open <repo> --new` does) so the repository shows up in the TUI; one already there is left alone, and `--no-open` skips it. If the agent cannot be started, init still succeeds and says to run `pekoe open <path> --new`. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `pekoe` | TUI (starts the daemon if needed) |
-| `pekoe init [<dir>] [--yes] [--overwrite] [--print]` | Detect the repository's settings and write a draft. `--print` only prints it |
+| `pekoe init [<dir>] [--yes] [--overwrite] [--print] [--no-open]` | Detect the repository's settings and write a draft, then start the main session in the main checkout if there is none. `--print` only prints it; `--no-open` writes without starting the session |
 | `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]` | Create a worktree + session. Shows setup progress and returns once the agent has started. `--after` records which sessions this one comes after (repeatable; existing sessions only, not itself, no cycles). It is only recorded and shown (`after feat-a` on the row in [1], each one's state in its footer, `after` in `pekoe --json ls`): the session starts right away. `--request` is how tapi chat ties a session to a request in its ledger (tapi and you only) |
 | `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start in an existing worktree. Choose whether to resume a past Claude Code session (`--resume` to resume, `--new` for a new one) |
 | `pekoe adopt [<path>] [--yes]` | Stop an agent running outside pekoe and resume the same session inside pekoe |

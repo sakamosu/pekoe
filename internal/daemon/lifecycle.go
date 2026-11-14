@@ -683,7 +683,8 @@ func (d *Daemon) hInitWrite(p initWriteP) (any, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), paths.DirPerm); err != nil {
 		return nil, err
 	}
-	return map[string]any{"path": dst}, os.WriteFile(dst, []byte(p.TOML), paths.FilePerm)
+	// repo_dir: the main checkout, where pekoe init then opens the main session
+	return map[string]any{"path": dst, "repo_dir": repo.Dir}, os.WriteFile(dst, []byte(p.TOML), paths.FilePerm)
 }
 
 // ---- review surface (nvim in the session's review window) ----
