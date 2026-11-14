@@ -39,6 +39,7 @@ func TestIconsNotAmbiguous(t *testing.T) {
 	for _, name := range []string{"nerd", "unicode", "ascii"} {
 		uses = append(uses, iconUses(Icons(name))...)
 	}
+	uses = append(uses, glyphguard.Use{Where: "TestRunningMark", Glyph: TestRunningMark})
 	glyphguard.Check(t, uses, knownIconViolations)
 }
 
@@ -61,4 +62,5 @@ var knownIconViolations = []glyphguard.Known{
 	{Where: "unicode.Issues", Rune: '⊙', Stage: "段階 2"},
 	{Where: "nerd.Here", Rune: '▶', Stage: "段階 2"},
 	{Where: "nerd.Unsent", Rune: '●', Stage: "段階 2"},
+	{Where: "TestRunningMark", Rune: '…', Stage: "段階 2"},
 }
