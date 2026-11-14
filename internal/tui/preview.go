@@ -361,7 +361,8 @@ func (m *model) keyPreview(key string) tea.Cmd {
 	case "esc":
 		return m.closePreview()
 	case "v": // agent → preview → dev → agent
-		if s.Dev {
+		// a dev hook that ended by itself left its window: its last screen
+		if s.Dev || (s.DevExit != nil && !s.DevExit.Stopped && !s.DevExit.Closed) {
 			m.window = engine.WinDev
 			m.screen = nil
 			return m.fetchScreen()

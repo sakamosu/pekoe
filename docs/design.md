@@ -371,7 +371,8 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe event` | hooks から呼ばれる。stdin の JSON(session\_id, cwd, hook 名)をデーモンに渡す |
 | `pekoe review [<slug> \| gh#N [--repo R]]` | レビュー面を開く |
 | `pekoe land <slug>` / `pekoe rm <slug>` | 取り込む / 消す |
-| `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動 |
+| `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動(動いていれば止めて `dev_stop`) |
+| `pekoe dev --log [<slug>]` | dev hook のログの末尾と、動いているか・どう終わったか |
 | `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す) |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。記録は pekoed に頼み(`tips.next`。エージェントの sandbox は `tips.json` を書けない)、pekoed が無ければ自分で書く(pekoed を起動はしない) |

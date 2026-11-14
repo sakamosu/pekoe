@@ -103,6 +103,9 @@ func cmdNew(args []string) error {
 						mark = icons.Fail
 					}
 					fmt.Printf("  %s %-9s %s %s\n", mark, st.Label, st.Detail, fmtMs(st.Elapsed))
+					for _, w := range st.Warnings {
+						fmt.Printf("    %s %s\n", icons.Warning, w)
+					}
 				}
 			case "session.updated":
 				var u state.Session

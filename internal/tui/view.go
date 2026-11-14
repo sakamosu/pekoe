@@ -590,6 +590,15 @@ func (m *model) viewAgent(width, height int) []string {
 	if m.window == engine.WinRun && s.Run != "" {
 		extra = "· $ " + oneLine(s.Run)
 	}
+	if m.window == engine.WinDev {
+		extra = "· " + devState(s)
+		if !s.Dev && s.DevExit != nil && !s.DevExit.Stopped {
+			extra = "· " + th.FG(theme.Warn, devState(s)) + th.FG(theme.Dim, " · ↵ start again")
+		}
+	}
+	if len(s.Warnings) > 0 && m.window == engine.WinAgent {
+		extra += " · " + th.FG(theme.Warn, fmt.Sprintf("%s %d warning%s at creation", m.ic.Warning, len(s.Warnings), plural(len(s.Warnings))))
+	}
 	if s.Port > 0 {
 		extra += fmt.Sprintf(" · :%d", s.Port)
 	}
@@ -1287,4 +1296,35 @@ func (m *model) viewNarrow() []string {
 	top := m.box(m.width, topH, boxOpt{title: title, right: th.Bold(theme.Secondary, "[ ]") + th.FG(theme.Dim, " tab"), rows: rows, focused: f})
 	agent := m.viewAgent(m.width, m.height-1-topH)
 	return append(top, agent...)
+}
+
+// devState is the dev hook's state for the Dev panel's title: running, or
+// how it ended (exit status, signal, stopped by pekoe) and when.
+func devState(s *state.Session) string {
+	if s.Dev {
+		return "running"
+	}
+	ex := s.DevExit
+	if ex == nil {
+		return "not running"
+	}
+	how := "stopped"
+	switch {
+	case ex.Stopped:
+	case ex.Signal != "":
+		how = "killed by " + ex.Signal
+	case ex.Status >= 0:
+		how = fmt.Sprintf("exited %d", ex.Status)
+	default:
+		how = "exited"
+	}
+	how += " " + ex.At.Local().Format("15:04")
+	if ex.DevStop != nil {
+		if ex.DevStop.Error != "" {
+			how += " · dev_stop failed"
+		} else {
+			how += " · dev_stop ok"
+		}
+	}
+	return how
 }

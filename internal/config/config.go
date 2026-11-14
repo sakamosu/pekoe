@@ -29,6 +29,11 @@ type Hooks struct {
 	Dev      string   `toml:"dev"`
 	Test     string   `toml:"test"`
 	Teardown []string `toml:"teardown"`
+	// DevStop runs when pekoe stops the dev hook (pekoe dev, rm, x, pekoed
+	// stopping its agents), in the same sandbox and environment as dev:
+	// what dev started outside its own process (make down, docker compose
+	// down). teardown is for the worktree and runs on rm and after a merge.
+	DevStop string `toml:"dev_stop"`
 }
 
 type Review struct {
@@ -258,7 +263,7 @@ type Tips struct {
 }
 
 // Sandbox is [sandbox]: pekoed runs the commands that come from a worktree
-// (an agent can write them: [hooks] test / setup / dev / teardown and the
+// (an agent can write them: [hooks] test / setup / dev / dev_stop / teardown and the
 // gatekeeper) in a sandbox that cannot read pekoe's tokens
 // (internal/sandbox), and every git pekoed runs (gitx.SetSandbox). On by
 // default; where no sandbox works, those commands are not run (git runs
@@ -497,4 +502,47 @@ func (r *Repo) EnvList(v Vars) []string {
 		out = append(out, k+"="+v.Expand(r.Env[k]))
 	}
 	return out
+}
+
+// DescribeHooks says what the repository config file at path holds as far
+// as `[hooks] <key>` goes, for an error that found the key empty: whether
+// the file is there, parses, has a [hooks] table and which keys that table
+// has. A missing key then reads as a wrong path, a file not saved, or a
+// table written over, without opening the file.
+func DescribeHooks(path, key string) string {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "the file does not exist (pekoe init writes a draft)"
+	}
+	if err != nil {
+		return "the file cannot be read: " + err.Error()
+	}
+	var m map[string]any
+	if _, err := toml.Decode(string(b), &m); err != nil {
+		return "the file does not parse, so pekoe reads no settings from it: " + err.Error()
+	}
+	if len(m) == 0 {
+		return fmt.Sprintf("the file is there (%d bytes) but sets nothing", len(b))
+	}
+	tables := sortedKeys(m)
+	h, ok := m["hooks"]
+	if !ok {
+		return fmt.Sprintf("the file has no [hooks] table (it has: %s)", strings.Join(tables, ", "))
+	}
+	hm, ok := h.(map[string]any)
+	if !ok {
+		return "hooks in the file is not a table"
+	}
+	if v, ok := hm[key]; ok {
+		if s, isStr := v.(string); isStr && strings.TrimSpace(s) == "" {
+			return fmt.Sprintf("[hooks] %s is there but empty", key)
+		}
+		if _, isStr := v.(string); !isStr {
+			return fmt.Sprintf("[hooks] %s is not a string", key)
+		}
+	}
+	if len(hm) == 0 {
+		return "the file's [hooks] table is empty"
+	}
+	return fmt.Sprintf("the file's [hooks] has %s, no %s", strings.Join(sortedKeys(hm), ", "), key)
 }

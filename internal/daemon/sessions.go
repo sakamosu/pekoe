@@ -274,7 +274,9 @@ func (d *Daemon) restore() {
 			if w == engine.WinAgent {
 				hasAgent = true
 			}
-			if w == engine.WinDev {
+			// a dead window is a hook that ended while pekoed was away:
+			// Dev stays as saved, and checkDevExits records the end
+			if w == engine.WinDev && !s.Dev && d.Eng.Alive(s.Slug, engine.WinDev) {
 				s.Dev = true
 			}
 			if w == engine.WinRun {

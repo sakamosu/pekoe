@@ -170,6 +170,8 @@ type Daemon struct {
 
 	mu          sync.Mutex
 	runMu       sync.Mutex // run.start / run.close, one at a time (lifecycle.go)
+	devMu       sync.Mutex // starting, stopping and seeing the end of dev hooks (devlog.go)
+	devlog      devLogs    // the dev hooks' logs (devlog.go)
 	tapiMu      sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
 	tapi        tapiState  // tapi chat, in memory only (tapi.go; under mu)
 	saveMu      sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
@@ -491,6 +493,8 @@ func (d *Daemon) call(method string, params json.RawMessage, who *Caller) (res a
 		h = bind(d.hAgentCleanup)
 	case agent && method == "dev.toggle":
 		h = bind(func(p slugP) (any, error) { return d.hAgentDevToggle(who, p) })
+	case agent && method == "dev.log":
+		h = bind(func(p devLogP) (any, error) { return d.hAgentDevLog(who, p) })
 	}
 	if len(params) == 0 {
 		params = json.RawMessage("{}")
@@ -574,6 +578,9 @@ func (d *Daemon) registerHandlers() {
 			}
 			if p.KillAgents {
 				d.killAgents.Store(true)
+				// the dev hooks go with the tmux server: their dev_stop
+				// first, before the caller starts waiting for pekoed to exit
+				d.stopAllDevs()
 			}
 			go func() { time.Sleep(100 * time.Millisecond); d.Stop() }()
 			return nil, nil
@@ -620,6 +627,7 @@ func (d *Daemon) registerHandlers() {
 		"worktree.rm":           bind(d.hRm),
 		"land":                  bind(d.hLand),
 		"dev.toggle":            bind(d.hDevToggle),
+		"dev.log":               bind(d.hDevLog),
 		"run.start":             bind(d.hRunStart),
 		"run.close":             bind(d.hRunClose),
 		"changes":               bind(d.hChanges),

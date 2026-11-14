@@ -48,6 +48,7 @@
   | `land` | ハブのエージェントの `pekoe land`(origin のあるリポジトリだけ。下) |
   | `worktree.rm` | ハブのエージェントの `pekoe rm`(landed のセッションだけ。下) |
   | `dev.toggle` | 作業セッションの `pekoe dev <自分の slug>`(呼び出し元のセッションの dev server だけ。`unknown` は断る。下) |
+  | `dev.log` | 作業セッションの `pekoe dev --log`(呼び出し元のセッションの dev hook のログだけ。`unknown` は断る。下) |
   | `report.post` | 作業セッションの `pekoe report`(呼び出し元のセッションの分だけ。`unknown` は断る。長さと件数の上限。下の「報告」) |
   | `report.list` | ハブのエージェントの `pekoe reports`(エージェントが書いた要約で、`session.list` と同じ公開度) |
   | `wait` | ハブのエージェントの `pekoe wait`(呼び出し元ごとに 8 本、1 時間まで。下の「待ち合わせ」) |
@@ -87,13 +88,14 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 - クライアントは `$PEKOE_SESSION` をリクエストの最上位の `session` に入れて送る(`internal/client`)。pekoed はこれを名乗り(`claimed`)として、識別したものと違うときだけ記録に残す。振り分けには使わない
 - `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。ただし `payload.transcript_path` が Claude Code の会話のファイル(`~/.claude/projects/<符号化した起動時の cwd>/<id>.jsonl`)なら、会話が始まった場所を先に見る: tapi の稼働ディレクトリなら tapi、あるセッションの worktree ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てる(cwd では決める)。Claude Code が会話をバックグラウンドのセッションに移すと、そのプロセスは別の窓の環境変数を持って窓の外で動くため(docs/tapi-chat.md「窓の外に出た会話」)。hooks は token を読めるので、ここでは token の有無ではなく窓を見る
 - `dev.toggle` も token なしなら窓で決める(token つきは今までどおり `slug` の相手)
+- `dev.log` も同じ。token なしでは窓のセッションのログだけを返し(`slug` を省けば窓のセッション)、別の slug は `dev.log: a session reads only its own dev server's log (…)` で断る。ログは worktree のコマンドの出力で、起動時に `.env` の中身を出すような dev server だと秘密を含みうるので、ほかのセッションの分は読ませない
 - `report.post` と `inbox.*` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告と問いは自分の窓のセッションに付く)
 
 ### hooks の sandbox
 
 pekoed は sandbox の外で動くので、エージェントが書き換えられるコード(worktree の Makefile・package.json・テスト、エージェントのブランチを `--base` にした `pekoe new`)を pekoed が実行すると、そのコードは human-token を読めてしまう。`session.event` は token なしで受け付けるので、Stop を偽れば何度でも走らせられる。そこで、worktree から来るコマンドはすべて sandbox(`internal/sandbox`)で包む。
 
-- 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く。pekoed が動かす git もすべてこの sandbox で包む(下の「pekoed が動かす git」。git だけは sandbox が使えなくても動かす)
+- 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)と、dev を止めるときの `dev_stop`、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く。pekoed が動かす git もすべてこの sandbox で包む(下の「pekoed が動かす git」。git だけは sandbox が使えなくても動かす)
 - 包まないもの: `run.start`(run 窓。人間が打ったコマンドで、自分の端末で打つのと同じ)、エージェント自身の起動(Claude Code の sandbox の役目)、`review.surface` の nvim。nvim のサーバーソケットは `nvim --listen <データディレクトリ>/nvim/<slug のハッシュ>.sock` で pekoe の管理下に置く(下の「つなげない」。既定の `$TMPDIR/nvim.$USER/…` だと hooks の中から `nvim --server … --remote-send` で外のコマンドを打てる)。パスが unix ソケットの上限(約 104 バイト)を超えるときだけ、これまでどおり nvim に任せる
 - macOS: `/usr/bin/sandbox-exec`。プロファイルは `(allow default)` に deny を足す。パスは `-D` の引数で渡し、プロファイルに埋めない。Seatbelt は解決後のパスで照合するので、各パスを書いたままのものと symlink を解いたもの(`/tmp` → `/private/tmp`)の両方で塞ぐ
   - 読めない: `human-token`、`http-token`、tsnet の state(`[web] state_dir` と既定の場所)、`config.toml`(`[web] auth_key`)、`state.db` と `-wal`・`-shm`(他のセッションのプロンプト・レビューのコメント・報告・受信箱。エージェントの sandbox と同じ扱い)
@@ -114,7 +116,7 @@ pekoed は sandbox の外で動くので、エージェントが書き換えら�
 
 ### 本体の .git の見張り
 
-pekoed が hooks の sandbox で動かすもの(Stop の `[hooks] test`、land のテスト、`setup`、`teardown`、`[review] gatekeeper`、`dev`)の前後で、そのセッションのリポジトリ本体の git ディレクトリ(`git rev-parse --git-common-dir`)の、あとで git が実行するものの指紋を取って比べる(`internal/gitwatch`)。
+pekoed が hooks の sandbox で動かすもの(Stop の `[hooks] test`、land のテスト、`setup`、`teardown`、`[review] gatekeeper`、`dev`、`dev_stop`)の前後で、そのセッションのリポジトリ本体の git ディレクトリ(`git rev-parse --git-common-dir`)の、あとで git が実行するものの指紋を取って比べる(`internal/gitwatch`)。
 
 - 見るもの: `hooks/` の中身(名前・内容の sha256・実行ビット・symlink の先。`*.sample` は git が動かさないので除く)、`core.hooksPath` が指すディレクトリの中身(husky の `.husky/_` など。相対パスは本体のチェックアウトから。本体のチェックアウトも hooks の中から書ける)、`config`・`config.worktree`・`worktrees/*/config.worktree` の危ない設定、サブモジュールの git ディレクトリ(`modules/…`。入れ子も)の `hooks/` と `config`
 - 危ない設定: コマンドを名指しするか、git が読むもの・フックの場所を変えるもの。`core.hooksPath`・`core.fsmonitor`・`core.sshCommand`・`core.editor`・`core.pager`・`core.askPass`・`core.gitProxy`・`core.alternateRefsCommand`・`core.worktree`・`core.attributesFile`・`sequence.editor`・`diff.external`・`gpg.program`・`credential.helper`・`interactive.diffFilter`・`web.browser`・`ssh.variant`・`uploadpack.packObjectsHook`・`extensions.worktreeConfig`・`include.path`・`protocol.allow`・`receive.procReceiveRefs`・`sendemail.*cmd` など、と `alias.*`・`pager.*`・`includeIf.*.path`・`filter.*.{clean,smudge,process}`・`diff.*.{textconv,command}`・`merge.*.driver`・`gpg.*.program`・`credential.*.helper`・`{merge,diff}tool.*.{cmd,path}`・`browser.*.{cmd,path}`・`man.*.{cmd,path}`・`remote.*.{uploadpack,receivepack,url,pushurl,vcs}`・`submodule.*.update`・`protocol.*.allow`・`url.*.{insteadOf,pushInsteadOf}`・`trailer.*.{command,cmd}`。読むのは `git config --file <f> --no-includes -z --list`(pekoed の git と同じ守りで動かす)で、git が読めない config はファイルのハッシュで見る。`user.name` や `branch.*` のような変更では何も出さない
@@ -176,7 +178,10 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "unread": 1234,                  // 離れてからの未読バイト数
   "activity": [0,1,3,5,8,6,4,5,7,9], // 直近の活動量(スパークライン用、古い順)
   "tokens": 42000,
-  "dev": true,                     // dev server 起動中
+  "dev": false,                    // dev hook([hooks] dev)のプロセスが動いている間だけ true。自分で終わったら pekoed が 2 秒ほどで見つけて false にする
+  "dev_log": "~/.local/share/pekoe/devlogs/feat-x.log", // dev hook の出力のファイル(エスケープシーケンスを除く。pekoe dev --log・dev.log)。一度起動してから
+  "dev_exit": {"status": 1, "at": "...", "dev_stop": {"command": "make down", "status": 0, "at": "..."}}, // 最後の dev hook がどう終わったか(動いている間・起動前は無い)。status は終了コード(不明・シグナル・pekoe が止めたときは -1)、signal、stopped(pekoe が止めた)、closed(終わった後の窓も閉じた)、dev_stop は [hooks] dev_stop の結果(error は失敗の理由)
+  "warnings": ["[worktree] copy \".envrc.local\": not found in /src/app, nothing copied"], // 作るときに気づいたが止めなかったこと([worktree] copy / clone のコピー元が本体のチェックアウトに無い・0 バイト)
   "run": "gh auth login",          // run 窓(TUI の !)のコマンド。閉じると消える
   "pr": 123,                       // セッションの PR 番号(gh#N のレビュー、land、自動検出)
   "issue": 12,                     // --from gh#N で作ったときの issue 番号
@@ -253,7 +258,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
 | `worktree.rm` | `{slug, force}` | teardown → worktree 削除(`~/worktrees` 配下のみ)。token なしでは landed のセッションの記録を消すだけ(上) |
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
-| `dev.toggle` | `{slug}` | dev server の起動/停止。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
+| `dev.toggle` | `{slug}` | dev server の起動/停止。答えはセッション。止めるときは `[hooks] dev_stop` を dev と同じ worktree・環境変数・sandbox で実行し(5 分まで)、結果を `dev_exit.dev_stop` とログに残す(失敗したら止めたうえでエラー)。`[hooks] dev` が無いときのエラーには設定ファイルの様子(無い・読めない・`[hooks]` が無い・`[hooks]` にあるキー)を添える。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
+| `dev.log` | `{slug?, lines?}` | `{slug, path, running, exit?, lines: [string]}`。dev hook のログの末尾 `lines` 行(既定 100、5000 まで)。ログには hook の出力(エスケープシーケンスを除き、`\r` は改行に)と、pekoed の `[pekoe <時刻>] …` の行(起動・自分で終わった(終了コード)・pekoe が止めた・`dev_stop` とその出力)が入る。2 MiB を超えたら `.1` に回す。rm で消す。token なしでは呼び出し元のセッションの分だけ |
 | `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |
 | `changes` | `{slug}` | `[{status: "A"\|"M"\|"D", path}]`(base からの変更) |
