@@ -30,7 +30,8 @@ type Hooks struct {
 	Test     string   `toml:"test"`
 	Teardown []string `toml:"teardown"`
 	// DevStop runs when pekoe stops the dev hook (pekoe dev, rm, x, pekoed
-	// stopping its agents), in the same sandbox and environment as dev:
+	// stopping its agents) and when the hook ends by itself, in the same
+	// sandbox and environment as dev:
 	// what dev started outside its own process (make down, docker compose
 	// down). teardown is for the worktree and runs on rm and after a merge.
 	DevStop string `toml:"dev_stop"`
