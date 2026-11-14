@@ -9,7 +9,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"pekoe/internal/config"
 	"pekoe/internal/state"
+	"pekoe/internal/theme"
 )
 
 func plain(o Options) *Renderer { o.NoColor = true; return New(o) }
@@ -268,5 +270,28 @@ func TestFitBannerShortKeepsText(t *testing.T) {
 	// a narrow pane still clips the kept rows
 	if rows := r.FitBanner(eyes, text, 18, 3); !strings.Contains(rows[0], "…") {
 		t.Errorf("narrow: %q, want a clipped first row", rows[0])
+	}
+}
+
+// Without theme colors in Options, the accents are the default theme's
+// state colors (theme.Look: run ok, wait warn, done secondary, fail err, idle dim).
+func TestDefaultAccentsAreThemeDefaults(t *testing.T) {
+	t.Setenv("PEKOE_COLOR", "truecolor")
+	th := theme.Load(&config.Theme{})
+	r := New(Options{})
+	for mood, role := range map[Mood]theme.Role{Work: theme.Ok, Wait: theme.Warn, Done: theme.Secondary,
+		Error: theme.Err, Idle: theme.Dim, Sleep: theme.Dim} {
+		if got, want := r.Color(mood), th.Color(role); got != want {
+			t.Errorf("%s: %v, want theme %s %v", mood, got, role, want)
+		}
+	}
+	// Options win over the defaults
+	r = New(Options{Work: lipgloss.Color("2"), Done: lipgloss.Color("6")})
+	if r.Color(Work) != lipgloss.Color("2") || r.Color(Done) != lipgloss.Color("6") {
+		t.Errorf("Options accents ignored: work %v done %v", r.Color(Work), r.Color(Done))
+	}
+	// work and done share the 1-cell ● so their colors must differ
+	if r.Color(Work) == r.Color(Done) || New(Options{}).Color(Work) == New(Options{}).Color(Done) {
+		t.Error("work and done must not share a color")
 	}
 }
