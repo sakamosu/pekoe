@@ -388,6 +388,8 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	switch {
 	case merged:
 		step("merge", stepDone, "")
+	case run != nil && run.State == state.MergeRunning && run.Detail != "":
+		step("merge", stepNow, run.Detail)
 	case run != nil && run.State == state.MergeRunning:
 		step("merge", stepNow, "pekoed is merging (checking again first)")
 	case run != nil && run.State == state.MergeMerged:

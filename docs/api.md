@@ -469,17 +469,18 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **前の選択肢の項目**: この版より前に作られた項目は 0 番が `merged`(人が GitHub でマージした、の記録)。添字の意味は選択肢の文で決まり、0 番が `merge` の項目だけがマージを走らせる。前の項目に 0 と答えても、state.db に残った答えを読み直しても、何もマージしない
 - **`merge` の答え**(token つきの `inbox.answer` だけ。TUI・CLI・Web UI のどれからでも同じ。エージェントは答えられない): 答えを保存するのと同じ変更で `answer.merge` を `running` にして返し、その後ろで pekoed が:
   1. その項目が `kv` に残した、そのセッションの最新の根拠の項目(id・PR・HEAD)であることを確かめる(違えば断る)。`gh` が無い・origin が GitHub のリポジトリを指さない・`[merge] method` が不正でも断る
-  2. PR を GitHub から読み直し(`gh api graphql`、`--repo` に当たる owner と name は main のチェックアウトの origin から)、`pr_status` を更新してから 6 つの条件をもう一度判定する。1 つでも崩れている・PR の HEAD が項目の HEAD と違う・PR の base がセッションの base(land が rebase した先)と違えば、マージしない。origin の host・owner・name は英数字と `.` `_` `-` だけのものに限る(gh がフラグや `@ファイル` と読むものを渡さない)
+  2. PR を GitHub から読み直し(`gh api graphql`、`--repo` に当たる owner と name は main のチェックアウトの origin から)、`pr_status` を更新してから 6 つの条件をもう一度判定する。1 つでも崩れている・PR の HEAD が項目の HEAD と違う・PR の base がセッションの base(land が rebase した先)と違えば、マージしない。ただし崩れているのが `merge_state` だけで、GitHub がまだマージできるかを計算している(`mergeStateStatus` が `UNKNOWN`、または無くて `mergeable` が null か `UNKNOWN`。同じ base に別の PR がマージされた直後など)ときは、断らずに 5 秒おきに読み直す(合計 1 分まで)。待っている間は `answer.merge` を `running` のまま、`detail` を `waiting: GitHub is still computing whether PR #42 can merge (merge_state UNKNOWN); …` にして `rev` を上げる。読み直すたびに、項目が最新か・セッションと PR の番号・base・6 つの条件・HEAD をすべて確かめ直す(待っている間に HEAD が動けば `PR HEAD moved`、CI が落ちればその理由で、すぐ断る)。1 分たっても `UNKNOWN` なら `not merged: evidence no longer holds: merge_state: merge_state is UNKNOWN (GitHub was still computing it after 1m0s)` で断る。`UNKNOWN` のほかに崩れた条件がある・`BLOCKED` などのときは待たない。origin の host・owner・name は英数字と `.` `_` `-` だけのものに限る(gh がフラグや `@ファイル` と読むものを渡さない)
   3. `gh pr merge <番号> --repo <host/owner/name> --merge|--squash|--rebase --match-head-commit <項目の HEAD>` を人の gh で、エージェントの worktree ではなく main のチェックアウトで実行する(sandbox の外。`GH_PROMPT_DISABLED=1`。`--admin`・`--auto`・`--delete-branch` は付けない。`--repo` を付けるので gh は手元のブランチに触らない)。方法はリポジトリの設定(`repos/<repo-id>.toml`)の `[merge] method`(`merge`・`squash`・`rebase`。既定 `merge`)
   4. 結果を `answer.merge` に書いて `rev` を上げ、`inbox.updated` を出す。成功したら PR をもう一度読み、`MERGED` ならその場で後片付け(下の「PR の状態のポーリング」と同じ)を始める
   - 実行は送信の記録に `from: pekoed, to: <slug>, kind: merge` で残る(`text` に実行した gh のコマンドと受信箱の id、`via` は答えた経路、失敗なら `ok: false` と `error`)
   - 失敗(`failed`)はマージ済みとして扱わず、`detail` に理由(`not merged: evidence no longer holds: ci: 1 pending`・`not merged: PR HEAD moved (…)`・`not merged: gh pr merge: <GitHub の言葉>` など)。同じ HEAD で条件が揃っていれば、根拠の項目がもう一度作られる(人はもう一度 `merge` と答えられる)
   - gh が 2 分で終わらなければ止め、`failed` の `detail` を `unknown: …` にする(GitHub がマージしたかは分からない。マージされていればポーリングが landed にする)
+  - 実行中(`running`)の `detail` は、GitHub の計算を待っている間だけ入る(上の 2)
   - pekoed が `running` のまま止まったら、次の起動で `failed`(`pekoed stopped during the merge …`)にする。GitHub でマージされていれば、ポーリングがいつもどおり landed にする
 
 ```jsonc
 // InboxAnswer.merge(pekoed の根拠の項目に merge と答えたときだけ)、MergeCheck.run(merge.check。最後のものを、次に項目を作るまで)
-{"state": "failed",          // running | merged | failed
+{"state": "failed",          // running | merged | failed(running の間も、GitHub の計算待ちなら detail に waiting: …)
  "pr": 42, "head": "3f2a…",  // --match-head-commit に渡す HEAD(項目のもの)
  "method": "merge",          // merge | squash | rebase(決まる前に失敗したら省く)
  "detail": "not merged: evidence no longer holds: ci: 1 pending",

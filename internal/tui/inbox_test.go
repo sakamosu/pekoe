@@ -123,3 +123,26 @@ func TestInboxModalStale(t *testing.T) {
 		t.Fatalf("withdrawn elsewhere: %T %q", m.modal, m.msg)
 	}
 }
+
+// pekoed's merge toasts once per state, and once more when it starts
+// waiting for GitHub to compute whether the PR can merge.
+func TestInboxMergeToast(t *testing.T) {
+	m := wrapModel(t, "feat-x")
+	m.onInboxList(nil)
+	it := state.InboxItem{ID: 7, Rev: 2, Kind: "approve", From: "pekoed", About: "feat-x", Status: state.InboxAnswered,
+		Answer: &state.InboxAnswer{Merge: &state.MergeRun{State: state.MergeRunning, PR: 42}}}
+	step := func(st, detail, want string) {
+		t.Helper()
+		it.Rev++
+		it.Answer.Merge = &state.MergeRun{State: st, PR: 42, Detail: detail}
+		m.msg = ""
+		inboxEv(t, m, it)
+		if !strings.Contains(m.msg, want) || (want == "" && m.msg != "") {
+			t.Fatalf("%s %q: toast %q", st, detail, m.msg)
+		}
+	}
+	step(state.MergeRunning, "", "merging PR #42 (feat-x) · checking again first")
+	step(state.MergeRunning, "waiting: GitHub is still computing whether PR #42 can merge (merge_state UNKNOWN); …", "GitHub is still computing whether it can merge: waiting")
+	step(state.MergeRunning, "waiting: GitHub is still computing whether PR #42 can merge (merge_state UNKNOWN); …", "")
+	step(state.MergeMerged, "merged PR #42 (merge) at HEAD 0123456", "✓ pekoed merged PR #42")
+}
