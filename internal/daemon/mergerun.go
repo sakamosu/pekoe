@@ -231,6 +231,11 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 		}
 		break
 	}
+	if run.Detail != "" {
+		// no longer waiting on GitHub: the item stops saying so
+		run.Detail, run.At = "", time.Now()
+		d.endMerge(it.ID, it.About, run)
+	}
 
 	args := []string{"pr", "merge", strconv.Itoa(s.PR), "--repo", repo, "--" + method, "--match-head-commit", run.Head}
 	ctx, cancel := context.WithTimeout(context.Background(), mergeRunTimeout)
