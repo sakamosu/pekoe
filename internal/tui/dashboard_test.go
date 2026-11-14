@@ -274,7 +274,7 @@ func TestDashboardPipeline(t *testing.T) {
 	}
 }
 
-// With color and a picture-friendly icon set the stages are a bar (▰ ▱)
+// With color and a picture-friendly icon set the stages are a bar (▅ ▁)
 // and the sections carry emoji; the ascii icon set gets ASCII marks and no
 // emoji; without color the bar becomes marks (it could not tell done from
 // failing). Every emoji is two cells (East Asian Wide).
@@ -282,7 +282,7 @@ func TestDashboardGlyphs(t *testing.T) {
 	m := dashPipelineModel(t)
 	dashLook(t, m, "truecolor", "unicode")
 	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
-	for _, want := range []string{"🧭 Overview", "📬 Inbox", "🚦 Pipeline", "▰▰▱▱▰▰▰▰▱▱  👀 needs review", "🎉 merged · 1", "📨 Sends", "💡 Decided"} {
+	for _, want := range []string{"🧭 Overview", "📬 Inbox", "🚦 Pipeline", "▅▅▁▁▅▅▅▅▁▁  👀 needs review", "🎉 merged · 1", "📨 Sends", "💡 Decided"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("truecolor unicode: %q missing:\n%s", want, out)
 		}
@@ -299,7 +299,7 @@ func TestDashboardGlyphs(t *testing.T) {
 		t.Errorf("ascii: no ASCII marks:\n%s", out)
 	}
 	for _, r := range out {
-		if r >= 0x1F000 || r == '▰' || r == '▱' {
+		if r >= 0x1F000 || r == '▅' || r == '▁' {
 			t.Fatalf("ascii: %q drawn:\n%s", r, out)
 		}
 	}
@@ -473,7 +473,7 @@ func TestDashboardStats(t *testing.T) {
 	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
 	for _, want := range []string{
 		"📊 today  2 merged · out 85.0k · cache write 410.0k · cache read 9.80M · in 1.2k",
-		"📅 7 days  ▱▱ ▱▱ ▱▱ ▰▱ ▱▱ ▱▱ ▰▰  3 merged",
+		"📅 7 days  ▁▁ ▁▁ ▁▁ ▅▁ ▁▁ ▁▁ ▅▅  3 merged",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("%q missing:\n%s", want, out)
@@ -496,7 +496,7 @@ func TestDashboardStats(t *testing.T) {
 		}
 	}
 	for _, r := range out {
-		if r >= 0x1F000 || r == '▰' || r == '▱' {
+		if r >= 0x1F000 || r == '▅' || r == '▁' {
 			t.Fatalf("ascii: %q drawn:\n%s", r, out)
 		}
 	}
@@ -504,7 +504,7 @@ func TestDashboardStats(t *testing.T) {
 	// narrow: one cell a day, unspaced, and the overview flows onto lines
 	dashLook(t, m, "truecolor", "unicode")
 	out = ansi.Strip(strings.Join(m.viewAgent(44, 40), "\n"))
-	if !strings.Contains(out, "7 days  ▱▱▱▰▱▱▰  3 merged") {
+	if !strings.Contains(out, "7 days  ▁▁▁▅▁▁▅  3 merged") {
 		t.Errorf("narrow week:\n%s", out)
 	}
 	if !strings.Contains(out, "cache read 9.80M") {
@@ -512,7 +512,7 @@ func TestDashboardStats(t *testing.T) {
 	}
 }
 
-// A busy day scales the bar down and keeps a ▰ for a day with one merge.
+// A busy day scales the bar down and keeps a ▅ for a day with one merge.
 func TestDashboardStatsScale(t *testing.T) {
 	m, _ := dashModel(t)
 	dashLook(t, m, "truecolor", "unicode")
@@ -521,7 +521,7 @@ func TestDashboardStatsScale(t *testing.T) {
 	m.dash.stats = &daemon.Stats{From: day(6), To: day(0), Merged: 9, Rows: []daemon.StatsRow{
 		{Day: day(0), Repo: "a", Merged: 8}, {Day: day(1), Repo: "a", Merged: 1}}}
 	out := ansi.Strip(strings.Join(m.viewAgent(150, 60), "\n"))
-	if !strings.Contains(out, "▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▱▱▱▱ ▰▱▱▱ ▰▰▰▰  9 merged") {
+	if !strings.Contains(out, "▁▁▁▁ ▁▁▁▁ ▁▁▁▁ ▁▁▁▁ ▁▁▁▁ ▅▁▁▁ ▅▅▅▅  9 merged") {
 		t.Errorf("scaled week:\n%s", out)
 	}
 	if !strings.Contains(out, "📊 today  8 merged · out 0") {
@@ -567,7 +567,7 @@ func TestDashboardStatsFailAndEmpty(t *testing.T) {
 	m.dash.statsAt = time.Time{}
 	runCmd(m, m.loadDashStats(dashStatsOpen))
 	out = ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
-	for _, want := range []string{"today  no merges · no tokens recorded yet", "7 days  ▱▱▱▱▱▱▱  0 merged"} {
+	for _, want := range []string{"today  no merges · no tokens recorded yet", "7 days  ▁▁▁▁▁▁▁  0 merged"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("empty stats: %q missing:\n%s", want, out)
 		}
