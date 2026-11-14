@@ -53,6 +53,37 @@ var mergeRunTimeout = 2 * time.Minute
 // are closed and the merge ends anyway (tests shorten it).
 var mergeWaitDelay = 5 * time.Second
 
+// mergeComputeEvery and mergeComputeLimit: how often pekoed reads the PR
+// again while GitHub is still computing whether it can merge, and for how
+// long in all before the merge fails (tests shorten them).
+var (
+	mergeComputeEvery = 5 * time.Second
+	mergeComputeLimit = time.Minute
+)
+
+// mergeComputing is whether the only condition off is merge_state and
+// GitHub has not computed it yet: mergeStateStatus UNKNOWN, or none with
+// mergeable null or UNKNOWN.
+func mergeComputing(v *PRView, c *state.MergeCheck) bool {
+	if len(c.Missing) != 1 || c.Missing[0] != "merge_state" {
+		return false
+	}
+	switch strings.ToUpper(v.MergeState) {
+	case "UNKNOWN":
+		return true
+	case "":
+		return v.Mergeable == "" || strings.EqualFold(v.Mergeable, "UNKNOWN")
+	}
+	return false
+}
+
+func mergeStateOf(v *PRView) string {
+	if v.MergeState == "" {
+		return "unknown"
+	}
+	return v.MergeState
+}
+
 // mergeTimedOut is the outcome of a gh pr merge that was stopped: GitHub
 // may have merged it, so neither merged nor not merged.
 func mergeTimedOut() string {
@@ -120,18 +151,25 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 		run.State, run.Detail, run.At = st, fmt.Sprintf(format, args...), time.Now()
 		d.endMerge(it.ID, it.About, run)
 	}
-	rec := d.mergeRecordOf(it.About)
-	if rec.ID != it.ID {
-		end(state.MergeFailed, "not merged: #%d is not pekoed's latest merge evidence for %s", it.ID, it.About)
-		return
+	// the item is still pekoed's latest one, for the session's PR
+	current := func() (*state.Session, bool) {
+		if rec := d.mergeRecordOf(it.About); rec.ID != it.ID {
+			end(state.MergeFailed, "not merged: #%d is not pekoed's latest merge evidence for %s", it.ID, it.About)
+			return nil, false
+		}
+		s, err := d.snapshot(it.About)
+		if err != nil {
+			end(state.MergeFailed, "not merged: session %s is gone", it.About)
+			return nil, false
+		}
+		if s.PR != run.PR {
+			end(state.MergeFailed, "not merged: the session's PR is #%d now, not #%d", s.PR, run.PR)
+			return nil, false
+		}
+		return s, true
 	}
-	s, err := d.snapshot(it.About)
-	if err != nil {
-		end(state.MergeFailed, "not merged: session %s is gone", it.About)
-		return
-	}
-	if s.PR != run.PR {
-		end(state.MergeFailed, "not merged: the session's PR is #%d now, not #%d", s.PR, run.PR)
+	s, ok := current()
+	if !ok {
 		return
 	}
 	if !ghFound() {
@@ -150,36 +188,52 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	}
 	run.Method = method
 
-	// read the PR again, and every condition on what was read
-	ctx, cancel := context.WithTimeout(context.Background(), mergeReadTimeout)
-	v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR)
-	cancel()
-	if err != nil {
-		end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
-		return
-	}
-	d.applyPRStatus(s.Slug, v.Summary(), false)
-	if base := prBase(s); v.Base != base {
-		// the base was changed after the person looked: not what they agreed to
-		end(state.MergeFailed, "not merged: PR #%d goes into %s now, not %s", s.PR, v.Base, base)
-		return
-	}
-	if s, err = d.snapshot(it.About); err != nil {
-		end(state.MergeFailed, "not merged: session %s is gone", it.About)
-		return
-	}
-	c := d.mergeCheck(s)
-	switch {
-	case !strings.EqualFold(c.PRHead, run.Head):
-		end(state.MergeFailed, "not merged: PR HEAD moved (%s → %s)", shortSHA(run.Head), shortSHA(c.PRHead))
-		return
-	case !c.Ready:
-		end(state.MergeFailed, "not merged: evidence no longer holds: %s", mergeDetails(c))
-		return
+	// read the PR again, and every condition on what was read. While
+	// GitHub is still computing whether it can merge (UNKNOWN, as right
+	// after another PR into the same base merged) and nothing else is
+	// off, read it again every mergeComputeEvery, up to mergeComputeLimit.
+	waitUntil := time.Now().Add(mergeComputeLimit)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), mergeReadTimeout)
+		v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR)
+		cancel()
+		if err != nil {
+			end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
+			return
+		}
+		d.applyPRStatus(s.Slug, v.Summary(), false)
+		if base := prBase(s); v.Base != base {
+			// the base was changed after the person looked: not what they agreed to
+			end(state.MergeFailed, "not merged: PR #%d goes into %s now, not %s", s.PR, v.Base, base)
+			return
+		}
+		if s, ok = current(); !ok {
+			return
+		}
+		c := d.mergeCheck(s)
+		switch {
+		case !strings.EqualFold(c.PRHead, run.Head):
+			end(state.MergeFailed, "not merged: PR HEAD moved (%s → %s)", shortSHA(run.Head), shortSHA(c.PRHead))
+			return
+		case c.Ready:
+		case mergeComputing(v, c) && time.Now().Before(waitUntil):
+			run.Detail, run.At = fmt.Sprintf("waiting: GitHub is still computing whether PR #%d can merge (merge_state %s); reading it again every %s, up to %s",
+				s.PR, mergeStateOf(v), mergeComputeEvery, mergeComputeLimit), time.Now()
+			d.endMerge(it.ID, it.About, run)
+			time.Sleep(mergeComputeEvery)
+			continue
+		case mergeComputing(v, c):
+			end(state.MergeFailed, "not merged: evidence no longer holds: %s (GitHub was still computing it after %s)", mergeDetails(c), mergeComputeLimit)
+			return
+		default:
+			end(state.MergeFailed, "not merged: evidence no longer holds: %s", mergeDetails(c))
+			return
+		}
+		break
 	}
 
 	args := []string{"pr", "merge", strconv.Itoa(s.PR), "--repo", repo, "--" + method, "--match-head-commit", run.Head}
-	ctx, cancel = context.WithTimeout(context.Background(), mergeRunTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), mergeRunTimeout)
 	_, err = ghMerge(ctx, s.RepoDir, args...)
 	timedOut := err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 	cancel()
@@ -216,8 +270,8 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	cancel()
 }
 
-// endMerge writes how the merge went onto the item (its rev goes up) and
-// tells the screens.
+// endMerge writes how the merge went (or, still running, what it waits
+// on) onto the item (its rev goes up) and tells the screens.
 func (d *Daemon) endMerge(id int64, slug string, run state.MergeRun) {
 	d.mergeRuns.Store(slug, run)
 	d.inboxMu.Lock()

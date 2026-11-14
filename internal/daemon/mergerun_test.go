@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -474,4 +475,132 @@ func TestMergeRunOddOrigin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// GitHub computing whether the PR can merge (right after another PR into
+// the same base merged): merge_state UNKNOWN while every other condition
+// holds → pekoed reads it again, the item saying it waits, and decides on
+// what it reads then.
+func TestMergeRunWaitsForUnknown(t *testing.T) {
+	shortCompute := func(t *testing.T, every, limit time.Duration) {
+		oe, ol := mergeComputeEvery, mergeComputeLimit
+		mergeComputeEvery, mergeComputeLimit = every, limit
+		t.Cleanup(func() { mergeComputeEvery, mergeComputeLimit = oe, ol })
+	}
+	// swap: pr.json replaced in one rename (the fake gh never reads half)
+	swap := func(t *testing.T, ghd string, f prFixture) {
+		f.writeAs(t, ghd, "pr.json.new")
+		if err := os.Rename(filepath.Join(ghd, "pr.json.new"), filepath.Join(ghd, "pr.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unknown := func(head string) prFixture { f := greenPR(head); f.Merge = "UNKNOWN"; return f }
+	// waiting: the item says it waits, still running
+	waiting := func(t *testing.T, d *Daemon, id int64) {
+		t.Helper()
+		waitFor(t, func() bool {
+			r := inboxGet(t, d, id).Answer.Merge
+			return r.State == state.MergeRunning && strings.Contains(r.Detail, "waiting: GitHub is still computing whether PR #42 can merge (merge_state UNKNOWN)")
+		})
+	}
+
+	t.Run("then clean", func(t *testing.T) {
+		shortCompute(t, 20*time.Millisecond, time.Minute)
+		d, _, ghd, it := mergeRunSetup(t)
+		swap(t, ghd, unknown(mergeHead))
+		answerMerge(t, d, it.ID)
+		waiting(t, d, it.ID)
+		if c := mergeCheckOf(t, d); c.Run == nil || c.Run.State != state.MergeRunning || !strings.HasPrefix(c.Run.Detail, "waiting: ") {
+			t.Fatalf("merge.check run: %+v", c.Run)
+		}
+		if ms := ghMerges(ghd); len(ms) != 0 {
+			t.Fatalf("merged while UNKNOWN: %q", ms)
+		}
+		swap(t, ghd, greenPR(mergeHead))
+		run := waitMergeEnd(t, d, it.ID)
+		if run.State != state.MergeMerged || !strings.Contains(run.Detail, "merged PR #42") {
+			t.Fatalf("run: %+v", run)
+		}
+		if ms := ghMerges(ghd); len(ms) != 1 || !strings.HasSuffix(ms[0], "--match-head-commit "+mergeHead) {
+			t.Fatalf("gh: %q", ms)
+		}
+	})
+
+	t.Run("unknown to the end", func(t *testing.T) {
+		shortCompute(t, 20*time.Millisecond, 300*time.Millisecond)
+		d, _, ghd, it := mergeRunSetup(t)
+		swap(t, ghd, unknown(mergeHead))
+		start := time.Now()
+		answerMerge(t, d, it.ID)
+		run := waitMergeEnd(t, d, it.ID)
+		if run.State != state.MergeFailed || time.Since(start) < 300*time.Millisecond ||
+			run.Detail != "not merged: evidence no longer holds: merge_state: merge_state is UNKNOWN (GitHub was still computing it after 300ms)" {
+			t.Fatalf("run after %s: %+v", time.Since(start), run)
+		}
+		if ms := ghMerges(ghd); len(ms) != 0 {
+			t.Fatalf("merged: %q", ms)
+		}
+		reads := 0
+		for _, l := range ghLog(ghd) {
+			if strings.HasPrefix(l, "api graphql -F owner=me -F name=app -F number=42") {
+				reads++
+			}
+		}
+		if reads < 3 {
+			t.Fatalf("read %d times", reads)
+		}
+		// asked again once it holds, as after any failed merge
+		swap(t, ghd, greenPR(mergeHead))
+		s, _ := d.snapshot("main")
+		v, err := fetchPRViewOf(context.Background(), s.RepoDir, "github.com/me/app", 42) // the poller's next round
+		if err != nil {
+			t.Fatal(err)
+		}
+		d.applyPRStatus("main", v.Summary(), false)
+		d.checkMerges()
+		if its := mergeItems(t, d, "open"); len(its) != 1 || its[0].ID == it.ID {
+			t.Fatalf("asked again: %+v", its)
+		}
+	})
+
+	// anything else off fails at once, even with merge_state UNKNOWN
+	for name, f := range map[string]prFixture{
+		"ci failed": func() prFixture {
+			f := unknown(mergeHead)
+			f.Checks = append(f.Checks, actionsCheck("e2e", "COMPLETED", "FAILURE", 1, 6))
+			return f
+		}(),
+		"blocked": func() prFixture { f := greenPR(mergeHead); f.Merge = "BLOCKED"; return f }(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			shortCompute(t, time.Second, time.Hour)
+			d, _, ghd, it := mergeRunSetup(t)
+			swap(t, ghd, f)
+			start := time.Now()
+			answerMerge(t, d, it.ID)
+			run := waitMergeEnd(t, d, it.ID)
+			if run.State != state.MergeFailed || strings.Contains(run.Detail, "computing") || time.Since(start) > 20*time.Second {
+				t.Fatalf("run after %s: %+v", time.Since(start), run)
+			}
+			if ms := ghMerges(ghd); len(ms) != 0 {
+				t.Fatalf("merged: %q", ms)
+			}
+		})
+	}
+
+	t.Run("head moved while waiting", func(t *testing.T) {
+		shortCompute(t, 20*time.Millisecond, time.Minute)
+		d, _, ghd, it := mergeRunSetup(t)
+		swap(t, ghd, unknown(mergeHead))
+		answerMerge(t, d, it.ID)
+		waiting(t, d, it.ID)
+		swap(t, ghd, greenPR(mergeHead2))
+		run := waitMergeEnd(t, d, it.ID)
+		if run.State != state.MergeFailed || !strings.Contains(run.Detail, "PR HEAD moved (0123456 → 89abcde)") {
+			t.Fatalf("run: %+v", run)
+		}
+		if ms := ghMerges(ghd); len(ms) != 0 {
+			t.Fatalf("merged: %q", ms)
+		}
+	})
 }
