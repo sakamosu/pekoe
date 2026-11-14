@@ -360,3 +360,63 @@ func TestRunInterruptedLine(t *testing.T) {
 		t.Fatalf("interrupted:\n%s", out)
 	}
 }
+
+// pressRun feeds a key the way the terminal does: through Update (the mouse
+// guard, tapi chat's and the review screen's turns, then onKey).
+func pressRun(m *model, k string) {
+	_, cmd := m.Update(key(k))
+	runCmd(m, cmd)
+}
+
+// tapi chat open in [4], then 1 and ! in Sessions: the run window must take
+// [4] and the typing. It used to start behind tapi chat (keys went to tapi,
+// the next ! "showed" the hidden run), so ! looked like it did nothing.
+func TestRunBangWithTapiChatOpen(t *testing.T) {
+	m, f, rr := runModel(t)
+	pressRun(m, "t") // tapi chat, typing into it
+	if !m.chat.open || !m.typing {
+		t.Fatalf("t: chat %v typing %v", m.chat.open, m.typing)
+	}
+	m.typing = false // ^q, as a person leaves the chat's input …
+	pressRun(m, "1") // … then [1]: tapi chat still shows in [4]
+	if m.focus != pSessions || !m.chat.open || m.current() == nil {
+		t.Fatalf("1: focus %d chat %v current %v", m.focus, m.chat.open, m.current())
+	}
+
+	pressRun(m, "!")
+	if _, ok := m.modal.(*runModal); !ok {
+		t.Fatalf("! opened %T (msg %q)", m.modal, m.msg)
+	}
+	rr.mu.Lock()
+	rr.run = map[string]any{"running": true, "started": true, "command": "gh auth login", "exit_status": -1}
+	m.sessions[0].Run = "gh auth login"
+	rr.runSc = &engine.Screen{Lines: []string{"$ gh auth login", "? Where do you use GitHub?"}, Width: 100, Height: 30}
+	rr.mu.Unlock()
+	pressRun(m, "enter")
+	if m.chat.open || m.window != engine.WinRun || m.focus != pAgent || !m.typing {
+		t.Fatalf("after ↵: chat %v window %s focus %d typing %v", m.chat.open, m.window, m.focus, m.typing)
+	}
+	out := checkSize(t, m, "run over tapi chat")
+	if !strings.Contains(out, "Run api-1") || !strings.Contains(out, "? Where do you use GitHub?") || strings.Contains(out, "tapi the orchestrator") {
+		t.Fatalf("[4] must show the run window:\n%s", out)
+	}
+	if testing.Verbose() {
+		t.Logf("screen after ! ↵ with tapi chat open:\n%s", out)
+	}
+	pressRun(m, "y")
+	if ks := f.find("session.keys"); len(ks) == 0 || ks[len(ks)-1]["window"] != engine.WinRun || ks[len(ks)-1]["literal"] != "y" {
+		t.Fatalf("typed into: %v (tapi.keys %v)", ks, f.find("tapi.keys"))
+	}
+	if tk := f.find("tapi.keys"); len(tk) != 0 {
+		t.Fatalf("keys went to tapi: %v", tk)
+	}
+
+	// a run already open: ! from [1] with tapi chat open shows it too
+	m.typing, m.focus = false, pSessions
+	m.window, m.screen = engine.WinAgent, nil
+	m.chat.open = true
+	pressRun(m, "!")
+	if m.chat.open || m.window != engine.WinRun || !m.typing {
+		t.Fatalf("! on an open run: chat %v window %s typing %v", m.chat.open, m.window, m.typing)
+	}
+}
