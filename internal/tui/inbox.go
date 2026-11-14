@@ -123,16 +123,22 @@ func (m *model) toastMerge(it state.InboxItem) {
 	if m.mergeToasted == nil {
 		m.mergeToasted = map[int64]string{}
 	}
-	if m.mergeToasted[it.ID] == r.State {
+	key := r.State
+	if r.State == state.MergeRunning && strings.HasPrefix(r.Detail, "waiting:") {
+		key += " waiting" // GitHub still computing: told once more
+	}
+	if m.mergeToasted[it.ID] == key {
 		return
 	}
-	m.mergeToasted[it.ID] = r.State
-	switch r.State {
-	case state.MergeRunning:
+	m.mergeToasted[it.ID] = key
+	switch {
+	case key != r.State:
+		m.setMsg(fmt.Sprintf("merging PR #%d (%s) · GitHub is still computing whether it can merge: waiting", r.PR, it.About), false)
+	case r.State == state.MergeRunning:
 		m.setMsg(fmt.Sprintf("merging PR #%d (%s) · checking again first", r.PR, it.About), false)
-	case state.MergeMerged:
+	case r.State == state.MergeMerged:
 		m.setMsg(fmt.Sprintf("✓ pekoed merged PR #%d (%s)", r.PR, it.About), false)
-	case state.MergeFailed:
+	case r.State == state.MergeFailed:
 		m.setMsg(fmt.Sprintf("✗ PR #%d (%s) %s", r.PR, it.About, inboxText(r.Detail)), true)
 	}
 }
