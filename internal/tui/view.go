@@ -175,6 +175,16 @@ func (m *model) sessionRows(cw int) ([]row, string) {
 // rowNone is a row of [1] that selects nothing (a heading, the empty hint).
 const rowNone = -2
 
+// rowIndent is how far the rows under a heading (the tapi row, the session
+// rows) sit right of it, so a repository reads as holding its sessions: the
+// row's icon lines up with the heading's name. Plain spaces, no tree rules
+// (├ └), so it reads the same narrow, in ascii and without colors. The
+// room comes out of the name column (sessionCols); the state and age keep
+// theirs.
+const rowIndent = 2
+
+func indentRow(line string) string { return strings.Repeat(" ", rowIndent) + line }
+
 // sessionRowsSel is sessionRows with what each row selects: tapiSel, an
 // index of visible(), or rowNone.
 func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
@@ -184,7 +194,7 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 	sels := make([]int, 0, len(vis)+2)
 	// tapi heads the list under its own heading, above the repository
 	// headings and outside the filter (taprow.go)
-	rows = append(rows, row{Text: m.tapiHeading(cw)}, row{Text: m.tapiLine(cw, now), Sel: m.onTapiRow()})
+	rows = append(rows, row{Text: m.tapiHeading(cw)}, row{Text: indentRow(m.tapiLine(max(cw-rowIndent, 1), now)), Sel: m.onTapiRow()})
 	sels = append(sels, rowNone, tapiSel)
 	waiting, toReview := 0, 0
 	var oldest time.Duration
@@ -206,7 +216,7 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 			rows = append(rows, row{Text: m.repoHeading(s, cw)})
 			sels = append(sels, rowNone)
 		}
-		rows = append(rows, row{Text: m.sessionLine(s, cw, now), Sel: i == m.sel})
+		rows = append(rows, row{Text: indentRow(m.sessionLine(s, max(cw-rowIndent, 1), now)), Sel: i == m.sel})
 		sels = append(sels, i)
 	}
 	if len(vis) == 0 {
@@ -259,10 +269,11 @@ const (
 func sessionCols(cw int) (nameW, diffW int) {
 	diffW = 11
 	// icon+sp + name + sp + state + sp + age + sp + diff + sp + test
+	// (without the diff and test: icon+sp + name + sp + state + sp + age)
 	nameW = cw - 2 - 1 - stateW - 1 - ageW - 1 - diffW - 2
 	if nameW < 8 {
 		diffW = 0
-		nameW = cw - 2 - stateW - 1 - ageW
+		nameW = cw - 2 - 1 - stateW - 1 - ageW
 	}
 	return nameW, diffW
 }

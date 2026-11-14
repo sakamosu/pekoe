@@ -164,7 +164,9 @@ var tourSteps = []tourStep{
 			if !ok {
 				return nil
 			}
-			nameW, _ := sessionCols(cw)
+			// the rows sit rowIndent right of the headings (sessionRowsSel)
+			x += rowIndent
+			nameW, _ := sessionCols(cw - rowIndent)
 			var out []rect
 			for i, sel := range sels {
 				switch sel {
