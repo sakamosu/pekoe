@@ -288,10 +288,10 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 			m.chat.info = c.info
 			rows, _ := m.sessionRows(80)
 			line := rows[1].Text
-			if got := ansi.Strip(line); c.icon != "" && !strings.HasPrefix(got, c.icon+" tapi") {
+			if got := ansi.Strip(line); c.icon != "" && !strings.HasPrefix(got, "  "+c.icon+" tapi") {
 				t.Errorf("%s/%q: row %q should start with %s", tc.palette, c.name, got, c.icon)
 			}
-			if has := strings.HasPrefix(line, "\x1b["+tc.body+"m"); has != c.calm {
+			if has := strings.HasPrefix(line, "  \x1b["+tc.body+"m"); has != c.calm {
 				t.Errorf("%s/%q: body-colored icon %v, want %v: %q", tc.palette, c.name, has, c.calm, line)
 			}
 		}
