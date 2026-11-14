@@ -23,12 +23,12 @@ issue #85 の調査と案。まだ実装していない。方針を決めるた�
 
 | 区分 | 字 | 主な場所 | A のとき | B(JPDOC で測った字形)のとき | 影響 |
 | --- | --- | --- | --- | --- | --- |
-| 状態アイコン(unicode のセット) | `◆ ● ○ ◎ ▶ ⊙ ± ≡`、区切り `│` | `internal/theme/theme.go:220-223`(Sessions・Run・Wait・Idle・Unsent・Browser・Here・Issues・Diff・Changes・Sep) | 崩れる | `● ○ ◆ ◎ ≡ ±` がはみ出す。`▶ ⊙` は収まる | 大。セッション一覧の行頭で状態を見分ける字 |
+| 状態アイコン(unicode のセット) | `◆ ● ○ ◎ ▶ ⊙ ± ≡ …`、区切り `│` | `internal/theme/theme.go:220-223`(Sessions・Run・Wait・Idle・Unsent・Browser・Here・Issues・Diff・Changes・Pending・Sep) | 崩れる | `● ○ ◆ ◎ ≡ ±` がはみ出す。`▶ ⊙` は収まる | 大。セッション一覧の行頭で状態を見分ける字 |
 | 状態アイコン(nerd のセット) | `●`(Unsent)、`▶`(Here)、`│`(Sep)と私用領域 25 字 | `internal/theme/theme.go:226-231` | 崩れる | `●` がはみ出す | 大 |
 | ほかの状態表示 | `•`(未読の印)、`○`(レビューの見出し)、`●`(ロゴの点) | `internal/tui/view.go:324`、`review.go:638`、`render.go:304` | 崩れる | `● ○` がはみ出す。`•` は収まる | 中 |
 | マスコット | 目と 1 セル表示の `• ●`(idle・work・done)、`˙`(Peek)、`╥`(ci_failed の目)、吹き出しの泡 `° ·` | `internal/mascot/tapi.json:17-26`、`mascot.go:306`、`internal/tui/tapi.go:380` | 崩れる(今は `auto` が ascii にする) | `●` がはみ出す(今の `narrow` の対象)。`• ˙ ° ·` は収まる。`╥` は JPDOC に無い | 大。顔は 1 か所の状態表示 |
 | マスコットの輪郭 | `█ ▌ ▀ ▄`(`▐` と六分ブロックは N) | `tapi.json:9,13`、`mascot.go:101-105,349-382` | 崩れる(今は ascii の輪郭になる) | 端末が自前で描く | 中 |
-| 本文の記号 | `·`(193 か所)、`…`(60)、`→`(32)、`←`(8)、`×`(7)、`—`(3)、`⇧`(3)、`↔`・`’`・`°`(各 1) | `·` は区切り(`view.go`・`dashboard.go`・`inbox.go`…)、`…` は `clip`(`render.go:21` の `ansi.Truncate` の末尾)と省略、`→ ←` は tips・ダッシュボード・CLI、`×` は寸法と閉じるボタン(`errcard.go`・`preview.go`) | 崩れる。`clip` の `…` は切り詰めた行すべてを 1 セル延ばすので、枠のある画面がほぼ全部ずれる | `… → ← × ±` がはみ出す(0.2〜0.5 セル)。`· — ˙ ° ’ ↔ ⇧` は収まる | A では大、B では小(次が空白なら読める) |
+| 本文の記号 | `·`(193 か所)、`…`(60)、`→`(32)、`←`(8)、`×`(7)、`—`(3)、`⇧`(3)、`↔`・`’`・`°`(各 1) | `·` は区切り(`view.go`・`dashboard.go`・`inbox.go`…)、`…` は `fit`(`render.go:16-21`。`ansi.Truncate(s, n, "…")` で切り詰める。呼び出しは 96 か所)と省略、`→ ←` は tips・ダッシュボード・CLI、`×` は寸法と閉じるボタン(`errcard.go`・`preview.go`) | 崩れる。`fit` の `…` は切り詰めた行すべてを 1 セル延ばすので、枠のある画面がほぼ全部ずれる | `… → ← × ±` がはみ出す(0.2〜0.5 セル)。`· — ˙ ° ’ ↔ ⇧` は収まる | A では大、B では小(次が空白なら読める) |
 | 枠線・ブロック要素 | `─ ━ │ ┃ ┄ ┆ ┌ ┐ └ ┘ ┏ ┓ ┗ ┛ ├ ┤ ┼ ╭ ╮ ╯ ╰`、`▁〜▇ █ ▌ ▎ ▏ ▀ ▄` | `render.go:82-84`(箱)、`modals.go`、`errcard.go`、`markdown.go`(表)、`tour.go:496`、`render.go:245`(スパークライン) | 崩れる | 端末が自前で描く(下の「端末」) | A では大 |
 | nerd font の私用領域 | U+E0B4・E0B6(キャップ)、U+E725〜F28B、U+F06A9 | `theme.go:226-231` | 端末による | nerd font の字形は 1.5 セルほど(後ろの空白まで使う作り) | 小(後ろが空白なら) |
 | その他 | U+10EEEE | `internal/tui/kitty.go:200`。kitty の画像の置き場所を示す字で、字形は描かれない | — | — | なし |
@@ -74,7 +74,7 @@ issue #85 の調査と案。まだ実装していない。方針を決めるた�
 
 | 字 | EAW | Menlo | SF Mono | Monaco | DejaVu | Cascadia | JetBrains | Noto Mono | JPDOC | UDEV | HackGen35C | 向く用途 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `∙` U+2219 | N | o | o | o | o | o | o | o | o | o | o | `·` `•` の代わり。**測った 10 書体すべてで収まる唯一の点**。小さいので `●` の代わりには弱い |
+| `∙` U+2219 | N | o | o | o | o | o | o | o | o | o | o | `·` `•` の代わり。**N の点で、測った 10 書体すべてに入っていて収まる唯一のもの**。小さいので `●` の代わりには弱い |
 | `◦` U+25E6 | N | o | o | - | o | o | o | o | o | o | o | `○`(Idle)の代わり |
 | `▸` U+25B8 | N | o | o | - | o | o | o | o | o | o | o | `▶`(Here)の代わり |
 | `◊` U+25CA | N | o | o | o | o | o | o | o | o | o | o | `◆`(Sessions)の代わり。10 書体すべてで収まる |
@@ -96,6 +96,8 @@ issue #85 の調査と案。まだ実装していない。方針を決めるた�
 
 読み取れること:
 
+- 今使っている N のアイコンも書体の対応は弱い。`⎇ ⌖` は測った書体のどれにも無く(Apple Symbols にはあるが 2 セルほど)、`✎` は Menlo と DejaVu だけ、`⇄` は SF Mono・Monaco・Cascadia・JetBrains・Noto に無い、`↣` は Noto で 2 セル幅。`◌` は Monaco 以外で収まる。曖昧幅の置き換えとは別に、unicode のセットを見直すときの材料にする
+
 - issue の候補 `∙ ◦ ◉ ◕ ⨯ ✓ ✗` のうち、そのまま既定にできるのは `∙`(全書体)と `◦`(Monaco 以外)。`◉ ◕` は SF Mono・Monaco に無い(Terminal.app の既定は SF Mono、Monaco は古い iTerm2 の既定)。`⨯` は JetBrains Mono(Ghostty の既定)・Noto・SF Mono に無いので、今の error の目 `⨯` もすでに代替フォント頼み
 - `●` の代わりに「どの書体にもあって、大きくて、1 セルに収まる黒丸」は見つからなかった。状態アイコンは「`◉`(SF Mono では代替)」か「`∙`(小さい)」のどちらかを選ぶことになる。マスコットの目は表情の設計なので、マスコットの担当の判断にする
 - Noto Sans Mono は `◆ ▶ ⊙ ▱` などを 2 セル分の送り幅で持っていて、日本語フォントでなくても B が起きる
@@ -104,7 +106,7 @@ issue #85 の調査と案。まだ実装していない。方針を決めるた�
 
 pekoe の幅の数え方はすべて `charmbracelet/x/ansi` に集まっている。
 
-- `lipgloss.Width`・枠線・`Place`・`JoinHorizontal` などは `ansi.StringWidth`。pekoe の `w()`(`internal/tui/render.go:14`)と `clip`(`ansi.Truncate`)も同じ。bubbletea の描画(`standard_renderer.go`)も行を `ansi.StringWidth` / `ansi.Truncate` で端末の幅に切る
+- `lipgloss.Width`・枠線・`Place`・`JoinHorizontal` などは `ansi.StringWidth`。pekoe の `w()`(`internal/tui/render.go:14`)、`fit`(`…` を付けて切る)と `clip`(`…` なしで切る。`render.go:29-34`)も同じ。bubbletea の描画(`standard_renderer.go`)も行を `ansi.StringWidth` / `ansi.Truncate` で端末の幅に切る
 - `ansi.StringWidth` は書記素ごとに `clipperhouse/displaywidth` で数える。曖昧幅を 2 にするのは `displaywidth.Options.EastAsianWidth`。x/ansi はこれを**パッケージ内の変数に持ち、`init` で環境変数 `RUNEWIDTH_EASTASIAN` を読んだときだけ true にする**(`x/ansi@v0.11.8/method.go`)。外から切り替える API は無い
 - `go-runewidth` は x/ansi の `StringWidthWc` 経由でだけ入っていて、こちらも x/ansi 自前の `Condition`(同じ環境変数)を使う。runewidth の `DefaultCondition` はロケールが `ja_JP` だと曖昧幅を 2 にするが、pekoe からは使われていない
 - `rivo/uniseg` は `withCursor`(`view.go:723`)で使っていて、公開の変数 `uniseg.EastAsianAmbiguousWidth` で実行中に切り替えられる
@@ -116,9 +118,9 @@ pekoe の幅の数え方はすべて `charmbracelet/x/ansi` に集まってい�
 | 既定 | `ansi.StringWidth` = 1、`lipgloss.Width` = 1、`uniseg` = 1、`runewidth.StringWidth`(DefaultCondition)= 2 | 4 |
 | `RUNEWIDTH_EASTASIAN=1` | `ansi` = 2、`lipgloss` = 2、`uniseg` = 1 のまま | 6(枠線も 2 と数える) |
 
-つまり「曖昧幅を 2 と数える」ことは環境変数 1 つで pekoe 全体に効くが、`init` で読むので、CPR で測った結果に合わせるには測ってから自分を exec し直すしかない。もう一つの問題は、pekoe が枠を手で組み立てている箇所(`render.go:82` の `"╭" + strings.Repeat("─", n) + "╮"`、ツアーのカードの `inner := width - 4` など)が「枠線は 1 セル」を前提にしていること。枠線を 2 と数えるなら、これらを全部直すことになる。
+つまり「曖昧幅を 2 と数える」ことは環境変数 1 つで pekoe 全体に効くが、`init` で読むので、CPR で測った結果に合わせるには測ってから自分を exec し直すしかない。もう一つの問題は、pekoe が枠を手で組み立てている箇所(`errcard.go:153`・`view.go:978` の `"╭" + strings.Repeat("─", n) + "╮"`、ツアーのカードの `inner := width - 4` など)が「枠線は 1 セル」を前提にしていること。枠線を 2 と数えるなら、これらを全部直すことになる。
 
-エージェントの画面の取り込み: プレビューは `tmux capture-pane -p -e` の行を `clip` で切って並べる(`view.go:700` 付近)。tmux は曖昧幅を utf8proc か libc の `wcwidth()` で 1 と数え、エージェント(Claude Code の `●` `⎿` など)もその前提で画面を作る。A の端末ではこの取り込んだ行が 1 字ごとにずれるが、中身はエージェントのものなので置き換えられない。pekoe にできるのは、行を 2 で数えて切り、枠を押し出さないことだけ。tmux 3.6 の `codepoint-widths` で tmux 側の数え方を変えることもできるが、エージェントのレイアウトとずれる(手元の tmux は 3.5a で、この設定は無い)。
+エージェントの画面の取り込み: プレビューは `tmux capture-pane -p -e` の行を `clip` で切って並べる(`view.go:700` 付近。`…` は付けない)。tmux は曖昧幅を utf8proc か libc の `wcwidth()` で 1 と数え、エージェント(Claude Code の `●` など)もその前提で画面を作る。A の端末ではこの取り込んだ行が 1 字ごとにずれるが、中身はエージェントのものなので置き換えられない。pekoe にできるのは、行を 2 で数えて切り、枠を押し出さないことだけ。tmux 3.6 の `codepoint-widths` で tmux 側の数え方を変えることもできるが、エージェントのレイアウトとずれる(手元の tmux は 3.5a で、この設定は無い)。
 
 ## 4. 検出
 
@@ -154,11 +156,11 @@ B を自動で見分けられるか:
 
 | 案 | 内容 | 長所 | 短所 |
 | --- | --- | --- | --- |
-| a | 状態表示だけ置き換える。本文は今のまま | 変更が小さい。見た目がほぼ変わらない | A では本文と `clip` の `…` で全体が崩れたまま |
-| b | 本文も既定で N の字か ASCII に置き換える | A でも B でも崩れない | `…` `→` を ASCII(`...` `->`)にすると見た目と幅が変わる。N の代わりの字は書体の対応が弱い(`⋯` `➜` は SF Mono・Cascadia・Noto に無い)。`· → ∙` だけは全書体にあるが、そもそも `·` は B で崩れない |
+| a | 状態表示だけ置き換える。本文は今のまま | 変更が小さい。見た目がほぼ変わらない | A では本文と `fit` の `…` で全体が崩れたまま |
+| b | 本文も既定で N の字か ASCII に置き換える | A でも B でも崩れない | `…` `→` を ASCII(`...` `->`)にすると見た目と幅が変わる。N の代わりの字は書体の対応が弱い(`⋯` `➜` は SF Mono・Cascadia・Noto に無い)。`·` の代わりの `∙` だけは全書体にあるが、そもそも `·` は B で崩れない |
 | c | 既定は a。A と判定(または設定)したときだけ、本文・枠線を含めて A の字を一切使わない表に切り替える | 普通の環境の見た目を変えず、A で崩れない | 表を 2 つ持ち、テストで両方を守る |
 
-おすすめ: **c**。B での本文の記号のはみ出しは 0.2〜0.5 セルで、次が空白なら読める。A では `clip` の `…` だけで枠のある画面が全部ずれるので、本文まで替えないと意味がない。
+おすすめ: **c**。B での本文の記号のはみ出しは 0.2〜0.5 セルで、次が空白なら読める。A では `fit` の `…` だけで枠のある画面が全部ずれるので、本文まで替えないと意味がない。
 
 ### (2) A のとき、幅を 2 として数えるか、置き換えるか
 
@@ -166,7 +168,7 @@ B を自動で見分けられるか:
 | --- | --- | --- | --- |
 | a | 幅計算を 2 にする(`RUNEWIDTH_EASTASIAN=1` を立てて exec し直す) | lipgloss・bubbletea・`w()`・`clip` に一度に効く。エージェントの画面の取り込みも正しく切れる | 枠線も 2 と数えるので、枠を手で組んでいる箇所(`render.go`・`modals.go`・`errcard.go`・`tour.go` …)を全部直すことになる。枠が 2 セル幅になり画面が狭くなる |
 | b | pekoe が描く字をすべて置き換える(枠線は ASCII の `+ - |` かアイコンの ascii セット相当に) | 幅計算に触らない。今の `glyphs = "ascii"` の延長 | エージェントの画面の取り込みは置き換えられないので、プレビューの行がずれて枠を押し出す |
-| c | b に加えて、`RUNEWIDTH_EASTASIAN=1` で exec し直す(pekoe の字はもう曖昧幅を含まないので、2 と数えて困るのは取り込んだ画面だけになる) | 自前の画面もプレビューも崩れない。枠の計算は直さなくてよい | 起動時の exec し直し(CPR → 環境変数を立てて `syscall.Exec`)。設定の再読み込みでは切り替えられない(今の `auto` と同じ) |
+| c | b に加えて、`RUNEWIDTH_EASTASIAN=1` で exec し直す(pekoe の字はもう曖昧幅を含まないので、2 と数えて困るのは取り込んだ画面だけになる) | 自前の画面もプレビューも崩れない。枠の計算は直さなくてよい | 起動時の exec し直し(CPR → 環境変数を立てて `syscall.Exec`)。設定の再読み込みでは切り替えられない(今の `auto` と同じ)。変数は TUI から起こす子プロセス(エディタ、pekoe のサブコマンド、自動で起こすデーモンとその先の tmux・エージェント)にも伝わるので、exec し直した直後に `os.Unsetenv` で外す(x/ansi は `init` で読み終えているので外しても効き続ける) |
 
 おすすめ: **c**。exec し直しを避けたいなら、プレビューの `clip` だけ自前の切り詰め(`displaywidth.Options{EastAsianWidth: true}` で数える)にする手もあるが、bubbletea の行の切り詰めには効かないので、exec し直しのほうが確実。
 
@@ -210,9 +212,9 @@ ambiguous = "auto"   # auto | narrow | wide
 ## 実装の段階(PR の単位)
 
 1. **テストの土台**(振る舞いは変えない): マスコットの spec、`IconSet` の unicode / nerd、未読の印などの既定の字に曖昧幅が入ったら落ちるテスト。枠線(U+2500–257F)・ブロック要素(U+2580–259F)・私用領域を許可リストに、今ある違反を「既知の違反」のリストに入れ、後の PR で減らす。曖昧幅でなくても日本語フォントで全角に描かれる字(`⚠ ▱ ▪`)は、EAW だけでは拾えないので、字ごとに確かめた許可リスト(この文書の表)にする案も合わせて決める。`theme.Confetti` のテストが先例
-2. **状態アイコンの置き換え**: unicode / nerd のセットの `● ○ ◆ ◎ ▶ ⊙ ± ≡`、未読の `•`(B では崩れないので `wide` の表だけでもよい)、ロゴの `●`、`⚠`。アイコンの後ろの空白のテスト
+2. **状態アイコンの置き換え**: unicode / nerd のセットの `● ○ ◆ ◎ ▶ ⊙ ± ≡ …`(`…` は Pending)、未読の `•`(B では崩れないので `wide` の表だけでもよい)、ロゴの `●`、`⚠`。アイコンの後ろの空白のテスト
 3. **マスコットの置き換え**(`internal/mascot` の担当と相談): 目と 1 セル表示の `● •`、`˙`、`╥`。`narrowGlyph` をなくし、`mascot.glyphs = "narrow"` を読むだけにする。チュートリアルのカードの顔をステップごとの表情に戻す。`docs/mascot.md` の互換性の表を書き直す
-4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`clip` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
+4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
 5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。`dashboard.go:506` のコメントの直し(▰ ▱ は JPDOC で崩れる)
 
 1 は単独で入れられる。2 と 3 は互いに独立で、1 の既知の違反を減らす。4 は 2・3 の後(`wide` の表が置き換え後の字を前提にするため)。
