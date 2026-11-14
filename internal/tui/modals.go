@@ -357,6 +357,9 @@ func (n *newModal) view() []string {
 				" " + fmt.Sprintf("%d%%", st.Progress) + th.FG(theme.Dim, fmt.Sprintf(" · %.0fs of ~%.0fs", float64(st.Elapsed)/1000, float64(st.Expected)/1000))
 		}
 		lines = append(lines, col(icon, st.Label, v))
+		for _, w := range st.Warnings {
+			lines = append(lines, col("", "", th.FG(theme.Warn, m.ic.Warning+" "+clip(w, 90))))
+		}
 	}
 	if s != nil && s.State == state.Failed {
 		lines = append(lines, "", th.FG(theme.Err, clip(strings.SplitN(s.Error, "\n", 2)[0], 90)))

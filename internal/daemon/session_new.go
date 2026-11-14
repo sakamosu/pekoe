@@ -119,6 +119,9 @@ type Step struct {
 	Progress int    `json:"progress,omitempty"` // 0-99 while running, from the last run's duration
 	Expected int64  `json:"expected_ms,omitempty"`
 	Elapsed  int64  `json:"elapsed_ms"`
+	// Warnings: the step went on, but something is off (env: a copy
+	// source missing or empty). Also in Session.Warnings.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // fromIssueRe is session.new's from: an issue number of the repository.
@@ -279,6 +282,15 @@ func (d *Daemon) stepUpdate(slug string, i int, status, detail string, started t
 	d.emit("session.progress", map[string]any{"slug": slug, "steps": cp})
 }
 
+// stepWarn puts warnings on step i; the step's next update shows them.
+func (d *Daemon) stepWarn(slug string, i int, warns []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if steps := d.progress[slug]; i < len(steps) {
+		steps[i].Warnings = append(append([]string{}, steps[i].Warnings...), warns...)
+	}
+}
+
 // gauge reports progress of a running step against its last duration
 // (capped at 99% until the step really ends).
 func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, stop <-chan struct{}) {
@@ -369,7 +381,17 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	}) {
 		return
 	}
-	if !run("env", func() error { return copyIgnored(repo.Dir, s.Path, repo.Config.Worktree) }) {
+	if !run("env", func() error {
+		warns, err := copyIgnored(repo.Dir, s.Path, repo.Config.Worktree)
+		if len(warns) > 0 {
+			for _, w := range warns {
+				log.Printf("new %s: %s", slug, w)
+			}
+			d.stepWarn(slug, i, warns)
+			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), warns...) })
+		}
+		return err
+	}) {
 		return
 	}
 	if !run("port", func() error { return nil }) {
@@ -480,14 +502,23 @@ func issueText(n int, title, body string) string {
 
 // copyIgnored brings ignored files (.env etc.) into the new worktree.
 // copy = plain copy, clone = APFS clone (cp -c) for heavy dirs like node_modules.
-func copyIgnored(from, to string, w config.Worktree) error {
-	do := func(patterns []string, clone bool) error {
+// It answers warnings about the sources that do not stop the session: a
+// pattern that matches nothing in the main checkout, a file there that is
+// empty (an .envrc.local never filled in, a file saved elsewhere).
+func copyIgnored(from, to string, w config.Worktree) (warnings []string, err error) {
+	do := func(key string, patterns []string, clone bool) error {
 		for _, pat := range patterns {
 			matches, _ := filepath.Glob(filepath.Join(from, pat))
+			if len(matches) == 0 {
+				warnings = append(warnings, fmt.Sprintf("[worktree] %s %q: not found in %s, nothing copied", key, pat, from))
+			}
 			for _, m := range matches {
 				rel, err := filepath.Rel(from, m)
 				if err != nil {
 					continue
+				}
+				if fi, err := os.Stat(m); err == nil && fi.Mode().IsRegular() && fi.Size() == 0 {
+					warnings = append(warnings, fmt.Sprintf("[worktree] %s %s: empty (0 bytes) in %s", key, rel, from))
 				}
 				dst := filepath.Join(to, rel)
 				if _, err := os.Lstat(dst); err == nil {
@@ -511,8 +542,8 @@ func copyIgnored(from, to string, w config.Worktree) error {
 		}
 		return nil
 	}
-	if err := do(w.Copy, false); err != nil {
-		return err
+	if err := do("copy", w.Copy, false); err != nil {
+		return warnings, err
 	}
-	return do(w.Clone, true)
+	return warnings, do("clone", w.Clone, true)
 }
