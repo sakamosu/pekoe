@@ -33,7 +33,7 @@ issue #85 の調査と案。まだ実装していない。方針を決めるた�
 | nerd font の私用領域 | U+E0B4・E0B6(キャップ)、U+E725〜F28B、U+F06A9 | `theme.go:226-231` | 端末による | nerd font の字形は 1.5 セルほど(後ろの空白まで使う作り) | 小(後ろが空白なら) |
 | その他 | U+10EEEE | `internal/tui/kitty.go:200`。kitty の画像の置き場所を示す字で、字形は描かれない | — | — | なし |
 
-曖昧幅でない(N)のに B で崩れる字もある。JPDOC で `⚠`(unicode の Warning)と `▱`(ダッシュボードの進み具合のバー)は全角の字形で、`▰` は入っていない(`dashboard.go:506` のコメントは「N なので崩れない」としているが、JPDOC では成り立たない)。HackGen35 Console では `✓ ✗` が 1.4 セルにはみ出す。EAW だけでは B を防げない。
+曖昧幅でない(N)のに B で崩れる字もある。JPDOC で `⚠`(unicode の Warning)と `▱`(ダッシュボードの進み具合のバー)は全角の字形で、`▰` は入っていない(当時の `dashboard.go` のコメントは「N なので崩れない」としていたが、JPDOC では成り立たなかった。今はブロック要素の `▅ ▁` に替えた)。HackGen35 Console では `✓ ✗` が 1.4 セルにはみ出す。EAW だけでは B を防げない。
 
 ## 2. 代わりの文字の候補
 
@@ -215,7 +215,7 @@ ambiguous = "auto"   # auto | narrow | wide
 2. **状態アイコンの置き換え**: unicode / nerd のセットの `● ○ ◆ ◎ ▶ ⊙ ± ≡ …`(`…` は Pending)、未読の `•`(B では崩れないので `wide` の表だけでもよい)、ロゴの `●`、レビューの見出しの `○`、テスト実行中のバッジ `…test` の `…`、`⚠`。アイコンの後ろの空白のテスト
 3. **マスコットの置き換え**(`internal/mascot` の担当と相談): 目と 1 セル表示の `● •`、`˙`、`╥`。`narrowGlyph` をなくし、`mascot.glyphs = "narrow"` を読むだけにする。チュートリアルのカードの顔をステップごとの表情に戻す。`docs/mascot.md` の互換性の表を書き直す
 4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
-5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。`dashboard.go:506` のコメントの直し(▰ ▱ は JPDOC で崩れる)
+5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。(ダッシュボードのバーの `▰ ▱` は `▅ ▁` に替えて済み)
 
 1 は単独で入れられる。2 と 3 は互いに独立で、1 の既知の違反を減らす。4 は 2・3 の後(`wide` の表が置き換え後の字を前提にするため)。
 
@@ -225,7 +225,7 @@ ambiguous = "auto"   # auto | narrow | wide
 - 対象: `theme.Icons` の nerd / unicode / ascii の全フィールド(`internal/theme/ambiguous_test.go`)、`tapi.json` の states・reactions・sprites と mascot.go・pr.go が入れる字(`Peek`・`Blink`・`CloudyEyes`・`Pearl`、両方の shape の輪郭。`internal/mascot/ambiguous_test.go`)、テスト実行中のバッジの `theme.TestRunningMark`(`…test`。theme のテストに入れた)、TUI が直に描く状態表示の `unreadMark`・`hunkOpenMark`・`logoDot`・`workBubbles`(`internal/tui/ambiguous_test.go`。直書きだった字を名前の付いた定数に出しただけで、見た目は変わらない)
 - 今ある違反は各テストの既知の違反のリストに、消える予定の段階と一緒に入れた。リストに無い違反も、リストにあるのにもう使っていない字も落ちる
 - `╥`(ci_failed の目)は A だが枠線の範囲なので許される。B では端末が自前で描くので崩れず、A の端末では段階 4 の `wide` の表(マスコットは ascii)で扱う。段階 3 で置き換えるかはマスコットの担当の判断
-- 本文の記号(`·` `…` `→` など)・Markdown の `•`・ダッシュボードの進み具合のバー(`▰ ▱`)は対象にしない。本文は段階 4 の `wide` の表、バーは段階 5 で扱いを決める
+- 本文の記号(`·` `…` `→` など)・Markdown の `•`は対象にしない。本文は段階 4 の `wide` の表で扱う。ダッシュボードの進み具合のバー(工程表と直近の日のマージ数)は、`▰ ▱` が JPDOC で崩れた(`▱` が 1.5 セル、`▰` は代替フォント)ので、端末が自前で描くブロック要素の `▅ ▁` に替えた(`internal/tui` の `TestDashBarNotWide`)
 - **曖昧幅でないのにフォントで全角に描かれる字**: EAW だけでは拾えないので、「2. 代わりの文字の候補」の表で測った結果から、字ごとのリストにする。状態表示の N の字を測って確かめた字だけに限る案(許可リスト)は、`⎇ ⌖ ✎ ⇄ ↣` など測っていない今の字が全部違反になり、新しい字を足すたびにフォントを測ることになるので取らない。禁止のリスト(`glyphguard.WideInFonts`)にする:
   - 禁止: `⚠`(JPDOC・HackGen35 Console で 1.6)、`▱`(JPDOC 1.5、Noto 1.8)、`▰`(Noto 1.8)、`⊚`(Noto 1.6)、`✕`(HackGen35 Console 1.3)、`✔ ✘`(同 1.4〜1.5)
   - 確かめて許す(`glyphguard.AllowedNarrow`): `✓ ✗`。はみ出すのは HackGen35 Console の 1.4 だけで、ほかの入っている書体では収まる。代わりの候補(`✔ ✘ ✕`)はどれも同じか悪く、アイコンの後ろには必ず空白がある(`theme.Prefix`)

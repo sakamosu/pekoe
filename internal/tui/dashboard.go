@@ -500,13 +500,25 @@ func stageRole(st int) theme.Role {
 	return theme.Dim
 }
 
+// barFull and barEmpty are the cells of the dashboard's bars (the stage
+// bar, the week's merges): a filled cell and an empty one. Block elements
+// (U+2580–259F), which the major terminals draw themselves to the cell
+// rather than from the font, so they stay one cell in every font. ▰ ▱
+// (Neutral, but East Asian Width says nothing of the glyph) did not:
+// Moralerspace JPDOC draws ▱ 1.5 cells wide and lacks ▰, which comes from
+// a fallback font, so the cells overlapped and the days lost their
+// spacing (docs/ambiguous-width.md「2. 代わりの文字の候補」).
+const (
+	barFull  = "▅"
+	barEmpty = "▁"
+)
+
 // stageBar draws the five stages as a bar, two cells a stage when wide
-// (one when not), so how far a session got reads at a glance: ▰ in the
-// stage's color for done / under way / failing / ready, ▱ for not yet.
-// ▰ ▱ are Neutral width (never East Asian Ambiguous), so fonts that draw
-// ambiguous glyphs wide keep the row in line. Without color the bar could
-// not tell done from failing, and the ascii icon set (or ascii glyphs)
-// asks for ASCII: both get the marks instead ("✓✓✗··", "vvx..").
+// (one when not), so how far a session got reads at a glance: barFull in
+// the stage's color for done / under way / failing / ready, barEmpty for
+// not yet. Without color the bar could not tell done from failing, and the
+// ascii icon set (or ascii glyphs) asks for ASCII: both get the marks
+// instead ("✓✓✗··", "vvx..").
 func (m *model) stageBar(st [5]int, wide bool) string {
 	var b strings.Builder
 	if m.th.Mode == theme.None || !m.dashGlyphs() {
@@ -515,14 +527,14 @@ func (m *model) stageBar(st [5]int, wide bool) string {
 		}
 		return b.String()
 	}
-	cell := "▰"
+	n := 1
 	if wide {
-		cell = "▰▰"
+		n = 2
 	}
 	for _, x := range st {
-		c := cell
+		c := strings.Repeat(barFull, n)
 		if x == stNone {
-			c = strings.Repeat("▱", w(cell))
+			c = strings.Repeat(barEmpty, n)
 		}
 		b.WriteString(m.th.FG(stageRole(x), c))
 	}
@@ -1114,8 +1126,8 @@ func (m *model) dashStatsToday() []string {
 }
 
 // dashStatsWeek is the merges of the last days, oldest first, in the
-// stage bar's words: a ▰ for each merge (scaled down when a day has more
-// than fit), ▱ for the rest of the day's cells, so busy and quiet days
+// stage bar's words: a barFull for each merge (scaled down when a day has
+// more than fit), barEmpty for the rest of the day's cells, so busy and quiet days
 // read at a glance; then the sum. Without pictures (ascii) each day is its
 // count. "" until stats came back fine.
 func (m *model) dashStatsWeek(room int) string {
@@ -1167,13 +1179,13 @@ func (m *model) dashStatsWeek(room int) string {
 		}
 		fill := n
 		if most > cells {
-			fill = (n*cells + most - 1) / most // a day with a merge keeps a ▰
+			fill = (n*cells + most - 1) / most // a day with a merge keeps a barFull
 		}
 		if fill > 0 {
-			b.WriteString(th.FG(theme.Ok, strings.Repeat("▰", fill)))
+			b.WriteString(th.FG(theme.Ok, strings.Repeat(barFull, fill)))
 		}
 		if fill < cells {
-			b.WriteString(dim(strings.Repeat("▱", cells-fill)))
+			b.WriteString(dim(strings.Repeat(barEmpty, cells-fill)))
 		}
 	}
 	return head + b.String() + total

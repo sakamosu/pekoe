@@ -23,6 +23,20 @@ func TestMarksNotAmbiguous(t *testing.T) {
 	glyphguard.Check(t, uses, knownMarkViolations)
 }
 
+// The dashboard's bars (the stage bar, the week's merges) draw every
+// cell from barFull and barEmpty: neither may draw wider than a cell in
+// any font, as ▰ ▱ did in Moralerspace JPDOC (▱ 1.5 cells, ▰ from a
+// fallback font), which made the days' cells overlap.
+func TestDashBarNotWide(t *testing.T) {
+	glyphguard.Check(t, []glyphguard.Use{
+		{Where: "barFull", Glyph: barFull},
+		{Where: "barEmpty", Glyph: barEmpty},
+	}, nil)
+	if w(barFull) != 1 || w(barEmpty) != 1 || barFull == barEmpty {
+		t.Errorf("bar cells %q %q: one cell each, and told apart without color", barFull, barEmpty)
+	}
+}
+
 // knownMarkViolations shrinks as docs/ambiguous-width.md「実装の段階」
 // replaces them.
 var knownMarkViolations = []glyphguard.Known{
