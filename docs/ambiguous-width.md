@@ -217,7 +217,20 @@ ambiguous = "auto"   # auto | narrow | wide
 4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
 5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。`dashboard.go:506` のコメントの直し(▰ ▱ は JPDOC で崩れる)
 
-1 は単独で入れられる。2 と 3 は互いに独立で、1 の既知の違反を減らす。4 は 2・3 の後(`wide` の表が置き換え後の字を前提にするため)。
+1 は単独で入れられる。2 と 3 は互いに独立で、1 の既知の違反を減らす。
+
+### 段階 1 で決めたこと(テストの土台)
+
+- 判定は `internal/glyphguard`(テストからだけ import するので、`golang.org/x/text/width` はバイナリに入らない)。ASCII・枠線(U+2500–257F)・ブロック要素(U+2580–259F)・私用領域は許す。それ以外で EAW が A の字と、下の「フォントで全角」の字を違反にする
+- 対象: `theme.Icons` の nerd / unicode / ascii の全フィールド(`internal/theme/ambiguous_test.go`)、`tapi.json` の states・reactions・sprites と mascot.go・pr.go が入れる字(`Peek`・`Blink`・`CloudyEyes`・`Pearl`、両方の shape の輪郭。`internal/mascot/ambiguous_test.go`)、TUI が直に描く状態表示の `unreadMark`・`hunkOpenMark`・`logoDot`・`workBubbles`(`internal/tui/ambiguous_test.go`。直書きだった字を名前の付いた定数に出しただけで、見た目は変わらない)
+- 今ある違反は各テストの既知の違反のリストに、消える予定の段階と一緒に入れた。リストに無い違反も、リストにあるのにもう使っていない字も落ちる
+- `╥`(ci_failed の目)は A だが枠線の範囲なので許される。B では端末が自前で描くので崩れず、A の端末では段階 4 の `wide` の表(マスコットは ascii)で扱う。段階 3 で置き換えるかはマスコットの担当の判断
+- 本文の記号(`·` `…` `→` など)・Markdown の `•`・ダッシュボードの進み具合のバー(`▰ ▱`)は対象にしない。本文は段階 4 の `wide` の表、バーは段階 5 で扱いを決める
+- **曖昧幅でないのにフォントで全角に描かれる字**: EAW だけでは拾えないので、「2. 代わりの文字の候補」の表で測った結果から、字ごとのリストにする。状態表示の N の字を測って確かめた字だけに限る案(許可リスト)は、`⎇ ⌖ ✎ ⇄ ↣` など測っていない今の字が全部違反になり、新しい字を足すたびにフォントを測ることになるので取らない。禁止のリスト(`glyphguard.WideInFonts`)にする:
+  - 禁止: `⚠`(JPDOC・HackGen35 Console で 1.6)、`▱`(JPDOC 1.5、Noto 1.8)、`▰`(Noto 1.8)、`⊚`(Noto 1.6)、`✕`(HackGen35 Console 1.3)、`✔ ✘`(同 1.4〜1.5)
+  - 確かめて許す(`glyphguard.AllowedNarrow`): `✓ ✗`。はみ出すのは HackGen35 Console の 1.4 だけで、ほかの入っている書体では収まる。代わりの候補(`✔ ✘ ✕`)はどれも同じか悪く、アイコンの後ろには必ず空白がある(`theme.Prefix`)
+  - 文書にある `▪` は表で測っていないので、どちらにも入れていない。使うときに測って足す
+  - 新しい字を状態表示に使うときは、この文書の表で測ってから使う。測って崩れる字は `WideInFonts` に足す4 は 2・3 の後(`wide` の表が置き換え後の字を前提にするため)。
 
 ## 付録: 調べ方
 

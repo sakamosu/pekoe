@@ -286,6 +286,9 @@ var logo = []string{
 // logoBase is the logo's baseline row (the p's tail hangs below it).
 const logoBase = 4
 
+// logoDot is the one primary accent beside the logo.
+const logoDot = "●"
+
 // logoRows centers the dim ASCII logo (one primary accent) with a caption.
 func (m *model) logoRows(width, height int, caption string) []row {
 	var rows []row
@@ -301,7 +304,7 @@ func (m *model) logoRows(width, height int, caption string) []row {
 	for i, l := range logo {
 		t := m.th.FG(theme.Dim, l)
 		if i == logoBase {
-			t += "  " + m.th.FG(theme.Primary, "●")
+			t += "  " + m.th.FG(theme.Primary, logoDot)
 		}
 		rows = append(rows, row{Text: left + t})
 	}

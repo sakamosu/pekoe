@@ -267,6 +267,10 @@ func sessionCols(cw int) (nameW, diffW int) {
 	return nameW, diffW
 }
 
+// unreadMark follows a session's name when it has unread output or its PR
+// wants attention.
+const unreadMark = "•"
+
 func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	th := m.th
 	lk := theme.Look(m.ic, s.State, m.frame, m.g.AnimateOn())
@@ -321,7 +325,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	}
 	prAttention := s.PRStatus != nil && len(s.PRStatus.Attention) > 0
 	if (s.Unread > 0 && s.Slug != m.lastSel) || prAttention {
-		tag += " " + th.FG(theme.Secondary, "•")
+		tag += " " + th.FG(theme.Secondary, unreadMark)
 	}
 	branch := s.Branch
 	if tw := w(tag); tw < nameW && w(branch)+tw > nameW {

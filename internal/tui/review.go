@@ -613,6 +613,9 @@ func (r *reviewModel) view() string {
 	return out
 }
 
+// hunkOpenMark heads a hunk not yet approved, rejected or under the cursor.
+const hunkOpenMark = "○"
+
 func (r *reviewModel) diffPanel(width, height int) []string {
 	m := r.m
 	th := r.th
@@ -635,7 +638,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 		var t string
 		switch d.kind {
 		case "header":
-			mark := th.FG(theme.Dim, "○")
+			mark := th.FG(theme.Dim, hunkOpenMark)
 			switch {
 			case h.Approved:
 				mark = th.FG(theme.Ok, m.ic.Check)
