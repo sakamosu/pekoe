@@ -113,7 +113,7 @@ brew upgrade pekoe      # 更新(pekoe update は Homebrew で入れたものを
 
 - リリースのアーカイブ(`pekoe_<ver>_<os>_<arch>.tar.gz`)から作った cask。`$(brew --prefix)/Caskroom/pekoe/<ver>/` にアーカイブと同じ配置(`bin/`・`share/pekoe/`・`contrib/launchd/`)で展開し、`pekoe`・`pekoed` を `$(brew --prefix)/bin` にリンクする。pekoe はそのリンクを辿るので、`share/pekoe` の nvim プラグインと Chrome 拡張もそのまま見つかる
 - Web UI が要るなら、リリースから `_web` のアーカイブを入れる(下)か、`make install WEB=1` でビルドする
-- macOS は brew が落としたものに quarantine の印を付け、Gatekeeper は印の付いた未署名のバイナリを開かせない。macOS 向けのバイナリはまだ署名していない(下)ので、cask はインストールの後にこの印を外す
+- macOS は brew が落としたものに quarantine の印を付け、Gatekeeper は印の付いたバイナリを動かす前に確かめる。cask はインストールの後にこの印を外す。v0.5.0 からの macOS 向けのバイナリは署名・公証済み(下)なので印があっても動くが、単体のバイナリには公証のチケットを留め付けられず、Gatekeeper は初回にオンラインで確かめる。印を外すとこの確認を省ける。v0.4.0 までのリリースはアドホック署名だけなので、印が付いたままだと Gatekeeper が開かせない
 - ログイン時に pekoed を起動するなら、`brew info pekoe` に launchd のコマンドが出る。`brew services` は cask では使えない
 
 ### リリースから(ビルド済みバイナリ)
@@ -140,7 +140,7 @@ pekoe version
 
 `checksums.txt` は同じ Release に置いてあるので、アーカイブが壊れていないかしか分からない。`gh attestation verify` は、アーカイブがこのリポジトリの `release.yml` でビルドされたこと(GitHub Actions が Sigstore で署名したビルド来歴)を確かめる。来歴が付くのは、リポジトリが公開されているときに `release.yml` が作るリリースだけ(private のリポジトリでは来歴に GitHub Enterprise Cloud が要るので、`release.yml` は付けない)。来歴はリポジトリを公開した後に作るリリース(v0.4.0 以降)から付く。v0.1.0〜v0.3.0 は private だったときに作ったので来歴がなく、`gh attestation verify` が通らない。`--signer-workflow` と `--source-ref` で、このリポジトリの他のワークフローや他のブランチではなく、`release.yml` がそのタグからビルドしたことまで確かめる。`release.yml` はリリースを下書きで作り、アーカイブに来歴を付けてから公開するので、公開されたリリース(v0.4.0 以降)には必ず来歴がある。
 
-macOS 向けのバイナリはまだ署名していない。`release.yml` には darwin のバイナリ(darwin のすべてのアーカイブ(既定と `_web`)の `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出す準備があるが、署名用の secrets をまだ用意していないので、今までのリリース(v0.1.0〜v0.3.0)はどれも Go リンカのアドホック署名だけ: `codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Signature=adhoc` と出す。署名したリリースからは `TeamIdentifier` が見える。
+v0.5.0 から(プレリリースでは v0.5.0-rc.1 から)、`release.yml` は darwin のバイナリ(darwin のすべてのアーカイブ(既定と `_web`、arm64 と amd64)の `bin/pekoe`)を Developer ID Application 証明書で署名し、Apple の公証に出している。`codesign -dv ~/.local/opt/pekoe/bin/pekoe` は `Authority=Developer ID Application: Yuki Sakamoto` と `TeamIdentifier=K9F9554C8G` を出し、`spctl -a -vvv -t install ~/.local/opt/pekoe/bin/pekoe` は `source=Notarized Developer ID` と出す。単体のバイナリには公証のチケットを留め付け(staple)できないので、Gatekeeper は quarantine の印の付いたものを初めて動かすときにオンラインで確かめる。v0.1.0〜v0.4.0 は Go リンカのアドホック署名だけ: `codesign -dv` は `Signature=adhoc` と出す。
 
 アーカイブの中は `bin/pekoe`、`bin/pekoed`(→ pekoe)、`share/pekoe/nvim/`、`share/pekoe/extension/`、`contrib/launchd/` と、`README.md`・`README.ja.md`・`LICENSE`・`THIRD_PARTY_LICENSES`(依存ライブラリのライセンス。[ライセンス](#ライセンス))。`bin/pekoe` は実体の位置から `../share/pekoe/nvim` を探すので、上のようにシンボリックリンクで PATH に置けば nvim プラグインもそのまま見つかる。launchd で起動するなら `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` のあと `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`。
 

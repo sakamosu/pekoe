@@ -132,8 +132,9 @@ archives:
 # 結果は Caskroom/pekoe/<ver>/{bin/pekoe,bin/pekoed,share/pekoe,contrib/launchd} で、
 # $(brew --prefix)/bin/pekoe → Caskroom/…/bin/pekoe の symlink を pekoe が辿って ../share/pekoe を見つける。
 #
-# quarantine: brew は cask で落としたものに com.apple.quarantine を付ける。未署名(ad-hoc 署名)の
-# バイナリだと Gatekeeper に止められるので、postflight で外す。署名・公証済みでも外して害はない
+# quarantine: brew は cask で落としたものに com.apple.quarantine を付ける。ad-hoc 署名だけのバイナリ
+# (v0.4.0 までのリリースや、署名の secrets 無しのビルド)だと Gatekeeper に止められるので、postflight で外す。
+# v0.5.0 からは署名・公証済みで、外して害はない
 # (公証のチケットを留め付けられない単体バイナリが初回にオンラインで確かめられるのを省くだけ)。
 homebrew_casks:
   - name: pekoe
