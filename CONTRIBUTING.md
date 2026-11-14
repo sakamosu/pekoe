@@ -100,7 +100,7 @@ To make them:
 2. API key: in App Store Connect → Users and Access → Integrations → App Store Connect API, create a Team key with the Developer role. Download the `.p8` (only once), then `base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy` into `MACOS_NOTARY_KEY`, and copy the Key ID and the Issuer ID into the other two
 3. Delete the local `.p12` / `.p8` copies you don't need, or keep them somewhere safe
 
-To check a release: `codesign -dv bin/pekoe` should show `Authority=Developer ID Application: …` and a `TeamIdentifier` (instead of `Signature=adhoc`).
+To check a release: `codesign -dv bin/pekoe` should show `Authority=Developer ID Application: …` and a `TeamIdentifier` (instead of `Signature=adhoc`), and `spctl -a -vvv -t install bin/pekoe` should show `source=Notarized Developer ID`. Releases are signed and notarized from v0.5.0 (v0.5.0-rc.1 among pre-releases); v0.1.0 to v0.4.0 are ad-hoc signed only.
 
 ### Homebrew tap
 
@@ -108,7 +108,7 @@ To check a release: `codesign -dv bin/pekoe` should show `Authority=Developer ID
 
 - It is a cask, not a formula: GoReleaser v2 deprecates `brews` (formulae) in favor of `homebrew_casks`
 - The cask moves `bin/`, `share/` and `contrib/` out of the archive's top directory (the `rename` lines in `custom_block`), so that `Caskroom/pekoe/<ver>/bin/pekoe` finds `../share/pekoe` the same way as an unpacked archive. GoReleaser by itself only moves the binaries out
-- After installing, it removes macOS's quarantine mark (`postflight_steps`), because Gatekeeper refuses an unsigned binary that has it. It does no harm once the binaries are signed and notarized
+- After installing, it removes macOS's quarantine mark (`postflight_steps`). Gatekeeper refuses an ad-hoc signed binary (releases up to v0.4.0, or a build without the signing secrets) that has it. For signed and notarized binaries (v0.5.0 on) it does no harm and only skips Gatekeeper's online check on the first run (a bare binary can't have its notarization ticket stapled)
 - If `HOMEBREW_TAP_TOKEN` is empty or the tap answers HTTP 404 (it doesn't exist yet, or the token can't read it), the step only warns and the job passes: a release can be cut before the tap is ready. Other errors (no write permission, say) fail the job, but the release is already published by then, and re-running the workflow would try to make it again. In both cases the job's summary has the cask, so put it into the tap by hand as `Casks/pekoe.rb` once the problem is fixed
 - To look at the cask locally: `goreleaser release --snapshot --clean --skip=publish`, then `dist/homebrew/Casks/pekoe.rb`
 
