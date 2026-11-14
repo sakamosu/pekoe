@@ -159,7 +159,7 @@ var specs = map[string]spec{
 	"review":    {use: "pekoe review [<slug> | gh#N [--repo R]]", vals: []string{"repo"}},
 	"land":      {use: "pekoe land <slug>   rebase → test → gh pr create"},
 	"rm":        {use: "pekoe rm <slug> [--force] [--yes]", bools: []string{"force", "yes"}},
-	"dev":       {use: "pekoe dev <slug>   toggle the dev server on the session's port"},
+	"dev":       {use: "pekoe dev <slug>   toggle the dev server on the session's port · pekoe dev --log [<slug>] [--lines N]   the end of its log", bools: []string{"log"}, vals: []string{"lines"}},
 	"undo":      {use: "pekoe undo <slug> [n]"},
 	"answer":    {use: "pekoe answer <slug> allow|deny|always"},
 	"attach":    {use: "pekoe attach <slug> [agent|review|dev]"},

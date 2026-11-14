@@ -135,6 +135,7 @@ func (d *Daemon) onOutput(o engine.Output) {
 
 	if o.Window == engine.WinDev {
 		d.feedDev(o.Slug, o.Data, now)
+		d.writeDevLog(o.Slug, o.Data)
 	}
 	if bytes.Contains(data, []byte("\x1b_G")) || bytes.Contains(data, []byte("\x1bPtmux;")) {
 		d.passGraphics(o.Slug, o.Window, data)
@@ -232,6 +233,9 @@ func (d *Daemon) tickLoop() {
 		}
 		if n%10 == 7 {
 			go d.checkMerges() // merge evidence in the inbox
+		}
+		if n%2 == 0 {
+			go d.checkDevExits() // a dev hook that ended by itself (devlog.go)
 		}
 		if n%10 == 9 {
 			go d.checkDevWatches() // .git/hooks and config under running dev servers (gitwatch.go)

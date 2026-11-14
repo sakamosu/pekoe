@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/config"
 	"pekoe/internal/engine"
 	"pekoe/internal/gitx"
 	"pekoe/internal/initdetect"
@@ -122,6 +123,13 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
 		}
 	}
+	if !foreign {
+		d.devMu.Lock()
+		if err := d.stopDev(p.Slug, true); err != nil {
+			log.Printf("rm %s: %v", p.Slug, err) // the worktree goes all the same
+		}
+		d.devMu.Unlock()
+	}
 	_ = d.Eng.KillSession(p.Slug)
 	deleted := false
 	if exists && foreign {
@@ -224,27 +232,41 @@ func (d *Daemon) purgeFiles(s *state.Session) {
 	d.catch.Forget(s.Slug)
 	removeAttachments(s.RepoID, s.Slug)
 	d.dropPreview(s)
+	d.forgetDevLog(s.Slug)
 	os.Remove(agentSettingsFile(s.Slug))
 }
 
 // ---- dev server ----
 
+// While it runs, a second call stops it and runs [hooks] dev_stop
+// (devlog.go). The output goes to the session's dev log as well.
 func (d *Daemon) hDevToggle(p slugP) (any, error) {
+	d.devMu.Lock()
+	defer d.devMu.Unlock()
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
 	}
 	if d.Eng.Alive(p.Slug, engine.WinDev) {
-		_ = d.Eng.Kill(p.Slug, engine.WinDev)
-		d.endDevWatch(p.Slug)
-		return d.update(p.Slug, func(x *state.Session) { x.Dev = false })
+		stopErr := d.stopDev(p.Slug, false)
+		x, err := d.snapshot(p.Slug)
+		if err != nil {
+			return nil, err
+		}
+		if stopErr != nil {
+			// stopped all the same; the session says how dev_stop ended
+			return nil, fmt.Errorf("dev server stopped, but %w", stopErr)
+		}
+		return x, nil
 	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Dev == "" {
-		return nil, fmt.Errorf("no [hooks] dev command in %s", paths.RepoConfig(s.RepoID))
+		path := paths.RepoConfig(s.RepoID)
+		return nil, fmt.Errorf("no [hooks] dev command in %s: %s", path, config.DescribeHooks(path, "dev"))
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Dev)
-	full := cmd + `; printf '\n[pekoe] dev server exited (%s)\n' "$?"`
+	// the hook's own exit status stays the window's (checkDevExits reads it)
+	full := cmd + `; pekoe_st=$?; printf '\n[pekoe] dev server exited (%s)\n' "$pekoe_st"; exit "$pekoe_st"`
 	// the dev server runs the worktree's code (package.json …) and keeps
 	// running: in the sandbox, or not at all
 	full, err = d.sbx.ShellLine(userShell(), full)
@@ -252,11 +274,13 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 		return nil, fmt.Errorf("dev server %w", err)
 	}
 	d.startDevWatch(s)
+	d.devLogNote(p.Slug, "dev hook started on :%d: %s", s.Port, cmd)
 	if err := d.Eng.Spawn(engine.Spawn{Slug: p.Slug, Window: engine.WinDev, Dir: s.Path, Env: append(s.Env, "PEKOE_SESSION="+p.Slug), Command: full, Width: 120, Height: 40}); err != nil {
 		d.endDevWatch(p.Slug)
+		d.devLogNote(p.Slug, "dev hook did not start: %v", err)
 		return nil, err
 	}
-	return d.update(p.Slug, func(x *state.Session) { x.Dev = true })
+	return d.update(p.Slug, func(x *state.Session) { x.Dev, x.DevExit, x.DevLog = true, nil, devLogPath(p.Slug) })
 }
 
 // hAgentDevToggle is dev.toggle without the human token (call routes it
@@ -543,8 +567,16 @@ func (d *Daemon) finishLanding(slug string) error {
 		return nil
 	}
 	merged := time.Now() // when pekoe saw it merged, before the teardown's minutes
+	foreign := errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree)
+	if !foreign {
+		d.devMu.Lock()
+		if err := d.stopDev(slug, true); err != nil {
+			log.Printf("land %s: %v", slug, err)
+		}
+		d.devMu.Unlock()
+	}
 	_ = d.Eng.KillSession(slug)
-	if errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree) {
+	if foreign {
 		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
 	} else {
 		if err := d.teardown(s); err != nil {
@@ -779,14 +811,22 @@ func (d *Daemon) hWindowKill(p windowP) (any, error) {
 	if p.Window == engine.WinAgent {
 		return nil, errors.New("use session.kill for the agent window")
 	}
+	if p.Window == engine.WinDev {
+		// closing the dev window stops a running hook: dev_stop runs
+		d.devMu.Lock()
+		err := d.stopDev(p.Slug, false)
+		d.devMu.Unlock()
+		if err != nil {
+			log.Printf("window.kill %s: %v", p.Slug, err)
+		}
+	}
 	_ = d.Eng.Kill(p.Slug, p.Window)
+	if p.Window == engine.WinDev {
+		d.update(p.Slug, devWindowClosed)
+	}
 	if p.Window == engine.WinReview {
 		// leaving the review surface: back to done unless comments are pending
 		_, _ = d.hReviewEnd(slugP{Slug: p.Slug})
-	}
-	if p.Window == engine.WinDev {
-		d.endDevWatch(p.Slug)
-		d.update(p.Slug, func(s *state.Session) { s.Dev = false })
 	}
 	if p.Window == engine.WinRun {
 		_, err := d.hRunClose(slugP{Slug: p.Slug})

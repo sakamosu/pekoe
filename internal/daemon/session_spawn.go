@@ -238,8 +238,14 @@ func (d *Daemon) hKill(p slugP) (any, error) {
 	if _, err := d.get(p.Slug); err != nil {
 		return nil, err
 	}
+	d.devMu.Lock()
+	if err := d.stopDev(p.Slug, false); err != nil {
+		log.Printf("kill %s: %v", p.Slug, err)
+	}
+	d.devMu.Unlock()
 	_ = d.Eng.KillSession(p.Slug)
 	return d.update(p.Slug, func(s *state.Session) {
+		devWindowClosed(s)
 		s.Stopped = true
 		s.Dev = false
 		if s.State == state.Running || s.State == state.Waiting {

@@ -61,6 +61,9 @@ var agentMethods = map[string]string{
 	// needs the server to look at its UI. hAgentDevToggle limits it to the
 	// caller's own session.
 	"dev.toggle": "a session starts or stops its own dev server (`pekoe dev <slug>`); hAgentDevToggle limits it to the caller's own session, unknown callers refused; the command runs in pekoed's hooks sandbox, as [hooks] test does",
+	// what the dev server it started printed: the output of its own
+	// worktree's command, which another session's could leak
+	"dev.log": "a session reads its own dev server's log (`pekoe dev --log`); hAgentDevLog limits it to the caller's own session, unknown callers refused",
 	// orchestration (docs/orchestration.md): records only, nothing runs and
 	// pekoed reads no file for them
 	"report.post": "a session reports its own work (`pekoe report`); only for the caller's own session, unknown callers refused, sizes capped; evidence paths are kept as text, never read",

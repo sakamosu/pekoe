@@ -158,6 +158,40 @@ type Session struct {
 	// --after, daemon/after.go). Only recorded and shown: nothing waits on
 	// them yet.
 	After []string `json:"after,omitempty"`
+	// Dev (above) is true while the dev hook's process ([hooks] dev) runs;
+	// it turns false when the hook ends by itself (DevExit says how) or
+	// pekoe stops it. DevLog is the file its output goes to (pekoe dev
+	// --log), set from the first start on.
+	DevLog string `json:"dev_log,omitempty"`
+	// DevExit is how the last dev hook ended; nil while it runs or before
+	// it ever ran.
+	DevExit *DevExit `json:"dev_exit,omitempty"`
+	// Warnings are what pekoe noticed while creating the session that did
+	// not stop it ([worktree] copy sources missing or empty).
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// DevExit is how a session's dev hook ended.
+type DevExit struct {
+	// Status is the hook's exit status; -1 when it is unknown, a signal
+	// ended it (Signal), or pekoe stopped it (Stopped).
+	Status  int       `json:"status"`
+	Signal  string    `json:"signal,omitempty"`
+	Stopped bool      `json:"stopped,omitempty"` // pekoe stopped it (pekoe dev, rm, x, pekoed stopping its agents)
+	At      time.Time `json:"at"`
+	// Closed: its window, kept after the hook ended by itself so its last
+	// screen can be read, has been closed.
+	Closed bool `json:"closed,omitempty"`
+	// DevStop is the [hooks] dev_stop run after it (nil: none ran).
+	DevStop *HookRun `json:"dev_stop,omitempty"`
+}
+
+// HookRun is one run of a hook command that pekoed waited for.
+type HookRun struct {
+	Command string    `json:"command"`
+	Status  int       `json:"status"` // exit status; -1: did not exit by itself (timeout, signal, not started)
+	Error   string    `json:"error,omitempty"`
+	At      time.Time `json:"at"` // when it ended
 }
 
 type DB struct {

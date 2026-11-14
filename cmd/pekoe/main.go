@@ -94,7 +94,7 @@ func main() {
 	case "rm":
 		err = cmdRm(args)
 	case "dev":
-		err = cmdSimple("dev", "dev.toggle", args)
+		err = cmdDev(args)
 	case "undo":
 		err = cmdUndo(args)
 	case "answer":
@@ -210,6 +210,7 @@ func usage() {
                                PRs merged and tokens used, by day and repository
                                (removed sessions included; default: the last 7 days)
   pekoe dev <slug>              toggle the dev server on the session's port
+  pekoe dev --log [<slug>]      the end of its log, and how it ended
   pekoe undo <slug> [n]         undo the last (or n-th) prompt's changes
   pekoe answer <slug> allow|deny|always
   pekoe hooks install|uninstall|status
