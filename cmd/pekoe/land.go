@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"pekoe/internal/state"
 )
@@ -59,5 +60,15 @@ func cmdRm(args []string) error {
 			return nil
 		}
 	}
-	return cl.Call("worktree.rm", map[string]any{"slug": pos[0], "force": f["force"] != ""}, nil)
+	var res struct {
+		PortHeld *state.HeldPort `json:"port_held"`
+	}
+	if err := cl.Call("worktree.rm", map[string]any{"slug": pos[0], "force": f["force"] != ""}, &res); err != nil {
+		return err
+	}
+	if h := res.PortHeld; h != nil {
+		fmt.Fprintf(os.Stderr, "%s: [hooks] dev_stop did not succeed or did not run; port %d is kept from new sessions until %s, as what dev started (containers) may still hold ports\n",
+			pos[0], h.Port, h.Until.Local().Format("2006-01-02 15:04"))
+	}
+	return nil
 }

@@ -202,6 +202,7 @@ type DB struct {
 const schema = `
 CREATE TABLE IF NOT EXISTS sessions (slug TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS ports (port INTEGER PRIMARY KEY, repo_id TEXT NOT NULL, slug TEXT NOT NULL, UNIQUE(repo_id, slug));
+CREATE TABLE IF NOT EXISTS held_ports (port INTEGER PRIMARY KEY, repo_id TEXT NOT NULL, slug TEXT NOT NULL, until INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS prompts (slug TEXT NOT NULL, n INTEGER NOT NULL, text TEXT NOT NULL, ref TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(slug, n));
 CREATE TABLE IF NOT EXISTS reviews (slug TEXT NOT NULL, n INTEGER NOT NULL, ref TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(slug, n));
 CREATE TABLE IF NOT EXISTS hunks (slug TEXT NOT NULL, hunk_id TEXT NOT NULL, status TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(slug, hunk_id));
@@ -299,6 +300,8 @@ func (d *DB) Sessions() ([]*Session, error) {
 
 // AllocPort returns the port recorded for (repoID, slug), or records the
 // lowest free port >= base. busy reports ports in use by other processes.
+// Ports held (HoldPort) until a time not yet passed are skipped; the ones
+// whose time has passed are dropped.
 func (d *DB) AllocPort(repoID, slug string, base int, busy func(int) bool) (int, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -321,6 +324,19 @@ func (d *DB) AllocPort(repoID, slug string, base int, busy func(int) bool) (int,
 		used[x] = true
 	}
 	rows.Close()
+	if _, err := d.db.Exec(`DELETE FROM held_ports WHERE until<=?`, time.Now().Unix()); err != nil {
+		return 0, err
+	}
+	rows, err = d.db.Query(`SELECT port FROM held_ports`)
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var x int
+		rows.Scan(&x)
+		used[x] = true
+	}
+	rows.Close()
 	for p = base; p < base+2000; p++ {
 		if used[p] || (busy != nil && busy(p)) {
 			continue
@@ -331,6 +347,26 @@ func (d *DB) AllocPort(repoID, slug string, base int, busy func(int) bool) (int,
 		return p, nil
 	}
 	return 0, errors.New("no free port")
+}
+
+// HeldPort is a port no new session gets until Until: the session that had
+// it (Slug) was removed while what its dev hook started outside its own
+// process may still hold ports derived from it ([hooks] dev_stop did not
+// succeed).
+type HeldPort struct {
+	Port   int       `json:"port"`
+	RepoID string    `json:"repo_id"`
+	Slug   string    `json:"slug"`
+	Until  time.Time `json:"until"`
+}
+
+// HoldPort keeps AllocPort from giving port to a new session until until.
+func (d *DB) HoldPort(h HeldPort) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`INSERT INTO held_ports(port,repo_id,slug,until) VALUES(?,?,?,?) ON CONFLICT(port) DO UPDATE SET repo_id=excluded.repo_id, slug=excluded.slug, until=MAX(until, excluded.until)`,
+		h.Port, h.RepoID, h.Slug, h.Until.Unix())
+	return err
 }
 
 func (d *DB) PortOwner(port int) (repoID, slug string, ok bool) {

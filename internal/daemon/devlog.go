@@ -261,8 +261,11 @@ func lastLines(s string, n int) []string {
 // ---- the dev hook ending ----
 
 // checkDevExits (tickLoop): a dev hook that ended by itself turns Dev
-// false, with its exit status and the time pekoed saw it end. The window
-// stays (remain-on-exit) so its last screen can be read.
+// false, with its exit status and the time pekoed saw it end, and then
+// [hooks] dev_stop runs, as when pekoe stops a hook: what the hook started
+// outside its own process (compose's containers, including the ones a
+// failed `make dev` half made) is cleaned up whether it ended with 0 or
+// not. The window stays (remain-on-exit) so its last screen can be read.
 func (d *Daemon) checkDevExits() {
 	// a dev.toggle or rm holding it (dev_stop may take minutes) decides
 	// itself; the next tick looks again instead of piling up behind it
@@ -278,6 +281,7 @@ func (d *Daemon) checkDevExits() {
 		}
 	}
 	d.mu.Unlock()
+	var ended []string
 	for _, slug := range devs {
 		if d.Eng.Alive(slug, engine.WinDev) {
 			continue
@@ -286,7 +290,34 @@ func (d *Daemon) checkDevExits() {
 		d.devLogNote(slug, "dev hook ended by itself: %s", describeDevExit(ex))
 		d.endDevWatch(slug)
 		d.update(slug, func(x *state.Session) { x.Dev, x.DevExit = false, ex })
+		ended = append(ended, slug)
 	}
+	// still under devMu: a pekoe dev starting it again waits for its
+	// dev_stop instead of racing it
+	var wg sync.WaitGroup
+	for _, slug := range ended {
+		wg.Add(1)
+		go func(slug string) {
+			defer wg.Done()
+			if err := d.stopDev(slug, true); err != nil {
+				log.Printf("dev %s: %v", slug, err)
+			}
+		}(slug)
+	}
+	wg.Wait()
+}
+
+// devStopPending: [hooks] dev_stop is still owed for the session's dev
+// hook: it runs, or it ran and no dev_stop has succeeded since it ended
+// (none ran: no key then, the worktree gone, pekoed without dev_stop;
+// or it failed). A session whose dev hook never ran (since dev_exit
+// exists) owes none.
+func devStopPending(s *state.Session) bool {
+	if s.Dev {
+		return true
+	}
+	ex := s.DevExit
+	return ex != nil && (ex.DevStop == nil || ex.DevStop.Error != "")
 }
 
 // deadDevExit is how slug's dev hook, no longer running, ended: the dead
@@ -335,10 +366,11 @@ func describeDevExit(ex *state.DevExit) string {
 // ---- stopping the dev hook ----
 
 // stopDev stops slug's dev hook if it is running and then runs [hooks]
-// dev_stop. final (rm, a landed session's teardown, pekoed stopping its
-// agents): dev_stop also runs for a hook that ended by itself and has had
-// no dev_stop since, since what it started (compose's containers) may
-// still be up. Callers hold devMu. It answers the dev_stop error, if any
+// dev_stop. final (the hook seen ending by itself, rm, a landed session's
+// teardown, pekoed stopping its agents): dev_stop also runs for a hook that
+// is no longer running when no dev_stop has succeeded since it ended
+// (devStopPending), since what it started (compose's containers) may still
+// be up. Callers hold devMu. It answers the dev_stop error, if any
 // (logged in the dev log too).
 func (d *Daemon) stopDev(slug string, final bool) error {
 	s, err := d.snapshot(slug)
@@ -357,8 +389,10 @@ func (d *Daemon) stopDev(slug string, final bool) error {
 		ex = &state.DevExit{Status: -1, Stopped: true, At: time.Now()}
 	case s.Dev: // ended by itself, before checkDevExits saw it
 		ex = d.deadDevExit(slug)
+		d.endDevWatch(slug)
+		d.devLogNote(slug, "dev hook ended by itself: %s", describeDevExit(ex))
 	}
-	due := alive || s.Dev || (final && ex != nil && ex.DevStop == nil)
+	due := alive || s.Dev || (final && devStopPending(s))
 	var runErr error
 	if due {
 		if run := d.runDevStop(s); run != nil {
@@ -420,7 +454,7 @@ func (d *Daemon) stopAllDevs() {
 	d.mu.Lock()
 	var slugs []string
 	for slug, s := range d.sessions {
-		if s.State != state.Landed && (s.Dev || (s.DevExit != nil && s.DevExit.DevStop == nil)) {
+		if s.State != state.Landed && devStopPending(s) {
 			slugs = append(slugs, slug)
 		}
 	}

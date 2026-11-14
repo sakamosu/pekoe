@@ -151,9 +151,13 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			}
 		}
 	}
-	d.purge(s)
+	held := d.purge(s)
 	d.emit("session.removed", s)
-	return map[string]any{"removed": p.Slug, "worktree_deleted": deleted}, nil
+	res := map[string]any{"removed": p.Slug, "worktree_deleted": deleted}
+	if held != nil {
+		res["port_held"] = held
+	}
+	return res, nil
 }
 
 // hAgentRm is rm without the human token (call routes it here), for the
@@ -198,19 +202,55 @@ func (d *Daemon) hAgentRm(p rmP) (any, error) {
 	}) {
 		return nil, fmt.Errorf("%s changed while being removed (no longer the landed session): %w", p.Slug, ErrHumanOnly)
 	}
+	held := d.holdDevPort(snap)
 	d.purgeFiles(snap)
 	d.emit("session.removed", snap)
-	return map[string]any{"removed": p.Slug, "worktree_deleted": false}, nil
+	res := map[string]any{"removed": p.Slug, "worktree_deleted": false}
+	if held != nil {
+		res["port_held"] = held
+	}
+	return res, nil
 }
 
 // purge drops everything pekoe keeps about a session (not its worktree):
 // the row and its prompts, reviews, comments and risks, the picks, errors,
-// attachments and preview addressed to it.
-func (d *Daemon) purge(s *state.Session) {
+// attachments and preview addressed to it. Its port goes back to the
+// ledger, or is held for a while (holdDevPort; answered then).
+func (d *Daemon) purge(s *state.Session) *state.HeldPort {
+	cur := s
+	if c, err := d.snapshot(s.Slug); err == nil && c.RepoID == s.RepoID {
+		cur = c // as rm's stopDev left it
+	}
+	held := d.holdDevPort(cur)
 	// out of memory and state.db together, before anything else can save it
 	// again (an update racing with rm used to write it back: see persist)
 	d.forget(s.Slug)
 	d.purgeFiles(s)
+	return held
+}
+
+// devPortHold is how long a removed session's port stays out of the ledger
+// when its [hooks] dev_stop did not succeed.
+var devPortHold = 7 * 24 * time.Hour
+
+// holdDevPort keeps s's port from the next sessions for devPortHold when s
+// goes while [hooks] dev_stop is still owed (devStopPending: it did not
+// run, or it failed): what its dev hook started outside its own process
+// (a compose Postgres on port+20000) may still hold ports derived from it,
+// and a new session given the same port would fail to start its own. A
+// repository with no [hooks] dev_stop holds nothing (pekoe cannot tell
+// there is anything outside the hook). nil when nothing is held.
+func (d *Daemon) holdDevPort(s *state.Session) *state.HeldPort {
+	if s.Port <= 0 || !devStopPending(s) || strings.TrimSpace(d.repoConfig(s).Hooks.DevStop) == "" {
+		return nil
+	}
+	h := state.HeldPort{Port: s.Port, RepoID: s.RepoID, Slug: s.Slug, Until: time.Now().Add(devPortHold).Truncate(time.Second)}
+	if err := d.DB.HoldPort(h); err != nil {
+		log.Printf("hold port %d of %s: %v", s.Port, s.Slug, err)
+		return nil
+	}
+	log.Printf("%s: [hooks] dev_stop did not succeed; port %d held from new sessions until %s", s.Slug, s.Port, h.Until.Format(time.RFC3339))
+	return &h
 }
 
 // purgeFiles is purge after the session is forgotten: the picks, errors,
@@ -258,6 +298,16 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 			return nil, fmt.Errorf("dev server stopped, but %w", stopErr)
 		}
 		return x, nil
+	}
+	if s.Dev {
+		// it ended by itself and checkDevExits has not seen it yet: record
+		// the end and run its dev_stop before starting it again
+		if err := d.stopDev(p.Slug, true); err != nil {
+			log.Printf("dev %s: %v", p.Slug, err)
+		}
+		if s, err = d.snapshot(p.Slug); err != nil {
+			return nil, err
+		}
 	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Dev == "" {

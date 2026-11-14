@@ -442,7 +442,7 @@ docs = ["README.ja.md#設定", "docs/api.md"]
 [[tip]]
 id = "dev-stop"
 short = "[hooks] dev_stop で dev が立てたコンテナを片付ける"
-detail = "pekoe が dev を止めるとき(pekoe dev・dev 窓を閉じる・x・rm・マージ後・--kill-agents)に、dev と同じ sandbox と環境変数で動く。make down などを書く。teardown は worktree の後片付け。"
+detail = "dev を止めたとき・dev が自分で終わったときに dev と同じ sandbox で動く。成功しないまま rm したら rm で再実行し、それでも駄目ならそのポートを 7 日間使い回さない。"
 keys = ["pekoe dev <slug>"]
 docs = ["README.ja.md#設定"]
 

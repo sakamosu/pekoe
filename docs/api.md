@@ -256,9 +256,9 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
 | `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
-| `worktree.rm` | `{slug, force}` | teardown → worktree 削除(`~/worktrees` 配下のみ)。token なしでは landed のセッションの記録を消すだけ(上) |
+| `worktree.rm` | `{slug, force}` | `{removed, worktree_deleted, port_held?: {port, repo_id, slug, until}}`。dev hook を止めて `dev_stop`(dev hook を起動したことがあり、最後の `dev_stop` が成功していなければ、dev が false でも)→ teardown → worktree 削除(`~/worktrees` 配下のみ)。`dev_stop` が成功しないまま(失敗・走らなかった)消すときは、`[hooks] dev_stop` のあるリポジトリならそのポートを 7 日間ポート台帳から外し(`held_ports`。期限が過ぎたら次の割り当てで消す)、`port_held` で返す。token なしでは landed のセッションの記録を消すだけ(上) |
 | `land` | `{slug}` | rebase → test → push → `gh pr create`。マージ検出後に自動 teardown |
-| `dev.toggle` | `{slug}` | dev server の起動/停止。答えはセッション。止めるときは `[hooks] dev_stop` を dev と同じ worktree・環境変数・sandbox で実行し(5 分まで)、結果を `dev_exit.dev_stop` とログに残す(失敗したら止めたうえでエラー)。`[hooks] dev` が無いときのエラーには設定ファイルの様子(無い・読めない・`[hooks]` が無い・`[hooks]` にあるキー)を添える。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
+| `dev.toggle` | `{slug}` | dev server の起動/停止。答えはセッション。止めるときは `[hooks] dev_stop` を dev と同じ worktree・環境変数・sandbox で実行し(5 分まで)、結果を `dev_exit.dev_stop` とログに残す(失敗したら止めたうえでエラー)。hook が自分で終わったときも(2 秒ごとの tick が見つけたとき、または見つける前の `dev.toggle` の起動の前に)同じように `dev_stop` を実行する。`[hooks] dev` が無いときのエラーには設定ファイルの様子(無い・読めない・`[hooks]` が無い・`[hooks]` にあるキー)を添える。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
 | `dev.log` | `{slug?, lines?}` | `{slug, path, running, exit?, lines: [string]}`。dev hook のログの末尾 `lines` 行(既定 100、5000 まで)。ログには hook の出力(エスケープシーケンスを除き、`\r` は改行に)と、pekoed の `[pekoe <時刻>] …` の行(起動・自分で終わった(終了コード)・pekoe が止めた・`dev_stop` とその出力)が入る。2 MiB を超えたら `.1` に回す。rm で消す。token なしでは呼び出し元のセッションの分だけ |
 | `run.start` | `{slug, command?, width?, height?}` | `RunState` = `{running, finished, started, command, exit_status, signal?}`。worktree で `command` を 1 回だけ run 窓に起動する(dev と同じ環境変数、`$SHELL -c`)。run 窓が動いている・終わって閉じていない間は起動せずにその状態(実行中のコマンドと、終わっていれば終了コード。シグナルで終わったら `exit_status` は -1 で `signal: "SIGINT"`)を返す。`command` なしは状態を見るだけ。作成中・landed・worktree が無いセッションではエラー。呼び出しは 1 本ずつ処理する |
 | `run.close` | `{slug}` | run 窓を閉じ、閉じる前の `RunState` を返す(TUI の「tell the agent?」用)。セッションの `run` を空にする |

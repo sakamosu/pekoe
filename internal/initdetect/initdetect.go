@@ -264,7 +264,7 @@ func Render(copyFiles, clone, setup []string, dev, test string) string {
 	} else {
 		b.WriteString("# test   = \"make test\"\n")
 	}
-	b.WriteString("# dev_stop = \"make down\"   # dev を止めるとき(pekoe dev・rm・x)に dev と同じ sandbox で実行\n")
+	b.WriteString("# dev_stop = \"make down\"   # dev を止めたとき・dev が終わったとき(pekoe dev・rm・x)に dev と同じ sandbox で実行\n")
 	b.WriteString("teardown = []\n\n")
 	b.WriteString("[env]\n")
 	b.WriteString("PORT = \"{{port}}\"\n")

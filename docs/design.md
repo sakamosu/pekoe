@@ -184,7 +184,7 @@ COMPOSE_PROJECT_NAME = "{{slug}}"
 - `.tool-versions` `mise.toml` `.nvmrc` → `mise install`、`.envrc` → `direnv allow`
 - `git ls-files --others --ignored --exclude-standard` で実在する無視ファイルを列挙し、node\_modules や dist などの定番を除いた候補を見せて選んでもらう → `copy` に入る
 
-**ポート台帳** — worktree ごとに決定的なポートを割り、デーモンの状態 DB に記録する。dev server の衝突を消すだけでなく、ブラウザのタブ(URL のポート)→ worktree → セッションを機械的に結ぶ鍵になる。
+**ポート台帳** — worktree ごとに決定的なポートを割り、デーモンの状態 DB に記録する。dev server の衝突を消すだけでなく、ブラウザのタブ(URL のポート)→ worktree → セッションを機械的に結ぶ鍵になる。`[hooks] dev_stop` が成功しないまま消えたセッションのポートは、dev が残したもの(+20000 の Postgres など)と次のセッションがぶつからないよう、7 日間割り当てない(`held_ports`)。
 
 **重い依存の扱い**
 
