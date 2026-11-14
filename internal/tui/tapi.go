@@ -356,6 +356,9 @@ func (m *model) bigRowsTip(width, height int, mood mascot.Mood, caption, sub str
 	return m.bigRowsWith(width, height, mood, caption, sub, true)
 }
 
+// workBubbles rise from the work face, lowest first (ascii: . o O).
+var workBubbles = [3]string{"·", "°", "°"}
+
 func (m *model) bigRowsWith(width, height int, mood mascot.Mood, caption, sub string, withTip bool) []row {
 	r := m.tapi.r
 	anim := m.animating()
@@ -376,7 +379,7 @@ func (m *model) bigRowsWith(width, height int, mood mascot.Mood, caption, sub st
 		seq := []struct {
 			row int
 			g   string
-		}{{2, "·"}, {1, "°"}, {0, "°"}, {-1, ""}}
+		}{{2, workBubbles[0]}, {1, workBubbles[1]}, {0, workBubbles[2]}, {-1, ""}}
 		if r.ASCII() {
 			seq[0].g, seq[1].g, seq[2].g = ".", "o", "O"
 		}

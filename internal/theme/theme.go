@@ -231,6 +231,9 @@ func Icons(name string) IconSet {
 		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192"}
 }
 
+// TestRunningMark leads the "test" badge while a session's tests run.
+const TestRunningMark = "…"
+
 // Prefix renders an icon followed by one space, or nothing in ascii.
 func Prefix(icon string) string {
 	if icon == "" {
@@ -332,7 +335,7 @@ func SessionLine(t *Theme, ic IconSet, s *state.Session, now time.Time, frame in
 	case "fail":
 		parts = append(parts, t.FG(Err, ic.Fail)+"test")
 	case "running":
-		parts = append(parts, t.FG(Dim, "…test"))
+		parts = append(parts, t.FG(Dim, TestRunningMark+"test"))
 	}
 	if s.Port > 0 {
 		parts = append(parts, t.FG(Dim, fmt.Sprintf(":%d", s.Port)))
