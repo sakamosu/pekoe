@@ -287,7 +287,7 @@ var logo = []string{
 const logoBase = 4
 
 // logoDot is the one primary accent beside the logo.
-const logoDot = "●"
+const logoDot = "◉"
 
 // logoRows centers the dim ASCII logo (one primary accent) with a caption.
 func (m *model) logoRows(width, height int, caption string) []row {

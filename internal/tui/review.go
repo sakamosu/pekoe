@@ -614,7 +614,7 @@ func (r *reviewModel) view() string {
 }
 
 // hunkOpenMark heads a hunk not yet approved, rejected or under the cursor.
-const hunkOpenMark = "○"
+const hunkOpenMark = "◦"
 
 func (r *reviewModel) diffPanel(width, height int) []string {
 	m := r.m

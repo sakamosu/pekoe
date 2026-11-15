@@ -2,8 +2,8 @@ package tui
 
 // Conflict forecast in the TUI. pekoed computes it (daemon/conflicts.go) and
 // ships it on each Session as Overlaps / PendingTool.AlsoIn; this file only
-// draws it: ⚠N in the session list, the peer per file in Changes, notes
-// above the land question.
+// draws it: the Warning icon and N in the session list, the peer per file
+// in Changes, notes above the land question.
 
 import (
 	"fmt"
@@ -22,8 +22,10 @@ func overlapRole(o state.Overlap) theme.Role {
 	return theme.Warn
 }
 
-// conflictTag is the "⚠2" next to a branch in the session list: how many
-// open sessions touch the same files. err when any of them would conflict.
+// conflictTag is the "! 2" (the Warning icon, a space, the count) next to a
+// branch in the session list: how many open sessions touch the same files.
+// err when any of them would conflict. The space keeps a nerd icon's glyph
+// off the count.
 func (m *model) conflictTag(s *state.Session) string {
 	if len(s.Overlaps) == 0 {
 		return ""
@@ -34,7 +36,7 @@ func (m *model) conflictTag(s *state.Session) string {
 			role = theme.Err
 		}
 	}
-	return m.th.FG(role, fmt.Sprintf("%s%d", m.ic.Warning, len(s.Overlaps)))
+	return m.th.FG(role, fmt.Sprintf("%s%d", theme.Prefix(m.ic.Warning), len(s.Overlaps)))
 }
 
 // filePeers maps each path of the session's forecast to the sessions that

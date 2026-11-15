@@ -43,24 +43,7 @@ func TestIconsNotAmbiguous(t *testing.T) {
 	glyphguard.Check(t, uses, knownIconViolations)
 }
 
-// knownIconViolations shrinks as docs/ambiguous-width.md「実装の段階」
-// replaces them. Candidates are in its table 2 (the replacement each stage
-// picks is decided there, not here).
-var knownIconViolations = []glyphguard.Known{
-	// 段階 2: 状態アイコンの置き換え
-	{Where: "unicode.Sessions", Rune: '◆', Stage: "段階 2"},
-	{Where: "unicode.Changes", Rune: '≡', Stage: "段階 2"},
-	{Where: "unicode.Diff", Rune: '±', Stage: "段階 2"},
-	{Where: "unicode.Browser", Rune: '◎', Stage: "段階 2"},
-	{Where: "unicode.Run", Rune: '●', Stage: "段階 2"},
-	{Where: "unicode.Wait", Rune: '●', Stage: "段階 2"},
-	{Where: "unicode.Idle", Rune: '○', Stage: "段階 2"},
-	{Where: "unicode.Warning", Rune: '⚠', Stage: "段階 2"},
-	{Where: "unicode.Here", Rune: '▶', Stage: "段階 2"},
-	{Where: "unicode.Unsent", Rune: '●', Stage: "段階 2"},
-	{Where: "unicode.Pending", Rune: '…', Stage: "段階 2"},
-	{Where: "unicode.Issues", Rune: '⊙', Stage: "段階 2"},
-	{Where: "nerd.Here", Rune: '▶', Stage: "段階 2"},
-	{Where: "nerd.Unsent", Rune: '●', Stage: "段階 2"},
-	{Where: "TestRunningMark", Rune: '…', Stage: "段階 2"},
-}
+// knownIconViolations: 段階 2 of docs/ambiguous-width.md「実装の段階」
+// replaced them all (the glyphs picked are in「段階 2 で決めたこと」). A new
+// one goes here only with the stage that removes it.
+var knownIconViolations = []glyphguard.Known{}

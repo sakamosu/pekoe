@@ -284,7 +284,7 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 			{"idle", alive(state.Idle), true, "◉"},
 			{"exited", &daemon.Tapi{Started: true, Alive: false}, true, "✗"},
 			{"run", alive(state.Running), false, ""},
-			{"wait", alive(state.Waiting), false, "●"},
+			{"wait", alive(state.Waiting), false, "◉"},
 		} {
 			m.chat.info = c.info
 			rows, _ := m.sessionRows(80)
@@ -306,7 +306,7 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 
 // The hollow idle circle fills in every icon set that has one: nerd's
 // U+F10C with nerd's own filled U+F111 (the same family and size as the
-// other rows' nerd icons, whatever [mascot] glyphs says), unicode's ○ with
+// other rows' nerd icons, whatever [mascot] glyphs says), unicode's ◦ with
 // tapi's pearl (◉, narrow too); ascii keeps its o, done keeps its
 // check, no color keeps the glyph.
 func TestTapiRowIdleIconFilledAnyIconSet(t *testing.T) {
@@ -327,7 +327,7 @@ func TestTapiRowIdleIconFilledAnyIconSet(t *testing.T) {
 		{"nerd", "unicode", "truecolor", done, theme.Icons("nerd").Done},
 		{"unicode", "unicode", "truecolor", done, "✓"},
 		{"nerd", "unicode", "none", idle, theme.Icons("nerd").Idle},
-		{"unicode", "unicode", "none", idle, "○"},
+		{"unicode", "unicode", "none", idle, "◦"},
 	} {
 		m := tapiModel(t, c.color, config.Mascot{Glyphs: c.glyphs})
 		m.ic = theme.Icons(c.icons)

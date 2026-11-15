@@ -581,7 +581,7 @@ func TestWebTheme(t *testing.T) {
 	w = doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone})
 	var res struct{ Sessions []webSession }
 	json.Unmarshal(w.Body.Bytes(), &res)
-	if lk := res.Sessions[0].Look; lk != (webLook{Icon: "●", Role: "warn", Word: "wait"}) {
+	if lk := res.Sessions[0].Look; lk != (webLook{Icon: "◉", Role: "warn", Word: "wait"}) {
 		t.Fatalf("look: %+v", lk)
 	}
 }

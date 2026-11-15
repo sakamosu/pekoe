@@ -246,7 +246,7 @@ func TestSessionListPRIcon(t *testing.T) {
 	m := prModel(t, "none", 160, 40)
 	m.ic = theme.Icons("unicode")
 	line := func() string { return ansi.Strip(m.sessionLine(m.sessions[0], 60, time.Now())) }
-	if strings.Contains(line(), "#42 ") && strings.Contains(line(), "•") {
+	if strings.Contains(line(), "#42 ") && strings.Contains(line(), unreadMark) {
 		t.Fatalf("no status, no attention: %q", line())
 	}
 	for _, c := range []struct {
@@ -267,7 +267,7 @@ func TestSessionListPRIcon(t *testing.T) {
 		}
 	}
 	m.sessions[0].PRStatus = &state.PRStatus{State: "OPEN", Fail: 1, Attention: []string{"ci_failed"}}
-	if !strings.Contains(line(), "•") {
+	if !strings.Contains(line(), unreadMark) {
 		t.Errorf("PR attention must show the unread dot: %q", line())
 	}
 }

@@ -284,7 +284,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 - In [2] Issues, `f` cycles assigned to me → all open → by label, and `n` creates a session from the issue
 - [2] Browser ties localhost tabs open in Chrome to sessions by port. `E` sends the console errors
 - When an element arrives from Chrome, a card appears in the Agent pane (`↵` send, `^s` another session, `^n` new session, `esc` discard). A pick with an instruction is sent right away to the session that owns the page's port (`[picks] auto_send`)
-- Sessions touching the same files get `⚠N` in the list
+- Sessions touching the same files get a warning icon and the count in the list (`! 2` with unicode icons)
 - Passed through to the agent: OSC 52 (clipboard), OSC 8 (links), OSC 9/99/777 (notifications), mouse (SGR), Kitty keyboard protocol (so Shift+Enter and friends arrive; disable with `PEKOE_KITTY=0`)
 
 All keys are listed in [docs/design.md](docs/design.md#cli-コマンドとキーバインド).

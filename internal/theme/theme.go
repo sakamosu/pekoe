@@ -217,22 +217,26 @@ func Icons(name string) IconSet {
 			Current: "*", Warning: "!", Check: "v", Here: ">", Unsent: "*", Sent: "v", Sep: "|",
 			Pending: "~", ChangesReq: "!", Merged: "m", Closed: "-", Spinner: []string{"-", "\\", "|", "/"}}
 	case "unicode":
-		return IconSet{Name: "unicode", Sessions: "◆", Worktrees: "⎇", Changes: "≡", Agent: ">", Diff: "±", Browser: "◎", Picks: "⌖",
-			Comments: "✎", Vim: "V", Run: "●", Wait: "●", Idle: "○", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "⚠",
-			Check: "✓", Here: "▶", Unsent: "●", Sent: "✓", Sep: "│", Spinner: braille,
-			PR: "⇄", Pending: "…", ChangesReq: "!", Merged: "↣", Closed: "-", Issues: "⊙"}
+		// No East Asian Ambiguous glyph, nor one a measured font draws
+		// wider than a cell (docs/ambiguous-width.md「段階 2 で決めたこと」).
+		return IconSet{Name: "unicode", Sessions: "◊", Worktrees: "⎇", Changes: "≣", Agent: ">", Diff: "∆", Browser: "◉", Picks: "⌖",
+			Comments: "✎", Vim: "V", Run: "◉", Wait: "◉", Idle: "◦", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "!",
+			Check: "✓", Here: "▸", Unsent: "◉", Sent: "✓", Sep: "│", Spinner: braille,
+			PR: "⇄", Pending: "◔", ChangesReq: "!", Merged: "↣", Closed: "-", Issues: "◉"}
 	}
 	return IconSet{Name: "nerd",
 		Sessions: "\U000F06A9", Worktrees: "", Changes: "", Agent: "", Diff: "",
 		Browser: "", Picks: "", Comments: "", Vim: "",
 		Run: "", Wait: "", Idle: "", Creating: "◌", Done: "", Fail: "",
-		Current: "", Warning: "", Check: "✓", Here: "▶", Unsent: "●", Sent: "✓",
+		Current: "", Warning: "", Check: "✓", Here: "▸", Unsent: "◉", Sent: "✓",
 		PR: "\ue726", Pending: "\uf017", ChangesReq: "\uf06a", Merged: "\ue727", Closed: "\uf05e",
 		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192"}
 }
 
-// TestRunningMark leads the "test" badge while a session's tests run.
-const TestRunningMark = "…"
+// TestRunningMark leads the "test" badge while a session's tests run, where
+// ✓ / ✗ stand once they finished. ASCII: it is the same in every icon set
+// and font (… was East Asian Ambiguous).
+const TestRunningMark = "~"
 
 // Prefix renders an icon followed by one space, or nothing in ascii.
 func Prefix(icon string) string {
@@ -331,11 +335,11 @@ func SessionLine(t *Theme, ic IconSet, s *state.Session, now time.Time, frame in
 	}
 	switch s.Test.Status {
 	case "pass":
-		parts = append(parts, t.FG(Ok, ic.Check)+"test")
+		parts = append(parts, t.FG(Ok, Prefix(ic.Check))+"test")
 	case "fail":
-		parts = append(parts, t.FG(Err, ic.Fail)+"test")
+		parts = append(parts, t.FG(Err, Prefix(ic.Fail))+"test")
 	case "running":
-		parts = append(parts, t.FG(Dim, TestRunningMark+"test"))
+		parts = append(parts, t.FG(Dim, Prefix(TestRunningMark)+"test"))
 	}
 	if s.Port > 0 {
 		parts = append(parts, t.FG(Dim, fmt.Sprintf(":%d", s.Port)))

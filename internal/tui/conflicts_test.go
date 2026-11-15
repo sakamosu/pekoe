@@ -50,30 +50,30 @@ func TestSessionListConflictTag(t *testing.T) {
 	now := time.Now()
 	a := ansi.Strip(m.sessionLine(m.sessions[0], cw, now))
 	// the tags survive; the long branch name gives way
-	if !strings.Contains(a, "#42 ⚠2") || !strings.Contains(a, "…") {
+	if !strings.Contains(a, "#42 ! 2") || !strings.Contains(a, "…") {
 		t.Fatalf("feat-a row: %q", a)
 	}
 	if w(a) != cw {
 		t.Fatalf("row width %d, want %d: %q", w(a), cw, a)
 	}
-	if c := ansi.Strip(m.sessionLine(m.sessions[2], cw, now)); !strings.Contains(c, "feat/c ⚠1") {
+	if c := ansi.Strip(m.sessionLine(m.sessions[2], cw, now)); !strings.Contains(c, "feat/c ! 1") {
 		t.Fatalf("feat-c row: %q", c)
 	}
-	if d := ansi.Strip(m.sessionLine(m.sessions[3], cw, now)); strings.Contains(d, "⚠") {
+	if d := ansi.Strip(m.sessionLine(m.sessions[3], cw, now)); strings.Contains(d, "!") {
 		t.Fatalf("no forecast, no tag: %q", d)
 	}
 	// colors: err when any peer conflicts, warn for overlap only
 	mc := forecastModel(t, "truecolor")
-	if got, want := mc.conflictTag(mc.sessions[0]), mc.th.FG("err", "⚠2"); got != want {
+	if got, want := mc.conflictTag(mc.sessions[0]), mc.th.FG("err", "! 2"); got != want {
 		t.Fatalf("conflict tag %q, want err %q", got, want)
 	}
-	if got, want := mc.conflictTag(mc.sessions[2]), mc.th.FG("warn", "⚠1"); got != want {
+	if got, want := mc.conflictTag(mc.sessions[2]), mc.th.FG("warn", "! 1"); got != want {
 		t.Fatalf("overlap tag %q, want warn %q", got, want)
 	}
 	// ascii icons
 	t.Setenv("PEKOE_ICONS", "ascii")
 	ma := tapiModel(t, "none", config.Mascot{Glyphs: "ascii"})
-	if got := ma.conflictTag(m.sessions[0]); got != "!2" {
+	if got := ma.conflictTag(m.sessions[0]); got != "! 2" {
 		t.Fatalf("ascii tag %q", got)
 	}
 }
@@ -82,7 +82,7 @@ func TestPermissionModalAlsoChanged(t *testing.T) {
 	m := forecastModel(t, "none")
 	out := strings.Join(newPermissionModal(m, m.sessions[1]).view(), "\n")
 	l := lineWith(t, out, "also changed in")
-	if !strings.Contains(l, "⚠ also changed in feat-a") {
+	if !strings.Contains(l, "! also changed in feat-a") {
 		t.Fatalf("warning line: %q", l)
 	}
 	// nothing to warn about: no line
@@ -100,16 +100,16 @@ func TestChangesShowPeersAndLandForecast(t *testing.T) {
 		m.changesOf = "feat-a"
 		m.focus = pThird
 		out := m.View()
-		if l := lineWith(t, out, "src/api.ts"); !strings.Contains(l, "⚠ feat-b") {
+		if l := lineWith(t, out, "src/api.ts"); !strings.Contains(l, "! feat-b") {
 			t.Fatalf("%s: api.ts row: %q", color, l)
 		}
-		if l := lineWith(t, out, "README.md"); !strings.Contains(l, "⚠ feat-b,feat-c") {
+		if l := lineWith(t, out, "README.md"); !strings.Contains(l, "! feat-b,feat-c") {
 			t.Fatalf("%s: README row: %q", color, l)
 		}
-		if l := lineWith(t, out, "src/new.ts"); strings.Contains(l, "⚠") {
+		if l := lineWith(t, out, "src/new.ts"); strings.Contains(l, "!") {
 			t.Fatalf("%s: new.ts row: %q", color, l)
 		}
-		if l := lineWith(t, out, "feat-b conflict"); !strings.Contains(l, "⚠ feat-c overlap") {
+		if l := lineWith(t, out, "feat-b conflict"); !strings.Contains(l, "! feat-c overlap") {
 			t.Fatalf("%s: footer: %q", color, l)
 		}
 
@@ -131,10 +131,10 @@ func TestChangesShowPeersAndLandForecast(t *testing.T) {
 		if ask < 2 {
 			t.Fatalf("%s: ask line missing:\n%s", color, ansi.Strip(out))
 		}
-		if l := ansi.Strip(lines[ask-2]); !strings.Contains(l, "⚠ feat-b conflict · src/api.ts") {
+		if l := ansi.Strip(lines[ask-2]); !strings.Contains(l, "! feat-b conflict · src/api.ts") {
 			t.Fatalf("%s: conflict note: %q", color, l)
 		}
-		if l := ansi.Strip(lines[ask-1]); !strings.Contains(l, "⚠ feat-c overlap, auto-merges · README.md") {
+		if l := ansi.Strip(lines[ask-1]); !strings.Contains(l, "! feat-c overlap, auto-merges · README.md") {
 			t.Fatalf("%s: overlap note: %q", color, l)
 		}
 		m.modal = nil
