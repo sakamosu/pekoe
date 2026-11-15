@@ -18,6 +18,7 @@ import (
 type prFixture struct {
 	State, Merge, Decision string
 	Head                   string // headRefOid (default ABCDEF…)
+	Commit                 string // the last commit's oid (default: none given)
 	Base                   string // baseRefName (default main)
 	Checks                 []map[string]any
 	Reviews                []map[string]any
@@ -59,11 +60,15 @@ func (f prFixture) writeAs(t *testing.T, ghDir, name string) {
 	if f.Checks != nil {
 		rollup = map[string]any{"contexts": map[string]any{"nodes": f.Checks}}
 	}
+	commit := map[string]any{"statusCheckRollup": rollup}
+	if f.Commit != "" {
+		commit["oid"] = f.Commit
+	}
 	pr := map[string]any{
 		"number": 42, "title": "Add CSV export", "body": "## Summary", "url": "https://github.com/me/app/pull/42",
 		"state": f.State, "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": f.Merge,
 		"reviewDecision": decision, "baseRefName": f.Base, "headRefName": "feat/csv", "headRefOid": f.Head,
-		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{"statusCheckRollup": rollup}}}},
+		"commits":       map[string]any{"nodes": []any{map[string]any{"commit": commit}}},
 		"reviews":       map[string]any{"nodes": nz(f.Reviews)},
 		"reviewThreads": map[string]any{"nodes": nz(f.Threads)},
 		"comments":      map[string]any{"nodes": nz(f.Comments)},

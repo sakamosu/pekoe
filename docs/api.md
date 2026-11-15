@@ -189,10 +189,12 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
     "pass": 5, "fail": 1, "pending": 0,   // checks の数
+    "failed_checks": ["test (ubuntu)"],   // 落ちている check の名前(10 件まで、1 件 60 文字まで)
     "review_decision": "CHANGES_REQUESTED", // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
     "unresolved": 2,               // 未解決のレビュースレッド
     "merge_state": "BLOCKED",      // mergeStateStatus: CLEAN | BLOCKED | DIRTY | BEHIND | UNSTABLE …
     "head_sha": "3f2a…",           // GitHub 上の PR の HEAD(headRefOid)
+    "ci_head": "3f2a…",            // CI の決着を知らせた HEAD(wait の `ci`。同じ HEAD では 1 回だけ出すための記録。下の「待ち合わせ」)
     "last_comment": "…", "last_thread": "…",
     "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
     "attention_at": "…", "at": "…"
@@ -355,8 +357,9 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 }
 ```
 
-- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox #12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
-- `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
+- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox #12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
+- `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
+- `ci` は、`OPEN` の PR の HEAD のチェックで `pending` が 0、`pass` + `fail` が 1 以上になったときに 1 回だけ出る(`pr_status` を取り直したときに判定するので、遅れはポーリングの間隔に見回りの刻みの 15 秒を足したくらいまで)。`summary` は `feat-csv: PR #42 ci green: 5 passed, head <PR の HEAD の SHA(40 桁)>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`(落ちた check の名前は 3 つまで、残りは `+N more`)。知らせた HEAD を `pr_status.ci_head` に残し、同じ HEAD では二度と出さない(pekoed を再起動しても、同じ HEAD で check をやり直しても)。HEAD が変われば、次に決着したときにまた 1 回出る。check が 1 件も無い・`pass` も `fail` も 0(全部 skip)・`OPEN` でない PR では出ない。キャンセル・skip・neutral の check は `pass` にも `fail` にも数えないので、それらがあっても残りが通れば green。`pr` の `ci_failed` は最初の 1 本が落ちた時点で出るので、同じ CI で `pr` と `ci` の両方が出ることがある
 - `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない
 - 何も起きずに `timeout_s`(既定 1800、3600 まで)が過ぎたら `timed_out: true` と今の `cursor`。条件に合わなかった変化は飛ばして `cursor` は進む
 - `mine` は `Session.parent` が呼び出し元のもの。`unknown` の呼び出し元は使えない。`slugs` は `<repo>/<slug>` も受け付ける

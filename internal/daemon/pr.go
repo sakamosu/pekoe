@@ -81,7 +81,7 @@ const prQuery = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       number title body url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName headRefOid
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+      commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt databaseId
           checkSuite { workflowRun { databaseId workflow { name } } } }
@@ -133,6 +133,7 @@ type gqlPR struct {
 	Commits          struct {
 		Nodes []struct {
 			Commit struct {
+				OID               string `json:"oid"`
 				StatusCheckRollup *struct {
 					Contexts struct {
 						Nodes []struct {
@@ -220,6 +221,11 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 		if c.Commit.StatusCheckRollup == nil {
 			continue
 		}
+		if oid := strings.ToLower(c.Commit.OID); oid != "" && oid != v.HeadSHA {
+			// not the head's commit (the head moved a moment ago): its
+			// checks are not this head's result (wait's ci is told per head)
+			continue
+		}
 		for _, n := range c.Commit.StatusCheckRollup.Contexts.Nodes {
 			var ck PRCheck
 			if n.Typename == "StatusContext" {
@@ -275,6 +281,9 @@ func checkBucket(c PRCheck) string {
 	return "pending"
 }
 
+// failedChecksKept is how many failing checks' names the summary keeps.
+const failedChecksKept = 10
+
 // Summary is the small part kept on the session (Session.PRStatus).
 func (v *PRView) Summary() *state.PRStatus {
 	st := &state.PRStatus{State: v.State, Draft: v.IsDraft, ReviewDecision: v.ReviewDecision, MergeState: v.MergeState, HeadSHA: v.HeadSHA, At: v.FetchedAt}
@@ -284,6 +293,9 @@ func (v *PRView) Summary() *state.PRStatus {
 			st.Pass++
 		case "fail":
 			st.Fail++
+			if len(st.FailedChecks) < failedChecksKept {
+				st.FailedChecks = append(st.FailedChecks, lineCut(c.Name, 60))
+			}
 		case "pending":
 			st.Pending++
 		}
@@ -335,6 +347,32 @@ func prAttention(prev, next *state.PRStatus) []string {
 		out = append(out, "mergeable")
 	}
 	return out
+}
+
+// ciSettled reports whether the CI of an open PR's head has a result: no
+// check is pending and at least one passed or failed. A PR without checks
+// (or with skipped ones only) never settles.
+func ciSettled(st *state.PRStatus) bool {
+	return st != nil && st.State == "OPEN" && st.HeadSHA != "" && st.Pending == 0 && st.Pass+st.Fail > 0
+}
+
+// ciSummary is the one line wait's ci gives: green or red, the failed
+// checks and the head it is about.
+func ciSummary(s *state.Session) string {
+	st := s.PRStatus
+	res := fmt.Sprintf("green: %d passed", st.Pass)
+	if st.Fail > 0 {
+		names := st.FailedChecks
+		if len(names) > 3 {
+			names = names[:3]
+		}
+		list := strings.Join(names, ", ")
+		if more := st.Fail - len(names); more > 0 {
+			list += fmt.Sprintf(", +%d more", more)
+		}
+		res = fmt.Sprintf("red: %d failed (%s), %d passed", st.Fail, list, st.Pass)
+	}
+	return fmt.Sprintf("%s: PR #%d ci %s, head %s", s.Slug, s.PR, res, st.CIHead)
 }
 
 // ---- gh plumbing ----
@@ -478,6 +516,14 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 	}
 	if next.State != "OPEN" { // merged / closed: nothing left to act on
 		next.Attention, next.AttentionAt = nil, time.Time{}
+	}
+	// wait's ci: told once per head, when its CI settles (sessionChanges
+	// sees CIHead move). Kept across restarts with the session.
+	if prev != nil {
+		next.CIHead = prev.CIHead
+	}
+	if ciSettled(next) {
+		next.CIHead = next.HeadSHA
 	}
 	if prev.Same(next) {
 		return
