@@ -551,43 +551,86 @@ func TestLedgerKeepsRequestOnRefusedSend(t *testing.T) {
 }
 
 // What pekoed closed itself stays in the list tapi reads first for a day
-// (ledger.list with auto), marked; open alone is as before, and a request
-// among them opened again is an open one.
+// (ledger.list with auto): apart from the open ones, the newest 10, each
+// text cut short, the rest counted. Closed 23 hours ago is in, 25 hours
+// ago is not. Open alone is as before, and a request among them opened
+// again is an open one.
 func TestLedgerListShowsLatelyAuto(t *testing.T) {
 	d, _, _ := setup(t)
 	tapi := agentAs(TapiSlug)
-	for _, s := range []string{"B が済んだら C も直して", "ありがと", "おやすみ"} {
+	long := strings.Repeat("あ", 300)
+	texts := []string{"B が済んだら C も直して", "ありがと", long}
+	for i := 0; i < 11; i++ {
+		texts = append(texts, fmt.Sprintf("雑談 %d", i))
+	}
+	for _, s := range texts { // #1..#14, all closed by pekoed
 		promptEvent(t, d, tapi, TapiSlug, s)
 		stopEvent(t, d, tapi, TapiSlug)
 	}
-	promptEvent(t, d, tapi, TapiSlug, "CSV を直して")
+	promptEvent(t, d, tapi, TapiSlug, "CSV を直して") // #15, kept
 	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{})
 	stopEvent(t, d, tapi, TapiSlug)
-	// #2 was closed more than a day ago
-	old, _ := d.DB.LedgerGet(2)
-	long := time.Now().Add(-ledgerAutoShown - time.Minute)
-	old.ClosedAt = &long
-	if err := d.DB.SaveLedger(old); err != nil {
-		t.Fatal(err)
+	closedAgo := func(id int64, ago time.Duration) {
+		t.Helper()
+		e, _ := d.DB.LedgerGet(id)
+		at := time.Now().Add(-ago)
+		e.ClosedAt = &at
+		if err := d.DB.SaveLedger(e); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{}); len(es) != 1 || es[0].ID != 4 {
+	closedAgo(1, 23*time.Hour) // still shown
+	closedAgo(2, 25*time.Hour) // not any more
+	view := func() state.LedgerView {
+		t.Helper()
+		return callAs[state.LedgerView](t, d, tapi, "ledger.list", map[string]any{"auto": true})
+	}
+	ids := func(es []state.LedgerEntry) (out []int64) {
+		for _, e := range es {
+			out = append(out, e.ID)
+		}
+		return
+	}
+	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{}); len(es) != 1 || es[0].ID != 15 {
 		t.Fatalf("open alone: %+v", es)
 	}
-	es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"auto": true})
-	if len(es) != 3 || es[0].ID != 1 || !es[0].Auto || es[0].Status != state.LedgerChat || es[1].ID != 3 || !es[1].Auto || es[2].ID != 4 || es[2].Status != state.LedgerOpen {
-		t.Fatalf("open and lately auto: %+v", es)
+	v := view()
+	// shown lately: #1 and #3..#14 (13); the newest 10 are #5..#14
+	if got := ids(v.Open); len(got) != 1 || got[0] != 15 {
+		t.Fatalf("open: %v", got)
 	}
-	// the request among them, opened again
-	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": 1})
-	es = callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"auto": true})
-	if len(es) != 3 || es[0].ID != 1 || es[0].Auto || es[0].Status != state.LedgerOpen {
-		t.Fatalf("after keep: %+v", es)
+	if got := ids(v.AutoClosed); len(got) != ledgerAutoMax || got[0] != 5 || got[9] != 14 || v.AutoClosedMore != 3 {
+		t.Fatalf("auto closed, newest 10: %v · more %d", got, v.AutoClosedMore)
 	}
-	if v := call[Tapi](t, d, "tapi.get", nil); v.LedgerOpen != 2 {
-		t.Fatalf("ledger_open counts the open ones only: %+v", v)
+	for _, e := range v.AutoClosed {
+		if e.Status != state.LedgerChat || !e.Auto || e.Cut {
+			t.Fatalf("auto closed: %+v", e)
+		}
 	}
-	// all is all, auto or not
-	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"status": "all", "auto": true}); len(es) != 4 {
-		t.Fatalf("all: %+v", es)
+	// 23 hours ago is in, 25 hours ago is not: with fewer than 10 every
+	// one shows (#1 in, #2 out, #3 and #4 closed just now)
+	for id := int64(5); id <= 14; id++ {
+		callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": id})
+	}
+	v = view()
+	if got := ids(v.AutoClosed); len(got) != 3 || got[0] != 1 || got[1] != 3 || got[2] != 4 || v.AutoClosedMore != 0 {
+		t.Fatalf("23h in, 25h out: %v · more %d", got, v.AutoClosedMore)
+	}
+	// a long text is cut to 200 characters; the entry itself is whole
+	if e := v.AutoClosed[1]; !e.Cut || []rune(e.Text)[ledgerAutoText] != '…' || len([]rune(e.Text)) != ledgerAutoText+1 {
+		t.Fatalf("cut: %d characters, cut %v", len([]rune(e.Text)), e.Cut)
+	}
+	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"status": "all", "since": 2}); es[0].ID != 3 || es[0].Text != long || es[0].Cut {
+		t.Fatalf("the entry by id is whole: %+v", es[0])
+	}
+	if got := ids(v.Open); len(got) != 11 || got[0] != 5 {
+		t.Fatalf("opened again: %v", got)
+	}
+	if tv := call[Tapi](t, d, "tapi.get", nil); tv.LedgerOpen != 11 {
+		t.Fatalf("ledger_open counts the open ones only: %+v", tv)
+	}
+	// all is all, auto or not, as a list
+	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"status": "all", "auto": true}); len(es) != 15 {
+		t.Fatalf("all: %d", len(es))
 	}
 }

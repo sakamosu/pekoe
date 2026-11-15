@@ -204,7 +204,7 @@ func usage() {
   pekoe ask-human <question> [--option O]... [--recommend N] [--kind K] [--wait]
                                ask a person (run by an agent); the answer comes back
   pekoe inbox [<id>] [--all]    the questions agents asked; pekoe inbox answer <id> <n>
-  pekoe ledger [--all] [--json] what you asked tapi chat for; tapi closes them with
+  pekoe ledger [<id>] [--all] [--json] what you asked tapi chat for; tapi closes them with
                                pekoe ledger done|drop|close|link|keep, you reopen|rm
                                (small talk closes itself when tapi's reply ends; listed
                                for 24h, apart, so that a request among it is seen)

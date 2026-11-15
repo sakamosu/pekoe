@@ -426,7 +426,7 @@ const tapiDoc = `# tapi chat
 
 会話の記憶に頼らない。状態は pekoed にあり、%pekoe tapi reset%(会話を消す)をしても依頼と受信箱は残る。会話の最初の返事の前に、必ず次を読む:
 
-- %pekoe --json ledger%: ユーザーから頼まれてまだ閉じていない依頼(%status% が %open%)。%sessions% に結んだセッション。一緒に、pekoe が直近 24 時間に「依頼ではなかった」として自動で閉じた入力も出る(%status% が %chat% で %auto% が true)。その文を読み、依頼だったもの(頼まれたのに誰にも任せていない・後でやると言ったまま)があれば %pekoe ledger keep <id>% で open に戻して、続きから進める
+- %pekoe --json ledger%: ユーザーから頼まれてまだ閉じていない依頼(%status% が %open%)。%sessions% に結んだセッション。形は %{open, auto_closed, auto_closed_more}%: %open% が閉じていない依頼、%auto_closed% が pekoe が直近 24 時間に「依頼ではなかった」として自動で閉じた入力の新しい 10 件(本文は 200 文字で切ってあり、%cut% が true なら続きは %pekoe ledger <id>% で読める)、%auto_closed_more% がそれより古い件数。%auto_closed% の文を読み、依頼だったもの(頼まれたのに誰にも任せていない・後でやると言ったまま)があれば %pekoe ledger keep <id>% で open に戻して、続きから進める
 - %pekoe --json inbox%: ユーザーの答えを待っている問い。%pekoe --json inbox --mine --all% で自分が出した問いとその答え
 - %pekoe --json ls%: セッションの状態。%parent% が %+tapi% のものが自分の任せた分、%report% に最新の報告
 
@@ -435,7 +435,8 @@ const tapiDoc = `# tapi chat
 ## 統括役の手順
 
 - **依頼**: ユーザーが tapi に打った文は、pekoe が自動で依頼として open で記録する(id は %pekoe --json ledger% で分かる。同じ文が続けて 2 回送られたら 1 件にまとまる)。依頼でなかったもの(雑談・お礼・「マージした」のような報告・その場で答えた質問)は、何もしなくてよい: 返事を終えたときに、このターンの入力にセッションが結ばれておらず、このターンで誰にも何も頼まず、待ち始めてもいなければ(%pekoe new%・%pekoe send%・%pekoe ask-human%・%pekoe land%・%pekoe wait% を呼んでいない)、pekoe が「依頼ではなかった」(chat)として閉じる
-- **依頼を残す**: 依頼なのにこのターンで誰にも頼まないとき(後でやる・ユーザーに聞き返して答えを待つ・前の作業が済んでから始める・「報告が来たら land して」のように、もう張ってある %pekoe wait% を待つだけ)は、返事を終える前に必ず %pekoe ledger keep% を打つ(引数なしでこのターンの入力。打たないと依頼が閉じてしまう)。依頼かどうか迷ったら keep する。pekoe が閉じたものが依頼だったと後で分かったら %pekoe ledger keep <id>% で open に戻す(%auto% が true のもの。閉じてから 24 時間は %pekoe --json ledger% に出て、その後は %--all% で見える。%--request <id>% や %pekoe ledger link% でセッションを結んでも戻る)。自分や人が閉じたものは戻せない(人の %pekoe ledger reopen%)
+- **依頼を残す**: 依頼なのにこのターンで誰にも頼まないとき(後でやる・ユーザーに聞き返して答えを待つ・前の作業が済んでから始める・「報告が来たら land して」のように、もう張ってある %pekoe wait% を待つだけ)は、返事を終える前に必ず %pekoe ledger keep% を打つ(引数なしでこのターンの入力。打たないと依頼が閉じてしまう)。依頼かどうか迷ったら keep する。pekoe が閉じたものが依頼だったと後で分かったら %pekoe ledger keep <id>% で open に戻す(%auto% が true のもの。閉じてから 24 時間は %pekoe --json ledger% の %auto_closed% に出て、その後は %--all% で見える。%--request <id>% や %pekoe ledger link% でセッションを結んでも戻る)。自分や人が閉じたものは戻せない(人の %pekoe ledger reopen%)
+- %pekoe ask-human --wait% をバックグラウンドで走らせている間は、それが中で呼び直す %wait% がたまたまターンに重なると、そのターンの雑談は閉じずに open のまま残る
 - pekoe が自分で閉じるのは今のターンの入力 1 件だけ。open のまま残った依頼でないもの(セッションに何か頼んだターンや %pekoe wait% を張り直したターンに混ざったお礼、中断されたターンの入力など)は %pekoe ledger close <id> --as chat% で閉じる
 - **任せる**: 変更はすべてセッションに任せる: %pekoe --json new <ブランチ> --repo <リポジトリ> --request <依頼の id> --prompt …%。プロンプトには何を・なぜ・分かっていること・**完了条件**・やらないこと・最後に %pekoe report% で報告すること、を必ず入れる(テンプレートは pekoe-orchestrate スキル)。1 PR で済むなら 1 本、分けるのは独立にレビュー・マージできて触るファイルが重ならないときだけ。分けたものに順序があれば、後のものに %--after <先のセッションの slug>% を付けて記録する(記録と表示だけで起動は止まらない。渡せるのは今あるセッションだけなので先のものから作る)
 - **待つ**: 任せたら %pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor> --timeout 30m% をバックグラウンド実行(Claude Code の %run_in_background%)で待つ。ポーリングしない(%sleep% のループや %pekoe ls% の繰り返しはしない)。返った %cursor% を次の %--since% に渡す。%reset: true% なら %pekoe --json ls% を読み直す。%--on% で起きるのは、報告(%report%)・人の答え(%inbox%)・セッションが落ちた(%failed%)・許可ダイアログなどで止まった(%waiting%)・PR の CI が決着した(%ci%)ときだけにする。%done%・%idle%・%pr%・%landed%・%removed% はほとんどが報告の前後の空振りで、起きるたびに会話全体を読み直してトークンを使う。報告せずに止まったセッションは、%timed_out% で起きたときに %pekoe --json ls% で気づく
@@ -523,7 +524,7 @@ pekoe の機能を 1 つずつ紹介する tip の一覧が pekoe に入って�
   - 新しいエージェントはこの会話を知らない。何を・なぜ・分かっていること・完了条件・やらないことをプロンプトに込める。codex などスキルを読めないエージェント(%--agent codex%)には、「最後に」を手順そのもの(実装 → テスト → 差分の読み直し → コミット → %pekoe land <slug>% → %pekoe report "<要約>" --status done --evidence <PR の URL>%)に置き換える
 - 既存のセッションに指示を足す: %pekoe send <slug> -% に stdin で本文を渡す
 - 報告と CI の決着を待つ・読む: %pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor>%(バックグラウンドで)、%pekoe --json reports <slug>%
-- 依頼: %pekoe --json ledger%(open のものと、pekoe が直近 24 時間に自動で閉じたもの。%--all% で閉じたものも)、%pekoe ledger done|drop|close|link|keep …%
+- 依頼: %pekoe --json ledger%(open のものと、pekoe が直近 24 時間に自動で閉じたものの新しい 10 件。%--all% で閉じたものも)、%pekoe ledger <id>%(1 件を全文で)、%pekoe ledger done|drop|close|link|keep …%
 - 受信箱: %pekoe --json inbox%、%pekoe --json ask-human …%、%pekoe --json ask-human --wait <id>%
 - セッションの中身を見る: %pekoe --json ls% の path を使って %git -C <path> log% / %git -C <path> diff%
 - GitHub の様子: %gh%(例: %gh api repos/<owner>/<repo>/dependabot/alerts%、%gh pr list -R <owner>/<repo>%)

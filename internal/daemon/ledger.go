@@ -52,6 +52,39 @@ var ledgerRepeatWithin = time.Minute
 // `pekoe ledger --all`.
 const ledgerAutoShown = 24 * time.Hour
 
+// What pekoed closed itself is shown short: the newest ledgerAutoMax, each
+// text cut to ledgerAutoText characters, the rest as a count. tapi reads
+// the list at the start of every conversation and whenever it looks up
+// an id, and the point of closing small talk is fewer tokens; the whole
+// text is `pekoe ledger <id>`.
+const (
+	ledgerAutoMax  = 10
+	ledgerAutoText = 200
+)
+
+// ledgerView splits the open entries from what pekoed closed itself lately
+// and keeps the latter short.
+func ledgerView(es []state.LedgerEntry) *state.LedgerView {
+	v := &state.LedgerView{Open: []state.LedgerEntry{}, AutoClosed: []state.LedgerEntry{}}
+	for _, e := range es {
+		if e.Status == state.LedgerOpen {
+			v.Open = append(v.Open, e)
+		} else {
+			v.AutoClosed = append(v.AutoClosed, e)
+		}
+	}
+	if n := len(v.AutoClosed) - ledgerAutoMax; n > 0 {
+		v.AutoClosed, v.AutoClosedMore = v.AutoClosed[n:], n // oldest first: the newest are last
+	}
+	for i := range v.AutoClosed {
+		e := &v.AutoClosed[i]
+		if r := []rune(e.Text); len(r) > ledgerAutoText {
+			e.Text, e.Cut = string(r[:ledgerAutoText])+"…", true
+		}
+	}
+	return v
+}
+
 // notTyped: a prompt that reaches UserPromptSubmit without the person
 // typing it, so no request of theirs:
 //   - "[pekoe …": what pekoed itself typed into tapi's input box (an inbox
@@ -233,8 +266,8 @@ func ledgerErr(id int64, err error) error {
 type ledgerListP struct {
 	Status string `json:"status"` // open (default) | all
 	Since  int64  `json:"since"`
-	// Auto, with open: also the entries pekoed closed itself in the last
-	// ledgerAutoShown (status chat, auto true)
+	// Auto, with open: a LedgerView instead of a list, with what pekoed
+	// closed itself in the last ledgerAutoShown (status chat, auto true)
 	Auto bool `json:"auto"`
 }
 
@@ -245,7 +278,11 @@ func (d *Daemon) hLedgerList(who *Caller, p ledgerListP) (any, error) {
 	switch p.Status {
 	case "", state.LedgerOpen:
 		if p.Auto {
-			return d.DB.LedgerOpenAndAuto(p.Since, time.Now().Add(-ledgerAutoShown))
+			es, err := d.DB.LedgerOpenAndAuto(p.Since, time.Now().Add(-ledgerAutoShown))
+			if err != nil {
+				return nil, err
+			}
+			return ledgerView(es), nil
 		}
 		return d.DB.LedgerList(false, p.Since)
 	case "all":

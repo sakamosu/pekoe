@@ -18,6 +18,7 @@ package tui
 // modal.
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -57,15 +58,17 @@ const (
 // dashState is the dashboard's data and cursor.
 type dashState struct {
 	ledger []state.LedgerEntry
-	// auto: the entries pekoed closed itself in the last 24 hours
-	// (ledger.list with auto), drawn quietly under the open ones
-	auto    []state.LedgerEntry
-	sends   []state.SendRecord
-	fyi     []state.InboxItem
-	merge   map[string]*state.MergeCheck
-	at      time.Time // the last read came back
-	loading bool
-	stale   bool // something changed since the last read
+	// auto: the newest entries pekoed closed itself in the last 24 hours,
+	// short (ledger.list with auto), drawn quietly under the open ones;
+	// autoMore how many more there are
+	auto     []state.LedgerEntry
+	autoMore int
+	sends    []state.SendRecord
+	fyi      []state.InboxItem
+	merge    map[string]*state.MergeCheck
+	at       time.Time // the last read came back
+	loading  bool
+	stale    bool // something changed since the last read
 
 	stats        *daemon.Stats // the last stats read that came back fine
 	statsErr     string        // why the last stats read failed ("" when it did not)
@@ -79,7 +82,7 @@ type dashState struct {
 }
 
 type dashMsg struct {
-	ledger []state.LedgerEntry
+	ledger state.LedgerView
 	sends  []state.SendRecord
 	fyi    []state.InboxItem
 	merge  []state.MergeCheck
@@ -104,7 +107,10 @@ func (m *model) loadDash() tea.Cmd {
 		if cl == nil {
 			return out
 		}
-		_ = cl.Call("ledger.list", map[string]any{"status": "open", "auto": true}, &out.ledger)
+		var raw json.RawMessage
+		if cl.Call("ledger.list", map[string]any{"status": "open", "auto": true}, &raw) == nil {
+			out.ledger = parseLedgerView(raw)
+		}
 		_ = cl.Call("send.log", map[string]any{"limit": dashSends}, &out.sends)
 		var answered []state.InboxItem
 		if cl.Call("inbox.list", map[string]any{"status": "answered", "limit": 100}, &answered) == nil {
@@ -119,17 +125,23 @@ func (m *model) loadDash() tea.Cmd {
 	}
 }
 
+// parseLedgerView reads ledger.list with auto: a LedgerView, or the plain
+// list of open entries an older pekoed answers.
+func parseLedgerView(raw json.RawMessage) state.LedgerView {
+	var v state.LedgerView
+	if t := strings.TrimSpace(string(raw)); strings.HasPrefix(t, "[") {
+		_ = json.Unmarshal(raw, &v.Open)
+	} else {
+		_ = json.Unmarshal(raw, &v)
+	}
+	return v
+}
+
 func (m *model) onDash(msg dashMsg) {
 	d := &m.dash
 	d.loading, d.at = false, time.Now()
-	d.ledger, d.auto, d.sends, d.fyi = nil, nil, msg.sends, msg.fyi
-	for _, e := range msg.ledger {
-		if e.Status == state.LedgerOpen {
-			d.ledger = append(d.ledger, e)
-		} else {
-			d.auto = append(d.auto, e)
-		}
-	}
+	d.ledger, d.auto, d.autoMore = msg.ledger.Open, msg.ledger.AutoClosed, msg.ledger.AutoClosedMore
+	d.sends, d.fyi = msg.sends, msg.fyi
 	d.merge = map[string]*state.MergeCheck{}
 	for i := range msg.merge {
 		d.merge[msg.merge[i].Slug] = &msg.merge[i]
@@ -908,8 +920,8 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 
 	// requests
 	sum = fmt.Sprintf("%d open", len(d.ledger))
-	if len(d.auto) > 0 {
-		sum += fmt.Sprintf(" · %d closed by pekoe", len(d.auto))
+	if n := len(d.auto) + d.autoMore; n > 0 {
+		sum += fmt.Sprintf(" · %d closed by pekoe", n)
 	}
 	section("📝", "Requests", dim(sum))
 	if len(d.ledger) == 0 {
@@ -953,7 +965,13 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		for _, l := range wrapText(inboxText(e.Text), max(cw-8, 4)) {
 			more = append(more, dim(l))
 		}
+		if e.Cut {
+			more = append(more, dim(fmt.Sprintf("(cut · pekoe ledger %d for the whole text)", e.ID)))
+		}
 		item(fmt.Sprintf("req:%d", e.ID), dim(head+fit(firstLine(inboxText(e.Text)), room)+tail), nil, more)
+	}
+	if d.autoMore > 0 {
+		none(fmt.Sprintf("+%d older · pekoe ledger --all", d.autoMore))
 	}
 
 	// sends

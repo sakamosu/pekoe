@@ -659,28 +659,40 @@ func TestDashboardStatsRefresh(t *testing.T) {
 }
 
 // What pekoed closed itself as no request in the last day is drawn under
-// the open requests, apart and quiet: it is not counted as a request, and
-// ↵ unfolds its text.
+// the open requests, apart and quiet, with how many more there are: it is
+// not counted as a request, j / k reach it and ↵ unfolds its text.
 func TestDashboardLatelyAutoClosed(t *testing.T) {
-	m, _ := dashModel(t)
+	m, f := dashModel(t)
 	before := ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
 	if strings.Contains(before, "closed by pekoe") {
 		t.Fatalf("nothing closed by pekoed yet:\n%s", before)
 	}
 	now := time.Now()
 	closed := now.Add(-time.Minute)
-	m.onDash(dashMsg{ledger: []state.LedgerEntry{
-		{ID: 2, At: now.Add(-2 * time.Hour), Text: "B が済んだら C も直して\n二行目の詳細 " + hostile, Status: "chat", Auto: true, ClosedAt: &closed},
-		{ID: 3, At: now.Add(-time.Hour), Text: "CSV の空行を飛ばして", Status: "open", Sessions: []string{"feat-csv"}},
-	}})
+	ledger := f.reply
+	f.reply = func(method string) any {
+		if method != "ledger.list" {
+			return ledger(method)
+		}
+		return state.LedgerView{
+			Open: []state.LedgerEntry{{ID: 3, At: now.Add(-time.Hour), Text: "CSV の空行を飛ばして", Status: "open", Sessions: []string{"feat-csv"}}},
+			AutoClosed: []state.LedgerEntry{{ID: 2, At: now.Add(-2 * time.Hour), Text: "B が済んだら C も直して\n二行目の詳細 " + hostile + "…",
+				Status: "chat", Auto: true, ClosedAt: &closed, Cut: true}},
+			AutoClosedMore: 5,
+		}
+	}
+	runCmd(m, m.loadDash())
+	if p := f.find("ledger.list"); len(p) == 0 || p[len(p)-1]["auto"] != true {
+		t.Fatalf("the dashboard does not ask for auto: %v", p)
+	}
 	raw := strings.Join(m.viewAgent(120, 60), "\n")
 	if strings.Contains(raw, "\x1b[2J") {
 		t.Fatalf("an escape in a request was drawn: %q", raw)
 	}
 	out := ansi.Strip(raw)
 	pos := 0
-	for _, want := range []string{"1 request", "Requests", "1 open · 1 closed by pekoe", "#3 CSV の空行を飛ばして", "→ feat-csv",
-		"closed by pekoe as no request · 24h · ledger keep <id>", "#2 B が済んだら C も直して", "Sends"} {
+	for _, want := range []string{"1 request", "Requests", "1 open · 6 closed by pekoe", "#3 CSV の空行を飛ばして", "→ feat-csv",
+		"closed by pekoe as no request · 24h · ledger keep <id>", "#2 B が済んだら C も直して", "+5 older · pekoe ledger --all", "Sends"} {
 		i := strings.Index(out[pos:], want)
 		if i < 0 {
 			t.Fatalf("%q missing or out of order:\n%s", want, out)
@@ -690,13 +702,31 @@ func TestDashboardLatelyAutoClosed(t *testing.T) {
 	if strings.Contains(out, "二行目の詳細") {
 		t.Errorf("folded line shown:\n%s", out)
 	}
-	if len(m.dash.ledger) != 1 || len(m.dash.auto) != 1 {
-		t.Fatalf("open %d, closed by pekoed %d", len(m.dash.ledger), len(m.dash.auto))
+	// j / k reach the row, ↵ unfolds it
+	runCmd(m, m.onKey(key("4")))
+	m.viewAgent(120, 60)
+	for steps := 0; m.dash.sel != "req:2"; steps++ {
+		if steps > 30 {
+			t.Fatalf("j never reached the row closed by pekoed (at %q)", m.dash.sel)
+		}
+		runCmd(m, m.onKey(key("j")))
+		m.viewAgent(120, 60)
 	}
-	// the row can be chosen and unfolds
-	m.dash.sel = "req:2"
-	m.dash.open = map[string]bool{"req:2": true}
-	if out := ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n")); !strings.Contains(out, "二行目の詳細") {
-		t.Errorf("unfolded:\n%s", out)
+	runCmd(m, m.onKey(key("k")))
+	m.viewAgent(120, 60)
+	if m.dash.sel != "req:3" {
+		t.Fatalf("k from it: %q", m.dash.sel)
+	}
+	runCmd(m, m.onKey(key("j")))
+	runCmd(m, m.onKey(key("enter")))
+	out = ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
+	if !strings.Contains(out, "二行目の詳細") || !strings.Contains(out, "pekoe ledger 2 for the whole text") {
+		t.Errorf("↵ did not unfold it:\n%s", out)
+	}
+	// an older pekoed answers a plain list of the open ones
+	f.reply = ledger
+	runCmd(m, m.loadDash())
+	if len(m.dash.ledger) != 1 || len(m.dash.auto) != 0 || m.dash.autoMore != 0 {
+		t.Fatalf("a plain list: open %d, auto %d, more %d", len(m.dash.ledger), len(m.dash.auto), m.dash.autoMore)
 	}
 }

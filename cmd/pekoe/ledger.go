@@ -9,6 +9,7 @@ package main
 // person's.
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -30,26 +31,42 @@ func cmdLedger(args []string) error {
 	}
 	use := specs[name].use
 	if name == "ledger" {
-		if len(pos) > 0 {
-			return &usageError{use: use, msg: "unexpected argument " + pos[0]}
+		if len(pos) > 1 {
+			return &usageError{use: use, msg: "unexpected argument " + pos[1]}
 		}
-		st := "open"
-		if f["all"] != "" {
-			st = "all"
+		if len(pos) == 1 {
+			return ledgerShow(use, pos[0], f["all"] != "")
 		}
 		cl := connect()
 		defer cl.Close()
-		var es []state.LedgerEntry
-		// auto: with the open ones, what pekoed closed itself in the last
-		// 24 hours (a request among them is opened again with ledger keep)
-		if err := cl.Call("ledger.list", map[string]any{"status": st, "auto": true}, &es); err != nil {
+		if f["all"] != "" {
+			var es []state.LedgerEntry
+			if err := cl.Call("ledger.list", map[string]any{"status": "all"}, &es); err != nil {
+				return err
+			}
+			if jsonOut {
+				printJSON(es)
+				return nil
+			}
+			printLedgerList(&state.LedgerView{Open: es}, true)
+			return nil
+		}
+		// auto: with the open ones, the newest of what pekoed closed itself
+		// in the last 24 hours, short (a request among them is opened again
+		// with ledger keep)
+		var raw json.RawMessage
+		if err := cl.Call("ledger.list", map[string]any{"status": "open", "auto": true}, &raw); err != nil {
+			return err
+		}
+		v, err := parseLedgerView(raw)
+		if err != nil {
 			return err
 		}
 		if jsonOut {
-			printJSON(es)
+			printJSON(v)
 			return nil
 		}
-		printLedgerList(es, st == "all")
+		printLedgerList(v, false)
 		return nil
 	}
 	sub := strings.TrimPrefix(name, "ledger ")
@@ -127,36 +144,81 @@ func cmdLedger(args []string) error {
 	return nil
 }
 
-// printLedgerList prints the list: all in the order asked, or the open
-// entries and then, apart, the ones pekoed closed itself lately.
-func printLedgerList(es []state.LedgerEntry, all bool) {
-	var auto []state.LedgerEntry
-	n := 0
-	for _, e := range es {
-		if !all && e.Status != state.LedgerOpen {
-			auto = append(auto, e)
-			continue
+// parseLedgerView reads ledger.list with auto: a LedgerView, or the plain
+// list of open entries an older pekoed answers (it knows no auto).
+func parseLedgerView(raw json.RawMessage) (*state.LedgerView, error) {
+	v := &state.LedgerView{}
+	if t := strings.TrimSpace(string(raw)); strings.HasPrefix(t, "[") || t == "null" {
+		if err := json.Unmarshal(raw, &v.Open); err != nil {
+			return nil, err
 		}
-		if n > 0 {
+	} else if err := json.Unmarshal(raw, v); err != nil {
+		return nil, err
+	}
+	if v.Open == nil {
+		v.Open = []state.LedgerEntry{}
+	}
+	if v.AutoClosed == nil {
+		v.AutoClosed = []state.LedgerEntry{}
+	}
+	return v, nil
+}
+
+// ledgerShow prints one entry whole (the list cuts what pekoed closed
+// itself short).
+func ledgerShow(use, arg string, all bool) error {
+	if all {
+		return &usageError{use: use, msg: "--all lists every request; give an id or --all, not both"}
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(arg, "#"), 10, 64)
+	if err != nil || id < 1 {
+		return &usageError{use: use, msg: fmt.Sprintf("bad request id %q", arg)}
+	}
+	cl := connect()
+	defer cl.Close()
+	var es []state.LedgerEntry
+	if err := cl.Call("ledger.list", map[string]any{"status": "all", "since": id - 1}, &es); err != nil {
+		return err
+	}
+	if len(es) == 0 || es[0].ID != id {
+		return fmt.Errorf("no such ledger entry: #%d", id)
+	}
+	if jsonOut {
+		printJSON(es[0])
+		return nil
+	}
+	printLedger(es[0])
+	return nil
+}
+
+// printLedgerList prints the open entries (with all: every entry, in the
+// order asked) and then, apart, the newest of what pekoed closed itself
+// lately, short.
+func printLedgerList(v *state.LedgerView, all bool) {
+	for i, e := range v.Open {
+		if i > 0 {
 			fmt.Println()
 		}
 		printLedger(e)
-		n++
 	}
-	if n == 0 {
+	if len(v.Open) == 0 {
 		if all {
 			fmt.Println("no requests")
 		} else {
 			fmt.Println("no open requests")
 		}
 	}
-	if len(auto) == 0 {
+	n := len(v.AutoClosed) + v.AutoClosedMore
+	if n == 0 {
 		return
 	}
-	fmt.Printf("\nclosed by pekoe as no request in the last 24h (%d) · a request among them: pekoe ledger keep <id>\n", len(auto))
-	for _, e := range auto {
+	fmt.Printf("\nclosed by pekoe as no request in the last 24h (%d) · a request among them: pekoe ledger keep <id>\n", n)
+	for _, e := range v.AutoClosed {
 		fmt.Println()
 		printLedger(e)
+	}
+	if v.AutoClosedMore > 0 {
+		fmt.Printf("\n+%d older (pekoe ledger --all)\n", v.AutoClosedMore)
 	}
 }
 
@@ -176,6 +238,9 @@ func printLedger(e state.LedgerEntry) {
 	}
 	if e.ClosedAt != nil {
 		head += " · closed " + e.ClosedAt.Local().Format("01-02 15:04")
+	}
+	if e.Cut {
+		head += fmt.Sprintf(" · cut (pekoe ledger %d)", e.ID)
 	}
 	fmt.Println(head)
 	for _, ev := range e.Evidence {

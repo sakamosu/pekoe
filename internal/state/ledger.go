@@ -40,6 +40,18 @@ type LedgerEntry struct {
 	// may undo: ledger.keep, or tying a session to it). Only with Status
 	// chat.
 	Auto bool `json:"auto,omitempty"`
+	// Cut: Text is the start of the request only (a list that keeps it
+	// short); the entry read by its id has it whole. Not stored.
+	Cut bool `json:"cut,omitempty"`
+}
+
+// LedgerView is ledger.list with auto: the open entries, whole, and the
+// newest of what pekoed closed itself lately, their text cut short, with
+// how many more there are (counted only).
+type LedgerView struct {
+	Open           []LedgerEntry `json:"open"`
+	AutoClosed     []LedgerEntry `json:"auto_closed"`
+	AutoClosedMore int           `json:"auto_closed_more"`
 }
 
 // ErrNoLedgerEntry is returned for an id that is not in the ledger.
