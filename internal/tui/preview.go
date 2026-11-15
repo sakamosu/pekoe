@@ -219,6 +219,11 @@ func (m *model) previewSync() tea.Cmd {
 				keys = append(keys, sl.key())
 			}
 		}
+		if em, ok := m.modal.(*evidenceModal); ok { // an evidence image drawn in place (evidence.go)
+			if k, ok := em.shown(); ok {
+				keys = append(keys, k)
+			}
+		}
 		seq, live := gfxSync(pv.live, keys, pv.alloc)
 		pv.live = live
 		if seq != "" {

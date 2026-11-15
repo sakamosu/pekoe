@@ -258,6 +258,13 @@ keys = ["4"]
 docs = ["docs/orchestration.md", "docs/api.md"]
 
 [[tip]]
+id = "dashboard-evidence"
+short = "工程表の行で o を押すと報告の evidence を開ける"
+detail = "報告に付いたスクショ・動画・ログ・URL を一覧にし、j k で選んで ↵ で開く。PNG は kitty の画像表示が使える端末ならその場に、ほかは既定のアプリかブラウザで。スクリプトなどは開かず場所だけ見せる。"
+keys = ["4", "o"]
+docs = ["docs/orchestration.md"]
+
+[[tip]]
 id = "merge-from-inbox"
 short = "根拠の項目に merge と答えると pekoed が PR をマージする"
 detail = "pekoed が条件を読み直し、HEAD が項目と同じときだけ gh pr merge する。崩れていればマージせず理由を出す。TUI では merge は ↵ を 2 回(1 回目は確認)。方法は [merge] method。"
