@@ -280,7 +280,7 @@ func sessionCols(cw int) (nameW, diffW int) {
 
 // unreadMark follows a session's name when it has unread output or its PR
 // wants attention.
-const unreadMark = "•"
+const unreadMark = "∙"
 
 func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	th := m.th
@@ -298,7 +298,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 	case "fail":
 		test = th.FG(theme.Err, m.ic.Fail)
 	case "running":
-		test = th.FG(theme.Dim, "…")
+		test = th.FG(theme.Dim, theme.TestRunningMark)
 	case "blocked": // no sandbox: [hooks] test was not run
 		test = th.FG(theme.Warn, m.ic.Warning)
 	}

@@ -134,7 +134,7 @@
 
 - メインペインに外から届くもの（ブラウザの要素ピック、エージェントからの質問、通知）は、ペイン内の枠付きカードで示す。枠線は border 色、タイトル行の先頭アイコンだけ secondary。primary の枠はフォーカスにしか使わないので、カードには使わない。例外はチュートリアルのカード（下の「チュートリアル」）。
 - カード最下行にそのカード専用の `key action` を書く。ボトムバーは変えない。
-- カードは同時に1枚。2枚目以降は Picks パネルの行として待たせ、未送信は secondary の ● で示す。
+- カードは同時に1枚。2枚目以降は Picks パネルの行として待たせ、未送信は secondary の ◉ で示す。
 - 優先順位は ピック > エラー。ピックは人が自分で送ったもの、エラーは pekoe が見つけて提案するものなので、ピックのカードがある間エラーのカードは出さない（Picks パネルの行で待つ）。
 - カードはフォーカスを奪わない。キーが効くのはメインパネルにフォーカスがあり、入力中でないときだけ（それ以外のときカードの最下行は `4 focus card`）。エージェントへの送信は人がキーを押したときだけ。
 - エラーカード：タイトル行は「発生源のアイコン（dev はターミナル、ブラウザは Browser）＋ fail アイコン（err）＋ error ＋ dim の発生源・形式・経過時間」、続けてメッセージ1行、`at file:line · ×回数`、最下行に `s send  i ignore  ↵ detail`。カードが i と ↵ を使う間、エージェントへの入力は `a`。未対応のエラーがあるセッションは Sessions の行に err 色の `err`（2件以上は `2 err`）を付ける。
@@ -201,28 +201,28 @@
 
 | 状態 | 記号 | 色 | 例 |
 | --- | --- | --- | --- |
-| 稼働中 | ● | ok | エージェントが実行中 |
-| 確認待ち | ● | warn | 人の判断を待っている |
-| 待機 | ○ | dim | 起動済みで何もしていない |
+| 稼働中 | ◉ | ok | エージェントが実行中 |
+| 確認待ち | ◉ | warn | 人の判断を待っている |
+| 待機 | ◦ | dim | 起動済みで何もしていない |
 | 作成中 | ◌（スピナー） | dim | worktree 作成からセッション起動までの間。まだエージェントはいないので ok にしない |
 | 完了 | ✓ | secondary | 結果のレビュー待ち |
 | 失敗 | ✗ | err | エラー終了 |
 | 承認済み | ✓ | ok | レビューで承認したハンク・ファイル |
-| 現在位置 | ▶ | primary | レビュー中のハンクなど、選択行の塗りと並立で「今ここ」を示す |
-| 未送信 | ● | secondary | 届いたが未送信のピック、未送信のコメント |
+| 現在位置 | ▸ | primary | レビュー中のハンクなど、選択行の塗りと並立で「今ここ」を示す |
+| 未送信 | ◉ | secondary | 届いたが未送信のピック、未送信のコメント |
 | 送信済み | ✓ | dim | 送ったピック・コメント |
 | 追加 | A | ok | diff の新規ファイル・+ 行 |
 | 変更 | M | warn | diff の変更ファイル |
 | 削除 | D | err | diff の削除ファイル・- 行 |
 | カレント | \* | text | 今いるリポジトリ・worktree ・ブランチ |
-| 重なり | ⚠ | warn | 他のセッションも同じファイルを触っている（自動マージ可）。一覧では `⚠2` のように相手の数と並べる |
-| 衝突 | ⚠ | err | コミット済みの内容が他のセッションと衝突する（git merge-tree）。詳細では状態語 conflict / overlap を添える |
+| 重なり | ! | warn | 他のセッションも同じファイルを触っている（自動マージ可）。一覧では `! 2` のように空白を挟んで相手の数と並べる |
+| 衝突 | ! | err | コミット済みの内容が他のセッションと衝突する（git merge-tree）。詳細では状態語 conflict / overlap を添える |
 
 ルール：
 
 - 「確認待ち」は warn に固定する。エージェント環境で最も気づいてほしい状態がこれなので、画面内で黄が別の意味で多用されないようにする。
 - 表の記号は icons = unicode のもの。nerd / ascii での対応は「アイコンとグラフィカル表現」の語彙表に従う。
-- unicode 段階で稼働中と確認待ちが同じ記号 ● なのは意図的。「今生きている」を記号で、「自分か相手か」を色で分ける。nerd 段階では pause\_circle、ascii では \* と ! で区別され、none モードでも状態語（run / wait）が必ず付くので別がつく。
+- unicode 段階で稼働中と確認待ちが同じ記号 ◉ なのは意図的。「今生きている」を記号で、「自分か相手か」を色で分ける。nerd 段階では pause\_circle、ascii では \* と ! で区別され、none モードでも状態語（run / wait）が必ず付くので別がつく。
 - カレントマーカーは状態ではないので、状態色を使わず text にする。Sessions のリポジトリ見出し行では状態アイコンと同じ列に並ぶため、done（secondary）と同じ色だと「完了」と読み違える。形（nf-fa-map\_marker / \*）と位置で「今ここ」を示す。
 - 同じ色は同じ種類の意味にだけ使う。warn が「待ち」と「変更」に跨っているのはどちらも「注意を向ける対象」だから。ok を「成功」と「稼働中」に使うのも同じ理由。
 - 状態の文字列は英小文字の短語（run / wait / idle / done / fail）。記号・色・語の3つが常に揃って出る。
@@ -239,26 +239,26 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 
 | 概念 | Nerd（名前） | U+ | unicode | ascii | 色 |
 | --- | --- | --- | --- | --- | --- |
-| Sessions パネル | nf-md-robot | F06A9 | ◆ | なし | タイトル色 |
+| Sessions パネル | nf-md-robot | F06A9 | ◊ | なし | タイトル色 |
 | Worktrees パネル | nf-dev-git\_branch | E725 | ⎇ | なし | タイトル色 |
-| Changes パネル | nf-fa-files\_o | F0C5 | ≡ | なし | タイトル色 |
+| Changes パネル | nf-fa-files\_o | F0C5 | ≣ | なし | タイトル色 |
 | Agent / ターミナル | nf-fa-terminal | F120 | > | なし | タイトル色 |
-| Diff / コード | nf-fa-code | F121 | ± | なし | タイトル色 |
-| Browser パネル / ブラウザ由来 | nf-fa-chrome | F268 | ◎ | なし | タイトル色（カード内は secondary） |
+| Diff / コード | nf-fa-code | F121 | ∆ | なし | タイトル色 |
+| Browser パネル / ブラウザ由来 | nf-fa-chrome | F268 | ◉ | なし | タイトル色（カード内は secondary） |
 | Picks パネル / 要素ピック | nf-fa-crosshairs | F05B | ⌖ | なし | タイトル色 |
-| Issues パネル / GitHub issue | nf-fa-dot\_circle\_o | F192 | ⊙ | なし | タイトル色 |
+| Issues パネル / GitHub issue | nf-fa-dot\_circle\_o | F192 | ◉ | なし | タイトル色 |
 | Comments パネル / コメント行 | nf-fa-comment\_o | F0E5 | ✎ | # | secondary |
 | vim | nf-dev-vim | E7C5 | V | なし | タイトル色 |
-| run | nf-fa-circle（静止）/ Braille スピナー（動作中） | F111 / 2800–28FF | ● | \* | ok |
-| wait | nf-fa-pause\_circle | F28B | ● | ! | warn |
-| idle | nf-fa-circle\_o | F10C | ○ | o | dim |
+| run | nf-fa-circle（静止）/ Braille スピナー（動作中） | F111 / 2800–28FF | ◉ | \* | ok |
+| wait | nf-fa-pause\_circle | F28B | ◉ | ! | warn |
+| idle | nf-fa-circle\_o | F10C | ◦ | o | dim |
 | creating | Braille スピナー | 2800–28FF | ◌ | . | dim |
 | done | nf-fa-check\_circle | F058 | ✓ | v | secondary |
 | fail | nf-fa-times\_circle | F057 | ✗ | x | err |
 | カレント worktree | nf-fa-map\_marker | F041 | \* | \* | text |
-| 警告（モーダル）・衝突予報 | nf-fa-exclamation\_triangle | F071 | ⚠ | ! | warn / err |
+| 警告（モーダル）・衝突予報 | nf-fa-exclamation\_triangle | F071 | ! | ! | warn / err |
 | PR ビュー / open の PR | nf-dev-git\_pull\_request | E726 | ⇄ | なし | タイトル色（状態行では ok） |
-| PR の CI 実行中・待ち | nf-fa-clock\_o | F017 | … | ~ | dim |
+| PR の CI 実行中・待ち | nf-fa-clock\_o | F017 | ◔ | ~ | dim |
 | PR の CI 全成功 | （check と同じ） | — | ✓ | v | ok |
 | PR の CI 失敗 | （fail と同じ） | — | ✗ | x | err |
 | PR の changes requested | nf-fa-exclamation\_circle | F06A | ! | ! | warn |
