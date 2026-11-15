@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -327,6 +328,9 @@ func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
 			who := &Caller{human: true, Via: viaSocket, peer: fixedPeer(TapiSlug)}
 			callAs[state.InboxItem](t, d, who, "inbox.post", map[string]any{"question": "gh auth login をお願い", "kind": "login"})
 		}},
+		{"a wait started (pekoe wait)", func(int64) {
+			callAs[any](t, d, tapi, "wait", map[string]any{"mine": true, "on": []string{"report"}, "timeout_s": 1})
+		}},
 		{"a land (refused here or not)", func(int64) {
 			_ = callAsErr(d, tapi, "land", map[string]any{"slug": "main"})
 		}},
@@ -403,6 +407,15 @@ func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
 		t.Fatalf("a repeat of an earlier turn's request: %+v", e)
 	}
 
+	// the conversation ended or started anew in the middle of a turn: a
+	// Stop after it closes nothing
+	for _, hook := range []string{"SessionEnd", "SessionStart"} {
+		id := prompt(hook + " の前の依頼")
+		callAs[any](t, d, tapi, "session.event", map[string]any{"hook": hook, "session": TapiSlug, "payload": map[string]any{"hook_event_name": hook}})
+		stopEvent(t, d, tapi, TapiSlug)
+		open("a Stop after "+hook, id)
+	}
+
 	// tapi.reset in the middle of a turn: the conversation is gone, the
 	// input stays
 	gone := prompt("H を直して")
@@ -472,5 +485,56 @@ func TestLedgerKeepReopens(t *testing.T) {
 	}
 	if e := call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 1}); e.Status != state.LedgerOpen {
 		t.Fatalf("a person reopens tapi's: %+v", e)
+	}
+}
+
+// What tapi closed itself in the turn stays as tapi closed it: the turn's
+// end does not turn it into pekoed's guess, which tapi could then undo.
+func TestLedgerTurnEndLeavesTapisClose(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	for i, as := range []string{state.LedgerDone, state.LedgerDropped, state.LedgerChat} {
+		id := i + 1
+		promptEvent(t, d, tapi, TapiSlug, "頼みごと "+as)
+		callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": id, "as": as, "note": "その場で済んだ"})
+		stopEvent(t, d, tapi, TapiSlug)
+		if e := ledgerAll(t, d)[i]; e.Status != as || e.Auto || e.Note != "その場で済んだ" {
+			t.Fatalf("closed %s by tapi, after the turn's end: %+v", as, e)
+		}
+		if err := callAsErr(d, tapi, "ledger.keep", map[string]any{"id": id}); err == nil || !strings.Contains(err.Error(), "a person can reopen it") {
+			t.Fatalf("keep of what tapi closed as %s: %v", as, err)
+		}
+	}
+}
+
+// Over the socket, from tapi's window: a send that authorize turns down
+// (text that starts with a digit) is still tapi asking a session for
+// something, so the turn's input stays open.
+func TestLedgerKeepsRequestOnRefusedSend(t *testing.T) {
+	d, fe, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	fe.panes[TapiSlug+"~agent"] = os.Getpid()
+	pid := childOfTest(t)
+	d.peerPID = func(net.Conn) int { return pid }
+	c := dialPipe(t, d)
+	event := func(hook, prompt string) {
+		t.Helper()
+		if e := c.call("session.event", map[string]any{"hook": hook, "session": TapiSlug, "payload": map[string]any{"prompt": prompt, "hook_event_name": hook}}, ""); e != "" {
+			t.Fatalf("%s: %s", hook, e)
+		}
+	}
+	event("UserPromptSubmit", "main に 2 番の案でと伝えて")
+	if e := c.call("session.send", map[string]any{"slug": "main", "text": "2 番の案で", "submit": true}, ""); !strings.Contains(e, "may not start with a digit") {
+		t.Fatalf("a send authorize refuses: %q", e)
+	}
+	event("Stop", "")
+	if es := ledgerAll(t, d); len(es) != 1 || es[0].Status != state.LedgerOpen {
+		t.Fatalf("after a refused send: %+v", es)
+	}
+	// the same window, nothing asked: closed
+	event("UserPromptSubmit", "ありがと")
+	event("Stop", "")
+	if es := ledgerAll(t, d); len(es) != 2 || es[1].Status != state.LedgerChat || !es[1].Auto {
+		t.Fatalf("small talk over the socket: %+v", es)
 	}
 }

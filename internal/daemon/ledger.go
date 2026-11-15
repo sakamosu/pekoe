@@ -16,7 +16,8 @@ package daemon
 // by what the words say; whatever falls outside them stays open:
 //   - the same text right after an open entry is folded into it
 //     (recordRequest)
-//   - when tapi's turn ends and it asked nobody for anything, the turn's
+//   - when tapi's turn ends and it asked nobody for anything (and
+//     started no wait), the turn's
 //     input was no request: closed as chat, marked auto (tapiTurnEnd).
 //     That is pekoed's guess, so tapi may undo it (ledger.keep, or tying
 //     a session to the entry); what tapi or a person closed only a person
@@ -118,9 +119,11 @@ func (d *Daemon) tapiPrompt(prompt string) {
 }
 
 // tapiAsks are the calls by which tapi asks a session or a person for
-// something (pekoe new, send, ask-human, land): a turn with one of them
-// works on a request, so its input stays open.
-var tapiAsks = map[string]bool{"session.new": true, "session.send": true, "inbox.post": true, "land": true}
+// something (pekoe new, send, ask-human, land) or starts waiting for one
+// (pekoe wait: "land it when the report comes"): a turn with one of them
+// works on a request, so its input stays open. Small talk in a turn in
+// which tapi starts its wait again stays open too; tapi closes that.
+var tapiAsks = map[string]bool{"session.new": true, "session.send": true, "inbox.post": true, "land": true, "wait": true}
 
 // noteTapiAsk remembers that tapi asked someone for something this turn:
 // a call from tapi's window, with the token or not (tapi has none, but
@@ -139,8 +142,8 @@ func (d *Daemon) noteTapiAsk(who *Caller, method string) {
 
 // tapiTurnEnd is a Stop from tapi's window: tapi finished its reply. The
 // turn's input is closed as chat (auto) when it is still open, no session
-// is tied to it and tapi neither asked anyone for anything this turn nor
-// kept it (ledger.keep): small talk, thanks, a report, a question answered
+// is tied to it and tapi neither asked anyone for anything this turn
+// (tapiAsks) nor kept it (ledger.keep): small talk, thanks, a report, a question answered
 // on the spot. Nothing else is ever closed here, so a request of an
 // earlier turn stays until tapi or a person closes it.
 func (d *Daemon) tapiTurnEnd() {
@@ -164,6 +167,15 @@ func (d *Daemon) tapiTurnEnd() {
 	if err == nil && closed {
 		d.ledgerChanged(e)
 	}
+}
+
+// tapiTurnGone is a SessionStart or SessionEnd from tapi's window: the
+// conversation started or ended, so whatever turn was running never ends.
+// Its input is let go (it stays open), as with the next prompt.
+func (d *Daemon) tapiTurnGone() {
+	d.mu.Lock()
+	d.tapi.turnEntry = 0
+	d.mu.Unlock()
 }
 
 // autoClosed: pekoed closed e as chat (tapiTurnEnd). tapi may open it

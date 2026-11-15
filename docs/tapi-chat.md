@@ -54,7 +54,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
 | PostToolUse | waiting なら running に戻す |
 | Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |
-| Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
+| Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | SessionEnd | idle |
 
 変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。

@@ -271,6 +271,8 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 			d.tapiPrompt(hp.Prompt)
 		case "Stop":
 			d.tapiTurnEnd()
+		case "SessionStart", "SessionEnd":
+			d.tapiTurnGone()
 		}
 	}
 	return res, err

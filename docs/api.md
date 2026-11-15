@@ -545,9 +545,9 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても依頼としては記録しない(依頼の文は tapi が「人に頼まれたこと」として読むため)。人が打ったのではないもの(pekoed 自身が tapi の入力欄に打った `[pekoe` で始まる受信箱の答え、Claude Code がバックグラウンドのタスク(tapi の `pekoe wait` など)の完了を新しいターンとして渡す `<task-notification>` で始まる文)と空の入力は入れない。どちらも前後の空白を除いた先頭で見て、人が打った文の途中に出てくるだけなら記録する。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
 - **まとめる**: 直前の依頼(id が最大のもの)が `open` で、前後の空白を除いて同じ文が、その `at` から 1 分以内に来たら、新しい依頼を作らずにその依頼の `repeats` を 1 増やす(`ledger.updated` が出る)。閉じた依頼にはまとめない
 - **自動で閉じる**: tapi の窓から Stop hook が来たとき(tapi が返事を終えたとき)に、そのターンの入力を `chat` で閉じて `auto: true` を付ける。条件は次のすべて。外れたものは `open` のまま残る
-  - そのターンを始めた UserPromptSubmit で記録した(またはそのターンの中でまとめた)1 件であること。前のターンからある依頼、Stop が来なかったターン(中断・pekoed の再起動・`tapi.reset`)の入力、ターンの途中で次の入力が来たときの前の入力、記録しない入力(受信箱の答え・タスクの完了通知)で始まったターンは対象にならない
+  - そのターンを始めた UserPromptSubmit で記録した(またはそのターンの中でまとめた)1 件であること。前のターンからある依頼、Stop が来なかったターン(中断・会話の終了や開始(SessionEnd / SessionStart)・pekoed の再起動・`tapi.reset`)の入力、ターンの途中で次の入力が来たときの前の入力、記録しない入力(受信箱の答え・タスクの完了通知)で始まったターンは対象にならない
   - `open` で、`sessions` が空であること
-  - そのターンの間(前の Stop から)に、tapi の窓から `session.new`・`session.send`・`inbox.post`・`land` が呼ばれていないこと(断られた呼び出しも数える。tapi が誰かに何かを頼んだターンの入力は依頼として残す)
+  - そのターンの間(前の Stop から)に、tapi の窓から `session.new`・`session.send`・`inbox.post`・`land`・`wait` が呼ばれていないこと(断られた呼び出しも数える。tapi が誰かに何かを頼んだ・待ち始めたターンの入力は依頼として残す。待ちを張り直したターンの雑談も残るので、それは tapi が `--as chat` で閉じる)
   - `ledger.keep` で残されていないこと
 - **残す・戻す**: `ledger.keep`(`pekoe ledger keep [<id>]`)。`id` なしはこのターンの入力を閉じる対象から外す(依頼なのにこのターンで誰にも頼まないとき。このターンの入力が無ければ断る)。`id` つきは、pekoed が自動で閉じたもの(`chat` で `auto`)を `open` に戻す(`closed_at` と `auto` を消す)。`session.new` の `request` と `ledger.link` も、自動で閉じたものなら `open` に戻して結ぶ。tapi か人が閉じたもの(`auto` でないもの)はどれも断る
 - **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`。自動で閉じたものには `pekoe ledger keep <id>` で戻せることを添える)
