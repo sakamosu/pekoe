@@ -190,7 +190,7 @@ pekoe                                                 # TUI
 | --- | --- |
 | `pekoe` | TUI(デーモンがなければ起動) |
 | `pekoe init [<dir>] [--yes] [--overwrite] [--print] [--no-open]` | リポジトリの設定を検出して下書きし、本体のチェックアウトに main セッションが無ければ起動する。`--print` は書かずに出すだけ、`--no-open` は書くだけで起動しない |
-| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]` | worktree + セッション作成。setup の進み具合を出し、エージェントが起動したら戻る。`--after` はこのセッションがどれの後かを記録する(複数可。今あるセッションだけで、自分自身・循環は断る)。記録して表示するだけ([1] の行に `after feat-a`、フッターにそれぞれの状態、`pekoe --json ls` の `after`)で、起動は止めない。`--request` は tapi chat が依頼(`pekoe ledger`)とセッションを結ぶ(tapi と人だけ) |
+| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--model M] [--effort E] [--base REF] [--after SLUG]... [--prompt TEXT] [--request ID]` | worktree + セッション作成。setup の進み具合を出し、エージェントが起動したら戻る。`--after` はこのセッションがどれの後かを記録する(複数可。今あるセッションだけで、自分自身・循環は断る)。記録して表示するだけ([1] の行に `after feat-a`、フッターにそれぞれの状態、`pekoe --json ls` の `after`)で、起動は止めない。`--request` は tapi chat が依頼(`pekoe ledger`)とセッションを結ぶ(tapi と人だけ)。`--model` / `--effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きする(Claude Code だけ) |
 | `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | 既存 worktree で起動。過去の Claude Code セッションを resume するか選ぶ(`--resume` で resume、`--new` で新規) |
 | `pekoe adopt [<path>] [--yes]` | pekoe の外で動いているエージェントを止め、同じセッションを pekoe の中で resume する |
 | `pekoe ls [--all\|--repo R]` | セッション一覧と状態。リポジトリの中ではそのリポジトリだけ、外では全部 |
@@ -505,6 +505,8 @@ sleep_after = "3m"          # 全セッションが idle でキー入力もな�
 bd = "#e4c49a"
 [agents.claude]
 sandbox = true              # Claude Code に pekoe の sandbox の設定(--settings)を渡す。false で渡さない
+model   = "claude-opus-5-5" # 起動のたび(新規・resume・R・tapi)に --model で渡す。無ければ ~/.claude/settings.json に従う
+effort  = "medium"          # --effort で渡す: low | medium | high | xhigh | max
 [agents.codex]              # Claude Code 以外のエージェント(sandbox の設定は渡さない)
 command = "codex"
 allow   = "y"
@@ -532,7 +534,9 @@ enable = true               # false で sandbox なしに動かす(使えない�
 
 保存した変更は再起動なしで効く: pekoed が変更から 1 秒以内に `config.toml` を読み直し、TUI も続く。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` まで起動したときの値のまま(TUI のメッセージ行と `pekoe daemon status` に名前が出る)。読めないファイルなら設定は前のままで、TUI が理由を出す。知らないキーや受け付けない値は `pekoe config check` で分かる([コマンド](#コマンド))。
 
-`[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` を書ける。`sandbox`(既定 `true`)は `command` が `claude` で始まるものにだけ効く([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
+`[agents.<name>]` には `command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` `model` `effort` を書ける。`sandbox`(既定 `true`)は `command` が `claude` で始まるものにだけ効く([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は最初のプロンプトを `--` の後ろに置いて渡す(`claude -- '<プロンプト>'`)ので、`-` で始まるプロンプトがオプションとして読まれることはない。`--` を受け付けないエージェントには `paste` を使う。Claude Code の許可メニューへの回答は既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送る。挙動が変わったら `[agents.claude]` で直せる。
+
+`model` と `effort` は Claude Code のエージェント(`command` が `claude` で始まるもの。ほかは無視)のモデルを固定する。pekoe は起動のたび(新規・`open`・resume・R での再起動・デーモン再起動後の再開・tapi chat)に `--model <model> --effort <effort>` を足す。**書いておくこと。** 無いと Claude Code 自身の既定(`~/.claude/settings.json` の `"model"`)に従い、どの Claude Code のセッションで `/model` を打ってもこのファイルが書き換わる。1 つのセッションを大きいモデルに替えただけで、その後に pekoe が起動するセッションが全部そのモデルになる。`model` を書いておけば、セッションの中の `/model` はそのセッションだけを(再起動するまで)替える(R や resume では設定のモデルをもう一度渡す)。pekoe は `~/.claude/settings.json` を書き換えない。`pekoe new --model M --effort E` で 1 つのセッションだけ上書きできる(resume・再起動でも保つ)。リポジトリは `repos/<name>.toml` の `agent` でエージェントを選ぶので、別のモデルで動かしたいリポジトリには別名のエージェントを定義して(`[agents.claude-big] command = "claude"`・`model = "…"`、リポジトリ側は `agent = "claude-big"`)指す。tapi は `[tapi] agent` のエージェントに従う。`pekoe --json ls` には、各セッションが最後に答えたモデル(`last_model`。会話記録の最後の assistant のメッセージから)と上書き(`model` / `effort`)が出る。
 
 ## データの置き場(リポジトリを汚さない)
 
