@@ -72,6 +72,7 @@ type dashState struct {
 	sel  string          // key of the chosen row
 	open map[string]bool // unfolded rows
 	top  int             // first row drawn
+	back map[string]int  // top before a row was unfolded; folding it goes back there
 }
 
 type dashMsg struct {
@@ -679,8 +680,15 @@ func (m *model) viewDash(width, height int) []string {
 		}
 	}
 	if start >= 0 { // keep the chosen row (and what it unfolds) on screen
-		if start < d.top {
-			d.top = start
+		// with the rows that lead to it and cannot be chosen (the section's
+		// head, a group's head; above the first row, the overview), or
+		// moving up never brings them back once the body is scrolled
+		lead := start
+		for lead > 0 && keys[lead-1] == "" {
+			lead--
+		}
+		if lead < d.top {
+			d.top = lead
 		}
 		if end >= d.top+ch {
 			d.top = max(min(start, end-ch+1), 0)
@@ -1268,10 +1276,19 @@ func (m *model) keyDash(key string) tea.Cmd {
 		if it.inbox != nil {
 			return m.openInbox(*it.inbox)
 		}
-		if m.dash.open == nil {
-			m.dash.open = map[string]bool{}
+		d := &m.dash
+		if d.open == nil {
+			d.open = map[string]bool{}
 		}
-		m.dash.open[it.key] = !m.dash.open[it.key]
+		if d.back == nil {
+			d.back = map[string]int{}
+		}
+		if d.open[it.key] = !d.open[it.key]; d.open[it.key] {
+			d.back[it.key] = d.top
+		} else if top, ok := d.back[it.key]; ok {
+			d.top = top // the view keeps the row on screen if this is too far up
+			delete(d.back, it.key)
+		}
 	case "o":
 		if len(its) == 0 {
 			return nil
