@@ -91,6 +91,7 @@ agent = "claude"   # 既定。[agents.claude-ask] などを定義していれば
   - `--add-dir <各リポジトリのメイン worktree> <worktree のルート>`: 登録済みリポジトリ(`repo.list` と同じ `knownRepos` で、ディレクトリが見つかるもの)と `~/worktrees`。各リポジトリを読むたびに許可を求められないように。リポジトリの増減は次に tapi を起動したときに反映する
   - `--append-system-prompt <人格>`: 「pekoe に住むタピオカの粒の相棒 tapi。一人称ぼく・ユーザーはきみ・くだけた話し言葉。返事に顔・絵文字・顔文字は入れない。キャラは最初か最後の 1 文だけで、中身は正確に、確かめたことと推測を分ける。統括役で、自分では編集せずセッションに任せて報告を待つ。会話の最初に依頼・受信箱・セッションを読む。詳細は CLAUDE.md」の数文(人物像は docs/mascot.md「tapi の人物像」)
   - `--settings <データディレクトリ>/agent-settings/tapi.json`(`[agents.*] sandbox` が切られていなければ): セッションと同じ sandbox の設定に、`--add-dir` で渡す各リポジトリと `~/worktrees`(まだ無くても。シンボリックリンクを解いたものも)を `sandbox.filesystem.denyWrite` と `permissions.deny` の `Edit(...)` に足したもの。Bash でも Edit / Write でも書けない。稼働ディレクトリは書ける(下書き・一時ファイル用)。`git fetch` などリポジトリに書く読み取り系のコマンドは失敗するが、統括役には要らない。Claude Code の sandbox が `--add-dir` への Bash の書き込みを許すかは版によるので、許すかどうかに関わらず塞ぐ(`denyWrite` は書ける場所より強い)
+  - `--model <model> --effort <effort>`(そのエージェントの `[agents.*] model` / `effort` があれば。セッションと同じ。README の設定の節)。tapi だけ別のモデルにするなら、別名のエージェントを定義して `[tapi] agent` で指す
   - 会話の記録(`~/.claude/projects/<tapi の cwd を符号化したもの>/`)が残っていれば `--continue`(tmux サーバーごと落ちた後に開き直しても、リセットするまで同じ会話が続く)
 - codex など claude 以外は `--add-dir` 相当を付けない(cwd だけ)。人格は `AGENTS.md` で伝わる。再開もしない
 - 環境変数は通常のセッションと同じ(`PEKOE_SESSION=+tapi`、`PEKOE_SOCK`、`PEKOE=1`、`PEKOE_HOME`。claude なら `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` も。下の「窓の外に出た会話」)

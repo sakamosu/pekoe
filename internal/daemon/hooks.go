@@ -582,10 +582,11 @@ func (d *Daemon) readTokens(slug, path string) {
 	}
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
-	tokens := 0
+	tokens, model := 0, ""
 	for sc.Scan() {
 		var e struct {
 			Message struct {
+				Model string `json:"model"`
 				Usage struct {
 					In     int `json:"input_tokens"`
 					Out    int `json:"output_tokens"`
@@ -599,10 +600,22 @@ func (d *Daemon) readTokens(slug, path string) {
 			if t := u.In + u.Out + u.CacheR + u.CacheC; t > 0 {
 				tokens = t
 			}
+			// "<synthetic>" marks messages Claude Code wrote itself (an
+			// API error, an interrupt): no model answered them
+			if m := e.Message.Model; m != "" && m != "<synthetic>" {
+				model = m
+			}
 		}
 	}
-	if tokens > 0 {
-		d.update(slug, func(s *state.Session) { s.Tokens = tokens })
+	if tokens > 0 || model != "" {
+		d.update(slug, func(s *state.Session) {
+			if tokens > 0 {
+				s.Tokens = tokens
+			}
+			if model != "" {
+				s.LastModel = model
+			}
+		})
 	}
 }
 

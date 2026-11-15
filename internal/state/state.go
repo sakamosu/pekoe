@@ -109,6 +109,9 @@ type Session struct {
 	RepoDir         string    `json:"repo_dir"` // main worktree of the repository
 	Path            string    `json:"path"`
 	Agent           string    `json:"agent"`
+	Model           string    `json:"model,omitempty"`      // pekoe new --model: overrides [agents.*] model for this session
+	Effort          string    `json:"effort,omitempty"`     // pekoe new --effort: overrides [agents.*] effort
+	LastModel       string    `json:"last_model,omitempty"` // the model of the last assistant message in the conversation
 	State           State     `json:"state"`
 	WaitKind        string    `json:"wait_kind,omitempty"`
 	StateSince      time.Time `json:"state_since"`

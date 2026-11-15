@@ -43,6 +43,12 @@ agent = "claude-ask"
 command = "claude --permission-mode plan"
 [agents.codex]
 allow = "y"
+[agents.claude]
+model = "claude-opus-5-5"
+effort = "medium"
+[agents.big]
+command = "claude"
+model = "claude-opus-5-5[1m]"
 [web]
 enable = true
 allow_users = ["you@github"]
@@ -97,6 +103,10 @@ agent = "gemini"
 prompt = "stdin"
 [agents.claude]
 sandbx = false
+effort = "huge"
+model = "opus 5"
+[agents.codex]
+model = "o3"
 [web]
 enable = true
 state_dir = "rel/dir"
@@ -121,6 +131,9 @@ state_dir = "rel/dir"
 		`tapi.agent: "gemini" is not in [agents.*] (claude, codex, mine, opencode)`,
 		`agents.mine.prompt: "stdin"`,
 		"agents.mine.command: missing",
+		`agents.claude.effort: "huge" is not one of low | medium | high | xhigh | max`,
+		`agents.claude.model: "opus 5" is not a model name`,
+		`agents.codex: model and effort are only passed to Claude Code`,
 		"web.allow_users: empty while enable = true",
 		`web.state_dir: "rel/dir" must be an absolute path`,
 	} {

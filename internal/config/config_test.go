@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"pekoe/internal/tips"
@@ -48,6 +49,38 @@ func TestTapiAgent(t *testing.T) {
 	}
 	if g.Tapi.Agent != "claude-ask" || g.Agents["claude-ask"].Command != "claude --permission-mode plan" {
 		t.Fatalf("configured: %q %+v", g.Tapi.Agent, g.Agents["claude-ask"])
+	}
+}
+
+// [agents.*] model / effort merge over the defaults; ModelArgs prefers a
+// session's own values and leaves out invalid ones and other agents.
+func TestAgentModel(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PEKOE_HOME", root)
+	os.MkdirAll(filepath.Join(root, "config"), 0o755)
+	os.WriteFile(filepath.Join(root, "config", "config.toml"), []byte("[agents.claude]\nmodel = \"claude-opus-5-5\"\neffort = \"medium\"\n"), 0o644)
+	g, err := LoadGlobal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := g.Agents["claude"]
+	if a.Command != "claude" || a.Model != "claude-opus-5-5" || a.Effort != "medium" {
+		t.Fatalf("merged: %+v", a)
+	}
+	if got := strings.Join(a.ModelArgs("", ""), " "); got != "--model claude-opus-5-5 --effort medium" {
+		t.Fatalf("args: %s", got)
+	}
+	if got := strings.Join(a.ModelArgs("sonnet", "low"), " "); got != "--model sonnet --effort low" {
+		t.Fatalf("override: %s", got)
+	}
+	if got := (Agent{Command: "claude"}).ModelArgs("", ""); got != nil {
+		t.Fatalf("unset: %v", got)
+	}
+	if got := (Agent{Command: "codex", Model: "o3"}).ModelArgs("", ""); got != nil {
+		t.Fatalf("codex: %v", got)
+	}
+	if got := (Agent{Command: "claude", Model: "a b", Effort: "huge"}).ModelArgs("", ""); got != nil {
+		t.Fatalf("invalid: %v", got)
 	}
 }
 

@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -87,6 +89,53 @@ type Agent struct {
 	// the sandbox on, pekoe's tokens and config unreadable). Default true;
 	// ignored for other agents.
 	Sandbox *bool `toml:"sandbox"`
+	// Model / Effort: what a Claude Code agent is started with (--model,
+	// --effort) on every start: new, resume, restart, tapi. Unset leaves it
+	// to Claude Code's default, ~/.claude/settings.json "model", which
+	// /model in any session rewrites. Ignored for other agents.
+	Model  string `toml:"model"`  // "claude-opus-5-5", or an alias such as "opus"
+	Effort string `toml:"effort"` // low | medium | high | xhigh | max
+}
+
+// Efforts are the levels --effort takes.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/\[\]-]{0,127}$`)
+
+// ValidModel: a model name or alias as --model takes it ("opus",
+// "claude-opus-5-5", "claude-opus-5-5[1m]", a Bedrock id).
+func ValidModel(m string) bool { return modelRe.MatchString(m) }
+
+// ValidEffort: one of Efforts.
+func ValidEffort(e string) bool { return slices.Contains(Efforts, e) }
+
+// IsClaude: the command starts Claude Code (model and effort only go to it).
+func IsClaude(command string) bool {
+	f := strings.Fields(command)
+	return len(f) > 0 && filepath.Base(f[0]) == "claude"
+}
+
+// ModelArgs are the flags that pin a Claude Code agent's model and effort:
+// model / effort override the agent's own when not empty; invalid values
+// are left out (pekoe config check names them). nil for other agents.
+func (a Agent) ModelArgs(model, effort string) []string {
+	if !IsClaude(a.Command) {
+		return nil
+	}
+	if model == "" {
+		model = a.Model
+	}
+	if effort == "" {
+		effort = a.Effort
+	}
+	var out []string
+	if ValidModel(model) {
+		out = append(out, "--model", model)
+	}
+	if ValidEffort(effort) {
+		out = append(out, "--effort", effort)
+	}
+	return out
 }
 
 // SandboxOn: unset means on.
@@ -395,6 +444,12 @@ func ParseGlobal(b []byte) (*Global, error) {
 		d.Hooks = d.Hooks || v.Hooks
 		if v.Sandbox != nil {
 			d.Sandbox = v.Sandbox
+		}
+		if v.Model != "" {
+			d.Model = v.Model
+		}
+		if v.Effort != "" {
+			d.Effort = v.Effort
 		}
 		agents[k] = d
 	}

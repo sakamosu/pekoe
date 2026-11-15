@@ -164,6 +164,9 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "repo_id": "github.com_me_app",
   "path": "/Users/me/worktrees/app/feat-csv",
   "agent": "claude",
+  "model": "claude-sonnet-5-5",    // pekoe new --model で上書きしたモデル(無ければ省略。[agents.*] model が使われる)
+  "effort": "low",                 // pekoe new --effort で上書きした effort(無ければ省略)
+  "last_model": "claude-opus-5-5", // このセッションが最後に答えたモデル(会話記録の最後の assistant のメッセージの model。Claude Code だけ。PostToolUse と Stop の hook で読む)
   "state": "running",              // creating | running | waiting | idle | done | reviewing | approved | landed | failed
   "wait_kind": "permission",       // waiting のときだけ: permission | question(AskUserQuestion と elicitation。AskUserQuestion の直後に Claude Code が送る permission_prompt は、待ちの対象が AskUserQuestion のままなら question のまま。知らない notification_type は permission)
   "state_since": "2026-11-07T10:00:00Z",
@@ -227,7 +230,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, prompt?, base?, request?: id, after?: [slug]}` | `Session`(state = creating。進捗は `session.progress` イベント)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
+| `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug]}` | `Session`(state = creating。進捗は `session.progress` イベント)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |

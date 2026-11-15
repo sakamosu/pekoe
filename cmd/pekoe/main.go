@@ -182,7 +182,7 @@ func usage() {
 
   pekoe                         open the TUI
   pekoe init                    draft ~/.config/pekoe/repos/<repo-id>.toml
-  pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--prompt TEXT] [--request ID]
+  pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--model M] [--effort E] [--prompt TEXT] [--request ID]
   pekoe open <worktree> [--resume|--new]
   pekoe adopt [--yes]           take over agents started by hand
   pekoe ls [--all|--repo R] [--json]   sessions (default: this repository; outside one, all)

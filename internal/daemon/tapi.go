@@ -562,6 +562,7 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 		}
 	}
 	cmd := tapiCommand(ag.Command, addDirs, isClaude(ag.Command) && tapiConversationLeft(dir))
+	cmd = withModel(cmd, ag, "", "")
 	var repoDirs []string
 	for _, r := range repos {
 		repoDirs = append(repoDirs, r.Dir)

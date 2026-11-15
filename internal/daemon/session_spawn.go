@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/config"
 	"pekoe/internal/engine"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
@@ -109,6 +110,7 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	}
 	// before the prompt's "--": every way an agent starts (new, open,
 	// restart, resume after a daemon restart) comes through here
+	cmd = withModel(cmd, ag, s.Model, s.Effort)
 	if cmd, err = d.withAgentSandbox(slug, cmd, ag.SandboxOn(), []string{s.RepoDir}, nil); err != nil {
 		return err
 	}
@@ -274,4 +276,18 @@ func (d *Daemon) hRestart(p restartP) (any, error) {
 		return nil, err
 	}
 	return d.snapshot(p.Slug)
+}
+
+// withModel pins a Claude Code agent's model and effort (--model,
+// --effort) so that it does not follow ~/.claude/settings.json, which
+// /model in any session rewrites. model / effort: the session's own
+// (pekoe new --model), else the agent's.
+func withModel(cmd string, ag config.Agent, model, effort string) string {
+	if !isClaude(cmd) {
+		return cmd
+	}
+	for _, a := range ag.ModelArgs(model, effort) {
+		cmd += " " + shellQuote(a)
+	}
+	return cmd
 }
