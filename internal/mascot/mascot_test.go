@@ -43,8 +43,8 @@ func TestShapes(t *testing.T) {
 		eyes string
 		want []string
 	}{
-		{Options{Shape: "round"}, "● ●", []string{"🬞🬹🬹🬹🬏", "█● ●█", "🬁🬎🬎🬎🬀"}},
-		{Options{Shape: "block"}, "● ●", []string{"▗▄▄▄▖", "▐● ●▌", "▝▀▀▀▘"}},
+		{Options{Shape: "round"}, "◉ ◉", []string{"🬞🬹🬹🬹🬏", "█◉ ◉█", "🬁🬎🬎🬎🬀"}},
+		{Options{Shape: "block"}, "◉ ◉", []string{"▗▄▄▄▖", "▐◉ ◉▌", "▝▀▀▀▘"}},
 		{Options{Glyphs: "ascii"}, "o o", []string{".---.", "|o o|", "'---'"}},
 	}
 	for _, c := range cases {
@@ -63,15 +63,22 @@ func TestShapes(t *testing.T) {
 
 func TestEyesAndCells(t *testing.T) {
 	r := plain(Options{})
-	want := map[Mood][2]string{Error: {"⨯ ⨯", "⨯"}, Wait: {"◕ ◕", "◉"}, Work: {"● ●", "●"}, Done: {"^ ^", "●"}, Idle: {"• •", "•"}, Sleep: {"- -", "◦"}}
+	want := map[Mood][2]string{Error: {"⨯ ⨯", "⨯"}, Wait: {"◕ ◕", "◕"}, Work: {"◉ ◉", "◉"}, Done: {"^ ^", "◉"}, Idle: {"∙ ∙", "∙"}, Sleep: {"- -", "◦"}}
 	for m, w := range want {
 		if r.Eyes(m) != w[0] || r.CellGlyph(m) != w[1] {
 			t.Errorf("%s: eyes=%q cell=%q", m, r.Eyes(m), r.CellGlyph(m))
 		}
 	}
+	// narrow, a former setting, draws as the default (the default glyphs
+	// have no ambiguous-width eyes any more)
 	n := plain(Options{Glyphs: "narrow"})
-	if n.Eyes(Work) != "🞄 🞄" || n.CellGlyph(Done) != "🞄" || n.Eyes(Error) != "⨯ ⨯" || n.ASCII() {
-		t.Errorf("narrow: work=%q done=%q error=%q", n.Eyes(Work), n.CellGlyph(Done), n.Eyes(Error))
+	for _, m := range Moods {
+		if n.Eyes(m) != r.Eyes(m) || n.CellGlyph(m) != r.CellGlyph(m) || n.ASCII() {
+			t.Errorf("narrow %s: eyes=%q cell=%q", m, n.Eyes(m), n.CellGlyph(m))
+		}
+	}
+	if n.Pearl() != r.Pearl() || n.Peek() != r.Peek() || n.ReactionEyes(PRCIFailed, 0) != r.ReactionEyes(PRCIFailed, 0) {
+		t.Errorf("narrow: pearl=%q peek=%q", n.Pearl(), n.Peek())
 	}
 	a := plain(Options{Glyphs: "ascii"})
 	for _, m := range Moods {
@@ -98,12 +105,12 @@ func TestColorOverride(t *testing.T) {
 // Banner is tapi alone: the 3-line face and its text, nothing around it.
 func TestBanner(t *testing.T) {
 	r := plain(Options{Shape: "round"})
-	got := r.Banner("● ●", []string{"pekoe", "", "x", "4th"})
-	want := []string{"🬞🬹🬹🬹🬏    pekoe", "█● ●█", "🬁🬎🬎🬎🬀    x", "         4th"}
+	got := r.Banner("◉ ◉", []string{"pekoe", "", "x", "4th"})
+	want := []string{"🬞🬹🬹🬹🬏    pekoe", "█◉ ◉█", "🬁🬎🬎🬎🬀    x", "         4th"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if got := r.Banner("● ●", nil); strings.Join(got, "\n") != strings.Join(r.Big("● ●"), "\n") {
+	if got := r.Banner("◉ ◉", nil); strings.Join(got, "\n") != strings.Join(r.Big("◉ ◉"), "\n") {
 		t.Errorf("no text: %q", got)
 	}
 }
@@ -198,7 +205,7 @@ func TestDetectShape(t *testing.T) {
 func TestNoSpaceAfterEyes(t *testing.T) {
 	r := New(Options{Shape: "round"})
 	r.noColor = false
-	faces := append([]string{r.Line("● ●"), r.Line("◕ ◕")}, r.Big("⨯ ⨯")...)
+	faces := append([]string{r.Line("◉ ◉"), r.Line("◕ ◕")}, r.Big("⨯ ⨯")...)
 	for _, f := range faces {
 		if p := ansi.Strip(f); strings.Contains(p, " ") {
 			t.Errorf("space in face %q", p)
@@ -311,5 +318,23 @@ func TestWithTheme(t *testing.T) {
 	r = New(Options{}.WithTheme(theme.Load(&config.Theme{})))
 	if out := r.Cell(Work) + r.Line(r.Eyes(Done)); strings.Contains(out, "\x1b[") {
 		t.Errorf("none mode still paints: %q", out)
+	}
+}
+
+// mascot.glyphs = "narrow" is still read (no error) and draws as unicode;
+// ascii and auto keep what they did
+func TestDetectGlyphs(t *testing.T) {
+	for _, c := range []struct{ cfg, icons, want string }{
+		{"narrow", "unicode", "unicode"},
+		{"narrow", "ascii", "unicode"},
+		{"unicode", "ascii", "unicode"},
+		{"ascii", "nerd", "ascii"},
+		{"auto", "ascii", "ascii"},
+		{"auto", "nerd", "unicode"},
+		{"", "unicode", "unicode"},
+	} {
+		if got := DetectGlyphs(c.cfg, c.icons, nil); got != c.want {
+			t.Errorf("DetectGlyphs(%q, %q) = %q, want %q", c.cfg, c.icons, got, c.want)
+		}
 	}
 }
