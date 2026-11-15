@@ -113,3 +113,59 @@ func TestLedgerLastEmpty(t *testing.T) {
 		t.Fatalf("empty ledger: %+v %v", e, err)
 	}
 }
+
+// The open entries and, for a while, the ones pekoed closed itself: not
+// the ones it closed long ago, nor what tapi closed.
+func TestLedgerOpenAndAuto(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Now()
+	at := func(d time.Duration) *time.Time { t := now.Add(d); return &t }
+	for _, e := range []LedgerEntry{
+		{Text: "open のまま", Status: LedgerOpen},
+		{Text: "さっき自動で", Status: LedgerChat, Auto: true, ClosedAt: at(-time.Minute)},
+		{Text: "23 時間前に自動で", Status: LedgerChat, Auto: true, ClosedAt: at(-23 * time.Hour)},
+		{Text: "25 時間前に自動で", Status: LedgerChat, Auto: true, ClosedAt: at(-25 * time.Hour)},
+		{Text: "tapi が chat で", Status: LedgerChat, ClosedAt: at(-time.Minute)},
+		{Text: "済んだ", Status: LedgerDone, ClosedAt: at(-time.Minute)},
+		{Text: "次の open", Status: LedgerOpen},
+	} {
+		e := e
+		e.At = now
+		if err := db.AddLedger(&e); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.SaveLedger(&e); err != nil { // auto is not AddLedger's
+			t.Fatal(err)
+		}
+	}
+	ids := func(es []LedgerEntry) (out []int64) {
+		for _, e := range es {
+			out = append(out, e.ID)
+		}
+		return
+	}
+	es, err := db.LedgerOpenAndAuto(0, now.Add(-24*time.Hour))
+	if got := ids(es); err != nil || len(got) != 4 || got[0] != 1 || got[1] != 2 || got[2] != 3 || got[3] != 7 {
+		t.Fatalf("open and lately auto, oldest first: %v %v", got, err)
+	}
+	if !es[1].Auto || es[1].Status != LedgerChat {
+		t.Fatalf("an auto one says so: %+v", es[1])
+	}
+	if got := ids(must(db.LedgerOpenAndAuto(2, now.Add(-24*time.Hour)))); len(got) != 2 || got[0] != 3 {
+		t.Fatalf("since: %v", got)
+	}
+	if got := ids(must(db.LedgerList(false, 0))); len(got) != 2 {
+		t.Fatalf("open alone is unchanged: %v", got)
+	}
+}
+
+func must(es []LedgerEntry, err error) []LedgerEntry {
+	if err != nil {
+		panic(err)
+	}
+	return es
+}

@@ -43,6 +43,15 @@ const (
 // variable for the tests.
 var ledgerRepeatWithin = time.Minute
 
+// ledgerAutoShown: how long an entry pekoed closed itself is still listed
+// with the open ones (ledger.list with auto: `pekoe ledger`, the
+// dashboard). Closing by itself is a guess, and tapi forgets `ledger keep`
+// now and then: a request closed that way is seen by the next tapi (which
+// reads the list first) and by the person, and tapi opens it again. A day
+// covers a night's break and a reset the next morning; older ones are in
+// `pekoe ledger --all`.
+const ledgerAutoShown = 24 * time.Hour
+
 // notTyped: a prompt that reaches UserPromptSubmit without the person
 // typing it, so no request of theirs:
 //   - "[pekoe …": what pekoed itself typed into tapi's input box (an inbox
@@ -224,6 +233,9 @@ func ledgerErr(id int64, err error) error {
 type ledgerListP struct {
 	Status string `json:"status"` // open (default) | all
 	Since  int64  `json:"since"`
+	// Auto, with open: also the entries pekoed closed itself in the last
+	// ledgerAutoShown (status chat, auto true)
+	Auto bool `json:"auto"`
 }
 
 func (d *Daemon) hLedgerList(who *Caller, p ledgerListP) (any, error) {
@@ -232,6 +244,9 @@ func (d *Daemon) hLedgerList(who *Caller, p ledgerListP) (any, error) {
 	}
 	switch p.Status {
 	case "", state.LedgerOpen:
+		if p.Auto {
+			return d.DB.LedgerOpenAndAuto(p.Since, time.Now().Add(-ledgerAutoShown))
+		}
 		return d.DB.LedgerList(false, p.Since)
 	case "all":
 		return d.DB.LedgerList(true, p.Since)

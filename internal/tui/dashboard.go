@@ -56,7 +56,10 @@ const (
 
 // dashState is the dashboard's data and cursor.
 type dashState struct {
-	ledger  []state.LedgerEntry
+	ledger []state.LedgerEntry
+	// auto: the entries pekoed closed itself in the last 24 hours
+	// (ledger.list with auto), drawn quietly under the open ones
+	auto    []state.LedgerEntry
 	sends   []state.SendRecord
 	fyi     []state.InboxItem
 	merge   map[string]*state.MergeCheck
@@ -101,7 +104,7 @@ func (m *model) loadDash() tea.Cmd {
 		if cl == nil {
 			return out
 		}
-		_ = cl.Call("ledger.list", map[string]any{"status": "open"}, &out.ledger)
+		_ = cl.Call("ledger.list", map[string]any{"status": "open", "auto": true}, &out.ledger)
 		_ = cl.Call("send.log", map[string]any{"limit": dashSends}, &out.sends)
 		var answered []state.InboxItem
 		if cl.Call("inbox.list", map[string]any{"status": "answered", "limit": 100}, &answered) == nil {
@@ -119,7 +122,14 @@ func (m *model) loadDash() tea.Cmd {
 func (m *model) onDash(msg dashMsg) {
 	d := &m.dash
 	d.loading, d.at = false, time.Now()
-	d.ledger, d.sends, d.fyi = msg.ledger, msg.sends, msg.fyi
+	d.ledger, d.auto, d.sends, d.fyi = nil, nil, msg.sends, msg.fyi
+	for _, e := range msg.ledger {
+		if e.Status == state.LedgerOpen {
+			d.ledger = append(d.ledger, e)
+		} else {
+			d.auto = append(d.auto, e)
+		}
+	}
 	d.merge = map[string]*state.MergeCheck{}
 	for i := range msg.merge {
 		d.merge[msg.merge[i].Slug] = &msg.merge[i]
@@ -319,6 +329,10 @@ func (m *model) dashItems() []dashItem {
 	}
 	for i := range m.dash.ledger {
 		e := &m.dash.ledger[i]
+		its = append(its, dashItem{key: fmt.Sprintf("req:%d", e.ID), req: e})
+	}
+	for i := range m.dash.auto {
+		e := &m.dash.auto[i]
 		its = append(its, dashItem{key: fmt.Sprintf("req:%d", e.ID), req: e})
 	}
 	for i := range m.dash.sends {
@@ -893,7 +907,11 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 
 	// requests
-	section("📝", "Requests", dim(fmt.Sprintf("%d open", len(d.ledger))))
+	sum = fmt.Sprintf("%d open", len(d.ledger))
+	if len(d.auto) > 0 {
+		sum += fmt.Sprintf(" · %d closed by pekoe", len(d.auto))
+	}
+	section("📝", "Requests", dim(sum))
 	if len(d.ledger) == 0 {
 		none("no open requests")
 	}
@@ -919,6 +937,23 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		if slugs := m.requestSessions(e); len(slugs) > 0 && !d.open[fmt.Sprintf("req:%d", e.ID)] {
 			add(fit("      "+dim("→ "+strings.Join(slugs, ", ")), cw))
 		}
+	}
+
+	// what pekoed closed itself as no request, lately: quiet, apart from
+	// the open ones (a request among them is opened again by tapi)
+	if len(d.auto) > 0 {
+		none("closed by pekoe as no request · 24h · ledger keep <id>")
+	}
+	for i := range d.auto {
+		e := &d.auto[i]
+		head := fmt.Sprintf("  #%d ", e.ID)
+		tail := "  " + fit(ago(e.At), 4)
+		room := max(cw-w(head)-w(tail), 1)
+		var more []string
+		for _, l := range wrapText(inboxText(e.Text), max(cw-8, 4)) {
+			more = append(more, dim(l))
+		}
+		item(fmt.Sprintf("req:%d", e.ID), dim(head+fit(firstLine(inboxText(e.Text)), room)+tail), nil, more)
 	}
 
 	// sends

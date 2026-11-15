@@ -218,7 +218,7 @@ docs = ["docs/tapi-chat.md", "docs/api.md"]
 [[tip]]
 id = "ledger-tidy"
 short = "tapi への雑談やお礼は、依頼から自動で閉じる"
-detail = "tapi が返事を終えたとき、セッションを結ばず誰にも頼んでいなければ、その入力は chat で閉じる。同じ文の 2 度送りは 1 件にまとまる。すぐ任せない依頼は tapi が keep で残す。"
+detail = "tapi が返事を終えたとき、誰にも頼まず待ち始めてもいなければ、その入力は chat で閉じる。閉じたものは 24 時間 pekoe ledger とダッシュボードに薄く出て、tapi が keep で戻せる。"
 keys = ["pekoe ledger"]
 docs = ["docs/api.md#依頼ledger"]
 

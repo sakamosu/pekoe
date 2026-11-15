@@ -549,3 +549,45 @@ func TestLedgerKeepsRequestOnRefusedSend(t *testing.T) {
 		t.Fatalf("small talk over the socket: %+v", es)
 	}
 }
+
+// What pekoed closed itself stays in the list tapi reads first for a day
+// (ledger.list with auto), marked; open alone is as before, and a request
+// among them opened again is an open one.
+func TestLedgerListShowsLatelyAuto(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	for _, s := range []string{"B が済んだら C も直して", "ありがと", "おやすみ"} {
+		promptEvent(t, d, tapi, TapiSlug, s)
+		stopEvent(t, d, tapi, TapiSlug)
+	}
+	promptEvent(t, d, tapi, TapiSlug, "CSV を直して")
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{})
+	stopEvent(t, d, tapi, TapiSlug)
+	// #2 was closed more than a day ago
+	old, _ := d.DB.LedgerGet(2)
+	long := time.Now().Add(-ledgerAutoShown - time.Minute)
+	old.ClosedAt = &long
+	if err := d.DB.SaveLedger(old); err != nil {
+		t.Fatal(err)
+	}
+	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{}); len(es) != 1 || es[0].ID != 4 {
+		t.Fatalf("open alone: %+v", es)
+	}
+	es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"auto": true})
+	if len(es) != 3 || es[0].ID != 1 || !es[0].Auto || es[0].Status != state.LedgerChat || es[1].ID != 3 || !es[1].Auto || es[2].ID != 4 || es[2].Status != state.LedgerOpen {
+		t.Fatalf("open and lately auto: %+v", es)
+	}
+	// the request among them, opened again
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": 1})
+	es = callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"auto": true})
+	if len(es) != 3 || es[0].ID != 1 || es[0].Auto || es[0].Status != state.LedgerOpen {
+		t.Fatalf("after keep: %+v", es)
+	}
+	if v := call[Tapi](t, d, "tapi.get", nil); v.LedgerOpen != 2 {
+		t.Fatalf("ledger_open counts the open ones only: %+v", v)
+	}
+	// all is all, auto or not
+	if es := callAs[[]state.LedgerEntry](t, d, tapi, "ledger.list", map[string]any{"status": "all", "auto": true}); len(es) != 4 {
+		t.Fatalf("all: %+v", es)
+	}
+}

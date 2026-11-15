@@ -122,6 +122,27 @@ func (d *DB) LedgerList(all bool, since int64) ([]LedgerEntry, error) {
 	return d.ledgerQuery(q+` ORDER BY id`, args...)
 }
 
+// LedgerOpenAndAuto lists, oldest first, the open entries and the ones
+// pekoed closed itself (chat, auto) at closedAfter or later: what was no
+// request by pekoed's guess, shown for a while so that a request among
+// them is seen.
+func (d *DB) LedgerOpenAndAuto(since int64, closedAfter time.Time) ([]LedgerEntry, error) {
+	// closed_at is RFC 3339 in UTC: comparing the text is right to the
+	// second, and the exact time is checked below
+	es, err := d.ledgerQuery(`SELECT `+ledgerCols+` FROM ledger WHERE id>? AND (status=? OR (status=? AND auto=1 AND closed_at>=?)) ORDER BY id`,
+		since, LedgerOpen, LedgerChat, ts(closedAfter.Add(-time.Second)))
+	if err != nil {
+		return nil, err
+	}
+	out := es[:0]
+	for _, e := range es {
+		if e.Status == LedgerOpen || e.ClosedAt != nil && !e.ClosedAt.Before(closedAfter) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
 // LedgerOpenCount is how many entries are open.
 func (d *DB) LedgerOpenCount() (int, error) {
 	var n int

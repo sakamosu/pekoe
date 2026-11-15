@@ -178,7 +178,7 @@ var specs = map[string]spec{
 	"inbox withdraw": {use: "pekoe inbox withdraw <id> [--note TEXT]   take back your own question (the agent that asked)", vals: []string{"note"}},
 	"inbox dismiss":  {use: "pekoe inbox dismiss <id> [--note TEXT]   close a question without an answer (a person only)", vals: []string{"note"}},
 
-	"ledger":        {use: "pekoe ledger [--all] [--json]   what a person asked tapi chat for (open ones; --all: closed too)", bools: []string{"all"}},
+	"ledger":        {use: "pekoe ledger [--all] [--json]   what a person asked tapi chat for (open ones, and what pekoe closed itself in the last 24h; --all: closed too)", bools: []string{"all"}},
 	"ledger done":   {use: "pekoe ledger done <id> [--evidence URL|PATH]... [--note TEXT]   the request is done (tapi chat)", vals: []string{"evidence", "note"}, multi: []string{"evidence"}},
 	"ledger drop":   {use: "pekoe ledger drop <id> --note TEXT   not doing it, and why (tapi chat)", vals: []string{"note"}},
 	"ledger close":  {use: "pekoe ledger close <id> --as done|dropped|chat [--evidence URL|PATH]... [--note TEXT]   (tapi chat; chat: it was no request)", vals: []string{"as", "evidence", "note"}, multi: []string{"evidence"}},

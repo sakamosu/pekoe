@@ -40,23 +40,16 @@ func cmdLedger(args []string) error {
 		cl := connect()
 		defer cl.Close()
 		var es []state.LedgerEntry
-		if err := cl.Call("ledger.list", map[string]any{"status": st}, &es); err != nil {
+		// auto: with the open ones, what pekoed closed itself in the last
+		// 24 hours (a request among them is opened again with ledger keep)
+		if err := cl.Call("ledger.list", map[string]any{"status": st, "auto": true}, &es); err != nil {
 			return err
 		}
 		if jsonOut {
 			printJSON(es)
 			return nil
 		}
-		if len(es) == 0 {
-			fmt.Println("no open requests")
-			return nil
-		}
-		for i, e := range es {
-			if i > 0 {
-				fmt.Println()
-			}
-			printLedger(e)
-		}
+		printLedgerList(es, st == "all")
 		return nil
 	}
 	sub := strings.TrimPrefix(name, "ledger ")
@@ -132,6 +125,39 @@ func cmdLedger(args []string) error {
 	}
 	fmt.Println()
 	return nil
+}
+
+// printLedgerList prints the list: all in the order asked, or the open
+// entries and then, apart, the ones pekoed closed itself lately.
+func printLedgerList(es []state.LedgerEntry, all bool) {
+	var auto []state.LedgerEntry
+	n := 0
+	for _, e := range es {
+		if !all && e.Status != state.LedgerOpen {
+			auto = append(auto, e)
+			continue
+		}
+		if n > 0 {
+			fmt.Println()
+		}
+		printLedger(e)
+		n++
+	}
+	if n == 0 {
+		if all {
+			fmt.Println("no requests")
+		} else {
+			fmt.Println("no open requests")
+		}
+	}
+	if len(auto) == 0 {
+		return
+	}
+	fmt.Printf("\nclosed by pekoe as no request in the last 24h (%d) · a request among them: pekoe ledger keep <id>\n", len(auto))
+	for _, e := range auto {
+		fmt.Println()
+		printLedger(e)
+	}
 }
 
 // printLedger prints pekoed's part first, then the words: the request is
