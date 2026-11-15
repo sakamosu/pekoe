@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -270,6 +271,40 @@ func TestEvidenceNameOnOneLine(t *testing.T) {
 	}
 }
 
+// What ↵ is said to do, by kind, on macOS (the app named) and elsewhere
+// (xdg-open's default).
+func TestEvidenceWhat(t *testing.T) {
+	png := evItem{kind: evImage, imgW: 10, imgH: 10}
+	jpg := evItem{kind: evImage}
+	for _, c := range []struct {
+		goos     string
+		it       evItem
+		graphics bool
+		want     string
+	}{
+		{"darwin", jpg, false, "↵ opens it in Preview"},
+		{"linux", jpg, false, "↵ opens it in the default app"},
+		{"darwin", png, false, "↵ opens it in Preview"},
+		{"darwin", png, true, "↵ shows it here · o opens it in Preview"},
+		{"linux", png, true, "↵ shows it here · o opens it in the default app"},
+		{"linux", png, false, "↵ opens it in the default app"},
+		{"darwin", evItem{kind: evPDF}, false, "↵ opens it in Preview"},
+		{"darwin", evItem{kind: evVideo}, false, "↵ opens it in QuickTime Player"},
+		{"linux", evItem{kind: evVideo}, false, "↵ opens it in the default app"},
+		{"darwin", evItem{kind: evText}, false, "↵ opens it in TextEdit"},
+		{"linux", evItem{kind: evText}, false, "↵ opens it in the default app"},
+		{"darwin", evItem{kind: evLink}, false, "↵ opens it in the browser"},
+		{"linux", evItem{kind: evLink}, false, "↵ opens it in the browser"},
+		{"linux", evItem{kind: evFile}, false, "not opened (only images, videos, PDFs and text are) · ↵ shows where it is"},
+		{"linux", evItem{kind: evFolder}, false, "a folder · ↵ shows where it is"},
+		{"linux", evItem{kind: evNone, why: "missing"}, false, "nothing to open"},
+	} {
+		if got := evWhatOn(c.goos, c.it, c.graphics); got != c.want {
+			t.Errorf("%s kind %d graphics %v: %q, want %q", c.goos, c.it.kind, c.graphics, got, c.want)
+		}
+	}
+}
+
 // The list: newest report first, each string once under the newest report
 // naming it, reports without evidence left out, a review's verdict shown.
 func TestEvidenceItems(t *testing.T) {
@@ -396,8 +431,19 @@ func TestDashboardEvidence(t *testing.T) {
 	if em.note != "" {
 		t.Errorf("the note stayed after moving: %q", em.note)
 	}
-	if out := ansi.Strip(strings.Join(em.view(), "\n")); !strings.Contains(out, filepath.Join(filepath.Base(dir), "shot.png")+"  │") || !strings.Contains(out, "↵ opens it in ") {
-		t.Errorf("the image's path and what ↵ does:\n%s", out)
+	// the sunk line names the file (cut from the left when long: a temp
+	// dir's path is long on macOS, short on Linux), what ↵ does under it
+	view := ansi.Strip(strings.Join(em.view(), "\n"))
+	shotPath := filepath.Join(dir, "shot.png")
+	var sunkLine, whatLine string
+	for i, l := range strings.Split(view, "\n") {
+		l = strings.TrimSpace(strings.Trim(strings.TrimSpace(l), "│"))
+		if strings.HasSuffix(l, string(filepath.Separator)+"shot.png") && strings.HasSuffix(shotPath, strings.TrimPrefix(l, "…")) {
+			sunkLine, whatLine = l, strings.TrimSpace(strings.Trim(strings.TrimSpace(strings.Split(view, "\n")[i+1]), "│"))
+		}
+	}
+	if want := evWhatOn(runtime.GOOS, em.items[em.sel], false); sunkLine == "" || whatLine != want {
+		t.Errorf("the image's path (%q) and what ↵ does (%q, want %q):\n%s", sunkLine, whatLine, want, view)
 	}
 	press("enter")
 	if got := last(); len(got) < 2 || got[len(got)-1] != filepath.Join(dir, "shot.png") || em.viewing {

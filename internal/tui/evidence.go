@@ -374,13 +374,16 @@ func evLine(s string) string {
 }
 
 // evWhat says what ↵ does with it, for the line under the path.
-func evWhat(it evItem, graphics bool) string {
+func evWhat(it evItem, graphics bool) string { return evWhatOn(runtime.GOOS, it, graphics) }
+
+// evWhatOn is evWhat on goos (the app named differs).
+func evWhatOn(goos string, it evItem, graphics bool) string {
 	switch it.kind {
 	case evLink:
 		return "↵ opens it in the browser"
 	case evImage, evVideo, evPDF, evText:
 		app := "the default app"
-		if runtime.GOOS == "darwin" {
+		if goos == "darwin" {
 			app = evAppName(evMacApp(it.kind))
 		}
 		if graphics && it.inline() {
