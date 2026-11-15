@@ -81,10 +81,14 @@ func TestWaitCI(t *testing.T) {
 	}
 
 	// a push: the new head tells once more, when all of it finished
+	step("new head, the checks still the old commit's", prFixture{Head: head2, Commit: head1, Checks: green}, 1)
+	if st := call[state.Session](t, d, "session.get", map[string]any{"slug": slug}).PRStatus; st.HeadSHA != head2 || st.Pass != 0 || st.CIHead != head1 {
+		t.Fatalf("another commit's checks counted for the new head: %+v", st)
+	}
 	step("new head, running", prFixture{Head: head2, Checks: []map[string]any{check("test", "")}}, 1)
 	step("new head, one failed while others run", prFixture{Head: head2, Checks: []map[string]any{check("test", "FAILURE"), check("lint", "")}}, 1)
 	red := []map[string]any{check("test", "FAILURE"), check("lint", "SUCCESS"), check("e2e (chrome)", "TIMED_OUT"), check("build", "FAILURE"), check("vet", "FAILURE")}
-	step("new head, all finished", prFixture{Head: head2, Checks: red}, 2)
+	step("new head, all finished", prFixture{Head: head2, Commit: strings.ToUpper(head2[:8]) + head2[8:], Checks: red}, 2)
 	if got, want := cis()[1], slug+": PR #42 ci red: 4 failed (test, e2e (chrome), build, +1 more), 1 passed, head "+head2; got != want {
 		t.Fatalf("red summary: %q, want %q", got, want)
 	}

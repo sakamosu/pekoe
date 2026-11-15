@@ -81,7 +81,7 @@ const prQuery = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       number title body url state isDraft mergeable mergeStateStatus reviewDecision baseRefName headRefName headRefOid
-      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+      commits(last: 1) { nodes { commit { oid statusCheckRollup { contexts(first: 100) { nodes {
         __typename
         ... on CheckRun { name status conclusion detailsUrl startedAt completedAt databaseId
           checkSuite { workflowRun { databaseId workflow { name } } } }
@@ -133,6 +133,7 @@ type gqlPR struct {
 	Commits          struct {
 		Nodes []struct {
 			Commit struct {
+				OID               string `json:"oid"`
 				StatusCheckRollup *struct {
 					Contexts struct {
 						Nodes []struct {
@@ -218,6 +219,11 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 	}
 	for _, c := range g.Commits.Nodes {
 		if c.Commit.StatusCheckRollup == nil {
+			continue
+		}
+		if oid := strings.ToLower(c.Commit.OID); oid != "" && oid != v.HeadSHA {
+			// not the head's commit (the head moved a moment ago): its
+			// checks are not this head's result (wait's ci is told per head)
 			continue
 		}
 		for _, n := range c.Commit.StatusCheckRollup.Contexts.Nodes {
