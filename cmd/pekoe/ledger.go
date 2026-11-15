@@ -3,7 +3,10 @@ package main
 // ledger (docs/orchestration.md "6. 依頼(ledger)"): what a person asked tapi
 // chat for. pekoed records every prompt typed into tapi; tapi reads the
 // open ones back (after a reset too), ties sessions to them and closes
-// them. Reopening and deleting are a person's.
+// them. pekoed closes the input of a turn in which tapi asked nobody for
+// anything as no request; `ledger keep` keeps it, or opens such an entry
+// again. Reopening what tapi or a person closed and deleting are a
+// person's.
 
 import (
 	"fmt"
@@ -14,7 +17,7 @@ import (
 	"pekoe/internal/untrusted"
 )
 
-var ledgerSubs = map[string]bool{"done": true, "drop": true, "close": true, "link": true, "reopen": true, "rm": true}
+var ledgerSubs = map[string]bool{"done": true, "drop": true, "close": true, "link": true, "keep": true, "reopen": true, "rm": true}
 
 func cmdLedger(args []string) error {
 	name := "ledger"
@@ -61,18 +64,23 @@ func cmdLedger(args []string) error {
 	if sub == "link" {
 		want = 2
 	}
-	if len(pos) < want {
+	if len(pos) < want && !(sub == "keep" && len(pos) == 0) {
 		return &usageError{use: use, msg: "missing arguments"}
 	}
 	if len(pos) > want {
 		return &usageError{use: use, msg: "unexpected argument " + pos[want]}
 	}
-	id, err := strconv.ParseInt(strings.TrimPrefix(pos[0], "#"), 10, 64)
-	if err != nil || id < 1 {
-		return &usageError{use: use, msg: fmt.Sprintf("bad request id %q", pos[0])}
+	var id int64 // stays 0 for `ledger keep` alone: the input of tapi's turn
+	if len(pos) > 0 {
+		id, err = strconv.ParseInt(strings.TrimPrefix(pos[0], "#"), 10, 64)
+		if err != nil || id < 1 {
+			return &usageError{use: use, msg: fmt.Sprintf("bad request id %q", pos[0])}
+		}
 	}
 	method, p := "", map[string]any{"id": id}
 	switch sub {
+	case "keep":
+		method = "ledger.keep"
 	case "done", "drop", "close":
 		as := map[string]string{"done": state.LedgerDone, "drop": state.LedgerDropped}[sub]
 		if sub == "close" {
@@ -129,7 +137,14 @@ func cmdLedger(args []string) error {
 // printLedger prints pekoed's part first, then the words: the request is
 // what the person typed (it may hold pasted text), the note tapi's.
 func printLedger(e state.LedgerEntry) {
-	head := fmt.Sprintf("#%d %s · %s", e.ID, e.Status, e.At.Local().Format("01-02 15:04"))
+	st := e.Status
+	if e.Auto {
+		st += " (auto)" // pekoed closed it when tapi's turn ended
+	}
+	head := fmt.Sprintf("#%d %s · %s", e.ID, st, e.At.Local().Format("01-02 15:04"))
+	if e.Repeats > 0 {
+		head += fmt.Sprintf(" · sent ×%d", e.Repeats+1)
+	}
 	if len(e.Sessions) > 0 {
 		head += " · sessions " + strings.Join(e.Sessions, ", ")
 	}

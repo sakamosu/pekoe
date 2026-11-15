@@ -183,6 +183,7 @@ var specs = map[string]spec{
 	"ledger drop":   {use: "pekoe ledger drop <id> --note TEXT   not doing it, and why (tapi chat)", vals: []string{"note"}},
 	"ledger close":  {use: "pekoe ledger close <id> --as done|dropped|chat [--evidence URL|PATH]... [--note TEXT]   (tapi chat; chat: it was no request)", vals: []string{"as", "evidence", "note"}, multi: []string{"evidence"}},
 	"ledger link":   {use: "pekoe ledger link <id> <slug>   tie a session to the request (tapi chat)"},
+	"ledger keep":   {use: "pekoe ledger keep [<id>]   it is a request: keep this turn's input open, or open again one pekoed closed as chat (tapi chat)"},
 	"ledger reopen": {use: "pekoe ledger reopen <id>   open a closed request again (a person only)"},
 	"ledger rm":     {use: "pekoe ledger rm <id> [--yes]   delete a request (a person only)", bools: []string{"yes"}},
 

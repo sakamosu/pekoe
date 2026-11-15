@@ -16,7 +16,7 @@ func TestLedgerFlags(t *testing.T) {
 	if f, _, err := parseCmd("new", []string{"feat/x", "--request", "4"}); err != nil || f["request"] != "4" {
 		t.Fatalf("new --request: %v %v", f, err)
 	}
-	for _, args := range [][]string{{"done", "x"}, {"drop", "3"}, {"close", "3"}, {"link", "3"}} {
+	for _, args := range [][]string{{"done", "x"}, {"drop", "3"}, {"close", "3"}, {"link", "3"}, {"keep", "x"}, {"keep", "3", "4"}} {
 		err := cmdLedger(args)
 		if _, ok := err.(*usageError); !ok {
 			t.Errorf("%v: want a usage error before connecting, got %v", args, err)

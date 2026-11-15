@@ -205,7 +205,8 @@ func usage() {
                                ask a person (run by an agent); the answer comes back
   pekoe inbox [<id>] [--all]    the questions agents asked; pekoe inbox answer <id> <n>
   pekoe ledger [--all] [--json] what you asked tapi chat for; tapi closes them with
-                               pekoe ledger done|drop|close|link, you reopen|rm
+                               pekoe ledger done|drop|close|link|keep, you reopen|rm
+                               (small talk closes itself when tapi's reply ends)
   pekoe stats [--days N] [--repo R] [--json]
                                PRs merged and tokens used, by day and repository
                                (removed sessions included; default: the last 7 days)
