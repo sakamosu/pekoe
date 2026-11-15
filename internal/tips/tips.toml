@@ -155,9 +155,16 @@ docs = ["README.ja.md#コマンド", "docs/api.md"]
 [[tip]]
 id = "wait"
 short = "pekoe wait --mine で任せたセッションの知らせを待つ"
-detail = "知らせが来るまで止まる(ポーリングしない)。返った cursor を次の --since に渡す。--on report,inbox,failed,waiting で絞れば空振りの done などで起きない。reset なら pekoe --json ls から読み直す。"
+detail = "知らせが来るまで止まる(ポーリングしない)。返った cursor を次の --since に渡す。--on report,inbox,failed,waiting,ci で絞れば空振りの done などで起きない。reset なら pekoe --json ls から読み直す。"
 keys = ["pekoe wait", "--mine", "--since", "--on"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
+id = "wait-ci"
+short = "pekoe wait --on ci で PR の CI が決着したときだけ起きる"
+detail = "PR の HEAD のチェックが全部終わると 1 回だけ知らせる(green / red・落ちたチェック名・HEAD の SHA)。push で HEAD が変われば次の決着でもう 1 回。gh pr checks --watch を自分で回さなくていい。"
+keys = ["pekoe wait", "--on"]
+docs = ["README.ja.md#コマンド", "docs/orchestration.md"]
 
 [[tip]]
 id = "new-after"
