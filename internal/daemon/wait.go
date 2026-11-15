@@ -30,12 +30,13 @@ const (
 	kindIdle    = "idle"
 	kindFailed  = "failed"
 	kindPR      = "pr"
+	kindCI      = "ci" // a PR's CI settled: every check finished (once per head)
 	kindLanded  = "landed"
 	kindRemoved = "removed"
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
-var waitKinds = map[string]bool{kindReport: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindLanded: true, kindRemoved: true, kindInbox: true}
+var waitKinds = map[string]bool{kindReport: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
 
 const (
 	changeRing     = 2000 // changes kept
@@ -157,7 +158,8 @@ func parseCursor(s string) (epoch string, seq int64, err error) {
 }
 
 // sessionChanges records what changed between a session's copy before an
-// update (prev) and after it (s): a state wait knows, or new PR attention.
+// update (prev) and after it (s): a state wait knows, new PR attention, or
+// a PR's CI that settled.
 func (d *Daemon) sessionChanges(prev, s *state.Session) {
 	if s.State != prev.State {
 		kind := ""
@@ -203,6 +205,9 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 				d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: fmt.Sprintf("%s: PR #%d %s", s.Slug, s.PR, a), parent: s.Parent})
 			}
 		}
+		if h := s.PRStatus.CIHead; h != "" && (prev.PRStatus == nil || prev.PRStatus.CIHead != h) {
+			d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent})
+		}
 	}
 }
 
@@ -245,7 +250,7 @@ type waitResult struct {
 func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	for _, k := range p.On {
 		if !waitKinds[k] {
-			return nil, fmt.Errorf("unknown kind %q (report, done, waiting, idle, failed, pr, landed, removed, inbox)", k)
+			return nil, fmt.Errorf("unknown kind %q (report, done, waiting, idle, failed, pr, ci, landed, removed, inbox)", k)
 		}
 	}
 	slugs := map[string]bool{}

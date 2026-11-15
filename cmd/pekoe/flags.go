@@ -170,7 +170,7 @@ var specs = map[string]spec{
 	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},
 	"report":    {use: "pekoe report <summary> --status done|blocked|progress|review [--evidence URL|PATH]... [--verdict pending|pass|fail --reviewed-sha SHA]   (summary '-' reads stdin; run by the session's agent)", vals: []string{"status", "evidence", "verdict", "reviewed-sha"}, multi: []string{"evidence"}},
 	"reports":   {use: "pekoe reports [<slug>] [--limit N] [--json]   the sessions' reports, newest first", vals: []string{"limit"}},
-	"wait":      {use: "pekoe wait [--mine] [--slug S,…] [--on report,done,inbox,…] [--since CURSOR] [--timeout 30m] [--json]   until something happens to sessions", bools: []string{"mine"}, vals: []string{"slug", "on", "since", "timeout"}},
+	"wait":      {use: "pekoe wait [--mine] [--slug S,…] [--on report,inbox,ci,…] [--since CURSOR] [--timeout 30m] [--json]   until something happens to sessions", bools: []string{"mine"}, vals: []string{"slug", "on", "since", "timeout"}},
 	"ask-human": {use: "pekoe ask-human <question> [--kind decision|approve|login|fyi] [--option TEXT]... [--recommend N|TEXT] [--decided N|TEXT] [--about SLUG] [--context TEXT|-] [--link URL]... [--wait [--timeout 30m]]   ask a person (run by an agent); pekoe ask-human --wait <id> waits for an earlier one",
 		bools: []string{"wait"}, vals: []string{"kind", "option", "recommend", "decided", "about", "context", "link", "timeout"}, multi: []string{"option", "link"}},
 	"inbox":          {use: "pekoe inbox [<id>] [--all] [--mine] [--json]   the questions agents asked a person (open ones; --all: answered too)", bools: []string{"all", "mine"}},
