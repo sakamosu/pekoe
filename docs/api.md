@@ -59,7 +59,7 @@
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
   | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する) |
-  | `ledger.list` / `ledger.close` / `ledger.link` | tapi chat の `pekoe ledger`(依頼を読む・閉じる・セッションと結ぶ。tapi の窓からだけ。下の「依頼(ledger)」) |
+  | `ledger.list` / `ledger.close` / `ledger.link` / `ledger.keep` | tapi chat の `pekoe ledger`(依頼を読む・閉じる・セッションと結ぶ・依頼として残す。tapi の窓からだけ。下の「依頼(ledger)」) |
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
@@ -252,8 +252,9 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
 | `ledger.list` | `{status?: "open"\|"all", since?: id}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼(ledger)」)。token なしでは tapi の窓からだけ |
 | `ledger.close` | `{id, as: "done"\|"dropped"\|"chat", evidence?: [string], note?}` | `LedgerEntry`。`dropped` は `note` が要る。`open` のものだけ。token なしでは tapi の窓からだけ |
-| `ledger.link` | `{id, slug}` | `LedgerEntry`。セッションを依頼に結ぶ(`Session.request` も入る)。`open` のものだけ。token なしでは tapi の窓からだけ |
-| `ledger.reopen` | `{id}` | `LedgerEntry`。人だけ(閉じたものを開き直す) |
+| `ledger.link` | `{id, slug}` | `LedgerEntry`。セッションを依頼に結ぶ(`Session.request` も入る)。`open` のものと、pekoed が自動で閉じたもの(`auto`。`open` に戻る)だけ。token なしでは tapi の窓からだけ |
+| `ledger.keep` | `{id?: id}` | `LedgerEntry`。依頼として残す: `id` なしは tapi のこのターンの入力(返事を終えても自動で閉じなくなる)、`id` つきは pekoed が自動で閉じたもの(`auto`)を `open` に戻す。`open` のものはそのまま返す。tapi か人が閉じたものは断る。token なしでは tapi の窓からだけ |
+| `ledger.reopen` | `{id}` | `LedgerEntry`。人だけ(閉じたものを開き直す。誰が閉じたものでも) |
 | `ledger.delete` | `{id}` | `null`。人だけ |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
@@ -535,14 +536,23 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
   "sessions": ["fix-csv"],                   // 結んだセッション(session.new の request、ledger.link)
   "evidence": ["https://github.com/me/app/pull/42"],
   "note": "PR #42 で直した",
-  "closed_at": "…"
+  "closed_at": "…",
+  "repeats": 1,                              // 同じ文が続けて来てまとめた回数(下の「まとめる」)。0 なら省略
+  "auto": true                               // pekoed が自動で chat に閉じた(下の「自動で閉じる」)。status が chat のときだけ。違えば省略
 }
 ```
 
 - **記録**: tapi の UserPromptSubmit hook(`pekoe event`)が tapi の窓から来たとき(上の「呼び出し元の識別」で窓が `+tapi` と分かったとき)に、`prompt` を `open` で記録する。`$PEKOE_SESSION=+tapi` を名乗るだけの呼び出し(窓に当たらない・別のセッションの窓)は tapi の状態は動かしても依頼としては記録しない(依頼の文は tapi が「人に頼まれたこと」として読むため)。人が打ったのではないもの(pekoed 自身が tapi の入力欄に打った `[pekoe` で始まる受信箱の答え、Claude Code がバックグラウンドのタスク(tapi の `pekoe wait` など)の完了を新しいターンとして渡す `<task-notification>` で始まる文)と空の入力は入れない。どちらも前後の空白を除いた先頭で見て、人が打った文の途中に出てくるだけなら記録する。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字を落とす。hooks の無いエージェント(codex など)の tapi では記録されない
-- **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`)
-- **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているときは、セッションを作らずに断る
-- **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり戻したりできないように
+- **まとめる**: 直前の依頼(id が最大のもの)が `open` で、前後の空白を除いて同じ文が、その `at` から 1 分以内に来たら、新しい依頼を作らずにその依頼の `repeats` を 1 増やす(`ledger.updated` が出る)。閉じた依頼にはまとめない
+- **自動で閉じる**: tapi の窓から Stop hook が来たとき(tapi が返事を終えたとき)に、そのターンの入力を `chat` で閉じて `auto: true` を付ける。条件は次のすべて。外れたものは `open` のまま残る
+  - そのターンを始めた UserPromptSubmit で記録した(またはそのターンの中でまとめた)1 件であること。前のターンからある依頼、Stop が来なかったターン(中断・pekoed の再起動・`tapi.reset`)の入力、ターンの途中で次の入力が来たときの前の入力、記録しない入力(受信箱の答え・タスクの完了通知)で始まったターンは対象にならない
+  - `open` で、`sessions` が空であること
+  - そのターンの間(前の Stop から)に、tapi の窓から `session.new`・`session.send`・`inbox.post`・`land` が呼ばれていないこと(断られた呼び出しも数える。tapi が誰かに何かを頼んだターンの入力は依頼として残す)
+  - `ledger.keep` で残されていないこと
+- **残す・戻す**: `ledger.keep`(`pekoe ledger keep [<id>]`)。`id` なしはこのターンの入力を閉じる対象から外す(依頼なのにこのターンで誰にも頼まないとき。このターンの入力が無ければ断る)。`id` つきは、pekoed が自動で閉じたもの(`chat` で `auto`)を `open` に戻す(`closed_at` と `auto` を消す)。`session.new` の `request` と `ledger.link` も、自動で閉じたものなら `open` に戻して結ぶ。tapi か人が閉じたもの(`auto` でないもの)はどれも断る
+- **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`。自動で閉じたものには `pekoe ledger keep <id>` で戻せることを添える)
+- **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているとき(自動で閉じたものを除く)は、セッションを作らずに断る
+- **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` と `auto` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり、自分や人が閉じたものを戻したりできないように(tapi が戻せるのは、pekoed が推測で閉じた `auto` のものだけ)
 - token なしでは `ledger.*` はすべて tapi の窓からだけ(main セッションのハブは依頼(ledger)を使わない。docs/orchestration.md の U13)
 - 依頼か受信箱が変わると `tapi.updated` も出る(`Tapi.ledger_open` / `inbox_open`)
 
@@ -725,7 +735,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `session.output` | `{slug, window}`(画面更新の合図。30ms で間引く) |
 | `report.posted` | `Report`(token なしの購読にも届く) |
 | `inbox.updated` | `InboxItem`(作られた・事実が変わった・答えた・取り下げた・届けた。人の答えを含むので token つきの購読にだけ届く) |
-| `ledger.updated` | `LedgerEntry`(記録した・閉じた・結んだ・開き直した。token つきの購読にだけ届く) |
+| `ledger.updated` | `LedgerEntry`(記録した・まとめた・閉じた(自動も)・結んだ・開き直した。token つきの購読にだけ届く) |
 | `ledger.removed` | `{id}`(人が消した。token つきの購読にだけ届く) |
 | `review.updated` | `{slug}` |
 | `review.answer` | `{slug, hunk_id, text}` |

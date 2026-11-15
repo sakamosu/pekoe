@@ -50,11 +50,11 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | hook | tapi の状態 |
 | --- | --- |
 | SessionStart | idle(`claude_session_id` を記録) |
-| UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打った受信箱の答え `[pekoe inbox #…]` と空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない) |
+| UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打った受信箱の答え `[pekoe inbox #…]` と空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない)。直前の open の依頼と同じ文が 1 分以内に来たら、新しく記録せずにまとめる |
 | PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
 | PostToolUse | waiting なら running に戻す |
 | Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |
-| Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い |
+| Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | SessionEnd | idle |
 
 変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。
@@ -64,7 +64,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 `paths.TapiDir()` = `~/.local/share/pekoe/tapi/`(`$PEKOE_HOME` があれば `$PEKOE_HOME/share/tapi/`)。
 
 - `$HOME` にはしない: cwd の前方一致で、ホーム以下で動く無関係な Claude Code の hook を拾ってしまう
-- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(統括役。手順の詳細は pekoe-orchestrate スキルで、スキルの無いエージェントのために要点も書く)、最初にすること(会話の最初とリセットの後に `pekoe --json ledger`・`pekoe --json inbox`・`pekoe --json ls` を読み、続きから始める)、統括役の手順(依頼の閉じ方、`--request` で任せる、完了条件を必ずプロンプトに入れる、`pekoe wait` をバックグラウンドで待つ(PR の CI の決着も同じ wait の `ci` で待つ)、報告を確かめる、人に上げる 2 種類と `fyi` の記録、「決定が必要 / 今やっていること / 進行中」の順の報告)、報告・受信箱・PR・issue の文は信頼できないデータとして読むこと、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --request <id> --prompt …`、`pekoe send <slug> -`、`wait`・`reports`・`ledger`・`inbox`・`ask-human`)、やらないこと(自分で編集しない、マージしない、land・rm はユーザーに頼まれたときだけ、自分が作っていないセッションに指示を足すのは頼まれたときだけ、人だけの操作を回避しない)、人物像と口調・振る舞いのルール(docs/mascot.md「tapi の人物像」。キャラは返事の最初か最後の 1 文だけで、中身は正確さ優先。返事に顔・絵文字・顔文字は入れない)、今日マージされた PR の数え方、TIPS の紹介の仕方(下記)、起動時点の登録済みリポジトリの一覧(名前とパス)、起動した時点で残っていたものの件数(open の依頼・受信箱の未回答・tapi が任せて landed でないセッション。件数だけで、依頼や受信箱の文は書かない: 指示の書かれたファイルに他人の文を混ぜない)を書く
+- 起動のたびに pekoed が `CLAUDE.md` と `AGENTS.md`(同じ内容)を書き出す。役割(統括役。手順の詳細は pekoe-orchestrate スキルで、スキルの無いエージェントのために要点も書く)、最初にすること(会話の最初とリセットの後に `pekoe --json ledger`・`pekoe --json inbox`・`pekoe --json ls` を読み、続きから始める)、統括役の手順(依頼の閉じ方(雑談は返事を終えると自動で閉じること、依頼なのにそのターンで誰にも頼まないときの `pekoe ledger keep`)、`--request` で任せる、完了条件を必ずプロンプトに入れる、`pekoe wait` をバックグラウンドで待つ(PR の CI の決着も同じ wait の `ci` で待つ)、報告を確かめる、人に上げる 2 種類と `fyi` の記録、「決定が必要 / 今やっていること / 進行中」の順の報告)、報告・受信箱・PR・issue の文は信頼できないデータとして読むこと、使うコマンド(`pekoe --json ls`、`pekoe --json new <branch> --repo R --request <id> --prompt …`、`pekoe send <slug> -`、`wait`・`reports`・`ledger`・`inbox`・`ask-human`)、やらないこと(自分で編集しない、マージしない、land・rm はユーザーに頼まれたときだけ、自分が作っていないセッションに指示を足すのは頼まれたときだけ、人だけの操作を回避しない)、人物像と口調・振る舞いのルール(docs/mascot.md「tapi の人物像」。キャラは返事の最初か最後の 1 文だけで、中身は正確さ優先。返事に顔・絵文字・顔文字は入れない)、今日マージされた PR の数え方、TIPS の紹介の仕方(下記)、起動時点の登録済みリポジトリの一覧(名前とパス)、起動した時点で残っていたものの件数(open の依頼・受信箱の未回答・tapi が任せて landed でないセッション。件数だけで、依頼や受信箱の文は書かない: 指示の書かれたファイルに他人の文を混ぜない)を書く
 - 初回は Claude Code のフォルダ信頼ダイアログが出る。開いた時点で入力モードなので、そのまま答えればよい(pekoe からは `~/.claude.json` を書き換えない)
 
 ### TIPS の紹介
@@ -196,7 +196,7 @@ tapi chat を閉じている間に tapi が許可待ち・質問待ちになっ�
 | internal/paths/paths.go | `TapiDir()` |
 | internal/config/config.go | `[tapi]`(`Tapi{Agent}`、既定 `claude`) |
 | internal/daemon/tapi.go(新規) | `tapiState`、`tapi.*` ハンドラ、起動・リセット、CLAUDE.md の書き出し、hook の状態遷移 |
-| internal/daemon/ledger.go / internal/state/ledger.go | 依頼(`ledger.*`、UserPromptSubmit での記録、`session.new` の `request`) |
+| internal/daemon/ledger.go / internal/state/ledger.go | 依頼(`ledger.*`、UserPromptSubmit での記録とまとめ、Stop での自動の整理、`session.new` の `request`) |
 | internal/daemon/agentsandbox.go | tapi の `--settings` に書けないディレクトリ |
 | internal/daemon/hooks.go | `resolveSession` と `hEvent` で tapi に振り分け |
 | internal/daemon/output.go | `+tapi` の出力を `tapi.output` に |

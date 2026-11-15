@@ -103,8 +103,8 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 | `inbox.dismiss` | **不可** | 人の判断(答えずに閉じる) | — |
 | `send.log` | 可(絞る) | tapi が「自分が誰に何を頼んだか」を読み直す。他人宛ての本文は他のセッションの中身なので見せない | トークンなしでは呼び出し元が from か to の記録だけ |
 | `ledger.list` | 可(絞る) | tapi が依頼の残りを読み直す(リセット後の再開) | トークンなしでは呼び出し元が `+tapi` のときだけ |
-| `ledger.close` / `ledger.link` | 可(絞る) | tapi が依頼を閉じる・セッションと結ぶ。記録を書くだけで、人がいつでも開き直せる | 呼び出し元が `+tapi` のときだけ |
-| `ledger.reopen` / `ledger.delete` | **不可** | 依頼を消す・戻すのは人の操作(tapi が自分の取りこぼしを消せないように) | — |
+| `ledger.close` / `ledger.link` / `ledger.keep` | 可(絞る) | tapi が依頼を閉じる・セッションと結ぶ・依頼として残す。記録を書くだけで、人がいつでも開き直せる。`keep` が open に戻せるのは pekoed が自動で閉じたものだけ | 呼び出し元が `+tapi` のときだけ |
+| `ledger.reopen` / `ledger.delete` | **不可** | 依頼を消す・戻すのは人の操作(tapi が自分の取りこぼしを消せないように)。tapi か人が閉じたものを tapi は戻せない | — |
 | `conflicts.list` | 可(段階 3) | 同じ情報(`overlaps`)は `session.list` で既に見える。git は pekoed の sandbox で動く | 計算し直しは 10 秒に 1 回まで。それ以内はキャッシュを返す。実装: トークンなしの呼び出しだけ `hAgentConflicts` に回し、最後の計算(トークンつきの呼び出し・裏の約 10 秒ごとの計算・hooks の Edit で走るものを含む)から 10 秒以内ならその結果を `repo_id` で絞って返す。判定と計算し直しは同じロックの中で、同時に来ても git は 1 回。トークンつきは今までどおり毎回計算し直す |
 | `tapi.deliver_pause` | **不可** | TUI が「人が tapi chat に入力中」を知らせる内部の記録 | — |
 
@@ -294,20 +294,27 @@ state.db: `sends(id INTEGER PRIMARY KEY, at, from_, to_, kind, text, via, ok, er
 
 人が tapi に頼んだことを、完了まで追う。会話が長くなっても、tapi をリセットしても残る。
 
-- 記録: tapi の UserPromptSubmit hook(pekoed は `tapiEvent` で受けている)で、人の入力を `open` で記録する。雑談やお礼も入るので、tapi が `pekoe ledger close <id> --as chat` で閉じる(未決事項 U2)
+- 記録: tapi の UserPromptSubmit hook(pekoed は `tapiEvent` で受けている)で、人の入力を `open` で記録する。雑談やお礼も入るので、依頼でなかったものは `chat` で閉じる(下の「自動の整理」。未決事項 U2・U16)
 - 記録しないもの: 空の入力、pekoed が tapi の入力欄に打った受信箱の答え(`[pekoe` で始まる)、Claude Code のバックグラウンドのタスクの完了通知(`<task-notification>` で始まる。tapi が `pekoe wait` をバックグラウンドで走らせると、終わるたびに新しいターンとして UserPromptSubmit に来る)。どれも前後の空白を除いた先頭で見るので、人が打った文の途中にあるだけなら記録する
 - 閉じ方: `pekoe ledger done <id> --evidence <PR の URL など> [--note …]`、`pekoe ledger drop <id> --note …`(やらないことにした)、`--as chat`(依頼ではなかった)
 - セッションと結ぶ: `pekoe new … --request <id>`(`Session.request` に入る)か `pekoe ledger link <id> <slug>`。ダッシュボードの「自分の依頼」は依頼ごとに結んだセッションの工程を出す
 - 依頼を消す・開き直すのは人だけ(`pekoe ledger reopen <id>` / `pekoe ledger rm <id>`)。`tapi.reset` は依頼に触らない
+- 自動の整理(未決事項 U16): 記録された依頼の大半は雑談・お礼・「マージした」のような報告・その場で答えた質問で、tapi が毎回 `--as chat` で閉じるのは手間とトークンの無駄になる。pekoed が次の 2 つだけを自分でやる。どちらも判定は決まった計算で(pekoed は文の中身を読んで依頼かどうかを決めない)、条件から外れたものは open のまま残す(本物の依頼が勝手に閉じるのは、閉じ忘れが残るより悪い)
+  - **まとめる**: 直前の依頼(id が最大のもの)が `open` で、前後の空白を除いて同じ文が、その記録から 1 分以内に来たら、新しい id を作らずにその依頼の `repeats` を 1 増やす(貼り付けた文が入力欄に残って 2 回送られたもの)。閉じた依頼にはまとめない(閉じた後に同じ文を打ち直したのなら、頼み直しかもしれない)
+  - **依頼でなかった入力を閉じる**: tapi が返事を終えたとき(tapi の窓からの Stop hook)に、そのターンの入力(そのターンを始めた UserPromptSubmit で記録した 1 件)を `chat` で閉じ、`auto` の印を付ける。閉じるのは次がすべて成り立つときだけ: その依頼が `open` のまま、セッションが結ばれていない、そのターンの間に tapi が誰にも何も頼んでいない(tapi の窓から `pekoe new`・`pekoe send`・`pekoe ask-human`・`pekoe land` を呼んでいない)、`pekoe ledger keep` で残す印を付けていない
+  - 閉じる対象は「今終わったターンの入力 1 件」だけ。前のターンからある open の依頼、Stop が来なかったターン(人が中断した・pekoed が再起動した)の入力、ターンの途中に別の入力が来たときの前の入力には触らない(open のまま残り、今までどおり tapi が `--as chat` で閉じる)
+  - 残す: 依頼なのにそのターンで誰にも頼まないとき(後でやる・人に聞き返して答えを待つ・前の作業が済んでから始める)は、tapi が返事を終える前に `pekoe ledger keep`(引数なしでこのターンの入力)を打つ
+  - 戻す: pekoed が閉じたもの(`chat` で `auto`)は、tapi が `pekoe ledger keep <id>` で `open` に戻せる。`pekoe new --request <id>` / `pekoe ledger link <id> <slug>` でセッションを結んでも `open` に戻る(セッションが動いているなら依頼だった)。tapi か人が閉じたもの(`done`・`dropped`・`auto` でない `chat`)を戻すのは今までどおり人だけ(`pekoe ledger reopen`)。境界は「pekoed の推測は tapi が直せる、誰かの判断は tapi が覆せない」
 
 | method | params | result |
 | --- | --- | --- |
-| `ledger.list` | `{status?: "open"\|"all", since?}` | `[LedgerEntry]` = `{id, at, text, status: "open"\|"done"\|"dropped"\|"chat", sessions: [slug], evidence: [string], note, closed_at}` |
+| `ledger.list` | `{status?: "open"\|"all", since?}` | `[LedgerEntry]` = `{id, at, text, status: "open"\|"done"\|"dropped"\|"chat", sessions: [slug], evidence: [string], note, closed_at, repeats?, auto?}` |
 | `ledger.close` | `{id, as: "done"\|"dropped"\|"chat", evidence?, note?}` | `LedgerEntry` |
 | `ledger.link` | `{id, slug}` | `LedgerEntry` |
+| `ledger.keep` | `{id?}` | `LedgerEntry`(`id` なしはこのターンの入力) |
 | `ledger.reopen` / `ledger.delete` | `{id}` | 人だけ |
 
-state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evidence TEXT, note, closed_at)`。
+state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evidence TEXT, note, closed_at, repeats, auto)`。
 
 実装(仕様の正は docs/api.md「依頼(ledger)」):
 
@@ -317,6 +324,7 @@ state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evide
 - **`--request`**: `session.new` は、`request` の依頼が無い・閉じている・呼び出し元が tapi でも人でもないときは、セッションを作る前に断る。作れたら依頼の `sessions` に slug を足し、`Session.request` に id を入れる(`ledger.link` も同じ両方向)。CLI は `pekoe new … --request <id>`(`#4` も可)
 - **CLI**: `pekoe ledger [--all]`(依頼の文は人の文だが貼り付けた外の文を含みうるので区切りで囲む)、`done <id> [--evidence …] [--note …]`・`drop <id> --note …`・`close <id> --as done|dropped|chat`・`link <id> <slug>`(tapi)、`reopen <id>`・`rm <id> [--yes]`(人だけ。`rm` は確認つき)
 - **イベント**: 消したときは `ledger.removed`(`{id}`)を足した。`ledger.updated` / `ledger.removed` は token つきの購読にだけ届く。依頼か受信箱が変わると `tapi.updated` も出す(件数のため)
+- **自動の整理**: ターンの状態(このターンの入力の id、誰かに頼んだか)は tapi の状態と同じくメモリにだけ持ち、`tapi.reset` と pekoed の再起動で消える(消えたら、そのターンの入力は閉じない)。UserPromptSubmit が来るたびに「このターンの入力」を置き換えるので、Stop を見なかったターンの入力は閉じる対象から外れる。pekoed が打った受信箱の答えやバックグラウンドのタスクの完了通知(記録しない入力)で始まったターンも同じで、その Stop で前の入力を閉じることはない。「誰かに頼んだ」は Stop でだけ消す(ターンの途中に入力が足されても、その前に頼んだことは残る)。呼び出しが断られても(相手が許可待ちで `send` が通らない、など)頼もうとしたことに数える。まとめた入力(`repeats`)は、まとめ先がこのターンの入力のときだけ閉じる対象になる(前のターンで残った依頼を、打ち直しのターンの終わりに閉じない)。state.db は `ledger` の表に `repeats`・`auto` の列を足した(古い state.db には起動時に `ALTER TABLE` で足す)。人の `ledger.reopen` と tapi の `keep`・結び直しは `auto` を消す。CLI は `pekoe ledger keep [<id>]`、一覧は `chat (auto)`・`sent ×2` と出す
 
 ### Session に足す項目
 
@@ -607,5 +615,6 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | U11 | プロジェクト担当の層 | (a) 作らない(tapi → セッションの 2 層) (b) 「プログラム」と担当の main セッションを作る | (a)。複数 PR のまとまりが日常的になってから、記録した依頼を「プログラム」に育てる形で考える |
 | U12 | `wait` の変化の記録を永続化するか | (a) メモリだけ(再起動で `reset`) (b) state.db | (a)。再起動の後は `ls` と受信箱を読み直せば足りる。再起動は稀 |
 | U13 | main セッションの依頼も記録するか | (a) v1 は tapi だけ (b) main セッションの UserPromptSubmit も記録 | (a)。main への入力は作業の指示と雑談が混ざり、プロンプトのスナップショット(`prompts`)とも重なる。実装: (a)。main をハブにするときは依頼の記録なしで、`pekoe new` → `pekoe report` → `pekoe wait --mine` の流れだけを使う(`ledger.*` と `--request` は main からは断られる) |
+| U16 | 依頼でなかった入力(雑談・お礼・報告・その場で答えた質問)の閉じ方 | (a) 次の入力が来たときに、セッションの結ばれていない直前の依頼を閉じる (b) tapi が返事を終えたとき(Stop hook)に、そのターンの入力を閉じる (c) 引数なしで直前の入力を閉じる短いコマンドを足し、tapi が打つ | (b) に条件を付けたもの(上の「6. 依頼(ledger)」の「自動の整理」)。(a) は閉じる時点で pekoed に見えているのが「次の入力が来た」ことだけで、聞き返し(「どのリポジトリ?」→「pekoe で」)の流れだと、聞き返された本物の依頼が答えの入力で閉じる。(b) はそのターンに tapi が何をしたか(セッションを作った・送った・人に聞いた)を見てから決められ、閉じる対象も今終わったターンの 1 件に限れる。(c) は既定が open で一番安全だが、雑談のたびに tapi がコマンドを 1 回打つ(ターンが 1 往復増える)ので、手間とトークンはあまり減らない。(b) に残る弱点は「依頼なのにそのターンで誰にも頼まず、`keep` も忘れると `chat` で閉じる」こと。備えは 3 つ: 閉じるのはそのターンの 1 件だけで古い依頼には触らない、閉じたものは消えずに `auto` の印つきで残る(`pekoe ledger --all`)、tapi が `keep <id>` やセッションを結ぶことで戻せる。それでも足りなければ (c) に倒す(Stop で閉じるのをやめ、`keep` の代わりに閉じるコマンドを打たせる)。実装: (b) |
 | U14 | 報告(`report`)を Stop hook と結ぶか | (a) 結ばない(エージェントが明示的に呼ぶ) (b) `report` の無い done を tapi に「報告なしで止まった」と知らせる | (a) に加えて (b) を `wait` の `done` で表す(`Change.summary` に「報告なし」)。done は今どおり Stop で決まる |
 | U15 | state.db をエージェントから読めなくする | (a) `denyRead` に足す (b) 足さない(記録の絞り込みは API の上だけ) | (a)。エージェントが state.db を直接読む用途は無く(CLI は pekoed を通す。pekoe の開発は `scripts/sandbox.sh` の別の `PEKOE_HOME`)、今入っているプロンプト・コメントも守れる |
