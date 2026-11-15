@@ -166,7 +166,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "agent": "claude",
   "model": "claude-sonnet-5-5",    // pekoe new --model で上書きしたモデル(無ければ省略。[agents.*] model が使われる)
   "effort": "low",                 // pekoe new --effort で上書きした effort(無ければ省略)
-  "last_model": "claude-opus-5-5", // このセッションが最後に答えたモデル(会話記録の最後の assistant のメッセージの model。Claude Code だけ。hook のたびに読む)
+  "last_model": "claude-opus-5-5", // このセッションが最後に答えたモデル(会話記録の最後の assistant のメッセージの model。Claude Code だけ。PostToolUse と Stop の hook で読む)
   "state": "running",              // creating | running | waiting | idle | done | reviewing | approved | landed | failed
   "wait_kind": "permission",       // waiting のときだけ: permission | question(AskUserQuestion と elicitation。AskUserQuestion の直後に Claude Code が送る permission_prompt は、待ちの対象が AskUserQuestion のままなら question のまま。知らない notification_type は permission)
   "state_since": "2026-11-07T10:00:00Z",
