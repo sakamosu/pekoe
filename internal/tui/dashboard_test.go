@@ -337,6 +337,70 @@ func TestSendGist(t *testing.T) {
 	}
 }
 
+// Unfolding a send taller than the panel scrolls the body down to it;
+// folding it goes back to where the body was, and moving up to the first
+// row brings back the rows above it that cannot be chosen (the overview,
+// the section heads), even after the body was scrolled to its end.
+func TestDashboardUnfoldScroll(t *testing.T) {
+	m, f := dashModel(t)
+	base := f.reply
+	long := "## 何を\n" + strings.Repeat("ダッシュボードの詳細を開いて閉じる。\n", 40)
+	f.reply = func(method string) any {
+		if method == "send.log" {
+			return []state.SendRecord{{ID: 41, At: time.Now(), From: "human", To: "feat-csv", Kind: "new", Text: long, OK: true}}
+		}
+		return base(method)
+	}
+	m.dash = dashState{}
+	runCmd(m, m.loadDash())
+	m.focus = pAgent
+	body := func() string { return ansi.Strip(strings.Join(m.viewAgent(120, 20), "\n")) }
+	first := body()
+	if !strings.Contains(first, "Overview") {
+		t.Fatalf("the overview is not at the top:\n%s", first)
+	}
+	for m.dash.sel != "send:41" {
+		before := m.dash.sel
+		runCmd(m, m.onKey(key("j")))
+		body()
+		if m.dash.sel == before {
+			t.Fatalf("j stuck at %q", before)
+		}
+	}
+	folded := body()
+	runCmd(m, m.onKey(key("enter")))
+	open := body()
+	if !strings.Contains(open, "human → feat-csv new") || strings.Contains(open, "Overview") {
+		t.Fatalf("unfolded: the send's row is not drawn first:\n%s", open)
+	}
+	runCmd(m, m.onKey(key("enter")))
+	if got := body(); got != folded {
+		t.Fatalf("folding did not go back:\n%s\nwant:\n%s", got, folded)
+	}
+
+	// unfolded, then up to the first row; and folded with the body
+	// scrolled to its end, then up to the first row
+	runCmd(m, m.onKey(key("enter")))
+	for range 20 {
+		runCmd(m, m.onKey(key("k")))
+		body()
+	}
+	if got := body(); !strings.Contains(got, "Overview") {
+		t.Fatalf("up to the first row, unfolded: no overview:\n%s", got)
+	}
+	m.dash.sel, m.dash.back = "send:41", nil
+	body()
+	m.dash.top = 1 << 20 // as far down as it goes
+	runCmd(m, m.onKey(key("enter")))
+	for range 20 {
+		runCmd(m, m.onKey(key("k")))
+		body()
+	}
+	if got := body(); got != first {
+		t.Fatalf("up to the first row, folded: not the top:\n%s\nwant:\n%s", got, first)
+	}
+}
+
 // A change while the dashboard reads is not lost; a new report or PR
 // summary on a session marks it to be read again (merge.check reads them).
 func TestDashboardStale(t *testing.T) {

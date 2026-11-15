@@ -289,7 +289,7 @@ func (m *model) tourBase() {
 	m.chat = chatState{info: tourTapi()} // the tapi row shows the sample tapi
 	m.iss.open, m.iss.queryOn = false, false
 	m.filter, m.filterOn = "", false
-	m.dash.sel, m.dash.top, m.dash.open = "", 0, nil
+	m.dash.sel, m.dash.top, m.dash.open, m.dash.back = "", 0, nil, nil
 	m.tourSelect(tourRun)
 }
 
