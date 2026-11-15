@@ -407,6 +407,17 @@ func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
 		t.Fatalf("a repeat of an earlier turn's request: %+v", e)
 	}
 
+	// between turns, what tapi left running in the background calls again
+	// (pekoe ask-human --wait asks wait every minute): that says nothing
+	// about the next turn's small talk
+	callAs[any](t, d, tapi, "wait", map[string]any{"mine": true, "on": []string{"inbox"}, "timeout_s": 1})
+	_ = callAsErr(d, tapi, "session.send", map[string]any{"slug": "nope", "text": "x", "submit": true})
+	talk := prompt("いま何時?")
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[talk-1]; e.Status != state.LedgerChat || !e.Auto {
+		t.Fatalf("small talk after calls between turns: %+v", e)
+	}
+
 	// the conversation ended or started anew in the middle of a turn: a
 	// Stop after it closes nothing
 	for _, hook := range []string{"SessionEnd", "SessionStart"} {

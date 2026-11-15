@@ -93,7 +93,7 @@ func (d *Daemon) recordRequest(prompt string) (e *state.LedgerEntry, folded bool
 
 // ---- tapi's turn: closing what was no request ----
 //
-// The turn's state (tapiState.turnEntry, turnKeep) is in memory only: lost
+// The turn's state (tapiState.turnOn, turnEntry, turnKeep) is in memory only: lost
 // with tapi.reset or a restart of pekoed, and then nothing is closed.
 
 // tapiPrompt is a UserPromptSubmit from tapi's window: the prompt goes
@@ -107,7 +107,7 @@ func (d *Daemon) recordRequest(prompt string) (e *state.LedgerEntry, folded bool
 func (d *Daemon) tapiPrompt(prompt string) {
 	d.mu.Lock()
 	prev := d.tapi.turnEntry
-	d.tapi.turnEntry = 0
+	d.tapi.turnOn, d.tapi.turnEntry = true, 0
 	d.mu.Unlock()
 	e, folded := d.recordRequest(prompt)
 	if e == nil || folded && e.ID != prev {
@@ -130,13 +130,17 @@ var tapiAsks = map[string]bool{"session.new": true, "session.send": true, "inbox
 // whatever runs there acts in tapi's turn). A call that is then refused
 // counts too: tapi tried to. Only a Stop clears it (tapiTurnEnd), not the
 // next prompt: an input added in the middle of a turn does not undo what
-// tapi asked for before it.
+// tapi asked for before it. Calls between turns do not count: what tapi
+// left running in the background (`pekoe ask-human --wait` calls wait
+// again every minute) says nothing about the next turn's input.
 func (d *Daemon) noteTapiAsk(who *Caller, method string) {
 	if !tapiAsks[method] || who.Pane() != TapiSlug {
 		return
 	}
 	d.mu.Lock()
-	d.tapi.turnKeep = true
+	if d.tapi.turnOn {
+		d.tapi.turnKeep = true
+	}
 	d.mu.Unlock()
 }
 
@@ -149,7 +153,7 @@ func (d *Daemon) noteTapiAsk(who *Caller, method string) {
 func (d *Daemon) tapiTurnEnd() {
 	d.mu.Lock()
 	id, keep := d.tapi.turnEntry, d.tapi.turnKeep
-	d.tapi.turnEntry, d.tapi.turnKeep = 0, false
+	d.tapi.turnOn, d.tapi.turnEntry, d.tapi.turnKeep = false, 0, false
 	d.mu.Unlock()
 	if id == 0 || keep {
 		return
@@ -170,8 +174,9 @@ func (d *Daemon) tapiTurnEnd() {
 }
 
 // tapiTurnGone is a SessionStart or SessionEnd from tapi's window: the
-// conversation started or ended, so whatever turn was running never ends.
-// Its input is let go (it stays open), as with the next prompt.
+// conversation started or ended (or was compacted), so pekoed cannot tell
+// how the running turn goes on. Its input is let go (it stays open), as
+// with the next prompt; what tapi asked for so far still counts.
 func (d *Daemon) tapiTurnGone() {
 	d.mu.Lock()
 	d.tapi.turnEntry = 0

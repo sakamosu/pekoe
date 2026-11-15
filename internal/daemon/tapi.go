@@ -80,9 +80,11 @@ type tapiState struct {
 	// in tapi's Claude Code project directory: tapiTranscriptOK)
 	transcript string
 	outside    *TapiOutside
-	// the ledger's view of tapi's turn (ledger.go, tapiTurnEnd):
-	// turnEntry is the entry of the turn's input (0: none), turnKeep says
-	// it stays open (tapi asked someone for something, or ledger.keep)
+	// the ledger's view of tapi's turn (ledger.go, tapiTurnEnd): turnOn
+	// from a UserPromptSubmit to the Stop, turnEntry is the entry of the
+	// turn's input (0: none), turnKeep says it stays open (tapi asked
+	// someone for something, or ledger.keep)
+	turnOn    bool
 	turnEntry int64
 	turnKeep  bool
 }
