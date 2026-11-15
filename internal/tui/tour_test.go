@@ -16,6 +16,7 @@ import (
 	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
+	"pekoe/internal/glyphguard"
 	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -420,7 +421,7 @@ func TestTourOneFace(t *testing.T) {
 					if n != 1 {
 						t.Errorf("%s: %d faces:\n%s", where, n, plain)
 					}
-					face := ansi.Strip(r.Line(r.Eyes(mascot.Done)))
+					face := ansi.Strip(r.Line(r.Eyes(tourMood(step))))
 					if n == 1 && size[1] >= 30 {
 						if line := lineWith(t, plain, face); !strings.Contains(line, m.tourCopy().title) {
 							t.Errorf("%s: the face is not on the title line: %q", where, line)
@@ -584,9 +585,17 @@ func TestTourDimsOutside(t *testing.T) {
 	}
 }
 
-// the card's face is ^ ^ in every glyph setting: no East Asian Ambiguous
-// character (● •) that a font may draw two cells wide
-func TestTourFaceIsNarrowEverywhere(t *testing.T) {
+// the card's face is the step's mood in every glyph setting (narrow, a
+// former setting, draws as unicode), the moods vary over the tour, and the
+// face line has no glyph a font may draw two cells wide
+func TestTourFaceByStep(t *testing.T) {
+	moods := map[mascot.Mood]bool{}
+	for step := range tourSteps {
+		moods[tourMood(step)] = true
+	}
+	if len(moods) < 3 {
+		t.Errorf("the tour shows %d moods, want the faces to vary by step", len(moods))
+	}
 	for _, g := range []string{"unicode", "narrow", "ascii", "auto"} {
 		m := tapiModel(t, "truecolor", config.Mascot{Glyphs: g})
 		m.initTour(filepath.Join(t.TempDir(), "tutorial.json"))
@@ -594,12 +603,20 @@ func TestTourFaceIsNarrowEverywhere(t *testing.T) {
 		for step := range tourSteps {
 			m.tourGo(step)
 			card := ansi.Strip(strings.Join(m.tourCard(56, 39), "\n"))
-			if face := ansi.Strip(m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done))); !strings.Contains(card, face) || !strings.Contains(face, "^") {
-				t.Errorf("%s step %d: no ^ ^ face in the card:\n%s", g, step, card)
+			face := ansi.Strip(m.tapi.r.Line(m.tapi.r.Eyes(tourMood(step))))
+			head := strings.SplitN(card, "\n", 3)[1]
+			if !strings.Contains(head, face) {
+				t.Errorf("%s step %d: no %s face (%s) in the card's head: %q", g, step, tourMood(step), face, head)
 			}
-			for _, amb := range []string{"●", "•", "🞄"} {
-				if strings.Contains(strings.SplitN(card, "\n", 3)[1], amb) {
-					t.Errorf("%s step %d: %s in the face line", g, step, amb)
+			if g == "narrow" {
+				u := mascot.New(mascot.Options{Glyphs: "unicode"})
+				if got, want := m.tapi.r.Eyes(tourMood(step)), u.Eyes(tourMood(step)); got != want {
+					t.Errorf("narrow step %d: eyes %q, want unicode's %q", step, got, want)
+				}
+			}
+			for _, r := range face {
+				if why := glyphguard.Bad(r); why != "" {
+					t.Errorf("%s step %d: %q in the face %q: %s", g, step, r, face, why)
 				}
 			}
 		}

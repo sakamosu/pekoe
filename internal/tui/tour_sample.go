@@ -29,6 +29,7 @@ import (
 
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
+	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -47,6 +48,7 @@ var tourRepo = daemon.KnownRepo{ID: "github.com_acme_webapp", Name: "webapp", Di
 
 var tourSteps = []tourStep{
 	{
+		mood: mascot.Done,
 		ja: tourCopy{
 			title: "pekoe へようこそ",
 			body:  "やあ、ぼくは tapi。pekoe はコーディングエージェントを並べて走らせる道具で、セッションごとに専用の git worktree ができるよ。ツアーは 2 本立て。前半はぼくに頼んで任せるやり方、後半はきみが自分でセッションを動かすやり方。中身はサンプルで、押したキーは本物のセッションに届かないから、気楽に触ってみて。",
@@ -58,6 +60,7 @@ var tourSteps = []tourStep{
 	},
 	// part 1: ask tapi
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title: "[1] tapi の行",
 			body:  "Sessions のいちばん上にいるのがぼく。ぼくは統括役で、頼まれた変更は自分では書かずに、セッションを作って任せて報告を待つ。きみに回すのは判断と承認だけ。この行を選んでいる間、[4] はダッシュボードになるよ。",
@@ -75,6 +78,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Done,
 		ja: tourCopy{
 			title: "tapi chat",
 			body:  "頼みごとは {t}(どのパネルからでも)か、tapi の行で {↵}。[4] がぼくとのチャットになる。「注文ページに CSV エクスポートを足して」みたいに言ってくれたら、完了条件を決めてセッションに任せるよ。頼んだことは依頼として残るから、{T} で会話をやり直しても続きから始められる。",
@@ -93,6 +97,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title: "ダッシュボード",
 			body:  "任せた仕事の様子はここで見る。上から概要、受信箱、工程表、自分の依頼、送ったものの記録、エージェントが自分で決めたこと(Decided)。{4} で入って {j}/{k} で選び、{↵} で開く。{o} でリンク、{h} か {esc} で Sessions に戻るよ。",
@@ -110,6 +115,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Wait,
 		ja: tourCopy{
 			title: "受信箱",
 			body:  "セッションが迷ったら、ここできみに聞いてくる。pekoe が自分で読んだ事実(ブランチ・差分・PR・CI)が先で、エージェントの言葉が後。推奨はエージェントの意見で、最初から選ばれてはいないよ。数字で選んで {↵} で答えると、そのセッションに届く。{]a} でも次の問いに回れる。答えを待たせていると最下行に残って、ターミナルから離れていれば 2 分で OS の通知が来るよ。",
@@ -128,6 +134,7 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
+		mood: mascot.Work,
 		ja: tourCopy{
 			title: "工程表とマージ",
 			body:  "工程表は、セッションごとの impl › review › PR › CI › merge(作業の順: 実装 → 独立レビュー → PR → CI → マージ)のバーと、今の段階のひとこと。足りないものは needs … とその理由に出る。fix-cart-total は全部そろって ready to merge になってるね。そろうと pekoed が受信箱に merge ready を 1 件出すけど、マージするのはきみ。GitHub でマージしてから、その項目に答えてね。",
@@ -147,6 +154,7 @@ var tourSteps = []tourStep{
 	},
 	// part 2: drive sessions yourself
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title: "[1] Sessions",
 			body:  "ここからは、きみが自分でセッションを動かすやり方。セッションはリポジトリごとに並んで、{j}/{k} で選ぶと [4] もそれに切り替わる。{@running} run は作業中、{@waiting} wait は入力待ち、{@done} done はレビュー待ち、{@idle} idle は待機中。右は経過時間・diff・テスト結果で、待っているセッションには {]a} で飛べるよ。",
@@ -181,6 +189,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Work,
 		ja: tourCopy{
 			title: "[4] Agent",
 			body:  "選んだエージェントとのやりとりが、そのまま見える。{↵} か {i} で打ち始めると、{^q} で抜けるまでキーは全部エージェントに届く。{v} で preview や dev サーバーの画面に切り替わるよ。",
@@ -195,6 +204,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title: "New session",
 			body:  "{n} で新しいセッション。ブランチ名、元にする issue(gh#123 など。なくてもいい)、最初のプロンプトを書けば、worktree を作ってエージェントを起こすところまで pekoe がやるよ。",
@@ -213,6 +223,7 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title:  "[3] Changes",
 			body:   "選んだセッションが変えたファイル。{@overlap} は、ほかのセッションも同じファイルを触っているしるし。{r} か {↵} でレビューを開くと、hunk ごとに承認したりコメントを付けたりして、エージェントに差し戻せる。{[ ]} で Picks(Chrome で選んだ要素)に切り替わるよ。",
@@ -232,6 +243,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Done,
 		ja: tourCopy{
 			title: "PR view · land",
 			body:  "{p} で [4] にこのセッションの GitHub PR。checks・レビュー・未解決のスレッドが並ぶから、直してほしいものを {space} で選んで {s} でエージェントに渡そう。done になったセッションは Sessions で {l} を押して land。rebase・テスト・push・PR 作成までやって、マージされたら worktree を片付けるよ。",
@@ -250,6 +262,7 @@ var tourSteps = []tourStep{
 		},
 	},
 	{
+		mood: mascot.Idle,
 		ja: tourCopy{
 			title:  "キーとコマンド",
 			body:   "キーを忘れたら {?}。今のパネルで使えるキーが並んで、選んで {↵} でそのまま実行できる。{:} はコマンド名で実行(new、send、land、review、tutorial など)。[2] は {[ ]} で Worktrees・Browser・Issues を切り替えられて、Issues からは {n} でセッションを始められるよ。",
@@ -268,6 +281,7 @@ var tourSteps = []tourStep{
 		target: func(m *model) (rect, bool) { return m.modalRect() },
 	},
 	{
+		mood: mascot.Done,
 		ja: tourCopy{
 			title: "ツアーはここまで",
 			body:  "おつかれさま。{" + tourKey + "} か {:tutorial} で、いつでももう一回案内するよ。閉じたら、きみのセッションに戻るね。困ったら {t} で声をかけて。",
