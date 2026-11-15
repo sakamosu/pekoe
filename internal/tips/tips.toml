@@ -260,7 +260,7 @@ docs = ["docs/orchestration.md", "docs/api.md"]
 [[tip]]
 id = "dashboard-evidence"
 short = "工程表の行で o を押すと報告の evidence を開ける"
-detail = "報告に付いたスクショ・動画・ログ・URL を一覧にし、j k で選んで ↵ で開く。PNG は kitty の画像表示が使える端末ならその場に、ほかは既定のアプリかブラウザで。スクリプトなどは開かず場所だけ見せる。"
+detail = "報告に付いたスクショ・動画・ログ・URL を一覧にし、j k で選んで ↵ で開く。PNG は kitty の画像表示が使える端末ならその場に、ほかは外のアプリかブラウザで。スクリプトなどは開かず場所だけ見せる。"
 keys = ["4", "o"]
 docs = ["docs/orchestration.md"]
 

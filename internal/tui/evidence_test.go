@@ -39,6 +39,9 @@ func evDir(t *testing.T) string {
 		"before.txt": "before\n", "hello.mp4": "\x00\x00\x00\x18ftypmp42", "evil.command": "#!/bin/sh\ntouch pwned\n",
 		"fake.png": "#!/bin/sh\ntouch pwned\n", "script.txt": "#!/bin/sh\ntouch pwned\n", "binary.log": "a\x00b",
 		"alias.png": "book\x00\x00\x00\x00mark\x00\x00\x00\x00", "page.html": "<script>alert(1)</script>", "noext": "x", "a.out": "x",
+		// a JPEG's first bytes, then a shell's lines: named only ".jpg" and runnable, macOS takes it for a program
+		".jpg": "\xff\xd8\xff\ntouch pwned\n", "..jpg": "\xff\xd8\xff\ntouch pwned\n",
+		"x.gİf": "GIF89a", "clip.mkv": "\x1a\x45\xdf\xa3", "SHOT.JPG": "\xff\xd8\xff\xe0",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
@@ -79,6 +82,10 @@ func TestClassifyEvidence(t *testing.T) {
 		{raw: p("script.txt"), kind: evFile, target: p("script.txt"), why: "its content is not what .txt says"},
 		{raw: p("binary.log"), kind: evFile, target: p("binary.log"), why: "its content is not what .log says"},
 		{raw: p("a.out"), kind: evFile, target: p("a.out")},
+		{raw: p(".jpg"), kind: evFile, target: p(".jpg"), why: "its name is only an extension"},
+		{raw: p("..jpg"), kind: evFile, target: p("..jpg"), why: "its name is only an extension"},
+		{raw: p("x.gİf"), kind: evFile, target: p("x.gİf")}, // not .gif to the system
+		{raw: p("SHOT.JPG"), kind: evImage, target: p("SHOT.JPG")},
 		{raw: p("before.txt"), kind: evText, target: p("before.txt")},
 		{raw: p("hello.mp4"), kind: evVideo, target: p("hello.mp4")},
 		{raw: p("evil.command"), kind: evFile, target: p("evil.command")},
@@ -99,10 +106,28 @@ func TestClassifyEvidence(t *testing.T) {
 	if it := classifyEvidence(p("shot.png"), ""); it.imgW != 320 || it.imgH != 200 || it.size == 0 {
 		t.Errorf("the PNG's size: %d×%d, %d bytes", it.imgW, it.imgH, it.size)
 	}
+	// a video QuickTime Player does not play: shown where it is on macOS
+	if it := classifyEvidenceOn("darwin", p("clip.mkv"), ""); it.kind != evFile || it.why != "QuickTime Player does not play .mkv" {
+		t.Errorf("an .mkv on macOS: kind %d why %q", it.kind, it.why)
+	}
+	if it := classifyEvidenceOn("linux", p("clip.mkv"), ""); it.kind != evVideo {
+		t.Errorf("an .mkv on Linux: kind %d why %q", it.kind, it.why)
+	}
+	// a file that cannot be read is not handed on unseen
+	if os.Getuid() != 0 {
+		if err := os.Chmod(p("before.txt"), 0); err != nil {
+			t.Fatal(err)
+		}
+		if it := classifyEvidence(p("before.txt"), ""); it.kind != evNone || it.why != "cannot be read" || it.target != "" {
+			t.Errorf("an unreadable text: %+v", it)
+		}
+	}
 }
 
 // What runs to open each kind: the path or URL is one argument, a file that
-// is not an image, video, PDF or text is never handed to open as it is.
+// is not an image, video, PDF or text is never handed to open as it is, and
+// on macOS a file goes to a named app on the system volume, never to
+// whatever Launch Services would pick for it.
 func TestEvidenceOpener(t *testing.T) {
 	dir := evDir(t)
 	p := func(name string) string { return filepath.Join(dir, name) }
@@ -112,14 +137,21 @@ func TestEvidenceOpener(t *testing.T) {
 	}{
 		{"darwin", "https://github.com/me/app/pull/42", []string{"open", "https://github.com/me/app/pull/42"}},
 		{"linux", "https://github.com/me/app/pull/42", []string{"xdg-open", "https://github.com/me/app/pull/42"}},
-		{"darwin", p("shot.png"), []string{"open", p("shot.png")}},
+		{"darwin", p("shot.png"), []string{"open", "-a", "/System/Applications/Preview.app", p("shot.png")}},
+		{"darwin", p("SHOT.JPG"), []string{"open", "-a", "/System/Applications/Preview.app", p("SHOT.JPG")}},
+		{"linux", p("shot.png"), []string{"xdg-open", p("shot.png")}},
+		{"darwin", p("hello.mp4"), []string{"open", "-a", "/System/Applications/QuickTime Player.app", p("hello.mp4")}},
 		{"linux", p("hello.mp4"), []string{"xdg-open", p("hello.mp4")}},
-		{"darwin", p("before.txt"), []string{"open", "-t", p("before.txt")}},
+		{"darwin", p("clip.mkv"), []string{"open", "-R", p("clip.mkv")}},
+		{"linux", p("clip.mkv"), []string{"xdg-open", p("clip.mkv")}},
+		{"darwin", p("before.txt"), []string{"open", "-a", "/System/Applications/TextEdit.app", p("before.txt")}},
 		{"linux", p("before.txt"), []string{"xdg-open", p("before.txt")}},
 		{"darwin", p("evil.command"), []string{"open", "-R", p("evil.command")}},
 		{"linux", p("evil.command"), []string{"xdg-open", dir}},
 		{"darwin", p("link.png"), []string{"open", "-R", p("evil.command")}},
 		{"darwin", p("fake.png"), []string{"open", "-R", p("fake.png")}},
+		{"darwin", p(".jpg"), []string{"open", "-R", p(".jpg")}},
+		{"linux", p(".jpg"), []string{"xdg-open", dir}},
 		{"darwin", p("alias.png"), []string{"open", "-R", p("alias.png")}},
 		{"darwin", p("script.txt"), []string{"open", "-R", p("script.txt")}},
 		{"linux", p("script.txt"), []string{"xdg-open", dir}},
@@ -127,9 +159,16 @@ func TestEvidenceOpener(t *testing.T) {
 		{"darwin", p("Evil.app"), []string{"open", "-R", p("Evil.app")}},
 		{"linux", p("Evil.app"), []string{"xdg-open", p("Evil.app")}},
 	} {
-		name, args, said, err := evidenceOpener(c.goos, classifyEvidence(c.raw, ""))
+		name, args, said, err := evidenceOpener(c.goos, classifyEvidenceOn(c.goos, c.raw, ""))
 		if got := append([]string{name}, args...); err != nil || !slices.Equal(got, c.want) || said == "" {
 			t.Errorf("%s %q: %v (%q, %v), want %v", c.goos, c.raw, got, said, err, c.want)
+		}
+	}
+	// on macOS no file is ever handed to open bare: Launch Services would choose what runs
+	for _, name := range []string{"shot.png", "SHOT.JPG", "hello.mp4", "before.txt", "fake.png", ".jpg", "..jpg", "alias.png", "evil.command", "link.png", "noext", "Evil.app", "clip.mkv"} {
+		_, args, _, err := evidenceOpener("darwin", classifyEvidenceOn("darwin", p(name), ""))
+		if err != nil || len(args) < 2 || (args[0] != "-R" && !(args[0] == "-a" && strings.HasPrefix(args[1], "/System/Applications/") && len(args) == 3)) {
+			t.Errorf("%s on macOS: open %v (%v)", name, args, err)
 		}
 	}
 	for _, raw := range []string{p("gone.png"), "javascript:alert(1)", os.DevNull, ""} {
@@ -352,16 +391,16 @@ func TestDashboardEvidence(t *testing.T) {
 	if got := last(); len(got) != 2 || got[1] != "https://github.com/me/app/pull/42" || !strings.Contains(em.note, "opened https://github.com/me/app/pull/42") {
 		t.Fatalf("↵ on the link ran %v, note %q", got, em.note)
 	}
-	// the image: no graphics here, so the default app
+	// the image: no graphics here, so an app outside
 	press("j")
 	if em.note != "" {
 		t.Errorf("the note stayed after moving: %q", em.note)
 	}
-	if out := ansi.Strip(strings.Join(em.view(), "\n")); !strings.Contains(out, filepath.Join(filepath.Base(dir), "shot.png")+"  │") || !strings.Contains(out, "↵ opens it in the default app") {
+	if out := ansi.Strip(strings.Join(em.view(), "\n")); !strings.Contains(out, filepath.Join(filepath.Base(dir), "shot.png")+"  │") || !strings.Contains(out, "↵ opens it in ") {
 		t.Errorf("the image's path and what ↵ does:\n%s", out)
 	}
 	press("enter")
-	if got := last(); len(got) != 2 || got[1] != filepath.Join(dir, "shot.png") || em.viewing {
+	if got := last(); len(got) < 2 || got[len(got)-1] != filepath.Join(dir, "shot.png") || em.viewing {
 		t.Fatalf("↵ on the image without graphics ran %v (viewing %v)", got, em.viewing)
 	}
 	// the text, written relative to the worktree
@@ -379,7 +418,8 @@ func TestDashboardEvidence(t *testing.T) {
 	n := len(*opened)
 	press("enter")
 	script := filepath.Join(dir, "evil.command")
-	if got := last(); len(*opened) != n+1 || (len(got) == 2 && got[1] == script) || !strings.Contains(em.note, "not opened") {
+	shownOnly := slices.Equal(last(), []string{"open", "-R", script}) || slices.Equal(last(), []string{"xdg-open", dir})
+	if got := last(); len(*opened) != n+1 || !shownOnly || !strings.Contains(em.note, "not opened") {
 		t.Fatalf("↵ on the script ran %v, note %q", got, em.note)
 	}
 	// gone since the list was read: nothing runs, the row says missing
@@ -432,7 +472,7 @@ func TestEvidenceImageInPlace(t *testing.T) {
 	if !ok {
 		t.Fatalf("modal %T, msg %q", m.modal, m.msg)
 	}
-	if out := ansi.Strip(strings.Join(em.view(), "\n")); !strings.Contains(out, "↵ shows it here · o opens it in the default app") {
+	if out := ansi.Strip(strings.Join(em.view(), "\n")); !strings.Contains(out, "↵ shows it here · o opens it in ") {
 		t.Errorf("what ↵ does on a PNG:\n%s", out)
 	}
 	upd := func(k string) { t.Helper(); _, c := m.Update(key(k)); runCmd(m, c) }
@@ -497,7 +537,7 @@ func TestEvidenceImageInPlace(t *testing.T) {
 	if k2, _ := em.shown(); k2 == k || len(m.pv.live) != 1 || m.pv.live[k2] == 0 {
 		t.Fatalf("after a resize the terminal holds %v (was %v)", m.pv.live, k)
 	}
-	// o: the default app, still viewing
+	// o: an app outside, still viewing
 	upd("o")
 	if got := *opened; len(got) != 1 || got[0][len(got[0])-1] != shot || !em.viewing {
 		t.Fatalf("o while viewing ran %v (viewing %v)", got, em.viewing)

@@ -4,7 +4,7 @@ package tui
 // a pipeline row of the dashboard lists what the session's reports named as
 // evidence (screenshots, videos, logs, the PR's URL) in a modal; ↵ opens the
 // chosen one. A PNG is drawn in place when the terminal draws Kitty
-// graphics; anything else goes to the default app (open / xdg-open), a URL
+// graphics; anything else goes to an app outside (open / xdg-open), a URL
 // to the browser.
 //
 // Evidence is a string an agent wrote: untrusted. Nothing here runs it. What
@@ -13,9 +13,16 @@ package tui
 // Any other file (a .command, a script, an .html, a file that only looks
 // like an image …) and a directory are only shown where they are (open
 // -R), never opened. The kind is that of the file behind every symlink, and
-// that path is the one opened. On macOS a file that tells Launch Services
-// itself what opens it (a Finder alias, a per-file "Open With") is not
-// opened either: open would not go by its extension (evidence_darwin.go).
+// that path is the one opened.
+//
+// macOS decides for itself what a file is and what opens it (Launch
+// Services: a name that is only ".jpg" with the executable bit is a program
+// for Terminal; a file can carry its own "Open With"; an app lying around
+// can claim a type nobody owns). So on macOS the app is named, by its path
+// on the system volume: Preview for images and PDFs, QuickTime Player for
+// videos, TextEdit for text. What a file says about itself then changes
+// nothing; a file that says such things is not opened anyway
+// (evidence_darwin.go).
 
 import (
 	"bytes"
@@ -66,6 +73,18 @@ var evKindWords = map[evKind]string{
 	evLink: "link", evImage: "image", evVideo: "video", evPDF: "pdf", evText: "text", evFile: "file", evFolder: "folder",
 }
 
+// The apps macOS opens evidence with, by path: on the sealed system volume,
+// so nothing an agent can write stands in for them.
+const (
+	macPreview   = "/System/Applications/Preview.app"
+	macQuickTime = "/System/Applications/QuickTime Player.app"
+	macTextEdit  = "/System/Applications/TextEdit.app"
+)
+
+// evMacNoApp are the videos QuickTime Player does not play: on macOS they
+// are shown where they are, for the person to open with what they have.
+var evMacNoApp = map[string]bool{".webm": true, ".mkv": true, ".avi": true}
+
 // evExts is what opens, by extension. Everything else is evFile.
 var evExts = map[string]evKind{
 	".png": evImage, ".jpg": evImage, ".jpeg": evImage, ".gif": evImage, ".webp": evImage,
@@ -104,6 +123,11 @@ func (it evItem) name() string {
 // classifyEvidence reads what raw is now. base is the session's worktree,
 // where a relative path starts ("" when unknown).
 func classifyEvidence(raw, base string) evItem {
+	return classifyEvidenceOn(runtime.GOOS, raw, base)
+}
+
+// classifyEvidenceOn is classifyEvidence for goos (what opens differs).
+func classifyEvidenceOn(goos, raw, base string) evItem {
 	it := evItem{raw: raw}
 	s := strings.TrimSpace(raw)
 	switch {
@@ -147,16 +171,26 @@ func classifyEvidence(raw, base string) evItem {
 		it.target, it.why = "", "not a regular file"
 	default:
 		it.size = fi.Size()
-		ext := strings.ToLower(filepath.Ext(real))
+		name := filepath.Base(real)
+		ext := asciiLower(filepath.Ext(name))
 		it.kind = evExts[ext]
-		switch {
-		case it.kind == evNone:
+		if it.kind == evNone {
 			it.kind = evFile
-		case !evContentOK(ext, evHead(real)):
+			break
+		}
+		head, ok := evHead(real)
+		switch {
+		case !ok:
+			it.kind, it.target, it.why = evNone, "", "cannot be read"
+		case strings.Trim(strings.TrimSuffix(name, filepath.Ext(name)), ".") == "":
+			// ".jpg": to macOS a file without an extension, a program when it may be run
+			it.kind, it.why = evFile, "its name is only an extension"
+		case !evContentOK(ext, head):
 			it.kind, it.why = evFile, "its content is not what "+ext+" says"
-		case it.kind != evText && runtime.GOOS == "darwin" && macOpensItsOwnWay(real):
-			// (text goes to open -t, which these do not steer)
+		case goos == "darwin" && macOpensItsOwnWay(real):
 			it.kind, it.why = evFile, "it names what opens it itself (a Finder alias or its own Open With)"
+		case goos == "darwin" && evMacNoApp[ext]:
+			it.kind, it.why = evFile, "QuickTime Player does not play "+ext
 		case ext == ".png":
 			it.imgW, it.imgH = pngSize(real, it.size)
 		}
@@ -164,16 +198,32 @@ func classifyEvidence(raw, base string) evItem {
 	return it
 }
 
-// evHead is the first bytes of a regular file (nil when it cannot be read).
-func evHead(path string) []byte {
+// asciiLower lowers A–Z only: "x.gİf" is not a .gif to the system, so it
+// is not one here (strings.ToLower folds İ to i).
+func asciiLower(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// evHead is the first bytes of a regular file; ok is false when it cannot
+// be read.
+func evHead(path string) (head []byte, ok bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 	defer f.Close()
 	h := make([]byte, evSniff)
-	n, _ := io.ReadFull(f, h)
-	return h[:n]
+	n, err := io.ReadFull(f, h)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, false
+	}
+	return h[:n], true
 }
 
 // evContentOK: a file with extension ext starts like one (h is its first
@@ -231,7 +281,9 @@ func pngSize(path string, size int64) (int, int) {
 
 // evidenceOpener is the command that opens it outside the TUI on goos, and
 // what to say when it ran. The path or URL is one argument of open /
-// xdg-open, never a shell's; a path starts with "/", so it is no flag.
+// xdg-open, never a shell's; a path starts with "/", so it is no flag. On
+// macOS a file goes to a named app (open -a <the app's path>), not to
+// whatever Launch Services would pick for it.
 func evidenceOpener(goos string, it evItem) (name string, args []string, said string, err error) {
 	mac := goos == "darwin"
 	name = "xdg-open"
@@ -247,11 +299,10 @@ func evidenceOpener(goos string, it evItem) (name string, args []string, said st
 			return "", nil, "", err
 		}
 		return name, []string{it.target}, "opened " + it.target, nil
-	case evImage, evVideo, evPDF:
-		return name, []string{it.target}, "opened " + it.name(), nil
-	case evText:
-		if mac { // the default text editor, not whatever app the extension belongs to
-			return name, []string{"-t", it.target}, "opened " + it.name() + " in the text editor", nil
+	case evImage, evVideo, evPDF, evText:
+		if mac {
+			app := evMacApp(it.kind)
+			return name, []string{"-a", app, it.target}, "opened " + it.name() + " in " + evAppName(app), nil
 		}
 		return name, []string{it.target}, "opened " + it.name(), nil
 	case evFile, evFolder:
@@ -271,22 +322,46 @@ func evidenceOpener(goos string, it evItem) (name string, args []string, said st
 	return "", nil, "", errors.New(why + ": " + firstLine(inboxText(it.raw)))
 }
 
+// evMacApp is the app macOS opens a kind with.
+func evMacApp(k evKind) string {
+	switch k {
+	case evVideo:
+		return macQuickTime
+	case evText:
+		return macTextEdit
+	}
+	return macPreview
+}
+
+// evAppName is an app's name from its path ("Preview").
+func evAppName(app string) string {
+	return strings.TrimSuffix(filepath.Base(app), ".app")
+}
+
 // runOpener runs open / xdg-open (tests put a recorder here). A failure
-// carries the command's own first line ("No application knows how to open
-// …"), which says more than its exit status. xdg-open may hand its stderr
-// on to the app it starts: the wait for that pipe is cut short, so the app
-// staying open does not keep "opened" from being said.
+// carries the command's own first line ("Unable to find application …"),
+// which says more than its exit status. The output goes to a file, not a
+// pipe: xdg-open may hand its stderr on to the app it starts, and a pipe
+// closed under that app would end it at its next word (SIGPIPE), or keep
+// this waiting until the app is closed.
 var runOpener = func(name string, args ...string) error {
-	var out bytes.Buffer
 	cmd := exec.Command(name, args...)
-	cmd.Stdout, cmd.Stderr = &out, &out
-	cmd.WaitDelay = 2 * time.Second
+	out, terr := os.CreateTemp("", "pekoe-open-*")
+	if terr == nil {
+		defer os.Remove(out.Name())
+		defer out.Close()
+		cmd.Stdout, cmd.Stderr = out, out
+	}
 	err := cmd.Run()
-	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
+	if err == nil {
 		return nil
 	}
-	if l := firstLine(out.String()); l != "" {
-		return fmt.Errorf("%s: %s", name, l)
+	if terr == nil {
+		b := make([]byte, 4096)
+		n, _ := out.ReadAt(b, 0)
+		if l := firstLine(string(b[:n])); l != "" {
+			return fmt.Errorf("%s: %s", name, l)
+		}
 	}
 	return fmt.Errorf("%s: %w", name, err)
 }
@@ -303,18 +378,15 @@ func evWhat(it evItem, graphics bool) string {
 	switch it.kind {
 	case evLink:
 		return "↵ opens it in the browser"
-	case evImage:
-		if graphics && it.inline() {
-			return "↵ shows it here · o opens it in the default app"
-		}
-		return "↵ opens it in the default app"
-	case evVideo, evPDF:
-		return "↵ opens it in the default app"
-	case evText:
+	case evImage, evVideo, evPDF, evText:
+		app := "the default app"
 		if runtime.GOOS == "darwin" {
-			return "↵ opens it in the default text editor"
+			app = evAppName(evMacApp(it.kind))
 		}
-		return "↵ opens it in the default app"
+		if graphics && it.inline() {
+			return "↵ shows it here · o opens it in " + app
+		}
+		return "↵ opens it in " + app
 	case evFile:
 		if it.why != "" {
 			return "not opened: " + it.why + " · ↵ shows where it is"
@@ -569,10 +641,17 @@ func (em *evidenceModal) view() []string {
 		if target == "" {
 			target = firstLine(inboxText(it.raw))
 		}
-		lines = append(lines, "", sunk(clipLeft(evLine(target), cw)))
+		shown := clipLeft(evLine(target), cw) // a path: its end names the file
+		if it.kind == evLink {
+			shown = fit(evLine(target), cw) // a URL: its start names the host
+		}
+		lines = append(lines, "", sunk(shown))
 		what := dim(evWhat(it, em.canShow()))
-		if it.kind == evNone {
+		switch {
+		case it.kind == evNone:
 			what = th.FG(theme.Err, it.why) + dim(" · nothing to open")
+		case it.kind == evFile && it.why != "": // its name said it would open
+			what = th.FG(theme.Err, "not opened: "+it.why) + dim(" · ↵ shows where it is")
 		}
 		lines = append(lines, what)
 	}
@@ -607,7 +686,7 @@ func (em *evidenceModal) viewImage() []string {
 			}
 		}
 	} else {
-		body[ch/2] = th.FG(theme.Dim, "no room to draw it here · o opens it in the default app")
+		body[ch/2] = th.FG(theme.Dim, "no room to draw it here · o opens it in an app")
 	}
 	n, of := 0, 0
 	for i, x := range em.items {
