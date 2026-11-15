@@ -127,6 +127,24 @@ type Step struct {
 // fromIssueRe is session.new's from: an issue number of the repository.
 var fromIssueRe = regexp.MustCompile(`^gh#[1-9][0-9]{0,9}$`)
 
+// checkModel refuses a model or effort that would not be passed (pekoe
+// new --model on a session that would then run something else).
+func checkModel(ag config.Agent, model, effort string) error {
+	if model == "" && effort == "" {
+		return nil
+	}
+	if !config.IsClaude(ag.Command) {
+		return fmt.Errorf("model and effort are only passed to Claude Code; the agent runs %q", ag.Command)
+	}
+	if model != "" && !config.ValidModel(model) {
+		return fmt.Errorf("model %q: give a model name or alias such as opus or claude-opus-5-5", model)
+	}
+	if effort != "" && !config.ValidEffort(effort) {
+		return fmt.Errorf("effort %q is not one of %s", effort, strings.Join(config.Efforts, " | "))
+	}
+	return nil
+}
+
 // newAgentName is the agent session.new starts: the one asked for, else
 // the repository's, else claude.
 func newAgentName(asked string, repo *repoInfo) string {
@@ -145,6 +163,10 @@ type newP struct {
 	From   string `json:"from"` // gh#123
 	Agent  string `json:"agent"`
 	Prompt string `json:"prompt"`
+	// Model / Effort override the agent's [agents.*] model / effort for
+	// this session (kept: resume and restart pass them again)
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 	Base   string `json:"base"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
@@ -198,8 +220,12 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		return nil, fmt.Errorf("session %s already exists", slug)
 	}
 	agent := newAgentName(p.Agent, repo)
-	if _, ok := d.cfg().Agents[agent]; !ok {
+	ag, ok := d.cfg().Agents[agent]
+	if !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
+	}
+	if err := checkModel(ag, p.Model, p.Effort); err != nil {
+		return nil, err
 	}
 	base := p.Base
 	if base == "" {
@@ -232,7 +258,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	}
 	s := &state.Session{
 		Slug: slug, Branch: p.Branch, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir,
-		Path: wt, Agent: agent, State: state.Creating,
+		Path: wt, Agent: agent, Model: p.Model, Effort: p.Effort, State: state.Creating,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
 		Parent: p.parent, Request: p.Request, After: after,

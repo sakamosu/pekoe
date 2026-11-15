@@ -137,6 +137,17 @@ func Check(b []byte) []Problem {
 		if _, builtin := agents[name]; !builtin && strings.TrimSpace(a.Command) == "" {
 			add(key+".command", "missing: an agent of your own needs a command")
 		}
+		cmd := a.Command
+		if cmd == "" {
+			cmd = agents[name].Command
+		}
+		oneOf(key+".effort", a.Effort, false, Efforts...)
+		if a.Model != "" && !ValidModel(a.Model) {
+			add(key+".model", "%q is not a model name (letters, digits and . _ - : / [ ]); not passed, so Claude Code's default is used", a.Model)
+		}
+		if (a.Model != "" || a.Effort != "") && !IsClaude(cmd) {
+			add(key, "model and effort are only passed to Claude Code (command \"claude\"); ignored for %q", cmd)
+		}
 		agents[name] = a
 	}
 	if t := g.Tapi.Agent; t != "" {

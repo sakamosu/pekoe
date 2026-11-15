@@ -77,4 +77,9 @@ const Template = `# pekoe's settings. Every key is optional: what is not here ke
 #
 # [theme]
 # mode = "auto"        # truecolor | ansi | none | auto
+#
+# [agents.claude]
+# model = "opus"       # passed as --model on every start; unset follows
+#                      # ~/.claude/settings.json, which /model in any session rewrites
+# effort = "medium"    # low | medium | high | xhigh | max
 `

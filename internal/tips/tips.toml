@@ -433,6 +433,13 @@ keys = ["[agents]"]
 docs = ["README.ja.md#エージェントに-pekoe-を使わせるときの権限"]
 
 [[tip]]
+id = "agent-model"
+short = "モデルは [agents.claude] model で固定する"
+detail = "起動のたびに --model / --effort を渡す。無いと、どこかで /model を打つと後の全セッションが替わる。1 つだけなら pekoe new --model M --effort E。実際は --json ls の last_model。"
+keys = ["[agents]", "pekoe new", "--model", "--effort"]
+docs = ["README.ja.md#設定"]
+
+[[tip]]
 id = "agent-dev"
 short = "エージェントも pekoe dev で自分の dev server を立てる"
 detail = "自分の sandbox ではポートを開けないエージェントが、UI を確かめるときに使う。効くのは呼び出し元のセッションの分だけで、ほかの slug は断られる。[hooks] dev は pekoe の sandbox で動く。"

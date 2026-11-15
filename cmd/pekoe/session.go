@@ -64,7 +64,7 @@ func cmdNew(args []string) error {
 	}
 	if err := cl.Call("session.new", map[string]any{
 		"repo": dir, "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
-		"base": f["base"], "after": multiVal(f, "after"), "width": w, "height": h, "request": request,
+		"model": f["model"], "effort": f["effort"], "base": f["base"], "after": multiVal(f, "after"), "width": w, "height": h, "request": request,
 	}, &s); err != nil {
 		return err
 	}
