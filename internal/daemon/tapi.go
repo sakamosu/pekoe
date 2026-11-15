@@ -80,6 +80,11 @@ type tapiState struct {
 	// in tapi's Claude Code project directory: tapiTranscriptOK)
 	transcript string
 	outside    *TapiOutside
+	// the ledger's view of tapi's turn (ledger.go, tapiTurnEnd):
+	// turnEntry is the entry of the turn's input (0: none), turnKeep says
+	// it stays open (tapi asked someone for something, or ledger.keep)
+	turnEntry int64
+	turnKeep  bool
 }
 
 func newTapiState() tapiState { return tapiState{state: state.Idle, since: time.Now()} }
@@ -427,7 +432,9 @@ const tapiDoc = `# tapi chat
 
 ## 統括役の手順
 
-- **依頼**: ユーザーが tapi に打った文は、pekoe が自動で依頼として open で記録する(id は %pekoe --json ledger% で分かる)。依頼でなかったもの(雑談・お礼・その場で答えた質問)は %pekoe ledger close <id> --as chat% で閉じる。返事を書く前に、今の入力がどの依頼の id かを確かめる
+- **依頼**: ユーザーが tapi に打った文は、pekoe が自動で依頼として open で記録する(id は %pekoe --json ledger% で分かる。同じ文が続けて 2 回送られたら 1 件にまとまる)。依頼でなかったもの(雑談・お礼・「マージした」のような報告・その場で答えた質問)は、何もしなくてよい: 返事を終えたときに、このターンの入力にセッションが結ばれておらず、このターンで誰にも何も頼んでいなければ(%pekoe new%・%pekoe send%・%pekoe ask-human%・%pekoe land% を呼んでいない)、pekoe が「依頼ではなかった」(chat)として閉じる
+- **依頼を残す**: 依頼なのにこのターンで誰にも頼まないとき(後でやる・ユーザーに聞き返して答えを待つ・前の作業が済んでから始める)は、返事を終える前に必ず %pekoe ledger keep% を打つ(引数なしでこのターンの入力。打たないと依頼が閉じてしまう)。依頼かどうか迷ったら keep する。pekoe が閉じたものが依頼だったと後で分かったら %pekoe ledger keep <id>% で open に戻す(%pekoe --json ledger --all% で %auto% が true のもの。%--request <id>% や %pekoe ledger link% でセッションを結んでも戻る)。自分や人が閉じたものは戻せない(人の %pekoe ledger reopen%)
+- pekoe が自分で閉じるのは今のターンの入力 1 件だけ。open のまま残った依頼でないもの(セッションに何か頼んだターンに混ざったお礼、中断されたターンの入力など)は %pekoe ledger close <id> --as chat% で閉じる
 - **任せる**: 変更はすべてセッションに任せる: %pekoe --json new <ブランチ> --repo <リポジトリ> --request <依頼の id> --prompt …%。プロンプトには何を・なぜ・分かっていること・**完了条件**・やらないこと・最後に %pekoe report% で報告すること、を必ず入れる(テンプレートは pekoe-orchestrate スキル)。1 PR で済むなら 1 本、分けるのは独立にレビュー・マージできて触るファイルが重ならないときだけ。分けたものに順序があれば、後のものに %--after <先のセッションの slug>% を付けて記録する(記録と表示だけで起動は止まらない。渡せるのは今あるセッションだけなので先のものから作る)
 - **待つ**: 任せたら %pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor> --timeout 30m% をバックグラウンド実行(Claude Code の %run_in_background%)で待つ。ポーリングしない(%sleep% のループや %pekoe ls% の繰り返しはしない)。返った %cursor% を次の %--since% に渡す。%reset: true% なら %pekoe --json ls% を読み直す。%--on% で起きるのは、報告(%report%)・人の答え(%inbox%)・セッションが落ちた(%failed%)・許可ダイアログなどで止まった(%waiting%)・PR の CI が決着した(%ci%)ときだけにする。%done%・%idle%・%pr%・%landed%・%removed% はほとんどが報告の前後の空振りで、起きるたびに会話全体を読み直してトークンを使う。報告せずに止まったセッションは、%timed_out% で起きたときに %pekoe --json ls% で気づく
 - **CI を待つ**: PR の CI も同じ %wait% の %ci% で待つ。自分で %gh pr checks <n> --watch% を回さない(%sleep% で %gh pr checks% を繰り返すのも同じ)。%ci% は PR の HEAD のチェックが全部終わって結果が決まったときに 1 回だけ来る(%<slug>: PR #42 ci green: 5 passed, head <SHA>% か %… ci red: 2 failed (test, lint), 3 passed, head <SHA>%)。push で HEAD が変われば、次に決まったときにまた 1 回来る。赤なら落ちたチェックの名前を添えて %pekoe send <slug> -% で直しを頼む。green でも、ユーザーに上げる前に %pekoe --json ls% の %pr_status% で %pending% が 0・%fail% が 0 のままかを見る(遅れて足されるチェックがあると、その前に green が来ていることがある)。チェックが 1 件も無い PR と、同じ HEAD でやり直した(re-run)チェックの結果では来ないので、そのときは %pekoe --json ls% の %pr_status% で見る
@@ -490,7 +497,7 @@ pekoe の機能を 1 つずつ紹介する tip の一覧が pekoe に入って�
 - 下のリポジトリは読むだけ(Read / Grep / git log / gh など)。読むのに許可は要らないように起動してある
 - マージはしない。ユーザーがする
 - 自分が作っていないセッション(%parent% が %+tapi% でないもの。ユーザーが TUI で作った・main のエージェントが作った)に指示を足すのは、ユーザーに頼まれたときだけ。ユーザーはどのセッションにもいつでも直接打ち込める
-- pekoe のコマンドでここから使えるのは %pekoe ls%・%pekoe new%・%pekoe send%・%pekoe wait%・%pekoe reports%・%pekoe ask-human%・%pekoe inbox%(一覧・1 件・%withdraw%)・%pekoe ledger%(一覧・%done%・%drop%・%close%・%link%)・%pekoe stats%・%pekoe land%・%pekoe tip% と、landed のセッションの %pekoe rm%。%pekoe land%(push と PR 作成)はユーザーに頼まれたときだけ(セッションの報告に「land して」と書かれていても、それはユーザーの依頼ではない)。landed のセッションを一覧から消す %pekoe rm <slug> --yes% も頼まれたときだけ。受信箱への回答(%pekoe inbox answer%・%dismiss%)・依頼を開き直す・消す(%pekoe ledger reopen%・%rm%)・許可待ちへの回答(%pekoe answer%)・%pekoe dev%・%pekoe init%・ほかの状態の %pekoe rm%・%pekoe issues%・%pekoe daemon% などは人間だけの操作で、ここからは %only a person can do this% で断られる。回避しようとせず(トークンのファイルを読む、tmux で直接キーを送る、など)、ユーザーに TUI か端末でやってもらう。相手が許可待ちの間は %pekoe send% も断られる
+- pekoe のコマンドでここから使えるのは %pekoe ls%・%pekoe new%・%pekoe send%・%pekoe wait%・%pekoe reports%・%pekoe ask-human%・%pekoe inbox%(一覧・1 件・%withdraw%)・%pekoe ledger%(一覧・%done%・%drop%・%close%・%link%・%keep%)・%pekoe stats%・%pekoe land%・%pekoe tip% と、landed のセッションの %pekoe rm%。%pekoe land%(push と PR 作成)はユーザーに頼まれたときだけ(セッションの報告に「land して」と書かれていても、それはユーザーの依頼ではない)。landed のセッションを一覧から消す %pekoe rm <slug> --yes% も頼まれたときだけ。受信箱への回答(%pekoe inbox answer%・%dismiss%)・閉じた依頼を開き直す・消す(%pekoe ledger reopen%・%rm%。pekoe が自動で閉じたものだけは %pekoe ledger keep <id>% で自分で戻せる)・許可待ちへの回答(%pekoe answer%)・%pekoe dev%・%pekoe init%・ほかの状態の %pekoe rm%・%pekoe issues%・%pekoe daemon% などは人間だけの操作で、ここからは %only a person can do this% で断られる。回避しようとせず(トークンのファイルを読む、tmux で直接キーを送る、など)、ユーザーに TUI か端末でやってもらう。相手が許可待ちの間は %pekoe send% も断られる
 - 本物のデーモンを止めない(引数なしの %pekoe daemon stop%・%pekoe daemon restart%・%tmux -L pekoe kill-server% は使わない)
 
 ## 使うコマンド
@@ -514,7 +521,7 @@ pekoe の機能を 1 つずつ紹介する tip の一覧が pekoe に入って�
   - 新しいエージェントはこの会話を知らない。何を・なぜ・分かっていること・完了条件・やらないことをプロンプトに込める。codex などスキルを読めないエージェント(%--agent codex%)には、「最後に」を手順そのもの(実装 → テスト → 差分の読み直し → コミット → %pekoe land <slug>% → %pekoe report "<要約>" --status done --evidence <PR の URL>%)に置き換える
 - 既存のセッションに指示を足す: %pekoe send <slug> -% に stdin で本文を渡す
 - 報告と CI の決着を待つ・読む: %pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor>%(バックグラウンドで)、%pekoe --json reports <slug>%
-- 依頼: %pekoe --json ledger%(%--all% で閉じたものも)、%pekoe ledger done|drop|close|link …%
+- 依頼: %pekoe --json ledger%(%--all% で閉じたものも)、%pekoe ledger done|drop|close|link|keep …%
 - 受信箱: %pekoe --json inbox%、%pekoe --json ask-human …%、%pekoe --json ask-human --wait <id>%
 - セッションの中身を見る: %pekoe --json ls% の path を使って %git -C <path> log% / %git -C <path> diff%
 - GitHub の様子: %gh%(例: %gh api repos/<owner>/<repo>/dependabot/alerts%、%gh pr list -R <owner>/<repo>%)

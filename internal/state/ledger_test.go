@@ -1,6 +1,7 @@
 package state
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -54,5 +55,61 @@ func TestLedger(t *testing.T) {
 	}
 	if err := db.SaveLedger(&LedgerEntry{ID: 99}); !errors.Is(err, ErrNoLedgerEntry) {
 		t.Fatalf("save unknown: %v", err)
+	}
+}
+
+// repeats and auto are kept, the newest entry is read back, and a
+// state.db made before the columns existed gets them.
+func TestLedgerRepeatsAuto(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	old, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`CREATE TABLE ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, sessions TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', closed_at TEXT NOT NULL DEFAULT '');
+INSERT INTO ledger(at,text,status) VALUES('2026-01-02T03:04:05Z','前からある依頼','open');`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+	for i := 0; i < 2; i++ { // opening twice adds the columns once
+		db, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db.Close()
+	}
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	e, err := db.LedgerLast()
+	if err != nil || e == nil || e.ID != 1 || e.Text != "前からある依頼" || e.Repeats != 0 || e.Auto {
+		t.Fatalf("an old entry: %+v %v", e, err)
+	}
+	now := time.Now()
+	e.Repeats, e.Auto, e.Status, e.ClosedAt = 2, true, LedgerChat, &now
+	if err := db.SaveLedger(e); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddLedger(&LedgerEntry{At: now, Text: "次", Status: LedgerOpen}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.LedgerGet(1); got.Repeats != 2 || !got.Auto {
+		t.Fatalf("saved: %+v", got)
+	}
+	if last, _ := db.LedgerLast(); last == nil || last.ID != 2 || last.Repeats != 0 || last.Auto {
+		t.Fatalf("last: %+v", last)
+	}
+}
+
+func TestLedgerLastEmpty(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if e, err := db.LedgerLast(); e != nil || err != nil {
+		t.Fatalf("empty ledger: %+v %v", e, err)
 	}
 }

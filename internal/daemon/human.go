@@ -81,6 +81,7 @@ var agentMethods = map[string]string{
 	"ledger.list":  "tapi chat reads back the requests still open (after a reset too); only from tapi's window",
 	"ledger.close": "tapi chat closes a request (done with evidence, dropped, or not a request); only from tapi's window, a person can reopen it",
 	"ledger.link":  "tapi chat ties a request to the session working on it; only from tapi's window",
+	"ledger.keep":  "tapi chat keeps the input of its turn as a request, or opens again one pekoed closed itself as no request (never one tapi or a person closed); only from tapi's window",
 	// the conflict forecast: the same pairs session.list already shows as
 	// each session's overlaps; git runs in pekoed (read-only: diff and
 	// merge-tree), at most every agentConflictsEvery (hAgentConflicts)

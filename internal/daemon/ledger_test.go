@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
@@ -187,7 +189,7 @@ func TestTapiResetKeepsLedger(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := string(b)
-	for _, want := range []string{"## 最初にすること", "`pekoe --json ledger`", "`pekoe --json inbox`", "open の依頼 1 件、受信箱の未回答 1 件", "--request <依頼の id>", "pekoe-orchestrate"} {
+	for _, want := range []string{"## 最初にすること", "`pekoe --json ledger`", "`pekoe --json inbox`", "open の依頼 1 件、受信箱の未回答 1 件", "--request <依頼の id>", "pekoe-orchestrate", "`pekoe ledger keep`", "`pekoe ledger keep <id>`"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("CLAUDE.md lacks %q", want)
 		}
@@ -197,5 +199,278 @@ func TestTapiResetKeepsLedger(t *testing.T) {
 	}
 	if !strings.Contains(tapiPersona, "統括役") || !strings.Contains(tapiPersona, "pekoe --json ledger") {
 		t.Error("the persona does not say tapi orchestrates")
+	}
+}
+
+func stopEvent(t *testing.T, d *Daemon, who *Caller, claimed string) {
+	t.Helper()
+	callAs[any](t, d, who, "session.event", map[string]any{
+		"hook": "Stop", "session": claimed,
+		"payload": map[string]any{"hook_event_name": "Stop", "last_assistant_message": "…"},
+	})
+}
+
+func ledgerAll(t *testing.T, d *Daemon) []state.LedgerEntry {
+	t.Helper()
+	return call[[]state.LedgerEntry](t, d, "ledger.list", map[string]any{"status": "all"})
+}
+
+// The same text right after an open entry (a prompt sent twice) is folded
+// into it: no new id, and the entry says so. Not after a minute, and not
+// into a closed entry.
+func TestLedgerFoldsRepeats(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "CSV の空行を飛ばすように直して")
+	promptEvent(t, d, tapi, TapiSlug, "  CSV の空行を飛ばすように直して\n")
+	promptEvent(t, d, tapi, TapiSlug, "CSV の空行を飛ばすように直して")
+	es := ledgerAll(t, d)
+	if len(es) != 1 || es[0].Repeats != 2 || es[0].Status != state.LedgerOpen {
+		t.Fatalf("folded: %+v", es)
+	}
+	// another text in between: the repeat is of the entry before the last
+	promptEvent(t, d, tapi, TapiSlug, "README も")
+	promptEvent(t, d, tapi, TapiSlug, "CSV の空行を飛ばすように直して")
+	if es = ledgerAll(t, d); len(es) != 3 || es[2].Repeats != 0 {
+		t.Fatalf("not the last entry: %+v", es)
+	}
+	// the last entry is closed: typed again, it may be asked again
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 3, "as": "chat"})
+	promptEvent(t, d, tapi, TapiSlug, "CSV の空行を飛ばすように直して")
+	if es = ledgerAll(t, d); len(es) != 4 || es[3].Status != state.LedgerOpen {
+		t.Fatalf("after a closed one: %+v", es)
+	}
+	// later than the window
+	was := ledgerRepeatWithin
+	ledgerRepeatWithin = -time.Second
+	defer func() { ledgerRepeatWithin = was }()
+	promptEvent(t, d, tapi, TapiSlug, "CSV の空行を飛ばすように直して")
+	if es = ledgerAll(t, d); len(es) != 5 || es[3].Repeats != 0 {
+		t.Fatalf("after the window: %+v", es)
+	}
+}
+
+// What was no request closes itself: tapi's turn ended and it asked nobody
+// for anything.
+func TestLedgerClosesChatAtTurnEnd(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "ありがと")
+	if es := ledgerOpen(t, d); len(es) != 1 {
+		t.Fatalf("open while tapi answers: %+v", es)
+	}
+	stopEvent(t, d, tapi, TapiSlug)
+	es := ledgerAll(t, d)
+	if len(es) != 1 || es[0].Status != state.LedgerChat || !es[0].Auto || es[0].ClosedAt == nil {
+		t.Fatalf("closed as chat by pekoed: %+v", es)
+	}
+	if v := call[Tapi](t, d, "tapi.get", nil); v.LedgerOpen != 0 {
+		t.Fatalf("ledger_open: %+v", v)
+	}
+	// sent twice in one turn: one entry, closed once
+	promptEvent(t, d, tapi, TapiSlug, "マージした")
+	promptEvent(t, d, tapi, TapiSlug, "マージした")
+	stopEvent(t, d, tapi, TapiSlug)
+	if es = ledgerAll(t, d); len(es) != 2 || es[1].Repeats != 1 || es[1].Status != state.LedgerChat || !es[1].Auto {
+		t.Fatalf("a repeat in the same turn: %+v", es)
+	}
+}
+
+// A real request never closes itself: every way a turn can show that it
+// works on a request, and every case pekoed cannot judge, leaves it open.
+func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	tapi := agentAs(TapiSlug)
+	n := 0 // the id of the last entry
+	prompt := func(text string) int64 {
+		t.Helper()
+		promptEvent(t, d, tapi, TapiSlug, text)
+		n++
+		return int64(n)
+	}
+	open := func(why string, ids ...int64) {
+		t.Helper()
+		for _, id := range ids {
+			if e := ledgerAll(t, d)[id-1]; e.ID != id || e.Status != state.LedgerOpen || e.Auto {
+				t.Fatalf("%s: #%d closed itself: %+v", why, id, e)
+			}
+		}
+	}
+	turns := []struct {
+		why string
+		do  func(id int64)
+	}{
+		{"a session tied to it (pekoe new --request)", func(id int64) {
+			s := callAs[state.Session](t, d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "request": id})
+			waitCreated(t, d, s.Slug)
+		}},
+		{"a session made without --request", func(int64) {
+			s := callAs[state.Session](t, d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/b"})
+			waitCreated(t, d, s.Slug)
+		}},
+		{"a session tied later (pekoe ledger link)", func(id int64) {
+			callAs[state.LedgerEntry](t, d, tapi, "ledger.link", map[string]any{"id": id, "slug": "main"})
+		}},
+		{"an instruction to a session (pekoe send)", func(int64) {
+			callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "テストも足して", "submit": true})
+		}},
+		{"a send that failed", func(int64) {
+			if err := callAsErr(d, tapi, "session.send", map[string]any{"slug": "nope", "text": "x", "submit": true}); err == nil {
+				t.Fatal("send to no session")
+			}
+		}},
+		{"a question to a person (pekoe ask-human)", func(int64) {
+			ask(t, d, TapiSlug, map[string]any{"question": "公開していい?", "kind": "approve"})
+		}},
+		{"a question asked with the human token, from tapi's window", func(int64) {
+			who := &Caller{human: true, Via: viaSocket, peer: fixedPeer(TapiSlug)}
+			callAs[state.InboxItem](t, d, who, "inbox.post", map[string]any{"question": "gh auth login をお願い", "kind": "login"})
+		}},
+		{"a land (refused here or not)", func(int64) {
+			_ = callAsErr(d, tapi, "land", map[string]any{"slug": "main"})
+		}},
+		{"tapi kept it (pekoe ledger keep)", func(id int64) {
+			if e := callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{}); e.ID != id || e.Status != state.LedgerOpen {
+				t.Fatalf("keep: %+v", e)
+			}
+		}},
+		{"tapi kept it by id", func(id int64) {
+			callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": id})
+		}},
+	}
+	var all []int64
+	for _, turn := range turns {
+		id := prompt("頼みごと: " + turn.why)
+		turn.do(id)
+		stopEvent(t, d, tapi, TapiSlug)
+		all = append(all, id)
+		open(turn.why, id)
+	}
+	// small talk after them closes itself and touches none of them
+	chat := prompt("ありがと")
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[chat-1]; e.Status != state.LedgerChat || !e.Auto {
+		t.Fatalf("small talk: %+v", e)
+	}
+	open("a later turn's end", all...)
+
+	// a turn that never ended (interrupted): its input is not closed by
+	// the next turn's end
+	cut := prompt("B も直して")
+	next := prompt("やっぱり今のは後で")
+	stopEvent(t, d, tapi, TapiSlug)
+	open("an interrupted turn", cut)
+	if e := ledgerAll(t, d)[next-1]; e.Status != state.LedgerChat {
+		t.Fatalf("the turn that did end: %+v", e)
+	}
+
+	// a turn pekoed's own typing or a finished background task started:
+	// its end closes nothing
+	for i, typed := range []string{"[pekoe inbox #3] 答え: 1「変える」", "<task-notification>\n<status>completed</status>\n</task-notification>"} {
+		id := prompt(fmt.Sprintf("C%d を直して", i))
+		promptEvent(t, d, tapi, TapiSlug, typed)
+		stopEvent(t, d, tapi, TapiSlug)
+		open("the end of a turn started by "+typed[:12], id)
+	}
+
+	// a Stop that only names tapi: not from tapi's window
+	id := prompt("D を直して")
+	stopEvent(t, d, agentAs("main"), TapiSlug)
+	stopEvent(t, d, &Caller{peer: fixedPeer("")}, TapiSlug)
+	open("a Stop from outside tapi's window", id)
+	stopEvent(t, d, tapi, TapiSlug) // tapi's own: this one was no request
+	if e := ledgerAll(t, d)[id-1]; e.Status != state.LedgerChat {
+		t.Fatalf("tapi's own Stop: %+v", e)
+	}
+
+	// tapi asked for something, then an input came in the middle of the
+	// turn: both stay
+	first := prompt("E を直して")
+	callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "E を直して", "submit": true})
+	second := prompt("あと F も")
+	stopEvent(t, d, tapi, TapiSlug)
+	open("an input in the middle of a turn", first, second)
+
+	// a request an earlier turn left open, sent again: the repeat's turn
+	// does not close it
+	was := prompt("G を直して")
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{})
+	stopEvent(t, d, tapi, TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "G を直して")
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[was-1]; e.Status != state.LedgerOpen || e.Repeats != 1 || len(ledgerAll(t, d)) != n {
+		t.Fatalf("a repeat of an earlier turn's request: %+v", e)
+	}
+
+	// tapi.reset in the middle of a turn: the conversation is gone, the
+	// input stays
+	gone := prompt("H を直して")
+	call[Tapi](t, d, "tapi.reset", nil)
+	stopEvent(t, d, tapi, TapiSlug)
+	open("tapi.reset", gone)
+}
+
+// What pekoed closed tapi may open again (keep, or tying a session to
+// it); what tapi or a person closed only a person reopens.
+func TestLedgerKeepReopens(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	tapi := agentAs(TapiSlug)
+	for _, s := range []string{"どのリポジトリの話かというと", "CSV を直して", "README を直して", "ありがと", "おやすみ"} {
+		promptEvent(t, d, tapi, TapiSlug, s)
+		stopEvent(t, d, tapi, TapiSlug)
+	}
+	for _, e := range ledgerAll(t, d) {
+		if e.Status != state.LedgerChat || !e.Auto {
+			t.Fatalf("closed by pekoed: %+v", e)
+		}
+	}
+	// no turn is running: nothing to keep without an id
+	if err := callAsErr(d, tapi, "ledger.keep", map[string]any{}); err == nil || !strings.Contains(err.Error(), "pekoe ledger keep <id>") {
+		t.Fatalf("keep with no input of the turn: %v", err)
+	}
+	if e := callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": 1}); e.Status != state.LedgerOpen || e.Auto || e.ClosedAt != nil {
+		t.Fatalf("keep <id>: %+v", e)
+	}
+	if e := callAs[state.LedgerEntry](t, d, tapi, "ledger.link", map[string]any{"id": 2, "slug": "main"}); e.Status != state.LedgerOpen || e.Auto || strings.Join(e.Sessions, ",") != "main" {
+		t.Fatalf("link: %+v", e)
+	}
+	s := callAs[state.Session](t, d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/readme", "request": 3})
+	waitCreated(t, d, s.Slug)
+	if e := ledgerAll(t, d)[2]; e.Status != state.LedgerOpen || e.Auto || strings.Join(e.Sessions, ",") != "feat-readme" || s.Request != 3 {
+		t.Fatalf("new --request: %+v %+v", e, s)
+	}
+	// closing one pekoed closed says how to get it back
+	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 4, "as": "done"}); err == nil || !strings.Contains(err.Error(), "pekoe ledger keep 4") {
+		t.Fatalf("close of an auto one: %v", err)
+	}
+	// only tapi (or a person)
+	if err := callAsErr(d, agentAs("main"), "ledger.keep", map[string]any{"id": 4}); err == nil || !strings.Contains(err.Error(), "only tapi chat") {
+		t.Fatalf("keep from a session: %v", err)
+	}
+	if err := callAsErr(d, tapi, "ledger.keep", map[string]any{"id": 9}); err == nil || !strings.Contains(err.Error(), "no such ledger entry: #9") {
+		t.Fatalf("keep of no entry: %v", err)
+	}
+	// what tapi closed itself stays closed for tapi, however it tries
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "chat"})
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 2, "as": "done"})
+	for id := 1; id <= 2; id++ {
+		for m, p := range map[string]map[string]any{
+			"ledger.keep": {"id": id},
+			"ledger.link": {"id": id, "slug": "main"},
+			"session.new": {"repo": repo, "branch": "feat/again", "request": id},
+		} {
+			if err := callAsErr(d, tapi, m, p); err == nil || !strings.Contains(err.Error(), "a person can reopen it") {
+				t.Fatalf("%s of #%d, closed by tapi: %v", m, id, err)
+			}
+		}
+	}
+	// a person reopens anything; the mark goes
+	if e := call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 5}); e.Status != state.LedgerOpen || e.Auto {
+		t.Fatalf("a person reopens an auto one: %+v", e)
+	}
+	if e := call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 1}); e.Status != state.LedgerOpen {
+		t.Fatalf("a person reopens tapi's: %+v", e)
 	}
 }

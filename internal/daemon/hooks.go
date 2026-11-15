@@ -259,10 +259,18 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 	}
 	res, err := d.hEvent(p)
 	if pane == TapiSlug && err == nil {
-		// a person's request to tapi (ledger.go): only from tapi's own
-		// window, never from a caller that just names it
-		if hook := p.Hook; hook == "UserPromptSubmit" || hook == "" && hp.HookEventName == "UserPromptSubmit" {
-			d.recordRequest(hp.Prompt)
+		// a person's request to tapi and the end of tapi's turn
+		// (ledger.go): only from tapi's own window, never from a caller
+		// that just names it
+		hook := p.Hook
+		if hook == "" {
+			hook = hp.HookEventName
+		}
+		switch hook {
+		case "UserPromptSubmit":
+			d.tapiPrompt(hp.Prompt)
+		case "Stop":
+			d.tapiTurnEnd()
 		}
 	}
 	return res, err
