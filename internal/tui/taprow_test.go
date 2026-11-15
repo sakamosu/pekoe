@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"pekoe/internal/config"
 	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
 	"pekoe/internal/state"
@@ -299,6 +300,38 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 			if strings.Contains(r, tc.body) {
 				t.Errorf("a session row took tapi's color: %q", r)
 			}
+		}
+	}
+}
+
+// The hollow idle circle fills with tapi's pearl in every icon set that
+// has one (nerd's  as well as unicode's ○), sized by [mascot] glyphs;
+// ascii keeps its o, done keeps its check, no color keeps the glyph.
+func TestTapiRowIdleIconFilledAnyIconSet(t *testing.T) {
+	idle := &daemon.Tapi{Started: true, Alive: true, State: state.Idle, StateSince: time.Now()}
+	done := &daemon.Tapi{Started: true, Alive: true, State: state.Done, StateSince: time.Now()}
+	for _, c := range []struct {
+		icons, glyphs, color string
+		info             *daemon.Tapi
+		icon             string
+	}{
+		{"nerd", "unicode", "truecolor", idle, "●"},
+		{"nerd", "narrow", "truecolor", idle, "\U0001F784"},
+		{"nerd", "unicode", "truecolor", nil, "●"}, // asleep
+		{"unicode", "unicode", "truecolor", idle, "●"},
+		{"unicode", "narrow", "truecolor", idle, "\U0001F784"},
+		{"ascii", "unicode", "truecolor", idle, "o"},
+		{"nerd", "unicode", "truecolor", done, theme.Icons("nerd").Done},
+		{"unicode", "unicode", "truecolor", done, "✓"},
+		{"nerd", "unicode", "none", idle, theme.Icons("nerd").Idle},
+		{"unicode", "unicode", "none", idle, "○"},
+	} {
+		m := tapiModel(t, c.color, config.Mascot{Glyphs: c.glyphs})
+		m.ic = theme.Icons(c.icons)
+		m.chat.info = c.info
+		rows, _ := m.sessionRows(80)
+		if got := ansi.Strip(rows[1].Text); !strings.HasPrefix(got, "  "+c.icon+" tapi") {
+			t.Errorf("%s/%s/%s state %v: row %q should start with %q", c.icons, c.glyphs, c.color, c.info, got, c.icon)
 		}
 	}
 }
