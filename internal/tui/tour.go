@@ -97,6 +97,7 @@ type tourCopy struct {
 // tourStep is one coach mark: its text in each language, and one sample
 // screen for both.
 type tourStep struct {
+	mood   mascot.Mood // tapi's face at the head of the card ("" = idle)
 	ja, en tourCopy
 	setup  func(m *model) // puts the sample screen into shape (after tourBase)
 	// target is what the step is about; ok=false centers the card
@@ -455,6 +456,14 @@ func (m *model) tourPlace(t rect, has bool, bodyH int) (x, y int, card []string)
 	return clampi(t.x+t.w-want-2, 0, max(W-want, 0)), clampi(t.y+1, 0, max(bodyH-len(card), 0)), card
 }
 
+// tourMood is the face of a step's card: its mood, idle when unset.
+func tourMood(step int) mascot.Mood {
+	if md := tourSteps[step].mood; md != "" {
+		return md
+	}
+	return mascot.Idle
+}
+
 // tourCard draws the card width cells wide and at most maxH rows tall:
 // tapi's face and the title with the position, the text, the keys.
 func (m *model) tourCard(width, maxH int) []string {
@@ -462,12 +471,11 @@ func (m *model) tourCard(width, maxH int) []string {
 	inner := max(width-4, 1)
 	right := th.FG(theme.Dim, fmt.Sprintf("sample · %d/%d", m.tour.step+1, len(tourSteps)))
 	// tapi tells the tour: its face heads the card (the bar keeps only its
-	// speech meanwhile, docs/mascot.md: one face at a time). Always the
-	// done eyes, ^ ^: plain ASCII, one cell in every font and glyph setting.
-	// The tour is the first screen a new user sees, before any [mascot]
-	// glyphs is set, and ● (work) or • (idle) are East Asian Ambiguous:
-	// fonts like Moralerspace draw them two cells wide and the face breaks.
-	head := m.tapi.r.Line(m.tapi.r.Eyes(mascot.Done)) + " " + th.Bold(theme.Primary, m.tourCopy().title)
+	// speech meanwhile, docs/mascot.md: one face at a time), with the
+	// step's mood. The eyes are no East Asian Ambiguous glyph
+	// (docs/ambiguous-width.md), so the face holds in every font before
+	// any [mascot] glyphs is set.
+	head := m.tapi.r.Line(m.tapi.r.Eyes(tourMood(m.tour.step))) + " " + th.Bold(theme.Primary, m.tourCopy().title)
 	if gap := inner - w(head) - w(right); gap >= 1 {
 		head += strings.Repeat(" ", gap) + right
 	}

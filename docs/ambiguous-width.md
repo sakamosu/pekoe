@@ -213,7 +213,7 @@ ambiguous = "auto"   # auto | narrow | wide
 
 1. **テストの土台**(振る舞いは変えない): マスコットの spec、`IconSet` の unicode / nerd、未読の印などの既定の字に曖昧幅が入ったら落ちるテスト。枠線(U+2500–257F)・ブロック要素(U+2580–259F)・私用領域を許可リストに、今ある違反を「既知の違反」のリストに入れ、後の PR で減らす。曖昧幅でなくても日本語フォントで全角に描かれる字(`⚠ ▱ ▪`)は、EAW だけでは拾えないので、字ごとに確かめた許可リスト(この文書の表)にする案も合わせて決める(決めたことは下の「段階 1 で決めたこと」。禁止のリストにした)。`theme.Confetti` のテストが先例
 2. **状態アイコンの置き換え**: unicode / nerd のセットの `● ○ ◆ ◎ ▶ ⊙ ± ≡ …`(`…` は Pending)、未読の `•`(B では崩れないので `wide` の表だけでもよい)、ロゴの `●`、レビューの見出しの `○`、テスト実行中のバッジ `…test` の `…`、`⚠`。アイコンの後ろの空白のテスト
-3. **マスコットの置き換え**(`internal/mascot` の担当と相談): 目と 1 セル表示の `● •`、`˙`、`╥`。`narrowGlyph` をなくし、`mascot.glyphs = "narrow"` を読むだけにする。チュートリアルのカードの顔をステップごとの表情に戻す。`docs/mascot.md` の互換性の表を書き直す
+3. **マスコットの置き換え**(済み。下の「段階 3 で決めたこと」): 目と 1 セル表示の `● •`、`˙`、`╥`。`narrowGlyph` をなくし、`mascot.glyphs = "narrow"` を読むだけにする。チュートリアルのカードの顔をステップごとの表情に戻す。`docs/mascot.md` の互換性の表を書き直す
 4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
 5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。(ダッシュボードのバーの `▰ ▱` は `▅ ▁` に替えて済み)
 
@@ -231,6 +231,25 @@ ambiguous = "auto"   # auto | narrow | wide
   - 確かめて許す(`glyphguard.AllowedNarrow`): `✓ ✗`。はみ出すのは HackGen35 Console の 1.4 だけで、ほかの入っている書体では収まる。代わりの候補(`✔ ✘ ✕`)はどれも同じか悪く、アイコンの後ろには必ず空白がある(`theme.Prefix`)
   - 文書にある `▪` は表で測っていないので、どちらにも入れていない。使うときに測って足す
   - 新しい字を状態表示に使うときは、この文書の表で測ってから使う。測って崩れる字は `WideInFonts` に足す
+
+### 段階 3 で決めたこと(マスコットの置き換え)
+
+既定の表(`mascot.glyphs` が auto・unicode)のマスコットの字に曖昧幅が無くなった。`internal/mascot/ambiguous_test.go` の既知の違反は空。
+
+| 場所 | 旧 | 新 | 理由 |
+| --- | --- | --- | --- |
+| work の目 | `● ●` | `◉ ◉` | `●` の代わりになる「全書体にあって大きい黒丸」は無い(「2.」の読み取れること)。大きさの近い `◉` にした。SF Mono・Monaco に無いのは、今の wait の `◕` と同じ |
+| idle の目 | `• •` | `∙ ∙` | 測った 10 書体すべてで収まる唯一の N の点。work の `◉` と大きさで見分けがつく |
+| 1 セルの work・done | `●` | `◉` | 目の片方と同じ字 |
+| 1 セルの idle | `•` | `∙` | 同上 |
+| 1 セルの wait | `◉` | `◕` | 曖昧幅ではないが、work が `◉` になったので、色なしでも work と見分けられるよう wait の目の字にした |
+| wait のチラ見(`Peek`) | `˙ ˙` | `' '` | `˙` に近い N の字(`⸳` など)は測った書体にほとんど無いので ASCII にした |
+| tapi の粒(`Pearl`。Sessions の tapi の行の落ち着いた状態) | `●`(narrow は `🞄`) | `◉` | work の目と同じ |
+| ci_failed の目 | `╥ ╥` | 替えない | 罫線の範囲で、B では端末が自前で描く。A の端末では段階 4 の `wide` の表(マスコットは ascii の `T T`)で扱う |
+
+- `narrowGlyph` をなくした。`mascot.glyphs = "narrow"` は読み続け(`pekoe config check` も通る)、`DetectGlyphs` で `unicode` として扱う。`auto`(CPR で広いと測れば ascii)と `ascii` の動きは変えていない。`config check` で「不要になった」と出すのは段階 4
+- チュートリアルのカードの顔を、ステップごとの表情(`tourStep.mood`)に戻した。`^ ^` に固定していたのは、`●` `•` が B で崩れたため
+- 残り: `internal/tips/tips.toml` の `mascot-glyphs` と README の `[mascot] glyphs` の説明はまだ narrow を「● を 🞄 に替える」と書いている(段階 4 の tips・README で直す)。Web UI の tapi chat の顔(`internal/daemon/webui/app.js`)はブラウザが描くので対象外で、`● ●` `• •` のまま
 
 ## 付録: 調べ方
 

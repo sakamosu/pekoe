@@ -23,8 +23,8 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 標準形は六分ブロック（sextant, U+1FB00–U+1FB3B）で輪郭を作る **round**。5桁×3行で、セル 10×20px なら 50×47px の横長の円になる（横幅 30→40→50→40→30px の段）。四分ブロックだけの **block** は角が丸まらず長方形になるので、六分ブロックが使えない環境のフォールバック扱い。
 
 ```
-🬞🬹🬹🬹🬏      ▐● ●▌      ●
-█● ●█
+🬞🬹🬹🬹🬏      ▐◉ ◉▌      ◉
+█◉ ◉█
 🬁🬎🬎🬎🬀
 3行(5桁)    1行         1セル
 ```
@@ -46,7 +46,7 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 | shadow | #c7a57c | #6e432c |
 | eye | #2b201c | #f6e7cf |
 
-状態のアクセント色は TUI の状態色（[ui-guidelines.md](ui-guidelines.md)「状態の表現」、`theme.Look`）と同じテーマのトークンから取る：working = ok（緑）、waiting = warn（黄）、done = secondary（シアン）、error = err（赤）、idle / sleep = dim。hex は持たないので、テーマの mode（truecolor / ansi / none）・`[theme.colors]` / `[theme.ansi]` の上書き・NO_COLOR にそのまま従う。ライト用のアクセントは別に持たない（パレット E が変えるのは体の色だけ。テーマ自体にライト用の色が無く、Sessions の状態アイコンと同じ色にそろえるため）。ライトの端末で見にくければ `[theme.colors]` か ansi モードで直す。1セルの work と done はどちらも `●` なので、この2つを同じ色に上書きしないこと。
+状態のアクセント色は TUI の状態色（[ui-guidelines.md](ui-guidelines.md)「状態の表現」、`theme.Look`）と同じテーマのトークンから取る：working = ok（緑）、waiting = warn（黄）、done = secondary（シアン）、error = err（赤）、idle / sleep = dim。hex は持たないので、テーマの mode（truecolor / ansi / none）・`[theme.colors]` / `[theme.ansi]` の上書き・NO_COLOR にそのまま従う。ライト用のアクセントは別に持たない（パレット E が変えるのは体の色だけ。テーマ自体にライト用の色が無く、Sessions の状態アイコンと同じ色にそろえるため）。ライトの端末で見にくければ `[theme.colors]` か ansi モードで直す。1セルの work と done はどちらも `◉` なので、この2つを同じ色に上書きしないこと。
 
 ## 状態と表情
 
@@ -55,15 +55,22 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 | 優先 | 状態 | 目 | 1セル | アクセント | 意味 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | error | `⨯ ⨯` | `⨯` | 赤（err） | エージェントが異常終了、またはコマンド失敗で停止 |
-| 2 | wait | `◕ ◕` | `◉` | 黄（warn） | エージェントがユーザーの入力・許可を待っている |
-| 3 | work | `● ●` | `●` | 緑（ok） | エージェントが出力中、またはコマンド実行中 |
-| 4 | done | `^ ^` | `●` | シアン（secondary） | ターンが終わり、ユーザーがまだ見ていない |
-| 5 | idle | `• •` | `•` | dim | プロンプトで待機。見た後の done もここに戻る |
+| 2 | wait | `◕ ◕` | `◕` | 黄（warn） | エージェントがユーザーの入力・許可を待っている |
+| 3 | work | `◉ ◉` | `◉` | 緑（ok） | エージェントが出力中、またはコマンド実行中 |
+| 4 | done | `^ ^` | `◉` | シアン（secondary） | ターンが終わり、ユーザーがまだ見ていない |
+| 5 | idle | `∙ ∙` | `∙` | dim | プロンプトで待機。見た後の done もここに戻る |
 | 6 | sleep | `- -` | `◦` | dim | 全セッションが3分以上 idle。集約表示でのみ使う |
 
-wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の顔にし、見開き（`◉ ◉`）は怖いので使わない。`◕` はフォントでは左上4分の1が欠けた円として描かれる。Ghostty で欠けが気になる場合の代替は `˙ ˙`（見上げる目）。
+wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の顔にする。`◕` はフォントでは左上4分の1が欠けた円として描かれる。
 
-1セルの wait は顔ではなく状態記号なので `◉` のまま。done と work は1セルでは同じ `●` で、色だけが違う。
+目と1セルの字は、East Asian Width が中立（N）で、[ambiguous-width.md](ambiguous-width.md)「2. 代わりの文字の候補」で測った書体に入っていて1セルに収まるものだけを使う（`internal/mascot` の `TestFaceNotAmbiguous` で固定）。曖昧幅（A）の字は Moralerspace JPDOC のように全角で描くフォントではみ出し、目が大きな半円になって顔が崩れる。以前の work の `● ●`、idle の `• •`、チラ見の `˙ ˙` は曖昧幅だったので、次のように替えた：
+
+- work の目は `◉ ◉`。`●` の代わりに「どの書体にもあって、大きくて、1セルに収まる黒丸」は無く（`⬤` `🞄` は入っている書体が少なく、`∙` は小さい）、大きさの近い `◉` にした。黒目の周りに輪があるので「じっと見て作業している」目になる。以前は wait の候補として `◉ ◉` を見開きで怖いと避けたが、お願いの顔（wait）でなく作業中の顔なら合う。wait の `◕ ◕` とは形で見分けがつく
+- idle の目は `∙ ∙`。測った10書体すべてに入っていて収まる唯一の N の点。`•` より小さく、work の `◉` と大きさで見分けがつく
+- チラ見は ASCII の `' '`（セルの上の方の印で頭上を見る）。`˙` に近い N の字（`⸳` など）は測った書体にほとんど無い
+- `◉ ◕` は SF Mono・Monaco に無い（代替フォントで描かれる）。wait の `◕` と同じ扱いで、ほかの書体では収まる
+
+1セルの表示は目の片方と同じ字にそろえる：work と done は `◉`（色だけが違う）、wait は `◕`。以前は wait が `◉`、work / done が `●` だったが、work が `◉` になったので、色の無い端末でも work と wait を形で見分けられるよう wait を `◕` にした。
 
 ## 表示設計
 
@@ -71,12 +78,12 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 
 | 場所 | 形 | 出す条件 | 内容 |
 | --- | --- | --- | --- |
-| ステータスバー（最下行左端） | 1行 | 常時 | 集約状態の顔 ＋ 台詞。例：`▐● ●▌ 3 working` / `▐◕ ◕▌ fix-ci needs you` / `▐⨯ ⨯▌ auth-refactor failed` / `▐- -▌ all quiet` |
+| ステータスバー（最下行左端） | 1行 | 常時 | 集約状態の顔 ＋ 台詞。例：`▐◉ ◉▌ 3 working` / `▐◕ ◕▌ fix-ci needs you` / `▐⨯ ⨯▌ auth-refactor failed` / `▐- -▌ all quiet` |
 | 主ペイン | 3行 | 空のときだけ | セッション未選択、worktree 作成中、依存インストール中。中央に顔と短いキャプション。tapi の行を選んでいるときは空きではなくダッシュボード(docs/orchestration.md「ダッシュボード」)で、顔も TIPS も出さない。泡アニメはここ専用。セッション未選択と worktree 作成中だけ、キャプションの下に TIPS を 1 つ添える(README「TIPS」。`.` で次へ。入らなければ出さない) |
 | pekoe 自身のプロンプト | 1行 | pekoe が尋ねるとき | `▐◕ ◕▌ delete worktree fix-ci? [y/n]` のように文頭に置く。puppy＝「pekoe が聞いている」を一貫させる |
 | トースト（右下、2行） | 1行 | 見ていないセッションが wait / error になったとき。tapi chat を閉じている間に tapi が wait になったとき、エージェントが受信箱に問いを出したとき(`[orchestrator] notify = "quiet"` でなければ) | `▐◕ ◕▌ fix-ci needs you` / `▐◕ ◕▌ tapi needs you · t` / `▐◕ ◕▌ ? feat-x asks: … · ]a`。数秒で消える。任意キーでも消える。表示中のセッションについては出さない |
-| tapi chat のタイトル | 1行 | `t` で tapi chat(docs/tapi-chat.md)を開いている間 | `▐● ●▌ [4] tapi chat · claude · thinking`。目は tapi chat のエージェントの状態(running → work、waiting → wait、idle → idle、未起動 → sleep、終了 → error)。この間ステータスバーは顔を出さず台詞だけにする(顔は1か所) |
-| チュートリアルのカード | 1行 | ツアー(初回起動、`H` / `:tutorial`)の間 | `▐^ ^▌ pekoe へようこそ  sample · 1/13`。tapi が画面を案内している体で、カードのタイトルの頭に置く。カードの文面も tapi の口調(下の「tapi の人物像」: ぼく・きみ・くだけた話し言葉、本文に顔や絵文字なし)で書く。目はいつも done の `^ ^`(案内役の笑顔)。ツアーは `[mascot] glyphs` を設定する前の新しいユーザーが最初に見る画面なので、どのフォント・glyphs 設定でも 1 セルで描かれる ASCII の目だけを使う(work の `●` や idle の `•` は East Asian Ambiguous で、Moralerspace などは 2 セル幅に描いて顔が崩れる)。この間ステータスバーは顔を出さず台詞だけにし、tapi chat のステップでもその窓のタイトルに顔を出さない(顔は1か所) |
+| tapi chat のタイトル | 1行 | `t` で tapi chat(docs/tapi-chat.md)を開いている間 | `▐◉ ◉▌ [4] tapi chat · claude · thinking`。目は tapi chat のエージェントの状態(running → work、waiting → wait、idle → idle、未起動 → sleep、終了 → error)。この間ステータスバーは顔を出さず台詞だけにする(顔は1か所) |
+| チュートリアルのカード | 1行 | ツアー(初回起動、`H` / `:tutorial`)の間 | `▐^ ^▌ pekoe へようこそ  sample · 1/13`。tapi が画面を案内している体で、カードのタイトルの頭に置く。カードの文面も tapi の口調(下の「tapi の人物像」: ぼく・きみ・くだけた話し言葉、本文に顔や絵文字なし)で書く。目はステップごとの表情(ようこそ・tapi chat・PR・終わりは done の `^ ^`、受信箱は wait の `◕ ◕`、工程表と [4] Agent は work の `◉ ◉`、ほかは idle の `∙ ∙`。`internal/tui/tour_sample.go` の `mood`)。ツアーは `[mascot] glyphs` を設定する前の新しいユーザーが最初に見る画面だが、既定の目に曖昧幅の字が無いので、どのフォントでも崩れない(以前は work の `●`・idle の `•` が崩れたので `^ ^` に固定していた)。この間ステータスバーは顔を出さず台詞だけにし、tapi chat のステップでもその窓のタイトルに顔を出さない(顔は1か所) |
 | ステータスバーの台詞(tapi・受信箱) | — | tapi chat を閉じている間に許可待ち・質問待ちになったか、エージェントが答えを待つ受信箱の問い(`fyi` と人が出したもの以外)があり、セッションの wait / error が無いとき | `▐◕ ◕▌ tapi needs you · t`(tapi が先)/ `▐◕ ◕▌ ? feat-x asks · ]a` / `▐◕ ◕▌ ? 2 questions · ]a`。セッションの wait と同じエスカレーション(下の表)に乗る。`[orchestrator] notify = "quiet"` では tapi の `chat waits · t` だけで、トーストも通知も出さない(統括役にする前の弱い知らせ方) |
 | スプラッシュ | 3行＋文字 | 起動時 | 集約状態の顔の右に名前・バージョン・生きているセッション数。1秒かキー入力で消える |
 | CLI / README | 3行＋文字 | `pekoe --help`、README の頭 | 静止画 |
@@ -95,7 +102,7 @@ wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の
 | 瞬き | idle / work で `- -` を1フレーム。間隔は 4–6 秒でランダム。Web UI の tapi chat のタイトルの顔(`▐◕ ◕▌` を pearl1 と同じ bd・eye・sh で描いたもの)も同じ |
 | 泡（work） | 主ペインが空の3行表示だけ。右隣の1列で `·` → `°` → `°` → 無を 400ms 間隔で巡回 |
 | 台詞の点滅（wait） | 表示3：非表示1 の比で、周期 1.6 秒。`?` を出すのは3行表示とトーストだけ |
-| チラ見（wait） | 6フレームに1回 `˙ ˙` で頭上を見る。バーではやらない |
+| チラ見（wait） | 6フレームに1回 `' '` で頭上を見る。バーではやらない |
 | z（sleep） | 4秒に1回、右上へ `z` → `z` → `Z` → 無 |
 | done の戻し | セッションを表示したら即時、未表示でも 10 秒で idle |
 | error の戻し | 表示するまで保持。時間では消えない |
@@ -177,7 +184,7 @@ CLOSED は何もしない。MERGED と同時に CI が通っても merged だけ
 - ci\_running の目線は 800ms ごとに2コマを往復する
 - `animate = false` のときは紙吹雪を出さず、目も1コマ目で止める（静止の顔とセリフだけ）
 
-待機中の顔：集約が idle のとき、開いている PR に失敗 check があると目が少し曇り（`• •` → `◦ ◦`）、台詞に1行足す（`▐◦ ◦▌ idle · fix-ci #42 ci red`、複数なら `idle · 2 prs ci red`）。wait / work / done / error / sleep の顔は変えない。ascii では目は変えず台詞だけ。
+待機中の顔：集約が idle のとき、開いている PR に失敗 check があると目が少し曇り（`∙ ∙` → `◦ ◦`）、台詞に1行足す（`▐◦ ◦▌ idle · fix-ci #42 ci red`、複数なら `idle · 2 prs ci red`）。wait / work / done / error / sleep の顔は変えない。ascii では目は変えず台詞だけ。
 
 確かめ方：`PEKOE_TAPI_DEMO=pr pekoe` で起動すると、選択中のセッション（なければ架空の `feat/demo`）に台本どおりの偽の PR 要約を 6 秒ごとに流す。基準 → ci\_passed → approved → new\_comment → changes\_requested → ci\_running → ci\_failed（バーが曇る）→ 同じ要約（何も出ない）→ ci\_running → approved と ci\_passed の同時（approved だけ）→ merged（紙吹雪）。デーモンには何も送らない。
 
@@ -208,7 +215,7 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
 
 振る舞いのルール(キャラが仕事の邪魔をしない)：
 
-- 返事に顔（`▐• •▌` など）・絵文字・顔文字を入れない。tapi の顔は tapi chat のタイトルにだけ出す（顔は1か所。目は tapi chat のエージェントの状態で変わる）。返事の中は Claude Code の画面なので `[mascot] glyphs` の置き換えが効かず、曖昧幅を全角で描く端末では目がはみ出して顔に見えないこともある
+- 返事に顔（`▐∙ ∙▌` など）・絵文字・顔文字を入れない。tapi の顔は tapi chat のタイトルにだけ出す（顔は1か所。目は tapi chat のエージェントの状態で変わる）。返事の中は Claude Code の画面なので `[mascot] glyphs` の置き換え(ascii)が効かず、顔として描かれる保証がない
 - 言葉の調子は報告する中身の気持ちにそろえる（CI が落ちたらしょんぼり、マージなら一緒に喜ぶ）。良い知らせと悪い知らせが混ざるときは悪いほうに合わせる
 - キャラを出すのは返事の最初か最後の1文だけ。調査結果・コマンド・根拠・手順は普通に正確に書き、確かめたことと推測を分け、根拠を添え、分からないことは分からないと言う
 - 失敗や分からないことをキャラでごまかさない
@@ -236,10 +243,10 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
     ]
   },
   "states": {
-    "idle":  {"eyes": "• •", "cell": "•", "accent": "i"},
-    "work":  {"eyes": "● ●", "cell": "●", "accent": "w"},
-    "wait":  {"eyes": "◕ ◕", "cell": "◉", "accent": "q"},
-    "done":  {"eyes": "^ ^", "cell": "●", "accent": "d"},
+    "idle":  {"eyes": "∙ ∙", "cell": "∙", "accent": "i"},
+    "work":  {"eyes": "◉ ◉", "cell": "◉", "accent": "w"},
+    "wait":  {"eyes": "◕ ◕", "cell": "◕", "accent": "q"},
+    "done":  {"eyes": "^ ^", "cell": "◉", "accent": "d"},
     "error": {"eyes": "⨯ ⨯", "cell": "⨯", "accent": "x"},
     "sleep": {"eyes": "- -", "cell": "◦", "accent": "i"}
   }
@@ -260,12 +267,12 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
 | 条件 | 判定 | 代替 |
 | --- | --- | --- |
 | 六分ブロックの内蔵描画 | `TERM_PROGRAM=ghostty` / kitty / WezTerm / foot なら有効。それ以外は設定 `mascot.shape` に従う | `block`（四分ブロックの長方形） |
-| `● ◉ ◕ ⨯ ◦` の幅 | 起動時に `●` を出力して CPR（`ESC[6n`）でカーソル位置を測る。2桁進んだら曖昧幅＝広い環境 | 目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット |
+| 端末が曖昧幅を2セルと数える（輪郭の `█ ▌ ▀ ▄` が曖昧幅） | 起動時に `●` を出力して CPR（`ESC[6n`）でカーソル位置を測る。2桁進んだら曖昧幅＝広い環境（`glyphs = "auto"` のとき） | 目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット |
 | tmux 越し | 上と同じ測定で決まる。tmux は六分ブロックを素通しするが、`◕` の幅は tmux 側の設定に依存 | 同上 |
-| 曖昧幅を全角で作ったフォント（Moralerspace JPDOC など） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す）。error と sleep は既定で中立幅の `⨯` `◦` を使うので崩れない。`●` だけが残る | 設定 `mascot.glyphs = "narrow"` で `●` を `🞄`（U+1F784 BLACK SLIGHTLY SMALL CIRCLE、中立幅）に替える。`🞄` は Menlo / SF Mono / Apple Symbols に無く、どのフォールバックで描かれるかが環境次第なので既定にはしない |
+| 曖昧幅を全角で作ったフォント（Moralerspace JPDOC など） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`unicode` と同じ見た目になる |
 | 256色端末 | truecolor 非対応なら最近傍の 256 色に落とす | パレットの近似色 |
 
-narrow の代替字を `🞄` にした理由：以前は `⬤`（U+2B24 LARGE CIRCLE）を使っていたが、`⬤` はセルいっぱいの黒丸なので、ステータスバー（`▐⬤ ⬤▌ main working`）で work の目が真っ黒に見開いたように見えて怖い（wait で `◉ ◉` を避けたのと同じ理由）。`🞄` は Moralerspace JPDOC の全書体に入っていて、大きさは `⬤` と idle の `•` の間（1セル幅に対して幅・高さとも `⬤` の約6割、`•` の約1.4倍）。work の目として黒目がはっきりしつつ見開きにならず、idle の `• •` とも大きさで見分けがつく。同じ置き換えを受ける1セルの work / done も `🞄` になる。ほかの候補は、`⦁`（U+2981）は Moralerspace に無くフォールバック頼み、`∙` `⋅` は小さすぎて idle と区別しにくく、`⚫` は全角、`⏺` は絵文字で描かれることがあるので選ばない。
+ci_failed の目 `╥ ╥` は曖昧幅だが罫線（U+2500–257F）の範囲なので替えない。主な端末は罫線を自前で描くのでフォントが全角に作っていても1セルに収まり、端末が曖昧幅を2セルと数える環境では輪郭ごと ascii（`T T`）になる（[ambiguous-width.md](ambiguous-width.md)「段階 3 で決めたこと」）。
 
 検証手順（Ghostty 実機）：
 
@@ -276,7 +283,7 @@ narrow の代替字を `🞄` にした理由：以前は `⬤`（U+2B24 LARGE C
 
 ## 実装メモ
 
-コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / narrow / ascii） / `palette` / `splash` / `[mascot.colors]`）。
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / ascii。narrow は以前の値で unicode と同じ） / `palette` / `splash` / `[mascot.colors]`）。
 
 pekoed のセッション状態との対応：
 
@@ -314,7 +321,7 @@ pekoed のセッション状態との対応：
 実機で確かめること：
 
 - [ ] Ghostty で printf を貼り、六分ブロックの継ぎ目に線が出ない
-- [ ] `◕` が1桁幅で、欠けが艶に見える（気になるなら `˙ ˙` へ）
+- [ ] `◕` が1桁幅で、欠けが艶に見える
 - [ ] tmux 内でも幅が変わらない
 - [ ] D の艶（#f8ecd9）が Mocha / Tokyo Night / 黒の上で浮きすぎない
 - [ ] E が Latte の上で沈まない

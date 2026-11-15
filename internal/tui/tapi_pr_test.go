@@ -256,7 +256,7 @@ func TestCloudyIdleBar(t *testing.T) {
 	s := &state.Session{Slug: "a", Branch: "fix-ci", State: state.Idle, StateSince: time.Now()}
 	m.sessions = []*state.Session{s}
 	clear := ansi.Strip(m.barTapi(100))
-	if clear != "▐• •▌ idle" {
+	if clear != "▐∙ ∙▌ idle" {
 		t.Fatalf("%q", clear)
 	}
 	m.tapi.demoPR["a"] = &mascot.PR{Number: 42, State: "OPEN", Fail: 1}

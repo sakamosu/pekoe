@@ -176,7 +176,7 @@ type accents struct{ work, wait, done, err lipgloss.TerminalColor }
 // Options come from [mascot] in config.toml plus terminal detection.
 type Options struct {
 	Shape  string            // round | block (resolve "auto" with DetectShape first)
-	Glyphs string            // unicode | narrow | ascii
+	Glyphs string            // unicode | ascii (narrow, a former setting, draws as unicode)
 	Light  bool              // light theme: palette E (the body only)
 	Colors map[string]string // overrides: hi bd sh eye
 	// State accents as the theme resolves them: Work = ok, Wait = warn,
@@ -226,8 +226,8 @@ func New(o Options) *Renderer {
 	if r.shape != "block" {
 		r.shape = "round"
 	}
-	if r.glyphs != "ascii" && r.glyphs != "narrow" {
-		r.glyphs = "unicode"
+	if r.glyphs != "ascii" {
+		r.glyphs = "unicode" // narrow too: the default glyphs no longer need it
 	}
 	return r
 }
@@ -288,13 +288,14 @@ func (r *Renderer) Body() lipgloss.TerminalColor {
 	return r.color("bd")
 }
 
-// Pearl is a filled dot sized for the glyph setting: ● (🞄 in narrow mode,
-// o in ascii), tapi's pearl drawn as one cell.
+// Pearl is tapi's pearl drawn as one cell: ◉ (o in ascii). Not ●: it is
+// East Asian Ambiguous, and fonts like Moralerspace JPDOC draw it two
+// cells wide (docs/ambiguous-width.md).
 func (r *Renderer) Pearl() string {
 	if r.glyphs == "ascii" {
 		return "o"
 	}
-	return r.narrowGlyph("●")
+	return "◉"
 }
 
 // Color returns the mood's accent color.
@@ -303,37 +304,25 @@ func (r *Renderer) Color(m Mood) lipgloss.TerminalColor { return r.color(spec.St
 var asciiEyes = map[Mood]string{Idle: "o o", Work: "o o", Wait: "0 0", Done: "^ ^", Error: "x x", Sleep: "- -"}
 var asciiCell = map[Mood]string{Idle: ".", Work: "*", Wait: "?", Done: "*", Error: "x", Sleep: "."}
 
-// narrowGlyph swaps ● (East Asian Ambiguous) for 🞄 (U+1F784 BLACK
-// SLIGHTLY SMALL CIRCLE, Neutral) in narrow mode. Fonts like Moralerspace
-// JPDOC draw ambiguous glyphs two cells wide while the terminal gives them
-// one, so ● spills into the next cell; a CPR can't see that, hence an
-// explicit setting. 🞄 rather than ⬤: ⬤ fills the cell and makes work's
-// eyes stare. 🞄 isn't the default because Menlo / SF Mono / Apple Symbols
-// lack it and the fallback glyph's size is up to the system.
-func (r *Renderer) narrowGlyph(s string) string {
-	if r.glyphs == "narrow" {
-		return strings.ReplaceAll(s, "●", "🞄")
-	}
-	return s
-}
-
-// Eyes returns the three eye cells for a mood ("● ●").
+// Eyes returns the three eye cells for a mood ("◉ ◉").
 func (r *Renderer) Eyes(m Mood) string {
 	if r.ASCII() {
 		return asciiEyes[m]
 	}
-	return r.narrowGlyph(spec.States[m].Eyes)
+	return spec.States[m].Eyes
 }
 
 // Blink is the closed-eye frame.
 func (r *Renderer) Blink() string { return "- -" }
 
-// Peek is wait's glance upward (˙ ˙); the puppy eyes in ascii.
+// Peek is wait's glance upward (' ': a mark at the top of the cell); the
+// puppy eyes in ascii. ASCII rather than ˙, which is East Asian Ambiguous:
+// no Neutral raised dot is in every common font (docs/ambiguous-width.md).
 func (r *Renderer) Peek() string {
 	if r.ASCII() {
 		return asciiEyes[Wait]
 	}
-	return "˙ ˙"
+	return "' '"
 }
 
 // CellGlyph is the plain 1-cell state symbol.
@@ -341,7 +330,7 @@ func (r *Renderer) CellGlyph(m Mood) string {
 	if r.ASCII() {
 		return asciiCell[m]
 	}
-	return r.narrowGlyph(spec.States[m].Cell)
+	return spec.States[m].Cell
 }
 
 // Cell renders the colored 1-cell dot (session list, statuslines).
@@ -405,7 +394,7 @@ func (r *Renderer) draw(name, eyes string) []string {
 				}
 			}
 			cbg, fg := c.BG, c.FG
-			// Ghostty draws a symbol (● ◕ ⨯) up to two cells wide when a
+			// Ghostty draws a symbol (◉ ◕ ⨯) up to two cells wide when a
 			// space follows it, so the gap between the eyes is a solid
 			// block in the face color instead of a space.
 			if g == " " && cbg != "" && !r.noColor && !r.ASCII() {

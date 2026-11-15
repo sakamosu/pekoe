@@ -179,7 +179,7 @@ func (r *Renderer) ReactionEyes(e PREvent, frame int) string {
 	if alt != "" && frame%2 == 1 {
 		return alt
 	}
-	return r.narrowGlyph(eyes)
+	return eyes
 }
 
 // PaintReaction renders s in the event's accent color.
@@ -188,7 +188,7 @@ func (r *Renderer) PaintReaction(e PREvent, s string) string {
 }
 
 // CloudyEyes: the idle face while an open PR has a failing check. Hollow
-// pupils, a shade duller than • • and nowhere near the error face.
+// pupils, a shade duller than ∙ ∙ and nowhere near the error face.
 func (r *Renderer) CloudyEyes() string {
 	if r.ASCII() {
 		return asciiEyes[Idle]
