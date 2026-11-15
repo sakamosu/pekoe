@@ -304,20 +304,23 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 	}
 }
 
-// The hollow idle circle fills with tapi's pearl in every icon set that
-// has one (nerd's  as well as unicode's ○), sized by [mascot] glyphs;
-// ascii keeps its o, done keeps its check, no color keeps the glyph.
+// The hollow idle circle fills in every icon set that has one: nerd's
+// U+F10C with nerd's own filled U+F111 (the same family and size as the
+// other rows' nerd icons, whatever [mascot] glyphs says), unicode's ○ with
+// tapi's pearl sized by [mascot] glyphs; ascii keeps its o, done keeps its
+// check, no color keeps the glyph.
 func TestTapiRowIdleIconFilledAnyIconSet(t *testing.T) {
 	idle := &daemon.Tapi{Started: true, Alive: true, State: state.Idle, StateSince: time.Now()}
 	done := &daemon.Tapi{Started: true, Alive: true, State: state.Done, StateSince: time.Now()}
 	for _, c := range []struct {
 		icons, glyphs, color string
-		info             *daemon.Tapi
-		icon             string
+		info                 *daemon.Tapi
+		icon                 string
 	}{
-		{"nerd", "unicode", "truecolor", idle, "●"},
-		{"nerd", "narrow", "truecolor", idle, "\U0001F784"},
-		{"nerd", "unicode", "truecolor", nil, "●"}, // asleep
+		{"nerd", "unicode", "truecolor", idle, theme.Icons("nerd").Run},
+		{"nerd", "narrow", "truecolor", idle, theme.Icons("nerd").Run},
+		{"nerd", "unicode", "truecolor", nil, theme.Icons("nerd").Run}, // asleep
+		{"nerd", "narrow", "truecolor", nil, theme.Icons("nerd").Run},  // asleep
 		{"unicode", "unicode", "truecolor", idle, "●"},
 		{"unicode", "narrow", "truecolor", idle, "\U0001F784"},
 		{"ascii", "unicode", "truecolor", idle, "o"},
