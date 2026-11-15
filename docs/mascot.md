@@ -245,7 +245,7 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
   "states": {
     "idle":  {"eyes": "∙ ∙", "cell": "∙", "accent": "i"},
     "work":  {"eyes": "◉ ◉", "cell": "◉", "accent": "w"},
-    "wait":  {"eyes": "◕ ◕", "cell": "◉", "accent": "q"},
+    "wait":  {"eyes": "◕ ◕", "cell": "◕", "accent": "q"},
     "done":  {"eyes": "^ ^", "cell": "◉", "accent": "d"},
     "error": {"eyes": "⨯ ⨯", "cell": "⨯", "accent": "x"},
     "sleep": {"eyes": "- -", "cell": "◦", "accent": "i"}
