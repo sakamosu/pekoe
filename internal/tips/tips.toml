@@ -216,6 +216,13 @@ keys = ["pekoe ledger", "pekoe new --request", "--request", "--as"]
 docs = ["docs/tapi-chat.md", "docs/api.md"]
 
 [[tip]]
+id = "ledger-tidy"
+short = "tapi への雑談やお礼は、依頼から自動で閉じる"
+detail = "tapi が返事を終えたとき、セッションを結ばず誰にも頼んでいなければ、その入力は chat で閉じる。同じ文の 2 度送りは 1 件にまとまる。すぐ任せない依頼は tapi が keep で残す。"
+keys = ["pekoe ledger"]
+docs = ["docs/api.md#依頼ledger"]
+
+[[tip]]
 id = "inbox-answer"
 short = "受信箱の問いには ]a から答える"
 detail = "エージェントが人に頼むとトーストが出る。]a で未回答の問いを先に回り、pekoe が読んだ事実を見てから 1〜6 で選んで ↵。推奨は既定で選ばれない。n でメモ、x で答えずに閉じる。:inbox でも開く。"
