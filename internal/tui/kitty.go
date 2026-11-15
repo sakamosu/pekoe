@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"strconv"
@@ -137,10 +138,13 @@ func decodeCSIu(b []byte) (tea.Msg, bool) {
 
 func (k kittyKeyMsg) String() string { return fmt.Sprintf("kitty(%s)", k.name) }
 
+// termOut is the outer terminal (tests put a buffer here).
+var termOut io.Writer = os.Stdout
+
 // writeTerm writes a control sequence straight to the outer terminal.
 func writeTerm(seq string) tea.Cmd {
 	return func() tea.Msg {
-		os.Stdout.WriteString(seq)
+		io.WriteString(termOut, seq)
 		return nil
 	}
 }

@@ -291,6 +291,9 @@ func (m *model) onFeatureMsg(msg tea.Msg) (tea.Cmd, bool) {
 		m.onDashStats(msg)
 		return nil, true
 
+	case evidenceMsg:
+		return m.onEvidence(msg), true
+
 	case inboxAnswerMsg:
 		return m.onInboxAnswer(msg), true
 

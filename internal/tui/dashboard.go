@@ -13,7 +13,7 @@ package tui
 // No new keys (docs/orchestration.md U4): ↵ on the tapi row in [1] still
 // opens tapi chat. In [4], j/k move over the rows that can be chosen, ↵
 // answers an inbox item (the inbox modal) or unfolds a row, o opens an
-// inbox item's link. Every agent's words are drawn as text only (inboxText
+// inbox item's link or lists a session's evidence (evidence.go). Every agent's words are drawn as text only (inboxText
 // drops escapes, control and invisible format characters), like the inbox
 // modal.
 
@@ -857,7 +857,11 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			moving += len(g.sessions)
 		}
 	}
-	section("🚦", "Pipeline", dim(fmt.Sprintf("%d moving · ", moving)+strings.Join(stageNames[:], " › ")))
+	pipe := fmt.Sprintf("%d moving · ", moving) + strings.Join(stageNames[:], " › ")
+	if len(groups) > 0 {
+		pipe += " · o evidence"
+	}
+	section("🚦", "Pipeline", dim(pipe))
 	if len(groups) == 0 {
 		none(m.dashEmo("🌱") + "no sessions yet · ask tapi for something")
 	}
@@ -1353,6 +1357,8 @@ func (m *model) keyDash(key string) tea.Cmd {
 			u = inboxLink(it.inbox)
 		case it.fyi != nil:
 			u = inboxLink(it.fyi)
+		case it.slug != "": // a pipeline row: what its reports named as evidence (evidence.go)
+			return m.loadEvidence(it.slug)
 		}
 		if u == "" {
 			m.setMsg("no http(s) link to open", false)
@@ -1415,10 +1421,10 @@ func (m *model) dashMouse(ev tea.MouseMsg, x, y int) tea.Cmd {
 }
 
 func dashHints() [][2]string {
-	return [][2]string{{"j/k", "move"}, {"↵", "answer / unfold"}, {"o", "open link"}, {"h", "back"}, {"t", "tapi chat"}, {"?", "help"}}
+	return [][2]string{{"j/k", "move"}, {"↵", "answer / unfold"}, {"o", "open"}, {"h", "back"}, {"t", "tapi chat"}, {"?", "help"}}
 }
 
 func dashKeysFull() [][3]string {
-	return [][3]string{{"j/k", "move", "j"}, {"↵", "answer an inbox item / unfold a row", "\r"}, {"o", "open the inbox item's link", "o"},
+	return [][3]string{{"j/k", "move", "j"}, {"↵", "answer an inbox item / unfold a row", "\r"}, {"o", "open an inbox item's link / a session's evidence", "o"},
 		{"h", "back to Sessions", "h"}, {"esc", "back to Sessions", "esc"}}
 }
