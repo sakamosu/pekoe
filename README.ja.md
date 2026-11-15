@@ -282,7 +282,7 @@ pekoe                                                 # TUI
 - [2] Issues では `f` で自分担当 → 全 open → ラベル指定を切り替え、`n` で issue からセッションを作る
 - [2] Browser は Chrome で開いている localhost のタブをポートでセッションに結びつける。`E` でコンソールのエラーを送る
 - Chrome から要素が届くと Agent ペインにカードが出る(`↵` 送信・`^s` 別セッション・`^n` 新セッション・`esc` 破棄)。指示つきのピックは、ページのポートを持つセッションにそのまま送る(`[picks] auto_send`)
-- 同じファイルを触っているセッションには一覧に `⚠N` が付く
+- 同じファイルを触っているセッションには一覧に警告のアイコンと相手の数(unicode のアイコンなら `! 2`)が付く
 - エージェントへのパススルーは OSC 52(クリップボード)・OSC 8(リンク)・OSC 9/99/777(通知)・マウス(SGR)・Kitty keyboard protocol(Shift+Enter などが届く。`PEKOE_KITTY=0` で無効)
 
 すべてのキーは [docs/design.md](docs/design.md#cli-コマンドとキーバインド) にある。

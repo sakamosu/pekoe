@@ -77,7 +77,7 @@ docs = ["README.ja.md#tui"]
 
 [[tip]]
 id = "conflicts"
-short = "同じファイルを触るセッションには ⚠N が付く"
+short = "同じファイルを触るセッションには警告のアイコンと数が付く"
 detail = "衝突予報。pekoe conflicts で、同じファイルを触っているセッションのペアと、git merge-tree で実際に衝突するかが分かる。l の land の確認にも出る。"
 keys = ["pekoe conflicts", "l"]
 docs = ["README.ja.md#コマンド"]
