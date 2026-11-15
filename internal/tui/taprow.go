@@ -96,16 +96,24 @@ func (m *model) tapiLook() (lk theme.StateLook, calm bool) {
 }
 
 // tapiIcon paints the row's icon. A calm icon is tapi's body color, and
-// the hollow idle circle (unicode ○, nerd ) becomes a filled pearl
-// (● / 🞄) so the row isn't bare; ascii keeps its o, and with no color the
-// glyph stays as is (● would read as run).
+// the hollow idle circle becomes a filled one so the row isn't bare: nerd
+// takes its own filled circle (ic.Run, U+F111) so it matches the other
+// rows' nerd icons in size and height, unicode takes tapi's pearl (● / 🞄,
+// by [mascot] glyphs). ascii keeps its o, and with no color the glyph
+// stays as is (a filled circle would read as run).
 func (m *model) tapiIcon(lk theme.StateLook, calm bool) string {
 	icon := fit(lk.Icon, 1)
 	if !calm || m.th.Mode == theme.None || m.tapi == nil || m.tapi.r == nil {
 		return m.th.FG(lk.Role, icon)
 	}
-	if lk.Icon == m.ic.Idle && m.ic.Name != "ascii" {
-		icon = m.tapi.r.Pearl()
+	if lk.Icon == m.ic.Idle {
+		switch m.ic.Name {
+		case "nerd":
+			icon = m.ic.Run
+		case "ascii":
+		default:
+			icon = m.tapi.r.Pearl()
+		}
 	}
 	return lipgloss.NewStyle().Foreground(m.tapi.r.Body()).Render(icon)
 }
