@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -35,8 +36,9 @@ func evDir(t *testing.T) string {
 	}
 	f.Close()
 	for name, body := range map[string]string{
-		"before.txt": "before\n", "hello.mp4": "not really a video", "evil.command": "#!/bin/sh\ntouch pwned\n",
-		"fake.png": "not a png", "page.html": "<script>alert(1)</script>", "noext": "x",
+		"before.txt": "before\n", "hello.mp4": "\x00\x00\x00\x18ftypmp42", "evil.command": "#!/bin/sh\ntouch pwned\n",
+		"fake.png": "#!/bin/sh\ntouch pwned\n", "script.txt": "#!/bin/sh\ntouch pwned\n", "binary.log": "a\x00b",
+		"alias.png": "book\x00\x00\x00\x00mark\x00\x00\x00\x00", "page.html": "<script>alert(1)</script>", "noext": "x", "a.out": "x",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
@@ -71,7 +73,12 @@ func TestClassifyEvidence(t *testing.T) {
 		{raw: p("shot.png"), kind: evImage, target: p("shot.png"), inline: true},
 		{raw: "shot.png", base: dir, kind: evImage, target: p("shot.png"), inline: true},
 		{raw: "shot.png", why: "a relative path, and the worktree is not known"},
-		{raw: p("fake.png"), kind: evImage, target: p("fake.png")}, // not a PNG inside: opened outside, never drawn here
+		// named like an image or a text, but not one inside (a script, the data of a Finder alias): never opened
+		{raw: p("fake.png"), kind: evFile, target: p("fake.png"), why: "its content is not what .png says"},
+		{raw: p("alias.png"), kind: evFile, target: p("alias.png"), why: "its content is not what .png says"},
+		{raw: p("script.txt"), kind: evFile, target: p("script.txt"), why: "its content is not what .txt says"},
+		{raw: p("binary.log"), kind: evFile, target: p("binary.log"), why: "its content is not what .log says"},
+		{raw: p("a.out"), kind: evFile, target: p("a.out")},
 		{raw: p("before.txt"), kind: evText, target: p("before.txt")},
 		{raw: p("hello.mp4"), kind: evVideo, target: p("hello.mp4")},
 		{raw: p("evil.command"), kind: evFile, target: p("evil.command")},
@@ -112,6 +119,10 @@ func TestEvidenceOpener(t *testing.T) {
 		{"darwin", p("evil.command"), []string{"open", "-R", p("evil.command")}},
 		{"linux", p("evil.command"), []string{"xdg-open", dir}},
 		{"darwin", p("link.png"), []string{"open", "-R", p("evil.command")}},
+		{"darwin", p("fake.png"), []string{"open", "-R", p("fake.png")}},
+		{"darwin", p("alias.png"), []string{"open", "-R", p("alias.png")}},
+		{"darwin", p("script.txt"), []string{"open", "-R", p("script.txt")}},
+		{"linux", p("script.txt"), []string{"xdg-open", dir}},
 		{"darwin", p("page.html"), []string{"open", "-R", p("page.html")}},
 		{"darwin", p("Evil.app"), []string{"open", "-R", p("Evil.app")}},
 		{"linux", p("Evil.app"), []string{"xdg-open", p("Evil.app")}},
@@ -134,6 +145,89 @@ func TestEvidenceOpener(t *testing.T) {
 		if name, args, _, err := evidenceOpener("darwin", it); err == nil {
 			t.Errorf("%+v would run %s %v", it, name, args)
 		}
+	}
+}
+
+// What a file must start with to count as what its extension says.
+func TestEvidenceContent(t *testing.T) {
+	for _, c := range []struct {
+		ext, head string
+		ok        bool
+	}{
+		{".png", "\x89PNG\r\n\x1a\n....", true}, {".png", "GIF89a", false}, {".png", "", false},
+		{".jpg", "\xff\xd8\xff\xe0", true}, {".jpeg", "\xff\xd8\xff\xe1", true}, {".jpg", "#!/bin/sh", false},
+		{".gif", "GIF89a", true}, {".webp", "RIFF\x00\x00\x00\x00WEBPVP8 ", true}, {".webp", "RIFF\x00\x00\x00\x00AVI ", false},
+		{".bmp", "BM....", true}, {".tiff", "II*\x00", true}, {".tif", "MM\x00*", true},
+		{".heic", "\x00\x00\x00\x18ftypheic", true}, {".avif", "\x00\x00\x00\x1cftypavif", true},
+		{".mp4", "\x00\x00\x00\x18ftypmp42", true}, {".mp4", "#!/bin/sh\n", false},
+		{".mov", "\x00\x00\x00\x14ftypqt  ", true}, {".mov", "\x00\x00\x00\x08wide", true}, {".mov", "book\x00\x00\x00\x00mark", false},
+		{".webm", "\x1a\x45\xdf\xa3", true}, {".mkv", "\x1a\x45\xdf\xa3", true}, {".avi", "RIFF\x00\x00\x00\x00AVI LIST", true},
+		{".pdf", "%PDF-1.7", true}, {".pdf", "<html>", false},
+		{".txt", "before\nafter\n", true}, {".txt", "", true}, {".md", "# 日本語\n", true}, {".json", "{}", true},
+		{".txt", "#!/bin/sh\n", false}, {".log", "a\x00b", false},
+		{".command", "echo", false}, {"", "x", false}, {".html", "<p>", false},
+	} {
+		if got := evContentOK(c.ext, []byte(c.head)); got != c.ok {
+			t.Errorf("%s starting %q: %v, want %v", c.ext, c.head, got, c.ok)
+		}
+	}
+	// every extension that opens has a rule of its own, or is text
+	for ext, kind := range evExts {
+		if kind != evText && evContentOK(ext, []byte("plain words, no signature")) {
+			t.Errorf("%s opens whatever it holds", ext)
+		}
+	}
+}
+
+// A canvas too large to hand to the terminal is not drawn in place.
+func TestEvidencePNGLimits(t *testing.T) {
+	dir := evDir(t)
+	big := filepath.Join(dir, "big.png")
+	f, err := os.Create(big)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 8000×8000 is within a side's limit but 64 M pixels; a paletted image keeps the file and the test small
+	if err := png.Encode(f, image.NewPaletted(image.Rect(0, 0, 8000, 8000), color.Palette{color.Black})); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if it := classifyEvidence(big, ""); it.kind != evImage || it.inline() {
+		t.Fatalf("an 8000×8000 PNG: kind %d, drawn in place %v", it.kind, it.inline())
+	}
+}
+
+// A file's name is the agent's to choose, line breaks included (the name
+// behind a symlink is not cleaned by pekoed): it is drawn on one line.
+func TestEvidenceNameOnOneLine(t *testing.T) {
+	m, _, dir, _ := evidenceDash(t, func(dir string) []state.Report {
+		odd := filepath.Join(dir, "a\nFAKE LINE  ↵ opens it in the browser\tb.txt")
+		if err := os.WriteFile(odd, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(odd, filepath.Join(dir, "notes.txt")); err != nil {
+			t.Fatal(err)
+		}
+		return []state.Report{{ID: 7, Slug: "feat-csv", Status: "done", At: time.Now(), Evidence: []string{filepath.Join(dir, "notes.txt")}}}
+	})
+	runCmd(m, m.onKey(key("o")))
+	em, ok := m.modal.(*evidenceModal)
+	if !ok {
+		t.Fatalf("modal %T, msg %q", m.modal, m.msg)
+	}
+	if em.items[0].kind != evText || !strings.Contains(em.items[0].target, "\n") {
+		t.Fatalf("the item: %+v", em.items[0])
+	}
+	runCmd(m, m.onKey(key("enter"))) // the note names the file too
+	lines := em.view()
+	for _, l := range lines {
+		if w(l) != w(lines[0]) || strings.ContainsAny(l, "\n\t") {
+			t.Fatalf("a modal line is %d cells (not %d) or holds a break: %q", w(l), w(lines[0]), ansi.Strip(l))
+		}
+	}
+	out := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(out, filepath.Base(dir)+"/a FAKE LINE ↵ opens it in the browser b.txt") || strings.Count(out, "\n") != len(lines)-1 {
+		t.Errorf("the name on one line:\n%s", out)
 	}
 }
 

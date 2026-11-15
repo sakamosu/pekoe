@@ -8,13 +8,17 @@ package tui
 // to the browser.
 //
 // Evidence is a string an agent wrote: untrusted. Nothing here runs it. What
-// opens is an http(s) URL, or a regular file that exists now and whose
-// extension says image, video, PDF or text. Any other file (a .command, a
-// script, an .html …) and a directory are only shown where they are (open
+// opens is an http(s) URL, or a regular file that exists now, whose
+// extension says image, video, PDF or text and whose first bytes agree.
+// Any other file (a .command, a script, an .html, a file that only looks
+// like an image …) and a directory are only shown where they are (open
 // -R), never opened. The kind is that of the file behind every symlink, and
-// that path is the one opened.
+// that path is the one opened. On macOS a file that tells Launch Services
+// itself what opens it (a Finder alias, a per-file "Open With") is not
+// opened either: open would not go by its extension (evidence_darwin.go).
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"image/png"
@@ -37,9 +41,12 @@ import (
 const (
 	evReports = 20 // reports read (report.list's default)
 	// a PNG drawn in place: the terminal reads and decodes the file, so
-	// neither a huge file nor a huge canvas is handed to it
-	evInlineBytes = 32 << 20
-	evInlineSide  = 16384
+	// neither a huge file nor a huge canvas (4 bytes a pixel, decoded) is
+	// handed to it
+	evInlineBytes  = 32 << 20
+	evInlineSide   = 16384
+	evInlinePixels = 50_000_000
+	evSniff        = 4096 // bytes read to see that a file starts like its extension says
 )
 
 type evKind int
@@ -65,7 +72,7 @@ var evExts = map[string]evKind{
 	".bmp": evImage, ".tif": evImage, ".tiff": evImage, ".heic": evImage, ".avif": evImage,
 	".mp4": evVideo, ".mov": evVideo, ".m4v": evVideo, ".webm": evVideo, ".mkv": evVideo, ".avi": evVideo,
 	".pdf": evPDF,
-	".txt": evText, ".md": evText, ".log": evText, ".out": evText, ".json": evText, ".jsonl": evText,
+	".txt": evText, ".md": evText, ".log": evText, ".json": evText, ".jsonl": evText,
 	".diff": evText, ".patch": evText, ".csv": evText, ".tsv": evText, ".yaml": evText, ".yml": evText, ".toml": evText,
 }
 
@@ -78,7 +85,7 @@ type evItem struct {
 	size   int64
 	imgW   int // a PNG's pixels when it can be drawn in place (0: it cannot)
 	imgH   int
-	why    string // evNone: why nothing opens
+	why    string // evNone: why nothing opens; evFile: why it is not opened, when its extension said it would be
 }
 
 // inline: the terminal can draw it from its path (a PNG within the limits).
@@ -141,14 +148,66 @@ func classifyEvidence(raw, base string) evItem {
 	default:
 		it.size = fi.Size()
 		ext := strings.ToLower(filepath.Ext(real))
-		if it.kind = evExts[ext]; it.kind == evNone {
+		it.kind = evExts[ext]
+		switch {
+		case it.kind == evNone:
 			it.kind = evFile
-		}
-		if ext == ".png" {
+		case !evContentOK(ext, evHead(real)):
+			it.kind, it.why = evFile, "its content is not what "+ext+" says"
+		case it.kind != evText && runtime.GOOS == "darwin" && macOpensItsOwnWay(real):
+			// (text goes to open -t, which these do not steer)
+			it.kind, it.why = evFile, "it names what opens it itself (a Finder alias or its own Open With)"
+		case ext == ".png":
 			it.imgW, it.imgH = pngSize(real, it.size)
 		}
 	}
 	return it
+}
+
+// evHead is the first bytes of a regular file (nil when it cannot be read).
+func evHead(path string) []byte {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	h := make([]byte, evSniff)
+	n, _ := io.ReadFull(f, h)
+	return h[:n]
+}
+
+// evContentOK: a file with extension ext starts like one (h is its first
+// bytes). open and xdg-open may look past the name (a Finder alias is
+// found by what is in it; xdg-open can go by content), so a name alone
+// does not make a file an image. Text has no signature: it must hold no
+// NUL and not start like a script.
+func evContentOK(ext string, h []byte) bool {
+	has := func(off int, sig string) bool { return len(h) >= off+len(sig) && string(h[off:off+len(sig)]) == sig }
+	switch ext {
+	case ".png":
+		return has(0, "\x89PNG\r\n\x1a\n")
+	case ".jpg", ".jpeg":
+		return has(0, "\xff\xd8\xff")
+	case ".gif":
+		return has(0, "GIF87a") || has(0, "GIF89a")
+	case ".webp":
+		return has(0, "RIFF") && has(8, "WEBP")
+	case ".bmp":
+		return has(0, "BM")
+	case ".tif", ".tiff":
+		return has(0, "II*\x00") || has(0, "MM\x00*")
+	case ".heic", ".avif", ".mp4", ".m4v":
+		return has(4, "ftyp")
+	case ".mov": // older QuickTime files open with another atom
+		return has(4, "ftyp") || has(4, "moov") || has(4, "mdat") || has(4, "wide") || has(4, "free") || has(4, "skip")
+	case ".webm", ".mkv":
+		return has(0, "\x1a\x45\xdf\xa3")
+	case ".avi":
+		return has(0, "RIFF") && has(8, "AVI ")
+	case ".pdf":
+		return has(0, "%PDF-")
+	}
+	return evExts[ext] == evText && !bytes.ContainsRune(h, 0) && !has(0, "#!")
 }
 
 // pngSize is a PNG's size in pixels from its header, 0×0 when it is not one
@@ -163,7 +222,8 @@ func pngSize(path string, size int64) (int, int) {
 	}
 	defer f.Close()
 	c, err := png.DecodeConfig(io.LimitReader(f, 1<<20))
-	if err != nil || c.Width < 1 || c.Height < 1 || c.Width > evInlineSide || c.Height > evInlineSide {
+	if err != nil || c.Width < 1 || c.Height < 1 || c.Width > evInlineSide || c.Height > evInlineSide ||
+		c.Width*c.Height > evInlinePixels {
 		return 0, 0
 	}
 	return c.Width, c.Height
@@ -213,16 +273,29 @@ func evidenceOpener(goos string, it evItem) (name string, args []string, said st
 
 // runOpener runs open / xdg-open (tests put a recorder here). A failure
 // carries the command's own first line ("No application knows how to open
-// …"), which says more than its exit status.
+// …"), which says more than its exit status. xdg-open may hand its stderr
+// on to the app it starts: the wait for that pipe is cut short, so the app
+// staying open does not keep "opened" from being said.
 var runOpener = func(name string, args ...string) error {
-	out, err := exec.Command(name, args...).CombinedOutput()
-	if err == nil {
+	var out bytes.Buffer
+	cmd := exec.Command(name, args...)
+	cmd.Stdout, cmd.Stderr = &out, &out
+	cmd.WaitDelay = 2 * time.Second
+	err := cmd.Run()
+	if err == nil || errors.Is(err, exec.ErrWaitDelay) {
 		return nil
 	}
-	if l := firstLine(string(out)); l != "" {
+	if l := firstLine(out.String()); l != "" {
 		return fmt.Errorf("%s: %s", name, l)
 	}
 	return fmt.Errorf("%s: %w", name, err)
+}
+
+// evLine is text made safe to draw on one line: inboxText, and a line
+// break or tab (a file's name may hold them: the name behind a symlink is
+// the agent's to choose) becomes a space.
+func evLine(s string) string {
+	return strings.Join(strings.Fields(inboxText(s)), " ")
 }
 
 // evWhat says what ↵ does with it, for the line under the path.
@@ -243,6 +316,9 @@ func evWhat(it evItem, graphics bool) string {
 		}
 		return "↵ opens it in the default app"
 	case evFile:
+		if it.why != "" {
+			return "not opened: " + it.why + " · ↵ shows where it is"
+		}
 		return "not opened (only images, videos, PDFs and text are) · ↵ shows where it is"
 	case evFolder:
 		return "a folder · ↵ shows where it is"
@@ -493,7 +569,7 @@ func (em *evidenceModal) view() []string {
 		if target == "" {
 			target = firstLine(inboxText(it.raw))
 		}
-		lines = append(lines, "", sunk(clipLeft(inboxText(target), cw)))
+		lines = append(lines, "", sunk(clipLeft(evLine(target), cw)))
 		what := dim(evWhat(it, em.canShow()))
 		if it.kind == evNone {
 			what = th.FG(theme.Err, it.why) + dim(" · nothing to open")
@@ -505,7 +581,7 @@ func (em *evidenceModal) view() []string {
 		if em.noteErr {
 			r = theme.Err
 		}
-		lines = append(lines, th.FG(r, fit(inboxText(em.note), cw)))
+		lines = append(lines, th.FG(r, fit(evLine(em.note), cw)))
 	}
 	return m.modalFrame(width, title, lines, em.hints(), false)
 }
@@ -550,7 +626,7 @@ func (em *evidenceModal) viewImage() []string {
 		if em.noteErr {
 			r = theme.Err
 		}
-		last = th.FG(r, fit(inboxText(em.note), cw))
+		last = th.FG(r, fit(evLine(em.note), cw))
 	}
 	lines := append(append([]string{""}, body...), last)
 	return m.modalFrame(width, title, lines, em.hints(), false)
