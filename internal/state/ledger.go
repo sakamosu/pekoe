@@ -2,9 +2,11 @@ package state
 
 // The ledger (docs/orchestration.md "6. 依頼(ledger)"): what a person asked
 // tapi chat for, followed until it is done. Every prompt a person types
-// into tapi is recorded open (tapi closes the small talk as chat); the
-// entries outlive tapi's conversation (tapi.reset does not touch them), so
-// a fresh tapi reads what is left. Only a person reopens or deletes one.
+// into tapi is recorded open (what was no request is closed as chat: by
+// pekoed when tapi's turn ends and it asked nobody for anything, else by
+// tapi); the entries outlive tapi's conversation (tapi.reset does not
+// touch them), so a fresh tapi reads what is left. Only a person deletes
+// one or reopens what tapi or a person closed.
 
 import (
 	"database/sql"
@@ -31,12 +33,31 @@ type LedgerEntry struct {
 	Evidence []string   `json:"evidence"`
 	Note     string     `json:"note,omitempty"`
 	ClosedAt *time.Time `json:"closed_at,omitempty"`
+	// Repeats counts the times the same text came again right after it
+	// and was folded into this entry (a prompt sent twice).
+	Repeats int `json:"repeats,omitempty"`
+	// Auto: pekoed closed it as chat when tapi's turn ended (a guess tapi
+	// may undo: ledger.keep, or tying a session to it). Only with Status
+	// chat.
+	Auto bool `json:"auto,omitempty"`
+	// Cut: Text is the start of the request only (a list that keeps it
+	// short); the entry read by its id has it whole. Not stored.
+	Cut bool `json:"cut,omitempty"`
+}
+
+// LedgerView is ledger.list with auto: the open entries, whole, and the
+// newest of what pekoed closed itself lately, their text cut short, with
+// how many more there are (counted only).
+type LedgerView struct {
+	Open           []LedgerEntry `json:"open"`
+	AutoClosed     []LedgerEntry `json:"auto_closed"`
+	AutoClosedMore int           `json:"auto_closed_more"`
 }
 
 // ErrNoLedgerEntry is returned for an id that is not in the ledger.
 var ErrNoLedgerEntry = errors.New("no such ledger entry")
 
-const ledgerCols = `id,at,text,status,sessions,evidence,note,closed_at`
+const ledgerCols = `id,at,text,status,sessions,evidence,note,closed_at,repeats,auto`
 
 // AddLedger stores e (its At, Text and Status) and fills in its id.
 func (d *DB) AddLedger(e *LedgerEntry) error {
@@ -57,8 +78,8 @@ func (d *DB) AddLedger(e *LedgerEntry) error {
 
 // SaveLedger writes back everything but the id, at and text.
 func (d *DB) SaveLedger(e *LedgerEntry) error {
-	res, err := d.db.Exec(`UPDATE ledger SET status=?,sessions=?,evidence=?,note=?,closed_at=? WHERE id=?`,
-		e.Status, jsonText(e.Sessions), jsonText(e.Evidence), e.Note, optTime(e.ClosedAt), e.ID)
+	res, err := d.db.Exec(`UPDATE ledger SET status=?,sessions=?,evidence=?,note=?,closed_at=?,repeats=?,auto=? WHERE id=?`,
+		e.Status, jsonText(e.Sessions), jsonText(e.Evidence), e.Note, optTime(e.ClosedAt), e.Repeats, e.Auto, e.ID)
 	if err != nil {
 		return err
 	}
@@ -92,6 +113,15 @@ func (d *DB) LedgerGet(id int64) (*LedgerEntry, error) {
 	return &es[0], nil
 }
 
+// LedgerLast reads the newest entry (nil when the ledger is empty).
+func (d *DB) LedgerLast() (*LedgerEntry, error) {
+	es, err := d.ledgerQuery(`SELECT ` + ledgerCols + ` FROM ledger ORDER BY id DESC LIMIT 1`)
+	if err != nil || len(es) == 0 {
+		return nil, err
+	}
+	return &es[0], nil
+}
+
 // LedgerList lists entries oldest first (the order they were asked in):
 // open only unless all, with an id above since.
 func (d *DB) LedgerList(all bool, since int64) ([]LedgerEntry, error) {
@@ -102,6 +132,27 @@ func (d *DB) LedgerList(all bool, since int64) ([]LedgerEntry, error) {
 		args = append(args, LedgerOpen)
 	}
 	return d.ledgerQuery(q+` ORDER BY id`, args...)
+}
+
+// LedgerOpenAndAuto lists, oldest first, the open entries and the ones
+// pekoed closed itself (chat, auto) at closedAfter or later: what was no
+// request by pekoed's guess, shown for a while so that a request among
+// them is seen.
+func (d *DB) LedgerOpenAndAuto(since int64, closedAfter time.Time) ([]LedgerEntry, error) {
+	// closed_at is RFC 3339 in UTC: comparing the text is right to the
+	// second, and the exact time is checked below
+	es, err := d.ledgerQuery(`SELECT `+ledgerCols+` FROM ledger WHERE id>? AND (status=? OR (status=? AND auto=1 AND closed_at>=?)) ORDER BY id`,
+		since, LedgerOpen, LedgerChat, ts(closedAfter.Add(-time.Second)))
+	if err != nil {
+		return nil, err
+	}
+	out := es[:0]
+	for _, e := range es {
+		if e.Status == LedgerOpen || e.ClosedAt != nil && !e.ClosedAt.Before(closedAfter) {
+			out = append(out, e)
+		}
+	}
+	return out, nil
 }
 
 // LedgerOpenCount is how many entries are open.
@@ -136,7 +187,7 @@ func (d *DB) ledgerQuery(q string, args ...any) ([]LedgerEntry, error) {
 		var e LedgerEntry
 		var at, sessions, evidence string
 		var closed sql.NullString
-		if err := rows.Scan(&e.ID, &at, &e.Text, &e.Status, &sessions, &evidence, &e.Note, &closed); err != nil {
+		if err := rows.Scan(&e.ID, &at, &e.Text, &e.Status, &sessions, &evidence, &e.Note, &closed, &e.Repeats, &e.Auto); err != nil {
 			return nil, err
 		}
 		e.At, _ = time.Parse(time.RFC3339Nano, at)

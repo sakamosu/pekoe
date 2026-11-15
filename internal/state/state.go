@@ -214,7 +214,7 @@ CREATE INDEX IF NOT EXISTS reports_slug ON reports(slug, id);
 CREATE TABLE IF NOT EXISTS sends (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, from_ TEXT NOT NULL, to_ TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, via TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, rev INTEGER NOT NULL, kind TEXT NOT NULL, from_ TEXT NOT NULL, claimed TEXT NOT NULL DEFAULT '', about TEXT NOT NULL DEFAULT '', question TEXT NOT NULL, options TEXT NOT NULL DEFAULT '[]', recommend INTEGER, context TEXT NOT NULL DEFAULT '', links TEXT NOT NULL DEFAULT '[]', facts TEXT, status TEXT NOT NULL, answer TEXT, delivery TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS inbox_from ON inbox(from_, status);
-CREATE TABLE IF NOT EXISTS ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, sessions TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', closed_at TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, text TEXT NOT NULL, status TEXT NOT NULL, sessions TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]', note TEXT NOT NULL DEFAULT '', closed_at TEXT NOT NULL DEFAULT '', repeats INTEGER NOT NULL DEFAULT 0, auto INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS usage_cursors (slug TEXT NOT NULL, born TEXT NOT NULL, path TEXT NOT NULL, off INTEGER NOT NULL DEFAULT 0, last_id TEXT NOT NULL DEFAULT '', PRIMARY KEY(slug, born, path));
 CREATE TABLE IF NOT EXISTS usage_days (slug TEXT NOT NULL, born TEXT NOT NULL, repo TEXT NOT NULL, day TEXT NOT NULL, input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0, cache_creation INTEGER NOT NULL DEFAULT 0, cache_read INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(slug, born, day));
 CREATE INDEX IF NOT EXISTS usage_days_day ON usage_days(day);
@@ -237,7 +237,40 @@ func Open(path string) (*DB, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
+	// columns added after a table was first made (a state.db from an older
+	// pekoed has the table without them)
+	for _, c := range [][3]string{
+		{"ledger", "repeats", "INTEGER NOT NULL DEFAULT 0"},
+		{"ledger", "auto", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumn(db, c[0], c[1], c[2]); err != nil {
+			return nil, fmt.Errorf("init schema: %s.%s: %w", c[0], c[1], err)
+		}
+	}
 	return &DB{db: db}, nil
+}
+
+// addColumn adds a column to a table that does not have it yet.
+func addColumn(db *sql.DB, table, col, decl string) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return err
+	}
+	have := false
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		have = have || name == col
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || have {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + col + ` ` + decl)
+	return err
 }
 
 func (d *DB) Close() error { return d.db.Close() }

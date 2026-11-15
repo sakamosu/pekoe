@@ -11,6 +11,17 @@ package daemon
 // still open. Without the human token only tapi chat reads and writes it,
 // and only a person reopens or deletes an entry (tapi cannot erase what it
 // let slip).
+//
+// pekoed tidies two things itself ("自動の整理"), by fixed rules and never
+// by what the words say; whatever falls outside them stays open:
+//   - the same text right after an open entry is folded into it
+//     (recordRequest)
+//   - when tapi's turn ends and it asked nobody for anything (and
+//     started no wait), the turn's
+//     input was no request: closed as chat, marked auto (tapiTurnEnd).
+//     That is pekoed's guess, so tapi may undo it (ledger.keep, or tying
+//     a session to the entry); what tapi or a person closed only a person
+//     reopens.
 
 import (
 	"errors"
@@ -27,6 +38,53 @@ const (
 	ledgerNoteMax = 4000
 )
 
+// ledgerRepeatWithin: the same text this soon after an open entry is that
+// entry sent again (a paste left in the input box), not a new one. A
+// variable for the tests.
+var ledgerRepeatWithin = time.Minute
+
+// ledgerAutoShown: how long an entry pekoed closed itself is still listed
+// with the open ones (ledger.list with auto: `pekoe ledger`, the
+// dashboard). Closing by itself is a guess, and tapi forgets `ledger keep`
+// now and then: a request closed that way is seen by the next tapi (which
+// reads the list first) and by the person, and tapi opens it again. A day
+// covers a night's break and a reset the next morning; older ones are in
+// `pekoe ledger --all`.
+const ledgerAutoShown = 24 * time.Hour
+
+// What pekoed closed itself is shown short: the newest ledgerAutoMax, each
+// text cut to ledgerAutoText characters, the rest as a count. tapi reads
+// the list at the start of every conversation and whenever it looks up
+// an id, and the point of closing small talk is fewer tokens; the whole
+// text is `pekoe ledger <id>`.
+const (
+	ledgerAutoMax  = 10
+	ledgerAutoText = 200
+)
+
+// ledgerView splits the open entries from what pekoed closed itself lately
+// and keeps the latter short.
+func ledgerView(es []state.LedgerEntry) *state.LedgerView {
+	v := &state.LedgerView{Open: []state.LedgerEntry{}, AutoClosed: []state.LedgerEntry{}}
+	for _, e := range es {
+		if e.Status == state.LedgerOpen {
+			v.Open = append(v.Open, e)
+		} else {
+			v.AutoClosed = append(v.AutoClosed, e)
+		}
+	}
+	if n := len(v.AutoClosed) - ledgerAutoMax; n > 0 {
+		v.AutoClosed, v.AutoClosedMore = v.AutoClosed[n:], n // oldest first: the newest are last
+	}
+	for i := range v.AutoClosed {
+		e := &v.AutoClosed[i]
+		if r := []rune(e.Text); len(r) > ledgerAutoText {
+			e.Text, e.Cut = string(r[:ledgerAutoText])+"…", true
+		}
+	}
+	return v
+}
+
 // notTyped: a prompt that reaches UserPromptSubmit without the person
 // typing it, so no request of theirs:
 //   - "[pekoe …": what pekoed itself typed into tapi's input box (an inbox
@@ -40,21 +98,138 @@ func notTyped(prompt string) bool {
 	return strings.HasPrefix(p, "[pekoe") || strings.HasPrefix(p, "<task-notification>")
 }
 
-// recordRequest puts what the person typed into tapi into the ledger.
-func (d *Daemon) recordRequest(prompt string) {
+// recordRequest puts what the person typed into tapi into the ledger and
+// returns the entry it is in (nil: nothing recorded). folded: no new entry,
+// the text repeats the newest one, which is open and not a minute old.
+func (d *Daemon) recordRequest(prompt string) (e *state.LedgerEntry, folded bool) {
 	text := cleanInbox(prompt, true)
 	if text == "" || notTyped(text) {
-		return
+		return nil, false
 	}
 	if r := []rune(text); len(r) > ledgerTextMax {
 		text = string(r[:ledgerTextMax]) + "…"
 	}
-	e := &state.LedgerEntry{At: time.Now(), Text: text, Status: state.LedgerOpen}
-	if err := d.DB.AddLedger(e); err != nil {
-		return
+	now := time.Now()
+	d.ledgerMu.Lock()
+	last, _ := d.DB.LedgerLast()
+	if last != nil && last.Status == state.LedgerOpen && now.Sub(last.At) <= ledgerRepeatWithin &&
+		strings.TrimSpace(last.Text) == strings.TrimSpace(text) {
+		last.Repeats++
+		e, folded = last, true
+		if err := d.DB.SaveLedger(e); err != nil {
+			e = nil
+		}
+	} else {
+		e = &state.LedgerEntry{At: now, Text: text, Status: state.LedgerOpen}
+		if err := d.DB.AddLedger(e); err != nil {
+			e = nil
+		}
+	}
+	d.ledgerMu.Unlock()
+	if e == nil {
+		return nil, false
 	}
 	d.ledgerChanged(e)
+	return e, folded
 }
+
+// ---- tapi's turn: closing what was no request ----
+//
+// The turn's state (tapiState.turnOn, turnEntry, turnKeep) is in memory only: lost
+// with tapi.reset or a restart of pekoed, and then nothing is closed.
+
+// tapiPrompt is a UserPromptSubmit from tapi's window: the prompt goes
+// into the ledger and becomes the input of tapi's turn, the one entry
+// tapiTurnEnd may close. Whatever the turn's input was before is let go
+// (it stays open): its turn never ended (interrupted), or two inputs share
+// a turn. A prompt that is not recorded (notTyped) starts a turn with no
+// input, so its Stop closes nothing. A folded repeat stays the turn's
+// input only when it already was: one of an earlier turn was left open by
+// that turn and is not closed by the turn of its repeat.
+func (d *Daemon) tapiPrompt(prompt string) {
+	d.mu.Lock()
+	prev := d.tapi.turnEntry
+	d.tapi.turnOn, d.tapi.turnEntry = true, 0
+	d.mu.Unlock()
+	e, folded := d.recordRequest(prompt)
+	if e == nil || folded && e.ID != prev {
+		return
+	}
+	d.mu.Lock()
+	d.tapi.turnEntry = e.ID
+	d.mu.Unlock()
+}
+
+// tapiAsks are the calls by which tapi asks a session or a person for
+// something (pekoe new, send, ask-human, land) or starts waiting for one
+// (pekoe wait: "land it when the report comes"): a turn with one of them
+// works on a request, so its input stays open. Small talk in a turn in
+// which tapi starts its wait again stays open too; tapi closes that.
+var tapiAsks = map[string]bool{"session.new": true, "session.send": true, "inbox.post": true, "land": true, "wait": true}
+
+// noteTapiAsk remembers that tapi asked someone for something this turn:
+// a call from tapi's window, with the token or not (tapi has none, but
+// whatever runs there acts in tapi's turn). A call that is then refused
+// counts too: tapi tried to. Only a Stop clears it (tapiTurnEnd), not the
+// next prompt: an input added in the middle of a turn does not undo what
+// tapi asked for before it. Calls between turns do not count: what tapi
+// left running in the background (`pekoe ask-human --wait` calls wait
+// again every minute) says nothing about the next turn's input.
+func (d *Daemon) noteTapiAsk(who *Caller, method string) {
+	if !tapiAsks[method] || who.Pane() != TapiSlug {
+		return
+	}
+	d.mu.Lock()
+	if d.tapi.turnOn {
+		d.tapi.turnKeep = true
+	}
+	d.mu.Unlock()
+}
+
+// tapiTurnEnd is a Stop from tapi's window: tapi finished its reply. The
+// turn's input is closed as chat (auto) when it is still open, no session
+// is tied to it and tapi neither asked anyone for anything this turn
+// (tapiAsks) nor kept it (ledger.keep): small talk, thanks, a report, a question answered
+// on the spot. Nothing else is ever closed here, so a request of an
+// earlier turn stays until tapi or a person closes it.
+func (d *Daemon) tapiTurnEnd() {
+	d.mu.Lock()
+	id, keep := d.tapi.turnEntry, d.tapi.turnKeep
+	d.tapi.turnOn, d.tapi.turnEntry, d.tapi.turnKeep = false, 0, false
+	d.mu.Unlock()
+	if id == 0 || keep {
+		return
+	}
+	closed := false
+	e, err := d.changeLedger(id, func(e *state.LedgerEntry) error {
+		if e.Status != state.LedgerOpen || len(e.Sessions) > 0 {
+			return nil
+		}
+		now := time.Now()
+		e.Status, e.Auto, e.ClosedAt = state.LedgerChat, true, &now
+		closed = true
+		return nil
+	})
+	if err == nil && closed {
+		d.ledgerChanged(e)
+	}
+}
+
+// tapiTurnGone is a SessionStart or SessionEnd from tapi's window: the
+// conversation started or ended (or was compacted), so pekoed cannot tell
+// how the running turn goes on. Its input is let go (it stays open), as
+// with the next prompt; what tapi asked for so far still counts.
+func (d *Daemon) tapiTurnGone() {
+	d.mu.Lock()
+	d.tapi.turnEntry = 0
+	d.mu.Unlock()
+}
+
+// autoClosed: pekoed closed e as chat (tapiTurnEnd). tapi may open it
+// again; what tapi or a person closed only a person reopens.
+func autoClosed(e *state.LedgerEntry) bool { return e.Status == state.LedgerChat && e.Auto }
+
+func reopenLedger(e *state.LedgerEntry) { e.Status, e.Auto, e.ClosedAt = state.LedgerOpen, false, nil }
 
 func (d *Daemon) ledgerChanged(e *state.LedgerEntry) {
 	d.emit("ledger.updated", e)
@@ -91,6 +266,9 @@ func ledgerErr(id int64, err error) error {
 type ledgerListP struct {
 	Status string `json:"status"` // open (default) | all
 	Since  int64  `json:"since"`
+	// Auto, with open: a LedgerView instead of a list, with what pekoed
+	// closed itself in the last ledgerAutoShown (status chat, auto true)
+	Auto bool `json:"auto"`
 }
 
 func (d *Daemon) hLedgerList(who *Caller, p ledgerListP) (any, error) {
@@ -99,6 +277,13 @@ func (d *Daemon) hLedgerList(who *Caller, p ledgerListP) (any, error) {
 	}
 	switch p.Status {
 	case "", state.LedgerOpen:
+		if p.Auto {
+			es, err := d.DB.LedgerOpenAndAuto(p.Since, time.Now().Add(-ledgerAutoShown))
+			if err != nil {
+				return nil, err
+			}
+			return ledgerView(es), nil
+		}
 		return d.DB.LedgerList(false, p.Since)
 	case "all":
 		return d.DB.LedgerList(true, p.Since)
@@ -132,6 +317,9 @@ func (d *Daemon) changeLedger(id int64, f func(e *state.LedgerEntry) error) (*st
 }
 
 func notOpen(method string, e *state.LedgerEntry) error {
+	if autoClosed(e) {
+		return fmt.Errorf("%s: ledger #%d is chat already (pekoed closed it as no request when tapi's turn ended; pekoe ledger keep %d opens it again)", method, e.ID, e.ID)
+	}
 	return fmt.Errorf("%s: ledger #%d is %s already (a person can reopen it: pekoe ledger reopen %d)", method, e.ID, e.Status, e.ID)
 }
 
@@ -187,10 +375,14 @@ func (d *Daemon) hLedgerLink(who *Caller, p ledgerLinkP) (any, error) {
 }
 
 // linkLedger ties session slug to open entry id, both ways (the entry's
-// sessions, the session's request).
+// sessions, the session's request). An entry pekoed closed itself opens
+// again: a session works on it, so it was a request.
 func (d *Daemon) linkLedger(method string, id int64, slug string) (*state.LedgerEntry, error) {
 	e, err := d.changeLedger(id, func(e *state.LedgerEntry) error {
-		if e.Status != state.LedgerOpen {
+		switch {
+		case autoClosed(e):
+			reopenLedger(e)
+		case e.Status != state.LedgerOpen:
 			return notOpen(method, e)
 		}
 		for _, s := range e.Sessions {
@@ -210,7 +402,8 @@ func (d *Daemon) linkLedger(method string, id int64, slug string) (*state.Ledger
 }
 
 // checkRequest is session.new's --request, before the session is made:
-// the caller may use the ledger and the entry is open.
+// the caller may use the ledger and the entry is open (or pekoed closed it
+// itself: linkLedger opens it again).
 func (d *Daemon) checkRequest(who *Caller, id int64) error {
 	if id == 0 {
 		return nil
@@ -225,10 +418,57 @@ func (d *Daemon) checkRequest(who *Caller, id int64) error {
 	if err != nil {
 		return ledgerErr(id, err)
 	}
-	if e.Status != state.LedgerOpen {
+	if e.Status != state.LedgerOpen && !autoClosed(e) {
 		return notOpen("session.new --request", e)
 	}
 	return nil
+}
+
+type ledgerKeepP struct {
+	ID int64 `json:"id"` // 0: the input of tapi's turn
+}
+
+// hLedgerKeep is tapi saying "this is a request": the input of its turn
+// is not closed when the turn ends (for one it hands to nobody yet: later,
+// after an answer, after other work), and an entry pekoed closed itself
+// opens again. An open entry comes back as it is.
+func (d *Daemon) hLedgerKeep(who *Caller, p ledgerKeepP) (any, error) {
+	if err := ledgerAllowed(who, "ledger.keep"); err != nil {
+		return nil, err
+	}
+	if p.ID < 0 {
+		return nil, fmt.Errorf("ledger.keep: bad request id %d", p.ID)
+	}
+	id := p.ID
+	d.mu.Lock()
+	if id == 0 {
+		id = d.tapi.turnEntry
+	}
+	if id != 0 && id == d.tapi.turnEntry {
+		d.tapi.turnKeep = true
+	}
+	d.mu.Unlock()
+	if id == 0 {
+		return nil, errors.New("ledger.keep: this turn has no input pekoed would close (it closes only the input of the turn that just ended; what is open stays open). To open a request pekoed closed, name it: pekoe ledger keep <id>")
+	}
+	reopened := false
+	e, err := d.changeLedger(id, func(e *state.LedgerEntry) error {
+		switch {
+		case autoClosed(e):
+			reopenLedger(e)
+			reopened = true
+		case e.Status != state.LedgerOpen:
+			return notOpen("ledger.keep", e)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if reopened {
+		d.ledgerChanged(e)
+	}
+	return e, nil
 }
 
 type ledgerIDP struct {
@@ -241,7 +481,7 @@ func (d *Daemon) hLedgerReopen(p ledgerIDP) (any, error) {
 		if e.Status == state.LedgerOpen {
 			return fmt.Errorf("ledger.reopen: ledger #%d is open", e.ID)
 		}
-		e.Status, e.ClosedAt = state.LedgerOpen, nil
+		reopenLedger(e)
 		return nil
 	})
 	if err != nil {
