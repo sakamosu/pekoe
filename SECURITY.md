@@ -6,7 +6,7 @@ Please **do not open a public issue** for a security problem. Report it privatel
 
 Please include what you found, how to reproduce it, the version (`pekoe version`) and your OS, and whether the default build or the Web UI build (`-tags web`) is affected.
 
-pekoe is maintained by one person in their spare time, so there is no guaranteed response time, but reports are taken seriously.
+pekoe is maintained by one person. Security reports are prioritized, and fixes ship in a release. Every release carries `checksums.txt`, releases from v0.4.0 on also carry a build provenance (a GitHub attestation from the release workflow), and `pekoe update` checks the archive's SHA-256 against `checksums.txt` and looks up its provenance (verifying the signature with `gh attestation verify` when `gh` is installed and logged in) before replacing anything.
 
 ## Scope
 

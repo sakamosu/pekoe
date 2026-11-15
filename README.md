@@ -25,7 +25,7 @@ A terminal tool for running several coding agents in parallel, one per git workt
 
 ## Status and requirements
 
-- **A personal tool.** It is built for the author's daily use; configuration, API and commands may still change (no compatibility promises)
+- **Used by the author in daily development.** Configuration, API and commands may change between versions (changes are noted in the release notes)
 - **MIT licensed** (see [License](#license)). Downloading releases (with curl) and `pekoe update` need no GitHub account (see [From a release](#from-a-release-prebuilt-binaries))
 - **Developed and tested on macOS** (in Ghostty). Linux builds are published too, but parts of them are untested. Things that assume macOS:
   - APFS clones (`cp -c`) for `[worktree] clone`. On other file systems it falls back to a plain copy
