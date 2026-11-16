@@ -163,6 +163,18 @@ func Origin(dir string) string {
 
 var scpLike = regexp.MustCompile(`^(?:[\w.-]+@)?([\w.-]+):(.+)$`)
 
+// IsSSH tells whether remote URL u is one git reaches over ssh: ssh:// (or
+// git+ssh://), or the scp-like host:path. Its host (NormalizeURL's first
+// part) may then be a Host alias of ~/.ssh/config.
+func IsSSH(u string) bool {
+	u = strings.TrimSpace(u)
+	if scheme, _, ok := strings.Cut(u, "://"); ok {
+		scheme = strings.ToLower(scheme)
+		return scheme == "ssh" || scheme == "git+ssh"
+	}
+	return scpLike.MatchString(u)
+}
+
 // NormalizeURL turns git@github.com:me/app.git and https://github.com/me/app
 // into github.com/me/app.
 func NormalizeURL(u string) string {

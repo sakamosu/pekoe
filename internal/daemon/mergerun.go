@@ -100,14 +100,15 @@ func (d *Daemon) mergeMethod(s *state.Session) (string, error) {
 	return cfg.Merge.MergeMethod()
 }
 
-// ghRepo is host/owner/name of s's repository as its main checkout's origin
-// says ("" when it says none): what every gh pekoed runs for s is given
-// (ghCommand).
+// ghRepo is host/owner/name of the GitHub repository s's PRs go into, as
+// its main checkout's remotes say (ghRepoInfo.Base: origin, or for a fork
+// the base gh would pick), "" when they say none: what every gh pekoed
+// runs for s is given (ghCommand).
 func (d *Daemon) ghRepo(s *state.Session) string { return d.ghRepoOf(s.RepoDir) }
 
-// ghRepoOf is ghRepo for a repository without a session: host/owner/name
-// as origin of repoDir (its main checkout) says, "" when it says none.
-func (d *Daemon) ghRepoOf(repoDir string) string { return ghRepoFrom(d.webBase(repoDir)) }
+// ghRepoOf is ghRepo for a repository without a session (repoDir, its main
+// checkout).
+func (d *Daemon) ghRepoOf(repoDir string) string { return d.ghRepoInfoOf(repoDir).Base }
 
 // ghRepoFrom is host/owner/name of a webBase ("" when it is no such
 // thing). Each part is a plain name: nothing gh would read as a flag or,

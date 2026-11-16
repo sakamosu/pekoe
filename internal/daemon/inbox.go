@@ -262,6 +262,9 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 			f.PRURL = fmt.Sprintf("%s/pull/%d", base, s.PR)
 		}
 	}
+	if r := d.ghRepoInfoOf(s.RepoDir); r.Fork() {
+		f.PRRepo, f.PushRepo = r.Base, r.Origin
+	}
 	if ps := s.PRStatus; ps != nil {
 		f.PRStatus = &state.InboxPR{State: ps.State, Draft: ps.Draft, Pass: ps.Pass, Fail: ps.Fail, Pending: ps.Pending,
 			ReviewDecision: ps.ReviewDecision, Unresolved: ps.Unresolved, MergeState: ps.MergeState, HeadSHA: ps.HeadSHA}
@@ -272,18 +275,14 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 	return f
 }
 
-// webBase is https://<host>/<owner>/<name> of a repository's origin ("" when
-// it has none), remembered per directory.
+// webBase is https://<host>/<owner>/<name> of the repository a
+// repository's PRs go into (ghRepoInfo.Base: origin, or for a fork the
+// base gh would pick), "" when it has none.
 func (d *Daemon) webBase(repoDir string) string {
-	if repoDir == "" {
-		return ""
+	if r := d.ghRepoInfoOf(repoDir).Base; r != "" {
+		return "https://" + r
 	}
-	if v, ok := d.webBases.Load(repoDir); ok {
-		return v.(string)
-	}
-	base := webBaseOf(gitx.Origin(repoDir))
-	d.webBases.Store(repoDir, base)
-	return base
+	return ""
 }
 
 // webBaseOf is https://<host>/<owner>/<name> of an origin URL ("" when it

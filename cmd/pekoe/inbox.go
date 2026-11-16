@@ -334,6 +334,9 @@ func printInboxItem(it state.InboxItem, full bool) {
 	if it.Facts != nil && it.Facts.PRURL != "" {
 		fmt.Println("  pr: " + it.Facts.PRURL)
 	}
+	if it.Facts != nil && it.Facts.PRRepo != "" {
+		fmt.Printf("  fork: PR in %s, branch pushed to %s (origin)\n", it.Facts.PRRepo, it.Facts.PushRepo)
+	}
 	for _, l := range it.Links {
 		fmt.Println("  link: " + untrusted.Line(l))
 	}

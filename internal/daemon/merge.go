@@ -410,6 +410,9 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 		it.Links = append(it.Links, it.Facts.PRURL)
 	}
 	var b strings.Builder
+	if f := it.Facts; f.PRRepo != "" {
+		fmt.Fprintf(&b, "fork: the PR is in %s; the branch was pushed to %s (origin)\n", f.PRRepo, f.PushRepo)
+	}
 	b.WriteString("conditions pekoed checked:\n")
 	for _, x := range c.Conds {
 		fmt.Fprintf(&b, "- %s: %s\n", x.Name, x.Detail)

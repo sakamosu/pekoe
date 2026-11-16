@@ -509,7 +509,7 @@ func (d *Daemon) hPRView(p prViewP) (any, error) {
 	}
 	pr, repo := s.PR, d.ghRepo(s)
 	if pr == 0 && !s.PRReview && s.Branch != "" && s.Branch != s.Base {
-		if pr = prForBranch(repo, s.Branch); pr > 0 {
+		if pr = prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch); pr > 0 {
 			d.update(p.Slug, func(x *state.Session) {
 				if x.PR == 0 {
 					x.PR = pr

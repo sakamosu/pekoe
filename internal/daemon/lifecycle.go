@@ -557,7 +557,8 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	steps = append(steps, "pushed "+s.Branch)
 	pr := s.PR
 	if pr == 0 {
-		repo := d.ghRepo(s)
+		ri := d.ghRepoInfoOf(s.RepoDir)
+		repo := ri.Base
 		if repo == "" {
 			return nil, fmt.Errorf("pushed %s, but no PR: %w of %s", s.Branch, errNoGHRepo, s.RepoDir)
 		}
@@ -567,7 +568,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			return nil, err
 		}
 		title, body := prText(s.Branch, parseCommitMsgs(msgs))
-		c, done, err := ghCommand(context.Background(), repo, "pr", "create", "--repo", repo, "--head", s.Branch, "--base", base, "--title="+title, "--body-file", "-")
+		c, done, err := ghCommand(context.Background(), repo, "pr", "create", "--repo", repo, "--head", ri.headRef(s.Branch), "--base", base, "--title="+title, "--body-file", "-")
 		if err != nil {
 			return nil, err
 		}
@@ -579,7 +580,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		}
 		pr = prNumber(string(out))
 		if pr == 0 {
-			pr = prForBranch(repo, s.Branch)
+			pr = prForBranch(ri, s.Branch)
 		}
 		steps = append(steps, fmt.Sprintf("PR #%d", pr))
 	}
@@ -635,10 +636,10 @@ func prText(branch string, cs []commitMsg) (title, body string) {
 	return title, b.String()
 }
 
-// prForBranch is the number of the PR of branch in repo (host/owner/name),
-// 0 when there is none or gh cannot tell.
-func prForBranch(repo, branch string) int {
-	c, done, err := ghCommand(context.Background(), repo, "pr", "view", branch, "--repo", repo, "--json", "number")
+// prForBranch is the number of the PR of branch in r.Base (from r.Origin's
+// owner, headRef), 0 when there is none or gh cannot tell.
+func prForBranch(r ghRepoInfo, branch string) int {
+	c, done, err := ghCommand(context.Background(), r.Base, "pr", "view", r.headRef(branch), "--repo", r.Base, "--json", "number")
 	if err != nil {
 		return 0
 	}
@@ -715,7 +716,7 @@ func (d *Daemon) watchPRs() {
 	}
 	d.mu.Unlock()
 	for _, s := range check {
-		if pr := prForBranch(d.ghRepo(&s), s.Branch); pr > 0 {
+		if pr := prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch); pr > 0 {
 			d.update(s.Slug, func(x *state.Session) {
 				if x.PR == 0 {
 					x.PR = pr
