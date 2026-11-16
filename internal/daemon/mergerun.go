@@ -62,6 +62,14 @@ var (
 	mergeComputeLimit = time.Minute
 )
 
+// mergeNow and mergeSleep are the clock that wait is measured on and the
+// pause between its reads (tests put a clock there that only the pauses
+// move, so how many reads fit does not hang on how long gh takes).
+var (
+	mergeNow   = time.Now
+	mergeSleep = time.Sleep
+)
+
 // mergeComputing is whether the only condition off is merge_state and
 // GitHub has not computed it yet: mergeStateStatus UNKNOWN, or none with
 // mergeable null or UNKNOWN.
@@ -202,7 +210,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// GitHub is still computing whether it can merge (UNKNOWN, as right
 	// after another PR into the same base merged) and nothing else is
 	// off, read it again every mergeComputeEvery, up to mergeComputeLimit.
-	waitUntil := time.Now().Add(mergeComputeLimit)
+	waitUntil := mergeNow().Add(mergeComputeLimit)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), mergeReadTimeout)
 		v, err := fetchPRView(ctx, repo, s.PR)
@@ -226,11 +234,11 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 			end(state.MergeFailed, "not merged: PR HEAD moved (%s → %s)", shortSHA(run.Head), shortSHA(c.PRHead))
 			return
 		case c.Ready:
-		case mergeComputing(v, c) && time.Now().Before(waitUntil):
+		case mergeComputing(v, c) && mergeNow().Before(waitUntil):
 			run.Detail, run.At = fmt.Sprintf("waiting: GitHub is still computing whether PR #%d can merge (merge_state %s); reading it again every %s, up to %s",
 				s.PR, mergeStateOf(v), mergeComputeEvery, mergeComputeLimit), time.Now()
 			d.endMerge(it.ID, it.About, run)
-			time.Sleep(mergeComputeEvery)
+			mergeSleep(mergeComputeEvery)
 			continue
 		case mergeComputing(v, c):
 			end(state.MergeFailed, "not merged: evidence no longer holds: %s (GitHub was still computing it after %s)", mergeDetails(c), mergeComputeLimit)

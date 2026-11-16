@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -279,6 +280,11 @@ func TestMergeRunOnlyPekoedsItem(t *testing.T) {
 	if g.Answer.Merge != nil {
 		t.Fatalf("merging on an agent's item: %+v", g.Answer)
 	}
+	// the answer is typed into main's window in the background
+	// (deliverInbox); the send it leaves makes main not settled, which
+	// changes the facts (and the rev) of every open item about main. Let
+	// it go first, so tapi's item below is answered on the rev it has.
+	waitFor(t, func() bool { return inboxGet(t, d, own.ID).Delivery == state.DeliveryDelivered })
 	// pekoed's own items of another kind (the .git watch) neither
 	if mergeAsked(&state.InboxItem{From: callerPekoed, Kind: "decision", Options: []string{"merge", "x"}}, intp(0)) {
 		t.Fatal("decision item asks for a merge")
@@ -533,14 +539,24 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 
 	t.Run("unknown to the end", func(t *testing.T) {
 		shortCompute(t, 20*time.Millisecond, 300*time.Millisecond)
+		// a clock that only the pauses between reads move: each gh read
+		// (a process) may take longer than the limit on a loaded machine,
+		// which would leave a wall clock no room for reads again
+		var mu sync.Mutex
+		start := time.Now()
+		now := start
+		oldNow, oldSleep := mergeNow, mergeSleep
+		mergeNow = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+		mergeSleep = func(dt time.Duration) { mu.Lock(); now = now.Add(dt); mu.Unlock() }
+		t.Cleanup(func() { mergeNow, mergeSleep = oldNow, oldSleep })
+		waited := func() time.Duration { mu.Lock(); defer mu.Unlock(); return now.Sub(start) }
 		d, _, ghd, it := mergeRunSetup(t)
 		swap(t, ghd, unknown(mergeHead))
-		start := time.Now()
 		answerMerge(t, d, it.ID)
 		run := waitMergeEnd(t, d, it.ID)
-		if run.State != state.MergeFailed || time.Since(start) < 300*time.Millisecond ||
+		if run.State != state.MergeFailed || waited() != 300*time.Millisecond ||
 			run.Detail != "not merged: evidence no longer holds: merge_state: merge_state is UNKNOWN (GitHub was still computing it after 300ms)" {
-			t.Fatalf("run after %s: %+v", time.Since(start), run)
+			t.Fatalf("run after %s waited: %+v", waited(), run)
 		}
 		if ms := ghMerges(ghd); len(ms) != 0 {
 			t.Fatalf("merged: %q", ms)
@@ -551,7 +567,7 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 				reads++
 			}
 		}
-		if reads < 3 {
+		if reads != 16 { // once, then again after each of the 15 pauses of 20ms
 			t.Fatalf("read %d times", reads)
 		}
 		// asked again once it holds, as after any failed merge
