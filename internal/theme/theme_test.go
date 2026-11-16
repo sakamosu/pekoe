@@ -11,7 +11,7 @@ import (
 	"pekoe/internal/state"
 )
 
-var allStates = []state.State{state.Creating, state.Running, state.Waiting, state.Idle, state.Done,
+var allStates = []state.State{state.Queued, state.Creating, state.Running, state.Waiting, state.Idle, state.Done,
 	state.Reviewing, state.Approved, state.Landed, state.Failed}
 
 // In none mode and with ascii icons every state must still be readable from

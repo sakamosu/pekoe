@@ -66,8 +66,8 @@ func (m *model) sessionPty() pty {
 		return p
 	}
 	slug, win := s.Slug, m.window
-	p.shown = win != winPR && win != winPreview && s.State != state.Creating && !(s.State == state.Failed && m.screen != nil && m.screen.Dead)
-	p.enterable = s.State != state.Creating
+	p.shown = win != winPR && win != winPreview && s.State != state.Creating && s.State != state.Queued && !(s.State == state.Failed && m.screen != nil && m.screen.Dead)
+	p.enterable = s.State != state.Creating && s.State != state.Queued
 	p.call = func(method string, params map[string]any) error {
 		if m.cl == nil {
 			return nil

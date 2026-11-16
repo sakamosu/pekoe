@@ -32,6 +32,7 @@ end
 
 -- state -> {symbol, hl, word}
 local STATES = {
+  queued = { "◌", "PekoeDim", "queued" },
   creating = { "◌", "PekoeDim", "creating" },
   running = { "●", "PekoeOk", "run" },
   waiting = { "●", "PekoeWarn", "wait" },

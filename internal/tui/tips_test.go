@@ -74,6 +74,13 @@ func TestTipWhileCreating(t *testing.T) {
 	if out := ansi.Strip(m.View()); !strings.Contains(out, "creating worktree feat/x") || !strings.Contains(out, m.tip.cur.Short) {
 		t.Errorf("no tip while creating:\n%s", out)
 	}
+	// a queued session (no worktree yet) shows why it waits, with a tip
+	m.sessions = []*state.Session{{Slug: "feat-y", Branch: "feat/y", State: state.Queued, Queue: "--hold: waiting for feat-x to land", StateSince: time.Now()}}
+	m.tipSync()
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "queued feat/y") || !strings.Contains(out, "--hold: waiting for feat-x to land") ||
+		!strings.Contains(out, m.tip.cur.Short) || !strings.Contains(out, "queued") {
+		t.Errorf("queued pane:\n%s", out)
+	}
 	// other empty panes carry no tip
 	for _, s := range []*state.Session{
 		{Slug: "feat-x", Branch: "feat/x", State: state.Failed, Error: "setup failed: exit 1"},

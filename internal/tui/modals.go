@@ -439,10 +439,16 @@ func (n *newModal) view() []string {
 			lines = append(lines, col("", "", th.FG(theme.Warn, m.ic.Warning+" "+clip(w, 90))))
 		}
 	}
+	if s != nil && s.State == state.Queued {
+		lines = append(lines, col(th.FG(theme.Dim, m.ic.Creating), "queued", th.FG(theme.Dim, clip(s.Queue, 90))))
+	}
 	if s != nil && s.State == state.Failed {
 		lines = append(lines, "", th.FG(theme.Err, clip(strings.SplitN(s.Error, "\n", 2)[0], 90)))
 	}
 	keys := [][2]string{{"esc", "cancel & remove worktree"}, {"↵", "open when ready"}, {"b", "background"}}
+	if s != nil && s.State == state.Queued {
+		keys = [][2]string{{"esc", "cancel & remove"}, {"b", "background"}}
+	}
 	if s != nil && s.State != state.Creating && s.State != state.Failed {
 		keys = [][2]string{{"↵", "open"}, {"b", "background"}}
 	}
@@ -464,14 +470,14 @@ func (n *newModal) key(k tea.KeyMsg) tea.Cmd {
 		switch k.String() {
 		case "esc":
 			slug := n.slug
-			if s != nil && (s.State == state.Creating || s.State == state.Failed) {
+			if s != nil && (s.State == state.Creating || s.State == state.Queued || s.State == state.Failed) {
 				return done(m.act("session.cancel", map[string]any{"slug": slug}, "cancelled "+slug))
 			}
 			return done(nil)
 		case "b", "q":
 			return done(nil)
 		case "enter":
-			if s != nil && s.State != state.Creating && s.State != state.Failed {
+			if s != nil && s.State != state.Creating && s.State != state.Queued && s.State != state.Failed {
 				m.focus, m.typing = pAgent, true
 				return done(m.selectSlug(n.slug))
 			}

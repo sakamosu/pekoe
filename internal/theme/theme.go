@@ -296,6 +296,8 @@ func Look(ic IconSet, s state.State, frame int, animate bool) StateLook {
 		return StateLook{ic.Idle, Dim, "idle"}
 	case state.Creating:
 		return StateLook{spin(ic.Creating), Dim, "creating"}
+	case state.Queued:
+		return StateLook{ic.Creating, Dim, "queued"}
 	case state.Done:
 		return StateLook{ic.Done, Secondary, "done"}
 	case state.Reviewing:
@@ -348,6 +350,9 @@ func SessionLine(t *Theme, ic IconSet, s *state.Session, now time.Time, frame in
 	}
 	if s.State == state.Waiting && s.PendingTool != nil {
 		parts = append(parts, t.FG(Dim, s.PendingTool.Name+" "+s.PendingTool.Input))
+	}
+	if s.State == state.Queued && s.Queue != "" {
+		parts = append(parts, t.FG(Dim, s.Queue))
 	}
 	if s.Error != "" {
 		parts = append(parts, t.FG(Err, strings.SplitN(s.Error, "\n", 2)[0]))

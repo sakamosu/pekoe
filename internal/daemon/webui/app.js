@@ -99,6 +99,7 @@ function details(s, withRepo) {
   else if (s.test === "blocked") add(colored("warn", "!"), document.createTextNode("test not run: no sandbox"));
   else if (s.test === "error") add(colored("warn", "!"), document.createTextNode("test could not run"));
   if (s.git_blocked) add(colored("warn", "!"), document.createTextNode(".git changed: git stopped"));
+  if (s.state === "queued" && s.queue) add(document.createTextNode(s.queue));
   if (s.pr) {
     const n = [document.createTextNode("#" + s.pr)];
     if (s.pr_look) n.push(document.createTextNode(" "), colored(s.pr_look.role, s.pr_look.icon));
@@ -112,7 +113,7 @@ function details(s, withRepo) {
 // line1 is the TUI's sessionLine: icon  name  state  age (no age when idle)
 function line1(s) {
   const lk = look(s);
-  const dimName = s.state === "idle" || s.state === "creating" || s.state === "landed";
+  const dimName = s.state === "idle" || s.state === "creating" || s.state === "queued" || s.state === "landed";
   const l1 = el("div", "line1");
   l1.append(
     colored(lk.role, lk.icon, "ic"),
@@ -1001,6 +1002,7 @@ function renderCounts(c) {
     box.append(t);
   };
   tile("ok", "●", c.running, "running");
+  if (c.queued) tile("dim", "◌", c.queued, "queued");
   tile("warn", "●", c.waiting, "waiting");
   tile("secondary", "✓", c.review, "to review");
   tile("primary", "#", c.open_prs, "open PRs");
