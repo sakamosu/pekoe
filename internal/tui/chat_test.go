@@ -489,6 +489,83 @@ func TestWheelFocusesAgentPane(t *testing.T) {
 	}
 }
 
+// A left click on [4]'s pty window starts typing into it, as Enter does.
+// The click that enters is not the program's (its press, drag and release
+// stay with pekoe); the next click goes to a program that asked for the
+// mouse. A click on a link only opens it; a dead pane or a session being
+// created is not entered.
+func TestClickEntersAgentPane(t *testing.T) {
+	mouse := func(m *model, x, y int, b tea.MouseButton, a tea.MouseAction) {
+		runCmd(m, m.onMouse(tea.MouseMsg{X: x, Y: y, Button: b, Action: a}))
+	}
+	click := func(m *model, x, y int) {
+		mouse(m, x, y, tea.MouseButtonLeft, tea.MouseActionPress)
+		mouse(m, x+1, y, tea.MouseButtonLeft, tea.MouseActionMotion)
+		mouse(m, x+1, y, tea.MouseButtonLeft, tea.MouseActionRelease)
+	}
+	setup := func(t *testing.T) (*model, *fakePekoed) {
+		m, f, _ := chatModel(t)
+		m.window = engine.WinAgent
+		m.focus, m.typing = pSessions, false
+		m.unreadAt = map[string]int{"api-1": 3}
+		m.screen = &engine.Screen{Lines: []string{"hello", "see https://example.com/x ok"}, Width: 100, Height: 30, MouseAny: true, AltScreen: true}
+		m.screenOf = "api-1"
+		return m, f
+	}
+
+	m, f := setup(t)
+	x0, y0 := m.agentOrigin()
+	click(m, x0+1, y0+1)
+	if m.focus != pAgent || !m.typing {
+		t.Fatalf("click: focus %d typing %v", m.focus, m.typing)
+	}
+	if _, ok := m.unreadAt["api-1"]; ok {
+		t.Errorf("click: still unread after entering the pane")
+	}
+	if got := f.find("session.keys"); len(got) != 0 {
+		t.Fatalf("the click that entered reached the program: %v", got)
+	}
+	click(m, x0+1, y0+1)
+	if got := f.find("session.keys"); len(got) != 3 || got[0]["hex"] == nil {
+		t.Fatalf("the second click: session.keys %v", got)
+	}
+
+	// a link only opens: no typing
+	m, f = setup(t)
+	_, ah := m.agentSize()
+	ly := -1
+	for y := 0; y < ah; y++ {
+		if m.agentLinkAt(5, y) != "" {
+			ly = y
+		}
+	}
+	if ly < 0 {
+		t.Fatal("no link drawn")
+	}
+	mouse(m, x0+5, y0+ly, tea.MouseButtonLeft, tea.MouseActionPress)
+	if m.typing || m.linkDown == "" {
+		t.Fatalf("link: typing %v linkDown %q", m.typing, m.linkDown)
+	}
+
+	for _, c := range []struct {
+		name string
+		set  func(m *model)
+	}{
+		{"dead", func(m *model) { m.screen.Dead = true }},
+		{"creating", func(m *model) { m.sessions[0].State = state.Creating }},
+	} {
+		m, f := setup(t)
+		c.set(m)
+		click(m, x0+1, y0+1)
+		if m.typing {
+			t.Errorf("%s: typing after a click", c.name)
+		}
+		if got := f.find("session.keys"); len(got) != 0 {
+			t.Errorf("%s: session.keys %v", c.name, got)
+		}
+	}
+}
+
 // msgsOf runs cmd (and batches inside it) without passing anything to
 // Update: what a Cmd's goroutine does on its own.
 func msgsOf(cmd tea.Cmd) []tea.Msg {
