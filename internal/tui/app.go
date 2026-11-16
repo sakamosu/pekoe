@@ -1215,7 +1215,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if sel, ok := m.sessionRowAt(ev.X, ev.Y); ok { // a click on a row of [1] selects it
 			m.focus = pSessions
-			m.typing = false
+			m.stopTyping()
 			if sel != tapiSel { // a session's row shows that session
 				m.hideChat()
 			}
@@ -1236,7 +1236,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		m.clickEntered = false
 		if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
-			m.typing = false
+			m.stopTyping()
 		}
 	}
 	return nil

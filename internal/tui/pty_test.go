@@ -17,6 +17,7 @@ import (
 type ptyKind struct {
 	name   string
 	method string // the pekoed methods that reach it: "session." or "tapi."
+	row    string // its row in [1]
 	// show puts the pty in [4] with screen sc, not typing, the focus on [4]
 	show func(t *testing.T, sc engine.Screen) (*model, *fakePekoed)
 	// screen hands [4] a new capture of the pty, as pekoed's answer does
@@ -27,7 +28,7 @@ type ptyKind struct {
 
 var ptyKinds = []ptyKind{
 	{
-		name: "session", method: "session.",
+		name: "session", method: "session.", row: "api-1",
 		show: func(t *testing.T, sc engine.Screen) (*model, *fakePekoed) {
 			m, f, _ := chatModel(t)
 			m.sessions = append(m.sessions, sess("api-2", appA, state.Idle, time.Now()))
@@ -43,7 +44,7 @@ var ptyKinds = []ptyKind{
 		back: func(m *model) { m.sel = 0; m.onSelChange(); m.focus = pAgent },
 	},
 	{
-		name: "tapi chat", method: "tapi.",
+		name: "tapi chat", method: "tapi.", row: "orchestrator",
 		show: func(t *testing.T, sc engine.Screen) (*model, *fakePekoed) {
 			m, f, _ := chatModel(t)
 			m.chat.open = true
@@ -202,28 +203,41 @@ func TestPtySameForSessionAndChat(t *testing.T) {
 			}
 		}},
 		{"entering and leaving without typing has seen the unread line", func(t *testing.T, k ptyKind) {
-			sc := base
-			sc.Lines = lines[:1]
-			m, _ := k.show(t, sc)
-			k.away(m)
-			k.back(m)
-			more := base
-			more.Lines = []string{"hello from the agent", "new output 1", "new output 2"}
-			more.Cursor.Y = 2 // the prompt, where the user leaves it
-			k.screen(m, more)
-			x, y := at(t, m, "new output 2")
-			click(m, x, y)
-			if !m.typing {
-				t.Fatal("the click did not enter")
-			}
-			runCmd(m, m.onKey(ctrlQ))
-			if m.typing {
-				t.Fatal("the prefix did not leave")
-			}
-			k.back(m)
-			k.screen(m, more)
-			if out := ansi.Strip(m.View()); strings.Contains(out, "─── new ───") {
-				t.Fatalf("the unread line came back after it was seen:\n%s", out)
+			// every way out of typing: the prefix, a click on the pty's
+			// own row in [1], a click on another panel
+			for _, leave := range []struct {
+				name string
+				do   func(m *model)
+			}{
+				{"prefix", func(m *model) { runCmd(m, m.onKey(ctrlQ)) }},
+				{"its row", func(m *model) { x, y := at(t, m, k.row); click(m, x, y) }},
+				{"another panel", func(m *model) { x, y := at(t, m, "no changes yet"); click(m, x, y) }},
+			} {
+				sc := base
+				sc.Lines = lines[:1]
+				m, _ := k.show(t, sc)
+				k.away(m)
+				k.back(m)
+				more := base
+				more.Lines = []string{"hello from the agent", "new output 1", "new output 2"}
+				more.Cursor.Y = 2 // the prompt, where the user leaves it
+				k.screen(m, more)
+				x, y := at(t, m, "new output 2")
+				click(m, x, y)
+				if !m.typing {
+					t.Fatalf("%s: the click did not enter", leave.name)
+				}
+				leave.do(m)
+				if m.typing {
+					t.Fatalf("%s: did not leave", leave.name)
+				}
+				if !m.chat.open || k.name != "tapi chat" {
+					k.back(m)
+				}
+				k.screen(m, more)
+				if out := ansi.Strip(m.View()); strings.Contains(out, "─── new ───") {
+					t.Fatalf("%s: the unread line came back after it was seen:\n%s", leave.name, out)
+				}
 			}
 		}},
 		{"an exited pty: ↵ restarts it and types into it", func(t *testing.T, k ptyKind) {
@@ -361,5 +375,17 @@ func TestPtyPartsBuiltForBoth(t *testing.T) {
 		if _, ok := onlyOne[name]; !ok {
 			t.Errorf("%s: set for one pty only (session %v, chat %v); build it for both, or say why in onlyOne", name, !sp.Field(i).IsZero(), !cp.Field(i).IsZero())
 		}
+	}
+}
+
+// tapi's restart is a new pty, its History counted from 0: the line where
+// the user left the old one would land at a wrong place in it.
+func TestChatRestartForgetsUnreadLine(t *testing.T) {
+	m, _ := ptyKinds[1].show(t, engine.Screen{Lines: []string{"hello"}, Width: 100, Height: 30, Dead: true})
+	m.chat.unreadAt, m.chat.unreadSet = 40, true
+	m.typing = true
+	runCmd(m, m.onKey(key("enter")))
+	if m.chat.unreadSet {
+		t.Fatal("the unread line outlived the restart")
 	}
 }

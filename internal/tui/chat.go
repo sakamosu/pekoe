@@ -183,6 +183,7 @@ func (m *model) chatKey(key string) tea.Cmd {
 func (m *model) restartChat() tea.Cmd {
 	aw, ah := m.agentSize()
 	m.chat.screen = nil
+	m.chat.unreadSet = false // a new pty: the old line is not in it
 	return func() tea.Msg {
 		var v daemon.Tapi
 		if err := m.cl.Call("tapi.restart", map[string]any{"width": aw, "height": ah}, &v); err != nil {
@@ -199,6 +200,7 @@ func (m *model) confirmResetChat() tea.Cmd {
 		if m.chat.open {
 			cmd = m.closeChat()
 		}
+		m.chat.unreadSet = false // the conversation is gone, its line too
 		return tea.Batch(cmd, func() tea.Msg {
 			var v daemon.Tapi
 			if err := m.cl.Call("tapi.reset", nil, &v); err != nil {

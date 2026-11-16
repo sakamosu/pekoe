@@ -187,17 +187,25 @@ func (m *model) ptyKeys(p pty, params map[string]any) tea.Cmd {
 // program exited, ↵ restarts it and x or esc closes it.
 func (m *model) ptyTypingKey(p pty, k tea.KeyMsg) tea.Cmd {
 	if m.prefixKey(k) {
-		// left: what was there has been seen, typed into or not (tapi
-		// chat marks the new place as it closes)
-		if p.seen != nil {
-			p.seen()
-		}
+		m.stopTyping()
 		return p.leave()
 	}
 	if p.sc != nil && p.sc.Dead {
 		return m.ptyDeadKey(p, k)
 	}
 	return m.ptySend(p, k)
+}
+
+// stopTyping leaves the pty [4] shows (the prefix, a click outside it):
+// what was there has been seen, typed into or not, so its unread line goes
+// (tapi chat marks the new place as it closes).
+func (m *model) stopTyping() {
+	if m.typing {
+		if p := m.shownPty(); p.seen != nil {
+			p.seen()
+		}
+	}
+	m.typing = false
 }
 
 // ptyDeadKey: a key while typing into a pty whose program exited: ↵
@@ -207,7 +215,7 @@ func (m *model) ptyDeadKey(p pty, k tea.KeyMsg) tea.Cmd {
 	case "enter":
 		return m.restartPty(p)
 	case "x", "esc":
-		m.typing = false
+		m.stopTyping()
 		if p.close != nil {
 			return p.close()
 		}
