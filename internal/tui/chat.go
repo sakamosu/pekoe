@@ -261,29 +261,26 @@ func (m *model) chatKeys(params map[string]any) tea.Cmd {
 	return m.inOrder(func() error { return m.cl.Call("tapi.keys", params, nil) })
 }
 
-// chatMouse: a mouse event inside the main panel while tapi chat shows.
-func (m *model) chatMouse(ev tea.MouseMsg, x, y int) tea.Cmd {
-	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
-		m.focus = pAgent
+// enterChat starts typing into tapi chat from the mouse, as Enter does
+// (chatKey). It does nothing when already typing, before tapi's screen
+// came, or when tapi left (Enter restarts it). It reports whether it entered.
+func (m *model) enterChat() bool {
+	if m.typing || m.chat.screen == nil || m.chat.screen.Dead {
+		return false
 	}
-	sc := m.chat.screen
-	if !m.typing || sc == nil {
-		return nil
+	m.focus = pAgent
+	m.typing = true
+	return true
+}
+
+// chatLinkAt returns the URL drawn at (x, y) of the panel body while tapi
+// chat shows (viewChat).
+func (m *model) chatLinkAt(x, y int) string {
+	if m.chat.screen == nil {
+		return ""
 	}
-	if sc.MouseAny {
-		if hex := sgrMouse(ev, x, y); hex != nil {
-			return m.chatKeys(map[string]any{"hex": hex})
-		}
-		return nil
-	}
-	if sc.AltScreen && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) {
-		k := "Up"
-		if ev.Button == tea.MouseButtonWheelDown {
-			k = "Down"
-		}
-		return m.chatKeys(map[string]any{"keys": []string{k}})
-	}
-	return nil
+	cw, ch := m.agentSize()
+	return rowsLinkAt(m.chatRows(cw), ch, x, y)
 }
 
 // chatMood is tapi's face in the chat window's title.

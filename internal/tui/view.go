@@ -681,7 +681,12 @@ func (m *model) agentLinkAt(x, y int) string {
 		return ""
 	}
 	cw, ch := m.agentSize()
-	rows := m.agentRows(cw, ch)
+	return rowsLinkAt(m.agentRows(cw, ch), ch, x, y)
+}
+
+// rowsLinkAt returns the URL drawn at (x, y) of a ch-tall body that shows
+// rows bottom-aligned (box's bottom), as the pty windows do.
+func rowsLinkAt(rows []row, ch, x, y int) string {
 	if len(rows) > ch {
 		rows = rows[len(rows)-ch:]
 	}
