@@ -769,6 +769,42 @@ func (d *Daemon) hTapiKeys(p keysP) (any, error) {
 	return d.sendKeys(p)
 }
 
+// tapiAnswerP is tapi.answer's: answerP without the slug.
+type tapiAnswerP struct {
+	Answer string        `json:"answer"` // allow | deny | always
+	Expect *answerExpect `json:"expect,omitempty"`
+}
+
+// hTapiAnswer answers tapi chat's permission prompt as hAnswer does a
+// session's (the TUI's permission modal): the same keys, of tapi's agent,
+// and the same expect check. A person only (humanMethods): tapi must not
+// answer its own prompts.
+func (d *Daemon) hTapiAnswer(p tapiAnswerP) (any, error) {
+	if err := d.tapiNeedsWindow(); err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	st, tool := d.tapi.state, d.tapi.pending
+	d.mu.Unlock()
+	if st != state.Waiting {
+		// never type a stray "1" into tapi's prompt
+		return nil, fmt.Errorf("tapi is not waiting (state: %s)", st)
+	}
+	if p.Expect != nil && !sameTool(tool, p.Expect.Tool) {
+		return nil, errPromptChanged
+	}
+	if err := d.answerKeys(TapiSlug, d.cfg().Tapi.Agent, tool, p.Answer); err != nil {
+		return nil, err
+	}
+	next := answeredState(tool, p.Answer)
+	d.tapiUpdate(func(t *tapiState) {
+		if t.state == state.Waiting {
+			t.state, t.waitKind, t.pending = next, "", nil
+		}
+	})
+	return d.tapiView(), nil
+}
+
 func (d *Daemon) hTapiResize(p tapiSizeP) (any, error) {
 	if !d.tapiStarted() {
 		return nil, nil

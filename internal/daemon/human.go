@@ -112,6 +112,7 @@ var humanMethods = map[string]string{
 	"session.keys":          "raw keys: can pick a menu entry or switch modes",
 	"tapi.send":             "tapi chat's input box",
 	"tapi.keys":             "raw keys into tapi chat",
+	"tapi.answer":           "allow / deny / always on tapi chat's permission prompt: tapi must not answer its own",
 	"review.approve":        "a person's review decision",
 	"review.unapprove":      "a person's review decision",
 	"review.reject":         "a person's review decision, sent to the agent",
