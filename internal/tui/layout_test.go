@@ -211,8 +211,9 @@ func TestLayoutDebounce(t *testing.T) {
 		t.Fatal("should wait to settle")
 	}
 	// the ptys are not chased while the keys repeat
-	if m.fitScreen("a", engine.WinAgent, &engine.Screen{Width: 80, Height: 30}) != nil {
-		t.Fatal("fitScreen resized before the layout settled")
+	m.screen = &engine.Screen{Width: 80, Height: 30}
+	if m.fitPty(m.sessionPty()) != nil {
+		t.Fatal("fitPty resized before the layout settled")
 	}
 	if m.layoutSettled(1) != nil || m.layoutSettled(2) != nil {
 		t.Fatal("a stale tick should do nothing")

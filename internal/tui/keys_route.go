@@ -4,8 +4,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-
-	"pekoe/internal/engine"
 )
 
 // onKey routes a key to whoever eats it first. The order is the behaviour
@@ -50,60 +48,9 @@ func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
 	return m.onKeyPanel(k.String())
 }
 
-// onKeyTyping: everything goes to the pty (or tapi chat) except the prefix,
-// which leaves.
+// onKeyTyping: the key goes to the pty [4] shows (pty.go).
 func (m *model) onKeyTyping(k tea.KeyMsg) tea.Cmd {
-	if m.chat.open {
-		return m.chatTypingKey(k)
-	}
-	if m.prefixKey(k) {
-		m.typing = false
-		if !m.layout.Zoom || narrow(m.width) { // zoomed, the left column is hidden
-			m.focus = pSessions
-		}
-		m.prefix, m.prefixType = true, true
-		return nil
-	}
-	if m.screen != nil && m.screen.Dead {
-		return m.onKeyDeadPane(k)
-	}
-	return m.forward(k)
-}
-
-// onKeyDeadPane: the process in this window has exited: nothing to type into.
-func (m *model) onKeyDeadPane(k tea.KeyMsg) tea.Cmd {
-	s := m.current()
-	switch k.String() {
-	case "enter":
-		if m.window == engine.WinRun {
-			return m.finishRun()
-		}
-		if s != nil && m.window == engine.WinAgent {
-			aw, ah := m.agentSize()
-			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
-		}
-		if s != nil && m.window == engine.WinDev {
-			m.window = engine.WinAgent
-			return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server restarted")
-		}
-	case "x", "esc":
-		m.typing = false
-		if s != nil && m.window == engine.WinRun {
-			return m.closeRun(false) // without telling the agent
-		}
-		if s != nil && m.window != engine.WinAgent {
-			// the dead screen goes with the window: left as the
-			// agent's, ↵ would restart the running agent
-			w := m.window
-			m.window = engine.WinAgent
-			m.screen = nil
-			return tea.Batch(m.act("window.kill", map[string]any{"slug": s.Slug, "window": w}, ""), m.fetchScreen())
-		}
-		if s != nil {
-			return m.act("session.kill", map[string]any{"slug": s.Slug}, "ended "+s.Slug)
-		}
-	}
-	return nil
+	return m.ptyTypingKey(m.shownPty(), k)
 }
 
 // onKeyAfterPrefix spends the prefix on the key after it. used is false when
@@ -119,6 +66,7 @@ func (m *model) onKeyAfterPrefix(k tea.KeyMsg) (tea.Cmd, bool) {
 			m.focus, m.typing = pAgent, true
 			if reopen { // … or to tapi
 				m.chat.open = true
+				m.chat.unreadSet = false // straight back: nothing new was missed
 				cmd = tea.Batch(cmd, m.fetchChat())
 			}
 		}

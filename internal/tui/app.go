@@ -120,7 +120,7 @@ type model struct {
 	typing       bool
 	guard        mouseGuard    // reassembles mouse reports split across reads
 	linkDown     string        // URL under the last left press in the agent panel
-	clickEntered bool          // the left button down now entered [4] (enterPane): its drag and release are not forwarded
+	clickEntered bool          // the left button down now entered [4] (enterPty): its drag and release are not forwarded
 	window       string        // agent | review | dev | run | pr | preview shown in the main panel
 	pr           *prState      // the PR view's data (pr.go)
 	pv           *previewState // the preview window (preview.go)
@@ -367,33 +367,6 @@ func (m *model) resizeAll() tea.Cmd {
 	aw, ah := m.agentSize()
 	return func() tea.Msg {
 		_ = m.cl.Call("session.resize", map[string]any{"slug": "*", "width": aw, "height": ah}, nil)
-		return nil
-	}
-}
-
-// fitScreen resizes the shown window's pty when it doesn't match the pane.
-// resizeAll only runs at start and on terminal resizes, so a window spawned
-// later by someone who didn't know the pane size (`pekoe new` run by an
-// agent, whose stdout isn't a terminal) would otherwise keep its size: the
-// agent wraps narrower than the pane, or paints past its border.
-func (m *model) fitScreen(slug, window string, sc *engine.Screen) tea.Cmd {
-	aw, ah := m.agentSize()
-	if m.layoutPending() {
-		return nil // layoutSettled resizes them all
-	}
-	if sc == nil || sc.Dead || sc.Width <= 0 || sc.Height <= 0 || (sc.Width == aw && sc.Height == ah) {
-		return nil
-	}
-	key := fmt.Sprintf("%s\x00%s\x00%dx%d>%dx%d", slug, window, sc.Width, sc.Height, aw, ah)
-	if m.fitReq == key {
-		return nil // already asked; wait for tmux to apply it
-	}
-	m.fitReq = key
-	return func() tea.Msg {
-		if m.cl == nil {
-			return nil
-		}
-		_ = m.cl.Call("session.resize", map[string]any{"slug": slug, "window": window, "width": aw, "height": ah}, nil)
 		return nil
 	}
 }
@@ -945,17 +918,14 @@ func (m *model) keySessions(key string) tea.Cmd {
 		}
 		if m.window == winPR {
 			m.typing = true
-			delete(m.unreadAt, s.Slug)
 			return m.closePR()
 		}
 		m.typing = true
-		delete(m.unreadAt, s.Slug)
 		if m.window == winPreview { // typing goes to the agent
 			return m.closePreview()
 		}
 		if m.screen != nil && m.screen.Dead && m.window == engine.WinAgent {
-			aw, ah := m.agentSize()
-			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
+			return m.restartPty(m.sessionPty())
 		}
 		return nil
 	case "!": // run one command in the worktree (run.go)
@@ -1168,14 +1138,12 @@ func (m *model) keyAgent(key string) tea.Cmd {
 			return nil
 		}
 		if m.screen != nil && m.screen.Dead && m.window == engine.WinAgent {
-			aw, ah := m.agentSize()
-			return m.act("session.restart", map[string]any{"slug": s.Slug, "width": aw, "height": ah}, "restarted "+s.Slug)
+			return m.restartPty(m.sessionPty())
 		}
 		if m.runDone() && key != "i" {
 			return m.finishRun()
 		}
 		m.typing = true
-		delete(m.unreadAt, s.Slug)
 		return nil
 	case "h", "left", "esc":
 		m.focus = pSessions
@@ -1199,46 +1167,6 @@ func (m *model) keyAgent(key string) tea.Cmd {
 		return m.openPreview()
 	}
 	return m.sessionAction(key, s)
-}
-
-func (m *model) forward(k tea.KeyMsg) tea.Cmd {
-	s := m.current()
-	if s == nil {
-		return nil
-	}
-	f := toTmux(k)
-	slug, win := s.Slug, m.window
-	return m.inOrder(func() error { // keys reach the pty in the order typed (order.go)
-		switch {
-		case f.paste != "":
-			return m.cl.Call("session.send", map[string]any{"slug": slug, "window": win, "text": f.paste}, nil)
-		case f.literal != "":
-			return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "literal": f.literal}, nil)
-		case len(f.keys) > 0:
-			return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": f.keys}, nil)
-		}
-		return nil
-	})
-}
-
-// enterPane starts typing into [4]'s pty window from the mouse, with
-// Enter's side effects (focus, unread mark). It does nothing when already
-// typing, or where Enter would do something else: a dead pane (Enter
-// restarts it) or a session still being created. The other windows (chat,
-// dashboard, PR, preview, issue) and modals are left before onMouse gets
-// here. It reports whether it entered.
-func (m *model) enterPane() bool {
-	if m.typing || m.screen == nil || m.screen.Dead {
-		return false
-	}
-	s := m.current()
-	if s == nil || s.State == state.Creating {
-		return false
-	}
-	m.focus = pAgent
-	m.typing = true
-	delete(m.unreadAt, s.Slug)
-	return true
 }
 
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
@@ -1282,14 +1210,14 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		return nil // nothing to forward: no pty behind the preview
 	}
 	if inAgent {
-		return m.ptyMouse(ev, x, y, m.agentPty())
+		return m.ptyMouse(ev, x, y, m.sessionPty())
 	}
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if sel, ok := m.sessionRowAt(ev.X, ev.Y); ok { // a click on a row of [1] selects it
 			m.focus = pSessions
-			m.typing = false
+			m.stopTyping()
 			if sel != tapiSel { // a session's row shows that session
-				m.chat.open = false
+				m.hideChat()
 			}
 			m.sel = sel
 			return m.onSelChange()
@@ -1308,109 +1236,8 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		m.clickEntered = false
 		if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
-			m.typing = false
+			m.stopTyping()
 		}
-	}
-	return nil
-}
-
-// ptyWin is a pty shown in [4] as the mouse sees it: a session's window or
-// tapi chat.
-type ptyWin struct {
-	sc     *engine.Screen
-	linkAt func(x, y int) string        // the URL drawn at (x, y) of the panel body
-	enter  func() bool                  // start typing into it, as Enter does
-	keys   func(map[string]any) tea.Cmd // write to its pty: "hex" or "keys"
-}
-
-// agentPty is the session's window shown in [4].
-func (m *model) agentPty() ptyWin {
-	p := ptyWin{sc: m.screen, linkAt: m.agentLinkAt, enter: m.enterPane, keys: func(map[string]any) tea.Cmd { return nil }}
-	if s := m.current(); s != nil {
-		slug, win := s.Slug, m.window
-		p.keys = func(params map[string]any) tea.Cmd {
-			params["slug"], params["window"] = slug, win
-			return m.inOrder(func() error {
-				_ = m.cl.Call("session.keys", params, nil)
-				return nil
-			})
-		}
-	}
-	return p
-}
-
-// chatPty is tapi chat shown in [4].
-func (m *model) chatPty() ptyWin {
-	return ptyWin{sc: m.chat.screen, linkAt: m.chatLinkAt, enter: m.enterChat, keys: m.chatKeys}
-}
-
-// ptyMouse: a mouse event at (x, y) of [4]'s body over a pty window.
-//
-// A click on a link opens it, like ⌘-click in a bare terminal (mouse
-// reports carry no ⌘, so any left click on a link counts); the click is not
-// forwarded to the program. Elsewhere a click, or the wheel, starts typing
-// into the window as Enter does; the click that enters only enters (its
-// press, drag and release stay with pekoe), the wheel's first notch already
-// scrolls. While typing, the mouse goes to a program that asked for it, and
-// the wheel of a full-screen program that did not becomes Up / Down.
-func (m *model) ptyMouse(ev tea.MouseMsg, x, y int, p ptyWin) tea.Cmd {
-	wheel := ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown
-	if ev.Button == tea.MouseButtonLeft {
-		switch ev.Action {
-		case tea.MouseActionPress:
-			m.linkDown = p.linkAt(x, y)
-			if m.linkDown != "" {
-				m.focus = pAgent
-				return nil
-			}
-		case tea.MouseActionRelease:
-			if u := m.linkDown; u != "" {
-				m.linkDown = ""
-				if p.linkAt(x, y) != u {
-					return nil
-				}
-				return func() tea.Msg {
-					if err := openURL(u); err != nil {
-						return errMsg{err}
-					}
-					return infoMsg("opened " + u)
-				}
-			}
-		}
-	}
-	if m.clickEntered && ev.Button == tea.MouseButtonLeft && ev.Action != tea.MouseActionPress {
-		if ev.Action == tea.MouseActionRelease {
-			m.clickEntered = false
-		}
-		return nil
-	}
-	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
-		m.clickEntered = false
-		m.focus = pAgent
-		if p.enter() {
-			m.clickEntered = true
-			return nil
-		}
-	}
-	if wheel {
-		p.enter()
-	}
-	sc := p.sc
-	if !m.typing || sc == nil {
-		return nil
-	}
-	if sc.MouseAny {
-		if hex := sgrMouse(ev, x, y); hex != nil {
-			return p.keys(map[string]any{"hex": hex})
-		}
-		return nil
-	}
-	if wheel && sc.AltScreen {
-		k := "Up"
-		if ev.Button == tea.MouseButtonWheelDown {
-			k = "Down"
-		}
-		return p.keys(map[string]any{"keys": []string{k}})
 	}
 	return nil
 }
