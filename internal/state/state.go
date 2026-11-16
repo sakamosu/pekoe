@@ -171,6 +171,11 @@ type Session struct {
 	// Warnings are what pekoe noticed while creating the session that did
 	// not stop it ([worktree] copy sources missing or empty).
 	Warnings []string `json:"warnings,omitempty"`
+	// LandHeld says why the session, whose PR was merged, is not torn
+	// down yet: its agent was still at work (running, waiting, or work
+	// not committed in the worktree). Its window and worktree stay; it
+	// lands once that is over. Empty: not held.
+	LandHeld string `json:"land_held,omitempty"`
 }
 
 // DevExit is how a session's dev hook ended.

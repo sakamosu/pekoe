@@ -655,7 +655,18 @@ func prForBranch(r ghRepoInfo, branch string) int {
 	return v.Number
 }
 
-func (d *Daemon) finishLanding(slug string) error {
+// finishLanding tears down a session whose work went in (pekoe land on a
+// local-only repository: its own agent asked for it, so nothing holds it).
+func (d *Daemon) finishLanding(slug string) error { return d.finishLand(slug, false) }
+
+// finishLand is finishLanding; merged: the PR was merged on GitHub (by
+// pekoed on a person's answer, or outside pekoe), maybe while the agent
+// was still at work. Then a session whose agent is running or waiting, or
+// whose worktree has work not committed, is not torn down: the PR is
+// recorded merged, the window and worktree stay, land_held and a pr
+// change say why, and watchMerges (every 2 minutes) or the agent going
+// idle or done tries again.
+func (d *Daemon) finishLand(slug string, merged bool) error {
 	// one at a time per session: watchMerges (at start and every 2 minutes)
 	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
 	// slow teardown must not run twice in the same worktree
@@ -670,7 +681,13 @@ func (d *Daemon) finishLanding(slug string) error {
 	if s.State == state.Landed { // finished by a run that started earlier
 		return nil
 	}
-	merged := time.Now() // when pekoe saw it merged, before the teardown's minutes
+	if merged {
+		if why := d.landHold(s); why != "" {
+			d.holdLanding(s, why)
+			return nil
+		}
+	}
+	mergedAt := time.Now() // when pekoe saw it merged, before the teardown's minutes
 	foreign := errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree)
 	if !foreign {
 		d.devMu.Lock()
@@ -695,12 +712,39 @@ func (d *Daemon) finishLanding(slug string) error {
 	}
 	landed, _ := d.update(slug, func(x *state.Session) {
 		x.State, x.Landing, x.Dev, x.Stopped = state.Landed, false, false, true
+		x.LandHeld = ""
 		landedPRMerged(x)
 	})
 	if landed != nil {
-		d.recordSession(landed, &merged, false) // stats.go
+		d.recordSession(landed, &mergedAt, false) // stats.go
 	}
 	return nil
+}
+
+// holdLanding records s's PR merged without tearing s down (finishLand):
+// why goes into land_held, and, when it is new, into the log and a pr
+// change for the session's parent (pekoe wait).
+func (d *Daemon) holdLanding(s *state.Session, why string) {
+	note := fmt.Sprintf("PR #%d merged while the session is still at work (%s): window and worktree kept; it lands once the agent is idle or done and the worktree is clean", s.PR, why)
+	changed := false
+	c, err := d.update(s.Slug, func(x *state.Session) {
+		if x.PRStatus == nil || x.PRStatus.State != "MERGED" {
+			ps := state.PRStatus{}
+			if x.PRStatus != nil {
+				ps = *x.PRStatus
+			}
+			ps.State = "MERGED"
+			ps.Attention, ps.AttentionAt = nil, time.Time{}
+			x.PRStatus = &ps
+		}
+		changed = x.LandHeld == "" // told once per hold; the text keeps up
+		x.LandHeld = note
+	})
+	if err != nil || !changed {
+		return
+	}
+	log.Printf("land %s: %s", s.Slug, note)
+	d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: s.Slug + ": " + note, parent: c.Parent})
 }
 
 // watchPRs fills in the PR number of sessions whose branch got a PR outside
@@ -728,7 +772,7 @@ func (d *Daemon) watchPRs() {
 
 // landMerged finishes the landing of a session whose PR was seen merged.
 func (d *Daemon) landMerged(slug string) {
-	if err := d.finishLanding(slug); err != nil {
+	if err := d.finishLand(slug, true); err != nil {
 		log.Printf("land %s: %v", slug, err)
 	}
 }
@@ -745,6 +789,10 @@ func (d *Daemon) watchMerges() {
 	}
 	d.mu.Unlock()
 	for _, s := range landing {
+		if s.LandHeld != "" && s.PRStatus != nil && s.PRStatus.State == "MERGED" {
+			d.landMerged(s.Slug) // seen merged already; held while its agent was at work
+			continue
+		}
 		repo := d.ghRepo(s)
 		c, done, err := ghCommand(context.Background(), repo, "pr", "view", strconv.Itoa(s.PR), "--repo", repo, "--json", "state")
 		if err != nil {

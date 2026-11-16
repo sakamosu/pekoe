@@ -17,6 +17,11 @@ package daemon
 //   - merge_state: GitHub's mergeStateStatus is CLEAN
 //   - conflicts: the conflict forecast sees no conflict with another session
 //   - after: every session this one comes after (pekoe new --after) landed
+//   - settled: the session's work is over (settled.go): its agent is not
+//     running or waiting, its worktree has no uncommitted changes or
+//     untracked files, and nothing reached it (pekoe send from a person,
+//     tapi or another session; an inbox answer) after its last done or
+//     blocked report
 //
 // When one stops holding, or the PR's head moves, the item is withdrawn.
 // One PR and head get one item: once a person answered it (or closed it),
@@ -215,6 +220,19 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 		add("after", true, "%s landed", strings.Join(s.After, ", "))
 	default:
 		add("after", true, "no sessions to land first")
+	}
+
+	// the session's work is over: a PR that passed review and CI can
+	// still be work in progress (settled.go). git runs only for sessions
+	// waiting on a merge (the dashboards read every session).
+	switch {
+	case s.Landing && s.PR > 0:
+		ok, detail := d.settledCheck(s)
+		add("settled", ok, "%s", detail)
+	case agentBusy(s) != "":
+		add("settled", false, "%s", agentBusy(s))
+	default:
+		add("settled", true, "agent %s (worktree read after pekoe land)", s.State)
 	}
 
 	c.Ready = len(c.Missing) == 0
