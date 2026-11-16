@@ -28,8 +28,10 @@ type chatState struct {
 	dirty    bool
 	fitReq   string
 	// reopen: the prefix just left the chat; a layout key (<prefix> z < > =)
-	// comes back to it, typing, as it does to an agent
-	reopen bool
+	// comes back to it, typing, as it does to an agent (or, left untyped,
+	// shows it again on reopenFocus)
+	reopen      bool
+	reopenFocus int
 	// unreadAt is the absolute line where the user left tapi chat (the
 	// "new" line, like a session's unreadAt), when unreadSet
 	unreadAt  int
@@ -93,6 +95,23 @@ func (m *model) closeChat() tea.Cmd {
 		m.focus = pSessions
 	}
 	return m.fetchScreen()
+}
+
+// leaveChat is the prefix leaving tapi chat, typed into or not: it closes
+// and the prefix stays armed for z < > = (they come back to it), as after
+// leaving an agent.
+func (m *model) leaveChat(typing bool) tea.Cmd {
+	m.chat.reopenFocus = m.focus
+	cmd := m.closeChat()
+	m.prefix, m.prefixType, m.chat.reopen = true, typing, true
+	return cmd
+}
+
+// showChatAgain: a layout key right after the prefix left tapi chat.
+func (m *model) showChatAgain() tea.Cmd {
+	m.chat.open = true
+	m.chat.unreadSet = false // straight back: nothing new was missed
+	return m.fetchChat()
 }
 
 func (m *model) fetchChat() tea.Cmd {
@@ -275,13 +294,15 @@ func (m *model) viewChat(width, height int) []string {
 
 // chatHints are the bottom bar's keys while tapi chat shows.
 func (m *model) chatHints() [][2]string {
+	dash := [2]string{m.prefixLabel() + " " + dashKey, "dashboard"}
 	if m.typing {
-		return m.ptyTypingHints(m.chatPty())
+		h := m.ptyTypingHints(m.chatPty())
+		return append(h[:1:1], append([][2]string{dash}, h[1:]...)...)
 	}
 	if m.chat.screen != nil && m.chat.screen.Dead {
-		return [][2]string{{"↵", "restart"}, {"esc", "close"}, {"T", "reset"}, {"?", "help"}}
+		return [][2]string{{"↵", "restart"}, {"esc", "close"}, dash, {"T", "reset"}, {"?", "help"}}
 	}
-	return [][2]string{{"↵", "type"}, {"esc", "close"}, {"T", "reset"}, {"?", "help"}}
+	return [][2]string{{"↵", "type"}, {"esc", "close"}, dash, {"T", "reset"}, {"?", "help"}}
 }
 
 // chatKeysFull is the help list of the main panel while tapi chat shows.

@@ -118,12 +118,7 @@ func (m *model) chatPty() pty {
 		restart: m.restartChat, close: m.closeChat,
 		leaveLabel: "leave",
 	}
-	p.leave = func() tea.Cmd {
-		cmd := m.closeChat()
-		// like leaving an agent: the prefix stays armed for z < > =
-		m.prefix, m.prefixType, m.chat.reopen = true, true, true
-		return cmd
-	}
+	p.leave = func() tea.Cmd { return m.leaveChat(true) }
 	p.call = func(method string, params map[string]any) error {
 		if m.cl == nil {
 			return nil

@@ -247,7 +247,7 @@ func TestChatLayout(t *testing.T) {
 	if !strings.Contains(out, "[4] tapi the orchestrator") || strings.Contains(out, "Sessions") || !strings.Contains(out, "zoom ^q z") {
 		t.Fatalf("zoomed chat:\n%s", out)
 	}
-	if !strings.Contains(out, "^q leave  ^q z unzoom  ^q < > width") {
+	if !strings.Contains(out, "^q leave  ^q o dashboard  ^q z unzoom  ^q < > width") {
 		t.Fatalf("hints:\n%s", out)
 	}
 	// the fake pty is 100 wide: it is fitted to the zoomed pane

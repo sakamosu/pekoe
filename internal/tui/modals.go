@@ -653,7 +653,7 @@ var tipHelpKey = [2]string{tipKey, "next tip"}
 // of the help).
 func (m *model) globalHelpKeys() [][2]string {
 	p := m.prefixLabel()
-	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {p + " " + configKey, "edit config.toml"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {tourKey, "tutorial (replay)"}, {"q", "quit"}}
+	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {p + " " + configKey, "edit config.toml"}, {p + " " + dashKey, "tapi's dashboard (from anywhere, typing too)"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {tourKey, "tutorial (replay)"}, {"q", "quit"}}
 }
 
 // Names of the panel key lists in helpSets.
