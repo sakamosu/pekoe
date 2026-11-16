@@ -279,6 +279,13 @@ keys = ["4"]
 docs = ["docs/orchestration.md", "README.ja.md#tapi-chat"]
 
 [[tip]]
+id = "chat-to-dashboard"
+short = "^q o で tapi chat からダッシュボードへ 1 手で移る"
+detail = "tapi chat に打ち込んでいる最中でも、セッションからでも ^q o で 4 のダッシュボードへ。t で tapi chat に戻ってそのまま打てる。Sessions の tapi の行では l / → でもダッシュボードへ、↵ は tapi chat。"
+keys = ["^q o", "l"]
+docs = ["README.ja.md#tapi-chat", "docs/tapi-chat.md"]
+
+[[tip]]
 id = "dashboard-pipeline"
 short = "ダッシュボードの工程表はバーと一言で今の段階を見せる"
 detail = "バーは impl → review → PR → CI → merge。緑が済み・黄が進行中・赤が失敗・青緑がマージしてよい。後ろに今の段階(CI running など)と足りない条件の理由が出る。マージ済みは最後にまとまる。"
