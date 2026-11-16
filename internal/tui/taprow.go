@@ -197,8 +197,11 @@ func (m *model) tapiRowKey(key string) tea.Cmd {
 			m.sel = tapiSel
 		}
 		return m.onSelChange()
-	case "enter", "right":
+	case "enter":
 		return m.openChat()
+	case "l", "right": // to [4], which shows the dashboard here (↵ is tapi chat)
+		m.focus = pAgent
+		return m.dashTick()
 	case "n":
 		return m.openNew(nil)
 	}
@@ -207,12 +210,12 @@ func (m *model) tapiRowKey(key string) tea.Cmd {
 
 // tapiRowHints are the bottom bar's keys on the tapi row.
 func tapiRowHints() [][2]string {
-	return [][2]string{{"j/k", "move"}, {"↵", "open tapi"}, {"T", "reset tapi"}, {"n", "new"}, {"?", "help"}}
+	return [][2]string{{"j/k", "move"}, {"↵", "open tapi"}, {"l", "dashboard"}, {"T", "reset tapi"}, {"n", "new"}, {"?", "help"}}
 }
 
 // tapiRowKeysFull is the help list of Sessions on the tapi row.
 func tapiRowKeysFull() [][3]string {
-	return [][3]string{{"j/k", "move (wraps at the ends)", "j"}, {"↵", "open tapi chat", "\r"}, {"n", "new session", "n"}}
+	return [][3]string{{"j/k", "move (wraps at the ends)", "j"}, {"↵", "open tapi chat", "\r"}, {"l", "the dashboard ([4])", "l"}, {"n", "new session", "n"}}
 }
 
 // sessionsPos is the "2/5" of the Sessions title ("tapi/5" on the tapi row).

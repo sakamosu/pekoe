@@ -62,18 +62,25 @@ func (m *model) onKeyAfterPrefix(k tea.KeyMsg) (tea.Cmd, bool) {
 	reopen := m.chat.reopen // the prefix left tapi chat (chat.go)
 	m.chat.reopen = false
 	if cmd, ok := m.layoutKey(k.String()); ok {
-		if fromTyping && !narrow(m.width) { // straight back to the agent
+		switch {
+		case fromTyping && !narrow(m.width): // straight back to the agent
 			m.focus, m.typing = pAgent, true
 			if reopen { // … or to tapi
-				m.chat.open = true
-				m.chat.unreadSet = false // straight back: nothing new was missed
-				cmd = tea.Batch(cmd, m.fetchChat())
+				cmd = tea.Batch(cmd, m.showChatAgain())
 			}
+		case reopen && !fromTyping: // the prefix left tapi chat nobody typed into: it shows again, still untyped
+			if !m.zoomed() {
+				m.focus = m.chat.reopenFocus
+			}
+			cmd = tea.Batch(cmd, m.showChatAgain())
 		}
 		return cmd, true
 	}
-	if k.String() == configKey {
+	switch k.String() {
+	case configKey:
 		return m.editConfig(), true
+	case dashKey: // the dashboard, from wherever (tapi chat, a session)
+		return m.goDash(), true
 	}
 	// after ^q left typing, any other key is a plain key: l still lands
 	if !fromTyping {
@@ -198,6 +205,12 @@ func (m *model) onKeyGlobal(k tea.KeyMsg) (tea.Cmd, bool) {
 	}
 	if m.prefixKey(k) {
 		m.prefix = true
+		if m.chat.open {
+			// tapi chat shows but nobody types (a click left the typing):
+			// the prefix leaves it all the same, as it does while typing
+			// (chat.go leaveChat), so ^q 1 4 does not find it again
+			return m.leaveChat(false), true
+		}
 		return nil, true
 	}
 	return nil, false

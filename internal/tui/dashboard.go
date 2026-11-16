@@ -95,6 +95,23 @@ func (m *model) dashShown() bool {
 	return m.onTapiRow() && m.current() == nil && !m.chat.open && !m.issueShown()
 }
 
+// dashKey after the prefix goes to the dashboard from wherever: tapi chat
+// being typed into, a session's agent, any panel. o for orchestrator (the
+// tapi row's heading); after the prefix it shadows no key (o is no key of
+// Sessions, and the prefix's own keys are z < > = , h l).
+const dashKey = "o"
+
+// goDash selects the tapi row and puts the focus on [4], which then shows
+// the dashboard: tapi chat closes (t comes back to it), an issue too.
+func (m *model) goDash() tea.Cmd {
+	m.stopTyping()
+	m.hideChat()
+	m.iss.open = false
+	cmd := m.selectTapi()
+	m.focus = pAgent
+	return tea.Batch(cmd, m.dashTick())
+}
+
 // loadDash reads what the dashboard needs. A method an older pekoed lacks
 // leaves its section empty.
 func (m *model) loadDash() tea.Cmd {

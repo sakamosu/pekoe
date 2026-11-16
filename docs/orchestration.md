@@ -494,7 +494,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(`internal/tui/dashboard.go`):
 
-- **開き方**: U4 は (a)。新しいキーは足さず、Sessions で tapi の行を選ぶと [4] がダッシュボードになる(前の「↵ open tapi chat」の空き表示と、そこに出ていた顔と TIPS の代わり。顔は 1 か所の決まりのまま、ダッシュボードには顔を出さない)。tapi chat は今どおり Sessions の `↵` か `t`。ほかのセッションの行では今の窓のまま
+- **開き方**: U4 は (a)。新しいキーは足さず、Sessions で tapi の行を選ぶと [4] がダッシュボードになる(前の「↵ open tapi chat」の空き表示と、そこに出ていた顔と TIPS の代わり。顔は 1 か所の決まりのまま、ダッシュボードには顔を出さない)。tapi chat は今どおり Sessions の `↵` か `t`。ほかのセッションの行では今の窓のまま。のちに、tapi chat に入力中から 1 手で来られるよう `^q o` を足した(どこからでも tapi の行を選んで [4] に入る。docs/tapi-chat.md)
 - **キー**: `4`(か `tab`・クリック)で入り、`j` `k` で選べる行(受信箱の項目・工程表のセッション・依頼・送信の記録・fyi)を動く。`↵` は受信箱の項目なら今の答えるモーダル(`inbox.go`)を開き、ほかの行は畳んだ中身を開く(工程表は `merge.check` の条件ごとの `detail` と最新の報告、依頼は全文と結んだセッションの工程、送信の記録は全文とエラー、fyi は問い・背景・リンク)。`o` は受信箱と fyi の項目のリンク(PR、なければ最初の http(s) のリンク)を開き、工程表の行ではそのセッションの報告の evidence の一覧を開く(下の「evidence を開く」)。`h` / `esc` で Sessions へ。ホイールで選び、クリックで行を選ぶ
 - **読むもの**: セッションは TUI が持っている一覧(`subscribe` で動く)、受信箱は TUI が持っている未回答の項目。ほかは表示している間だけ `ledger.list`(open と、pekoed が直近 24 時間に自動で閉じたもの)・`send.log`(新しい 30 件)・`inbox.list`(`answered` のうち `fyi` の 10 件)・`merge.check` を読む。tapi の行を選んだときにすぐ、その後は 10 秒ごと、`ledger.updated` / `ledger.removed` / `inbox.updated` が来たら 2 秒後。古い pekoed で無いメソッドはその区画が空になるだけ
 - **見た目**(人が答える・マージする > 進行中 > 終わったもの・記録 の順に目に入るように): 区画は絵文字・太字の名前・罫線の見出しで始める(`🧭 Overview` `📬 Inbox` `🚦 Pipeline` `📝 Requests` `📨 Sends` `💡 Decided`)。絵文字は 2 セル幅が揺れない East Asian Wide のものだけで、`icons = "ascii"` か `[mascot] glyphs = "ascii"` では出さない(docs/ui-guidelines.md「ダッシュボードの例外」)。顔は出さず、空のときは一言(`🍵 nothing to answer · time for a cup of tea`)

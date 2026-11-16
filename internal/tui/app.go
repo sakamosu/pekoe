@@ -1238,9 +1238,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		if sel, ok := m.sessionRowAt(ev.X, ev.Y); ok { // a click on a row of [1] selects it
 			m.focus = pSessions
 			m.stopTyping()
-			if sel != tapiSel { // a session's row shows that session
-				m.hideChat()
-			}
+			m.hideChat() // [4] shows what the row shows: the session, or tapi's dashboard
 			m.sel = sel
 			return m.onSelChange()
 		}

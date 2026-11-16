@@ -308,6 +308,12 @@ func TestPtySameForSessionAndChat(t *testing.T) {
 			m.typing = true
 			h := m.hints()
 			p := m.prefixLabel()
+			if k.name == "tapi chat" { // on purpose: tapi chat adds the way to the dashboard (chatdash_test.go)
+				if len(h) < 2 || h[1] != [2]string{p + " " + dashKey, "dashboard"} {
+					t.Fatalf("hints %v", h)
+				}
+				h = append(h[:1:1], h[2:]...)
+			}
 			if len(h) != 3 || h[0][0] != p || h[1] != [2]string{p + " z", "zoom"} || h[2] != [2]string{p + " < >", "width"} {
 				t.Fatalf("hints %v", h)
 			}
