@@ -183,6 +183,8 @@ docs/mascot.md の「顔は 1 か所」を守るため、tapi chat を開いて�
 
 tapi chat を閉じている間に tapi が許可待ち・質問待ちになったら、セッションの wait と同じに知らせる: トースト(`tapi needs you · t`)、ステータスバーの声(セッションの wait / error が無いとき。30 秒で点滅)、ターミナルにフォーカスが無ければ 2 分で OS の通知。統括役の tapi は人が離れている間も報告を待って動くので、許可待ちを見落とすと任せた作業が止まる([orchestration.md](orchestration.md)「知らせ方」)。
 
+許可待ちは、これに加えてセッションと同じ許可モーダルを最前面に出す(tapi chat を開いていても閉じていても、何を選んでいても。[design.md](design.md)「許可モーダル」)。`y` / `n` / `A` は `[agents.<tapi の agent>]` の allow / deny / always のキーを tapi chat に打ち、tapi chat を開いたり閉じたりはしない。`g` で tapi chat を開く。モーダルを出したら、同じ待ちのトーストは消す。tapi chat に打ち込んでいる間は出さない(画面に許可メニューが見えている)。
+
 `config.toml` の `[orchestrator] notify = "quiet"` で前の知らせ方に戻る: バーの声を `chat waits · t` にするだけ(セッションの wait より弱く、セッションの wait が無いときだけ)で、トーストや通知は出さない。tapi を人が呼んだときにしか動かさない使い方向け。
 
 ## スキル
@@ -216,7 +218,7 @@ engine.Engine にはメソッドを足さない(ウィンドウ名が `+tapi~age
 | 事項 | 今回の決め | 見直す条件 |
 | --- | --- | --- |
 | tapi の状態を `session.*` と同じ型で返すか | 別の型 `Tapi`(リポジトリ前提の項目を持たない) | Neovim などからも tapi を扱いたくなったら共通部分を切り出す |
-| 許可待ちの通知 | バーの声だけ。トースト・OSC 通知は出さない | [orchestration.md](orchestration.md)「知らせ方」で強める(別の変更) |
+| 許可待ちの通知 | 許可モーダル(どこにいても最前面)と、バーの声・OS の通知([orchestration.md](orchestration.md)「知らせ方」)。モーダルを出したらトーストは消す | — |
 | リポジトリの増減の反映 | 次回起動時(リセットか再起動) | 不便なら、増えたときに「再起動で反映」と声で知らせる |
 | codex などの横断読み取り | cwd だけ(`--add-dir` 相当なし) | 各エージェントに相当のオプションができたら `[agents.*]` に `add_dir` のような書式を足す |
 | 会話の記録の場所 | Claude Code の既定(`~/.claude/projects/…`)。`CLAUDE_CONFIG_DIR` があればそちら | — |
