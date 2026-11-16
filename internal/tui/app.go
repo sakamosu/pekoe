@@ -113,16 +113,17 @@ type model struct {
 	psel      int               // over picks, then errs (Picks panel)
 	errs      []errcatch.Report // open errors offered as cards (errcard.go)
 
-	focus     int
-	narrowTab int // < 100 columns: index into narrowTabs
-	sub2      int // 0 worktrees, 1 browser, 2 issues (subIssues)
-	sub3      int // 0 changes, 1 picks
-	typing    bool
-	guard     mouseGuard    // reassembles mouse reports split across reads
-	linkDown  string        // URL under the last left press in the agent panel
-	window    string        // agent | review | dev | run | pr | preview shown in the main panel
-	pr        *prState      // the PR view's data (pr.go)
-	pv        *previewState // the preview window (preview.go)
+	focus        int
+	narrowTab    int // < 100 columns: index into narrowTabs
+	sub2         int // 0 worktrees, 1 browser, 2 issues (subIssues)
+	sub3         int // 0 changes, 1 picks
+	typing       bool
+	guard        mouseGuard    // reassembles mouse reports split across reads
+	linkDown     string        // URL under the last left press in the agent panel
+	clickEntered bool          // the left button down now entered [4] (enterPane): its drag and release are not forwarded
+	window       string        // agent | review | dev | run | pr | preview shown in the main panel
+	pr           *prState      // the PR view's data (pr.go)
+	pv           *previewState // the preview window (preview.go)
 
 	screen     *engine.Screen
 	screenOf   string
@@ -1220,6 +1221,26 @@ func (m *model) forward(k tea.KeyMsg) tea.Cmd {
 	})
 }
 
+// enterPane starts typing into [4]'s pty window from the mouse, with
+// Enter's side effects (focus, unread mark). It does nothing when already
+// typing, or where Enter would do something else: a dead pane (Enter
+// restarts it) or a session still being created. The other windows (chat,
+// dashboard, PR, preview, issue) and modals are left before onMouse gets
+// here. It reports whether it entered.
+func (m *model) enterPane() bool {
+	if m.typing || m.screen == nil || m.screen.Dead {
+		return false
+	}
+	s := m.current()
+	if s == nil || s.State == state.Creating {
+		return false
+	}
+	m.focus = pAgent
+	m.typing = true
+	delete(m.unreadAt, s.Slug)
+	return true
+}
+
 func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.modal != nil {
 		return nil
@@ -1297,13 +1318,34 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			return m.onSelChange()
 		}
 	}
+	// a left button that entered the pane is not the program's: its drag
+	// and release are swallowed with the press, so the program never sees
+	// half a click
+	if m.clickEntered && ev.Button == tea.MouseButtonLeft && ev.Action != tea.MouseActionPress {
+		if ev.Action == tea.MouseActionRelease {
+			m.clickEntered = false
+		}
+		return nil
+	}
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
+		m.clickEntered = false
 		if inAgent {
 			m.focus = pAgent
+			// a click on a pty window starts typing into it, as Enter does;
+			// the click itself only enters (not a click inside the program)
+			if m.enterPane() {
+				m.clickEntered = true
+				return nil
+			}
 		} else if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
 			m.typing = false
 		}
+	}
+	// the wheel over a pty window starts typing into it too, and the first
+	// notch already scrolls instead of being dropped for want of focus
+	if inAgent && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) {
+		m.enterPane()
 	}
 	if !inAgent || !m.typing || m.screen == nil || !m.screen.MouseAny {
 		if inAgent && m.screen != nil && !m.screen.MouseAny && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) && m.typing {
