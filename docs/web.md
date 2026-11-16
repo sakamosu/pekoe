@@ -142,7 +142,7 @@ tapi は全リポジトリを読み、`pekoe new` でセッションを作って
 - **確認はセッションと同じ**: 本文は前後の空白を落として 1〜4000 文字、改行・タブ以外の制御文字は 400。tapi が許可待ち(hook の状態)なら 409。`tapi.send` が打つ前と Enter の直前に hook の状態と画面の許可メニュー(`promptUp`)を見直し、出ていれば 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったものと、断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録(`send.log`)に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番か・本文の最初の 200 文字を出す(全文は送信の記録。ログは同じユーザーのエージェントから読めるので切る)。`allow_devices` で断ったものはログにだけ出る
 - **キーパッド**: tapi が質問待ちのときだけ、セッションと同じキー(`Up Down Left Right Tab BTab Space Enter Escape 0`〜`9`、1 回 8 個まで)。許可待ちのときと、画面に許可メニューが出ているとき(hook は偽れるので画面で見る)は 409
-- **allow / deny は無い**: tapi の許可待ちに答える API は無い(`/api/tapi/` に answer は無く、`/api/sessions/+tapi/…` は `session.*` が `+tapi` を拒むので届かない)。許可待ちの間、ページは「端末(pekoe TUI)で答える」とだけ出し、send とキーも止める
+- **allow / deny は無い**: tapi の許可待ちに答える Web の API は無い(`/api/tapi/` に answer は無く、`/api/sessions/+tapi/…` は `session.*` が `+tapi` を拒むので届かない。ソケットの `tapi.answer` は TUI の許可モーダル用で、Web からは呼ばない)。許可待ちの間、ページは「端末(pekoe TUI)で答える」とだけ出し、send とキーも止める
 
 #### 吹き出し(chat)と画面(screen)
 
