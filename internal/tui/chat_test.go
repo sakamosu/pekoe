@@ -136,7 +136,7 @@ func TestChatDead(t *testing.T) {
 	m, f, cr := chatModel(t)
 	cr.dead = true
 	runCmd(m, m.onKey(key("t")))
-	if out := checkSize(t, m, "dead"); !strings.Contains(out, "tapi left · ↵ restart  x close") {
+	if out := checkSize(t, m, "dead"); !strings.Contains(out, "exited · ↵ restart  x close") {
 		t.Fatalf("dead:\n%s", out)
 	}
 	cr.mu.Lock()
@@ -444,8 +444,9 @@ func TestWheelFocusesAgentPane(t *testing.T) {
 		if m.focus != pAgent || !m.typing {
 			t.Fatalf("%s: focus %d typing %v", c.name, m.focus, m.typing)
 		}
-		if _, ok := m.unreadAt["api-1"]; ok {
-			t.Errorf("%s: still unread after entering the pane", c.name)
+		// the unread line stays until something is typed (pty_test.go)
+		if _, ok := m.unreadAt["api-1"]; !ok {
+			t.Errorf("%s: the unread line went with the wheel", c.name)
 		}
 		got := f.find("session.keys")
 		if len(got) != 1 || got[0][c.want] == nil || got[0]["window"] != engine.WinAgent {
@@ -520,8 +521,9 @@ func TestClickEntersAgentPane(t *testing.T) {
 	if m.focus != pAgent || !m.typing {
 		t.Fatalf("click: focus %d typing %v", m.focus, m.typing)
 	}
-	if _, ok := m.unreadAt["api-1"]; ok {
-		t.Errorf("click: still unread after entering the pane")
+	// the unread line stays until something is typed (pty_test.go)
+	if _, ok := m.unreadAt["api-1"]; !ok {
+		t.Errorf("click: the unread line went with the click")
 	}
 	if got := f.find("session.keys"); len(got) != 0 {
 		t.Fatalf("the click that entered reached the program: %v", got)

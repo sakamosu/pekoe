@@ -110,7 +110,7 @@ func (m *model) showRun() tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	m.chat.open = false
+	m.hideChat()
 	m.window = engine.WinRun
 	m.screen = nil
 	m.focus = pAgent

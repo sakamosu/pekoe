@@ -43,7 +43,7 @@ func (m *model) onNavMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return m.onJump(msg), true
 	case reviewSurfaceMsg:
 		if s := m.current(); s != nil && s.Slug == msg.slug {
-			m.chat.open = false
+			m.hideChat()
 			m.window = engine.WinReview
 			m.screen = nil
 			m.focus = pAgent
@@ -72,7 +72,7 @@ func (m *model) onJump(msg jumpMsg) tea.Cmd {
 	}
 	m.focus = pSessions
 	m.typing = false
-	m.chat.open = false // the jump shows the session
+	m.hideChat() // the jump shows the session
 	// tapi waits: its row (↵ opens tapi chat)
 	if msg.slug == daemon.TapiSlug {
 		return m.selectTapi()
@@ -254,7 +254,7 @@ func (m *model) onScreen(msg screenMsg) tea.Cmd {
 		return cmd
 	}
 	m.screen, m.screenOf = msg.sc, msg.slug
-	cmd = tea.Batch(cmd, m.fitScreen(msg.slug, msg.window, msg.sc))
+	cmd = tea.Batch(cmd, m.fitPty(m.sessionPty()))
 	if msg.window == engine.WinReview && msg.sc.Dead {
 		// nvim exited (:PekoeSend → :qa): back to the agent screen
 		slug := s.Slug
@@ -363,16 +363,12 @@ func (m *model) onInputMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case kittyKeyMsg:
 		m.lastKeyAt = time.Now()
 		// keys with no legacy encoding (Shift+Enter …) only matter to the pty
-		if m.typing && m.modal == nil && m.chat.open {
-			return m.chatKeys(map[string]any{"keys": []string{msg.name}}), true
-		}
 		if m.typing && m.modal == nil {
-			if s := m.current(); s != nil {
-				slug, win, name := s.Slug, m.window, msg.name
-				return m.inOrder(func() error {
-					return m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{name}}, nil)
-				}), true
+			p := m.shownPty()
+			if p.call != nil && p.seen != nil {
+				p.seen() // typed, like any key (ptySend)
 			}
+			return m.ptyKeys(p, map[string]any{"keys": []string{msg.name}}), true
 		}
 		return nil, true
 

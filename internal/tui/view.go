@@ -655,90 +655,23 @@ func (m *model) viewAgent(width, height int) []string {
 	return m.box(width, height, boxOpt{title: title, right: right, rows: m.agentRows(cw, ch), focused: f, bottom: true})
 }
 
-// agentRows is the body of the agent panel as drawn: the pty screen with the
-// pick card at the bottom. Rows are bottom-aligned in a ch-tall body.
+// agentRows is the body of the agent panel as drawn (ptyBody).
 func (m *model) agentRows(cw, ch int) []row {
-	rows := m.screenRows(cw, ch)
-	// a card from outside (Chrome pick) sits inside the pane, at the bottom
-	card := m.pickCard(cw)
-	if len(card) == 0 {
-		card = m.errorCard(cw) // one card at a time: a pick first
+	return m.ptyBody(m.sessionPty(), cw, ch)
+}
+
+// agentCards is the card from outside drawn inside the pane at the bottom:
+// a Chrome pick first, else the error card (one card at a time).
+func (m *model) agentCards(cw int) []row {
+	if card := m.pickCard(cw); len(card) > 0 {
+		return card
 	}
-	if len(card) > 0 {
-		keep := max(ch-len(card), 0)
-		if len(rows) > keep {
-			rows = rows[len(rows)-keep:]
-		}
-		rows = append(rows, card...)
-	}
-	return rows
+	return m.errorCard(cw)
 }
 
 // agentLinkAt returns the URL drawn at (x, y) of the agent panel body.
 func (m *model) agentLinkAt(x, y int) string {
-	s := m.current()
-	if m.window == winPR || m.screen == nil || s == nil || s.State == state.Creating || (s.State == state.Failed && m.screen.Dead) {
-		return ""
-	}
-	cw, ch := m.agentSize()
-	return rowsLinkAt(m.agentRows(cw, ch), ch, x, y)
-}
-
-// rowsLinkAt returns the URL drawn at (x, y) of a ch-tall body that shows
-// rows bottom-aligned (box's bottom), as the pty windows do.
-func rowsLinkAt(rows []row, ch, x, y int) string {
-	if len(rows) > ch {
-		rows = rows[len(rows)-ch:]
-	}
-	i := y - (ch - len(rows))
-	if i < 0 || i >= len(rows) {
-		return ""
-	}
-	return linkAt(rows[i].Text, x)
-}
-
-// screenRows renders the captured pty screen with the cursor (when typing)
-// and the unread line where the user left.
-func (m *model) screenRows(cw, ch int) []row {
-	sc := m.screen
-	if sc == nil {
-		return []row{{Text: m.th.FG(theme.Dim, "…")}}
-	}
-	lines := append([]string(nil), sc.Lines...)
-	if m.typing && sc.Cursor.Visible && sc.Cursor.Y < len(lines) {
-		lines[sc.Cursor.Y] = withCursor(lines[sc.Cursor.Y], sc.Cursor.X)
-	}
-	// trim trailing blank rows so short output sits at the bottom like the mock
-	end := len(lines)
-	if !sc.AltScreen {
-		for end > 0 && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" && end-1 > sc.Cursor.Y {
-			end--
-		}
-	}
-	lines = lines[:end]
-	s := m.current()
-	if s != nil && m.window == engine.WinAgent {
-		if at, ok := m.unreadAt[s.Slug]; ok {
-			r := at - sc.History + 1
-			if r > 0 && r < len(lines) {
-				mark := m.th.FG(theme.Border, strings.Repeat("─", 3)) + m.th.FG(theme.Dim, " new ") + m.th.FG(theme.Border, strings.Repeat("─", max(cw-8, 0)))
-				lines = append(lines[:r], append([]string{mark}, lines[r:]...)...)
-			}
-		}
-	}
-	if sc.Dead && m.window == engine.WinRun {
-		lines = append(dropPaneDead(lines), "", m.runExitLine())
-	} else if sc.Dead {
-		lines = append(lines, m.th.FG(theme.Dim, "exited · ")+m.th.Bold(theme.Secondary, "↵")+m.th.FG(theme.Dim, " restart  ")+m.th.Bold(theme.Secondary, "x")+m.th.FG(theme.Dim, " close"))
-	}
-	rows := make([]row, 0, len(lines))
-	for _, l := range lines {
-		// capture-pane -e leaves the last SGR open (an agent's full-width
-		// background is "set bg + erase line", not cells), so the padding,
-		// the border and whatever follows would inherit it: close it here.
-		rows = append(rows, row{Text: clip(l, cw) + "\x1b[0m"})
-	}
-	return rows
+	return m.ptyLinkAt(m.sessionPty(), x, y)
 }
 
 func withCursor(line string, x int) string {
@@ -1113,17 +1046,7 @@ func (m *model) hints() [][2]string {
 		if m.runDone() {
 			return [][2]string{{"↵", "back to the agent"}, {"x", "close"}, {p, "leave"}}
 		}
-		if m.screen != nil && m.screen.Dead {
-			return [][2]string{{"↵", "restart"}, {"x", "close"}, {p, "back"}}
-		}
-		if !narrow(m.width) {
-			zoom := "zoom"
-			if m.zoomed() {
-				zoom = "unzoom"
-			}
-			return [][2]string{{p, "back"}, {p + " z", zoom}, {p + " < >", "width"}}
-		}
-		return [][2]string{{p, "back"}}
+		return m.ptyTypingHints(m.sessionPty())
 	}
 	switch m.focus {
 	case pSecond:

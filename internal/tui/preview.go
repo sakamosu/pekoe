@@ -378,7 +378,6 @@ func (m *model) keyPreview(key string) tea.Cmd {
 		return nil
 	case "i", "enter", "a":
 		m.typing = true
-		delete(m.unreadAt, s.Slug)
 		return m.closePreview()
 	case "r", "n":
 		cmd, _ := m.common(key)

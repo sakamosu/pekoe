@@ -8,11 +8,8 @@ package tui
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
@@ -32,6 +29,10 @@ type chatState struct {
 	// reopen: the prefix just left the chat; a layout key (<prefix> z < > =)
 	// comes back to it, typing, as it does to an agent
 	reopen bool
+	// unreadAt is the absolute line where the user left tapi chat (the
+	// "new" line, like a session's unreadAt), when unreadSet
+	unreadAt  int
+	unreadSet bool
 }
 
 type chatInfoMsg struct {
@@ -68,11 +69,20 @@ func (m *model) openChat() tea.Cmd {
 	}
 }
 
+// hideChat takes tapi chat off [4], remembering where the user left it
+// (the "new" line when it shows again).
+func (m *model) hideChat() {
+	if m.chat.open && m.chat.screen != nil {
+		m.chat.unreadAt, m.chat.unreadSet = m.chat.screen.History+m.chat.screen.Cursor.Y, true
+	}
+	m.chat.open = false
+}
+
 // closeChat goes back to the selected session's window; the conversation
 // stays (t again continues it). Zoomed, the focus stays on the main panel
 // (the left column is hidden; focusing it would unzoom).
 func (m *model) closeChat() tea.Cmd {
-	m.chat.open = false
+	m.hideChat()
 	m.typing = false
 	if !m.zoomed() {
 		m.focus = pSessions
@@ -93,26 +103,6 @@ func (m *model) fetchChat() tea.Cmd {
 		var sc engine.Screen
 		err := m.cl.Call("tapi.screen", nil, &sc)
 		return chatScreenMsg{sc: &sc, err: err}
-	}
-}
-
-// fitChat resizes tapi's pty to the pane, like fitScreen for sessions.
-func (m *model) fitChat(sc *engine.Screen) tea.Cmd {
-	aw, ah := m.agentSize()
-	if m.layoutPending() {
-		return nil // layoutSettled resizes every pty, tapi's too
-	}
-	if sc == nil || sc.Dead || sc.Width <= 0 || sc.Height <= 0 || (sc.Width == aw && sc.Height == ah) {
-		return nil
-	}
-	key := fmt.Sprintf("%dx%d>%dx%d", sc.Width, sc.Height, aw, ah)
-	if m.chat.fitReq == key {
-		return nil
-	}
-	m.chat.fitReq = key
-	return func() tea.Msg {
-		_ = m.cl.Call("tapi.resize", map[string]any{"width": aw, "height": ah}, nil)
-		return nil
 	}
 }
 
@@ -153,7 +143,7 @@ func (m *model) chatUpdate(msg tea.Msg) (tea.Cmd, bool) {
 			return cmd, true
 		}
 		m.chat.screen = msg.sc
-		return tea.Batch(cmd, m.fitChat(msg.sc)), true
+		return tea.Batch(cmd, m.fitPty(m.chatPty())), true
 	}
 	return nil, false
 }
@@ -174,35 +164,13 @@ func (m *model) chatEvent(ev client.Event) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// chatTypingKey: a key while typing into tapi. Everything goes to its pty
-// (esc too: it interrupts Claude Code) except the prefix, which leaves.
-func (m *model) chatTypingKey(k tea.KeyMsg) tea.Cmd {
-	if m.prefixKey(k) {
-		cmd := m.closeChat()
-		// like leaving an agent: the prefix stays armed for z < > =
-		m.prefix, m.prefixType, m.chat.reopen = true, true, true
-		return cmd
-	}
-	if m.chat.screen != nil && m.chat.screen.Dead {
-		switch k.String() {
-		case "enter":
-			return m.restartChat()
-		case "x", "esc":
-			return m.closeChat()
-		}
-		return nil
-	}
-	return m.chatSend(toTmux(k))
-}
-
 // chatKey: a key in the main panel while tapi chat shows but nobody types
 // (a click on the left panels stops typing).
 func (m *model) chatKey(key string) tea.Cmd {
 	switch key {
 	case "enter", "i", "t", "a":
 		if m.chat.screen != nil && m.chat.screen.Dead && key == "enter" {
-			m.typing = true
-			return m.restartChat()
+			return m.restartPty(m.chatPty())
 		}
 		m.typing = true
 		return m.fetchChat()
@@ -240,47 +208,6 @@ func (m *model) confirmResetChat() tea.Cmd {
 		})
 	})
 	return nil
-}
-
-// chatSend writes a key to tapi's pty, in the order typed (order.go).
-func (m *model) chatSend(f fwd) tea.Cmd {
-	return m.inOrder(func() error {
-		switch {
-		case f.paste != "":
-			return m.cl.Call("tapi.send", map[string]any{"text": f.paste}, nil)
-		case f.literal != "":
-			return m.cl.Call("tapi.keys", map[string]any{"literal": f.literal}, nil)
-		case len(f.keys) > 0:
-			return m.cl.Call("tapi.keys", map[string]any{"keys": f.keys}, nil)
-		}
-		return nil
-	})
-}
-
-func (m *model) chatKeys(params map[string]any) tea.Cmd {
-	return m.inOrder(func() error { return m.cl.Call("tapi.keys", params, nil) })
-}
-
-// enterChat starts typing into tapi chat from the mouse, as Enter does
-// (chatKey). It does nothing when already typing, before tapi's screen
-// came, or when tapi left (Enter restarts it). It reports whether it entered.
-func (m *model) enterChat() bool {
-	if m.typing || m.chat.screen == nil || m.chat.screen.Dead {
-		return false
-	}
-	m.focus = pAgent
-	m.typing = true
-	return true
-}
-
-// chatLinkAt returns the URL drawn at (x, y) of the panel body while tapi
-// chat shows (viewChat).
-func (m *model) chatLinkAt(x, y int) string {
-	if m.chat.screen == nil {
-		return ""
-	}
-	cw, ch := m.agentSize()
-	return rowsLinkAt(m.chatRows(cw), ch, x, y)
 }
 
 // chatMood is tapi's face in the chat window's title.
@@ -334,60 +261,17 @@ func (m *model) viewChat(width, height int) []string {
 	case m.chat.screen == nil && (m.chat.info == nil || !m.chat.info.Started):
 		rows = m.bigRows(cw, ch, mascot.Sleep, "waking tapi up …", "")
 	default:
-		rows = m.chatRows(cw)
+		rows = m.ptyBody(m.chatPty(), cw, ch)
 	}
 	return m.box(width, height, boxOpt{title: title, rows: rows, focused: f, bottom: true})
 }
 
-// chatRows draws tapi's pty like the agent window: the cursor while typing,
-// trailing blank rows dropped, and the way out when the agent exited.
-func (m *model) chatRows(cw int) []row {
-	sc := m.chat.screen
-	if sc == nil {
-		return []row{{Text: m.th.FG(theme.Dim, "…")}}
-	}
-	lines := append([]string(nil), sc.Lines...)
-	if m.typing && sc.Cursor.Visible && sc.Cursor.Y < len(lines) {
-		lines[sc.Cursor.Y] = withCursor(lines[sc.Cursor.Y], sc.Cursor.X)
-	}
-	end := len(lines)
-	if !sc.AltScreen {
-		for end > 0 && strings.TrimSpace(ansi.Strip(lines[end-1])) == "" && end-1 > sc.Cursor.Y {
-			end--
-		}
-	}
-	lines = lines[:end]
-	if sc.Dead {
-		lines = append(dropPaneDead(lines), m.th.FG(theme.Dim, "tapi left · ")+m.th.Bold(theme.Secondary, "↵")+m.th.FG(theme.Dim, " restart  ")+m.th.Bold(theme.Secondary, "x")+m.th.FG(theme.Dim, " close"))
-	}
-	rows := make([]row, 0, len(lines))
-	for _, l := range lines {
-		rows = append(rows, row{Text: clip(l, cw) + "\x1b[0m"})
-	}
-	return rows
-}
-
 // chatHints are the bottom bar's keys while tapi chat shows.
 func (m *model) chatHints() [][2]string {
-	p := strings.ReplaceAll(m.g.Keys.Prefix, "ctrl+", "^")
-	if p == "" {
-		p = "^q"
-	}
-	dead := m.chat.screen != nil && m.chat.screen.Dead
 	if m.typing {
-		if dead {
-			return [][2]string{{"↵", "restart"}, {"x", "close"}, {p, "leave"}}
-		}
-		if !narrow(m.width) {
-			zoom := "zoom"
-			if m.zoomed() {
-				zoom = "unzoom"
-			}
-			return [][2]string{{p, "leave"}, {p + " z", zoom}, {p + " < >", "width"}}
-		}
-		return [][2]string{{p, "leave"}}
+		return m.ptyTypingHints(m.chatPty())
 	}
-	if dead {
+	if m.chat.screen != nil && m.chat.screen.Dead {
 		return [][2]string{{"↵", "restart"}, {"esc", "close"}, {"T", "reset"}, {"?", "help"}}
 	}
 	return [][2]string{{"↵", "type"}, {"esc", "close"}, {"T", "reset"}, {"?", "help"}}

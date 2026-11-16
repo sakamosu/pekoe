@@ -26,21 +26,25 @@ func TestFitScreenResizesMismatchedWindow(t *testing.T) {
 	if aw != 161 || ah != 57 {
 		t.Fatalf("agentSize = %dx%d, want 161x57", aw, ah)
 	}
+	fit := func(sc *engine.Screen) bool {
+		m.screen = sc
+		return m.fitPty(m.sessionPty()) != nil
+	}
 	small := &engine.Screen{Width: 67, Height: 37}
-	if m.fitScreen("a", engine.WinAgent, small) == nil {
+	if !fit(small) {
 		t.Fatal("67x37 window in a 161x57 pane should be resized")
 	}
-	if m.fitScreen("a", engine.WinAgent, small) != nil {
+	if fit(small) {
 		t.Fatal("the same mismatch must not be re-requested every frame")
 	}
-	if m.fitScreen("a", engine.WinAgent, &engine.Screen{Width: aw, Height: ah}) != nil {
+	if fit(&engine.Screen{Width: aw, Height: ah}) {
 		t.Fatal("a window that already fits needs no resize")
 	}
-	if m.fitScreen("a", engine.WinAgent, &engine.Screen{Width: 67, Height: 37, Dead: true}) != nil {
+	if fit(&engine.Screen{Width: 67, Height: 37, Dead: true}) {
 		t.Fatal("a dead pane is left alone")
 	}
 	m.width = 180 // the terminal changed: the new pane size is asked for again
-	if m.fitScreen("a", engine.WinAgent, small) == nil {
+	if !fit(small) {
 		t.Fatal("a new pane size should be requested")
 	}
 }
@@ -57,7 +61,7 @@ func TestScreenRowsCloseTrailingSGR(t *testing.T) {
 		bg + "> prompt text that is long", // bg set at the start, never reset
 	} {
 		m.screen = &engine.Screen{Width: 161, Height: 3, Lines: []string{line}}
-		rows := m.screenRows(161, 3)
+		rows := m.ptyRows(m.sessionPty(), 161)
 		box := m.box(165, 5, boxOpt{rows: rows, bottom: true})
 		var got string
 		for _, l := range box {
