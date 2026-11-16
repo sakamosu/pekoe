@@ -34,7 +34,7 @@ func TestLedgerRecordsTapiPrompts(t *testing.T) {
 	d, _, _ := setup(t)
 	call[Tapi](t, d, "tapi.open", nil)
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "CSV の空行を飛ばすように直して\x1b[31m")
-	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "[pekoe inbox #3] 答え: 1「変える」")
+	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "[pekoe inbox q3] 答え: 1「変える」")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "   ")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "\n <task-notification>\n<task-id>b1x2</task-id>\n<status>completed</status>\n</task-notification>")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "さっきの <task-notification> は何?")
@@ -371,7 +371,7 @@ func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
 
 	// a turn pekoed's own typing or a finished background task started:
 	// its end closes nothing
-	for i, typed := range []string{"[pekoe inbox #3] 答え: 1「変える」", "<task-notification>\n<status>completed</status>\n</task-notification>"} {
+	for i, typed := range []string{"[pekoe inbox q3] 答え: 1「変える」", "<task-notification>\n<status>completed</status>\n</task-notification>"} {
 		id := prompt(fmt.Sprintf("C%d を直して", i))
 		promptEvent(t, d, tapi, TapiSlug, typed)
 		stopEvent(t, d, tapi, TapiSlug)

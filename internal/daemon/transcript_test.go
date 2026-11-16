@@ -71,7 +71,7 @@ var chatFixture = []string{
 	`{"type":"user","timestamp":"2026-11-12T12:00:01Z","message":{"role":"user","content":"<command-name>/clear</command-name>\n<command-message>COMMAND_SECRET</command-message>"}}`,
 	`{"type":"user","timestamp":"2026-11-12T12:00:01Z","message":{"role":"user","content":"<local-command-stdout>LOCAL_SECRET</local-command-stdout>"}}`,
 	`{"type":"user","timestamp":"2026-11-12T12:00:02Z","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification>TASK_SECRET</task-notification>"}}`,
-	`{"type":"user","timestamp":"2026-11-12T12:00:03Z","origin":{"kind":"human"},"message":{"role":"user","content":"[pekoe inbox #3] 答え: yes\nsecond line"}}`,
+	`{"type":"user","timestamp":"2026-11-12T12:00:03Z","origin":{"kind":"human"},"message":{"role":"user","content":"[pekoe inbox q3] 答え: yes\nsecond line"}}`,
 	`{"type":"assistant","timestamp":"2026-11-12T12:00:04Z","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"SYNTHETIC_SECRET"}]}}`,
 	`{"type":"assistant","timestamp":"2026-11-12T12:00:05Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t3","name":"AskUserQuestion","input":{"questions":[{"question":"どっちから？","header":"order","options":[{"label":"証明書","description":"DESC_SECRET"},{"label":"パスワード"}]}]}}]}}`,
 	`not json at all`,
@@ -133,7 +133,7 @@ func TestReadChat(t *testing.T) {
 	if it[3].MS != 17000 {
 		t.Errorf("turn: %+v", it[3])
 	}
-	if it[4].Text != "[pekoe inbox #3] 答え: yes second line" {
+	if it[4].Text != "[pekoe inbox q3] 答え: yes second line" {
 		t.Errorf("pekoe: %q", it[4].Text)
 	}
 	if it[5].Name != "AskUserQuestion" || it[5].Question != "どっちから？\n1. 証明書\n2. パスワード" || it[5].Input != "" {
