@@ -80,12 +80,13 @@ EOF
 
 ```sh
 pekoe --json new feat/csv-export --prompt "…"        # 返り値の slug と cursor を覚える
-# setup が済んでエージェントが動き始めた(started)か、setup が落ちた(failed)まで
-pekoe --json wait --slug feat-csv-export --on started,failed --since <new の cursor> --timeout 30m
-# 報告が来た・止まった・許可や質問で止まった・落ちたまで(前の wait の cursor を渡す)
-pekoe --json wait --slug feat-csv-export --on report,done,failed,waiting --since <前の cursor> --timeout 1h
+# setup が済んでエージェントが動き始めた(started)か、setup が落ちた(failed)か、消された(removed)まで
+pekoe --json wait --slug feat-csv-export --on started,failed,removed --since <new の cursor> --timeout 30m
+# 報告が来た・止まった・許可や質問で止まった・落ちた・消されたまで(前の wait の cursor を渡す)
+pekoe --json wait --slug feat-csv-export --on report,done,failed,waiting,removed --since <前の cursor> --timeout 1h
 ```
 
+- `--on` には `removed` も入れる。作成中に人が cancel / `pekoe rm` するとセッションは `started` にも `failed` にもならず消える(`removed`)ので、入れないと timeout まで返らない
 - `--since` には `pekoe new` か前の `wait` が返した `cursor` を必ず渡す。`--since` なしは「今から」なので、`new` が返ってから待ち始めるまでに起きたこと(すぐ済む setup・早い報告)を取りこぼす
 - 返り値の `changes[].summary` に `feat-csv-export: started (running)`・`…: failed: <エラー>`・`…: report done: <要約>` などが 1 行で入る。中身は `pekoe reports <slug>` や `pekoe --json ls` で読む
 - `timed_out: true` なら何も起きていない。同じ `cursor` でもう一度待つ。`reset: true`(pekoed の再起動)なら `pekoe --json ls` で今の状態を読み直す

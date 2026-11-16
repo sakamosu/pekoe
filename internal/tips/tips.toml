@@ -176,7 +176,7 @@ docs = ["README.ja.md#コマンド", "docs/orchestration.md"]
 [[tip]]
 id = "wait-started"
 short = "pekoe wait --on started で作ったセッションの setup 待ち"
-detail = "setup が済んでエージェントが動き始めたら started、落ちたら failed で起きる(--on started,failed)。pekoe --json new が返す cursor を --since に渡せば、すぐ済んだ setup も取りこぼさない。"
+detail = "--on started,failed,removed で、setup が済んだ・落ちた・作成中に消されたときに返る。pekoe --json new が返す cursor を --since に渡せば、すぐ済んだ setup も取りこぼさない。"
 keys = ["pekoe wait", "--on", "--since", "pekoe new"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 
