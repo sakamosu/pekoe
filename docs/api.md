@@ -184,7 +184,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "port": 3001,
   "last_tool": "Edit src/api.ts",  // PreToolUse の直近
   "pending_tool": {"name": "Edit", "input": "src/api.ts", "touches": "src/api.ts", "also_in": ["feat-x"]}, // 許可待ちの対象。input は主な引数 1 つの 1 行の要約(改行のかたまりは " ⏎ "、200 バイトまで)。touches は Edit/Write が変えるファイル、also_in はそれを既に変更済みの他セッション。引数が複数行なら lines(行数)、要約が切れていれば cut: true と size(全体のバイト数)
-  "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none | blocked(sandbox が使えず動かしていない。summary に理由)
+  "test": {"status": "pass", "summary": "12 passed", "at": "..."},      // pass | fail | running | none | blocked(sandbox が使えず動かしていない。summary に理由)| error(コマンドを起動できなかった。シェルの終了コード 127 = command not found。summary にシェルの最後の行。テストが落ちたのとは別)。repos/<id>.toml に test が無ければ、次の Stop(か land)で none に戻る
   "diffstat": {"added": 120, "deleted": 8, "files": 4},
   "prompts": 7,                    // スナップショット数
   "review_n": 2,                   // 最後のレビュー地点番号(0 = 未レビュー)

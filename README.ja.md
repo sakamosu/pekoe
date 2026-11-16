@@ -182,7 +182,7 @@ pekoe new feat/invoice --from gh#128                  # issue 本文を初期プ
 pekoe                                                 # TUI
 ```
 
-`pekoe init` は lockfile・`.envrc`・git の無視ファイルから setup や copy を推測し、コピーする無視ファイルを番号で選ばせてから書く。書いたら、リポジトリ本体のチェックアウトでエージェント(main セッション。`pekoe open <repo> --new` と同じ)を起動し、TUI にそのリポジトリが出るようにする。既にあれば何もしない。`--no-open` で起動しない。起動できなかったときも init は成功扱いで、`pekoe open <path> --new` で作れると出す。手で始めたエージェントは `pekoe adopt` で、既存の worktree は `pekoe open` で取り込める。
+`pekoe init` は lockfile・`.envrc`・git の無視ファイルから setup や copy を推測し(`test` は動かせるときだけ書く。`yarn` などのコマンドが pekoed の PATH にあり、`npm` / `yarn` / `pnpm test` なら package.json に `scripts.test` があること。無ければ理由を添えてコメントアウトで下書きする)、コピーする無視ファイルを番号で選ばせてから書く。書いたら、リポジトリ本体のチェックアウトでエージェント(main セッション。`pekoe open <repo> --new` と同じ)を起動し、TUI にそのリポジトリが出るようにする。既にあれば何もしない。`--no-open` で起動しない。起動できなかったときも init は成功扱いで、`pekoe open <path> --new` で作れると出す。手で始めたエージェントは `pekoe adopt` で、既存の worktree は `pekoe open` で取り込める。
 
 ## コマンド
 
@@ -317,7 +317,7 @@ pekoe の機能を「こう使うと便利」と 1 つずつ紹介する。出�
 
 ## レビュー
 
-- `done` になったセッションはレビュー待ちに入り、Stop hook で `test` が自動で走る
+- `done` になったセッションはレビュー待ちに入り、Stop hook で `test` が自動で走る。test のコマンドが見つからない(シェルの終了コード 127、"command not found")ときは ✗ ではなく警告の印と `test could not run` を出す(テストが落ちたのではなく、動かせなかった)。`repos/<id>.toml` の `test` を消す(コメントアウトする)と、前の結果は次の Stop で消える
 - 承認は hunk 単位(パス + 変更内容のハッシュで識別するので行番号がずれても残る)
 - `S`(nvim では `:PekoeSend`)で未送信コメントを 1 通にまとめて送り、レビュー地点 `refs/pekoe/<slug>/review-<n>` を記録。次のレビューはそこからの差分だけ
 - 各 hunk には「どのプロンプトから生まれたか」(`← prompt #3: …`)が付く

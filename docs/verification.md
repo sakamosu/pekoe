@@ -48,7 +48,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | `pekoe land`(rebase → test → `gh pr create` → マージ検出 → teardown) | `TestLandWithPRAndMergeTeardown`(偽 gh + bare origin)、ローカル fast-forward は e2e |
 | `pekoe rm` は `~/worktrees` 配下しか消さない | `TestUnderWorktrees`、`TestSessionLifecycleAndReview`(外部リポジトリが残る) |
 | 設定ファイル `~/.config/pekoe/repos/<repo-id>.toml` | `TestNormalizeURL`(origin URL の正規化) |
-| `pekoe init` の自動検出(lockfile、mise、direnv、無視ファイル) | `initdetect`。ルールは `~/.config/pekoe/defaults/init.toml` で編集できる |
+| `pekoe init` の自動検出(lockfile、mise、direnv、無視ファイル) | `initdetect`。ルールは `~/.config/pekoe/defaults/init.toml` で編集できる。`TestDetectDraftsTestOnlyWhenItCanRun`(コマンドが PATH に無い・scripts.test が無いと test をコメントアウト) |
 | ポート台帳 | `AllocPort`(決定的、使用中は飛ばす)。タブ → ポート → セッションの対応は実機の Chrome で確認 |
 | docker compose / DB | `[env] COMPOSE_PROJECT_NAME = "{{slug}}"` と teardown で対応(リポジトリ側の設定に委ねる) |
 | プロンプト単位 undo | `TestSnapshotAndRestore`、e2e |
