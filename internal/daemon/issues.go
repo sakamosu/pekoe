@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode"
 
-	"pekoe/internal/gitx"
 	"pekoe/internal/state"
 )
 
@@ -104,11 +103,11 @@ func (d *Daemon) issueRepo(p issuesP) (dir, id string, err error) {
 
 // ghUnavailable turns "gh cannot answer for this repository" into one line.
 // It returns "" when gh might work.
-func ghUnavailable(dir string) string {
+func (d *Daemon) ghUnavailable(dir string) string {
 	if _, err := exec.LookPath("gh"); err != nil {
 		return "gh not installed"
 	}
-	if gitx.Origin(dir) == "" {
+	if d.ghRepoOf(dir) == "" {
 		return "no GitHub remote"
 	}
 	return ""
@@ -137,13 +136,16 @@ func ghError(err error, out []byte) string {
 	return "gh: " + strings.SplitN(msg, "\n", 2)[0]
 }
 
-func runGH(dir string, args ...string) ([]byte, error) {
+// runGH runs gh issue … for repo (host/owner/name), with --repo.
+func runGH(repo string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c, err := ghCommand(ctx, dir, args...)
+	args = append(args, "--repo", repo)
+	c, done, err := ghCommand(ctx, repo, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
 	return c.Output()
 }
 
@@ -241,7 +243,7 @@ func (d *Daemon) hIssuesList(p issuesP) (any, error) {
 		res.Cached = true
 	} else {
 		res = IssueList{RepoID: id, Filter: p.Filter, Label: p.Label, Issues: []Issue{}, FetchedAt: time.Now()}
-		if u := ghUnavailable(dir); u != "" {
+		if u := d.ghUnavailable(dir); u != "" {
 			res.Unavailable = u
 		} else {
 			args := []string{"issue", "list", "--state", "open", "--limit", "100", "--json", "number,title,labels,assignees,updatedAt,comments,url"}
@@ -251,7 +253,7 @@ func (d *Daemon) hIssuesList(p issuesP) (any, error) {
 			case "label":
 				args = append(args, "--label", p.Label)
 			}
-			out, err := runGH(dir, args...)
+			out, err := runGH(d.ghRepoOf(dir), args...)
 			var raw []ghIssue
 			switch {
 			case err != nil:
@@ -291,10 +293,10 @@ func (d *Daemon) hIssuesView(p issuesP) (any, error) {
 	if c, ok := d.issueCached(key, p.Refresh); ok && c.view != nil {
 		det = *c.view
 	} else {
-		if u := ghUnavailable(dir); u != "" {
+		if u := d.ghUnavailable(dir); u != "" {
 			return nil, errors.New(u)
 		}
-		out, err := runGH(dir, "issue", "view", strconv.Itoa(p.Number), "--json", "number,title,body,state,author,labels,assignees,comments,url,createdAt,updatedAt")
+		out, err := runGH(d.ghRepoOf(dir), "issue", "view", strconv.Itoa(p.Number), "--json", "number,title,body,state,author,labels,assignees,comments,url,createdAt,updatedAt")
 		if err != nil {
 			return nil, errors.New(ghError(err, out))
 		}

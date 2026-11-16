@@ -427,9 +427,9 @@ func TestMergeRunTimeout(t *testing.T) {
 	}
 }
 
-// gh pr merge runs in the main checkout of the repository, not in the
-// session's worktree.
-func TestMergeRunInMainCheckout(t *testing.T) {
+// gh pr merge runs in neither the session's worktree nor the main
+// checkout (ghCommand: an empty directory, the repository by --repo).
+func TestMergeRunOutsideCheckouts(t *testing.T) {
 	d, _, ghd, it := mergeRunSetup(t)
 	other, _ := d.snapshot("feat-a")
 	d.update("main", func(x *state.Session) { x.Path = other.Path })
@@ -442,9 +442,14 @@ func TestMergeRunInMainCheckout(t *testing.T) {
 		t.Fatalf("run: %+v", run)
 	}
 	b, _ := os.ReadFile(filepath.Join(ghd, "merge.cwd"))
-	want, _ := filepath.EvalSymlinks(s.RepoDir)
-	if got := strings.TrimSpace(string(b)); got != want {
-		t.Fatalf("gh pr merge ran in %q, want %q (worktree %s)", got, want, s.Path)
+	got := strings.TrimSpace(string(b))
+	for _, dir := range []string{s.RepoDir, s.Path} {
+		if in := evalSymlinks(t, dir); got == in || strings.HasPrefix(got, in+string(filepath.Separator)) {
+			t.Fatalf("gh pr merge ran in %q, inside %s", got, dir)
+		}
+	}
+	if ms := ghMerges(ghd); len(ms) != 1 || !strings.Contains(ms[0], "--repo github.com/me/app") {
+		t.Fatalf("gh: %q", ms)
 	}
 }
 
@@ -551,8 +556,7 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 		}
 		// asked again once it holds, as after any failed merge
 		swap(t, ghd, greenPR(mergeHead))
-		s, _ := d.snapshot("main")
-		v, err := fetchPRViewOf(context.Background(), s.RepoDir, "github.com/me/app", 42) // the poller's next round
+		v, err := fetchPRView(context.Background(), "github.com/me/app", 42) // the poller's next round
 		if err != nil {
 			t.Fatal(err)
 		}

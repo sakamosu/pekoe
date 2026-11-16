@@ -134,9 +134,6 @@ func TestPinnedWorktree(t *testing.T) {
 		if !errors.Is(err, ErrTampered) {
 			t.Fatalf("relative=%v: status with a changed .git: %v", relative, err)
 		}
-		if _, err := Env(wt); !errors.Is(err, ErrTampered) {
-			t.Fatalf("relative=%v: Env with a changed .git: %v", relative, err)
-		}
 		// not pinned: git as it finds it (CheckWorktreeOf looks there)
 		if err := CheckWorktreeOf(repo, wt); !errors.Is(err, ErrForeignWorktree) && !errors.Is(err, ErrNotWorktree) {
 			t.Fatalf("relative=%v: CheckWorktreeOf: %v", relative, err)

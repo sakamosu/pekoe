@@ -21,6 +21,7 @@ func ghCalls(t *testing.T, gh, sub string) int {
 func TestIssuesListParsesAndFilters(t *testing.T) {
 	d, _, repo := setup(t)
 	withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
 
 	res := call[IssueList](t, d, "issues.list", map[string]any{"repo": repo})
@@ -57,6 +58,7 @@ func TestIssuesListParsesAndFilters(t *testing.T) {
 func TestIssuesListCachesUntilRefresh(t *testing.T) {
 	d, _, repo := setup(t)
 	withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
 	first := call[IssueList](t, d, "issues.list", map[string]any{"repo": repo, "filter": "open"})
 	second := call[IssueList](t, d, "issues.list", map[string]any{"repo": repo, "filter": "open"})
@@ -89,6 +91,7 @@ func TestIssuesListCachesUntilRefresh(t *testing.T) {
 func TestIssuesView(t *testing.T) {
 	d, _, repo := setup(t)
 	withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
 	v := call[IssueDetail](t, d, "issues.view", map[string]any{"repo": repo, "number": 12})
 	if v.Number != 12 || v.Author != "alice" || v.State != "OPEN" || !strings.Contains(v.Body, "- open /login") {
@@ -115,6 +118,7 @@ func TestIssuesUnavailable(t *testing.T) {
 		t.Fatalf("no remote: %+v", r)
 	}
 	withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	os.WriteFile(filepath.Join(gh, "auth-fail"), nil, 0o644)
 	r = call[IssueList](t, d, "issues.list", map[string]any{"repo": repo, "refresh": true})
 	if r.Unavailable != "gh not authenticated · gh auth login" || len(r.Issues) != 0 {
@@ -156,6 +160,7 @@ func waitCreated(t *testing.T, d *Daemon, slug string) state.Session {
 func TestIssuesMatchSessions(t *testing.T) {
 	d, _, repo := setup(t)
 	withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	fakeGH(t, "OPEN")
 	// --from gh#12 records the issue on the session (and uses its body as the prompt)
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "fix/login-safari", "from": "gh#12"})

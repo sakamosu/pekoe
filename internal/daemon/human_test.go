@@ -227,6 +227,7 @@ func TestAgentMethodsWithoutToken(t *testing.T) {
 func TestAgentLand(t *testing.T) {
 	d, _, repo := setup(t)
 	bare := withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
 	s := readySession(t, d, repo, "feat/agent-land")
 	os.WriteFile(filepath.Join(s.Path, "b.txt"), []byte("b\n"), 0o644)
@@ -237,7 +238,7 @@ func TestAgentLand(t *testing.T) {
 		t.Fatalf("land without the token: %s", e)
 	}
 	out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
-	if !strings.Contains(string(out), "pr create --fill --head feat/agent-land --base main") {
+	if !strings.Contains(string(out), "pr create --repo github.com/me/app --head feat/agent-land --base main --title=") {
 		t.Fatalf("gh calls: %s", out)
 	}
 	run(t, repo, "git", "--git-dir", bare, "rev-parse", "--verify", "refs/heads/feat/agent-land")

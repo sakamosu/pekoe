@@ -133,7 +133,7 @@ func gitOps(t *testing.T, d *Daemon, s state.Session) {
 	try("conflicts.list", map[string]any{})
 	d.scanConflicts("")
 	try("session.undo", sl)
-	prForBranch(s.Path, s.Branch)
+	prForBranch(d.ghRepo(&s), s.Branch)
 	os.Remove(filepath.Join(s.Path, "new.txt"))
 	try("land", sl)
 	time.Sleep(100 * time.Millisecond) // goroutines started by the events
@@ -274,7 +274,9 @@ func TestOriginConfigRunsNothing(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			d, _, repo := setup(t)
 			withOrigin(t, repo)
-			// gh runs git in the worktree too (git status for pr create)
+			onGitHub(t, d, repo)
+			// gh runs git where it starts (git status for pr create): it
+			// must start nowhere near the worktree
 			gh := t.TempDir()
 			os.WriteFile(filepath.Join(gh, "gh"), []byte("#!/bin/sh\ngit status --porcelain >/dev/null 2>&1\ngit remote -v >/dev/null 2>&1\n"+
 				"case \"$1 $2\" in \"pr create\") echo https://github.com/me/app/pull/42 ;; \"pr view\") echo '{\"number\":42,\"state\":\"OPEN\"}' ;; esac\n"), 0o755)

@@ -17,6 +17,7 @@ import (
 func landingSetup(t *testing.T) (d *Daemon, count string) {
 	t.Helper()
 	d, _, repo := setup(t)
+	onGitHub(t, d, repo)
 	ghd := fakeGH(t, "MERGED")
 	prFixture{State: "MERGED", Merge: "UNKNOWN"}.write(t, ghd)
 	id := call[map[string]any](t, d, "init.detect", map[string]any{"path": repo})["repo_id"].(string)
