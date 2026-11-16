@@ -145,7 +145,8 @@ func (m *model) shownPty() pty {
 }
 
 // ptySend writes a key (or a paste) to the pty, in the order typed
-// (order.go). The user typed into it: the unread line has done its job.
+// (order.go). The user typed into it: the unread line has done its job
+// (entering alone keeps it: tapi chat is entered as it opens).
 func (m *model) ptySend(p pty, k tea.KeyMsg) tea.Cmd {
 	if p.call == nil {
 		return nil
@@ -167,7 +168,9 @@ func (m *model) ptySend(p pty, k tea.KeyMsg) tea.Cmd {
 	})
 }
 
-// ptyKeys writes raw keys ("hex" or "keys") to the pty, in order.
+// ptyKeys writes raw keys ("hex" or "keys") to the pty, in order. Its
+// errors are dropped: a mouse motion or a wheel notch that missed is not
+// worth an error line each.
 func (m *model) ptyKeys(p pty, params map[string]any) tea.Cmd {
 	if p.call == nil {
 		return nil
@@ -184,6 +187,11 @@ func (m *model) ptyKeys(p pty, params map[string]any) tea.Cmd {
 // program exited, ↵ restarts it and x or esc closes it.
 func (m *model) ptyTypingKey(p pty, k tea.KeyMsg) tea.Cmd {
 	if m.prefixKey(k) {
+		// left: what was there has been seen, typed into or not (tapi
+		// chat marks the new place as it closes)
+		if p.seen != nil {
+			p.seen()
+		}
 		return p.leave()
 	}
 	if p.sc != nil && p.sc.Dead {

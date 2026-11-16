@@ -201,6 +201,31 @@ func TestPtySameForSessionAndChat(t *testing.T) {
 				t.Fatal("the unread line stayed after typing")
 			}
 		}},
+		{"entering and leaving without typing has seen the unread line", func(t *testing.T, k ptyKind) {
+			sc := base
+			sc.Lines = lines[:1]
+			m, _ := k.show(t, sc)
+			k.away(m)
+			k.back(m)
+			more := base
+			more.Lines = []string{"hello from the agent", "new output 1", "new output 2"}
+			more.Cursor.Y = 2 // the prompt, where the user leaves it
+			k.screen(m, more)
+			x, y := at(t, m, "new output 2")
+			click(m, x, y)
+			if !m.typing {
+				t.Fatal("the click did not enter")
+			}
+			runCmd(m, m.onKey(ctrlQ))
+			if m.typing {
+				t.Fatal("the prefix did not leave")
+			}
+			k.back(m)
+			k.screen(m, more)
+			if out := ansi.Strip(m.View()); strings.Contains(out, "─── new ───") {
+				t.Fatalf("the unread line came back after it was seen:\n%s", out)
+			}
+		}},
 		{"an exited pty: ↵ restarts it and types into it", func(t *testing.T, k ptyKind) {
 			for _, typing := range []bool{false, true} {
 				sc := base
@@ -317,6 +342,8 @@ func TestPtyPartsBuiltForBoth(t *testing.T) {
 	onlyOne := map[string]string{
 		"cards": "a Chrome pick and the error card are about a session's work; tapi chat shows none",
 	}
+	// the session's agent window, the one tapi chat stands beside (the run
+	// window's own exit line, deadRows, has no chat counterpart)
 	sc := engine.Screen{Lines: []string{"hello"}, Width: 100, Height: 30}
 	sm, _ := ptyKinds[0].show(t, sc)
 	cm, _ := ptyKinds[1].show(t, sc)
