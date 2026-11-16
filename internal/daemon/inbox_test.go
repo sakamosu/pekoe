@@ -201,7 +201,7 @@ func TestInboxAnswerToWaiter(t *testing.T) {
 		t.Fatalf("delivery: %+v", g.Delivery)
 	}
 	d.deliverAllInbox()
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatalf("typed although it waited:\n%s", fe.last())
 	}
 }
@@ -217,7 +217,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 		t.Fatalf("delivery while running: %+v", g.Delivery)
 	}
 	d.deliverAllInbox()
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatal("typed while the agent was running")
 	}
 
@@ -231,7 +231,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 	d.setState("main", state.Idle, "")
 	d.deliverInbox("main")
 	time.Sleep(50 * time.Millisecond)
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatalf("typed into a permission prompt:\n%s", fe.last())
 	}
 	// a person typed into the window just now
@@ -240,7 +240,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 	fe.mu.Unlock()
 	d.noteTyped("main")
 	d.deliverAllInbox()
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatal("typed over a person's typing")
 	}
 	d.mu.Lock()
@@ -249,7 +249,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 
 	n := len(fe.sent)
 	deliverUntil(t, d, func() bool { return len(sentSince(fe, n)) >= 2 })
-	want := "text:[pekoe inbox #" + itoa(it.ID) + "] 答え: 1「A」(メモ: A で) 詳しくは pekoe --json inbox " + itoa(it.ID)
+	want := "text:[pekoe inbox q" + itoa(it.ID) + "] 答え: 1「A」(メモ: A で) 詳しくは pekoe --json inbox q" + itoa(it.ID)
 	got := sentSince(fe, n)
 	if len(got) != 2 || got[0] != want || got[1] != "keys:Enter" {
 		t.Fatalf("typed:\n%s\nwant %s", strings.Join(got, "\n"), want)
@@ -296,7 +296,7 @@ func TestInboxGetByAskerIsDelivery(t *testing.T) {
 	}
 	d.setState("main", state.Idle, "")
 	d.deliverAllInbox()
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatal("typed after the asker read it")
 	}
 }
@@ -334,7 +334,7 @@ func TestInboxAnswerToTapi(t *testing.T) {
 	call[any](t, d, "tapi.send", map[string]any{"text": "h"}) // a person typing into tapi chat
 	call[any](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": it.Rev, "choice": 1})
 	d.deliverAllInbox()
-	if sentText(fe, "pekoe inbox #") {
+	if sentText(fe, "[pekoe inbox ") {
 		t.Fatal("typed over a person's typing in tapi chat")
 	}
 	d.mu.Lock()

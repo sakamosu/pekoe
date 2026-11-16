@@ -48,3 +48,14 @@ func TestPrintInboxItem(t *testing.T) {
 		t.Fatalf("output:\n%s", out)
 	}
 }
+
+// ask-human --wait with another kind's number (r12 a request, p12 a
+// report) is refused before connecting, not asked as a question "r12".
+func TestAskHumanWaitWrongLetter(t *testing.T) {
+	for _, arg := range []string{"r12", "p12"} {
+		err := cmdAskHuman([]string{"--wait", arg})
+		if _, ok := err.(*usageError); !ok || !strings.Contains(err.Error(), "not an inbox question number") {
+			t.Errorf("--wait %s: want a usage error, got %v", arg, err)
+		}
+	}
+}

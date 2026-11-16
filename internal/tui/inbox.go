@@ -18,6 +18,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/mascot"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -97,7 +98,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		switch {
 		case it.Status != state.InboxOpen && !im.sending:
 			m.modal = nil
-			m.setMsg(fmt.Sprintf("inbox #%d was %s elsewhere", it.ID, it.Status), false)
+			m.setMsg(fmt.Sprintf("inbox %s was %s elsewhere", ids.Question(it.ID), it.Status), false)
 		case it.Status == state.InboxOpen && it.Rev > im.it.Rev:
 			im.it, im.confirm = it, false // a merge confirmed on what was there before: choose again
 			if im.opened {
@@ -270,7 +271,7 @@ func (im *inboxModal) view() []string {
 	m, th, it := im.m, im.m.th, im.it
 	width := m.modalWidth(min(m.width*60/100, 100))
 	cw := width - 6
-	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, fmt.Sprintf("Inbox #%d", it.ID)) +
+	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, "Inbox "+ids.Question(it.ID)) +
 		th.FG(theme.Dim, " · "+it.Kind+" · from "+it.From)
 	if im.popup {
 		title += th.FG(theme.Warn, " · new")
@@ -320,7 +321,7 @@ func (im *inboxModal) view() []string {
 				lines = append(lines, label("forecast")+what+" with "+o.Slug)
 			}
 			if f.Report != nil {
-				lines = append(lines, label("report")+fmt.Sprintf("#%d %s", f.Report.ID, f.Report.Status))
+				lines = append(lines, label("report")+ids.Report(f.Report.ID)+" "+f.Report.Status)
 			}
 			if f.GitBlocked != "" {
 				lines = append(lines, label("git")+th.FG(theme.Warn, ".git changed: git stopped"))
@@ -344,7 +345,7 @@ func (im *inboxModal) view() []string {
 		ctx := wrapText(inboxText(it.Context), cw-2)
 		room := max(m.height-len(lines)-len(it.Options)-14, 2)
 		if len(ctx) > room {
-			ctx = append(ctx[:room], "…  (pekoe inbox "+fmt.Sprint(it.ID)+" shows all)")
+			ctx = append(ctx[:room], "…  (pekoe inbox "+ids.Question(it.ID)+" shows all)")
 		}
 		lines = append(lines, "")
 		for _, l := range ctx {
@@ -559,7 +560,7 @@ func (im *inboxModal) grace(now time.Time) bool {
 // skip closes the popup with no answer: the item stays in the inbox for
 // ]a and the bar, and does not come up again.
 func (im *inboxModal) skip() tea.Cmd {
-	im.m.setMsg(fmt.Sprintf("skipped inbox #%d · it stays in the inbox · ]a", im.it.ID), false)
+	im.m.setMsg("skipped inbox "+ids.Question(im.it.ID)+" · it stays in the inbox · ]a", false)
 	return done(nil)
 }
 
@@ -594,7 +595,7 @@ func (m *model) onInboxAnswer(msg inboxAnswerMsg) tea.Cmd {
 	}
 	m.modal = nil
 	if m.mergeToasted[msg.id] == "" {
-		m.setMsg(fmt.Sprintf("answered inbox #%d", msg.id), false)
+		m.setMsg("answered inbox "+ids.Question(msg.id), false)
 	}
 	return nil
 }

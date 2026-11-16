@@ -79,7 +79,7 @@ func TestMergeEvidenceReady(t *testing.T) {
 	if f := it.Facts; f == nil || f.PR != 42 || f.PRStatus == nil || f.PRStatus.HeadSHA != mergeHead || f.Merge == nil || !f.Merge.Ready {
 		t.Fatalf("facts: %+v", it.Facts)
 	}
-	if !strings.Contains(it.Context, "review: pass in report #") || !strings.Contains(it.Context, "reviewed in the author's session") {
+	if !strings.Contains(it.Context, "review: pass in report p") || !strings.Contains(it.Context, "reviewed in the author's session") {
 		t.Fatalf("context: %q", it.Context)
 	}
 	if c := mergeCheckOf(t, d); c.Inbox != it.ID {
@@ -225,7 +225,7 @@ func TestMergeEvidenceSendBack(t *testing.T) {
 	n := len(fe.sent)
 	d.setState("main", state.Idle, "")
 	waitFor(t, func() bool { return inboxGet(t, d, it.ID).Delivery == state.DeliveryDelivered })
-	want := "text:[pekoe inbox #" + itoa(it.ID) + "] 人が PR #42 のマージを差し戻しました(メモ: テストを足して) 詳しくは pekoe --json inbox " + itoa(it.ID)
+	want := "text:[pekoe inbox q" + itoa(it.ID) + "] 人が PR #42 のマージを差し戻しました(メモ: テストを足して) 詳しくは pekoe --json inbox q" + itoa(it.ID)
 	got := sentSince(fe, n)
 	if len(got) != 2 || got[0] != want || got[1] != "keys:Enter" {
 		t.Fatalf("typed:\n%s\nwant %s", strings.Join(got, "\n"), want)

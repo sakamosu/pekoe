@@ -11,9 +11,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/untrusted"
 )
@@ -82,9 +82,8 @@ func cmdLedger(args []string) error {
 	}
 	var id int64 // stays 0 for `ledger keep` alone: the input of tapi's turn
 	if len(pos) > 0 {
-		id, err = strconv.ParseInt(strings.TrimPrefix(pos[0], "#"), 10, 64)
-		if err != nil || id < 1 {
-			return &usageError{use: use, msg: fmt.Sprintf("bad request id %q", pos[0])}
+		if id, err = ids.ParseRequest(pos[0]); err != nil {
+			return &usageError{use: use, msg: err.Error()}
 		}
 	}
 	method, p := "", map[string]any{"id": id}
@@ -110,9 +109,9 @@ func cmdLedger(args []string) error {
 	case "rm":
 		if f["yes"] == "" {
 			if !stdinIsTerminal() {
-				return fmt.Errorf("ledger rm deletes request #%d for good; pass --yes to confirm", id)
+				return fmt.Errorf("ledger rm deletes request %s for good; pass --yes to confirm", ids.Request(id))
 			}
-			if !confirm(fmt.Sprintf("delete request #%d from the ledger?", id)) {
+			if !confirm(fmt.Sprintf("delete request %s from the ledger?", ids.Request(id))) {
 				return nil
 			}
 		}
@@ -128,7 +127,7 @@ func cmdLedger(args []string) error {
 		if jsonOut {
 			printJSON(map[string]any{"id": id, "deleted": true})
 		} else {
-			fmt.Printf("request #%d deleted\n", id)
+			fmt.Printf("request %s deleted\n", ids.Request(id))
 		}
 		return nil
 	}
@@ -136,7 +135,7 @@ func cmdLedger(args []string) error {
 		printJSON(e)
 		return nil
 	}
-	fmt.Printf("request #%d %s", e.ID, e.Status)
+	fmt.Printf("request %s %s", ids.Request(e.ID), e.Status)
 	if len(e.Sessions) > 0 {
 		fmt.Printf(" · sessions %s", strings.Join(e.Sessions, ", "))
 	}
@@ -170,9 +169,9 @@ func ledgerShow(use, arg string, all bool) error {
 	if all {
 		return &usageError{use: use, msg: "--all lists every request; give an id or --all, not both"}
 	}
-	id, err := strconv.ParseInt(strings.TrimPrefix(arg, "#"), 10, 64)
-	if err != nil || id < 1 {
-		return &usageError{use: use, msg: fmt.Sprintf("bad request id %q", arg)}
+	id, err := ids.ParseRequest(arg)
+	if err != nil {
+		return &usageError{use: use, msg: err.Error()}
 	}
 	cl := connect()
 	defer cl.Close()
@@ -181,7 +180,7 @@ func ledgerShow(use, arg string, all bool) error {
 		return err
 	}
 	if len(es) == 0 || es[0].ID != id {
-		return fmt.Errorf("no such ledger entry: #%d", id)
+		return fmt.Errorf("no such request: %s", ids.Request(id))
 	}
 	if jsonOut {
 		printJSON(es[0])
@@ -229,7 +228,7 @@ func printLedger(e state.LedgerEntry) {
 	if e.Auto {
 		st += " (auto)" // pekoed closed it when tapi's turn ended
 	}
-	head := fmt.Sprintf("#%d %s · %s", e.ID, st, e.At.Local().Format("01-02 15:04"))
+	head := fmt.Sprintf("%s %s · %s", ids.Request(e.ID), st, e.At.Local().Format("01-02 15:04"))
 	if e.Repeats > 0 {
 		head += fmt.Sprintf(" · sent ×%d", e.Repeats+1)
 	}
@@ -240,7 +239,7 @@ func printLedger(e state.LedgerEntry) {
 		head += " · closed " + e.ClosedAt.Local().Format("01-02 15:04")
 	}
 	if e.Cut {
-		head += fmt.Sprintf(" · cut (pekoe ledger %d)", e.ID)
+		head += " · cut (pekoe ledger " + ids.Request(e.ID) + ")"
 	}
 	fmt.Println(head)
 	for _, ev := range e.Evidence {

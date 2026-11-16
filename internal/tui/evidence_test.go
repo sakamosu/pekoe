@@ -394,8 +394,8 @@ func TestDashboardEvidence(t *testing.T) {
 	out := ansi.Strip(raw)
 	t.Log("\n" + out)
 	at := 0
-	for _, want := range []string{"Evidence feat-csv · 7 in 2 reports", "#9 review pass", "LGTM", "link", "https://github.com/me/app/pull/42",
-		"#7 done", "直した <script>", "image", "shot.png", "png 320×200", "text", "before.txt", "7 B", "video", "hello.mp4", "file", "evil.command",
+	for _, want := range []string{"Evidence feat-csv · 7 in 2 reports", "p9 review pass", "LGTM", "link", "https://github.com/me/app/pull/42",
+		"p7 done", "直した <script>", "image", "shot.png", "png 320×200", "text", "before.txt", "7 B", "video", "hello.mp4", "file", "evil.command",
 		"missing", "gone.png", "missing", "<script>alert(1)</script>x.png",
 		"https://github.com/me/app/pull/42", "↵ opens it in the browser", "j/k move", "↵ open", "o open in app", "esc close"} {
 		i := strings.Index(out[at:], want)
@@ -558,7 +558,7 @@ func TestEvidenceImageInPlace(t *testing.T) {
 		}
 	}
 	if out := ansi.Strip(raw); !strings.Contains(out, "Evidence feat-csv · shot.png") || !strings.Contains(out, "png 320×200") ||
-		!strings.Contains(out, "report #7 done · 1/2") || !strings.Contains(out, "j/k next / previous image") {
+		!strings.Contains(out, "report p7 done · 1/2") || !strings.Contains(out, "j/k next / previous image") {
 		t.Errorf("the image's caption and keys:\n%s", out)
 	}
 	if !strings.Contains(m.View(), string(placeholder)) {

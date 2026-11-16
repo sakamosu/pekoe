@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/untrusted"
 )
@@ -47,14 +48,17 @@ func cmdAskHuman(args []string) error {
 	if err != nil {
 		return &usageError{use: use, msg: err.Error()}
 	}
+	// --wait <id>: wait for an earlier question's answer (r12 or p12 is
+	// another kind's number, not a question to ask)
+	if f["wait"] != "" && len(pos) == 1 && f["kind"] == "" && len(multiVal(f, "option")) == 0 && ids.Numbered(pos[0]) {
+		id, err := ids.ParseQuestion(pos[0])
+		if err != nil {
+			return &usageError{use: use, msg: err.Error()}
+		}
+		return askWait(id, timeout)
+	}
 	cl := connect()
 	defer cl.Close()
-	// --wait <id>: wait for an earlier question's answer
-	if f["wait"] != "" && len(pos) == 1 && f["kind"] == "" && len(multiVal(f, "option")) == 0 {
-		if id, err := strconv.ParseInt(strings.TrimPrefix(pos[0], "#"), 10, 64); err == nil {
-			return askWait(id, timeout)
-		}
-	}
 	if len(pos) == 0 {
 		return &usageError{use: use, msg: "question required"}
 	}
@@ -102,7 +106,7 @@ func cmdAskHuman(args []string) error {
 		printJSON(it)
 		return nil
 	}
-	fmt.Printf("inbox #%d (%s) asked; wait for the answer with: pekoe --json ask-human --wait %d\n", it.ID, it.Kind, it.ID)
+	fmt.Printf("inbox %s (%s) asked; wait for the answer with: pekoe --json ask-human --wait %s\n", ids.Question(it.ID), it.Kind, ids.Question(it.ID))
 	return nil
 }
 
@@ -126,7 +130,7 @@ func askWait(id int64, timeout time.Duration) error {
 			} else {
 				printInboxItem(it, true)
 				if it.Status == state.InboxOpen {
-					fmt.Printf("timed out: no answer yet; wait again with: pekoe --json ask-human --wait %d\n", id)
+					fmt.Printf("timed out: no answer yet; wait again with: pekoe --json ask-human --wait %s\n", ids.Question(id))
 				}
 			}
 			return nil
@@ -256,19 +260,15 @@ func cmdInbox(args []string) error {
 		printJSON(it)
 		return nil
 	}
-	fmt.Printf("inbox #%d %s\n", it.ID, it.Status)
+	fmt.Printf("inbox %s %s\n", ids.Question(it.ID), it.Status)
 	if a := it.Answer; a != nil && a.Merge != nil {
-		fmt.Printf("%s; see how it goes with: pekoe inbox %d\n", mergeRunLine(a.Merge), it.ID)
+		fmt.Printf("%s; see how it goes with: pekoe inbox %s\n", mergeRunLine(a.Merge), ids.Question(it.ID))
 	}
 	return nil
 }
 
 func itemID(s string) (int64, error) {
-	id, err := strconv.ParseInt(strings.TrimPrefix(s, "#"), 10, 64)
-	if err != nil || id < 1 {
-		return 0, fmt.Errorf("bad item id %q", s)
-	}
-	return id, nil
+	return ids.ParseQuestion(s)
 }
 
 // factsLine is what pekoed read about the session, on one line.
@@ -311,7 +311,7 @@ func factsLine(f *state.InboxFacts) string {
 		}
 	}
 	if f.Report != nil {
-		parts = append(parts, fmt.Sprintf("report #%d %s", f.Report.ID, f.Report.Status))
+		parts = append(parts, fmt.Sprintf("report %s %s", ids.Report(f.Report.ID), f.Report.Status))
 	}
 	if f.GitBlocked != "" {
 		parts = append(parts, ".git changed: git stopped")
@@ -322,7 +322,7 @@ func factsLine(f *state.InboxFacts) string {
 // printInboxItem prints pekoed's part first (who asked, facts, links,
 // the answer), then the agent's words fenced. full: with the context.
 func printInboxItem(it state.InboxItem, full bool) {
-	head := fmt.Sprintf("#%d %s %s · from %s", it.ID, it.Kind, it.Status, it.From)
+	head := fmt.Sprintf("%s %s %s · from %s", ids.Question(it.ID), it.Kind, it.Status, it.From)
 	if it.Claimed != "" {
 		head += fmt.Sprintf(" ⚠ claims to be %s", untrusted.Line(it.Claimed))
 	}

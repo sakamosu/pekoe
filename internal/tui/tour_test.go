@@ -872,7 +872,7 @@ func TestTourOrchestratorSteps(t *testing.T) {
 		case "ダッシュボード":
 			seen[title] = true
 			a := agent()
-			for _, want := range []string{"Dashboard", "Overview", "Inbox", "#12", "decide", "merge ready", "Pipeline", "from tapi · #7",
+			for _, want := range []string{"Dashboard", "Overview", "Inbox", "q12", "decide", "merge ready", "Pipeline", "from tapi · r7",
 				tourCSV, tourReady, "#131", "changes requested", "review: no independent review reported", "Requests", "3 open", "Sends", "Decided", "→ cursor"} {
 				if !strings.Contains(a, want) {
 					t.Errorf("%q: no %q in [4]:\n%s", title, want, a)
@@ -887,7 +887,7 @@ func TestTourOrchestratorSteps(t *testing.T) {
 			if !ok || im.it.ID != 12 || im.sel != -1 {
 				t.Fatalf("%q: modal %T", title, m.modal)
 			}
-			for _, want := range []string{"Inbox #12", "pekoe read", "feat-csv-export", "Dates in the CSV", "recommended (agent)"} {
+			for _, want := range []string{"Inbox q12", "pekoe read", "feat-csv-export", "Dates in the CSV", "recommended (agent)"} {
 				if !strings.Contains(out, want) {
 					t.Errorf("%q: no %q:\n%s", title, want, out)
 				}

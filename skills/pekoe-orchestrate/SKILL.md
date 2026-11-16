@@ -125,7 +125,7 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 - `--recommend` / `--decided` は選択肢の番号(1 から)か、`--option` と同じ文。推奨は人には `recommended (agent)` と出るだけで、既定の選択にはならない
 - `--about` に関係するセッションの slug(`<repo>/<slug>` も可)を付ける。省くと自分のセッション。pekoed がそのセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突予報)を自分で読んで人に見せる。人が見た後に事実が変わると答えは断られ、人が見直す
 - 問いは 1 つずつ短く(問い 500 字・選択肢 6 個まで、背景は `--context` に 4000 字まで)。似た問いは 1 件にまとめる(未回答は呼び出し元ごとに 10 件まで。超えると断られる)
-- 返り値の `id` を覚えておく。答えの受け取り方は 3 通り: `pekoe --json ask-human --wait <id>`(答えが出るまで止まる。`--timeout` は 1 時間まで)、ふだんの `pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor>`(`inbox` の変化として自分の問いの答えだけが来る)、待っていなければ手が空いたときに入力欄に `[pekoe inbox #<id>] 答え: 1「<選択肢>」(メモ: …)` の 1 行が届く。詳しくは `pekoe --json inbox <id>` の `answer`(`choice` は 0 から数える)
+- 返り値の `id` を覚えておく。答えの受け取り方は 3 通り: `pekoe --json ask-human --wait <id>`(答えが出るまで止まる。`--timeout` は 1 時間まで)、ふだんの `pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor>`(`inbox` の変化として自分の問いの答えだけが来る)、待っていなければ手が空いたときに入力欄に `[pekoe inbox q<id>] 答え: 1「<選択肢>」(メモ: …)` の 1 行が届く。詳しくは `pekoe --json inbox <id>` の `answer`(`choice` は 0 から数える)
 - 人が答えずに閉じることもある(`status: dismissed`、入力欄には「答えずに閉じられました」)。閉じられた問いを同じ形で出し直さない
 - 状況が変わって要らなくなった問いは `pekoe --json inbox withdraw <id> --note "<理由>"` で取り下げる(自分が出したものだけ)
 - `pekoe inbox answer` / `pekoe inbox dismiss` は人だけの操作。自分で答えない(断られる)

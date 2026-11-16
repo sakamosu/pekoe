@@ -34,7 +34,7 @@ func TestLedgerRecordsTapiPrompts(t *testing.T) {
 	d, _, _ := setup(t)
 	call[Tapi](t, d, "tapi.open", nil)
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "CSV の空行を飛ばすように直して\x1b[31m")
-	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "[pekoe inbox #3] 答え: 1「変える」")
+	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "[pekoe inbox q3] 答え: 1「変える」")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "   ")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "\n <task-notification>\n<task-id>b1x2</task-id>\n<status>completed</status>\n</task-notification>")
 	promptEvent(t, d, agentAs(TapiSlug), TapiSlug, "さっきの <task-notification> は何?")
@@ -97,7 +97,7 @@ func TestLedgerClose(t *testing.T) {
 	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 3, "as": "later"}); err == nil {
 		t.Fatal("unknown as")
 	}
-	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 9, "as": "chat"}); err == nil || !strings.Contains(err.Error(), "no such ledger entry: #9") {
+	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 9, "as": "chat"}); err == nil || !strings.Contains(err.Error(), "no such request: r9") {
 		t.Fatalf("unknown id: %v", err)
 	}
 	e := callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done", "evidence": []string{"https://x/pull/4\n", " "}, "note": "PR 出た"})
@@ -141,7 +141,7 @@ func TestNewWithRequest(t *testing.T) {
 	if err := callAsErr(d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "request": 2}); err == nil || !strings.Contains(err.Error(), "chat already") {
 		t.Fatalf("--request to a closed entry: %v", err)
 	}
-	if err := callAsErr(d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/c", "request": 7}); err == nil || !strings.Contains(err.Error(), "no such ledger entry") {
+	if err := callAsErr(d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/c", "request": 7}); err == nil || !strings.Contains(err.Error(), "no such request: r7") {
 		t.Fatalf("--request to no entry: %v", err)
 	}
 	if ss := call[[]state.Session](t, d, "session.list", nil); len(ss) != 1 {
@@ -371,7 +371,7 @@ func TestLedgerKeepsRequestsAtTurnEnd(t *testing.T) {
 
 	// a turn pekoed's own typing or a finished background task started:
 	// its end closes nothing
-	for i, typed := range []string{"[pekoe inbox #3] 答え: 1「変える」", "<task-notification>\n<status>completed</status>\n</task-notification>"} {
+	for i, typed := range []string{"[pekoe inbox q3] 答え: 1「変える」", "<task-notification>\n<status>completed</status>\n</task-notification>"} {
 		id := prompt(fmt.Sprintf("C%d を直して", i))
 		promptEvent(t, d, tapi, TapiSlug, typed)
 		stopEvent(t, d, tapi, TapiSlug)
@@ -466,14 +466,14 @@ func TestLedgerKeepReopens(t *testing.T) {
 		t.Fatalf("new --request: %+v %+v", e, s)
 	}
 	// closing one pekoed closed says how to get it back
-	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 4, "as": "done"}); err == nil || !strings.Contains(err.Error(), "pekoe ledger keep 4") {
+	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 4, "as": "done"}); err == nil || !strings.Contains(err.Error(), "pekoe ledger keep r4") {
 		t.Fatalf("close of an auto one: %v", err)
 	}
 	// only tapi (or a person)
 	if err := callAsErr(d, agentAs("main"), "ledger.keep", map[string]any{"id": 4}); err == nil || !strings.Contains(err.Error(), "only tapi chat") {
 		t.Fatalf("keep from a session: %v", err)
 	}
-	if err := callAsErr(d, tapi, "ledger.keep", map[string]any{"id": 9}); err == nil || !strings.Contains(err.Error(), "no such ledger entry: #9") {
+	if err := callAsErr(d, tapi, "ledger.keep", map[string]any{"id": 9}); err == nil || !strings.Contains(err.Error(), "no such request: r9") {
 		t.Fatalf("keep of no entry: %v", err)
 	}
 	// what tapi closed itself stays closed for tapi, however it tries

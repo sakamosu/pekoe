@@ -114,7 +114,7 @@ func TestMergeRunMerges(t *testing.T) {
 	waitFor(t, func() bool { return strings.HasSuffix(seq(), "read,merge,read") })
 	rs := call[[]state.SendRecord](t, d, "send.log", nil)
 	if len(rs) == 0 || rs[0].Kind != "merge" || rs[0].From != callerPekoed || rs[0].To != "main" || !rs[0].OK ||
-		!strings.Contains(rs[0].Text, want) || !strings.Contains(rs[0].Text, "inbox #"+itoa(it.ID)) {
+		!strings.Contains(rs[0].Text, want) || !strings.Contains(rs[0].Text, "inbox q"+itoa(it.ID)) {
 		t.Fatalf("send log: %+v", rs)
 	}
 	if c := mergeCheckOf(t, d); c.Run == nil || c.Run.State != state.MergeMerged {
@@ -245,7 +245,7 @@ func TestMergeRunGHFails(t *testing.T) {
 	}
 	d.checkMerges()
 	its := mergeItems(t, d, "open")
-	if len(its) != 1 || its[0].ID == it.ID || !strings.Contains(its[0].Context, "last merge (inbox #"+itoa(it.ID)+") failed: not merged: gh pr merge: GraphQL: Head branch was modified") {
+	if len(its) != 1 || its[0].ID == it.ID || !strings.Contains(its[0].Context, "last merge (inbox q"+itoa(it.ID)+") failed: not merged: gh pr merge: GraphQL: Head branch was modified") {
 		t.Fatalf("asked again: %+v", its)
 	}
 

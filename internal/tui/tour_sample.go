@@ -500,7 +500,7 @@ func tourDash(now time.Time) dashState {
 		},
 		merge: map[string]*state.MergeCheck{
 			tourReady: {Slug: tourReady, PR: 131, PRHead: "3f9c2e1b88", Ready: true, Inbox: 13, Missing: []string{}, Conds: []state.MergeCond{
-				ok("land", "pekoe land done (PR #131)"), ok("review", "pass in report #31 (3f9c2e1)"), ok("ci", "all 3 passed"),
+				ok("land", "pekoe land done (PR #131)"), ok("review", "pass in report p31 (3f9c2e1)"), ok("ci", "all 3 passed"),
 				ok("merge_state", "CLEAN"), ok("conflicts", "no conflicts forecast"), ok("after", "nothing to wait for"),
 			}},
 			tourDone: {Slug: tourDone, PR: 128, Missing: []string{"review", "ci", "merge_state"}, Conds: []state.MergeCond{
@@ -513,7 +513,7 @@ func tourDash(now time.Time) dashState {
 
 func tourTapi() *daemon.Tapi {
 	return &daemon.Tapi{Agent: "claude", Started: true, Alive: true, State: state.Idle, StateSince: time.Now().Add(-2 * time.Minute),
-		LastMessage: "Handed request #7 to feat-csv-export"}
+		LastMessage: "Handed request r7 to feat-csv-export"}
 }
 
 // tourScreen is a made-up agent screen for a sample session, drawn with the
@@ -569,7 +569,7 @@ func (m *model) tourChatScreen() *engine.Screen {
 		th.FG(theme.Ok, "⏺") + " Leave it to me, I'll get someone on it.", "",
 		th.FG(theme.Ok, "⏺") + " " + th.Bold(theme.Text, "Bash") + "(pekoe new feat/csv-export --request 7 …)",
 		"  " + th.FG(theme.Dim, "⎿") + "  started feat-csv-export", "",
-		th.FG(theme.Ok, "⏺") + " Handed request #7 to feat-csv-export.",
+		th.FG(theme.Ok, "⏺") + " Handed request r7 to feat-csv-export.",
 		"  Done when the button downloads the filtered",
 		"  orders, with a test. I'll tell you when it",
 		"  needs you; the rest is on the dashboard.",

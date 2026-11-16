@@ -27,6 +27,28 @@ func TestLedgerFlags(t *testing.T) {
 	}
 }
 
+// A request number with another kind's letter (q12 is an inbox question,
+// p12 a report) is refused before connecting, saying what it is.
+func TestLedgerWrongLetter(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		says string
+	}{
+		{[]string{"q12"}, "inbox question number"},
+		{[]string{"done", "p12"}, "report number"},
+		{[]string{"link", "q3", "feat-x"}, "inbox question number"},
+	} {
+		err := cmdLedger(c.args)
+		if _, ok := err.(*usageError); !ok || !strings.Contains(err.Error(), c.says) {
+			t.Errorf("%v: want a usage error saying %q, got %v", c.args, c.says, err)
+		}
+	}
+	err := cmdNew([]string{"feat/x", "--request", "q4"})
+	if _, ok := err.(*usageError); !ok || !strings.Contains(err.Error(), "inbox question number") {
+		t.Errorf("new --request q4: want a usage error, got %v", err)
+	}
+}
+
 // The list sets what pekoed closed itself apart from the open requests,
 // says how one comes back, how many more there are, and where a cut text
 // is whole.
@@ -42,9 +64,9 @@ func TestLedgerListOutput(t *testing.T) {
 		AutoClosedMore: 4,
 	}
 	out, _ := capture(t, func() error { printLedgerList(v, false); return nil })
-	order := []string{"#2 open · 11-15 10:00 · sent ×2 · sessions fix-csv", "CSV を直して",
+	order := []string{"r2 open · 11-15 10:00 · sent ×2 · sessions fix-csv", "CSV を直して",
 		"closed by pekoe as no request in the last 24h (6)", "pekoe ledger keep <id>",
-		"#1 chat (auto) · 11-15 10:00 · closed 11-15 10:01 · cut (pekoe ledger 1)", "B が済んだら C も直して", "#3 chat (auto)", "ありがと",
+		"r1 chat (auto) · 11-15 10:00 · closed 11-15 10:01 · cut (pekoe ledger r1)", "B が済んだら C も直して", "r3 chat (auto)", "ありがと",
 		"+4 older (pekoe ledger --all)"}
 	pos := 0
 	for _, want := range order {
@@ -66,7 +88,7 @@ func TestLedgerListOutput(t *testing.T) {
 		t.Errorf("empty: %q", out)
 	}
 	out, _ = capture(t, func() error { printLedgerList(&state.LedgerView{Open: v.AutoClosed}, true); return nil })
-	if strings.Contains(out, "closed by pekoe") || !strings.Contains(out, "#1 chat (auto)") {
+	if strings.Contains(out, "closed by pekoe") || !strings.Contains(out, "r1 chat (auto)") {
 		t.Errorf("--all:\n%s", out)
 	}
 }

@@ -20,6 +20,13 @@ let pressing = false; // a keypad key is in flight
 let touching = false; // a finger is on the list: do not move rows under it
 const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
 
+// pekoe's own numbers carry a letter for their kind (internal/ids), so they
+// are not taken for a GitHub PR or issue (#185): r651 a request, q12 an
+// inbox question, p468 a report.
+const requestId = (id) => "r" + id;
+const questionId = (id) => "q" + id;
+const reportId = (id) => "p" + id;
+
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -765,7 +772,7 @@ function factsBlock(it) {
     for (const o of f.overlaps || []) {
       box.append(factRow("forecast", o.conflict ? colored("err", "conflicts") : txt("overlaps"), txt(" with " + o.slug)));
     }
-    if (f.report) box.append(factRow("report", txt("#" + f.report.id + " " + f.report.status + " · " + ago(f.report.at) + " ago")));
+    if (f.report) box.append(factRow("report", txt(reportId(f.report.id) + " " + f.report.status + " · " + ago(f.report.at) + " ago")));
     if (f.git_blocked) box.append(factRow("git", colored("warn", ".git changed: git stopped")));
     if (f.merge) {
       for (const c of f.merge.conds || []) box.append(factRow(c.name, colored(c.ok ? "ok" : "err", c.ok ? "✓" : "✗"), txt(" " + c.detail)));
@@ -800,7 +807,7 @@ function inboxCard(it) {
   const card = el("div", "card ibox");
   const [icon, role, word] = KINDS[it.kind] || ["?", "dim", it.kind];
   const head = el("div", "line1 ihead");
-  head.append(colored(role, icon, "ic"), el("span", "name r-text", "#" + it.id), colored(role, word, "word"), el("span", "age", ago(it.created_at)));
+  head.append(colored(role, icon, "ic"), el("span", "name r-text", questionId(it.id)), colored(role, word, "word"), el("span", "age", ago(it.created_at)));
   const body = el("div", "body");
   body.append(factsBlock(it));
   if (d.changed) body.append(el("div", "also r-warn", "⚠ changed while you looked: check the facts again"));
@@ -873,7 +880,7 @@ function mergeRow(it) {
   const head = el("div", "line1");
   head.append(colored(role, icon, "ic"), el("span", "name r-text", "PR #" + r.pr), colored(role, word, "word"), el("span", "age", ago(r.at)));
   const body = el("div", "body");
-  body.append(el("div", "also", (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + " · inbox #" + it.id));
+  body.append(el("div", "also", (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + " · inbox " + questionId(it.id)));
   if (r.detail) body.append(el("div", "also " + (r.state === "failed" ? "r-err" : "r-dim"), r.detail));
   row.append(head, body);
   return row;
@@ -929,7 +936,7 @@ function openInboxSheet(it) {
   if (!d || !canAnswer(it, d)) return;
   const note = d.note.trim();
   ianswer = { id: it.id, rev: d.rev, choice: d.choice, note };
-  $("isheet-title").textContent = "answer inbox #" + it.id;
+  $("isheet-title").textContent = "answer inbox " + questionId(it.id);
   $("isheet-to").textContent = it.from + (it.about && it.about !== it.from ? " · about " + it.about : "");
   $("isheet-q").textContent = it.question;
   const a = [];
@@ -961,15 +968,15 @@ async function doInboxAnswer() {
   try {
     await api("/api/inbox/" + encodeURIComponent(String(a.id)) + "/answer", body);
     inboxDraft.delete(a.id);
-    toast("answered #" + a.id, true);
+    toast("answered " + questionId(a.id), true);
   } catch (e) {
     const d = inboxDraft.get(a.id);
     if (e.status === 409 && d) {
       d.choice = null;
       d.changed = true;
-      toast("#" + a.id + " changed or was closed: look again");
+      toast(questionId(a.id) + " changed or was closed: look again");
     } else {
-      toast("#" + a.id + ": " + e.message);
+      toast(questionId(a.id) + ": " + e.message);
     }
   }
   closeInboxSheet();
@@ -1058,7 +1065,7 @@ function flowRow(f) {
   const notes = el("div", "miss");
   if (f.merge) {
     if (f.merge.ready) {
-      notes.append(el("div", "r-ok", "✓ evidence ready · waiting for a person to merge" + (f.merge.inbox ? " (inbox #" + f.merge.inbox + ")" : "")));
+      notes.append(el("div", "r-ok", "✓ evidence ready · waiting for a person to merge" + (f.merge.inbox ? " (inbox " + questionId(f.merge.inbox) + ")" : "")));
     }
     for (const c of f.merge.conds || []) {
       if (c.ok) continue;
@@ -1094,7 +1101,7 @@ function renderOverview(o) {
     const t = el("div", "gtitle");
     t.append(el("span", "r-secondary", parentLabel(g)));
     if (g.request) {
-      t.append(sep(), txt("request #" + g.request.id + " "), colored(g.request.status === "open" ? "warn" : "dim", g.request.status));
+      t.append(sep(), txt("request " + requestId(g.request.id) + " "), colored(g.request.status === "open" ? "warn" : "dim", g.request.status));
       if (g.request.text) sec.append(t, el("div", "req", g.request.text));
       else sec.append(t);
     } else {

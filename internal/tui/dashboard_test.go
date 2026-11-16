@@ -91,12 +91,12 @@ func TestDashboardSections(t *testing.T) {
 	}
 	out := ansi.Strip(raw)
 	order := []string{"Dashboard · tapi the orchestrator", "Overview", "3 questions to answer", "1 running", "1 to merge", "1 PR open", "1 request",
-		"Inbox", "3 open", "login", "#14", "decide", "#12 feat-csv", "ページングを変えてよい? <script>alert(1)</script>", "merge ready", "#13 pekoed",
-		"Pipeline", "impl › review › PR › CI › merge", "from tapi · #3 CSV の空行", "feat-csv", "✓·✓✓·", "needs review", "#42", "独立レビューの報告がない",
+		"Inbox", "3 open", "login", "q14", "decide", "q12 feat-csv", "ページングを変えてよい? <script>alert(1)</script>", "merge ready", "q13 pekoed",
+		"Pipeline", "impl › review › PR › CI › merge", "from tapi · r3 CSV の空行", "feat-csv", "✓·✓✓·", "needs review", "#42", "独立レビューの報告がない",
 		"from you", "fix-ci", "working",
-		"Requests", "#3 CSV の空行を飛ばして <script>", "→ feat-csv",
+		"Requests", "r3 CSV の空行を飛ばして <script>", "→ feat-csv",
 		"Sends", "+tapi → feat-csv send", "テストも足して", "failed", "CSV を直す",
-		"Decided", "#15 +tapi", "PR を 2 つに分けた", "→ 2 つ"}
+		"Decided", "q15 +tapi", "PR を 2 つに分けた", "→ 2 つ"}
 	at := 0
 	for _, want := range order {
 		i := strings.Index(out[at:], want)
@@ -129,7 +129,7 @@ func TestDashboardKeys(t *testing.T) {
 	runCmd(m, m.onKey(key("enter")))
 	im, ok := m.modal.(*inboxModal)
 	if !ok || im.it.ID != 12 {
-		t.Fatalf("↵ on #12: %T", m.modal)
+		t.Fatalf("↵ on q12: %T", m.modal)
 	}
 	m.modal = nil
 	for m.dash.sel != "send:41" {
@@ -484,15 +484,15 @@ func TestDashStagesReview(t *testing.T) {
 		{"failed", &state.Session{State: state.Running, Report: rep(3, "review"), Review: fail},
 			nil, [5]int{stOK, stFail, stNone, stNone, stNone}, "review failed", ""},
 		{"PR, reviewed its head", opened(&state.Session{State: state.Done, Review: pass}),
-			review(true, "報告 #3 で pass", false), [5]int{stOK, stOK, stOK, stOK, stNone}, "waiting", ""},
+			review(true, "報告 p3 で pass", false), [5]int{stOK, stOK, stOK, stOK, stNone}, "waiting", ""},
 		{"PR, head only rebased", opened(&state.Session{State: state.Done, Review: pass}),
-			review(true, "報告 #3 で pass(abc1234)。PR の HEAD def5678 は rebase し直しただけで差分の中身が同じ", false),
+			review(true, "報告 p3 で pass(abc1234)。PR の HEAD def5678 は rebase し直しただけで差分の中身が同じ", false),
 			[5]int{stOK, stOK, stOK, stOK, stNone}, "waiting", ""},
 		{"PR, head changed the reviewed change", opened(&state.Session{State: state.Done, Review: pass}),
 			review(false, "レビューした abc1234 から PR の HEAD def5678 で差分の中身が変わった(再レビューが要る)", true),
 			[5]int{stOK, stStale, stOK, stOK, stNone}, "needs re-review", "差分の中身が変わった(再レビューが要る)"},
 		{"PR, re-review under way", opened(&state.Session{State: state.Done, Review: &state.ReviewSummary{ID: 4, Verdict: "pending", ReviewedSHA: "def5678"}}),
-			review(false, "独立レビューの最中(報告 #4・def5678)", false), [5]int{stOK, stRun, stOK, stOK, stNone}, "in review", ""},
+			review(false, "独立レビューの最中(報告 p4・def5678)", false), [5]int{stOK, stRun, stOK, stOK, stNone}, "in review", ""},
 	}
 	for _, c := range cases {
 		c.s.Slug = "feat-x"
@@ -691,8 +691,8 @@ func TestDashboardLatelyAutoClosed(t *testing.T) {
 	}
 	out := ansi.Strip(raw)
 	pos := 0
-	for _, want := range []string{"1 request", "Requests", "1 open · 6 closed by pekoe", "#3 CSV の空行を飛ばして", "→ feat-csv",
-		"closed by pekoe as no request · 24h · ledger keep <id>", "#2 B が済んだら C も直して", "+5 older · pekoe ledger --all", "Sends"} {
+	for _, want := range []string{"1 request", "Requests", "1 open · 6 closed by pekoe", "r3 CSV の空行を飛ばして", "→ feat-csv",
+		"closed by pekoe as no request · 24h · ledger keep <id>", "r2 B が済んだら C も直して", "+5 older · pekoe ledger --all", "Sends"} {
 		i := strings.Index(out[pos:], want)
 		if i < 0 {
 			t.Fatalf("%q missing or out of order:\n%s", want, out)
@@ -720,7 +720,7 @@ func TestDashboardLatelyAutoClosed(t *testing.T) {
 	runCmd(m, m.onKey(key("j")))
 	runCmd(m, m.onKey(key("enter")))
 	out = ansi.Strip(strings.Join(m.viewAgent(120, 60), "\n"))
-	if !strings.Contains(out, "二行目の詳細") || !strings.Contains(out, "pekoe ledger 2 for the whole text") {
+	if !strings.Contains(out, "二行目の詳細") || !strings.Contains(out, "pekoe ledger r2 for the whole text") {
 		t.Errorf("↵ did not unfold it:\n%s", out)
 	}
 	// an older pekoed answers a plain list of the open ones

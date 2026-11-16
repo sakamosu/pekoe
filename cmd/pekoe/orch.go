@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/untrusted"
 )
@@ -48,7 +49,7 @@ func cmdReport(args []string) error {
 		printJSON(r)
 		return nil
 	}
-	fmt.Printf("report #%d on %s (%s)\n", r.ID, r.Slug, r.Status)
+	fmt.Printf("report %s on %s (%s)\n", ids.Report(r.ID), r.Slug, r.Status)
 	return nil
 }
 
@@ -86,7 +87,7 @@ func cmdReports(args []string) error {
 		return nil
 	}
 	for _, r := range rs {
-		head := fmt.Sprintf("#%d %s %s %s", r.ID, r.Slug, r.Status, r.At.Local().Format("01-02 15:04"))
+		head := fmt.Sprintf("%s %s %s %s", ids.Report(r.ID), r.Slug, r.Status, r.At.Local().Format("01-02 15:04"))
 		if r.Verdict != "" {
 			head += " verdict=" + r.Verdict + " reviewed=" + r.ReviewedSHA
 		}

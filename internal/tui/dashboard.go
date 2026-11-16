@@ -28,6 +28,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"pekoe/internal/daemon"
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -842,7 +843,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			if it.About != "" && it.About != it.From {
 				who += dim(" · " + clip(inboxText(it.About), 22))
 			}
-			head := "    " + dim(fmt.Sprintf("#%d ", it.ID)) + who + "  "
+			head := "    " + dim(ids.Question(it.ID)+" ") + who + "  "
 			tail := "  " + dim(fit(ago(it.CreatedAt), 4))
 			room := max(cw-w(head)-w(tail), 1)
 			item(fmt.Sprintf("inbox:%d", it.ID), head+th.FG(theme.Text, fit(firstLine(inboxText(it.Question)), room))+tail, nil, nil)
@@ -882,7 +883,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 				}
 			}
 			if s.Report != nil {
-				more = append(more, dim("report #"+fmt.Sprint(s.Report.ID)+" "+s.Report.Status+" · ")+firstLine(inboxText(s.Report.Summary)))
+				more = append(more, dim("report "+ids.Report(s.Report.ID)+" "+s.Report.Status+" · ")+firstLine(inboxText(s.Report.Summary)))
 			}
 			if len(more) == 0 {
 				more = append(more, dim("nothing more yet"))
@@ -904,7 +905,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 				line += dim(fmt.Sprintf("  #%d", s.PR))
 			}
 			if mc != nil && mc.Inbox > 0 {
-				line += dim(fmt.Sprintf("  inbox #%d", mc.Inbox))
+				line += dim("  inbox " + ids.Question(mc.Inbox))
 			}
 			why := stageWhy(st, mc, named)
 			if why != "" && w(head)+w(line)+2+w(why) <= cw {
@@ -933,7 +934,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 	for i := range d.ledger {
 		e := &d.ledger[i]
-		head := "  " + dim(fmt.Sprintf("#%d ", e.ID))
+		head := "  " + dim(ids.Request(e.ID)+" ")
 		tail := "  " + dim(fit(ago(e.At), 4))
 		room := max(cw-w(head)-w(tail), 1)
 		var more []string
@@ -962,7 +963,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 	for i := range d.auto {
 		e := &d.auto[i]
-		head := fmt.Sprintf("  #%d ", e.ID)
+		head := "  " + ids.Request(e.ID) + " "
 		tail := "  " + fit(ago(e.At), 4)
 		room := max(cw-w(head)-w(tail), 1)
 		var more []string
@@ -970,7 +971,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			more = append(more, dim(l))
 		}
 		if e.Cut {
-			more = append(more, dim(fmt.Sprintf("(cut · pekoe ledger %d for the whole text)", e.ID)))
+			more = append(more, dim("(cut · pekoe ledger "+ids.Request(e.ID)+" for the whole text)"))
 		}
 		item(fmt.Sprintf("req:%d", e.ID), dim(head+fit(firstLine(inboxText(e.Text)), room)+tail), nil, more)
 	}
@@ -1011,7 +1012,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 	for i := range d.fyi {
 		it := &d.fyi[i]
-		head := "  " + dim(fmt.Sprintf("#%d ", it.ID)) + clip(inboxText(it.From), 14) + "  "
+		head := "  " + dim(ids.Question(it.ID)+" ") + clip(inboxText(it.From), 14) + "  "
 		chose := ""
 		if a := it.Answer; a != nil && a.Choice != nil && *a.Choice >= 0 && *a.Choice < len(it.Options) {
 			chose = dim(" → ") + th.FG(theme.Text, clip(inboxText(it.Options[*a.Choice]), 30))
@@ -1288,7 +1289,7 @@ func (m *model) dashGroupHead(g dashGroup, room int) string {
 	}
 	head := th.FG(theme.Text, who)
 	if g.request > 0 {
-		req := fmt.Sprintf(" · #%d", g.request)
+		req := " · " + ids.Request(g.request)
 		if e := m.ledgerEntry(g.request); e != nil {
 			if t := firstLine(inboxText(e.Text)); t != "" {
 				req += " " + fit(t, min(max(room-w(head)-w(req)-1, 1), 32))
