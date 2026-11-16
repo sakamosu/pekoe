@@ -69,7 +69,7 @@ EOF
 ## 作った後(main から操作する)
 
 - ユーザーには slug・ブランチ・何を頼んだかを伝える。worktree のパスやポートは必要なときだけでよい。TUI(`pekoe`)で様子を見られると添えてもよい
-- 状態の確認: `pekoe --json ls`。`state` は `creating` → `running` → `waiting`(許可待ち・入力待ち)/ `idle` / `done` → `reviewing` → `approved` → `landed`、失敗は `failed`(`error` に理由)
+- 状態の確認: `pekoe --json ls`。`state` は(`queued` →)`creating` → `running` → `waiting`(許可待ち・入力待ち)/ `idle` / `done` → `reviewing` → `approved` → `landed`、失敗は `failed`(`error` に理由)。`queued` は同時に動かす数の上限(`[orchestrator] max_running`)か `--hold` で起動を待っているもの(`queue` に理由。worktree もエージェントもまだ無い。空けば pekoe が古い順に始める)
 - 中身の確認: `ls` の `path` を使って `git -C <path> log` / `git -C <path> diff main...` などを main から読む
 - 追加の指示・修正依頼: `pekoe send <slug> -` に stdin で本文を渡す(長文や改行を含むときは必ず stdin で)。ユーザーから修正の要望が来たら、それをまとめて送る
 - 相手が許可待ち(`state` が `waiting` で `wait_kind` が `question` 以外、または相手の画面に許可ダイアログが出ている)の間は `pekoe send` が `<slug> is waiting for a permission answer: …` で断られる。許可にはユーザーが TUI などで答えるので、そう伝えて待つ

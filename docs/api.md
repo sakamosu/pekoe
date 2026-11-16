@@ -178,7 +178,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "model": "claude-sonnet-5-5",    // pekoe new --model で上書きしたモデル(無ければ省略。[agents.*] model が使われる)
   "effort": "low",                 // pekoe new --effort で上書きした effort(無ければ省略)
   "last_model": "claude-opus-5-5", // このセッションが最後に答えたモデル(会話記録の最後の assistant のメッセージの model。Claude Code だけ。PostToolUse と Stop の hook で読む)
-  "state": "running",              // creating | running | waiting | idle | done | reviewing | approved | landed | failed
+  "state": "running",              // queued | creating | running | waiting | idle | done | reviewing | approved | landed | failed(queued は下の「待ち行列」)
   "wait_kind": "permission",       // waiting のときだけ: permission | question(AskUserQuestion と elicitation。AskUserQuestion の直後に Claude Code が送る permission_prompt は、待ちの対象が AskUserQuestion のままなら question のまま。知らない notification_type は permission)
   "state_since": "2026-11-07T10:00:00Z",
   "port": 3001,
@@ -223,9 +223,21 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"}, // 最新の報告(summary は 1 行目、200 文字まで)
   "review": {"id": 15, "verdict": "pending", "reviewed_sha": "3f2a…", "at": "…"}, // 最新の status: review の報告(pending = レビュー中・pass・fail)。後に別の報告が来ても残る。無ければ省略
   "request": 4,                    // 結んだ依頼の id(pekoe new --request、ledger.link)。無ければ省略
-  "after": ["feat-api"]            // このセッションが後に来るセッションの slug(session.new の after)。記録と表示だけで、起動は止めない
+  "after": ["feat-api"],           // このセッションが後に来るセッションの slug(session.new の after)。hold が無ければ記録と表示だけで、起動は止めない
+  "hold": true,                    // session.new の hold(pekoe new --hold): after がすべて landed になるまで起動しない。無ければ省略
+  "holding": ["feat-api"],         // queued の間、after のうちまだ landed でないもの。起動したら消える
+  "queue": "--hold: waiting for feat-api to land" // queued の間だけ: 起動していない理由(1 行)。下の「待ち行列」
 }
 ```
+
+**待ち行列**(`queued`、internal/daemon/queue.go) — `session.new` は、次のどちらかのときは作成(worktree・setup・エージェントの起動)を始めずに `state: queued` のセッションを返す。行・slug・ポートはあるが、worktree もエージェントもまだ無い。
+
+- `[orchestrator] max_running` が 1 以上で、作業中のセッション(pekoe が作ったもの(`managed`)で `creating`・`running`・`waiting`。止めたもの(`x`)とリポジトリ本体のチェックアウトは数えない)がその数に達している。`queue` は `max_running = 3: waiting for a session to stop working`
+- `hold`(`pekoe new --after X --hold`)で、`after` のうち landed でないものがある。`queue` は `--hold: waiting for X to land`。待っている相手が `failed` なら `(X failed)` を足して待ち続ける(failed は resume で戻りうる)。相手が landed にならずに rm されたら、このセッションを `failed`(`--hold: X was removed before it landed …`)にする。landed になってから rm された相手は揃ったものとして扱う
+
+`max_running` を超えて上限を待つものは、作業中のものが止まる(idle・done・failed・landed・rm)たびに、古いもの(`created_at` の順)から起動する。hold で待つものは、揃ってからさらに上限を待つ(揃っていないものは後ろのものを止めない)。起動すると `creating` に移り、そこからは普通の作成と同じ(`session.progress`、`wait` の `started`)。hold で待ったものは、起動するときに origin から base を fetch して `origin/<base>` から(upstream は付けずに)ブランチを作る。待っていた相手のマージが入った base から始めるため(origin の無いリポジトリや fetch が落ちたときは、ふだんどおりローカルの base から)。上限も hold も無ければ、今までどおりすぐに作成を始める(`queued` は出ない)。
+
+queued のセッションでは、エージェントの起動(`session.restart` など)・`run.start` を断る。`session.cancel` と `worktree.rm`(token あり)で消せる。起動に要るもの(プロンプト・`from`・窓の大きさ)は state.db の kv(`queued:<slug>`)に置くので、pekoed を再起動しても queued のまま残り、起動後に順に始まる(kv が無ければ `failed`: `interrupted by daemon restart (queued)`)。
 
 **衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、pekoed が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
 
@@ -242,8 +254,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug]}` | `Session` に `cursor` を足したもの(state = creating。進捗は `session.progress` イベント)。`cursor` は作る直前の `wait` の cursor で、`wait --slug <slug> --since <cursor>` ならこのセッションの変化(`started`・`failed`・`report` …)を、返ってから待ち始めるまでの間に起きたものも取りこぼさない(下の「待ち合わせ」)。setup を待つなら `--on started,failed,removed`(`removed` は作成中に cancel・rm で消されたときも返るように)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
-| `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
+| `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug], hold?: bool}` | `Session` に `cursor` を足したもの(state = creating。進捗は `session.progress` イベント。上限(`[orchestrator] max_running`)に達しているときと `hold` のときは state = queued で、起動したら creating に移る。上の「待ち行列」)。`hold` は `after` がすべて landed になるまで起動しない(`after` が無ければ `--hold waits for the --after sessions to land: give --after` で断る)。`cursor` は作る直前の `wait` の cursor で、`wait --slug <slug> --since <cursor>` ならこのセッションの変化(`started`・`failed`・`report` …)を、返ってから待ち始めるまでの間に起きたものも取りこぼさない(下の「待ち合わせ」)。setup を待つなら `--on started,failed,removed`(`removed` は作成中に cancel・rm で消されたときも返るように)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
+| `session.cancel` | `{slug}` | 作成中・待ち行列(queued)を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
 | `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」)。agent の窓への指示(`submit` つき、または token なし)は送信の記録に残す(断ったものも) |
@@ -375,7 +387,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 }
 ```
 
-- `kind`: `report`(報告が来た)・`started`(作ったセッションの setup が済み、エージェントが動き始めた: `creating` から `failed` 以外に移った。セッションごとに 1 回。setup が落ちたら `started` は出ず `failed`。作成中に cancel・rm で消されたら `removed` だけなので、setup を待つときは `--on started,failed,removed`)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox q12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
+- `kind`: `report`(報告が来た)・`queued`(`session.new` が作成を始めずに待ち行列に入れた。`summary` は `feat-b: queued (--hold: waiting for feat-a to land)`。セッションごとに 1 回。待ち行列から出て起動したら、そこからは `started` / `failed` が出る)・`started`(作ったセッションの setup が済み、エージェントが動き始めた: `creating` から `failed` 以外に移った。セッションごとに 1 回。setup が落ちたら `started` は出ず `failed`。作成中に cancel・rm で消されたら `removed` だけなので、setup を待つときは `--on started,failed,removed`)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox q12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
 - `summary` は 1 行: `feat-csv: started (running)`(プロンプトなしで作ったら `(idle)`)、`feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
 - `ci` は、`OPEN` の PR の HEAD のチェックで `pending` が 0、`pass` + `fail` が 1 以上になったときに 1 回だけ出る(`pr_status` を取り直したときに判定するので、遅れはポーリングの間隔に見回りの刻みの 15 秒を足したくらいまで)。`summary` は `feat-csv: PR #42 ci green: 5 passed, head <PR の HEAD の SHA(40 桁)>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`(落ちた check の名前は 3 つまで、残りは `+N more`)。知らせた HEAD を `pr_status.ci_head` に残し、同じ HEAD では二度と出さない(pekoed を再起動しても、同じ HEAD で check をやり直しても)。HEAD が変われば、次に決着したときにまた 1 回出る。check が 1 件も無い・`pass` も `fail` も 0(全部 skip)・`OPEN` でない PR では出ない。キャンセル・skip・neutral の check は `pass` にも `fail` にも数えないので、それらがあっても残りが通れば green。`pr` の `ci_failed` は最初の 1 本が落ちた時点で出るので、同じ CI で `pr` と `ci` の両方が出ることがある
 - `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない

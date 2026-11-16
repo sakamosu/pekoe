@@ -183,9 +183,23 @@ docs = ["README.ja.md#コマンド", "docs/api.md"]
 [[tip]]
 id = "new-after"
 short = "pekoe new --after で、どのセッションの後かを残す"
-detail = "--after feat-a(複数可)で順序を記録する。[1] の行に after feat-a、選ぶとフッターに相手の状態が出る。記録と表示だけで起動は止めない。渡せるのは今あるセッションだけで、自分自身と循環は断られる。"
+detail = "--after feat-a(複数可)で順序を記録する。[1] の行に after feat-a、選ぶとフッターに相手の状態。記録と表示だけで起動は止めない(止めるなら --hold)。今あるセッションだけ渡せ、自分自身と循環は断られる。"
 keys = ["pekoe new", "--after"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
+id = "new-hold"
+short = "pekoe new --after X --hold で X のマージまで始めない"
+detail = "--hold を付けたセッションは queued で待ち、--after の相手がすべて landed になると、そのときの origin/<base> から始まる。相手が failed なら待ち続け、landed にならずに消されたら failed になる。"
+keys = ["pekoe new", "--after", "--hold"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
+id = "max-running"
+short = "[orchestrator] max_running で同時に動かす数を絞る"
+detail = "max_running = 2 なら、作業中(creating・running・waiting)が 2 本の間に作った pekoe new は queued で待ち、1 本止まるたびに古い順に始まる。理由は pekoe --json ls の queue に出る。既定 0 は上限なし。"
+keys = ["[orchestrator]", "pekoe new"]
+docs = ["README.ja.md", "docs/api.md"]
 
 [[tip]]
 id = "ask-human"

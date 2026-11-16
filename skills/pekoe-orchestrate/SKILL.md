@@ -11,7 +11,7 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 
 ## コマンドが無いと言われたら(古い pekoe)
 
-`pekoe report` / `pekoe reports`・`pekoe wait`・`pekoe ask-human` / `pekoe inbox`・`pekoe ledger`・`pekoe new` の `--request` / `--after` は今の pekoe にある。古い pekoe でどれかが無ければ、使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
+`pekoe report` / `pekoe reports`・`pekoe wait`・`pekoe ask-human` / `pekoe inbox`・`pekoe ledger`・`pekoe new` の `--request` / `--after` / `--hold` は今の pekoe にある。古い pekoe でどれかが無ければ、使い方の一覧が出て終了コード 2 で終わる(`unknown flag` も同じ)。そのときは:
 
 - 人に `pekoe update` を頼み、それまでは無いものを使わずに進める(順序はプロンプトと人への報告に書く)
 - 回避のために別の手段(state.db を読む、ファイルに記録を作る)を探さない
@@ -31,7 +31,7 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 ## 依頼を受けたら
 
 - 1 PR で済むか分けるかを決める。分けるのは、独立にレビュー・マージできて、触るファイルが重ならない単位だけ。迷ったら 1 本
-- 分けたものに順序があるなら `pekoe new … --after <先のセッションの slug>` で記録する(複数可)。記録して表示するだけで起動は止まらないので、先のものの変更に乗る作業は先のものが landed になってから作ってもよい(landed のセッションも `--after` に渡せる)。`--after` に渡せるのは今あるセッションだけ(先に作る)。自分自身・循環は断られる
+- 分けたものに順序があるなら `pekoe new … --after <先のセッションの slug>` で記録する(複数可)。`--after` だけなら記録して表示するだけで起動は止まらない。先のものの変更に乗る作業は `--hold` を足して今作っておく: 先のものが landed(PR がマージされた)になるまで `queued` で待ち、そのとき origin の base から始まる(下の「並行の約束」)。`--after` に渡せるのは今あるセッションだけ(先に作る。landed のものも渡せる)。自分自身・循環は断られる
 - tapi では依頼の id を `pekoe new … --request <id>` で結ぶ(自分や人が閉じた依頼なら断られ、セッションは作られない)。後から結ぶなら `pekoe ledger link <id> <slug>`。main をハブにするときは依頼(ledger)を使わず、`--request` も付けない
 - 雑談・お礼・「マージした」のような報告・質問だけの入力も依頼として記録されるが、閉じなくてよい。返事を終えたときに、そのターンの入力にセッションが結ばれておらず、そのターンで誰にも何も頼まず、待ち始めてもいなければ(`pekoe new`・`pekoe send`・`pekoe ask-human`・`pekoe land`・`pekoe wait` を呼んでいない)、pekoe が「依頼ではなかった」(`chat`、`auto: true`)として閉じる
 - **依頼なのにそのターンで誰にも頼まないとき**(後でやる・人に聞き返して答えを待つ・前の作業が済んでから始める・「報告が来たら land して」のように、もう張ってある `pekoe wait` を待つだけ)は、返事を終える前に必ず `pekoe ledger keep` を打つ(引数なしでそのターンの入力。打たないと依頼が閉じてしまう)。依頼かどうか迷ったら keep する。残した依頼は open のまま残り、リセットの後も `pekoe --json ledger` に出る
@@ -88,7 +88,7 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor> --
 - `changes` の `summary` は 1 行だけ(`feat-csv: report done: …`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>` など)。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json reports <slug>` で読む
 - `reset: true` が返ったら(pekoed が再起動した・前の cursor が古すぎる)、間の変化は失われている。`pekoe --json ls` を読み直してから、返った `cursor` で待ち直す
 - `timed_out: true` なら何も起きていない。人に報告することがなければそのまま待ち直す(`--timeout` は 1h まで)
-- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)。`--on` に渡せる種類はほかに `started`(setup が済んで動き始めた。待つときは作成中に消されたときも返るよう `started,failed,removed`)・`done` `idle` `pr` `landed` `removed`(1 本のセッションの終わりを待つときなどに足す)。作った直後から取りこぼさずに待つには、`pekoe --json new` が返す `cursor` を `--since` に渡す(pekoe スキルの「待つ」)
+- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)。`--on` に渡せる種類はほかに `queued`(上限か `--hold` で待ち行列に入った)・`started`(setup が済んで動き始めた。待ち行列から出たときも。待つときは作成中に消されたときも返るよう `started,failed,removed`)・`done` `idle` `pr` `landed` `removed`(1 本のセッションの終わりを待つときなどに足す)。作った直後から取りこぼさずに待つには、`pekoe --json new` が返す `cursor` を `--since` に渡す(pekoe スキルの「待つ」)
 - `--mine` は自分が `pekoe new` で作ったセッション(`parent` が自分)だけ。pekoe の外で起動した main のエージェントは呼び出し元が分からず `--mine` を使えないので、`--slug` で待つ
 - `feat-csv: done (no report)`(`--on` に `done` を足したときに来る)や、`pekoe --json ls` で報告が無いまま `done` のものは、報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
 
@@ -143,9 +143,11 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 
 ## 並行の約束
 
-- 共有ファイル(migration・スキーマ・lockfile・生成コード)を触る作業は 1 本ずつ。先のものが landed になってから次を作る
+- 共有ファイル(migration・スキーマ・lockfile・生成コード)を触る作業は 1 本ずつ。後のものは `pekoe new … --after <先> --hold` で作る(先のものが landed になるまで起動しない。先を待ってから作り直す必要はない)
 - 同時に動かすか決める前に、触るファイルの重なりを見る: `pekoe --json conflicts`(10 秒以内に続けて呼ぶと前の結果が返る。古い pekoed で断られたら `pekoe --json ls` の各セッションの `overlaps`)。重なるものは順番にする
-- 依存は `--after <slug>` で記録する
+- 依存は `--after <slug>` で記録する。先の変更が要るなら `--hold` も付ける
+- 依頼をまとめて並べてよい。人が `[orchestrator] max_running` を決めていれば、超えた分の `pekoe new` は `state: queued`(`queue` に理由)で返り、空いたら古い順に pekoe が始める。自分で数えて作るのを遅らせない。始まったことは `pekoe wait --slug <slug> --on started,failed,removed --since <new の cursor>` で分かる(queued の間はエージェントがいないので `pekoe send` は届かない)
+- `--hold` で待っているセッションの先が `failed` になっても待ち続ける(`queue` に `(X failed)`)。先を直すか、待つのをやめるなら人に `pekoe rm <slug>` を頼む(queued のセッションも、エージェントからは消せない)。先が landed にならずに rm されると、待っていたものは `failed`(`--hold: X was removed before it landed`)になるので、要るなら `--after` を変えて作り直す
 - 同じ作業に何本もセッションを作らない。続きは `pekoe send <slug> -` で足す
 
 ## 他の層のセッション
