@@ -27,6 +27,11 @@ import (
 // docs/api.md (pekoed が動かす gh).
 type ghRepoInfo struct {
 	Base, Origin string
+	// BaseRemote is the remote that points at Base ("origin" when Base is
+	// origin), where a PR's pull/<n>/head is fetched from; "" when no
+	// remote does (gh-resolved names a repository no remote points at) or
+	// its name is not a plain one (ghRemoteNameRe).
+	BaseRemote string
 }
 
 // Fork tells whether PRs go into another repository than origin.
@@ -164,7 +169,7 @@ func ghRemoteScore(name string) int {
 func pickGHBase(rs []ghRemote) ghRepoInfo {
 	var origin string
 	for _, r := range rs {
-		if r.Name == "origin" {
+		if r.Name == "origin" && origin == "" {
 			origin = r.Repo
 		}
 	}
@@ -179,18 +184,33 @@ func pickGHBase(rs []ghRemote) ghRepoInfo {
 		}
 	}
 	slices.SortStableFunc(cands, func(a, b ghRemote) int { return ghRemoteScore(b.Name) - ghRemoteScore(a.Name) })
+	info := ghRepoInfo{Base: cands[0].Repo, Origin: origin}
 	for _, r := range cands {
-		switch r.Resolved {
-		case "":
+		if r.Resolved == "" {
 			continue
-		case "base":
-			return ghRepoInfo{Base: r.Repo, Origin: origin}
-		default:
-			return ghRepoInfo{Base: resolvedRepo(r.Resolved, host), Origin: origin}
 		}
+		info.Base = r.Repo
+		if r.Resolved != "base" {
+			info.Base = resolvedRepo(r.Resolved, host)
+		}
+		break
 	}
-	return ghRepoInfo{Base: cands[0].Repo, Origin: origin}
+	if info.Base == "" {
+		return ghRepoInfo{Origin: origin}
+	}
+	// the remote to fetch Base's PRs from: origin when it is Base, else
+	// the first (in gh's order) that points at it
+	if info.Base == origin {
+		info.BaseRemote = "origin"
+	} else if i := slices.IndexFunc(cands, func(r ghRemote) bool { return r.Repo == info.Base }); i >= 0 && ghRemoteNameRe.MatchString(cands[i].Name) {
+		info.BaseRemote = cands[i].Name
+	}
+	return info
 }
+
+// ghRemoteNameRe is a remote name pekoed passes to git fetch: a plain
+// name, nothing git could read as a URL, a path or an option.
+var ghRemoteNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // resolvedRepo is host/owner/name of a gh-resolved value other than "base"
 // (gh's ghrepo.FromFullName, on the remote's host), "" when it names none.

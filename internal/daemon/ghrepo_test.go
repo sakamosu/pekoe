@@ -130,26 +130,30 @@ func TestPickGHBase(t *testing.T) {
 		rs   []ghRemote
 		want ghRepoInfo
 	}{
-		{"origin only", []ghRemote{{Name: "origin", Repo: me}}, ghRepoInfo{me, me}},
+		{"origin only", []ghRemote{{Name: "origin", Repo: me}}, ghRepoInfo{me, me, "origin"}},
 		{"no origin", []ghRemote{{Name: "upstream", Repo: up}}, ghRepoInfo{}},
 		{"origin names none", []ghRemote{{Name: "origin"}, {Name: "upstream", Repo: up}}, ghRepoInfo{}},
-		{"upstream before origin", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: up}}, ghRepoInfo{up, me}},
-		{"github before origin", []ghRemote{{Name: "github", Repo: up}, {Name: "origin", Repo: me}}, ghRepoInfo{up, me}},
-		{"origin before others", []ghRemote{{Name: "fork", Repo: up}, {Name: "origin", Repo: me}}, ghRepoInfo{me, me}},
-		{"Upstream in any case", []ghRemote{{Name: "origin", Repo: me}, {Name: "Upstream", Repo: up}}, ghRepoInfo{up, me}},
-		{"upstream on another host", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: "gitlab.com/up/app"}}, ghRepoInfo{me, me}},
-		{"upstream names none", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream"}}, ghRepoInfo{me, me}},
-		{"set-default origin", []ghRemote{{Name: "origin", Repo: me, Resolved: "base"}, {Name: "upstream", Repo: up}}, ghRepoInfo{me, me}},
-		{"set-default upstream", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: up, Resolved: "base"}}, ghRepoInfo{up, me}},
-		{"set-default other remote", []ghRemote{{Name: "fork", Repo: up, Resolved: "base"}, {Name: "origin", Repo: me}}, ghRepoInfo{up, me}},
+		{"upstream before origin", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: up}}, ghRepoInfo{up, me, "upstream"}},
+		{"github before origin", []ghRemote{{Name: "github", Repo: up}, {Name: "origin", Repo: me}}, ghRepoInfo{up, me, "github"}},
+		{"origin before others", []ghRemote{{Name: "fork", Repo: up}, {Name: "origin", Repo: me}}, ghRepoInfo{me, me, "origin"}},
+		{"Upstream in any case", []ghRemote{{Name: "origin", Repo: me}, {Name: "Upstream", Repo: up}}, ghRepoInfo{up, me, "Upstream"}},
+		{"upstream on another host", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: "gitlab.com/up/app"}}, ghRepoInfo{me, me, "origin"}},
+		{"upstream names none", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream"}}, ghRepoInfo{me, me, "origin"}},
+		{"set-default origin", []ghRemote{{Name: "origin", Repo: me, Resolved: "base"}, {Name: "upstream", Repo: up}}, ghRepoInfo{me, me, "origin"}},
+		{"set-default upstream", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: up, Resolved: "base"}}, ghRepoInfo{up, me, "upstream"}},
+		{"set-default other remote", []ghRemote{{Name: "fork", Repo: up, Resolved: "base"}, {Name: "origin", Repo: me}}, ghRepoInfo{up, me, "fork"}},
 		// the first remote with gh-resolved (in gh's order) decides
-		{"first resolved", []ghRemote{{Name: "origin", Repo: me, Resolved: "base"}, {Name: "upstream", Repo: up, Resolved: "base"}}, ghRepoInfo{up, me}},
+		{"first resolved", []ghRemote{{Name: "origin", Repo: me, Resolved: "base"}, {Name: "upstream", Repo: up, Resolved: "base"}}, ghRepoInfo{up, me, "upstream"}},
 		// a value other than base: owner/name on the remote's host
-		{"owner/name", []ghRemote{{Name: "origin", Repo: me, Resolved: "Up/App"}}, ghRepoInfo{up, me}},
-		{"host/owner/name", []ghRemote{{Name: "origin", Repo: me, Resolved: "evil.example.com/up/app"}}, ghRepoInfo{up, me}},
-		{"URL", []ghRemote{{Name: "origin", Repo: me, Resolved: "https://github.com/up/app.git"}}, ghRepoInfo{up, me}},
-		{"same as origin", []ghRemote{{Name: "origin", Repo: me, Resolved: "me/app"}}, ghRepoInfo{me, me}},
+		{"owner/name", []ghRemote{{Name: "origin", Repo: me, Resolved: "Up/App"}}, ghRepoInfo{up, me, ""}},
+		{"host/owner/name", []ghRemote{{Name: "origin", Repo: me, Resolved: "evil.example.com/up/app"}}, ghRepoInfo{up, me, ""}},
+		{"URL", []ghRemote{{Name: "origin", Repo: me, Resolved: "https://github.com/up/app.git"}}, ghRepoInfo{up, me, ""}},
+		{"same as origin", []ghRemote{{Name: "origin", Repo: me, Resolved: "me/app"}}, ghRepoInfo{me, me, "origin"}},
 		// a value naming no repository: none (gh fails), not a guess
+		// the base no remote points at: no remote to fetch its PRs from
+		{"no remote at the base", []ghRemote{{Name: "origin", Repo: me, Resolved: "other/app"}}, ghRepoInfo{"github.com/other/app", me, ""}},
+		{"odd remote name", []ghRemote{{Name: "origin", Repo: me}, {Name: "upstream", Repo: up, Resolved: "base"}, {Name: "-x", Repo: up}}, ghRepoInfo{up, me, "upstream"}},
+		{"only an odd remote name at the base", []ghRemote{{Name: "origin", Repo: me}, {Name: "-x", Repo: up, Resolved: "base"}}, ghRepoInfo{up, me, ""}},
 		{"bad value", []ghRemote{{Name: "origin", Repo: me, Resolved: "up"}}, ghRepoInfo{Origin: me}},
 		{"empty part", []ghRemote{{Name: "origin", Repo: me, Resolved: "up/"}}, ghRepoInfo{Origin: me}},
 		{"too many parts", []ghRemote{{Name: "origin", Repo: me, Resolved: "a/b/c/d"}}, ghRepoInfo{Origin: me}},
@@ -165,10 +169,10 @@ func TestPickGHBase(t *testing.T) {
 }
 
 func TestHeadRef(t *testing.T) {
-	if h := (ghRepoInfo{"github.com/me/app", "github.com/me/app"}).headRef("feat/x"); h != "feat/x" {
+	if h := (ghRepoInfo{"github.com/me/app", "github.com/me/app", "origin"}).headRef("feat/x"); h != "feat/x" {
 		t.Errorf("not a fork: %q", h)
 	}
-	if h := (ghRepoInfo{"github.com/up/app", "github.com/me/app"}).headRef("feat/x"); h != "me:feat/x" {
+	if h := (ghRepoInfo{"github.com/up/app", "github.com/me/app", "upstream"}).headRef("feat/x"); h != "me:feat/x" {
 		t.Errorf("fork: %q", h)
 	}
 }
@@ -198,18 +202,18 @@ func TestGHRepoInfoOfRepository(t *testing.T) {
 		return d.ghRepoInfoOf(repo)
 	}
 	run(t, repo, "git", "remote", "add", "origin", "git@github-work:me/app.git")
-	if r := read(); r != (ghRepoInfo{"github.com/me/app", "github.com/me/app"}) {
+	if r := read(); r != (ghRepoInfo{"github.com/me/app", "github.com/me/app", "origin"}) {
 		t.Fatalf("alias: %+v", r)
 	}
 	run(t, repo, "git", "remote", "add", "upstream", "https://github.com/up/app.git")
-	if r := read(); r != (ghRepoInfo{"github.com/up/app", "github.com/me/app"}) {
+	if r := read(); r != (ghRepoInfo{"github.com/up/app", "github.com/me/app", "upstream"}) {
 		t.Fatalf("upstream: %+v", r)
 	}
 	if d.webBase(repo) != "https://github.com/up/app" {
 		t.Fatalf("webBase: %q", d.webBase(repo))
 	}
 	run(t, repo, "git", "config", "remote.origin.gh-resolved", "base")
-	if r := read(); r != (ghRepoInfo{"github.com/me/app", "github.com/me/app"}) {
+	if r := read(); r != (ghRepoInfo{"github.com/me/app", "github.com/me/app", "origin"}) {
 		t.Fatalf("set-default origin: %+v", r)
 	}
 	run(t, repo, "git", "config", "remote.origin.gh-resolved", "up/-app")
@@ -224,7 +228,7 @@ func TestLandFork(t *testing.T) {
 	d, _, repo := setup(t)
 	withOrigin(t, repo)
 	for _, p := range []string{repo, evalSymlinks(t, repo)} {
-		d.ghRepos.Store(p, ghRepoInfo{Base: "github.com/up/app", Origin: "github.com/me/app"})
+		d.ghRepos.Store(p, ghRepoInfo{Base: "github.com/up/app", Origin: "github.com/me/app", BaseRemote: "upstream"})
 	}
 	gh := fakeGH(t, "OPEN")
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/fork"})
@@ -286,5 +290,50 @@ func TestMergeItemSaysFork(t *testing.T) {
 		if strings.Contains(l, "graphql") && !strings.Contains(l, "owner=up") {
 			t.Errorf("gh asked about origin: %s", l)
 		}
+	}
+}
+
+// Someone else's PR of a fork's base is fetched from the remote that
+// points at the base (pull/<n>/head is only there), and its comments go
+// to the base; with no remote at the base, nothing is fetched or sent.
+func TestReviewPRInForkBase(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo) // the fork: no pull/7 in it
+	up := filepath.Join(t.TempDir(), "up.git")
+	run(t, repo, "git", "init", "-q", "--bare", "-b", "main", up)
+	run(t, repo, "git", "remote", "add", "upstream", up)
+	run(t, repo, "git", "push", "-q", "upstream", "main")
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, repo, "git", "clone", "-q", up, other)
+	os.WriteFile(filepath.Join(other, "a.txt"), []byte("1\n2\nthree\n"), 0o644)
+	run(t, other, "git", "commit", "-qam", "their change")
+	run(t, other, "git", "push", "-q", "origin", "HEAD:refs/pull/7/head")
+	want := strings.TrimSpace(gitOut(t, other, "rev-parse", "HEAD"))
+	store := func(r ghRepoInfo) {
+		for _, p := range []string{repo, evalSymlinks(t, repo)} {
+			d.ghRepos.Store(p, r)
+		}
+	}
+	gh := fakeGH(t, "OPEN")
+
+	store(ghRepoInfo{Base: "github.com/up/app", Origin: "github.com/me/app"})
+	if _, err := d.Call("review.pr", mustJSON(map[string]any{"repo": repo, "number": 7})); err == nil || !strings.Contains(err.Error(), "no remote") {
+		t.Fatalf("no remote at the base: %v", err)
+	}
+	if l, _ := os.ReadFile(filepath.Join(gh, "gh.log")); len(l) != 0 {
+		t.Fatalf("gh ran: %s", l)
+	}
+
+	store(ghRepoInfo{Base: "github.com/up/app", Origin: "github.com/me/app", BaseRemote: "upstream"})
+	s := call[state.Session](t, d, "review.pr", map[string]any{"repo": repo, "number": 7})
+	if head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD")); head != want {
+		t.Fatalf("reviewing %s, want the base's pull/7 %s", head, want)
+	}
+	rv := call[ReviewView](t, d, "review.files", map[string]any{"slug": s.Slug})
+	call[any](t, d, "review.comment", map[string]any{"slug": s.Slug, "path": "a.txt", "line": 3, "hunk_id": rv.Files[0].Hunks[0].ID, "text": "why three?"})
+	call[map[string]any](t, d, "review.flush", map[string]any{"slug": s.Slug})
+	l, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
+	if !strings.Contains(string(l), "pr view 7 --repo github.com/up/app") || !strings.Contains(string(l), "repos/up/app/pulls/7/reviews") {
+		t.Fatalf("gh calls:\n%s", l)
 	}
 }

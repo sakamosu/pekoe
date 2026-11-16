@@ -76,7 +76,7 @@ esac
 func onGitHub(t *testing.T, d *Daemon, repo string) {
 	t.Helper()
 	for _, p := range []string{repo, evalSymlinks(t, repo)} {
-		d.ghRepos.Store(p, ghRepoInfo{Base: "github.com/me/app", Origin: "github.com/me/app"})
+		d.ghRepos.Store(p, ghRepoInfo{Base: "github.com/me/app", Origin: "github.com/me/app", BaseRemote: "origin"})
 	}
 }
 
