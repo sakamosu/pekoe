@@ -246,6 +246,9 @@ const npmNoTest = `echo "Error: no test specified" && exit 1`
 // test` and `<pm> run <script>`, at package.json's scripts.
 func testProblem(dir, test string) string {
 	f := strings.Fields(test)
+	for len(f) > 0 && strings.Contains(f[0], "=") { // CI=1 yarn test: the environment first
+		f = f[1:]
+	}
 	if len(f) == 0 {
 		return ""
 	}

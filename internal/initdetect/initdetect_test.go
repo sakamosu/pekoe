@@ -95,3 +95,16 @@ func TestDetectDraftsTestOnlyWhenItCanRun(t *testing.T) {
 		})
 	}
 }
+
+// Assignments before the command (a rule edited to `CI=1 yarn test`) are
+// the environment, not the command.
+func TestTestProblemSkipsTheEnvironment(t *testing.T) {
+	fakeBin(t, "yarn")
+	dir := repoWith(t, map[string]string{"package.json": `{"scripts":{"test":"jest"}}`})
+	if why := testProblem(dir, "CI=1 NODE_ENV=test yarn test"); why != "" {
+		t.Errorf("CI=1 NODE_ENV=test yarn test: %q", why)
+	}
+	if why := testProblem(dir, "CI=1 yarn run e2e"); why != "package.json に scripts.e2e が無い" {
+		t.Errorf("CI=1 yarn run e2e: %q", why)
+	}
+}
