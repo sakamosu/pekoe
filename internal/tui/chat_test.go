@@ -780,3 +780,40 @@ func TestMouseInTapiChat(t *testing.T) {
 		t.Fatal("dead: typing after a click")
 	}
 }
+
+// With [orchestrator] deliver = "idle", typing into tapi chat holds pekoed's
+// delivery back (tapi.deliver_pause on, said again every few seconds), and
+// leaving lets it go (off, once). With it off nothing is said.
+func TestChatDeliverPause(t *testing.T) {
+	m, f, _ := chatModel(t)
+	now := time.Now()
+	pauses := func() []any {
+		var on []any
+		for _, p := range f.find("tapi.deliver_pause") {
+			on = append(on, p["on"])
+		}
+		return on
+	}
+	m.chat.open, m.typing = true, true
+	m.chat.info = &daemon.Tapi{Deliver: &daemon.TapiDeliver{Mode: "off"}}
+	runCmd(m, m.deliverPause(now))
+	if got := pauses(); len(got) != 0 {
+		t.Fatalf("deliver off: %v", got)
+	}
+	m.chat.info = &daemon.Tapi{Deliver: &daemon.TapiDeliver{Mode: "idle"}}
+	runCmd(m, m.deliverPause(now))
+	runCmd(m, m.deliverPause(now.Add(time.Second))) // not again so soon
+	if got := pauses(); len(got) != 1 || got[0] != true {
+		t.Fatalf("typing: %v", got)
+	}
+	runCmd(m, m.deliverPause(now.Add(deliverPauseEvery)))
+	if got := pauses(); len(got) != 2 {
+		t.Fatalf("said again: %v", got)
+	}
+	m.typing = false
+	runCmd(m, m.deliverPause(now.Add(deliverPauseEvery+time.Second)))
+	runCmd(m, m.deliverPause(now.Add(deliverPauseEvery+2*time.Second)))
+	if got := pauses(); len(got) != 3 || got[2] != false {
+		t.Fatalf("left: %v", got)
+	}
+}

@@ -8,6 +8,7 @@ package tui
 
 import (
 	"encoding/json"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -33,6 +34,10 @@ type chatState struct {
 	// "new" line, like a session's unreadAt), when unreadSet
 	unreadAt  int
 	unreadSet bool
+	// paused: pekoed was told (tapi.deliver_pause) that a person types
+	// into tapi chat, last at pausedAt
+	paused   bool
+	pausedAt time.Time
 }
 
 type chatInfoMsg struct {
@@ -282,4 +287,33 @@ func (m *model) chatHints() [][2]string {
 // chatKeysFull is the help list of the main panel while tapi chat shows.
 func chatKeysFull() [][3]string {
 	return [][3]string{{"↵", "type into tapi", "\r"}, {"esc", "close tapi chat", "esc"}, {"T", "reset tapi chat (forget the conversation)", "T"}}
+}
+
+// deliverPauseEvery: how often the TUI says again that a person types into
+// tapi chat (pekoed keeps it for 20 s: deliverPauseLease)
+const deliverPauseEvery = 5 * time.Second
+
+// deliverPause keeps pekoed's delivery to tapi ([orchestrator] deliver)
+// out of tapi chat's input box while a person has it open and types into
+// it (the keys themselves hold it back for 30 s too, in pekoed), and lets
+// it go as the person leaves. Called every second (onTick).
+func (m *model) deliverPause(now time.Time) tea.Cmd {
+	on := m.chat.open && m.typing && m.chat.info != nil && m.chat.info.Deliver != nil && m.chat.info.Deliver.Mode == "idle"
+	switch {
+	case m.cl == nil:
+		return nil
+	case !on && !m.chat.paused:
+		return nil
+	case on && m.chat.paused && now.Sub(m.chat.pausedAt) < deliverPauseEvery:
+		return nil
+	}
+	m.chat.paused = on
+	if on {
+		m.chat.pausedAt = now
+	}
+	cl := m.cl
+	return func() tea.Msg {
+		_ = cl.Call("tapi.deliver_pause", map[string]any{"on": on}, nil)
+		return nil
+	}
 }

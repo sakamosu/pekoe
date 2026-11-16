@@ -697,6 +697,12 @@ func (d *Daemon) deliverInbox(to string) {
 		return // a delivery to it is under way
 	}
 	defer mu.(*sync.Mutex).Unlock()
+	if to == TapiSlug && d.deliverOn() {
+		// [orchestrator] deliver: tapi's answers go in the delivery's
+		// line, with its sessions' changes (deliver.go)
+		d.deliverTapiLocked()
+		return
+	}
 	all, err := d.DB.InboxList(state.InboxFilter{Delivery: state.DeliveryPending})
 	if err != nil {
 		return

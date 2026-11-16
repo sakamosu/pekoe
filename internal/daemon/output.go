@@ -230,6 +230,7 @@ func (d *Daemon) tickLoop() {
 		}
 		if n%5 == 4 {
 			go d.deliverAllInbox() // answers held back by a prompt or a person typing
+			go d.deliverTapi()     // [orchestrator] deliver (deliver.go)
 		}
 		if n%10 == 7 {
 			go d.checkMerges() // merge evidence in the inbox

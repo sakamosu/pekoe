@@ -56,6 +56,7 @@ type Change struct {
 	parent  string    // the session's parent then (mine)
 	to      string    // inbox: the asker, the only caller it goes to
 	inbox   int64     // inbox: the item
+	brief   string    // the delivery's word for it ("" the kind; deliver.go)
 }
 
 type changeLog struct {
@@ -67,15 +68,23 @@ type changeLog struct {
 	waiting  map[string]int
 	promptAt map[string]time.Time // slug -> last UserPromptSubmit (done without a report)
 	waiters  map[*waiter]bool     // waits blocked now (addSeen)
+	// tapi's delivery (deliver.go): every change up to delivAfter is
+	// delivered or not for tapi; taken are the later ones that went
+	// (delivered, or returned by a wait of tapi's)
+	delivAfter int64
+	taken      map[int64]bool
 }
 
-// waiter is one wait blocked in hWait, with what it takes.
-type waiter struct{ match func(Change) bool }
+// waiter is one wait blocked in hWait, with what it takes and whose it is.
+type waiter struct {
+	id    string
+	match func(Change) bool
+}
 
 func newChangeLog() *changeLog {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
-	return &changeLog{epoch: hex.EncodeToString(b), wake: make(chan struct{}), waiting: map[string]int{}, promptAt: map[string]time.Time{}, waiters: map[*waiter]bool{}}
+	return &changeLog{epoch: hex.EncodeToString(b), wake: make(chan struct{}), waiting: map[string]int{}, promptAt: map[string]time.Time{}, waiters: map[*waiter]bool{}, taken: map[int64]bool{}}
 }
 
 func (l *changeLog) cursorLocked() string { return fmt.Sprintf("%s-%d", l.epoch, l.seq) }
@@ -223,7 +232,11 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 			}
 		}
 		if h := s.PRStatus.CIHead; h != "" && (prev.PRStatus == nil || prev.PRStatus.CIHead != h) {
-			d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent})
+			ci := "ci green"
+			if s.PRStatus.Fail > 0 {
+				ci = "ci red"
+			}
+			d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent, brief: ci})
 		}
 	}
 }
@@ -342,7 +355,7 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	// blocked from here on: addSeen counts this wait as the receiver of
 	// what it matches until it leaves waiters, under the same lock as it
 	// takes its result
-	w := &waiter{match: match}
+	w := &waiter{id: id, match: match}
 	l.waiters[w] = true
 	l.mu.Unlock()
 
@@ -360,6 +373,9 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 		res := &waitResult{Cursor: l.cursorLocked(), Epoch: l.epoch, Changes: got}
 		if len(got) > 0 || timedOut {
 			delete(l.waiters, w)
+			if id == TapiSlug {
+				l.takeLocked(got) // tapi has them: not delivered again
+			}
 			l.mu.Unlock()
 			res.TimedOut = len(got) == 0
 			d.inboxWaited(got)

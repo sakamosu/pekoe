@@ -229,6 +229,7 @@ type Daemon struct {
 	inboxDeliver sync.Map             // asker -> *sync.Mutex: one delivery at a time
 	inboxTick    atomic.Bool          // deliverAllInbox is running
 	typedAt      map[string]time.Time // slug -> a person last typed into its agent window (under mu)
+	deliv        deliverState         // tapi's delivery (deliver.go), under mu
 	ghRepos      sync.Map             // repo dir -> ghRepoInfo
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 	mergeRuns    sync.Map             // slug -> state.MergeRun: pekoed's latest merge on a person's answer (mergerun.go)
@@ -679,6 +680,7 @@ func (d *Daemon) registerHandlers() {
 		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
 		"tapi.answer":           bind(d.hTapiAnswer),
+		"tapi.deliver_pause":    bind(d.hTapiDeliverPause),
 		"ledger.reopen":         bind(d.hLedgerReopen),
 		"ledger.delete":         bind(d.hLedgerDelete),
 		"tips.next":             bind(d.hTipsNext),
