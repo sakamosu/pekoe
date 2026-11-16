@@ -33,6 +33,11 @@ func Effective(g *Global) *Global {
 	if c.Orchestrator.Notify == "" || !c.Orchestrator.QuietNotify() {
 		c.Orchestrator.Notify = "escalate"
 	}
+	if c.Orchestrator.DeliverIdle() {
+		c.Orchestrator.Deliver = "idle"
+	} else {
+		c.Orchestrator.Deliver = "off"
+	}
 	if c.Theme.Mode == "" {
 		c.Theme.Mode = "auto"
 	}

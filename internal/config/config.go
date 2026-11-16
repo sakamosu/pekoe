@@ -213,10 +213,18 @@ type Tapi struct {
 // question an agent waits on in front as the answer dialog, one at a time
 // and only while nothing else is open and nobody is typing; skipped, it
 // stays in the inbox and does not come up again. Off with notify = "quiet"
-// too.
+// too. Deliver is "off" (the default) or "idle": pekoed types one line
+// summing up tapi's changes (reports, inbox answers, failed, waiting, ci)
+// into tapi's input box when it is free (daemon/deliver.go).
 type Orchestrator struct {
 	Notify     string `toml:"notify"`
 	InboxPopup *bool  `toml:"inbox_popup"`
+	Deliver    string `toml:"deliver"`
+}
+
+// DeliverIdle: deliver = "idle" (anything else is off).
+func (o Orchestrator) DeliverIdle() bool {
+	return strings.EqualFold(strings.TrimSpace(o.Deliver), "idle")
 }
 
 // InboxPopupOn: inbox_popup, unset is true.

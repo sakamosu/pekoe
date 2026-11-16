@@ -100,6 +100,7 @@ func Check(b []byte) []Problem {
 		add("review.surface", "%q is not one of nvim | tui (the built-in tui surface is used)", s)
 	}
 	oneOf("orchestrator.notify", g.Orchestrator.Notify, true, "escalate", "quiet")
+	oneOf("orchestrator.deliver", strings.TrimSpace(g.Orchestrator.Deliver), true, "off", "idle")
 	if s := strings.TrimSpace(g.Cleanup.StaleAfter); s != "" {
 		if d, err := time.ParseDuration(s); err != nil || d <= 0 {
 			add("cleanup.stale_after", "%q is not a positive Go duration like 72h or 36h30m (%s is used)", g.Cleanup.StaleAfter, fmtDur(DefaultStaleAfter))
