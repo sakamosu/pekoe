@@ -364,7 +364,7 @@ func TestFailedLog(t *testing.T) {
 		t.Fatalf("tail: %q … %q", lines[0], lines[199])
 	}
 	log, _ := os.ReadFile(filepath.Join(ghd, "gh.log"))
-	if !strings.Contains(string(log), "run view --job 777 --log-failed") {
+	if !strings.Contains(string(log), "run view --job 777 --log-failed --repo github.com/me/app") {
 		t.Fatalf("gh calls: %s", log)
 	}
 

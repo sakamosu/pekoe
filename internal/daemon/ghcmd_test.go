@@ -219,3 +219,43 @@ func TestPRTextFromGitLog(t *testing.T) {
 		t.Fatalf("title %q body %q", title, body)
 	}
 }
+
+// gh keeps what it needs to find its token (the Secret Service over the
+// session D-Bus on Linux) and nothing that points git anywhere.
+func TestGHEnv(t *testing.T) {
+	keep := map[string]string{
+		"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1/bus",
+		"XDG_RUNTIME_DIR":          "/run/user/1",
+		"XDG_CONFIG_HOME":          "/c",
+		"GH_HOST":                  "ghe.example.com",
+		"GITHUB_TOKEN":             "t",
+	}
+	drop := []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_CONFIG_GLOBAL", "GIT_EXEC_PATH"}
+	for k, v := range keep {
+		t.Setenv(k, v)
+	}
+	for _, k := range drop {
+		t.Setenv(k, "x")
+	}
+	t.Setenv("GIT_CEILING_DIRECTORIES", "/elsewhere")
+	ceiling := t.TempDir()
+	env := ghEnv(ceiling)
+	for k, v := range keep {
+		if !slices.Contains(env, k+"="+v) {
+			t.Errorf("%s dropped", k)
+		}
+	}
+	var ceilings []string
+	for _, e := range env {
+		k, v, _ := strings.Cut(e, "=")
+		if slices.Contains(drop, k) {
+			t.Errorf("gh gets %s", e)
+		}
+		if k == "GIT_CEILING_DIRECTORIES" {
+			ceilings = append(ceilings, v)
+		}
+	}
+	if len(ceilings) != 1 || ceilings[0] != evalSymlinks(t, ceiling) {
+		t.Errorf("GIT_CEILING_DIRECTORIES: %q", ceilings)
+	}
+}

@@ -417,17 +417,19 @@ func ghCommand(ctx context.Context, repo string, args ...string) (c *exec.Cmd, d
 
 var errNoGHRepo = errors.New("no GitHub repository in origin (host/owner/name)")
 
-// ghEnvKeep are what gh needs from pekoed's environment: where it finds
-// itself and its config and token, the locale, proxies and certificates.
+// ghEnvKeep are what gh needs from pekoed's environment (with GH_* and
+// XDG_*): where it finds itself and its config and token (on Linux the
+// token may be in the Secret Service, reached over the session D-Bus), the
+// locale, proxies and certificates.
 var ghEnvKeep = []string{
 	"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
-	"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME",
+	"DBUS_SESSION_BUS_ADDRESS",
 	"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
 	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "no_proxy", "all_proxy",
 	"SSL_CERT_FILE", "SSL_CERT_DIR",
 }
 
-// ghEnv is gh's environment: ghEnvKeep and GH_*, nothing of git's
+// ghEnv is gh's environment: ghEnvKeep, GH_* and XDG_*, nothing of git's
 // (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, …), and GIT_CEILING_DIRECTORIES
 // at ceiling, so a git gh starts anyway finds no repository above its cwd.
 func ghEnv(ceiling string) []string {
@@ -437,7 +439,7 @@ func ghEnv(ceiling string) []string {
 	var env []string
 	for _, e := range os.Environ() {
 		k, _, _ := strings.Cut(e, "=")
-		if strings.HasPrefix(k, "GH_") || slices.Contains(ghEnvKeep, k) {
+		if strings.HasPrefix(k, "GH_") || strings.HasPrefix(k, "XDG_") || slices.Contains(ghEnvKeep, k) {
 			env = append(env, e)
 		}
 	}
