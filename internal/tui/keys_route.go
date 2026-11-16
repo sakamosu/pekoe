@@ -66,6 +66,7 @@ func (m *model) onKeyAfterPrefix(k tea.KeyMsg) (tea.Cmd, bool) {
 			m.focus, m.typing = pAgent, true
 			if reopen { // … or to tapi
 				m.chat.open = true
+				m.chat.unreadSet = false // straight back: nothing new was missed
 				cmd = tea.Batch(cmd, m.fetchChat())
 			}
 		}

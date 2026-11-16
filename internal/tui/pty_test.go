@@ -240,6 +240,22 @@ func TestPtySameForSessionAndChat(t *testing.T) {
 				}
 			}
 		}},
+		{"the prefix and a layout key go straight back with no unread line", func(t *testing.T, k ptyKind) {
+			sc := base
+			sc.Lines = []string{"hello from the agent", "> prompt", "footer of the input box"}
+			sc.Cursor.Y = 1 // the input box has rows below the cursor
+			m, _ := k.show(t, sc)
+			m.typing = true
+			runCmd(m, m.onKey(ctrlQ))
+			runCmd(m, m.onKey(key("z")))
+			if !m.typing {
+				t.Fatal("^q z did not go back to typing")
+			}
+			k.screen(m, sc)
+			if out := ansi.Strip(m.View()); strings.Contains(out, "─── new ───") {
+				t.Fatalf("an unread line after ^q z:\n%s", out)
+			}
+		}},
 		{"an exited pty: ↵ restarts it and types into it", func(t *testing.T, k ptyKind) {
 			for _, typing := range []bool{false, true} {
 				sc := base
