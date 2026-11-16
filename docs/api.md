@@ -372,7 +372,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 }
 ```
 
-- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox #12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
+- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox q12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
 - `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
 - `ci` は、`OPEN` の PR の HEAD のチェックで `pending` が 0、`pass` + `fail` が 1 以上になったときに 1 回だけ出る(`pr_status` を取り直したときに判定するので、遅れはポーリングの間隔に見回りの刻みの 15 秒を足したくらいまで)。`summary` は `feat-csv: PR #42 ci green: 5 passed, head <PR の HEAD の SHA(40 桁)>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`(落ちた check の名前は 3 つまで、残りは `+N more`)。知らせた HEAD を `pr_status.ci_head` に残し、同じ HEAD では二度と出さない(pekoed を再起動しても、同じ HEAD で check をやり直しても)。HEAD が変われば、次に決着したときにまた 1 回出る。check が 1 件も無い・`pass` も `fail` も 0(全部 skip)・`OPEN` でない PR では出ない。キャンセル・skip・neutral の check は `pass` にも `fail` にも数えないので、それらがあっても残りが通れば green。`pr` の `ci_failed` は最初の 1 本が落ちた時点で出るので、同じ CI で `pr` と `ci` の両方が出ることがある
 - `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない
@@ -438,7 +438,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 - 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
 - **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
 - `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)
-- **答えの届け方**(`answer` と `dismiss`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox #12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox 12`(閉じたものは `答えずに閉じられました`)。1 行に均し、先頭は `[`(数字にしない)
+- **答えの届け方**(`answer` と `dismiss`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12`(閉じたものは `答えずに閉じられました`)。1 行に均し、先頭は `[`(数字にしない)
   - 打つ条件: セッションなら `idle` か `done` で agent の窓が生きている、tapi chat なら起動していて `idle`。どちらも許可ダイアログが出ていない(hooks の状態と画面の両方。受け付けた時と、送信ロックを取って打つ直前の 2 回。`session.send` の token なしの経路と同じ)。人がその窓に打った(TUI・CLI・Web UI の `session.send`・`session.keys`・`tapi.send`・`tapi.keys`)のが 30 秒以内なら待つ
   - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
   - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。依頼元のセッションが消えたら `none`
@@ -484,7 +484,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - 項目: `options` は `["merge", "wait", "send back"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail` と、`merge` で走るもの(方法と HEAD)。前の `merge` が失敗していればその理由も。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる
 - **取り消し**: 開いている項目は、条件が 1 つでも崩れる・PR の HEAD が動く・セッションが landed になる(答える前に GitHub でマージされた)・消えると、pekoed が `withdrawn` にする(`answer.by: "pekoed"`、`answer.note` に理由)
 - **重ねて作らない**: 同じ PR・同じ HEAD には開いている項目を 1 件だけ。人が答えた(閉じた)ものは、HEAD が動くまで作り直さない。pekoed が自分で取り消したもの(条件が崩れた)と、`merge` の答えでのマージが失敗したものは、同じ HEAD で条件が揃えばもう一度作る。最後に作った PR・HEAD・id は state.db の `kv` に残るので、pekoed を再起動しても重ならない
-- **答え**: `merge`(0)は pekoed がマージする(下)。`wait`(1)は記録だけ。`send back`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox #12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox 12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
+- **答え**: `merge`(0)は pekoed がマージする(下)。`wait`(1)は記録だけ。`send back`(2)は `note` が必須で、メモをそのセッションに送る: 受信箱の答えと同じ経路(エージェントが `idle` か `done`・許可ダイアログなし・人が 30 秒打っていない、受け付け時と打つ直前の 2 回の確認)で `[pekoe inbox q12] 人が PR #42 のマージを差し戻しました(メモ: …) 詳しくは pekoe --json inbox q12` を 1 行打つ。送信の記録には `from: pekoed, kind: inbox` で残る
 - **前の選択肢の項目**: この版より前に作られた項目は 0 番が `merged`(人が GitHub でマージした、の記録)。添字の意味は選択肢の文で決まり、0 番が `merge` の項目だけがマージを走らせる。前の項目に 0 と答えても、state.db に残った答えを読み直しても、何もマージしない
 - **`merge` の答え**(token つきの `inbox.answer` だけ。TUI・CLI・Web UI のどれからでも同じ。エージェントは答えられない): 答えを保存するのと同じ変更で `answer.merge` を `running` にして返し、その後ろで pekoed が:
   1. その項目が `kv` に残した、そのセッションの最新の根拠の項目(id・PR・HEAD)であることを確かめる(違えば断る)。`gh` が無い・origin が GitHub のリポジトリを指さない・`[merge] method` が不正でも断る

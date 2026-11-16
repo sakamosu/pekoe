@@ -50,7 +50,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | hook | tapi の状態 |
 | --- | --- |
 | SessionStart | idle(`claude_session_id` を記録) |
-| UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打った受信箱の答え `[pekoe inbox #…]` と空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない)。直前の open の依頼と同じ文が 1 分以内に来たら、新しく記録せずにまとめる |
+| UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打った受信箱の答え `[pekoe inbox q…]` と空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない)。直前の open の依頼と同じ文が 1 分以内に来たら、新しく記録せずにまとめる |
 | PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
 | PostToolUse | waiting なら running に戻す |
 | Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |

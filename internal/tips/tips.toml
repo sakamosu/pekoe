@@ -216,6 +216,13 @@ keys = ["pekoe ledger", "pekoe new --request", "--request", "--as"]
 docs = ["docs/tapi-chat.md", "docs/api.md"]
 
 [[tip]]
+id = "id-letters"
+short = "r12 は依頼、q12 は問い、p12 は報告の番号"
+detail = "pekoe の番号は頭文字で種類が分かる(依頼 r・受信箱の問い q・報告 p)。#12 は GitHub の PR・issue だけ。コマンドには q12 でも 12 でも渡せて、pekoe ledger q12 のように種類が違えば断られる。"
+keys = ["pekoe ledger", "pekoe inbox"]
+docs = ["docs/orchestration.md#番号の表記"]
+
+[[tip]]
 id = "ledger-tidy"
 short = "tapi への雑談やお礼は、依頼から自動で閉じる"
 detail = "tapi が返事を終えたとき、誰にも頼まず待ち始めてもいなければ、その入力は chat で閉じる。閉じたものは 24 時間 pekoe ledger とダッシュボードに薄く出て、tapi が keep で戻せる。"
