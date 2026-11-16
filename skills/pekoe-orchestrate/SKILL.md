@@ -35,6 +35,7 @@ tapi(`$PEKOE_SESSION` が `+tapi`)でも、main のチェックアウトのエ�
 - tapi では依頼の id を `pekoe new … --request <id>` で結ぶ(自分や人が閉じた依頼なら断られ、セッションは作られない)。後から結ぶなら `pekoe ledger link <id> <slug>`。main をハブにするときは依頼(ledger)を使わず、`--request` も付けない
 - 雑談・お礼・「マージした」のような報告・質問だけの入力も依頼として記録されるが、閉じなくてよい。返事を終えたときに、そのターンの入力にセッションが結ばれておらず、そのターンで誰にも何も頼まず、待ち始めてもいなければ(`pekoe new`・`pekoe send`・`pekoe ask-human`・`pekoe land`・`pekoe wait` を呼んでいない)、pekoe が「依頼ではなかった」(`chat`、`auto: true`)として閉じる
 - **依頼なのにそのターンで誰にも頼まないとき**(後でやる・人に聞き返して答えを待つ・前の作業が済んでから始める・「報告が来たら land して」のように、もう張ってある `pekoe wait` を待つだけ)は、返事を終える前に必ず `pekoe ledger keep` を打つ(引数なしでそのターンの入力。打たないと依頼が閉じてしまう)。依頼かどうか迷ったら keep する。残した依頼は open のまま残り、リセットの後も `pekoe --json ledger` に出る
+- **番号つきの案のうち一部だけ選ばれた・残りを後に回されたとき**: 残りは pekoe のどこにも記録されない(段取りの置き場所は作らないと決めた: docs/project-layer.md)。依頼は閉じずに open のまま残し(そのターンで誰にも頼まないなら `pekoe ledger keep`)、人への報告の最後に毎回「残り: 3. … 4. …」と書き直す。リセットの後は、open の依頼の文・結んだセッションの PR・docs から残りを思い出す
 - pekoe が閉じたものが依頼だったと後で分かったら、`pekoe ledger keep <id>` で open に戻す(`auto` が true のもの。閉じてから 24 時間は `pekoe --json ledger` の `auto_closed` に出て、その後は `--all` で見える)。`pekoe new … --request <id>` や `pekoe ledger link <id> <slug>` でセッションを結んでも戻る。自分や人が閉じたもの(`done`・`dropped`・`auto` でない `chat`)は戻せない(人の `pekoe ledger reopen`)
 - `pekoe ask-human --wait` をバックグラウンドで走らせている間は、それが中で呼び直す `wait` がたまたまターンに重なると、そのターンの雑談は閉じずに open のまま残る
 - pekoe が自分で閉じるのは、今終わったターンの入力 1 件だけ。open のまま残った依頼でないもの(セッションに何か頼んだターンや `pekoe wait` を張り直したターンに混ざったお礼、中断されたターンの入力、ターンの途中で次の入力が来たときの前の入力)は、今までどおり `pekoe ledger close <id> --as chat` で閉じる
