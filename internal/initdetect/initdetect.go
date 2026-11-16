@@ -5,8 +5,10 @@ package initdetect
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -167,7 +169,10 @@ type Result struct {
 	Matched    []string `json:"matched"`
 	Ignored    []string `json:"ignored"`  // candidates for [worktree] copy
 	Selected   []string `json:"selected"` // pre-selected (env-like)
-	TOML       string   `json:"toml"`
+	// TestSkipped says why the detected test command was drafted commented
+	// out (testProblem), or is empty.
+	TestSkipped string `json:"test_skipped,omitempty"`
+	TOML        string `json:"toml"`
 }
 
 func exists(dir, f string) bool {
@@ -225,8 +230,53 @@ func Detect(dir, repoID string) (*Result, error) {
 			res.Selected = append(res.Selected, strings.TrimSuffix(p, "/"))
 		}
 	}
-	res.TOML = Render(res.Selected, clone, setup, dev, test)
+	res.TestSkipped = testProblem(dir, test)
+	res.TOML = Render(res.Selected, clone, setup, dev, test, res.TestSkipped)
 	return res, nil
+}
+
+// npmNoTest is the scripts.test `npm init` writes: it only fails.
+const npmNoTest = `echo "Error: no test specified" && exit 1`
+
+// testProblem says why the drafted test command would not run in dir, or
+// "" when nothing is known against it. A test hook that cannot run shows
+// a failing test on every Stop, so such a command is drafted commented
+// out. It looks at the command's first word (on pekoed's PATH, which the
+// hooks run with, or a path in the repository) and, for `<npm|yarn|pnpm>
+// test` and `<pm> run <script>`, at package.json's scripts.
+func testProblem(dir, test string) string {
+	f := strings.Fields(test)
+	if len(f) == 0 {
+		return ""
+	}
+	var why []string
+	script := ""
+	switch {
+	case len(f) >= 2 && f[1] == "test" && (f[0] == "npm" || f[0] == "yarn" || f[0] == "pnpm"):
+		script = "test"
+	case len(f) >= 3 && f[1] == "run" && (f[0] == "npm" || f[0] == "yarn" || f[0] == "pnpm" || f[0] == "bun"):
+		script = f[2]
+	}
+	if script != "" {
+		var pkg struct {
+			Scripts map[string]string `json:"scripts"`
+		}
+		b, err := os.ReadFile(filepath.Join(dir, "package.json"))
+		if err == nil {
+			err = json.Unmarshal(b, &pkg)
+		}
+		if v := strings.TrimSpace(pkg.Scripts[script]); err != nil || v == "" || v == npmNoTest {
+			why = append(why, "package.json に scripts."+script+" が無い")
+		}
+	}
+	if strings.Contains(f[0], "/") {
+		if !filepath.IsAbs(f[0]) && !exists(dir, f[0]) {
+			why = append(why, f[0]+" がリポジトリに無い")
+		}
+	} else if _, err := exec.LookPath(f[0]); err != nil {
+		why = append(why, f[0]+" が PATH に無い")
+	}
+	return strings.Join(why, "・")
 }
 
 func q(s string) string {
@@ -243,8 +293,9 @@ func list(xs []string) string {
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-// Render produces the config draft. Commands are plain shell lines.
-func Render(copyFiles, clone, setup []string, dev, test string) string {
+// Render produces the config draft. Commands are plain shell lines. A test
+// with a testSkipped reason is written commented out, with the reason.
+func Render(copyFiles, clone, setup []string, dev, test, testSkipped string) string {
 	var b strings.Builder
 	b.WriteString("# pekoe repo config (pekoe init が下書き。実行時に検出はしない)\n")
 	b.WriteString("# 変数: {{slug}} {{branch}} {{port}} {{path}} {{repo}}\n\n")
@@ -259,7 +310,9 @@ func Render(copyFiles, clone, setup []string, dev, test string) string {
 	} else {
 		b.WriteString("# dev    = \"pnpm dev --port {{port}}\"\n")
 	}
-	if test != "" {
+	if test != "" && testSkipped != "" {
+		fmt.Fprintf(&b, "# test   = %s   # 書かなかった: %s\n", q(test), testSkipped)
+	} else if test != "" {
 		fmt.Fprintf(&b, "test     = %s\n", q(test))
 	} else {
 		b.WriteString("# test   = \"make test\"\n")
