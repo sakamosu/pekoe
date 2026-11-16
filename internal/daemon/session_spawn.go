@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -87,6 +88,10 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	s, err := d.snapshot(slug)
 	if err != nil {
 		return err
+	}
+	if s.State == state.Queued {
+		// no worktree yet: the queue starts it (queue.go)
+		return fmt.Errorf("%s is queued (%s); it starts by itself", slug, s.Queue)
 	}
 	ag := d.cfg().Agents[s.Agent]
 	cmd := ag.Command
@@ -186,7 +191,7 @@ func (d *Daemon) hCancel(p slugP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.State != state.Creating && s.State != state.Failed {
+	if s.State != state.Creating && s.State != state.Queued && s.State != state.Failed {
 		return nil, errors.New("session is not being created")
 	}
 	return d.hRm(rmP{Slug: p.Slug, Force: true})

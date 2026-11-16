@@ -317,6 +317,20 @@ func AddWorktree(repoDir, path, branch, base string) error {
 	return err
 }
 
+// AddWorktreeNoTrack is AddWorktree for a new branch started from a
+// remote-tracking ref (origin/main): the branch does not take it as its
+// upstream (a plain push must not go to the base).
+func AddWorktreeNoTrack(repoDir, path, branch, start string) error {
+	if BranchExists(repoDir, branch) {
+		return AddWorktree(repoDir, path, branch, start)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	_, err := Run(repoDir, "worktree", "add", "--no-track", "-b", branch, "--end-of-options", path, start)
+	return err
+}
+
 func RemoveWorktree(repoDir, path string, force bool) error {
 	args := []string{"worktree", "remove", "--end-of-options", path}
 	if force {

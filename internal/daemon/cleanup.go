@@ -83,7 +83,7 @@ type cleanupP struct {
 // cleanupKind says why s is a candidate ("" when it is not).
 func cleanupKind(s *state.Session, now time.Time, staleAfter time.Duration) string {
 	switch {
-	case s.State == state.Creating:
+	case s.State == state.Creating, s.State == state.Queued:
 		return ""
 	case s.State == state.Landed:
 		return CleanupLanded

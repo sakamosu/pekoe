@@ -70,7 +70,7 @@ func cmdNew(args []string) error {
 	}
 	if err := cl.Call("session.new", map[string]any{
 		"repo": dir, "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
-		"model": f["model"], "effort": f["effort"], "base": f["base"], "after": multiVal(f, "after"), "width": w, "height": h, "request": request,
+		"model": f["model"], "effort": f["effort"], "base": f["base"], "after": multiVal(f, "after"), "hold": f["hold"] != "", "width": w, "height": h, "request": request,
 	}, &res); err != nil {
 		return err
 	}
@@ -80,6 +80,11 @@ func cmdNew(args []string) error {
 	}
 	s := res.Session
 	fmt.Printf("%s → %s :%d\n", s.Branch, s.Path, s.Port)
+	if s.State == state.Queued {
+		// it starts by itself later (max_running, --hold): nothing to follow now
+		fmt.Printf("queued: %s\nit starts by itself · `pekoe wait --slug %s --on started,failed,removed --since %s` tells when\n", s.Queue, s.Slug, res.Cursor)
+		return nil
+	}
 	// follow progress until the agent starts or creation fails
 	icons := theme.Icons(theme.IconsFromEnv())
 	printed := map[string]string{}

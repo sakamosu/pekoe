@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -176,6 +177,8 @@ type newP struct {
 	parent  string // the caller (hNewAs); "" is a person (the Chrome extension)
 
 	After []string `json:"after"` // slugs this one comes after (after.go)
+	// Hold: do not start before every After session has landed (queue.go)
+	Hold bool `json:"hold"`
 }
 
 func stepLabel(cmd string) string {
@@ -241,6 +244,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.Hold && len(after) == 0 {
+		return nil, errors.New("--hold waits for the --after sessions to land: give --after")
+	}
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
@@ -250,43 +256,70 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// and comments must not carry over (undo would pick its last prompt,
 		// whose snapshot ref landing deleted)
 		d.purge(old)
-		d.emit("session.removed", old)
+		d.removed(old)
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.cfg().Ports.Base, d.busyPort)
 	if err != nil {
 		return nil, err
 	}
+	queue := p.Hold || d.cfg().Orchestrator.Cap() > 0
+	st := state.Creating
+	if queue {
+		st = state.Queued
+	}
 	s := &state.Session{
 		Slug: slug, Branch: p.Branch, Repo: repo.Name, RepoID: repo.ID, RepoDir: repo.Dir,
-		Path: wt, Agent: agent, Model: p.Model, Effort: p.Effort, State: state.Creating,
+		Path: wt, Agent: agent, Model: p.Model, Effort: p.Effort, State: st,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
 		Parent: p.parent, Request: p.Request, After: after,
 	}
+	if p.Hold {
+		s.Hold, s.Holding = true, slices.Clone(after)
+	}
 	if s.Parent == "" {
 		s.Parent = callerHuman
 	}
+	if queue {
+		// queue.go: kept before the row is visible, so a pump that sees
+		// the row finds what to start it with
+		d.queueNew(slug, p)
+		d.add(s)
+		d.pumpQueue()
+		c, err := d.snapshot(slug)
+		if err == nil && c.State == state.Queued {
+			d.changes.add(Change{Kind: kindQueued, Slug: slug, Summary: slug + ": queued (" + c.Queue + ")", parent: c.Parent})
+		}
+		return c, err
+	}
 	d.add(s)
+	ctx := d.prepareNew(s, repo)
+	go d.runNew(ctx, s.Slug, repo, p)
+	return d.snapshot(slug)
+}
+
+// prepareNew sets up the steps a new session's creation shows and its
+// cancel, for runNew.
+func (d *Daemon) prepareNew(s *state.Session, repo *repoInfo) context.Context {
 	steps := []Step{
 		{Name: "worktree", Label: "worktree", Detail: s.Path},
-		{Name: "env", Label: "env", Detail: strings.Join(append(repo.Config.Worktree.Copy, repo.Config.Worktree.Clone...), " ")},
-		{Name: "port", Label: "port", Detail: fmt.Sprintf(":%d", port)},
+		{Name: "env", Label: "env", Detail: strings.Join(append(slices.Clone(repo.Config.Worktree.Copy), repo.Config.Worktree.Clone...), " ")},
+		{Name: "port", Label: "port", Detail: fmt.Sprintf(":%d", s.Port)},
 	}
-	dv := config.Vars{Slug: slug, Branch: p.Branch, Path: s.Path, Repo: repo.Name, Port: port}
+	dv := config.Vars{Slug: s.Slug, Branch: s.Branch, Path: s.Path, Repo: repo.Name, Port: s.Port}
 	for i, c := range repo.Config.Hooks.Setup {
 		steps = append(steps, Step{Name: fmt.Sprintf("setup%d", i), Label: stepLabel(c), Detail: dv.ExpandShell(c)})
 	}
-	steps = append(steps, Step{Name: "start", Label: "start", Detail: agent + " · new session · snapshot #0"})
+	steps = append(steps, Step{Name: "start", Label: "start", Detail: s.Agent + " · new session · snapshot #0"})
 	for i := range steps {
 		steps[i].Status = "pending"
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d.mu.Lock()
-	d.progress[slug] = steps
-	d.cancels[slug] = cancel
+	d.progress[s.Slug] = steps
+	d.cancels[s.Slug] = cancel
 	d.mu.Unlock()
-	go d.runNew(ctx, s.Slug, repo, p)
-	return d.snapshot(slug)
+	return ctx
 }
 
 func (d *Daemon) stepUpdate(slug string, i int, status, detail string, started time.Time) {
@@ -403,6 +436,13 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		// whatever is at s.Path from here on is ours, even if git stops
 		// half way: rm may delete it
 		d.update(slug, func(x *state.Session) { x.OwnDir = true })
+		if s.Hold {
+			// queue.go: it waited for sessions to land (merge); start
+			// from the base as the remote has it now
+			if start, ok := fetchBase(repo.Dir, s.Base); ok {
+				return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, start)
+			}
+		}
 		return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 	}) {
 		return

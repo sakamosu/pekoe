@@ -179,6 +179,8 @@ type Daemon struct {
 	sessions    map[string]*state.Session
 	conns       map[*conn]bool
 	cancels     map[string]context.CancelFunc // creating sessions
+	queueMu     sync.Mutex                    // one pumpQueue at a time (queue.go)
+	queueKick   chan struct{}                 // wakes queueLoop
 	asks        map[string]string             // slug -> hunk id awaiting an answer
 	tabs        []Tab
 	errors      map[int][]ConsoleError // port -> recent errors
@@ -275,6 +277,7 @@ func New() (*Daemon, error) {
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
 		cancels:   map[string]context.CancelFunc{},
+		queueKick: make(chan struct{}, 1),
 		asks:      map[string]string{},
 		errors:    map[int][]ConsoleError{},
 		out:       map[string]*outState{},
@@ -338,6 +341,8 @@ func (d *Daemon) Run() error {
 	_ = os.WriteFile(paths.PidFile(), []byte(fmt.Sprint(os.Getpid())), paths.FilePerm)
 
 	d.restore()
+	go d.queueLoop() // queued sessions start as slots free up (queue.go)
+	d.kickQueue()
 	go d.outputLoop()
 	go d.tickLoop()
 	if err := d.startHTTP(); err != nil {

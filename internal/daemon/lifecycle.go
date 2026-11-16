@@ -152,7 +152,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		}
 	}
 	held := d.purge(s)
-	d.emit("session.removed", s)
+	d.removed(s)
 	res := map[string]any{"removed": p.Slug, "worktree_deleted": deleted}
 	if held != nil {
 		res["port_held"] = held
@@ -204,7 +204,7 @@ func (d *Daemon) hAgentRm(p rmP) (any, error) {
 	}
 	held := d.holdDevPort(snap)
 	d.purgeFiles(snap)
-	d.emit("session.removed", snap)
+	d.removed(snap)
 	res := map[string]any{"removed": p.Slug, "worktree_deleted": false}
 	if held != nil {
 		res["port_held"] = held
@@ -414,6 +414,8 @@ func (d *Daemon) hRunStart(p runP) (any, error) {
 	switch s.State {
 	case state.Creating:
 		return nil, fmt.Errorf("%s is still being created", p.Slug)
+	case state.Queued:
+		return nil, fmt.Errorf("%s is queued; its worktree is not made yet", p.Slug)
 	case state.Landed:
 		return nil, fmt.Errorf("%s has landed; its worktree is gone", p.Slug)
 	}

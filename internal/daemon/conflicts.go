@@ -59,7 +59,7 @@ func (t *touchSet) touches(p string) bool { return t.changed[p] || (t.pending !=
 // forecastable: landed and stopped sessions are out of the race; creating
 // ones have no worktree yet.
 func forecastable(s *state.Session) bool {
-	return s.State != state.Landed && s.State != state.Creating && !s.Stopped && s.Path != ""
+	return s.State != state.Landed && s.State != state.Creating && s.State != state.Queued && !s.Stopped && s.Path != ""
 }
 
 func toSet(xs []string) map[string]bool {

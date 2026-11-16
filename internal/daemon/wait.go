@@ -25,6 +25,7 @@ import (
 // Change kinds.
 const (
 	kindReport  = "report"
+	kindQueued  = "queued"  // a new session was queued (max_running, --hold) instead of starting (queue.go)
 	kindStarted = "started" // a new session's setup passed and its agent started (left creating, not failed)
 	kindDone    = "done"
 	kindWaiting = "waiting"
@@ -37,7 +38,7 @@ const (
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
-var waitKinds = map[string]bool{kindReport: true, kindStarted: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
+var waitKinds = map[string]bool{kindReport: true, kindQueued: true, kindStarted: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
 
 const (
 	changeRing     = 2000 // changes kept

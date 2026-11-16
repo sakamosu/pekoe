@@ -132,6 +132,7 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	d.persist(s)
 	if c.State != prev {
 		d.previewOnState(c, prev)
+		d.kickQueue() // a session stopped working, or landed (queue.go)
 	}
 	return c, nil
 }
@@ -244,6 +245,10 @@ func (d *Daemon) restore() {
 		}
 		if s.State == state.Creating {
 			d.update(s.Slug, func(x *state.Session) { x.State = state.Failed; x.Error = "interrupted by daemon restart" })
+			continue
+		}
+		if s.State == state.Queued {
+			d.restoreQueued(s) // no worktree yet: it starts from the queue (queue.go)
 			continue
 		}
 		// Kept (as failed) rather than dropped even for managed worktrees: the

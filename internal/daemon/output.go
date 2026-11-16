@@ -202,6 +202,9 @@ func (d *Daemon) tickLoop() {
 		}
 		n++
 		d.reloadConfig() // config.toml changed: take it up (config.go)
+		if n%5 == 1 {
+			d.kickQueue() // max_running changed, or a kick was missed (queue.go)
+		}
 		d.fallbackDetect()
 		if n%30 == 0 {
 			d.mu.Lock()
