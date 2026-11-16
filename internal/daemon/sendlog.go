@@ -23,10 +23,19 @@ import (
 // sendLogMax cuts a recorded text (bytes).
 const sendLogMax = 64 << 10
 
+// newResult is session.new's answer: the session, and the wait cursor from
+// just before it was made (wait --since it misses none of its changes:
+// started, failed, report, …).
+type newResult struct {
+	*state.Session
+	Cursor string `json:"cursor"`
+}
+
 // hNewAs is session.new: the session's parent is its caller, and the
 // prompt goes into the send log.
 func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 	p.parent = who.ID()
+	cursor := d.changes.cursor() // before runNew can change anything
 	var res any
 	err := d.checkRequest(who, p.Request)
 	switch {
@@ -50,6 +59,9 @@ func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 		text = "--from " + p.From + "\n" + text
 	}
 	d.recordSend(who, to, "new", text, err)
+	if s, ok := res.(*state.Session); ok && s != nil && err == nil {
+		return &newResult{Session: s, Cursor: cursor}, nil
+	}
 	return res, err
 }
 

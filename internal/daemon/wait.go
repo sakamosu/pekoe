@@ -25,6 +25,7 @@ import (
 // Change kinds.
 const (
 	kindReport  = "report"
+	kindStarted = "started" // a new session's setup passed and its agent started (left creating, not failed)
 	kindDone    = "done"
 	kindWaiting = "waiting"
 	kindIdle    = "idle"
@@ -36,7 +37,7 @@ const (
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
-var waitKinds = map[string]bool{kindReport: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
+var waitKinds = map[string]bool{kindReport: true, kindStarted: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
 
 const (
 	changeRing     = 2000 // changes kept
@@ -78,6 +79,14 @@ func newChangeLog() *changeLog {
 }
 
 func (l *changeLog) cursorLocked() string { return fmt.Sprintf("%s-%d", l.epoch, l.seq) }
+
+// cursor is where a wait --since would start now: session.new hands it out
+// so that its caller misses none of the new session's changes.
+func (l *changeLog) cursor() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.cursorLocked()
+}
 
 func (l *changeLog) add(c Change) {
 	l.mu.Lock()
@@ -161,6 +170,11 @@ func parseCursor(s string) (epoch string, seq int64, err error) {
 // update (prev) and after it (s): a state wait knows, new PR attention, or
 // a PR's CI that settled.
 func (d *Daemon) sessionChanges(prev, s *state.Session) {
+	if prev.State == state.Creating && s.State != state.Creating && s.State != state.Failed {
+		// setup passed and the agent started: what one who just made the
+		// session waits for (failed is its own kind below)
+		d.changes.add(Change{Kind: kindStarted, Slug: s.Slug, Summary: fmt.Sprintf("%s: started (%s)", s.Slug, s.State), parent: s.Parent})
+	}
 	if s.State != prev.State {
 		kind := ""
 		switch s.State {
@@ -253,7 +267,7 @@ type waitResult struct {
 func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	for _, k := range p.On {
 		if !waitKinds[k] {
-			return nil, fmt.Errorf("unknown kind %q (report, done, waiting, idle, failed, pr, ci, landed, removed, inbox)", k)
+			return nil, fmt.Errorf("unknown kind %q (report, started, done, waiting, idle, failed, pr, ci, landed, removed, inbox)", k)
 		}
 	}
 	slugs := map[string]bool{}

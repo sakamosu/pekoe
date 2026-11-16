@@ -74,9 +74,28 @@ EOF
 - 追加の指示・修正依頼: `pekoe send <slug> -` に stdin で本文を渡す(長文や改行を含むときは必ず stdin で)。ユーザーから修正の要望が来たら、それをまとめて送る
 - 相手が許可待ち(`state` が `waiting` で `wait_kind` が `question` 以外、または相手の画面に許可ダイアログが出ている)の間は `pekoe send` が `<slug> is waiting for a permission answer: …` で断られる。許可にはユーザーが TUI などで答えるので、そう伝えて待つ
 
+## 待つ(ポーリングしない)
+
+作ったセッションの setup や報告を待つときは、`sleep` のループで `pekoe ls` を叩かない(起きるたびにトークンを使う)。`pekoe wait` を Claude Code のバックグラウンド実行(`run_in_background`)で 1 回走らせ、返ってくるまで何もしない。待っている間はトークンを使わない。
+
+```sh
+pekoe --json new feat/csv-export --prompt "…"        # 返り値の slug と cursor を覚える
+# setup が済んでエージェントが動き始めた(started)か、setup が落ちた(failed)か、消された(removed)まで
+pekoe --json wait --slug feat-csv-export --on started,failed,removed --since <new の cursor> --timeout 30m
+# 報告が来た・止まった・許可や質問で止まった・落ちた・消されたまで(前の wait の cursor を渡す)
+pekoe --json wait --slug feat-csv-export --on report,done,failed,waiting,removed --since <前の cursor> --timeout 1h
+```
+
+- `--on` には `removed` も入れる。作成中に人が cancel / `pekoe rm` するとセッションは `started` にも `failed` にもならず消える(`removed`)ので、入れないと timeout まで返らない
+- `--since` には `pekoe new` か前の `wait` が返した `cursor` を必ず渡す。`--since` なしは「今から」なので、`new` が返ってから待ち始めるまでに起きたこと(すぐ済む setup・早い報告)を取りこぼす
+- 返り値の `changes[].summary` に `feat-csv-export: started (running)`・`…: failed: <エラー>`・`…: report done: <要約>` などが 1 行で入る。中身は `pekoe reports <slug>` や `pekoe --json ls` で読む
+- `timed_out: true` なら何も起きていない。同じ `cursor` でもう一度待つ。`reset: true`(pekoed の再起動)なら `pekoe --json ls` で今の状態を読み直す
+- `--slug` は `,` で複数並べられる。自分が pekoe の窓の中にいれば(`$PEKOE_SESSION` がある)`--slug` の代わりに `--mine`(自分が作ったセッション全部)も使える。pekoe の外で起動した main では `--mine` は断られる(か、人が作ったセッションまで混ざる)ので `--slug` で待つ
+- 複数のセッションを回す・人の答えや CI も待つときの待ち方は pekoe-orchestrate スキルの「待ち方」
+
 ## 人間だけの操作
 
-pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe send`・`pekoe land`・landed のセッションの `pekoe rm`・`pekoe conflicts`・自分のセッションの `pekoe dev` と hooks の `pekoe event` だけ(作業セッション用の `report`・`ask-human` などは pekoe-work スキル。`pekoe conflicts` は 10 秒以内に続けて呼ぶと前の結果が返る)。`pekoe new` は pekoe が既に知っているリポジトリ(セッションがある・あった、設定がある)でだけ通り、新しいリポジトリでは `a repository pekoe does not know yet` で断られる(最初のセッションはユーザーに TUI か端末で作ってもらう)。`pekoe land` は origin のあるリポジトリでだけ通る(origin がないと base をその場で進めるので人間だけの操作)。`pekoe rm` は `landed` のセッション(マージ済みで、pekoed が worktree をもう消したもの)を一覧から消すときだけ通る。ほかの状態のセッション・`--force`・worktree が残っている landed のセッションの rm は人間だけの操作。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・別のセッションの `pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `issues`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
+pekoed がエージェント(人間用トークン `human-token` を持たない呼び出し)に許すのは、`pekoe ls`・`pekoe new`・`pekoe wait`・`pekoe send`・`pekoe land`・landed のセッションの `pekoe rm`・`pekoe conflicts`・自分のセッションの `pekoe dev` と hooks の `pekoe event` だけ(作業セッション用の `report`・`ask-human` などは pekoe-work スキル。`pekoe conflicts` は 10 秒以内に続けて呼ぶと前の結果が返る)。`pekoe new` は pekoe が既に知っているリポジトリ(セッションがある・あった、設定がある)でだけ通り、新しいリポジトリでは `a repository pekoe does not know yet` で断られる(最初のセッションはユーザーに TUI か端末で作ってもらう)。`pekoe land` は origin のあるリポジトリでだけ通る(origin がないと base をその場で進めるので人間だけの操作)。`pekoe rm` は `landed` のセッション(マージ済みで、pekoed が worktree をもう消したもの)を一覧から消すときだけ通る。ほかの状態のセッション・`--force`・worktree が残っている landed のセッションの rm は人間だけの操作。許可待ちへの回答(`pekoe answer`)・生キー・`pekoe init`・別のセッションの `pekoe dev`・run 窓でのコマンド実行・`pekoe open` / `review` / `issues`・`pekoe daemon`(`stop` / `restart` / `status`)などは、エージェントから実行すると `only a person can do this` で断られる。pekoe 自身の入れ替え(`pekoe update`)も同じで、`$PEKOE_SESSION` がある・`human-token` を読めないところからは断られる(`pekoe update --check` で新しい版があるか見るのは誰でもできる)。
 
 - 断られたら、回避しようとせず(トークンのファイルを探して読む、tmux で直接キーを送る、など)、ユーザーに TUI か自分の端末でやってもらうよう伝える
 - ユーザーには、`Bash(pekoe *)` のように pekoe を丸ごと許可せず、`pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` だけを許可すること、Claude Code のエージェントは pekoe が渡す sandbox の設定でトークンのファイルを読めないこと(`[agents.claude] sandbox = false` にしていなければ)を伝える。sandbox の中ではビルドキャッシュへの書き込みや許していないドメインへの接続が断られる。断られたら回避せず、`~/.claude/settings.json` に `allowWrite` / `allowedDomains` を足す方法(pekoe の README.ja.md「エージェントに pekoe を使わせるときの権限」)をユーザーに伝える

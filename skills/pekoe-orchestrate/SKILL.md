@@ -87,7 +87,7 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor> --
 - `changes` の `summary` は 1 行だけ(`feat-csv: report done: …`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>` など)。詳しくは `pekoe --json ls`(`state`・`report`・`pr_status`)と `pekoe --json reports <slug>` で読む
 - `reset: true` が返ったら(pekoed が再起動した・前の cursor が古すぎる)、間の変化は失われている。`pekoe --json ls` を読み直してから、返った `cursor` で待ち直す
 - `timed_out: true` なら何も起きていない。人に報告することがなければそのまま待ち直す(`--timeout` は 1h まで)
-- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)。`--on` に渡せる種類はほかに `done` `idle` `pr` `landed` `removed`(1 本のセッションの終わりを待つときなどに足す)
+- 特定のセッションだけ待つなら `--slug <slug>`(複数はカンマ区切り)。`--on` に渡せる種類はほかに `started`(setup が済んで動き始めた。待つときは作成中に消されたときも返るよう `started,failed,removed`)・`done` `idle` `pr` `landed` `removed`(1 本のセッションの終わりを待つときなどに足す)。作った直後から取りこぼさずに待つには、`pekoe --json new` が返す `cursor` を `--since` に渡す(pekoe スキルの「待つ」)
 - `--mine` は自分が `pekoe new` で作ったセッション(`parent` が自分)だけ。pekoe の外で起動した main のエージェントは呼び出し元が分からず `--mine` を使えないので、`--slug` で待つ
 - `feat-csv: done (no report)`(`--on` に `done` を足したときに来る)や、`pekoe --json ls` で報告が無いまま `done` のものは、報告なしで止まったもの。`pekoe send <slug> -` で状況を聞くか、画面を見てもらうよう人に頼む
 
