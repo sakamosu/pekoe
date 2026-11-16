@@ -242,7 +242,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `repo.resolve` | `{repo, cwd?}` | `KnownRepo`。`repo` は repo-id・短い名前・パス(`/` を含むか `.` `~` で始まるもの。相対パスは `cwd` 基準。worktree の中ならメインに解決し、既知でなくてもよい)。短い名前が複数に当たるときは候補の repo-id を並べたエラー、知らない名前は既知の名前を並べたエラー。`cwd` 直下に同名のディレクトリがあればそのパスとして扱う |
 | `session.list` | `{repo_id?}` | `[Session]` |
 | `session.get` | `{slug}` | `Session` |
-| `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug]}` | `Session`(state = creating。進捗は `session.progress` イベント)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
+| `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug]}` | `Session` に `cursor` を足したもの(state = creating。進捗は `session.progress` イベント)。`cursor` は作る直前の `wait` の cursor で、`wait --slug <slug> --since <cursor>` ならこのセッションの変化(`started`・`failed`・`report` …)を、返ってから待ち始めるまでの間に起きたものも取りこぼさない(下の「待ち合わせ」)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
 | `session.cancel` | `{slug}` | 作成中を中止し worktree を消す |
 | `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session` |
 | `session.adopt` | `{path?}` | `[Session]` |
@@ -374,12 +374,12 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 }
 ```
 
-- `kind`: `report`(報告が来た)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox q12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
-- `summary` は 1 行: `feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
+- `kind`: `report`(報告が来た)・`started`(作ったセッションの setup が済み、エージェントが動き始めた: `creating` から `failed` 以外に移った。セッションごとに 1 回。setup が落ちたら `started` は出ず `failed`)・`done` `waiting` `idle` `failed` `landed`(その状態に入った)・`pr`(`pr_status.attention` に項目が増えた。1 項目ごと)・`ci`(PR の CI が決着した。下)・`removed`・`inbox`(自分が出した問いに人が答えた・答えずに閉じた。`summary` は `inbox q12 answered: 1 変える`。届くのは問いを出した呼び出し元だけで、`mine` にかかわらず含まれる。`slugs` は問いの `about` で絞る)。`on` を省くとすべて
+- `summary` は 1 行: `feat-csv: started (running)`(プロンプトなしで作ったら `(idle)`)、`feat-csv: done`、`feat-csv: waiting (permission)`、`feat-csv: failed: <エラー>`、`feat-csv: PR #42 ci_failed`、`feat-csv: PR #42 ci green: 5 passed, head <SHA>`、`feat-csv: report done: <要約の 1 行目>`。報告なしで done になった(最後のプロンプトの後に報告が無い)ものは `feat-csv: done (no report)`
 - `ci` は、`OPEN` の PR の HEAD のチェックで `pending` が 0、`pass` + `fail` が 1 以上になったときに 1 回だけ出る(`pr_status` を取り直したときに判定するので、遅れはポーリングの間隔に見回りの刻みの 15 秒を足したくらいまで)。`summary` は `feat-csv: PR #42 ci green: 5 passed, head <PR の HEAD の SHA(40 桁)>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`(落ちた check の名前は 3 つまで、残りは `+N more`)。知らせた HEAD を `pr_status.ci_head` に残し、同じ HEAD では二度と出さない(pekoed を再起動しても、同じ HEAD で check をやり直しても)。HEAD が変われば、次に決着したときにまた 1 回出る。check が 1 件も無い・`pass` も `fail` も 0(全部 skip)・`OPEN` でない PR では出ない。キャンセル・skip・neutral の check は `pass` にも `fail` にも数えないので、それらがあっても残りが通れば green。`pr` の `ci_failed` は最初の 1 本が落ちた時点で出るので、同じ CI で `pr` と `ci` の両方が出ることがある
 - `since` を省くと「今から」。`since` の epoch が違う(pekoed が再起動した)・輪から落ちている・知らない番号なら、すぐに `reset: true` と今の `cursor` を返す。呼び出し側は `pekoe --json ls` を読み直す。永続化はしない
 - 何も起きずに `timeout_s`(既定 1800、3600 まで)が過ぎたら `timed_out: true` と今の `cursor`。条件に合わなかった変化は飛ばして `cursor` は進む
-- `mine` は `Session.parent` が呼び出し元のもの。`unknown` の呼び出し元は使えない。`slugs` は `<repo>/<slug>` も受け付ける
+- `mine` は `Session.parent` が呼び出し元のもの。`unknown` の呼び出し元は使えない。pekoe の窓の中のエージェント(main のチェックアウトを取り込んだセッションも)は窓の slug が呼び出し元になるので使える。pekoe の外で起動したエージェントは `unknown`(token を読めるなら `human` で、人が作ったセッションまで混ざる)なので、`--slug` で待つ。`slugs` は `<repo>/<slug>` も受け付ける
 - token なしでは呼び出し元ごとに同時に 8 本まで。接続が切れると待ちも終わる
 
 ### 送信の記録

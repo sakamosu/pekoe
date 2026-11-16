@@ -174,6 +174,13 @@ keys = ["pekoe wait", "--on"]
 docs = ["README.ja.md#コマンド", "docs/orchestration.md"]
 
 [[tip]]
+id = "wait-started"
+short = "pekoe wait --on started で作ったセッションの setup 待ち"
+detail = "setup が済んでエージェントが動き始めたら started、落ちたら failed で起きる(--on started,failed)。pekoe --json new が返す cursor を --since に渡せば、すぐ済んだ setup も取りこぼさない。"
+keys = ["pekoe wait", "--on", "--since", "pekoe new"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
 id = "new-after"
 short = "pekoe new --after で、どのセッションの後かを残す"
 detail = "--after feat-a(複数可)で順序を記録する。[1] の行に after feat-a、選ぶとフッターに相手の状態が出る。記録と表示だけで起動は止めない。渡せるのは今あるセッションだけで、自分自身と循環は断られる。"
