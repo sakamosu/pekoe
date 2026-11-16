@@ -11,12 +11,17 @@ package daemon
 // not tmux's, so it cannot start a process inside another session's window;
 // a process that left its window's tree (double fork, reparented to
 // launchd) is "unknown", never another session. A request with the human
-// token is "human". $PEKOE_SESSION is kept as Claimed, only to show when it
-// differs.
+// token is "human", unless it comes from a session's agent window (tapi
+// chat's included): with sandbox off an agent reads the token too, and what
+// it does is still its own (ID). Only the record changes; the token still
+// opens the human-only methods. $PEKOE_SESSION is kept as Claimed, only to
+// show when it differs.
 
 import (
 	"net"
 	"sync"
+
+	"pekoe/internal/engine"
 )
 
 const (
@@ -53,13 +58,20 @@ func (c *Caller) Pane() string {
 	return c.peer.slug()
 }
 
-// ID is the caller as recorded: "human" with the token, else the window's
-// slug ("+tapi" included), else "unknown".
+// ID is the caller as recorded and matched (a session's parent, the send
+// log, wait's mine, a report's by): the window's slug ("+tapi" included)
+// when the request has no token, or has it but comes from an agent window;
+// else "human" with the token, else "unknown". An agent whose sandbox is
+// off reads the token (the hooks read it too), yet the sessions it starts
+// are its own, not a person's. The token from a session's other windows is
+// a person's: the run window (TUI `!`), the review window (nvim); the dev
+// window runs in the hooks sandbox, which cannot read the token.
 func (c *Caller) ID() string {
-	if c.human {
+	p := c.Pane()
+	switch {
+	case c.human && (p == "" || c.peer.window() != engine.WinAgent):
 		return callerHuman
-	}
-	if p := c.Pane(); p != "" {
+	case p != "":
 		return p
 	}
 	return callerUnknown
@@ -78,23 +90,43 @@ func (c *Caller) ClaimedDiff(by string) string {
 // first request that needs it.
 type peer struct {
 	pid  int
-	find func(pid int) string
+	find func(pid int) engine.Pane
 	once sync.Once
-	s    string
+	s    string // the window's slug ("": none)
+	w    string // the window's kind (engine.WinAgent …)
+}
+
+func (p *peer) look() {
+	p.once.Do(func() {
+		if p.pid > 1 && p.find != nil {
+			w := p.find(p.pid)
+			p.s, p.w = w.Slug, w.Window
+		}
+	})
 }
 
 func (p *peer) slug() string {
-	p.once.Do(func() {
-		if p.pid > 1 && p.find != nil {
-			p.s = p.find(p.pid)
-		}
-	})
+	p.look()
 	return p.s
 }
 
-// fixedPeer is a peer already identified as slug (tests).
-func fixedPeer(slug string) *peer {
+func (p *peer) window() string {
+	if p == nil {
+		return ""
+	}
+	p.look()
+	return p.w
+}
+
+// fixedPeer is a peer already identified as slug's agent window (tests).
+func fixedPeer(slug string) *peer { return fixedWindow(slug, engine.WinAgent) }
+
+// fixedWindow is a peer already identified as one window of slug (tests).
+func fixedWindow(slug, window string) *peer {
 	p := &peer{s: slug}
+	if slug != "" {
+		p.w = window
+	}
 	p.once.Do(func() {})
 	return p
 }
@@ -114,24 +146,28 @@ const maxAncestors = 64
 
 // paneOf walks from pid up through its parents to the root process of a
 // pekoe window and returns that window's slug ("" when none is reached).
-func (d *Daemon) paneOf(pid int) string {
+func (d *Daemon) paneOf(pid int) string { return d.windowOf(pid).Slug }
+
+// windowOf is paneOf with the window's kind (the zero Pane when none is
+// reached).
+func (d *Daemon) windowOf(pid int) engine.Pane {
 	panes, err := d.Eng.Panes()
 	if err != nil || len(panes) == 0 {
-		return ""
+		return engine.Pane{}
 	}
-	roots := make(map[int]string, len(panes))
+	roots := make(map[int]engine.Pane, len(panes))
 	for _, p := range panes {
-		roots[p.PID] = p.Slug
+		roots[p.PID] = p
 	}
 	for i := 0; i < maxAncestors && pid > 1; i++ {
-		if s, ok := roots[pid]; ok {
-			return s
+		if w, ok := roots[pid]; ok {
+			return w
 		}
 		pp, err := parentPID(pid)
 		if err != nil || pp == pid {
-			return ""
+			return engine.Pane{}
 		}
 		pid = pp
 	}
-	return ""
+	return engine.Pane{}
 }

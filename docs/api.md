@@ -81,7 +81,9 @@
 
 1. 接続を受けたら相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`。`peer_*.go`)
 2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元
-3. token つきのリクエストは `human`。token なしで窓に当たらなければ `unknown`
+3. token つきのリクエストは、セッションのエージェントの窓(`<slug>~agent`。tapi chat の `+tapi~agent` を含む)に当たればその slug、それ以外(窓に当たらない、同じセッションでも run 窓・review 窓・dev 窓)は `human`。token なしで窓に当たらなければ `unknown`
+
+sandbox なし(`[agents.<name>] sandbox = false`)のエージェントや tapi は `human-token` を読めるので、`pekoe` CLI は token を付けて送る。それでもエージェントの窓から来たものはそのエージェントのしたこととして記録する(`session.new` の `parent`、送信の記録の `from`、`wait` の `mine` と受信箱の答えの宛先、`send.log` の絞り込みの相手)。人のセッションと tapi が任せたセッションを取り違えないため。変わるのは記録と所有の判定だけで、token で human-only のメソッドを呼べること(認可)は変わらない(token を読める以上そこは守れない)。人が TUI の `!` で打つ run 窓と review の nvim は人の操作なので `human` のまま。TUI や素の端末は pekoe の窓の外なので `human`。dev 窓は hooks の sandbox で動き token を読めない
 
 Claude Code のエージェントは pekoe が渡す sandbox の中で動き、tmux のソケットにはつなげない(`network.allowUnixSockets` は pekoed のソケットだけ)ので、別のセッションの窓の中にプロセスを作れない。二重 fork などで親を launchd に付け替えても `unknown` になるだけで、別のセッションには化けられない。
 

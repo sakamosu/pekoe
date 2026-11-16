@@ -76,7 +76,7 @@ flowchart TB
 
 1. 接続を受けた時点で相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`)
 2. 親プロセスを辿り、tmux のペイン(`#{pane_pid}`)に当たればその窓の slug(`+tapi` を含む)を呼び出し元とする。engine.Engine にペインの pid を返すメソッドを足す(偽エンジンにも足す)
-3. 当たらなければ `unknown`。トークンつきは `human`
+3. 当たらなければ `unknown`。トークンつきは `human`(実装: エージェントの窓から来たトークンつきは窓の slug。下の「実装(追記)」)
 4. `$PEKOE_SESSION` の自己申告は `claimed` として並べるだけにし、食い違えば受信箱とダッシュボードに「⚠ 名乗りと違う」を出す
 
 Claude Code のエージェントは pekoe が渡す sandbox の中で動き、tmux のソケットにはつなげない(`network.allowUnixSockets` は pekoed のソケットだけ)ので、別のペインの子としてコマンドを走らせることはできない。抜け道は二重 fork などで親を launchd に付け替えることで、そのときは `unknown` になる(偽れるのは「分からない」までで、別のセッションには化けられない)。トークンなしのメソッドのうち「自分の分だけ」に限るもの(下の表)は、`unknown` を断る。
@@ -84,6 +84,8 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hooks は Claude Code が sandbox の外で起動するので親を辿れば同じペインに当たるはず。ここは実装のときに確かめる(当たらない場合は今の自己申告のまま)。
 
 実装: pekoe のセッションの中の Claude Code から親を辿ると、Bash ツールのコマンド → (sandbox の)シェル → claude → ペインのシェル(`#{pane_pid}`)→ tmux サーバー、と当たることを確かめた(`sysctl kern.proc.pid` は Claude Code の sandbox の中でも引ける)。hooks は同じ claude の子として起動されるので同じペインに当たる。そこで `session.event` は、ペインに当たればその slug に振り分け、当たらなければ今までどおり `$PEKOE_SESSION` と cwd で決める(tmux の外のエージェントを `adopt` したときなど)。hooks は sandbox の外で動き token を読めるので、hooks と `report.post` では token の有無ではなくペインを見る(token を読める sandbox なしのエージェントでも、報告は自分のセッションに付く)。名乗り(`claimed`)はクライアントがリクエストの最上位の `session` に `$PEKOE_SESSION` を入れて送る。
+
+実装(追記): ユーザーは委任を優先して `[agents.claude] sandbox = false` で使うので、エージェントも tapi も `human-token` を読み、`pekoe` CLI は token を付けて送る。token を窓より優先すると、tapi が `pekoe new` したセッションの `parent` が `human` になり、人が作ったものと区別がつかず、`wait --mine` も人のセッションで起きてしまう。そこで記録と所有の判定(`Caller.ID()`: `parent`・送信の記録・`wait` の `mine`・`send.log` の絞り込み)は、token つきでもエージェントの窓(`<slug>~agent`、`+tapi~agent`)から来ればその slug にした。同じセッションの run 窓(TUI の `!`)と review 窓(nvim)は人の操作なので `human` のまま。認可(token で human-only のメソッドを許すこと)は変えない。sandbox なしで token が読める以上、そこは守れないことを前提にする。
 
 ## 新しく足す仕組み
 
