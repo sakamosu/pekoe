@@ -289,7 +289,7 @@ pekoe                                                 # TUI
 
 ### tapi chat
 
-どのパネルからでも `t` を押すと、[4] がマスコット tapi との会話(tapi chat)に切り替わり、そのまま入力できる。tapi は**統括役**: 頼んだ変更は自分では書かず、`pekoe new` でセッションを作って任せ、`pekoe wait` で報告を待ち、結果を 1 通にまとめて返す。人に上げるのは判断と承認(受信箱)だけ。特定のセッションに属さない単発の調査や質問、リポジトリ横断の調査(「抱えているリポジトリの dependabot アラートは?」)には自分で答える。main セッションが作業中でも気軽に話せる。tapi を使わず、TUI でセッションを作って直接打ち込む使い方も今までどおりできる。
+どのパネルからでも `t` を押すと、[4] がマスコット tapi との会話(tapi chat)に切り替わり、そのまま入力できる。tapi は**統括役**: 頼んだ変更は自分では書かず、`pekoe new` でセッションを作って任せ、`pekoe wait` で報告を待ち、結果を 1 通にまとめて返す。人に上げるのは判断と承認(受信箱)だけ。特定のセッションに属さない単発の調査や質問、リポジトリ横断の調査(「抱えているリポジトリの dependabot アラートは?」)には自分で答える。main セッションが作業中でも気軽に話せる。tapi を使わず、TUI でセッションを作って直接打ち込む使い方も今までどおりできる。`pekoe wait` を使わないエージェントを tapi にするなら、`[orchestrator] deliver = "idle"` で pekoed がたまった報告などを 1 行(`[pekoe] 3 件の変化(…)。詳しくは pekoe --json wait --mine --since …`)で tapi の入力欄に送る(既定は off)。
 
 - `^q`(prefix)で閉じる。会話は残り、もう一度 `t` で続きから。`Esc` はエージェントに届く(Claude Code の中断)。`^q` `z` / `^q` `<` `>` `=` はエージェントのときと同じく効き、そのまま tapi chat の入力に戻る(ズーム中に開けば全幅で、pty の大きさもペインに合わせる)
 - 初めて開いたときにエージェントが起動する(pekoed の起動時には起動しない)。稼働ディレクトリは `~/.local/share/pekoe/tapi/` で、pekoed が役割と使うコマンドを書いた `CLAUDE.md` を置く。初回は Claude Code のフォルダ信頼の確認が出る
@@ -516,6 +516,7 @@ agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir 
 [orchestrator]              # 統括役としての tapi(docs/orchestration.md)
 notify = "escalate"         # tapi の許可待ちと受信箱の問いを、セッションの wait と同じに知らせる(トースト → 点滅 → OS 通知)| "quiet": 最下行・メッセージ行だけ
 inbox_popup = true          # エージェントが答えを待つ新しい問いを、答える画面としてその場で前に出す(1 回だけ。esc / ↵ でスキップすると受信箱に残り ]a で答える)。notify = "quiet" では出さない
+deliver = "off"             # "idle": tapi の手が空いたときに、任せたセッションの報告・failed・waiting・ci と受信箱の答えを 1 行で tapi の入力欄に送る(pekoe wait を使わないエージェント向け)。tapi chat に打っている間・許可ダイアログ・tapi が wait で待っている間は送らず、30 秒に 1 回まで
 [notify]                    # 待ちの知らせの間合い(セッションの wait。notify = "quiet" でなければ tapi と受信箱の問いも)
 toast_for   = "5s"          # トーストを出しておく長さ(PR の反応も。下限 1s)
 blink_after = "30s"         # 待ちがこれだけ続くと最下行の台詞が点滅する(下限 1s)

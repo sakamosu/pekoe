@@ -209,6 +209,13 @@ keys = ["[orchestrator]", "]a"]
 docs = ["docs/orchestration.md", "README.ja.md"]
 
 [[tip]]
+id = "orchestrator-deliver"
+short = "pekoe wait を使わない tapi にも、報告を 1 行で届けられる"
+detail = "[orchestrator] deliver = \"idle\" で、tapi の手が空いたときにたまった報告・受信箱の答えなどを 1 行で送る。tapi chat に打っている間・許可ダイアログ・wait で待っている間は送らない。"
+keys = ["[orchestrator]"]
+docs = ["docs/orchestration.md", "docs/tapi-chat.md"]
+
+[[tip]]
 id = "inbox"
 short = "pekoe inbox で受信箱を見て、inbox answer で答える"
 detail = "エージェントが人に頼んだことの一覧。pekoe inbox <id> で 1 件を詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ。エージェントからは断られる)。--all で答えたものも出る。"

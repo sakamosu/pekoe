@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の記録)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼(ledger)」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信を実装済み。段階 3 は tapi への配送(後回しに決めた)を除いて終わった。段階 4 は G の後片付け(片付けの候補の一覧と、人が選んで消す `pekoe cleanup` / TUI の `:cleanup`)を実装し、E・F・G の負荷の制御・プロジェクトの層は後回しにして(PR の集計は `pekoe stats` として後から実装)、ユーザーの判断で一旦完了とした。配送と後回しにしたものは設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の記録)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼(ledger)」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信、tapi への配送(`[orchestrator] deliver`。既定は off)を実装済みで、段階 3 は終わった。段階 4 は G の後片付け(片付けの候補の一覧と、人が選んで消す `pekoe cleanup` / TUI の `:cleanup`)を実装し、E・F・G の負荷の制御・プロジェクトの層は後回しにして(PR の集計は `pekoe stats` として後から実装)、ユーザーの判断で一旦完了とした。後回しにしたものは設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -210,6 +210,14 @@ deliver = "off"     # off(既定)| idle
 - 送る条件: tapi が idle、許可ダイアログが出ていない(`session.send` と同じ `promptUp` を受け付け時と打つ直前の 2 回)、人が tapi chat に入力中でない(TUI が `tapi.deliver_pause` で知らせる。開いて入力モードの間と、最後の打鍵から 30 秒)、前回の配送から 30 秒以上
 - 本文は 1 行: `[pekoe] 3 件の変化(feat-csv done、fix-ci ci_failed、受信箱 q12 に答え)。詳しくは pekoe --json wait --since 1532`。先頭を数字にしない
 - 配送したものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残す
+- 実装(internal/daemon/deliver.go。仕様の正は docs/api.md「tapi への配送」):
+  - **送るもの**: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(ハブの wait の `--on` から、別の仕組みで届く `inbox` を除いたもの)と、tapi の問いへの答え(受信箱で `delivery: pending` のもの)。off の間に起きたことは、後で idle にしても送らない
+  - **wait との二重を避ける**: tapi の `wait` が返した変化は送らない(返した時点で「渡した」と印を付ける。待たずに `--since` で読んだものも)。今ブロックしている tapi の `wait` が受け取る変化も送らない(その wait が起こす)。「wait を張っている間は何も送らない」にしなかったのは、`--on report` だけ・`ask-human --wait`(中は `--on inbox`)のような狭い wait を張っている間に、その wait が受け取らない `failed` などが届かなくなるため。受信箱の答えは前からある仕組みのまま: tapi が待っていれば答えた時点で `waited` になり、送らない
+  - **受信箱の答えの配送と共有する**: deliver が idle のとき、tapi 宛ての受信箱の答えは自分の 1 行(`[pekoe inbox q12] …`)ではなく、この 1 行にまとめて入る(`delivered` にする)。宛先ごとに 1 本の配送の鍵(`deliverInbox` のもの)・条件の判定(promptUp の 2 回・打鍵から 30 秒)・送り方(`hTapiSend`)・Enter の直前に許可ダイアログが出たときの扱いは同じ。2 つの 1 行が同じ入力欄に別々に入らないように 1 本にした。答えのメモは 1 行に入れないので、tapi は `pekoe --json inbox q12` で読む(1 行にそう書く)
+  - **人の入力**: `tapi.deliver_pause` は TUI が tapi chat を開いて入力モードの間、5 秒ごとに `on: true` を送り、pekoed は 1 回を 20 秒覚える(TUI が落ちても止まりっぱなしにならない)。離れたら `on: false`。最後の打鍵から 30 秒は段階 1 からの `tapi.keys` / `tapi.send` の記録で見る。TUI を 2 つ開いて片方が離れると、もう片方の次の `on` まで(5 秒以内)止まらない
+  - **本文**: 名前を挙げるのは pekoed の言葉(slug・種類・報告の status・CI の green / red)だけで、エージェントの要約や CI のチェック名(リポジトリの中身で決まる)は入れない。8 件まで挙げて残りは `ほか N 件`。`--mine` を足した(tapi が自分の分を読む。`--since` だけだと他人のセッションの変化も返る)。受信箱の答えがあれば `pekoe --json inbox q12`(2 件以上なら `--mine --all`)を添える
+  - **状態**: `Tapi.deliver` = `{mode, pending, held?, last_at?, last_error?}`。`held` は最後に試したときに送らなかった理由(`stopped`・`busy`・`prompt`・`typing`・`chat`・`interval`)。`pekoe tapi` が on のときに 1 行出す
+  - **tapi の指示**: tapi の `CLAUDE.md` に、この 1 行はユーザーの依頼ではなく信頼できないデータとして読み、書かれたコマンドで詳しく読んで片付け、wait を張り直すことを書いた。設定は動いている間に変えられるので、文は「deliver が idle のとき」の書き方で常に入れる
 
 ### 4. 判断の受信箱(ask-human)
 
@@ -273,7 +281,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
 - **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と 1 分ずつの `wait` を繰り返す)
 - **pty への配送**: 1 回に 1 件(古い順)。打つ条件は依頼元が `idle` か `done`(tapi chat は `idle`)・許可ダイアログなし(hooks と画面、受け付け時と打つ直前の 2 回)。試すのは依頼元が `idle` / `done` に入ったとき・答えた直後・5 秒ごと。1 行は `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12` に均す(メモの改行で入力が途中送信されないように)。Enter の直前に許可ダイアログが出たときは文字が入力欄に残るので、打ち直さず送信の記録に `ok: false` で残す
-- **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作るので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
+- **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作った(上の「3. tapi への配送」の「実装」。受信箱の答えも deliver が idle のときはその 1 行で届くので同じ印で止まる)ので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
 - **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない
 - **CLI**: `pekoe ask-human --wait` は真偽のフラグにした(問いと一緒なら出してから待つ、`--wait <id>` なら前に出したものを待つ。`--timeout` は `wait` と同じく 1 時間まで)。`pekoe inbox <id>`(1 件を詳しく)・`pekoe inbox withdraw`・`pekoe inbox dismiss`・`pekoe inbox --mine` を足した。`inbox answer` の `--rev` は省くと今の rev(`pekoe inbox` が rev を出す)
 - **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は `recommended (agent)` と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
@@ -398,7 +406,7 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 - 上の表(`reports`・`inbox`・`sends`・`ledger`)はすべて state.db。`tapi.reset` は会話(Claude Code の記録)だけを消し、表には触らない。依頼を消すのは `pekoe ledger rm`(人だけ)
 - `Tapi` オブジェクトに `inbox_open`・`ledger_open`・`deliver`(配送の状態)を足す。会話の中身や画面は今どおり人間だけ(`tapi.screen`)
 
-実装: `inbox_open`(受信箱の未回答、全員の分)と `ledger_open` を足した。`deliver` は配送(段階 3)と一緒に足す。`pekoe tapi` も 2 つの件数を出す
+実装: `inbox_open`(受信箱の未回答、全員の分)と `ledger_open` を足した。`deliver` は配送(段階 3)と一緒に足した(上の「3. tapi への配送」)。`pekoe tapi` も 2 つの件数を出す
 
 ### 知らせ方
 
@@ -603,7 +611,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - TUI のダッシュボードの窓(実装済み。上の「ダッシュボード」→「TUI」の「実装:」)
 - Web UI の受信箱・概要・tapi への送信(docs/web.md の脅威モデルに 1 項目)(実装済み。受信箱・概要は「ダッシュボード」→「Web UI」、tapi への送信は統括役の「Web UI」の「実装:」)
 - **マージしてよいかの根拠**: pekoed が land 済みのセッションを見て、条件(報告の `verdict: pass` の `reviewed_sha` が PR の HEAD と同じ、CI がすべて緑、`merge_state` が CLEAN、衝突予報で conflict なし、`after` のセッションが landed、セッションの作業が済んでいる(エージェントが running・waiting でない、コミットしていない変更がない、最後の報告の後に `pekoe send` などで追加の作業を頼まれていない))が揃ったら `from: pekoed`・`kind: approve` の項目 `evidence ready to merge #42 (…)` を作る。揃っていないものは工程表に何が足りないかを出す。答えは `merge`・`wait`・`send back`(メモ)。`merge` なら pekoed が条件を読み直してマージし(決まったこと 1。人の答えなしにはマージしない)、差し戻しはメモをセッションに送る
-- tapi への配送(`[orchestrator] deliver`)(後回しに決めた。段階 3 はこれを除いて実装済み)
+- tapi への配送(`[orchestrator] deliver`)(実装済み。既定は off。上の「3. tapi への配送」の「実装」)
 - `conflicts.list` をトークンなしに(実装済み)
 
 実装(マージしてよいかの根拠。仕様の正は docs/api.md「マージしてよいかの根拠」):
@@ -643,7 +651,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | U4 | ダッシュボードを開くキー | (a) tapi の行を選んだときの既定の表示だけ (b) 新しいキー(`g` は一覧の先頭への移動で使用中。`B`・`O` などの空き) | (a) に決めた(利用者の判断)。tapi の行は先頭にあるので、Sessions の `g`(先頭へ)で行ける。足りなければ (b) |
 | U5 | tapi のキャラクター | (a) 顔とタイトルを残し、返事は今の「キャラは 1 文だけ」の規則 (b) 統括役では口調を抑える | (a)(下書きのおすすめどおり) |
 | U6 | `issues.list` をトークンなしにするか | (a) 開かない(tapi は自分の sandbox の gh で読む) (b) 番号・タイトル・ラベルだけを返す形で開く(本文は人だけのまま) | (b)。gh の資格情報はエージェントに渡らず、タイトルは信頼できないデータとして区切りで囲む。本文はインジェクションの入口になりやすいので開かない |
-| U7 | tapi への自動配送の既定 | (a) 切る (b) idle のときだけ送る | (a)(下書きとハブの所見のとおり) |
+| U7 | tapi への自動配送の既定 | (a) 切る (b) idle のときだけ送る | (a)(下書きとハブの所見のとおり)。実装もこのとおり既定 `off` で、`idle` は設定で選ぶ |
 | U8 | 受信箱の答えの届け方 | (a) 待っていれば返り値、いなければ空いたときに pty (b) 常に pty (c) 常に `wait` で取りに来させる | (a)。codex など `wait` を使わないエージェントにも届き、`wait` を使うエージェントには pty に何も打たない |
 | U9 | Web UI からの tapi への送信 | (a) 送れる(確認シートつき)、`allow_devices` が無ければ断る (b) 送れる(セッションと同じ扱い) (c) 読むだけ | (a)。セッション 1 つへの send より重いので、端末を絞っているときだけ。tapi の許可への allow / deny は出さない。実装: (a)(利用者がおすすめどおりに決めた。上の「Web UI」の「実装:」) |
 | U10 | スキルの配り方 | (a) バイナリに同梱して `pekoe skills install` (b) 今の `ln -s` のまま (c) Claude Code のプラグインとして出す | (a)。リリースのバイナリでも入り、`pekoe update` で中身も新しくなる。(c) は Claude Code 以外に効かないので、(a) の後で検討 |

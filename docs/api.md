@@ -330,6 +330,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
 | `tapi.answer` | `{answer: "allow"\|"deny"\|"always", expect?: {tool}}` | tapi chat の許可待ちに答える(TUI の許可モーダル)。`session.answer` と同じく `[agents.<tapi の agent>]` のキーを打ち、`expect` が違えば `the prompt changed; look again`、待っていなければエラー。人だけ(tapi が自分の許可に答えないように)。Web UI には出さない |
 | `tapi.resize` | `{width, height}` | pty サイズ変更(`session.resize "*"` でも合わせる) |
+| `tapi.deliver_pause` | `{on: bool}` | tapi への配送(下の「tapi への配送」)を止めておく。TUI が tapi chat を開いて打っている間 `on: true` を 5 秒ごとに送り(pekoed は 1 回を 20 秒覚える。TUI が落ちても止まりっぱなしにならない)、離れたら `on: false` を 1 回送る。人だけ(エージェントが配送を止める・流すことのないように) |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
@@ -391,6 +392,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 | `session.new` の `prompt`(`from` があれば先頭に `--from gh#N` の行) | 呼び出し元 | `new` |
 | `session.send` の agent の窓への指示(`submit` つき、または token なし) | 呼び出し元(TUI・CLI は `human`) | `send` |
 | 受信箱の答えの配送(下の「判断の受信箱」) | `pekoed` | `inbox` |
+| tapi への配送(下の「tapi への配送」。`to` は `+tapi`) | `pekoed` | `deliver` |
 | Web UI からの tapi への送信(`POST /api/tapi/send`。`to` は `+tapi`、docs/web.md「tapi chat の扱い」) | `human` | `send` |
 
 ```jsonc
@@ -445,6 +447,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
   - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
   - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。依頼元のセッションが消えたら `none`
   - 打ったものは送信の記録に `from: pekoed, kind: inbox` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、記録に `ok: false` で残す
+- `[orchestrator] deliver = "idle"` のとき、tapi が出した問いの答えはこの 1 行ではなく、tapi への配送の 1 行にまとめて入る(下の「tapi への配送」。`delivery` は同じく `delivered`)
 - `inbox.updated` は token つきの購読にだけ届く。エージェントは `pekoe wait --on inbox`(や `ask-human --wait`)で自分宛ての答えだけを受け取る
 - pekoed 自身も項目を作る(`from: "pekoed"`)。v1 では下の「マージしてよいかの根拠」だけ
 
@@ -622,6 +625,13 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
   "state_since": "2026-11-08T21:37:30+09:00",
   "inbox_open": 2,                         // 受信箱の未回答(全員の分)
   "ledger_open": 1,                        // open の依頼の件数
+  "deliver": {                             // tapi への配送([orchestrator] deliver。下)。off のときは {"mode": "off"} だけ
+    "mode": "idle",                        // off | idle
+    "pending": 2,                          // 次の 1 行に入る変化と受信箱の答えの数
+    "held": "typing",                      // pending があるのに送っていない理由(最後に試したとき): stopped | busy | prompt | typing | chat | interval
+    "last_at": "…",                        // 最後に打った時刻
+    "last_error": ""                       // 最後に打てなかった理由
+  },
   "outside": {                             // tapi の会話が tapi の窓の外で動いている(tapi を起動し直すまで。無ければ省く)
     "claude_session_id": "…", "window": "", // window: 動いている pekoe の窓(空なら窓の外)
     "claimed": "pekoe-theme", "since": "…"  // claimed: その hooks の $PEKOE_SESSION
@@ -632,6 +642,17 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
 - tapi は統括役(docs/orchestration.md「tapi を統括役にする」)。pekoed が稼働ディレクトリに書く `CLAUDE.md` / `AGENTS.md` と `--append-system-prompt` の人格に、自分では編集せずセッションに任せること・会話の最初に `pekoe --json ledger`・`inbox`・`ls` を読むことを書き、`CLAUDE.md` の末尾に起動した時点の依頼・受信箱・任せたセッションの件数(中身は書かない)を入れる
 - Claude Code の tapi には、セッションと同じ `--settings` に加えて、`--add-dir` で読ませている各リポジトリと `~/worktrees`(まだ無くても。シンボリックリンクを解いたものも)を `sandbox.filesystem.denyWrite` と `permissions.deny` の `Edit(...)` に入れる。Bash でも Edit / Write でも書けない。稼働ディレクトリは書ける。`[agents.<tapi の agent>] sandbox = false` ならこれも渡さない(ほかのエージェントにも渡さない)
 - `tapi.reset` は会話だけを消し、依頼・受信箱・報告・送信の記録(state.db)には触らない
+
+#### tapi への配送
+
+`[orchestrator] deliver = "idle"`(既定は `"off"`)のとき、pekoed は tapi に起きたことを、tapi の手が空いたときに入力欄へ 1 行で打つ。`pekoe wait` を使わないエージェントを tapi にしたときや、tapi が wait を張り直し損ねたときにも報告が届くように。off では何もしない(off の間に起きたことを後で on にしても送らない)。
+
+- 送るもの: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(`wait --mine --on report,failed,waiting,ci` が返すもの)と、tapi が出した問いの答え・答えずに閉じたもの(`delivery: pending` のもの)
+- 送らないもの: tapi の `wait` が返したもの(待たずに `--since` で読んだものも含む)と、今ブロックしている tapi の `wait` が受け取るもの(その wait が tapi を起こすので、送ると二重に起きる)。受信箱の答えは、tapi が wait で待っていれば答えた時点で `waited` になり送らない。wait が受け取らない種類(`--on report` だけで待っている間の `failed` など)は送る
+- 打つ条件(すべて): tapi の窓がある、tapi が `idle`、許可ダイアログが出ていない(hooks の状態と画面。受け付けた時と Enter の直前の 2 回。`session.send` の token なしの経路と同じ)、人が tapi chat に打っていない(`tapi.send`・`tapi.keys` から 30 秒、`tapi.deliver_pause` の間)、前に打ってから 30 秒以上。試すのは tapi が `idle` に入ったとき・5 秒ごと・`tapi.deliver_pause` が off になったとき
+- 本文は 1 行: `[pekoe] 3 件の変化(feat-csv report done、fix-ci ci red、受信箱 q12 に答え)。詳しくは pekoe --json wait --mine --since <epoch>-<seq>、pekoe --json inbox q12`。書くのは pekoed の言葉(slug・種類・報告の status・CI の green / red)だけで、エージェントの要約や CI のチェック名は入れない。先頭は `[pekoe]`(数字にしない。依頼の記録にも入らない)。名前を挙げるのは 8 件までで、残りは `ほか N 件`。`--since` は 1 行に入れた最初の変化の直前の cursor で、受信箱の答えが 2 件以上なら `pekoe --json inbox --mine --all`
+- 打ったものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、`ok: false` で残し、送ったものとして扱う(受信箱の答えと同じ)
+- 状態は `Tapi.deliver`。`pekoe tapi` は on のとき `deliver: idle · 2 pending (held: typing) · last 21:37:30` の行を足す
 
 ### KnownRepo オブジェクト
 
