@@ -268,7 +268,7 @@ func TestWebOverview(t *testing.T) {
 	if got := steps(main); got != "impl:done review:now pr:done ci:done merge:todo" {
 		t.Errorf("main: %s", got)
 	}
-	if main.Merge == nil || strings.Join(main.Merge.Missing, ",") != "review,after" {
+	if main.Merge == nil || strings.Join(main.Merge.Missing, ",") != "review,after,settled" {
 		t.Errorf("main's missing: %+v", main.Merge)
 	}
 	if got := steps(feat); got != "impl:now review:todo pr:todo ci:todo merge:todo" || feat.Merge != nil {

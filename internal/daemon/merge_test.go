@@ -16,7 +16,8 @@ const (
 
 // mergeSetup: session "main" landed (pekoe land made PR #42), with every
 // merge condition met: a passing review of the PR's head, CI green, CLEAN,
-// no conflict forecast, and the session it comes after ("feat-a") landed.
+// no conflict forecast, the session it comes after ("feat-a") landed, and
+// its agent done (its turn ended; the worktree is clean).
 func mergeSetup(t *testing.T) (*Daemon, *fakeEngine) {
 	t.Helper()
 	d, fe, repo := inboxSetup(t)
@@ -29,6 +30,7 @@ func mergeSetup(t *testing.T) (*Daemon, *fakeEngine) {
 		x.Overlaps = []state.Overlap{{Slug: "feat-b", Files: []string{"README.md"}}} // overlap that merges: fine
 	})
 	review(t, d, "pass", mergeHead[:10])
+	d.setState("main", state.Done, "")
 	return d, fe
 }
 
@@ -62,7 +64,7 @@ func mergeCheckOf(t *testing.T, d *Daemon) state.MergeCheck {
 // kind approve, with pekoed's facts first; not made twice.
 func TestMergeEvidenceReady(t *testing.T) {
 	d, _ := mergeSetup(t)
-	if c := mergeCheckOf(t, d); !c.Ready || len(c.Missing) != 0 || len(c.Conds) != 6 || c.PRHead != mergeHead {
+	if c := mergeCheckOf(t, d); !c.Ready || len(c.Missing) != 0 || len(c.Conds) != 7 || c.PRHead != mergeHead {
 		t.Fatalf("check: %+v", c)
 	}
 	d.checkMerges()

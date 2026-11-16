@@ -191,6 +191,9 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 		}
 		if s.State == state.Idle || s.State == state.Done {
 			go d.deliverInbox(s.Slug) // its input box is free: an answer waiting for it goes now
+			if s.LandHeld != "" {
+				go d.landMerged(s.Slug) // its PR merged while it worked: land it if nothing is left uncommitted
+			}
 		}
 	}
 	if s.PRStatus != nil {
