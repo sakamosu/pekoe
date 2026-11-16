@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pekoe/internal/daemon"
+	"pekoe/internal/ids"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -43,9 +44,9 @@ func cmdNew(args []string) error {
 	}
 	var request int64
 	if r := f["request"]; r != "" {
-		n, err := strconv.ParseInt(strings.TrimPrefix(r, "#"), 10, 64)
-		if err != nil || n < 1 {
-			return &usageError{use: specs["new"].use, msg: "--request is a ledger id (pekoe ledger)"}
+		n, err := ids.ParseRequest(r)
+		if err != nil {
+			return &usageError{use: specs["new"].use, msg: "--request is a request number (pekoe ledger): " + err.Error()}
 		}
 		request = n
 	}

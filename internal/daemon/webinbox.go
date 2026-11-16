@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -96,7 +97,7 @@ func (d *Daemon) webInboxAnswer(w http.ResponseWriter, r *http.Request) {
 	if in.Choice != nil {
 		choice = fmt.Sprintf("choice %d", *in.Choice+1)
 	}
-	log.Printf("web: %s answers inbox #%d rev %d, %s, note %d chars (from %s)", p.Login, id, in.Rev, choice, len(in.Note), p.Device)
+	log.Printf("web: %s answers inbox %s rev %d, %s, note %d chars (from %s)", p.Login, ids.Question(id), in.Rev, choice, len(in.Note), p.Device)
 	res, err := d.CallAs(humanCaller(webVia(p)), "inbox.answer", mustJSON(inboxAnswerP{ID: id, Choice: in.Choice, Note: in.Note, Rev: in.Rev}))
 	switch {
 	case err == nil:
@@ -324,7 +325,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case s.State == state.Failed || s.Error != "":
 		step("impl", stepFail, firstLine(s.Error))
 	case s.Report != nil && s.Report.Status == "blocked":
-		step("impl", stepFail, "blocked (report #"+strconv.FormatInt(s.Report.ID, 10)+")")
+		step("impl", stepFail, "blocked (report "+ids.Report(s.Report.ID)+")")
 	default:
 		step("impl", stepNow, string(s.State))
 	}
@@ -339,13 +340,13 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case c != nil && c.OK:
 		step("review", stepDone, c.Detail)
 	case rv != nil && rv.Verdict == "pending":
-		step("review", stepNow, fmt.Sprintf("independent review in progress (report #%d)", rv.ID))
+		step("review", stepNow, "independent review in progress (report "+ids.Report(rv.ID)+")")
 	case rv != nil && rv.Verdict != "pass":
-		step("review", stepFail, fmt.Sprintf("report #%d is %s", rv.ID, rv.Verdict))
+		step("review", stepFail, fmt.Sprintf("report %s is %s", ids.Report(rv.ID), rv.Verdict))
 	case c != nil && rv != nil:
 		step("review", stepNow, c.Detail) // passed, but not this HEAD
 	case rv != nil:
-		step("review", stepDone, fmt.Sprintf("pass in report #%d", rv.ID))
+		step("review", stepDone, "pass in report "+ids.Report(rv.ID))
 	default:
 		step("review", stepTodo, "")
 	}

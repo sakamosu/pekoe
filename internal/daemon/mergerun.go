@@ -34,6 +34,7 @@ import (
 
 	"pekoe/internal/config"
 	"pekoe/internal/gitx"
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 )
 
@@ -163,7 +164,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// the item is still pekoed's latest one, for the session's PR
 	current := func() (*state.Session, bool) {
 		if rec := d.mergeRecordOf(it.About); rec.ID != it.ID {
-			end(state.MergeFailed, "not merged: #%d is not pekoed's latest merge evidence for %s", it.ID, it.About)
+			end(state.MergeFailed, "not merged: %s is not pekoed's latest merge evidence for %s", ids.Question(it.ID), it.About)
 			return nil, false
 		}
 		s, err := d.snapshot(it.About)
@@ -252,7 +253,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	timedOut := err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 	cancel()
 	rec2 := &state.SendRecord{At: time.Now(), From: callerPekoed, To: s.Slug, Kind: "merge", Via: it.Answer.Via, OK: err == nil,
-		Text: fmt.Sprintf("gh %s (inbox #%d, answered by %s)", strings.Join(args, " "), it.ID, it.Answer.By)}
+		Text: fmt.Sprintf("gh %s (inbox %s, answered by %s)", strings.Join(args, " "), ids.Question(it.ID), it.Answer.By)}
 	switch {
 	case timedOut:
 		rec2.Error = mergeTimedOut()
@@ -273,7 +274,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 		return
 	}
 	end(state.MergeMerged, "merged PR #%d (%s) at HEAD %s", s.PR, method, shortSHA(run.Head))
-	log.Printf("%s: pekoed merged PR #%d (%s, inbox #%d)", s.Slug, s.PR, method, it.ID)
+	log.Printf("%s: pekoed merged PR #%d (%s, inbox %s)", s.Slug, s.PR, method, ids.Question(it.ID))
 
 	// the poller's next round would see it within a minute; read it now so
 	// the landing starts right away
@@ -300,11 +301,11 @@ func (d *Daemon) endMerge(id int64, slug string, run state.MergeRun) {
 	}
 	d.inboxMu.Unlock()
 	if err != nil {
-		log.Printf("merge inbox #%d: %v", id, err)
+		log.Printf("merge inbox %s: %v", ids.Question(id), err)
 		return
 	}
 	if run.State == state.MergeFailed {
-		log.Printf("%s: merge of PR #%d (inbox #%d): %s", slug, run.PR, id, run.Detail)
+		log.Printf("%s: merge of PR #%d (inbox %s): %s", slug, run.PR, ids.Question(id), run.Detail)
 	}
 	d.emit("inbox.updated", it)
 }

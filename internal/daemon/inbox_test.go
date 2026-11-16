@@ -249,7 +249,7 @@ func TestInboxAnswerToWindow(t *testing.T) {
 
 	n := len(fe.sent)
 	deliverUntil(t, d, func() bool { return len(sentSince(fe, n)) >= 2 })
-	want := "text:[pekoe inbox #" + itoa(it.ID) + "] 答え: 1「A」(メモ: A で) 詳しくは pekoe --json inbox " + itoa(it.ID)
+	want := "text:[pekoe inbox q" + itoa(it.ID) + "] 答え: 1「A」(メモ: A で) 詳しくは pekoe --json inbox q" + itoa(it.ID)
 	got := sentSince(fe, n)
 	if len(got) != 2 || got[0] != want || got[1] != "keys:Enter" {
 		t.Fatalf("typed:\n%s\nwant %s", strings.Join(got, "\n"), want)

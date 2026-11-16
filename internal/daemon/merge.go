@@ -46,6 +46,7 @@ import (
 	"time"
 
 	"pekoe/internal/gitx"
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 )
 
@@ -128,17 +129,17 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 	case rv == nil:
 		add("review", false, "no independent review reported")
 	case rv.Verdict == "pending":
-		add("review", false, "independent review in progress (report #%d · %s)", rv.ID, shortSHA(rv.ReviewedSHA))
+		add("review", false, "independent review in progress (report %s · %s)", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA))
 	case rv.Verdict != "pass":
-		add("review", false, "latest review (report #%d) is %s", rv.ID, rv.Verdict)
+		add("review", false, "latest review (report %s) is %s", ids.Report(rv.ID), rv.Verdict)
 	case rv.ReviewedSHA == "":
-		add("review", false, "latest review (report #%d) has no reviewed_sha", rv.ID)
+		add("review", false, "latest review (report %s) has no reviewed_sha", ids.Report(rv.ID))
 	case c.PRHead == "":
 		add("review", false, "PR HEAD not read yet (review is of %s)", shortSHA(rv.ReviewedSHA))
 	case !strings.HasPrefix(c.PRHead, rv.ReviewedSHA):
 		switch d.sameChange(s, rv.ReviewedSHA, c.PRHead) {
 		case changeSame:
-			add("review", true, "pass in report #%d (%s · %s); PR HEAD %s is a rebase with the same diff", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
+			add("review", true, "pass in report %s (%s · %s); PR HEAD %s is a rebase with the same diff", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
 		case changeDiffers:
 			c.ReviewStale = true
 			add("review", false, "diff changed from reviewed %s to PR HEAD %s (needs a new review)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
@@ -147,7 +148,7 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 			add("review", false, "reviewed %s differs from PR HEAD %s (could not compare the diffs)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
 		}
 	default:
-		add("review", true, "pass in report #%d (%s · %s)", rv.ID, shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
+		add("review", true, "pass in report %s (%s · %s)", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
 	}
 
 	switch {
@@ -423,7 +424,7 @@ func (d *Daemon) askMerge(s *state.Session, c *state.MergeCheck) {
 	}
 	if rec := d.mergeRecordOf(s.Slug); rec.ID != 0 {
 		if prev, err := d.DB.InboxGet(rec.ID); err == nil && prev.Answer != nil && prev.Answer.Merge != nil && prev.Answer.Merge.State == state.MergeFailed {
-			fmt.Fprintf(&b, "last merge (inbox #%d) failed: %s\n", prev.ID, prev.Answer.Merge.Detail)
+			fmt.Fprintf(&b, "last merge (inbox %s) failed: %s\n", ids.Question(prev.ID), prev.Answer.Merge.Detail)
 		}
 	}
 	fmt.Fprintf(&b, "\"merge\": pekoed checks these again and runs gh pr merge --%s --match-head-commit %s (nothing merges otherwise). \"wait\" is recorded only. \"send back\" sends the note to the session", method, shortSHA(c.PRHead))

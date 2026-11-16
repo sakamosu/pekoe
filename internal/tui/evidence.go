@@ -41,6 +41,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -582,7 +583,7 @@ func (em *evidenceModal) view() []string {
 		if it.report != rep {
 			rep = it.report
 			r := em.reports[rep]
-			head := fmt.Sprintf("#%d %s · %s", r.id, r.status, theme.Ago(time.Since(r.at)))
+			head := fmt.Sprintf("%s %s · %s", ids.Report(r.id), r.status, theme.Ago(time.Since(r.at)))
 			if s := firstLine(inboxText(r.summary)); s != "" {
 				head += " · " + s
 			}
@@ -701,7 +702,7 @@ func (em *evidenceModal) viewImage() []string {
 		}
 	}
 	r := em.reports[it.report]
-	caption := fmt.Sprintf("png %d×%d · %s · report #%d %s · %d/%d", it.imgW, it.imgH, evSize(it.size), r.id, r.status, n, of)
+	caption := fmt.Sprintf("png %d×%d · %s · report %s %s · %d/%d", it.imgW, it.imgH, evSize(it.size), ids.Report(r.id), r.status, n, of)
 	last := th.FG(theme.Dim, fit(caption, cw))
 	if em.note != "" { // what o did, in the caption's place
 		r := theme.Dim

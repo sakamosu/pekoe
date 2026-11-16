@@ -6,7 +6,7 @@ package daemon
 // pekoed: no tool results (the "user" lines that carry them included), no
 // thinking, no system injections (reminders, compact summaries, command
 // output, task notifications). Lines pekoed itself typed into the input box
-// ("[pekoe inbox #3] …") are kept apart from the person's words.
+// ("[pekoe inbox q3] …") are kept apart from the person's words.
 //
 // It takes a path, not a session: tapi chat uses it now (tapi.transcript),
 // a session's transcript can use it later. The path comes from a hook

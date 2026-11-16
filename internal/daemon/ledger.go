@@ -30,6 +30,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 )
 
@@ -88,7 +89,7 @@ func ledgerView(es []state.LedgerEntry) *state.LedgerView {
 // notTyped: a prompt that reaches UserPromptSubmit without the person
 // typing it, so no request of theirs:
 //   - "[pekoe …": what pekoed itself typed into tapi's input box (an inbox
-//     answer, "[pekoe inbox #12] …")
+//     answer, "[pekoe inbox q12] …")
 //   - "<task-notification>…": Claude Code telling the agent a background
 //     task (tapi's `pekoe wait`) finished, which it hands over as a new turn
 //
@@ -258,7 +259,7 @@ func outsideHint(who *Caller) string {
 
 func ledgerErr(id int64, err error) error {
 	if errors.Is(err, state.ErrNoLedgerEntry) {
-		return fmt.Errorf("no such ledger entry: #%d", id)
+		return fmt.Errorf("no such request: %s", ids.Request(id))
 	}
 	return err
 }
@@ -318,9 +319,9 @@ func (d *Daemon) changeLedger(id int64, f func(e *state.LedgerEntry) error) (*st
 
 func notOpen(method string, e *state.LedgerEntry) error {
 	if autoClosed(e) {
-		return fmt.Errorf("%s: ledger #%d is chat already (pekoed closed it as no request when tapi's turn ended; pekoe ledger keep %d opens it again)", method, e.ID, e.ID)
+		return fmt.Errorf("%s: request %s is chat already (pekoed closed it as no request when tapi's turn ended; pekoe ledger keep %s opens it again)", method, ids.Request(e.ID), ids.Request(e.ID))
 	}
-	return fmt.Errorf("%s: ledger #%d is %s already (a person can reopen it: pekoe ledger reopen %d)", method, e.ID, e.Status, e.ID)
+	return fmt.Errorf("%s: request %s is %s already (a person can reopen it: pekoe ledger reopen %s)", method, ids.Request(e.ID), e.Status, ids.Request(e.ID))
 }
 
 func (d *Daemon) hLedgerClose(who *Caller, p ledgerCloseP) (any, error) {
@@ -479,7 +480,7 @@ type ledgerIDP struct {
 func (d *Daemon) hLedgerReopen(p ledgerIDP) (any, error) {
 	e, err := d.changeLedger(p.ID, func(e *state.LedgerEntry) error {
 		if e.Status == state.LedgerOpen {
-			return fmt.Errorf("ledger.reopen: ledger #%d is open", e.ID)
+			return fmt.Errorf("ledger.reopen: request %s is open", ids.Request(e.ID))
 		}
 		reopenLedger(e)
 		return nil

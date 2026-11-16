@@ -35,6 +35,7 @@ import (
 
 	"pekoe/internal/engine"
 	"pekoe/internal/gitx"
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/untrusted"
 )
@@ -306,7 +307,7 @@ func (d *Daemon) refreshFactsLocked(it *state.InboxItem) bool {
 	}
 	it.Facts, it.Rev, it.UpdatedAt = f, it.Rev+1, time.Now()
 	if err := d.DB.SaveInbox(it); err != nil {
-		log.Printf("inbox #%d: %v", it.ID, err)
+		log.Printf("inbox %s: %v", ids.Question(it.ID), err)
 	}
 	return true
 }
@@ -390,7 +391,7 @@ func (d *Daemon) inboxRead(who *Caller, it *state.InboxItem) {
 
 func inboxErr(id int64, err error) error {
 	if errors.Is(err, state.ErrNoInboxItem) {
-		return fmt.Errorf("%w: #%d", state.ErrNoInboxItem, id)
+		return fmt.Errorf("%w: %s", state.ErrNoInboxItem, ids.Question(id))
 	}
 	return err
 }
@@ -412,7 +413,7 @@ func (d *Daemon) closeInbox(id int64, method string, f func(it *state.InboxItem)
 		return nil, inboxErr(id, err)
 	}
 	if it.Status != state.InboxOpen {
-		return nil, fmt.Errorf("%s: inbox #%d is %s %w", method, id, it.Status, errInboxClosed)
+		return nil, fmt.Errorf("%s: inbox %s is %s %w", method, ids.Question(id), it.Status, errInboxClosed)
 	}
 	if err := f(it); err != nil {
 		return nil, err
@@ -436,7 +437,7 @@ func (d *Daemon) hInboxWithdraw(who *Caller, p inboxIDP) (any, error) {
 	}
 	it, err := d.closeInbox(p.ID, "inbox.withdraw", func(it *state.InboxItem) error {
 		if !who.Human() && it.From != me {
-			return fmt.Errorf("inbox.withdraw: #%d was asked by %s; a caller withdraws only its own questions", it.ID, it.From)
+			return fmt.Errorf("inbox.withdraw: %s was asked by %s; a caller withdraws only its own questions", ids.Question(it.ID), it.From)
 		}
 		it.Status = state.InboxWithdrawn
 		it.Answer = &state.InboxAnswer{Note: note, By: me, Via: who.Via, At: time.Now()}
@@ -479,7 +480,7 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 	it, err := d.closeInbox(p.ID, "inbox.answer", func(it *state.InboxItem) error {
 		changed = d.refreshFactsLocked(it)
 		if p.Rev != it.Rev {
-			return fmt.Errorf("inbox.answer: inbox #%d changed (rev %d, you answered rev %d); %w", it.ID, it.Rev, p.Rev, errInboxChanged)
+			return fmt.Errorf("inbox.answer: inbox %s changed (rev %d, you answered rev %d); %w", ids.Question(it.ID), it.Rev, p.Rev, errInboxChanged)
 		}
 		switch {
 		case len(it.Options) > 0 && p.Choice == nil:
@@ -584,7 +585,7 @@ func (d *Daemon) inboxClosed(it *state.InboxItem) {
 		it.Delivery = state.DeliveryWaited
 	}
 	if _, err := d.DB.SetInboxDelivery(it.ID, state.DeliveryNone, it.Delivery); err != nil {
-		log.Printf("inbox #%d: %v", it.ID, err)
+		log.Printf("inbox %s: %v", ids.Question(it.ID), err)
 	}
 	d.inboxMu.Unlock()
 	d.emit("inbox.updated", it)
@@ -607,7 +608,7 @@ func inboxRecipient(it *state.InboxItem) string {
 
 // inboxSummary is the wait Change's one line.
 func inboxSummary(it *state.InboxItem) string {
-	s := fmt.Sprintf("inbox #%d %s", it.ID, it.Status)
+	s := fmt.Sprintf("inbox %s %s", ids.Question(it.ID), it.Status)
 	if a := it.Answer; a != nil && a.Choice != nil && *a.Choice < len(it.Options) {
 		s += fmt.Sprintf(": %d %s", *a.Choice+1, lineCut(it.Options[*a.Choice], 60))
 	}
@@ -619,7 +620,7 @@ func inboxSummary(it *state.InboxItem) string {
 func inboxLine(it *state.InboxItem) string {
 	a := it.Answer
 	var b strings.Builder
-	fmt.Fprintf(&b, "[pekoe inbox #%d] ", it.ID)
+	fmt.Fprintf(&b, "[pekoe inbox %s] ", ids.Question(it.ID))
 	switch {
 	case mergeSentBack(it):
 		pr := 0
@@ -637,7 +638,7 @@ func inboxLine(it *state.InboxItem) string {
 	if a != nil && a.Note != "" {
 		fmt.Fprintf(&b, "(メモ: %s)", lineCut(a.Note, 1000))
 	}
-	fmt.Fprintf(&b, " 詳しくは pekoe --json inbox %d", it.ID)
+	fmt.Fprintf(&b, " 詳しくは pekoe --json inbox %s", ids.Question(it.ID))
 	return untrusted.Line(b.String())
 }
 
@@ -743,7 +744,7 @@ func (d *Daemon) deliverInbox(to string) {
 		log.Printf("send log: %v", e)
 	}
 	if err != nil && !errors.Is(err, errPromptUpTyped) {
-		log.Printf("inbox #%d to %s: %v", it.ID, to, err)
+		log.Printf("inbox %s to %s: %v", ids.Question(it.ID), to, err)
 		return
 	}
 	if ok, _ := d.DB.SetInboxDelivery(it.ID, state.DeliveryPending, state.DeliveryDelivered); ok {
