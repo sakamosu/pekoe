@@ -415,6 +415,80 @@ func TestAltScreenWheelGoesToShownWindow(t *testing.T) {
 	}
 }
 
+// The wheel over [4]'s pty window starts typing into it, as Enter does,
+// and that first notch already reaches the program: SGR for one that asked
+// for the mouse, Up/Down for a full-screen one that did not. A wheel
+// outside [4], over a dead pane, or under a modal moves no focus.
+func TestWheelFocusesAgentPane(t *testing.T) {
+	wheel := func(m *model, x, y int) {
+		runCmd(m, m.onMouse(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress}))
+	}
+	for _, c := range []struct {
+		name   string
+		screen engine.Screen
+		want   string // what session.keys carries
+	}{
+		{"mouse", engine.Screen{MouseAny: true, AltScreen: true}, "hex"},
+		{"altscreen", engine.Screen{AltScreen: true}, "keys"},
+	} {
+		m, f, _ := chatModel(t)
+		m.window = engine.WinAgent
+		m.focus, m.typing = pSessions, false
+		m.unreadAt = map[string]int{"api-1": 3}
+		sc := c.screen
+		sc.Lines, sc.Width, sc.Height = []string{"hello"}, 100, 30
+		m.screen, m.screenOf = &sc, "api-1"
+		x0, y0 := m.agentOrigin()
+		wheel(m, x0+1, y0+1)
+		if m.focus != pAgent || !m.typing {
+			t.Fatalf("%s: focus %d typing %v", c.name, m.focus, m.typing)
+		}
+		if _, ok := m.unreadAt["api-1"]; ok {
+			t.Errorf("%s: still unread after entering the pane", c.name)
+		}
+		got := f.find("session.keys")
+		if len(got) != 1 || got[0][c.want] == nil || got[0]["window"] != engine.WinAgent {
+			t.Fatalf("%s: session.keys %v", c.name, got)
+		}
+		if c.want == "keys" {
+			if k, _ := got[0]["keys"].([]any); len(k) != 1 || k[0] != "Up" {
+				t.Fatalf("%s: keys %v", c.name, got[0]["keys"])
+			}
+		}
+	}
+
+	for _, c := range []struct {
+		name  string
+		setup func(m *model) (x, y int)
+	}{
+		{"outside", func(m *model) (int, int) { return 1, 1 }},
+		{"dead", func(m *model) (int, int) {
+			m.screen.Dead = true
+			x0, y0 := m.agentOrigin()
+			return x0 + 1, y0 + 1
+		}},
+		{"modal", func(m *model) (int, int) {
+			m.modal = newProgressModal(m, "api-1")
+			x0, y0 := m.agentOrigin()
+			return x0 + 1, y0 + 1
+		}},
+	} {
+		m, f, _ := chatModel(t)
+		m.window = engine.WinAgent
+		m.focus, m.typing = pSessions, false
+		m.screen = &engine.Screen{Lines: []string{"hello"}, Width: 100, Height: 30, MouseAny: true}
+		m.screenOf = "api-1"
+		x, y := c.setup(m)
+		wheel(m, x, y)
+		if m.focus != pSessions || m.typing {
+			t.Errorf("%s: focus %d typing %v", c.name, m.focus, m.typing)
+		}
+		if got := f.find("session.keys"); len(got) != 0 {
+			t.Errorf("%s: session.keys %v", c.name, got)
+		}
+	}
+}
+
 // msgsOf runs cmd (and batches inside it) without passing anything to
 // Update: what a Cmd's goroutine does on its own.
 func msgsOf(cmd tea.Cmd) []tea.Msg {

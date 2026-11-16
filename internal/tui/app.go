@@ -1305,6 +1305,16 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 			m.typing = false
 		}
 	}
+	// the wheel over a pty window starts typing into it, as Enter does, so
+	// the first notch already scrolls instead of being dropped for want of
+	// focus (a dead pane is left alone: Enter restarts it, the wheel must not)
+	if inAgent && !m.typing && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) && m.screen != nil && !m.screen.Dead {
+		if s := m.current(); s != nil && s.State != state.Creating {
+			m.focus = pAgent
+			m.typing = true
+			delete(m.unreadAt, s.Slug)
+		}
+	}
 	if !inAgent || !m.typing || m.screen == nil || !m.screen.MouseAny {
 		if inAgent && m.screen != nil && !m.screen.MouseAny && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) && m.typing {
 			k := "Up"

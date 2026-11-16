@@ -545,6 +545,13 @@ keys = ["^q"]
 docs = ["README.ja.md#tui"]
 
 [[tip]]
+id = "wheel-enters-pane"
+short = "4 の上でホイールを回すとそのまま入力に入る"
+detail = "エージェントの画面の上のホイールは、↵ で入ったのと同じく 4 を打ち込み中にして、最初の 1 回からスクロールが届く。抜けるのは ^q。"
+keys = ["^q"]
+docs = ["docs/design.md"]
+
+[[tip]]
 id = "tapi-pr-react"
 short = "tapi は PR のマージや CI の失敗にトーストで反応する"
 detail = "マージ・CI の失敗・changes requested・新しいコメント・承認などに 1 回だけ。マージは紙吹雪。開いた PR の CI が赤のまま idle だと目が曇る。animate = false で紙吹雪と動きを止める。"
