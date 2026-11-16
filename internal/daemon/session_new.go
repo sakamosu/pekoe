@@ -393,7 +393,10 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 		delete(d.cancels, slug)
 		d.mu.Unlock()
 	}()
-	s, _ := d.snapshot(slug)
+	s, err := d.snapshot(slug)
+	if err != nil {
+		return // removed between leaving the queue and here (queue.go)
+	}
 	vars := config.Vars{Slug: slug, Branch: s.Branch, Path: s.Path, Repo: repo.Name, Port: s.Port}
 	i := 0
 	t0 := time.Now()

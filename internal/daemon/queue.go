@@ -236,18 +236,25 @@ func (d *Daemon) afterGone(s *state.Session) {
 	d.kickQueue()
 }
 
-// fetchBase fetches base from origin into repoDir and answers
-// origin/<base>; false when there is no origin or the fetch fails (the
-// local base is used then, as for any new session).
+// fetchBase fetches base's branch from origin into repoDir and answers
+// origin/<branch>: base "main" and base "origin/main" both start from
+// origin/main as the remote has it now. false when there is no origin, the
+// fetch fails, or base is not one of origin's branches (a tag, a commit:
+// they do not move, so the local base is used, as for any new session).
 func fetchBase(repoDir, base string) (string, bool) {
 	if gitx.Origin(repoDir) == "" {
 		return "", false
 	}
-	if _, err := gitx.Run(repoDir, "fetch", "--end-of-options", "origin", base); err != nil {
-		log.Printf("hold: fetch origin %s: %v (starting from the local %s)", base, err, base)
+	branch := strings.TrimPrefix(base, "origin/")
+	if _, err := gitx.Run(repoDir, "fetch", "--end-of-options", "origin", branch); err != nil {
+		log.Printf("hold: fetch origin %s: %v (starting from %s)", branch, err, base)
 		return "", false
 	}
-	return "origin/" + base, true
+	ref := "origin/" + branch
+	if _, err := gitx.Run(repoDir, "rev-parse", "--verify", "--quiet", "--end-of-options", "refs/remotes/"+ref+"^{commit}"); err != nil {
+		return "", false // a tag or a commit: no remote-tracking branch of that name
+	}
+	return ref, true
 }
 
 // removed is the session.removed event plus what the queue makes of it.

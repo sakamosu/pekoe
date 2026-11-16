@@ -449,7 +449,7 @@ func (n *newModal) view() []string {
 	if s != nil && s.State == state.Queued {
 		keys = [][2]string{{"esc", "cancel & remove"}, {"b", "background"}}
 	}
-	if s != nil && s.State != state.Creating && s.State != state.Failed {
+	if s != nil && s.State != state.Creating && s.State != state.Queued && s.State != state.Failed {
 		keys = [][2]string{{"↵", "open"}, {"b", "background"}}
 	}
 	if s != nil && s.State == state.Failed {

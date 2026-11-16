@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -251,6 +252,46 @@ func TestQueueHoldStartsFromOrigin(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(n.Path, "merged.txt")); err == nil {
 		t.Fatal("a session without --hold started from origin")
 	}
+}
+
+// --hold with a base that is no branch of origin (a tag) starts from it
+// as it is; with base origin/main it starts from origin's main fetched now.
+func TestQueueHoldOtherBases(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	run(t, repo, "git", "tag", "v1")
+	run(t, repo, "git", "push", "-q", "origin", "v1")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/t", "base": "v1", "after": []string{"feat-a"}, "hold": true})
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/o", "base": "origin/main", "after": []string{"feat-a"}, "hold": true})
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, repo, "git", "clone", "-q", bare, other)
+	os.WriteFile(filepath.Join(other, "merged.txt"), []byte("a\n"), 0o644)
+	run(t, other, "git", "add", ".")
+	run(t, other, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a")
+	run(t, other, "git", "push", "-q", "origin", "main")
+	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
+	d.pumpQueue()
+	tg := waitState(t, d, "feat-t", state.Idle, state.Running)
+	if _, err := os.Stat(filepath.Join(tg.Path, "merged.txt")); err == nil {
+		t.Fatal("tag base: started from origin/main")
+	}
+	o := waitState(t, d, "feat-o", state.Idle, state.Running)
+	if _, err := os.Stat(filepath.Join(o.Path, "merged.txt")); err != nil {
+		t.Fatalf("origin/main base: not fetched: %v", err)
+	}
+}
+
+// runNew for a session removed just after it left the queue returns
+// (it used to read a nil session and take pekoed down).
+func TestRunNewGone(t *testing.T) {
+	d, _, repo := setup(t)
+	r, err := resolveRepo(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.runNew(context.Background(), "nope", r, newP{})
 }
 
 // A queued session stays queued across a restart while its start is kept,

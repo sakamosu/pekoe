@@ -108,6 +108,15 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.State == state.Queued {
+		// the queue must not start it while it goes (queue.go): with
+		// queueMu held it stays queued, or it has already left the queue
+		d.queueMu.Lock()
+		defer d.queueMu.Unlock()
+		if s, err = d.snapshot(p.Slug); err != nil {
+			return nil, err
+		}
+	}
 	_, statErr := os.Stat(s.Path)
 	exists := statErr == nil
 	// the directory may belong to another repository of the same name (a
