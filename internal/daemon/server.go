@@ -402,7 +402,7 @@ func (d *Daemon) releaseLock() {
 
 func (d *Daemon) serve(nc net.Conn) {
 	c := newConn(nc)
-	pr := &peer{pid: d.peerPID(nc), find: d.paneOf}
+	pr := &peer{pid: d.peerPID(nc), find: d.windowOf}
 	d.mu.Lock()
 	d.conns[c] = true
 	d.mu.Unlock()
