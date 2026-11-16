@@ -112,9 +112,16 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		// the queue must not start it while it goes (queue.go): with
 		// queueMu held it stays queued, or it has already left the queue
 		d.queueMu.Lock()
-		defer d.queueMu.Unlock()
 		if s, err = d.snapshot(p.Slug); err != nil {
+			d.queueMu.Unlock()
 			return nil, err
+		}
+		if s.State == state.Queued {
+			defer d.queueMu.Unlock()
+		} else {
+			// it left the queue meanwhile: an ordinary rm, which must
+			// not hold the queue up through its teardown
+			d.queueMu.Unlock()
 		}
 	}
 	_, statErr := os.Stat(s.Path)
