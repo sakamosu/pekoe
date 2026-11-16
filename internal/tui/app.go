@@ -131,8 +131,8 @@ type model struct {
 	dirty      bool
 	unreadAt   map[string]int // slug -> absolute line where the user left
 	lastSel    string
-	returnTo   []string // attention queue: where ]a jumped from
-	dismissed  map[string]time.Time
+	returnTo   []string             // attention queue: where ]a jumped from
+	dismissed  map[string]dismissed // permission prompts put down, by slug (modals.go)
 	progress   map[string][]daemon.Step
 	pickInput  *input
 	answers    map[string]string
@@ -215,7 +215,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		pr:         newPRState(),
 		pv:         newPreviewState(),
 		unreadAt:   map[string]int{},
-		dismissed:  map[string]time.Time{},
+		dismissed:  map[string]dismissed{},
 		progress:   map[string][]daemon.Step{},
 		answers:    map[string]string{},
 		square:     os.Getenv("PEKOE_SQUARE") != "",
@@ -775,18 +775,31 @@ func (m *model) closeStalePermission() {
 	}
 }
 
+// textEntry: keys typed now go into text (the pty [4] shows, the [1]
+// filter, the Issues search, a pick's instruction in [4]), where a modal
+// coming up would take a y or n being typed as an answer. Inputs inside a
+// modal or the review surface are covered by those being open.
+func (m *model) textEntry() bool {
+	return m.typing || m.filterOn || m.iss.queryOn || m.pickInputFocused()
+}
+
+// pickInputFocused: [4]'s pick card takes the keys typed (its instruction).
+func (m *model) pickInputFocused() bool {
+	return m.pickInput != nil && m.focus == pAgent && !m.issueShown() && !m.chat.open
+}
+
 // maybePermission puts the permission modal on top for the oldest
 // permission prompt not dismissed: any session's or tapi chat's, whatever
-// is selected or shows. Never while typing into [4] (the keys typed would
-// answer it), in the review surface or the tour; leaving them, it comes up
-// at once (Update). A dismissed wait (esc, g, answered) stays down until
-// its session waits again.
+// is selected or shows. Never while typing text (textEntry: the keys typed
+// would answer it), in the review surface or the tour; leaving them, it
+// comes up at once (Update). A dismissed prompt (esc, g, answered) stays
+// down until its session waits again or for another tool.
 func (m *model) maybePermission() tea.Cmd {
-	if m.modal != nil || m.typing || m.review != nil || m.tour != nil {
+	if m.modal != nil || m.textEntry() || m.review != nil || m.tour != nil {
 		return nil
 	}
 	for _, w := range m.permWaits() {
-		if t, ok := m.dismissed[w.slug]; ok && !w.since.After(t) {
+		if d, ok := m.dismissed[w.slug]; ok && d == w.key() {
 			continue
 		}
 		m.modal = &permissionModal{m: m, slug: w.slug}

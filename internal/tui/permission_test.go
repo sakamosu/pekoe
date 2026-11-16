@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/client"
@@ -76,20 +77,13 @@ func TestPermissionModalForUnselectedSession(t *testing.T) {
 }
 
 // tapi chat's permission prompt comes up as well, with tapi chat closed or
-// open; y types [agents.claude] allow into tapi chat (after checking the
-// prompt is still the one shown) and nothing goes to a session.
+// open; y answers it with tapi.answer (naming the tool shown: pekoed checks
+// it, TestTapiAnswer) and nothing goes to a session.
 func TestPermissionModalForTapi(t *testing.T) {
 	for _, chatOpen := range []bool{false, true} {
-		m, f, cr := chatModel(t)
-		since := time.Now()
-		f.reply = func(method string) any {
-			if method == "tapi.get" {
-				return tapiPermission(since)
-			}
-			return cr.reply(method)
-		}
+		m, f, _ := chatModel(t)
 		m.chat.open = chatOpen
-		tapiEvent(t, m, tapiPermission(since))
+		tapiEvent(t, m, tapiPermission(time.Now()))
 		if got := shownPerm(m); got != daemon.TapiSlug {
 			t.Fatalf("chat open %v: modal for %q (%T)", chatOpen, got, m.modal)
 		}
@@ -100,38 +94,24 @@ func TestPermissionModalForTapi(t *testing.T) {
 			t.Fatalf("chat open %v: toast and modal both say it", chatOpen)
 		}
 		runCmd(m, m.onKey(key("y")))
-		keys := f.find("tapi.keys")
-		if len(keys) != 1 || keys[0]["literal"] != "1" {
-			t.Fatalf("chat open %v: tapi.keys %v", chatOpen, keys)
+		got := f.find("tapi.answer")
+		if len(got) != 1 || got[0]["answer"] != "allow" {
+			t.Fatalf("chat open %v: tapi.answer %v", chatOpen, got)
 		}
-		if len(f.find("session.answer")) != 0 {
-			t.Fatalf("chat open %v: answered a session", chatOpen)
+		if tool, _ := got[0]["expect"].(map[string]any)["tool"].(map[string]any); tool["input"] != "gh pr list" {
+			t.Fatalf("chat open %v: expect %v", chatOpen, got[0]["expect"])
+		}
+		if len(f.find("session.answer"))+len(f.find("tapi.keys")) != 0 {
+			t.Fatalf("chat open %v: answered elsewhere too", chatOpen)
 		}
 		if m.chat.open != chatOpen || m.typing {
 			t.Fatalf("chat open %v: screen switched: open %v typing %v", chatOpen, m.chat.open, m.typing)
 		}
-		// tapi's hooks have not said it moved on yet: the same prompt stays down
+		// the state event has not come yet: the same prompt stays down
 		m.Update(tickMsg{})
 		if m.modal != nil {
 			t.Fatalf("chat open %v: answered prompt came back: %T", chatOpen, m.modal)
 		}
-	}
-
-	// the prompt changed meanwhile: no keys
-	m, f, cr := chatModel(t)
-	since := time.Now()
-	f.reply = func(method string) any {
-		if method == "tapi.get" {
-			v := tapiPermission(since)
-			v.PendingTool.Input = "rm -rf /"
-			return v
-		}
-		return cr.reply(method)
-	}
-	tapiEvent(t, m, tapiPermission(since))
-	runCmd(m, m.onKey(key("y")))
-	if keys := f.find("tapi.keys"); len(keys) != 0 {
-		t.Fatalf("changed prompt answered: %v", keys)
 	}
 }
 
@@ -207,5 +187,70 @@ func TestPermissionModalDismiss(t *testing.T) {
 	sessionEvent(t, m, "session.waiting", permSess("api-2", time.Now().Add(time.Second), "make"))
 	if got := shownPerm(m); got != "api-2" {
 		t.Fatalf("new wait: %q", got)
+	}
+}
+
+// Any text being typed holds the modal back, not only the pty: a pick's
+// instruction in [4], the [1] filter, the Issues search. Leaving it brings
+// the modal up at once.
+func TestPermissionModalWaitsForTextEntry(t *testing.T) {
+	cases := []struct {
+		name  string
+		enter func(m *model)
+		leave tea.KeyMsg
+	}{
+		{"pick instruction", func(m *model) {
+			m.picks = []*state.Pick{{ID: 7, Slug: "api-1", File: "x.json"}}
+			m.focus = pAgent
+			m.ensurePickInput()
+		}, tea.KeyMsg{}},
+		{"filter", func(m *model) { runCmd(m, m.onKey(key("/"))) }, key("enter")},
+	}
+	for _, c := range cases {
+		m, f, _ := chatModel(t)
+		c.enter(m)
+		if !m.textEntry() {
+			t.Fatalf("%s: not text entry", c.name)
+		}
+		sessionEvent(t, m, "session.waiting", permSess("api-2", time.Now(), "ls"))
+		m.Update(tickMsg{})
+		if m.modal != nil {
+			t.Fatalf("%s: modal %T while typing", c.name, m.modal)
+		}
+		m.Update(key("y"))
+		m.Update(key("n"))
+		if len(f.find("session.answer")) != 0 {
+			t.Fatalf("%s: a typed y / n answered the prompt", c.name)
+		}
+		if c.name == "pick instruction" {
+			if got := m.pickInput.String(); got != "yn" {
+				t.Fatalf("pick instruction %q", got)
+			}
+			m.focus = pSessions // leave the card
+			m.Update(tickMsg{})
+		} else {
+			m.Update(c.leave)
+		}
+		if got := shownPerm(m); got != "api-2" {
+			t.Fatalf("%s: after leaving: modal %q (%T)", c.name, got, m.modal)
+		}
+	}
+}
+
+// A prompt put down stays down only while it is the same prompt: the
+// session moving on to another tool in the same wait (an answer refused as
+// the prompt changed) comes up again.
+func TestPermissionModalDismissedPromptChanged(t *testing.T) {
+	m, _, _ := chatModel(t)
+	at := time.Now().Add(-time.Minute)
+	sessionEvent(t, m, "session.waiting", permSess("api-2", at, "ls"))
+	runCmd(m, m.onKey(key("y")))
+	m.Update(tickMsg{})
+	if m.modal != nil {
+		t.Fatalf("answered prompt came back: %T", m.modal)
+	}
+	sessionEvent(t, m, "session.updated", permSess("api-2", at, "make deploy"))
+	if got := shownPerm(m); got != "api-2" {
+		t.Fatalf("another prompt in the same wait: modal %q", got)
 	}
 }

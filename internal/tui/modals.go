@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -145,6 +144,28 @@ type permissionModal struct {
 
 func (p *permissionModal) wait() *permWait { return p.m.permWaitOf(p.slug) }
 
+// dismissed is a permission prompt put down (esc, g, answered): the wait's
+// start and the tool it asks for. The same prompt does not come up again;
+// the session waiting anew, or for another tool, does.
+type dismissed struct {
+	since time.Time
+	tool  string
+}
+
+func (w permWait) key() dismissed {
+	d := dismissed{since: w.since}
+	if w.tool != nil {
+		d.tool = w.tool.Name + "\x00" + w.tool.Input
+	}
+	return d
+}
+
+func (p *permissionModal) dismiss() {
+	if wt := p.wait(); wt != nil {
+		p.m.dismissed[p.slug] = wt.key()
+	}
+}
+
 // stale: the wait was answered elsewhere (web UI, extension, the agent's
 // own window), ended, or the session is gone.
 func (p *permissionModal) stale() bool { return p.wait() == nil }
@@ -205,19 +226,20 @@ func (p *permissionModal) view() []string {
 func (p *permissionModal) key(k tea.KeyMsg) tea.Cmd {
 	m := p.m
 	answer := func(a string) tea.Cmd {
-		// the wait stays dismissed: until its state event arrives (tapi's
-		// comes from its hooks) the same prompt would come up again
-		m.dismissed[p.slug] = time.Now()
 		// expect: the tool on screen; the answer is refused when the prompt
 		// has moved on meanwhile (as the web UI)
 		var tool *state.Tool
 		if wt := p.wait(); wt != nil {
 			tool = wt.tool
 		}
-		if p.slug == daemon.TapiSlug {
-			return done(m.answerTapi(a, tool))
+		// the prompt answered stays down until its state event arrives;
+		// another prompt (the answer refused) comes up
+		p.dismiss()
+		expect := map[string]any{"tool": tool}
+		if p.slug == daemon.TapiSlug { // tapi.answer: the same as session.answer for tapi chat
+			return done(m.act("tapi.answer", map[string]any{"answer": a, "expect": expect}, ""))
 		}
-		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a, "expect": map[string]any{"tool": tool}}, ""))
+		return done(m.act("session.answer", map[string]any{"slug": p.slug, "answer": a, "expect": expect}, ""))
 	}
 	switch k.String() {
 	case "y":
@@ -227,7 +249,7 @@ func (p *permissionModal) key(k tea.KeyMsg) tea.Cmd {
 	case "A":
 		return answer("always")
 	case "g":
-		m.dismissed[p.slug] = time.Now()
+		p.dismiss()
 		if p.slug == daemon.TapiSlug {
 			return done(m.openChat())
 		}
@@ -236,70 +258,10 @@ func (p *permissionModal) key(k tea.KeyMsg) tea.Cmd {
 		m.focus, m.typing = pAgent, true
 		return done(cmd)
 	case "esc", "q":
-		m.dismissed[p.slug] = time.Now()
+		p.dismiss()
 		return done(nil)
 	}
 	return nil
-}
-
-// answerTapi answers tapi chat's permission prompt with the keys of
-// [agents.<tapi's agent>] allow / always / deny, typed into tapi chat's pty
-// as session.answer types them into a session's window. Like expect there,
-// it first looks again: a prompt that changed (or ended) gets no keys.
-func (m *model) answerTapi(answer string, tool *state.Tool) tea.Cmd {
-	call := m.chatPty().call
-	if call == nil || m.cl == nil {
-		return nil
-	}
-	name := m.g.Tapi.Agent
-	if v := m.chat.info; v != nil && v.Agent != "" {
-		name = v.Agent
-	}
-	if name == "" {
-		name = "claude"
-	}
-	ag := m.g.Agents[name]
-	spec := map[string]string{"allow": ag.Allow, "always": ag.Always, "deny": ag.Deny}[answer]
-	var keys []map[string]any
-	switch {
-	case tool != nil && tool.Name == "Trust": // folder trust menu: the cursor starts on "No, exit"
-		if answer == "deny" {
-			keys = []map[string]any{{"keys": []string{"Escape"}}}
-		} else {
-			keys = []map[string]any{{"keys": []string{"Down", "Enter"}}}
-		}
-	case spec == "":
-		return nil
-	case len([]rune(spec)) == 1:
-		keys = []map[string]any{{"literal": spec}}
-	default:
-		keys = []map[string]any{{"keys": []string{spec}}}
-	}
-	return m.inOrder(func() error {
-		var v daemon.Tapi
-		if err := m.cl.Call("tapi.get", nil, &v); err != nil {
-			return err
-		}
-		if v.State != state.Waiting || v.WaitKind != "permission" {
-			return fmt.Errorf("tapi is not waiting for a permission (state: %s)", v.State)
-		}
-		if !sameTool(v.PendingTool, tool) {
-			return errors.New("the prompt changed; look again")
-		}
-		for _, k := range keys {
-			if err := call("keys", k); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func sameTool(a, b *state.Tool) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return a.Name == b.Name && a.Input == b.Input
 }
 
 // ---- confirm (destructive → err border) ----
