@@ -32,7 +32,9 @@ func cmdInit(args []string) error {
 		Matched    []string `json:"matched"`
 		Ignored    []string `json:"ignored"`
 		Selected   []string `json:"selected"`
-		TOML       string   `json:"toml"`
+		// why the detected [hooks] test was drafted commented out
+		TestSkipped string `json:"test_skipped,omitempty"`
+		TOML        string `json:"toml"`
 	}
 	if err := cl.Call("init.detect", map[string]any{"path": dir}, &res); err != nil {
 		return err
@@ -42,6 +44,9 @@ func cmdInit(args []string) error {
 		return nil
 	}
 	fmt.Printf("repo-id   %s\nconfig    %s\ndetected  %s\n", res.RepoID, res.ConfigPath, strings.Join(res.Matched, ", "))
+	if res.TestSkipped != "" {
+		fmt.Printf("test      left commented out: %s\n", res.TestSkipped)
+	}
 	selected := res.Selected
 	if len(res.Ignored) > 0 && f["yes"] == "" {
 		fmt.Println("\nignored files that exist here (copied into new worktrees when selected):")

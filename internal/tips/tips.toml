@@ -552,6 +552,13 @@ keys = ["r", ":PekoeRisks"]
 docs = ["README.ja.md#レビュー", "nvim/README.md#コマンド"]
 
 [[tip]]
+id = "test-could-not-run"
+short = "⚠ test could not run は test のコマンドが無い印"
+detail = "[hooks] test のコマンドが見つからない(終了コード 127)ときは ✗ ではなくこれが出る。入れるか repos の toml の test を直す。test を消すと前の結果は次の Stop で消える。"
+keys = ["pekoe init"]
+docs = ["README.ja.md#レビュー"]
+
+[[tip]]
 id = "sandbox-warnings"
 short = "⚠ test not run や .git changed が出たら止まっている"
 detail = "test not run: no sandbox は sandbox が無くて test と門番を動かさなかった印。.git changed: git stopped は worktree の .git が書き換えられ、pekoed がそこで git を止めた印で、戻すと消える。"

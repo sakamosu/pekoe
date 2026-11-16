@@ -183,6 +183,7 @@ COMPOSE_PROJECT_NAME = "{{slug}}"
 **自動検出(`pekoe init`)** はこのファイルの下書きを作るだけで、実行時には参照しない。
 
 - lockfile → パッケージマネージャ(pnpm-lock.yaml / yarn.lock / package-lock.json / bun.lock / uv.lock / poetry.lock / Cargo.toml / go.mod / Gemfile)
+- `test` は動かせるときだけ書く: コマンドの最初の語が pekoed の PATH にある(`bin/rails` のようにパスならリポジトリにある)こと、`npm` / `yarn` / `pnpm test` と `<pm> run <script>` なら package.json にその script があること(npm の雛形の `echo "Error: no test specified" && exit 1` は無いとみなす)。外れたら `# test = "yarn test"   # 書かなかった: yarn が PATH に無い` のように理由を添えてコメントアウトする。動かないコマンドを書くと Stop のたびに test が落ちて見えるため。ルールの表(`defaults/init.toml`)を書き換えても、この確かめは効く
 - `.tool-versions` `mise.toml` `.nvmrc` → `mise install`、`.envrc` → `direnv allow`
 - `git ls-files --others --ignored --exclude-standard` で実在する無視ファイルを列挙し、node\_modules や dist などの定番を除いた候補を見せて選んでもらう → `copy` に入る
 

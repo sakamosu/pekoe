@@ -97,6 +97,7 @@ function details(s, withRepo) {
   else if (s.test === "fail") add(colored("err", "✗"), document.createTextNode("test"));
   else if (s.test === "running") add(document.createTextNode("…test"));
   else if (s.test === "blocked") add(colored("warn", "!"), document.createTextNode("test not run: no sandbox"));
+  else if (s.test === "error") add(colored("warn", "!"), document.createTextNode("test could not run"));
   if (s.git_blocked) add(colored("warn", "!"), document.createTextNode(".git changed: git stopped"));
   if (s.pr) {
     const n = [document.createTextNode("#" + s.pr)];
@@ -768,7 +769,7 @@ function factsBlock(it) {
     }
     if (f.pr_repo) box.append(factRow("fork", colored("warn", "PR in " + f.pr_repo), txt(" · pushed to " + f.push_repo + " (origin)")));
     const ts = f.test && f.test.status;
-    if (ts && ts !== "none") box.append(factRow("test", colored(ts === "pass" ? "ok" : ts === "fail" ? "err" : "dim", ts)));
+    if (ts && ts !== "none") box.append(factRow("test", colored(ts === "pass" ? "ok" : ts === "fail" ? "err" : ts === "error" || ts === "blocked" ? "warn" : "dim", ts)));
     for (const o of f.overlaps || []) {
       box.append(factRow("forecast", o.conflict ? colored("err", "conflicts") : txt("overlaps"), txt(" with " + o.slug)));
     }

@@ -340,6 +340,8 @@ func SessionLine(t *Theme, ic IconSet, s *state.Session, now time.Time, frame in
 		parts = append(parts, t.FG(Err, Prefix(ic.Fail))+"test")
 	case "running":
 		parts = append(parts, t.FG(Dim, Prefix(TestRunningMark)+"test"))
+	case "error": // the test command could not start: not a failing test
+		parts = append(parts, t.FG(Warn, Prefix(ic.Warning))+"test could not run")
 	}
 	if s.Port > 0 {
 		parts = append(parts, t.FG(Dim, fmt.Sprintf(":%d", s.Port)))

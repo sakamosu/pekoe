@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -805,6 +806,7 @@ func (d *Daemon) runTest(slug string) {
 	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test == "" {
+		d.dropTest(s)
 		return
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
@@ -830,11 +832,72 @@ func (d *Daemon) runTest(slug string) {
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
 	_ = os.MkdirAll(logDir, paths.DirPerm)
 	_ = os.WriteFile(filepath.Join(logDir, slug+"-test.log"), []byte(out), paths.FilePerm)
+	d.update(slug, func(x *state.Session) { x.Test = testResult(out, err) })
+}
+
+// testResult is the outcome of a [hooks] test run: pass, fail, or error
+// when the shell could not start the command (exit 127, "command not
+// found"; a test runner that is not installed). error is not a failing
+// test, and the summary says what was missing.
+func testResult(out string, err error) state.Test {
 	t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
-	if err != nil {
+	var ee *exec.ExitError
+	switch {
+	case errors.As(err, &ee) && ee.ExitCode() == 127:
+		t.Status = "error"
+		if what := notFound(out); what != "" {
+			t.Summary = what
+		}
+	case err != nil:
 		t.Status = "fail"
 	}
-	d.update(slug, func(x *state.Session) { x.Test = t })
+	return t
+}
+
+// notFoundRes read what was missing from a shell's exit-127 message: zsh
+// ("zsh:1: command not found: yarn"), bash ("/bin/bash: line 1: yarn:
+// command not found"), dash ("sh: 1: yarn: not found"), and a path that is
+// not there ("zsh:1: no such file or directory: ./run-tests", "bash:
+// ./run-tests: No such file or directory").
+var notFoundRes = []struct {
+	re   *regexp.Regexp
+	word string
+}{
+	{regexp.MustCompile(`command not found: (\S+)`), "command not found: "},
+	{regexp.MustCompile(`([^\s:]+): (?:command )?not found`), "command not found: "},
+	{regexp.MustCompile(`no such file or directory: (\S+)`), "no such file: "},
+	{regexp.MustCompile(`([^\s:]+): No such file or directory`), "no such file: "},
+}
+
+// notFound is the summary of a test command the shell could not start:
+// what was missing, from the end of the output. The shell's whole line
+// is cut at 60 characters by summarize, and bash puts the reason last
+// ("/bin/bash: line 1: <command>: command not found"), so a long command
+// would lose it. "" when no line says.
+func notFound(out string) string {
+	lines := strings.Split(strings.TrimSpace(stripANSI(out)), "\n")
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-30; i-- {
+		for _, n := range notFoundRes {
+			if m := n.re.FindStringSubmatch(lines[i]); m != nil {
+				return truncate(n.word+m[1], 60)
+			}
+		}
+	}
+	return ""
+}
+
+// dropTest forgets the test result of a session whose repository has no
+// [hooks] test (any more): a ✗ from before the line was removed would
+// otherwise stay. A run still going is stopped and its result dropped.
+// repos/<id>.toml is read when used, not watched, so this happens at the
+// next Stop (or land).
+func (d *Daemon) dropTest(s *state.Session) {
+	_, run := d.tests.start(s.Slug)
+	d.tests.finish(s.Slug, run)
+	if s.Test.Status == "" || s.Test.Status == "none" {
+		return
+	}
+	d.update(s.Slug, func(x *state.Session) { x.Test = state.Test{Status: "none"} })
 }
 
 var riskRe = regexp.MustCompile(`^\s*[-*]?\s*([^\s:]+):(\d+):?\s*(.*)$`)

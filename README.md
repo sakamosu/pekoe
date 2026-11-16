@@ -184,7 +184,7 @@ pekoe new feat/invoice --from gh#128                  # the issue body becomes t
 pekoe                                                 # TUI
 ```
 
-`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files, lets you pick by number which ignored files to copy, and then writes the file. Once written, it starts an agent in the repository's main checkout (the main session, as `pekoe open <repo> --new` does) so the repository shows up in the TUI; one already there is left alone, and `--no-open` skips it. If the agent cannot be started, init still succeeds and says to run `pekoe open <path> --new`. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
+`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files (and `test` only when it can run: the command, such as `yarn`, has to be on pekoed's PATH, and for `npm` / `yarn` / `pnpm test` package.json has to have `scripts.test`; otherwise the line is drafted commented out with the reason), lets you pick by number which ignored files to copy, and then writes the file. Once written, it starts an agent in the repository's main checkout (the main session, as `pekoe open <repo> --new` does) so the repository shows up in the TUI; one already there is left alone, and `--no-open` skips it. If the agent cannot be started, init still succeeds and says to run `pekoe open <path> --new`. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
 
 ## Commands
 
@@ -319,7 +319,7 @@ Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats un
 
 ## Review
 
-- A session that becomes `done` enters the review queue, and the Stop hook runs `test` automatically
+- A session that becomes `done` enters the review queue, and the Stop hook runs `test` automatically. A test command that isn't there (the shell's exit 127, "command not found") shows `test could not run` with a warning mark instead of ✗: the test didn't run, it didn't fail. Remove (or comment out) `test` in `repos/<id>.toml` and the last result goes away at the next Stop
 - Approval is per hunk (identified by path + a hash of the change, so it survives shifted line numbers)
 - `S` (`:PekoeSend` in nvim) sends all unsent comments as one message and records a review point `refs/pekoe/<slug>/review-<n>`. The next review shows only the diff from there
 - Each hunk shows which prompt it came from (`← prompt #3: …`)

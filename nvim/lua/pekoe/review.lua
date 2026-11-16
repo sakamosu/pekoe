@@ -90,7 +90,18 @@ local function render_list()
     local d = R.data or {}
     local test = ""
     if type(d.test) == "table" and d.test.status and d.test.status ~= "none" then
-      test = d.test.status == "pass" and " %#PekoeOk#✓test" or (d.test.status == "fail" and " %#PekoeErr#✗test" or " %#PekoeDim#…test")
+      local st = d.test.status
+      if st == "pass" then
+        test = " %#PekoeOk#✓test"
+      elseif st == "fail" then
+        test = " %#PekoeErr#✗test"
+      elseif st == "error" then -- the test command could not start (exit 127)
+        test = " %#PekoeWarn#!test could not run"
+      elseif st == "blocked" then -- no sandbox: not run
+        test = " %#PekoeWarn#!test not run"
+      else
+        test = " %#PekoeDim#…test"
+      end
     end
     -- 幅が足りないときは slug から先に切り、右端のキーヒントを残す(%<)
     vim.wo[R.list_win].winbar = string.format(
