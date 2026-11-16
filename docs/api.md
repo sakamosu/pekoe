@@ -141,7 +141,12 @@ git は設定に書かれたコマンドを動かす(`git status` のたびの `
 - 対象外: 人間が自分で動かす git(シェル、run 窓、レビュー面の nvim の git プラグイン、本体のチェックアウトでの git)。エージェントが書いた `.git` ファイルや `.git/config` はそのまま読まれる。`git_blocked` が出たら、その worktree で git を動かす前に `.git` を確かめる。本体の `.git/config`・`.git/hooks`(とサブモジュールの `.git/modules/*/{config,hooks}`)は、Claude Code のエージェントには pekoe が `sandbox.filesystem.denyWrite` で書かせない(ほかのエージェントは自分で塞ぐ)。ただし pekoed の hooks の sandbox からは書ける(husky などのため)。そこで変わったものは受信箱に出る(上の「本体の .git の見張り」)ので、見てから本体で git を使う
 - gh: pekoed が動かす gh(land の `gh pr create`、PR・CI・issue の読み出し、`gh pr merge`、GitHub へのレビューの送信)には git を一切動かさせない。gh は起動した場所で git を動かす(`gh pr create` の `git status`、remote からのリポジトリの割り出し)ので、上の三つの層をかけるのではなく、git が動く場所をなくす(`internal/daemon/pr.go` の `ghCommand`。`exec` で gh を直接呼ぶのは、下の 2 つを除いてここだけ)
   - cwd はどのリポジトリでもない空のディレクトリ(データディレクトリの `gh/` の下に呼び出しごとに作り、終われば消す)。環境は gh に要るもの(`PATH`・`HOME`・`GH_*`・`GITHUB_TOKEN`・`XDG_*`・`DBUS_SESSION_BUS_ADDRESS`(Linux で token を Secret Service から読む)・ロケール・プロキシ・証明書)だけで、`GIT_DIR`・`GIT_WORK_TREE` などは渡さず、`GIT_CEILING_DIRECTORIES` で cwd より上のリポジトリも探させない
-  - リポジトリは毎回 `--repo <host/owner/name>`(`gh api` は `--hostname` と、owner と name を入れたパスやフィールド)で渡す。host・owner・name は main のチェックアウトの origin から取り、英数字と `.` `_` `-` だけで、`.`・`..`・`-` で始まるものでないものに限る。origin がそうでなければ gh を起動せずにエラーにする
+  - リポジトリは毎回 `--repo <host/owner/name>`(`gh api` は `--hostname` と、owner と name を入れたパスやフィールド)で渡す。host・owner・name は英数字と `.` `_` `-` だけで(host は `_` も不可)、`.`・`..`・`-` で始まるものでないものに限る。決まらなければ gh を起動せずにエラーにする
+  - どのリポジトリかは、前に gh が自分で git を読んで決めていたのと同じ規則で、pekoed が main のチェックアウトを上の git(`git remote -v` と `git config --get-regexp '^remote\..*\.gh-resolved$'`)で読んで決める(`internal/daemon/ghrepo.go`。gh v2.103 の `context.ResolvedRemotes.BaseRepo` をプロンプトなしで動かしたときに合わせてある)。読んだ値はエージェントが書けるデータなので、どれも上の形を通らなければ使わない。結果はリポジトリごとに覚え、remote や gh-resolved を変えたら pekoed の再起動で読み直す(人が承認したときと違うリポジトリに gh が向かないように)
+    - ホストの別名: remote の URL が SSH(`git@host:owner/name` と `ssh://`・`git+ssh://`)なら、`ssh -G -- <host>` の `hostname` を本当のホストにする(`~/.ssh/config` の `Host github-work` など)。`ssh.github.com`(443 番ポート経由)は `github.com` にする。ssh に渡すのは上の形を通ったホスト名だけで、`--` の後に置く。cwd は `/`、環境は `HOME`・`USER`・`LOGNAME`・`PATH` だけ、5 秒で打ち切る。ssh が無い・失敗した・答えが上の形を通らないときは URL に書かれたホストのまま。https などの URL では ssh を起動しない
+    - base のリポジトリ(PR を出す先): origin が上の形のリポジトリを指していることが前提(指していなければ gh は起動しない)。候補は origin と同じホストを指す remote(gh は自分がログインしているホストに絞る)で、`upstream` > `github` > `origin` > その他(同じ順位は git の順)に並べる。最初に `remote.<name>.gh-resolved` を持つ remote が決める: `base`(`gh repo set-default` が書く値)ならその remote、ほかの値なら `owner/name`(`host/owner/name` や URL でもよく、host はその remote のもの)が指すリポジトリ、形が合わなければリポジトリなし(gh も失敗する)。gh-resolved がどこにも無ければ先頭の remote
+    - fork(base が origin と違う): push 先は今までどおり origin。`gh pr create` は `--repo <base> --head <origin の owner>:<branch>`、PR 番号の割り出し(`gh pr view`)も `<owner>:<branch>` で、PR の状態・マージ・CI のログ・issue・レビューの送信はすべて base に向ける。他人の PR のレビュー(`pekoe review gh#N`)は `pull/N/head` を base を指す remote(gh の順で最初のもの。名前は英数字と `.` `_` `-` だけで `-` で始まらないもの)から fetch する。base を指す remote が無ければ(gh-resolved が remote の無いリポジトリを指すとき)、gh も git も動かさずにエラーにする。受信箱の facts の `pr_url` は base の PR を指し、`pr_repo`(base)と `push_repo`(origin)が付く(fork のときだけ)。マージの承認の本文にも `fork: the PR is in … ; the branch was pushed to … (origin)` が出る
+    - remote が origin だけ、または gh-resolved が origin を指すときは、base = origin で、引数は今までと同じ
   - git から読む情報は pekoed が上の git で取り出して渡す。land の PR の title・本文(`--fill` が読んでいたもの)は base からの `git log` から作り、title は引数、本文は標準入力で渡す(commit が 1 つならその件名と本文、2 つ以上・0 なら title はブランチ名(`-` `_` を空白に)、本文は件名の箇条書き)
   - `gh auth token`(`pekoe update`)と `gh attestation verify -R … --signer-workflow … --source-ref …` は git を動かさないので、この仕組みを通さずそのまま起動する
 
@@ -411,7 +416,8 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
   "facts": {                                          // pekoed が自分で読んだもの(エージェントは書けない)
     "slug": "feat-pagination", "state": "idle", "branch": "feat/pagination", "base": "main", "head": "3f2a…",
     "diffstat": {"added": 120, "deleted": 8, "files": 4},
-    "pr": 42, "pr_url": "https://github.com/me/app/pull/42",
+    "pr": 42, "pr_url": "https://github.com/me/app/pull/42",   // PR を出した先(fork なら base)の PR
+    "pr_repo": "github.com/up/app", "push_repo": "github.com/me/app", // fork のときだけ: PR のあるリポジトリと push 先(origin)
     "pr_status": {"state": "OPEN", "pass": 5, "fail": 0, "pending": 0, "review_decision": "APPROVED", "unresolved": 0, "merge_state": "CLEAN", "head_sha": "3f2a…"},
     "test": {"status": "pass"}, "overlaps": [], "report": {"id": 17, "status": "done", "at": "…", "head": "3f2a…"},  // 最新の報告(要約はエージェントの文なので入れない)
     "git_blocked": "", "gone": false,

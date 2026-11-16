@@ -494,7 +494,12 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	ghr := d.ghRepoOf(repo.Dir)
+	ri := d.ghRepoInfoOf(repo.Dir)
+	ghr := ri.Base
+	if ghr != "" && ri.BaseRemote == "" {
+		// pull/<n>/head is only in the base repository
+		return nil, fmt.Errorf("PR #%d is in %s, but no remote of %s points at it: add one (git remote add upstream …) to review its PRs", p.Number, ghr, repo.Dir)
+	}
 	c, done, err := ghCommand(context.Background(), ghr, "pr", "view", strconv.Itoa(p.Number), "--repo", ghr, "--json", "headRefName,baseRefName,title")
 	if err != nil {
 		return nil, err
@@ -517,7 +522,7 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	// fetching straight into pr-N fails once a review has it checked out,
 	// and the old head was then reviewed without a word.
 	tmp := fmt.Sprintf("refs/pekoe/pr/%d", p.Number)
-	if _, err := gitx.Run(repo.Dir, "fetch", "--end-of-options", "origin", fmt.Sprintf("+pull/%d/head:%s", p.Number, tmp), pr.Base); err != nil {
+	if _, err := gitx.Run(repo.Dir, "fetch", "--end-of-options", ri.BaseRemote, fmt.Sprintf("+pull/%d/head:%s", p.Number, tmp), pr.Base); err != nil {
 		return nil, fmt.Errorf("fetching PR #%d: %w", p.Number, err)
 	}
 	head, err := gitx.RevParse(repo.Dir, tmp)

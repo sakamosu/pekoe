@@ -305,6 +305,9 @@ func (im *inboxModal) view() []string {
 				if f.PRURL != "" {
 					lines = append(lines, label("")+webLink(f.PRURL))
 				}
+				if f.PRRepo != "" {
+					lines = append(lines, label("fork")+th.FG(theme.Warn, "PR in "+f.PRRepo)+th.FG(theme.Dim, " · pushed to "+f.PushRepo+" (origin)"))
+				}
 			}
 			if f.Test.Status != "" {
 				lines = append(lines, label("test")+f.Test.Status)

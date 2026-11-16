@@ -90,14 +90,18 @@ type MergeRun struct {
 // InboxFacts is what pekoed read itself about the session an item is
 // about; the agent cannot write any of it.
 type InboxFacts struct {
-	Slug       string       `json:"slug"`
-	State      State        `json:"state"`
-	Branch     string       `json:"branch,omitempty"`
-	Base       string       `json:"base,omitempty"`
-	Head       string       `json:"head,omitempty"`
-	Diffstat   Stat         `json:"diffstat"`
-	PR         int          `json:"pr,omitempty"`
-	PRURL      string       `json:"pr_url,omitempty"`
+	Slug     string `json:"slug"`
+	State    State  `json:"state"`
+	Branch   string `json:"branch,omitempty"`
+	Base     string `json:"base,omitempty"`
+	Head     string `json:"head,omitempty"`
+	Diffstat Stat   `json:"diffstat"`
+	PR       int    `json:"pr,omitempty"`
+	PRURL    string `json:"pr_url,omitempty"`
+	// PRRepo and PushRepo (host/owner/name) are set for a fork only: the
+	// PR is in PRRepo, the branch pushed to PushRepo (origin).
+	PRRepo     string       `json:"pr_repo,omitempty"`
+	PushRepo   string       `json:"push_repo,omitempty"`
 	PRStatus   *InboxPR     `json:"pr_status,omitempty"`
 	Test       Test         `json:"test"`
 	Overlaps   []Overlap    `json:"overlaps,omitempty"`

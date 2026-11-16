@@ -171,12 +171,12 @@ func TestGHRepoOfRepository(t *testing.T) {
 		t.Fatalf("no origin: %q", r)
 	}
 	run(t, repo, "git", "remote", "add", "origin", "git@github.com:me/../app.git")
-	d.webBases.Delete(repo)
+	d.ghRepos.Delete(repo)
 	if r := d.ghRepoOf(repo); r != "" {
 		t.Fatalf("..: %q", r)
 	}
 	run(t, repo, "git", "remote", "set-url", "origin", "git@github.com:me/app.git")
-	d.webBases.Delete(repo)
+	d.ghRepos.Delete(repo)
 	if r := d.ghRepoOf(repo); r != "github.com/me/app" {
 		t.Fatalf("github: %q", r)
 	}

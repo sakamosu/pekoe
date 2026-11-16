@@ -759,6 +759,7 @@ function factsBlock(it) {
       }
       box.append(factRow("PR", ...n));
     }
+    if (f.pr_repo) box.append(factRow("fork", colored("warn", "PR in " + f.pr_repo), txt(" · pushed to " + f.push_repo + " (origin)")));
     const ts = f.test && f.test.status;
     if (ts && ts !== "none") box.append(factRow("test", colored(ts === "pass" ? "ok" : ts === "fail" ? "err" : "dim", ts)));
     for (const o of f.overlaps || []) {
