@@ -518,7 +518,7 @@ agent = "claude"            # a name from [agents.*]; agents other than claude g
 [orchestrator]              # tapi as the orchestrator (docs/orchestration.md)
 notify = "escalate"         # tapi waiting and the inbox's questions escalate like a session's wait (toast → blink → desktop notification) | "quiet": bottom line / message line only
 inbox_popup = true          # a new question an agent waits on comes up in front as the answer dialog (once; skip with esc / ↵ and it stays in the inbox for ]a). Not with notify = "quiet"
-deliver = "off"             # "idle": when tapi is free, pekoed types one line into its input box with its sessions' reports, failed, waiting and ci and the inbox's answers to it (for an agent without pekoe wait). Not while you type into tapi chat, a permission dialog is up or tapi waits with pekoe wait; at most once per 30 s
+deliver = "off"             # "idle": when tapi is free, pekoed types one line into its input box with its sessions' reports, failed, waiting and ci and the inbox's answers to it (for an agent without pekoe wait). Not while you type into tapi chat or a permission dialog is up, and not what tapi's pekoe wait takes (or took); at most once per 30 s
 [notify]                    # when the TUI tells you something waits (a session's wait; tapi's and the inbox's too unless notify = "quiet")
 toast_for   = "5s"          # how long a toast shows (PR reactions too; at least 1s)
 blink_after = "30s"         # the bottom line's speech blinks after a wait this long (at least 1s)

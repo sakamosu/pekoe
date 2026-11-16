@@ -211,7 +211,7 @@ docs = ["docs/orchestration.md", "README.ja.md"]
 [[tip]]
 id = "orchestrator-deliver"
 short = "pekoe wait を使わない tapi にも、報告を 1 行で届けられる"
-detail = "[orchestrator] deliver = \"idle\" で、tapi の手が空いたときにたまった報告・受信箱の答えなどを 1 行で送る。tapi chat に打っている間・許可ダイアログ・wait で待っている間は送らない。"
+detail = "[orchestrator] deliver = \"idle\" で、tapi の手が空いたときにたまった報告・受信箱の答えなどを 1 行で送る。tapi chat に打っている間・許可ダイアログの間は送らず、tapi の wait が受け取るものも送らない。"
 keys = ["[orchestrator]"]
 docs = ["docs/orchestration.md", "docs/tapi-chat.md"]
 

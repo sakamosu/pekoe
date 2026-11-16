@@ -516,7 +516,7 @@ agent = "claude"            # [agents.*] の名前。claude 以外は --add-dir 
 [orchestrator]              # 統括役としての tapi(docs/orchestration.md)
 notify = "escalate"         # tapi の許可待ちと受信箱の問いを、セッションの wait と同じに知らせる(トースト → 点滅 → OS 通知)| "quiet": 最下行・メッセージ行だけ
 inbox_popup = true          # エージェントが答えを待つ新しい問いを、答える画面としてその場で前に出す(1 回だけ。esc / ↵ でスキップすると受信箱に残り ]a で答える)。notify = "quiet" では出さない
-deliver = "off"             # "idle": tapi の手が空いたときに、任せたセッションの報告・failed・waiting・ci と受信箱の答えを 1 行で tapi の入力欄に送る(pekoe wait を使わないエージェント向け)。tapi chat に打っている間・許可ダイアログ・tapi が wait で待っている間は送らず、30 秒に 1 回まで
+deliver = "off"             # "idle": tapi の手が空いたときに、任せたセッションの報告・failed・waiting・ci と受信箱の答えを 1 行で tapi の入力欄に送る(pekoe wait を使わないエージェント向け)。tapi chat に打っている間・許可ダイアログの間は送らず、tapi の pekoe wait が受け取るもの(受け取ったもの)も送らない。30 秒に 1 回まで
 [notify]                    # 待ちの知らせの間合い(セッションの wait。notify = "quiet" でなければ tapi と受信箱の問いも)
 toast_for   = "5s"          # トーストを出しておく長さ(PR の反応も。下限 1s)
 blink_after = "30s"         # 待ちがこれだけ続くと最下行の台詞が点滅する(下限 1s)
