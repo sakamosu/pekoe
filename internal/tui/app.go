@@ -1256,7 +1256,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	x, y := ev.X-x0, ev.Y-y0
 	inAgent := x >= 0 && y >= 0 && x < aw && y < ah
 	if inAgent && m.chat.open {
-		return m.chatMouse(ev, x, y)
+		return m.ptyMouse(ev, x, y, m.chatPty())
 	}
 	if inAgent && m.dashShown() {
 		return m.dashMouse(ev, x, y)
@@ -1281,33 +1281,10 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		}
 		return nil // nothing to forward: no pty behind the preview
 	}
-	// a click on a link opens it, like ⌘-click in a bare terminal (mouse
-	// reports carry no ⌘, so any left click on a link counts); the click is
-	// not forwarded to the agent
-	if inAgent && ev.Button == tea.MouseButtonLeft {
-		switch ev.Action {
-		case tea.MouseActionPress:
-			m.linkDown = m.agentLinkAt(x, y)
-			if m.linkDown != "" {
-				m.focus = pAgent
-				return nil
-			}
-		case tea.MouseActionRelease:
-			if u := m.linkDown; u != "" {
-				m.linkDown = ""
-				if m.agentLinkAt(x, y) != u {
-					return nil
-				}
-				return func() tea.Msg {
-					if err := openURL(u); err != nil {
-						return errMsg{err}
-					}
-					return infoMsg("opened " + u)
-				}
-			}
-		}
+	if inAgent {
+		return m.ptyMouse(ev, x, y, m.agentPty())
 	}
-	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft && !inAgent {
+	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		if sel, ok := m.sessionRowAt(ev.X, ev.Y); ok { // a click on a row of [1] selects it
 			m.focus = pSessions
 			m.typing = false
@@ -1320,7 +1297,7 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	}
 	// a left button that entered the pane is not the program's: its drag
 	// and release are swallowed with the press, so the program never sees
-	// half a click
+	// half a click (the pointer may leave the pane before the release)
 	if m.clickEntered && ev.Button == tea.MouseButtonLeft && ev.Action != tea.MouseActionPress {
 		if ev.Action == tea.MouseActionRelease {
 			m.clickEntered = false
@@ -1329,51 +1306,113 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	}
 	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
 		m.clickEntered = false
-		if inAgent {
-			m.focus = pAgent
-			// a click on a pty window starts typing into it, as Enter does;
-			// the click itself only enters (not a click inside the program)
-			if m.enterPane() {
-				m.clickEntered = true
-				return nil
-			}
-		} else if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
+		if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
 			m.typing = false
 		}
 	}
-	// the wheel over a pty window starts typing into it too, and the first
-	// notch already scrolls instead of being dropped for want of focus
-	if inAgent && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) {
-		m.enterPane()
+	return nil
+}
+
+// ptyWin is a pty shown in [4] as the mouse sees it: a session's window or
+// tapi chat.
+type ptyWin struct {
+	sc     *engine.Screen
+	linkAt func(x, y int) string        // the URL drawn at (x, y) of the panel body
+	enter  func() bool                  // start typing into it, as Enter does
+	keys   func(map[string]any) tea.Cmd // write to its pty: "hex" or "keys"
+}
+
+// agentPty is the session's window shown in [4].
+func (m *model) agentPty() ptyWin {
+	p := ptyWin{sc: m.screen, linkAt: m.agentLinkAt, enter: m.enterPane, keys: func(map[string]any) tea.Cmd { return nil }}
+	if s := m.current(); s != nil {
+		slug, win := s.Slug, m.window
+		p.keys = func(params map[string]any) tea.Cmd {
+			params["slug"], params["window"] = slug, win
+			return m.inOrder(func() error {
+				_ = m.cl.Call("session.keys", params, nil)
+				return nil
+			})
+		}
 	}
-	if !inAgent || !m.typing || m.screen == nil || !m.screen.MouseAny {
-		if inAgent && m.screen != nil && !m.screen.MouseAny && (ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown) && m.typing {
-			k := "Up"
-			if ev.Button == tea.MouseButtonWheelDown {
-				k = "Down"
+	return p
+}
+
+// chatPty is tapi chat shown in [4].
+func (m *model) chatPty() ptyWin {
+	return ptyWin{sc: m.chat.screen, linkAt: m.chatLinkAt, enter: m.enterChat, keys: m.chatKeys}
+}
+
+// ptyMouse: a mouse event at (x, y) of [4]'s body over a pty window.
+//
+// A click on a link opens it, like ⌘-click in a bare terminal (mouse
+// reports carry no ⌘, so any left click on a link counts); the click is not
+// forwarded to the program. Elsewhere a click, or the wheel, starts typing
+// into the window as Enter does; the click that enters only enters (its
+// press, drag and release stay with pekoe), the wheel's first notch already
+// scrolls. While typing, the mouse goes to a program that asked for it, and
+// the wheel of a full-screen program that did not becomes Up / Down.
+func (m *model) ptyMouse(ev tea.MouseMsg, x, y int, p ptyWin) tea.Cmd {
+	wheel := ev.Button == tea.MouseButtonWheelUp || ev.Button == tea.MouseButtonWheelDown
+	if ev.Button == tea.MouseButtonLeft {
+		switch ev.Action {
+		case tea.MouseActionPress:
+			m.linkDown = p.linkAt(x, y)
+			if m.linkDown != "" {
+				m.focus = pAgent
+				return nil
 			}
-			s := m.current()
-			if s != nil && m.screen.AltScreen {
-				slug, win := s.Slug, m.window
-				return m.inOrder(func() error {
-					_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "keys": []string{k}}, nil)
+		case tea.MouseActionRelease:
+			if u := m.linkDown; u != "" {
+				m.linkDown = ""
+				if p.linkAt(x, y) != u {
 					return nil
-				})
+				}
+				return func() tea.Msg {
+					if err := openURL(u); err != nil {
+						return errMsg{err}
+					}
+					return infoMsg("opened " + u)
+				}
 			}
+		}
+	}
+	if m.clickEntered && ev.Button == tea.MouseButtonLeft && ev.Action != tea.MouseActionPress {
+		if ev.Action == tea.MouseActionRelease {
+			m.clickEntered = false
 		}
 		return nil
 	}
-	s := m.current()
-	hex := sgrMouse(ev, x, y)
-	if s == nil || hex == nil {
+	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
+		m.clickEntered = false
+		m.focus = pAgent
+		if p.enter() {
+			m.clickEntered = true
+			return nil
+		}
+	}
+	if wheel {
+		p.enter()
+	}
+	sc := p.sc
+	if !m.typing || sc == nil {
 		return nil
 	}
-	slug, win := s.Slug, m.window
-	return m.inOrder(func() error {
-		_ = m.cl.Call("session.keys", map[string]any{"slug": slug, "window": win, "hex": hex}, nil)
+	if sc.MouseAny {
+		if hex := sgrMouse(ev, x, y); hex != nil {
+			return p.keys(map[string]any{"hex": hex})
+		}
 		return nil
-	})
+	}
+	if wheel && sc.AltScreen {
+		k := "Up"
+		if ev.Button == tea.MouseButtonWheelDown {
+			k = "Down"
+		}
+		return p.keys(map[string]any{"keys": []string{k}})
+	}
+	return nil
 }
 
 // ---- attention queue / review queue ----

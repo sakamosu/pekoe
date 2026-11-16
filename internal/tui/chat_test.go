@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"pekoe/internal/client"
 	"pekoe/internal/daemon"
@@ -674,5 +675,106 @@ func TestPickSentOnce(t *testing.T) {
 	}
 	if pk := m.pendingPick(); pk == nil || pk.ID != 7 {
 		t.Fatalf("failed send: card %v, msgs %v", pk, msgs)
+	}
+}
+
+// tapi chat in [4] takes the mouse like a session's pty window: a click on a
+// link (OSC 8 or bare, found on the chat's own screen) only opens it, a
+// click or the wheel elsewhere starts typing (the click that enters is not
+// forwarded), and the next click goes to a program that asked for the mouse.
+func TestMouseInTapiChat(t *testing.T) {
+	mouse := func(m *model, x, y int, b tea.MouseButton, a tea.MouseAction) tea.Cmd {
+		return m.onMouse(tea.MouseMsg{X: x, Y: y, Button: b, Action: a})
+	}
+	click := func(m *model, x, y int) {
+		runCmd(m, mouse(m, x, y, tea.MouseButtonLeft, tea.MouseActionPress))
+		runCmd(m, mouse(m, x+1, y, tea.MouseButtonLeft, tea.MouseActionMotion))
+		runCmd(m, mouse(m, x+1, y, tea.MouseButtonLeft, tea.MouseActionRelease))
+	}
+	setup := func(t *testing.T) (*model, *fakePekoed) {
+		m, f, _ := chatModel(t)
+		m.window = engine.WinAgent
+		m.chat.open = true
+		m.focus, m.typing = pSessions, false
+		// the session's window shows no links: the chat's are looked up
+		m.screen = &engine.Screen{Lines: []string{"hello"}, Width: 100, Height: 30}
+		m.screenOf = "api-1"
+		m.chat.screen = &engine.Screen{Lines: []string{
+			"tapi says hello",
+			"PR \x1b]8;id=a;https://x.test/pr/9\x1b\\#9\x1b]8;;\x1b\\ ready",
+			"see https://example.com/x ok",
+		}, Width: 100, Height: 30, MouseAny: true, AltScreen: true}
+		return m, f
+	}
+	// the rendered frame tells where a text sits
+	at := func(t *testing.T, m *model, text string) (int, int) {
+		t.Helper()
+		for y, l := range strings.Split(m.View(), "\n") {
+			plain := ansi.Strip(l)
+			if i := strings.Index(plain, text); i >= 0 {
+				return ansi.StringWidth(plain[:i]) + 1, y
+			}
+		}
+		t.Fatalf("%q not drawn:\n%s", text, m.View())
+		return 0, 0
+	}
+
+	for _, c := range []struct{ text, want string }{
+		{"#9", "https://x.test/pr/9"},
+		{"example.com", "https://example.com/x"},
+	} {
+		m, f := setup(t)
+		x, y := at(t, m, c.text)
+		if cmd := mouse(m, x, y, tea.MouseButtonLeft, tea.MouseActionPress); cmd != nil {
+			t.Errorf("%s: the press did something: %v", c.text, msgsOf(cmd))
+		}
+		if m.linkDown != c.want || m.typing || m.focus != pAgent {
+			t.Fatalf("%s: linkDown %q typing %v focus %d", c.text, m.linkDown, m.typing, m.focus)
+		}
+		// the release opens it (the Cmd is not run: it would start a browser)
+		if cmd := mouse(m, x, y, tea.MouseButtonLeft, tea.MouseActionRelease); cmd == nil || m.linkDown != "" {
+			t.Fatalf("%s: release did not open (linkDown %q)", c.text, m.linkDown)
+		}
+		if got := f.find("tapi.keys"); len(got) != 0 {
+			t.Fatalf("%s: the link click reached tapi: %v", c.text, got)
+		}
+	}
+
+	// a click off the links enters; the next one is tapi's
+	m, f := setup(t)
+	x, y := at(t, m, "tapi says")
+	click(m, x, y)
+	if !m.typing || m.focus != pAgent {
+		t.Fatalf("click: typing %v focus %d", m.typing, m.focus)
+	}
+	if got := f.find("tapi.keys"); len(got) != 0 {
+		t.Fatalf("the click that entered reached tapi: %v", got)
+	}
+	click(m, x, y)
+	if got := f.find("tapi.keys"); len(got) != 3 || got[0]["hex"] == nil {
+		t.Fatalf("the second click: tapi.keys %v", got)
+	}
+	if got := f.find("session.keys"); len(got) != 0 {
+		t.Fatalf("chat clicks reached the session: %v", got)
+	}
+
+	// the wheel enters and already scrolls
+	m, f = setup(t)
+	x, y = at(t, m, "tapi says")
+	runCmd(m, mouse(m, x, y, tea.MouseButtonWheelUp, tea.MouseActionPress))
+	if !m.typing || m.focus != pAgent {
+		t.Fatalf("wheel: typing %v focus %d", m.typing, m.focus)
+	}
+	if got := f.find("tapi.keys"); len(got) != 1 || got[0]["hex"] == nil {
+		t.Fatalf("wheel: tapi.keys %v", got)
+	}
+
+	// a tapi that left is not entered (Enter restarts it)
+	m, _ = setup(t)
+	m.chat.screen.Dead = true
+	x, y = at(t, m, "tapi says")
+	click(m, x, y)
+	if m.typing {
+		t.Fatal("dead: typing after a click")
 	}
 }
