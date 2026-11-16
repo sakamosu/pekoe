@@ -678,6 +678,7 @@ func (d *Daemon) registerHandlers() {
 		"tapi.send":             bind(func(p tapiSendP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiSend(p) }),
 		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
+		"tapi.answer":           bind(d.hTapiAnswer),
 		"ledger.reopen":         bind(d.hLedgerReopen),
 		"ledger.delete":         bind(d.hLedgerDelete),
 		"tips.next":             bind(d.hTipsNext),

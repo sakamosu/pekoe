@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
@@ -51,7 +50,7 @@ func TestAgentLinkAtMatchesView(t *testing.T) {
 	m := &model{
 		g: g, th: theme.Load(&g.Theme), ic: theme.Icons(theme.IconsFromEnv()),
 		window: engine.WinAgent, width: 140, height: 30,
-		unreadAt: map[string]int{}, dismissed: map[string]time.Time{},
+		unreadAt: map[string]int{}, dismissed: map[string]dismissed{},
 		progress: map[string][]daemon.Step{}, answers: map[string]string{},
 		sentImages: map[int64]bool{}, ime: &imeCursor{},
 	}

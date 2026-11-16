@@ -99,6 +99,7 @@ func TestHumanOnlyMethodsNeedToken(t *testing.T) {
 		{"session.keys", map[string]any{"slug": "main", "keys": []string{"2"}}},
 		{"tapi.send", map[string]any{"text": "hi", "submit": true}},
 		{"tapi.keys", map[string]any{"keys": []string{"Enter"}}},
+		{"tapi.answer", map[string]any{"answer": "allow"}}, // tapi must not answer its own prompt
 		// tapi's words and the tools it called
 		{"tapi.transcript", map[string]any{"after": ""}},
 		{"init.write", map[string]any{"path": repo, "toml": "[hooks]\nsetup = \"true\"\n"}},

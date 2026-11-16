@@ -97,6 +97,13 @@ keys = ["p", "space", "s"]
 docs = ["README.ja.md#tui"]
 
 [[tip]]
+id = "permission-anywhere"
+short = "許可待ちはどこにいても最前面に出る"
+detail = "どのセッションでも tapi chat でも、許可待ちになると Permission モーダルがどこの許可かを添えて出る。y / n で答えても画面は動かない。文字を打っている間は抜けるまで待つ。esc で閉じたものは ]a で行ける。"
+keys = ["]a"]
+docs = ["README.ja.md#tui", "docs/design.md"]
+
+[[tip]]
 id = "web-ui"
 short = "iPhone から許可待ちに答えられる(Web UI)"
 detail = "make install WEB=1 で入れて [web] に enable と allow_users を書くと、tailnet 経由で一覧・allow / deny・send・画面が見られる。質問のメニューにはキーパッドで答える。URL は pekoe web。"

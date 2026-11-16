@@ -280,7 +280,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs |
 | `q` | Quit |
 
-- Selecting a session waiting for permission opens the Permission modal (`y` allow, `n` deny, `A` always allow, `g` go to that session, `esc` later)
+- When any session, or tapi chat, waits for a permission, the Permission modal comes up on top of whatever you are looking at, naming the repository and the session (or tapi chat): `y` allow, `n` deny, `A` always allow, `g` go to that session (or open tapi chat), `esc` later. Answering doesn't change what is selected or shown. Several waits come up one after another, the oldest first. It holds back while you type text (into [4], the `/` filter, the Issues search, a pick's instruction: your keys would answer it) and comes up as soon as you leave. A prompt dismissed with `esc` stays down until that session waits again or asks for another tool
 - In [2] Issues, `f` cycles assigned to me → all open → by label, and `n` creates a session from the issue
 - [2] Browser ties localhost tabs open in Chrome to sessions by port. `E` sends the console errors
 - When an element arrives from Chrome, a card appears in the Agent pane (`↵` send, `^s` another session, `^n` new session, `esc` discard). A pick with an instruction is sent right away to the session that owns the page's port (`[picks] auto_send`)

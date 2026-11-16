@@ -289,3 +289,48 @@ func TestTapiOtherAgent(t *testing.T) {
 }
 
 func sleep10ms() { time.Sleep(10 * time.Millisecond) }
+
+// tapi.answer answers tapi chat's permission prompt as session.answer does
+// a session's: [agents.<tapi's agent>]'s keys, refused when the prompt shown
+// is not the one waiting or tapi does not wait, and tapi moves on at once.
+func TestTapiAnswer(t *testing.T) {
+	d, fe, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	tapi := func() Tapi { return call[Tapi](t, d, "tapi.get", nil) }
+	wait := func(cmd string) {
+		event(t, d, "PreToolUse", TapiSlug, map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": cmd}})
+		event(t, d, "Notification", TapiSlug, map[string]any{"notification_type": "permission_prompt"})
+	}
+	shown := func(cmd string) map[string]any {
+		return map[string]any{"tool": map[string]any{"name": "Bash", "input": cmd}}
+	}
+	if err := callErr(d, "tapi.answer", map[string]any{"answer": "allow"}); err == nil {
+		t.Fatal("answered tapi that does not wait")
+	}
+	wait("gh pr list")
+	before := fe.spawns("lit:")
+	if err := callErr(d, "tapi.answer", map[string]any{"answer": "allow", "expect": shown("rm -rf /")}); err == nil || !strings.Contains(err.Error(), "prompt changed") {
+		t.Fatalf("another prompt shown: %v", err)
+	}
+	if fe.spawns("lit:") != before {
+		t.Fatal("keys typed for a prompt that changed")
+	}
+	if err := callErr(d, "tapi.answer", map[string]any{"answer": "maybe"}); err == nil {
+		t.Fatal("unknown answer taken")
+	}
+	call[any](t, d, "tapi.answer", map[string]any{"answer": "allow", "expect": shown("gh pr list")})
+	if fe.spawns("lit:1") != before+1 {
+		t.Fatalf("allow did not type 1: %s", fe.last())
+	}
+	if v := tapi(); v.State != state.Running || v.WaitKind != "" || v.PendingTool != nil {
+		t.Fatalf("after allow: %+v", v)
+	}
+	wait("make")
+	call[any](t, d, "tapi.answer", map[string]any{"answer": "deny"})
+	if !strings.HasSuffix(fe.last(), "keys:Escape") {
+		t.Fatalf("deny: %s", fe.last())
+	}
+	if v := tapi(); v.State != state.Idle {
+		t.Fatalf("after deny: %+v", v)
+	}
+}

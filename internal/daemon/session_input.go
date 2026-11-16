@@ -204,6 +204,46 @@ func (d *Daemon) sendKeySpec(slug, spec string) error {
 	return d.Eng.SendKeys(slug, engine.WinAgent, spec)
 }
 
+// answerKeys types the answer to a permission prompt into slug's agent
+// window (a session's, or tapi chat's): the keys of [agents.<agent>] allow /
+// always / deny, or the folder trust menu's own.
+func (d *Daemon) answerKeys(slug, agent string, tool *state.Tool, answer string) error {
+	ag := d.cfg().Agents[agent]
+	var spec string
+	switch answer {
+	case "allow", "y", "yes":
+		spec = ag.Allow
+	case "always", "a", "A":
+		spec = ag.Always
+	case "deny", "n", "no":
+		spec = ag.Deny
+	default:
+		return fmt.Errorf("answer must be allow, deny or always")
+	}
+	if tool != nil && tool.Name == "Trust" {
+		// folder trust menu: the cursor starts on "No, exit"
+		switch spec {
+		case ag.Allow, ag.Always:
+			return d.Eng.SendKeys(slug, engine.WinAgent, "Down", "Enter")
+		default:
+			return d.Eng.SendKeys(slug, engine.WinAgent, "Escape")
+		}
+	}
+	return d.sendKeySpec(slug, spec)
+}
+
+// answeredState is where an answered prompt leaves the agent until its
+// hooks say more.
+func answeredState(tool *state.Tool, answer string) state.State {
+	if tool != nil && tool.Name == "Trust" {
+		return state.Idle // UserPromptSubmit moves it to running if a prompt follows
+	}
+	if answer == "deny" || answer == "n" || answer == "no" {
+		return state.Idle
+	}
+	return state.Running
+}
+
 func (d *Daemon) hAnswer(p answerP) (any, error) {
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
@@ -216,39 +256,10 @@ func (d *Daemon) hAnswer(p answerP) (any, error) {
 	if p.Expect != nil && !sameTool(s.PendingTool, p.Expect.Tool) {
 		return nil, errPromptChanged
 	}
-	ag := d.cfg().Agents[s.Agent]
-	var spec string
-	switch p.Answer {
-	case "allow", "y", "yes":
-		spec = ag.Allow
-	case "always", "a", "A":
-		spec = ag.Always
-	case "deny", "n", "no":
-		spec = ag.Deny
-	default:
-		return nil, fmt.Errorf("answer must be allow, deny or always")
-	}
-	if s.PendingTool != nil && s.PendingTool.Name == "Trust" {
-		// folder trust menu: the cursor starts on "No, exit"
-		switch spec {
-		case ag.Allow, ag.Always:
-			err = d.Eng.SendKeys(p.Slug, engine.WinAgent, "Down", "Enter")
-		default:
-			err = d.Eng.SendKeys(p.Slug, engine.WinAgent, "Escape")
-		}
-	} else {
-		err = d.sendKeySpec(p.Slug, spec)
-	}
-	if err != nil {
+	if err := d.answerKeys(p.Slug, s.Agent, s.PendingTool, p.Answer); err != nil {
 		return nil, err
 	}
-	next := state.Running
-	if p.Answer == "deny" || p.Answer == "n" || p.Answer == "no" {
-		next = state.Idle
-	}
-	if s.PendingTool != nil && s.PendingTool.Name == "Trust" {
-		next = state.Idle // UserPromptSubmit moves it to running if a prompt follows
-	}
+	next := answeredState(s.PendingTool, p.Answer)
 	return d.update(p.Slug, func(x *state.Session) {
 		if x.State == state.Waiting {
 			x.State = next

@@ -328,6 +328,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 | `tapi.transcript` | `{after?: cursor}` | `ChatPage`(docs/web.md の「吹き出し(chat)と画面(screen)」)。tapi の hook が渡した transcript(tapi の Claude Code のプロジェクトディレクトリの中だけ)を、人・tapi のテキスト・ツールの名前と主な引数・ターンの所要時間に絞って、カーソルの後ろから返す。tool_result・thinking・システムの注入は返さない。人間だけ |
 | `tapi.send` | `{text, submit?}` | `session.send` と同じ |
 | `tapi.keys` | `{keys?, literal?, hex?}` | `session.keys` と同じ |
+| `tapi.answer` | `{answer: "allow"\|"deny"\|"always", expect?: {tool}}` | tapi chat の許可待ちに答える(TUI の許可モーダル)。`session.answer` と同じく `[agents.<tapi の agent>]` のキーを打ち、`expect` が違えば `the prompt changed; look again`、待っていなければエラー。人だけ(tapi が自分の許可に答えないように)。Web UI には出さない |
 | `tapi.resize` | `{width, height}` | pty サイズ変更(`session.resize "*"` でも合わせる) |
 | `issues.view` | `{repo? \| repo_id?, number, refresh?}` | `IssueDetail`(下記)。`gh issue view N --json …`。同じく 3 分キャッシュ |
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |

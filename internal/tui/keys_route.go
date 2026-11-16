@@ -115,7 +115,7 @@ func (m *model) onKeyFilter(k tea.KeyMsg) tea.Cmd {
 // onKeyAgentCards: the picks input and the error card in [4] take their keys
 // before ] / [ and the global keys.
 func (m *model) onKeyAgentCards(k tea.KeyMsg) (tea.Cmd, bool) {
-	if m.pickInput != nil && m.focus == pAgent && !m.issueShown() && !m.chat.open {
+	if m.pickInputFocused() {
 		if cmd, used := m.pickKey(k); used {
 			return cmd, true
 		}

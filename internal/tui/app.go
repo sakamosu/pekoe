@@ -131,8 +131,8 @@ type model struct {
 	dirty      bool
 	unreadAt   map[string]int // slug -> absolute line where the user left
 	lastSel    string
-	returnTo   []string // attention queue: where ]a jumped from
-	dismissed  map[string]time.Time
+	returnTo   []string             // attention queue: where ]a jumped from
+	dismissed  map[string]dismissed // permission prompts put down, by slug (modals.go)
 	progress   map[string][]daemon.Step
 	pickInput  *input
 	answers    map[string]string
@@ -215,7 +215,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		pr:         newPRState(),
 		pv:         newPreviewState(),
 		unreadAt:   map[string]int{},
-		dismissed:  map[string]time.Time{},
+		dismissed:  map[string]dismissed{},
 		progress:   map[string][]daemon.Step{},
 		answers:    map[string]string{},
 		square:     os.Getenv("PEKOE_SQUARE") != "",
@@ -541,6 +541,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		_, cmd = m.route(msg)
 	}
+	m.closeStalePermission()
+	m.maybePermission() // e.g. typing just stopped: a prompt held back comes up now
 	m.tipSync()
 	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
 }
@@ -765,28 +767,48 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 	return nil
 }
 
-// maybePermission opens the permission modal for the selected session when
-// it waits for a permission and the user is not typing elsewhere.
-// closeStalePermission closes the permission dialog once its session no
-// longer waits for a permission (or is gone): it would keep every key.
+// closeStalePermission closes the permission dialog once its wait ended
+// (or the session is gone): it would keep every key.
 func (m *model) closeStalePermission() {
 	if p, ok := m.modal.(*permissionModal); ok && p.stale() {
 		m.modal = nil
 	}
 }
 
+// textEntry: keys typed now go into text (the pty [4] shows, the [1]
+// filter, the Issues search, a pick's instruction in [4]), where a modal
+// coming up would take a y or n being typed as an answer. Inputs inside a
+// modal or the review surface are covered by those being open.
+func (m *model) textEntry() bool {
+	return m.typing || m.filterOn || m.iss.queryOn || m.pickInputFocused()
+}
+
+// pickInputFocused: [4]'s pick card takes the keys typed (its instruction).
+func (m *model) pickInputFocused() bool {
+	return m.pickInput != nil && m.focus == pAgent && !m.issueShown() && !m.chat.open
+}
+
+// maybePermission puts the permission modal on top for the oldest
+// permission prompt not dismissed: any session's or tapi chat's, whatever
+// is selected or shows. Never while typing text (textEntry: the keys typed
+// would answer it), in the review surface or the tour; leaving them, it
+// comes up at once (Update). A dismissed prompt (esc, g, answered) stays
+// down until its session waits again or for another tool.
 func (m *model) maybePermission() tea.Cmd {
-	if m.modal != nil || m.typing || m.review != nil {
+	if m.modal != nil || m.textEntry() || m.review != nil || m.tour != nil {
 		return nil
 	}
-	s := m.current()
-	if s == nil || s.State != state.Waiting || s.WaitKind != "permission" {
+	for _, w := range m.permWaits() {
+		if d, ok := m.dismissed[w.slug]; ok && d == w.key() {
+			continue
+		}
+		m.modal = &permissionModal{m: m, slug: w.slug}
+		// the modal says it: a toast for the same wait would say it twice
+		if t := m.tapi; t != nil && t.toast != nil && t.toast.slug == w.slug && t.toast.react == nil {
+			t.toast = nil
+		}
 		return nil
 	}
-	if t, ok := m.dismissed[s.Slug]; ok && !s.StateSince.After(t) {
-		return nil
-	}
-	m.modal = newPermissionModal(m, s)
 	return nil
 }
 
