@@ -128,7 +128,7 @@ func (m *model) onTick() tea.Cmd {
 	if m.window == winPR && m.current() != nil && time.Since(m.pr.at) >= prRefresh {
 		cmds = append(cmds, m.prFollow())
 	}
-	cmds = append(cmds, m.maybePermission(), m.maybeInboxPopup(time.Now()), m.escalate(), m.dashTick())
+	cmds = append(cmds, m.maybePermission(), m.maybeInboxPopup(time.Now()), m.escalate(), m.dashTick(), m.deliverPause(time.Now()))
 	m.tapiExpire()
 	return tea.Batch(cmds...)
 }

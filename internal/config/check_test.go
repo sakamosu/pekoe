@@ -95,6 +95,7 @@ eye = "black"
 surface = "vim"
 [orchestrator]
 notify = "loud"
+deliver = "always"
 [cleanup]
 stale_after = "3 days"
 [tapi]
@@ -127,6 +128,7 @@ state_dir = "rel/dir"
 		`mascot.colors.eye: "black" is not a color`,
 		`review.surface: "vim" is not one of nvim | tui (the built-in tui surface is used)`,
 		`orchestrator.notify: "loud"`,
+		`orchestrator.deliver: "always" is not one of off | idle`,
 		`cleanup.stale_after: "3 days" is not a positive Go duration`,
 		`tapi.agent: "gemini" is not in [agents.*] (claude, codex, mine, opencode)`,
 		`agents.mine.prompt: "stdin"`,
@@ -314,5 +316,39 @@ func TestInboxPopup(t *testing.T) {
 	}
 	if r := RestartNeeded(def, off); r != nil {
 		t.Errorf("inbox_popup needs a restart: %v", r)
+	}
+}
+
+// [orchestrator] deliver: unset is off, "idle" (any case) is on, check
+// refuses anything else, show spells it out, and it needs no restart.
+func TestDeliver(t *testing.T) {
+	def, err := ParseGlobal(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if def.Orchestrator.DeliverIdle() {
+		t.Error("unset: want off")
+	}
+	b, _ := EncodeTOML(Effective(def))
+	if !strings.Contains(string(b), `deliver = "off"`) {
+		t.Errorf("show: no deliver = \"off\" in\n%s", b)
+	}
+	src := "[orchestrator]\ndeliver = \"Idle\"\n"
+	on, err := ParseGlobal([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !on.Orchestrator.DeliverIdle() {
+		t.Error(`deliver = "Idle": want on`)
+	}
+	if ps := Check([]byte(src)); len(ps) != 0 {
+		t.Errorf("check: %s", problems(ps))
+	}
+	b, _ = EncodeTOML(Effective(on))
+	if !strings.Contains(string(b), `deliver = "idle"`) {
+		t.Errorf("show: no deliver = \"idle\" in\n%s", b)
+	}
+	if r := RestartNeeded(def, on); r != nil {
+		t.Errorf("deliver needs a restart: %v", r)
 	}
 }

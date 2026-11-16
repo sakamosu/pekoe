@@ -93,7 +93,7 @@ func (d *Daemon) hReportPost(who *Caller, p reportP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.changes.add(Change{Kind: kindReport, Slug: slug, Summary: fmt.Sprintf("%s: report %s: %s", slug, r.Status, lineCut(brief.Summary, 120)), parent: c.Parent})
+	d.changes.add(Change{Kind: kindReport, Slug: slug, Summary: fmt.Sprintf("%s: report %s: %s", slug, r.Status, lineCut(brief.Summary, 120)), parent: c.Parent, brief: "report " + string(r.Status)})
 	d.emit("report.posted", r)
 	return r, nil
 }

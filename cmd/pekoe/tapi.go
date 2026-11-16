@@ -49,6 +49,19 @@ func cmdTapi(args []string) error {
 			fmt.Printf("tapi chat: %s · agent %s · %s\n", st, v.Agent, v.Dir)
 		}
 		fmt.Printf("ledger: %d open · inbox: %d open\n", v.LedgerOpen, v.InboxOpen)
+		if dv := v.Deliver; dv != nil && dv.Mode != "off" {
+			line := fmt.Sprintf("deliver: %s · %d pending", dv.Mode, dv.Pending)
+			if dv.Held != "" {
+				line += " (held: " + dv.Held + ")"
+			}
+			if dv.LastAt != nil {
+				line += " · last " + dv.LastAt.Local().Format("15:04:05")
+			}
+			if dv.LastError != "" {
+				line += " · error: " + dv.LastError
+			}
+			fmt.Println(line)
+		}
 		if o := v.Outside; o != nil {
 			where := "outside every pekoe window (a Claude Code background session?)"
 			if o.Window != "" {

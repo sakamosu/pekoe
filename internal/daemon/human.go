@@ -113,6 +113,7 @@ var humanMethods = map[string]string{
 	"tapi.send":             "tapi chat's input box",
 	"tapi.keys":             "raw keys into tapi chat",
 	"tapi.answer":           "allow / deny / always on tapi chat's permission prompt: tapi must not answer its own",
+	"tapi.deliver_pause":    "the TUI says a person types into tapi chat: an agent must not hold back (or let go) what pekoed delivers to tapi",
 	"review.approve":        "a person's review decision",
 	"review.unapprove":      "a person's review decision",
 	"review.reject":         "a person's review decision, sent to the agent",
