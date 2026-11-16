@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,5 +34,44 @@ func TestOlderTestRunDoesNotOverwrite(t *testing.T) {
 	s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
 	if s.Test.Status != "pass" {
 		t.Fatalf("the older run's result won: %+v", s.Test)
+	}
+}
+
+// A [hooks] test whose command is not there (the shell's exit 127, as
+// `yarn test` on a machine without yarn) did not run: it is "error" with
+// the shell's message, not a failing test. A test that runs and fails is
+// still "fail".
+func TestMissingTestCommandIsNotAFailure(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	repoHooks(t, d, repo, `pekoe-no-such-command-for-test test`)
+	d.runTest("main")
+	s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
+	if s.Test.Status != "error" || !strings.Contains(s.Test.Summary, "not found") {
+		t.Fatalf("a missing command: %+v", s.Test)
+	}
+	repoHooks(t, d, repo, `echo '1 failed'; exit 1`)
+	d.runTest("main")
+	s = call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
+	if s.Test.Status != "fail" {
+		t.Fatalf("a failing test: %+v", s.Test)
+	}
+}
+
+// Taking [hooks] test out of repos/<id>.toml (or commenting it out) clears
+// the last result at the next Stop: a ✗ from before must not stay.
+func TestRemovedTestHookDropsTheOldResult(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	repoHooks(t, d, repo, `exit 1`)
+	d.runTest("main")
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.Test.Status != "fail" {
+		t.Fatalf("before: %+v", s.Test)
+	}
+	id := call[map[string]any](t, d, "init.detect", map[string]any{"path": repo})["repo_id"].(string)
+	os.WriteFile(filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos", id+".toml"), []byte("[hooks]\n# test = 'exit 1'\n"), 0o644)
+	d.runTest("main")
+	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.Test.Status != "none" {
+		t.Fatalf("the old result stayed: %+v", s.Test)
 	}
 }

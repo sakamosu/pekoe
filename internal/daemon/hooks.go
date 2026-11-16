@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -805,6 +806,7 @@ func (d *Daemon) runTest(slug string) {
 	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test == "" {
+		d.dropTest(s)
 		return
 	}
 	cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
@@ -830,11 +832,37 @@ func (d *Daemon) runTest(slug string) {
 	logDir := filepath.Join(paths.DataDir(), s.RepoID, "logs")
 	_ = os.MkdirAll(logDir, paths.DirPerm)
 	_ = os.WriteFile(filepath.Join(logDir, slug+"-test.log"), []byte(out), paths.FilePerm)
+	d.update(slug, func(x *state.Session) { x.Test = testResult(out, err) })
+}
+
+// testResult is the outcome of a [hooks] test run: pass, fail, or error
+// when the shell could not start the command (exit 127, "command not
+// found"; a test runner that is not installed). error is not a failing
+// test, and the summary says what was missing.
+func testResult(out string, err error) state.Test {
 	t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
-	if err != nil {
+	var ee *exec.ExitError
+	switch {
+	case errors.As(err, &ee) && ee.ExitCode() == 127:
+		t.Status = "error"
+	case err != nil:
 		t.Status = "fail"
 	}
-	d.update(slug, func(x *state.Session) { x.Test = t })
+	return t
+}
+
+// dropTest forgets the test result of a session whose repository has no
+// [hooks] test (any more): a ✗ from before the line was removed would
+// otherwise stay. A run still going is stopped and its result dropped.
+// repos/<id>.toml is read when used, not watched, so this happens at the
+// next Stop (or land).
+func (d *Daemon) dropTest(s *state.Session) {
+	_, run := d.tests.start(s.Slug)
+	d.tests.finish(s.Slug, run)
+	if s.Test.Status == "" || s.Test.Status == "none" {
+		return
+	}
+	d.update(s.Slug, func(x *state.Session) { x.Test = state.Test{Status: "none"} })
 }
 
 var riskRe = regexp.MustCompile(`^\s*[-*]?\s*([^\s:]+):(\d+):?\s*(.*)$`)

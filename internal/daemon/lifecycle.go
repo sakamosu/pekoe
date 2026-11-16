@@ -525,15 +525,17 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		if errors.Is(err, sandbox.ErrUnavailable) {
 			return nil, fmt.Errorf("tests %w", err)
 		}
-		t := state.Test{Status: "pass", Summary: summarize(out, err == nil), At: time.Now()}
-		if err != nil {
-			t.Status = "fail"
-		}
+		t := testResult(out, err)
 		d.update(p.Slug, func(x *state.Session) { x.Test = t })
+		if t.Status == "error" {
+			return nil, fmt.Errorf("tests could not run ([hooks] test: command not found): %s", t.Summary)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("tests failed: %s", t.Summary)
 		}
 		steps = append(steps, "tests passed")
+	} else {
+		d.dropTest(s)
 	}
 	if !hasOrigin {
 		// local-only repository: fast-forward the base branch in the main worktree
