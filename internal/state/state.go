@@ -19,6 +19,11 @@ import (
 type State string
 
 const (
+	// Queued: made by session.new but not started yet: it waits for a free
+	// slot ([orchestrator] max_running) or for the sessions it comes after
+	// to land (pekoe new --hold). No worktree and no agent yet; it goes on
+	// to creating (daemon/queue.go).
+	Queued    State = "queued"
 	Creating  State = "creating"
 	Running   State = "running"
 	Waiting   State = "waiting"
@@ -157,9 +162,17 @@ type Session struct {
 	// --request; daemon/ledger.go). 0: none.
 	Request int64 `json:"request,omitempty"`
 	// After are the slugs of the sessions this one comes after (pekoe new
-	// --after, daemon/after.go). Only recorded and shown: nothing waits on
-	// them yet.
+	// --after, daemon/after.go). Recorded and shown; with Hold the session
+	// does not start before they land.
 	After []string `json:"after,omitempty"`
+	// Hold: pekoe new --hold. The session stays queued until every After
+	// session has landed (daemon/queue.go). Holding are those not landed
+	// yet, while it is queued.
+	Hold    bool     `json:"hold,omitempty"`
+	Holding []string `json:"holding,omitempty"`
+	// Queue says why a queued session has not started yet (one line).
+	// Empty in any other state.
+	Queue string `json:"queue,omitempty"`
 	// Dev (above) is true while the dev hook's process ([hooks] dev) runs;
 	// it turns false when the hook ends by itself (DevExit says how) or
 	// pekoe stops it. DevLog is the file its output goes to (pekoe dev

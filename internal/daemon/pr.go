@@ -646,7 +646,7 @@ func (d *Daemon) watchPRStatus() {
 	d.mu.Lock()
 	var due []state.Session
 	for slug, s := range d.sessions {
-		if s.PR == 0 || s.State == state.Landed || s.State == state.Creating {
+		if s.PR == 0 || s.State == state.Landed || s.State == state.Creating || s.State == state.Queued {
 			continue
 		}
 		if s.PRStatus != nil && s.PRStatus.State != "OPEN" {

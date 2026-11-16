@@ -53,7 +53,7 @@ func (m *model) tipSpot() bool {
 	if s == nil {
 		return true
 	}
-	return s.State == state.Creating && m.window != winPR && m.window != winPreview
+	return (s.State == state.Creating || s.State == state.Queued) && m.window != winPR && m.window != winPreview
 }
 
 // tipSync picks a tip when the empty pane appears (runs after every update).

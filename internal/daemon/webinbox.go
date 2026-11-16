@@ -163,6 +163,7 @@ type webRequest struct {
 
 type webCounts struct {
 	Running    int `json:"running"`
+	Queued     int `json:"queued"` // queue.go: made, waiting for a slot or for --hold
 	Waiting    int `json:"waiting"`
 	Review     int `json:"review"` // done: waiting for a look
 	OpenPRs    int `json:"open_prs"`
@@ -203,6 +204,8 @@ func (d *Daemon) webOverview(w http.ResponseWriter, r *http.Request) {
 		switch s.State {
 		case state.Running, state.Creating:
 			c.Running++
+		case state.Queued:
+			c.Queued++
 		case state.Waiting:
 			c.Waiting++
 		case state.Done:
@@ -324,6 +327,8 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("impl", stepDone, "")
 	case s.State == state.Failed || s.Error != "":
 		step("impl", stepFail, firstLine(s.Error))
+	case s.State == state.Queued:
+		step("impl", stepTodo, "queued: "+s.Queue)
 	case s.Report != nil && s.Report.Status == "blocked":
 		step("impl", stepFail, "blocked (report "+ids.Report(s.Report.ID)+")")
 	default:

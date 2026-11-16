@@ -216,16 +216,25 @@ type Tapi struct {
 // too. Deliver is "off" (the default) or "idle": pekoed types one line
 // summing up tapi's changes (reports, inbox answers, failed, waiting, ci)
 // into tapi's input box when it is free (daemon/deliver.go).
+//
+// MaxRunning caps the sessions pekoed lets work at once (creating, running,
+// waiting; sessions pekoe made, not the repository's own checkout). A
+// session.new beyond it is queued and starts, oldest first, when one stops
+// working (daemon/queue.go). 0 (the default) or less: no cap.
 type Orchestrator struct {
 	Notify     string `toml:"notify"`
 	InboxPopup *bool  `toml:"inbox_popup"`
 	Deliver    string `toml:"deliver"`
+	MaxRunning int    `toml:"max_running"`
 }
 
 // DeliverIdle: deliver = "idle" (anything else is off).
 func (o Orchestrator) DeliverIdle() bool {
 	return strings.EqualFold(strings.TrimSpace(o.Deliver), "idle")
 }
+
+// Cap is max_running in use: 0 is no cap (unset, 0 or below 0).
+func (o Orchestrator) Cap() int { return max(o.MaxRunning, 0) }
 
 // InboxPopupOn: inbox_popup, unset is true.
 func (o Orchestrator) InboxPopupOn() bool { return o.InboxPopup == nil || *o.InboxPopup }

@@ -347,7 +347,7 @@ func (m *model) loadPicks() tea.Cmd {
 
 func (m *model) fetchScreen() tea.Cmd {
 	s := m.current()
-	if s == nil || s.State == state.Creating || m.window == winPR || m.window == winPreview {
+	if s == nil || s.State == state.Creating || s.State == state.Queued || m.window == winPR || m.window == winPreview {
 		return nil
 	}
 	if m.fetching {
@@ -934,7 +934,7 @@ func (m *model) keySessions(key string) tea.Cmd {
 			return nil
 		}
 		m.focus = pAgent
-		if s.State == state.Creating {
+		if s.State == state.Creating || s.State == state.Queued {
 			m.modal = newProgressModal(m, s.Slug)
 			return nil
 		}

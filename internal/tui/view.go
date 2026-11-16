@@ -312,7 +312,7 @@ func (m *model) sessionLine(s *state.Session, cw int, now time.Time) string {
 		test = ""
 	}
 	nameRole := theme.Text
-	if s.State == state.Idle || s.State == state.Creating || s.State == state.Landed {
+	if s.State == state.Idle || s.State == state.Creating || s.State == state.Queued || s.State == state.Landed {
 		nameRole = theme.Dim
 	}
 	// the PR and conflict tags never get truncated away; the branch name gives way first
@@ -624,7 +624,7 @@ func (m *model) viewAgent(width, height int) []string {
 	if s.GitBlocked != "" { // its .git was changed (gitx.TamperedError)
 		extra += " · " + th.FG(theme.Warn, ".git changed: git stopped")
 	}
-	if s.State == state.Creating {
+	if s.State == state.Creating || s.State == state.Queued {
 		extra = "· not started"
 	}
 	if m.typing {
@@ -632,7 +632,7 @@ func (m *model) viewAgent(width, height int) []string {
 	}
 	title := m.panelTitle(4, icon, winLabel+" "+s.Branch, extra, f)
 	right := ""
-	if len(s.Activity) > 0 && s.State != state.Creating {
+	if len(s.Activity) > 0 && s.State != state.Creating && s.State != state.Queued {
 		right = m.spark(s.Activity)
 		if s.Tokens > 0 {
 			right += " " + th.FG(theme.Dim, ktok(s.Tokens)+" tok")
@@ -642,6 +642,9 @@ func (m *model) viewAgent(width, height int) []string {
 	ch := height - 2
 	if s.State == state.Creating {
 		return m.box(width, height, boxOpt{title: title, rows: m.bigRowsTip(cw, ch, mascot.Work, "creating worktree "+s.Branch, creatingSub(m.progress[s.Slug])), focused: f})
+	}
+	if s.State == state.Queued {
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRowsTip(cw, ch, mascot.Idle, "queued "+s.Branch, s.Queue), focused: f})
 	}
 	if s.State == state.Failed && m.window == engine.WinAgent && (m.screen == nil || m.screen.Dead) {
 		rows := m.bigRows(cw, ch-4, mascot.Error, "setup failed", "")

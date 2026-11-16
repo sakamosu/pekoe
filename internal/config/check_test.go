@@ -96,6 +96,7 @@ surface = "vim"
 [orchestrator]
 notify = "loud"
 deliver = "always"
+max_running = -1
 [cleanup]
 stale_after = "3 days"
 [tapi]
@@ -129,6 +130,7 @@ state_dir = "rel/dir"
 		`review.surface: "vim" is not one of nvim | tui (the built-in tui surface is used)`,
 		`orchestrator.notify: "loud"`,
 		`orchestrator.deliver: "always" is not one of off | idle`,
+		"orchestrator.max_running: -1 is below 0",
 		`cleanup.stale_after: "3 days" is not a positive Go duration`,
 		`tapi.agent: "gemini" is not in [agents.*] (claude, codex, mine, opencode)`,
 		`agents.mine.prompt: "stdin"`,

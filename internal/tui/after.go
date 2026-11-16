@@ -1,9 +1,10 @@
 package tui
 
 // Session.after (pekoe new --after, daemon/after.go): which sessions one
-// comes after. Only shown, nothing waits on them: the row carries
-// "after <slug>" while one of them is not through yet, and the footer of
-// Sessions spells out each one's state for the selected session.
+// comes after. The row carries "after <slug>" while one of them is not
+// through yet, and the footer of Sessions spells out each one's state for
+// the selected session ("after (hold)" when it does not start before they
+// land: pekoe new --hold, daemon/queue.go).
 
 import (
 	"fmt"
@@ -72,5 +73,9 @@ func (m *model) afterFooter(s *state.Session) string {
 		}
 		parts = append(parts, m.th.FG(theme.Text, slug)+" "+m.th.FG(role, word))
 	}
-	return m.th.FG(theme.Dim, "after ") + strings.Join(parts, m.th.FG(theme.Dim, " · "))
+	lead := "after "
+	if s.Hold {
+		lead = "after (hold) "
+	}
+	return m.th.FG(theme.Dim, lead) + strings.Join(parts, m.th.FG(theme.Dim, " · "))
 }

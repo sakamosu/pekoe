@@ -1,6 +1,6 @@
 # 統括役(tapi)とセッションを人が管理しない体験 — 設計書
 
-状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の記録)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼(ledger)」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信、tapi への配送(`[orchestrator] deliver`。既定は off)を実装済みで、段階 3 は終わった。段階 4 は G の後片付け(片付けの候補の一覧と、人が選んで消す `pekoe cleanup` / TUI の `:cleanup`)を実装し、E・F・G の負荷の制御・プロジェクトの層は後回しにして(PR の集計は `pekoe stats` として後から実装)、ユーザーの判断で一旦完了とした。後回しにしたものは設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
+状態: 段階 1(呼び出し元の識別・`parent`・報告・`wait`・送信の記録・state.db の denyRead・判断の受信箱)を実装済み。段階 2 のうち、Sessions の先頭の tapi の行、スキルと `pekoe skills install`、tapi を統括役にする本体(役割の指示・書けないようにする・依頼の記録)を実装済み。仕様の正は docs/api.md(「呼び出し元の識別」「報告」「待ち合わせ」「送信の記録」「判断の受信箱」「依頼(ledger)」「Tapi オブジェクト」)と docs/tapi-chat.md。実装で設計から変えたところは各節に「実装:」で書いた。段階 2 の `Session.after`(`pekoe new --after`)と知らせ方(`[orchestrator] notify`)も実装済み。段階 3 のうち `conflicts.list` をトークンなしで呼べるようにし、「マージしてよいかの根拠」(根拠の受信箱の項目と `merge.check`)と TUI のダッシュボードの窓、Web UI の受信箱と概要・工程表、Web UI からの tapi への送信、tapi への配送(`[orchestrator] deliver`。既定は off)を実装済みで、段階 3 は終わった。段階 4 は G の後片付け(片付けの候補の一覧と、人が選んで消す `pekoe cleanup` / TUI の `:cleanup`)を実装し、E・F・G の負荷の制御・プロジェクトの層は後回しにして(PR の集計は `pekoe stats` として後から実装)、ユーザーの判断で一旦完了とした。その後 G の負荷の制御の最初の版(`[orchestrator] max_running` の待ち行列と `pekoe new --after X --hold`)を実装した。後回しにしたものは設計中。この文書は方針と API 案で、実装したら docs/api.md・docs/tapi-chat.md・README などに移し、ここには決めた理由と残る論点だけを残す(段階 1 が済んだら API 案を削る)。
 
 ## 目指す体験
 
@@ -351,7 +351,7 @@ state.db: `ledger(id INTEGER PRIMARY KEY, at, text, status, sessions TEXT, evide
 | --- | --- |
 | `parent` | 依頼元(`+tapi`・slug・`human`・`unknown`)。`session.new` の呼び出し元から決める(実装: `session.open`・`adopt`・`review.pr` で作ったものは空。Chrome 拡張から作ったものは `human`) |
 | `request` | 依頼の id(`--request`) |
-| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない。段階 3 の条件判定の材料(実装: 作る時点で今あるセッションだけを受け付ける。打ち間違いが「いつまでも満たされない依存」として残らないように、先のものから作らせる。landed のものも渡せる。一覧は作った後に変えないので循環は「landed の同じ slug を作り直す」ときにしか起きず、それと自分自身を断る。10 個まで、重複は 1 つに。後で `pekoe rm` された相手は消さずに残し、TUI は `gone` と出す。TUI は行に「まだ済んでいない(landed でも PR がマージ済みでもない)相手」を `after feat-a +1` で出し、選んだセッションのフッターにそれぞれの状態を出す。`pekoe ls` の文字の出力には出さない(`--json` には出る)) |
+| `after` | 依存するセッションの slug(`pekoe new --after <slug>`)。v1 は記録して表示するだけで、起動は止めない(段階 4 で `--hold` を足し、付けたときだけ相手が landed になるまで起動を止める。下の G の「実装:」)。段階 3 の条件判定の材料(実装: 作る時点で今あるセッションだけを受け付ける。打ち間違いが「いつまでも満たされない依存」として残らないように、先のものから作らせる。landed のものも渡せる。一覧は作った後に変えないので循環は「landed の同じ slug を作り直す」ときにしか起きず、それと自分自身を断る。10 個まで、重複は 1 つに。後で `pekoe rm` された相手は消さずに残し、TUI は `gone` と出す。TUI は行に「まだ済んでいない(landed でも PR がマージ済みでもない)相手」を `after feat-a +1` で出し、選んだセッションのフッターにそれぞれの状態を出す。`pekoe ls` の文字の出力には出さない(`--json` には出る)) |
 | `report` | 最新の報告の要約 |
 
 tapi は今どおり `state.Session` に入れない(docs/tapi-chat.md の方針)。`parent: "+tapi"` は文字列で指すだけ。
@@ -593,7 +593,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - 依頼(`ledger.*`、UserPromptSubmit での記録、`--request`)
 - 知らせ方を強める(`[orchestrator] notify`)
 - スキル `pekoe-orchestrate` / `pekoe-work` / `pekoe-review` と `pekoe skills install`
-- `Session.after`(`pekoe new --after`。記録と表示だけ)
+- `Session.after`(`pekoe new --after`。記録と表示だけ。起動を止める `--hold` は段階 4 の G)
 - docs/tapi-chat.md・docs/mascot.md・README の更新
 
 完了条件:
@@ -637,7 +637,15 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **E. 着地の自動化の残り**: 条件が揃ったら人の答えなしにマージまで進める段階(リポジトリごとの設定で許す)は **v1 の範囲外**(決まったこと 1。人が受信箱で `merge` と答えたときのマージは段階 3 に入った)。根拠の受信箱を使ってみて、独立レビューの限界(上の脅威モデル)への答えが出てから決め直す。独占レーン(`[land] exclusive = ["db/migrate/**"]` に触るセッションを 1 本ずつ最新の base の上で着地させる)、マージ後の main の CI の見届け、「マージ済みでまだリリースしていない」一覧(設定にコマンドを書く。設計原則 2「ただのシェル」)
 - **F. PR 監視を広げる**: 自分宛てのレビュー依頼(チーム経由・bot を除く)を受信箱に、`pekoe review gh#N` へつなぐ。自分の PR のレビュー待ちが長いものの一覧。事前チェックはモデルを使わずに pekoed がやり、変化があったときだけ tapi に知らせる
 - **G. 負荷の制御と後片付け**: load・メモリ・ディスクを測り、重い処理(setup・dev・E2E)を待ち行列に入れる。片付けの一覧(landed のまま、止めて長い、マージ済みのブランチ)を出し、選んで消す(消すのは人)
-  - 実装: 後片付けだけ(負荷の制御は後回し)。`cleanup.list`(token なしでも読める。git の読み取りは worktree ごとに 10 秒に 1 回まで)が候補を `landed`(記録だけ残る)・`merged`(`pekoe land` を通さずに GitHub でマージされ、worktree が残る)・`stale`(running・waiting 以外で `[cleanup] stale_after` より長く状態が変わらない。既定 72h は、金曜の夕方に止めて月曜の朝に戻る約 63 時間を拾わないため)に分け、未コミットのファイル数と、どのリモート・base・マージした PR の head にもないコミット数を警告として付ける。「マージ済みのブランチ」はセッションの単位で扱い、ローカルの git のブランチは消さない(`pekoe rm` と同じ)。消すのは既存の `worktree.rm` で、`pekoe cleanup --rm <slug>… | --rm --landed` と TUI の `:cleanup` の `D` が確認を挟んで呼ぶ。安全の線は変えない(token なしで消せるのは worktree の消えた landed だけ)。pekoe land が PR を作ってマージ待ちのセッションと、リポジトリ本体のチェックアウトのセッションは候補にしない。仕様は docs/api.md の「片付けの候補(cleanup)」
+  - 実装: 後片付け(負荷の制御は後から足した。下)。`cleanup.list`(token なしでも読める。git の読み取りは worktree ごとに 10 秒に 1 回まで)が候補を `landed`(記録だけ残る)・`merged`(`pekoe land` を通さずに GitHub でマージされ、worktree が残る)・`stale`(running・waiting 以外で `[cleanup] stale_after` より長く状態が変わらない。既定 72h は、金曜の夕方に止めて月曜の朝に戻る約 63 時間を拾わないため)に分け、未コミットのファイル数と、どのリモート・base・マージした PR の head にもないコミット数を警告として付ける。「マージ済みのブランチ」はセッションの単位で扱い、ローカルの git のブランチは消さない(`pekoe rm` と同じ)。消すのは既存の `worktree.rm` で、`pekoe cleanup --rm <slug>… | --rm --landed` と TUI の `:cleanup` の `D` が確認を挟んで呼ぶ。安全の線は変えない(token なしで消せるのは worktree の消えた landed だけ)。pekoe land が PR を作ってマージ待ちのセッションと、リポジトリ本体のチェックアウトのセッションは候補にしない。仕様は docs/api.md の「片付けの候補(cleanup)」
+  - 実装(負荷の制御の最初の版、internal/daemon/queue.go。仕様は docs/api.md の「待ち行列」): 2 つだけ。どちらも既定は今までどおり(上限なし・`--hold` なしなら何も待たない)
+    - **同時に動かす数の上限**: `[orchestrator] max_running`(既定 0 = 上限なし)。数えるのは pekoe が作ったセッション(`managed`)の `creating`・`running`・`waiting`。idle・done は数えない(ターンが終わってエージェントは手を止めている。後で `pekoe send` で動き出しても、上限は「新しく始めるか」だけに効く)。waiting を数えるのは、人の許可を待っていても作業の途中で、許可が出ればすぐに続きを動かすから(land の後片付けの「まだ作業中」と同じ線)。リポジトリ本体のチェックアウト(main セッション)は数えない: ハブとして `pekoe wait` で待っている main が running のまま枠を 1 つ取ると、上限 1 で何も始まらなくなる。止めたもの(`x`)も数えない
+    - **待ち行列に入れる時点**: 作成ごと(worktree も setup も作らず、行・slug・ポートだけ)。重いのは setup(install・migrate)とエージェントなので worktree だけ先に作っても軽くならないうえ、worktree を起動の時点で作れば `--hold` のものが先のマージを含む base から始められる。状態は新しく `queued` を足した(`creating` に「待ち中」の印を足す形にしなかったのは、`creating` は「setup が動いている」と読まれていて、`pekoe new` の進捗の追いかけ・TUI の作成中の表示・`wait` の `started` がどれもそれを前提にしているため。`queued` → `creating` → … と 1 段足すほうが読み違いがない)。`wait` には `queued`(待ち行列に入った)を足し、出たときは今ある `started` で知らせる
+    - **順番**: `created_at` の古い順。`--hold` で揃っていないものは飛ばし、後ろのものを止めない(揃うのを待つ間に枠を遊ばせない)。枠が空く(状態が変わる・rm・設定の変更。取りこぼしに備えて 5 秒ごとにも)たびに見直す
+    - **`--hold`**: `pekoe new --after X --hold`。リポジトリの設定ではなく 1 本ずつのフラグにした(同じリポジトリでも順序の要る作業と要らない作業が混ざり、決めるのは依頼を割る統括役なので)。「先が済んだ」は landed(PR がマージされ pekoed が片付けた)。land しただけ(PR を作ってマージ待ち)では始めない: マージ前に始めると先の変更が base に無い。起動するときは origin から base を fetch して `origin/<base>` から始める(ローカルの main は pekoe が更新しないので、そこから作ると待った意味がない。upstream は付けない)。base が `origin/main` ならそのブランチを fetch し、タグ・コミットなら fetch で動かないのでそのまま使う。`--hold` なしの作成は今までどおりローカルの base から
+    - **先が failed・消えたとき**: failed なら待ち続け、理由に `(X failed)` を出す(failed は resume で戻りうるし、先の失敗は `wait` の `failed` で統括役に届く。待つのをやめるかは統括役か人が決め、`pekoe rm` / `session.cancel` で消す)。landed にならずに rm されたら、二度と揃わないので `failed` にする(`--hold: X was removed before it landed …`。`wait` に `failed` が出る)。landed になってから rm されたものは揃ったものとして扱う(`holding` から先に外しておく)
+    - **再起動**: 起動に要るもの(プロンプト・`--from`・窓の大きさ)を state.db の kv に置き、pekoed を再起動しても queued のまま残す(`--hold` は数時間待つことがあり、その間の `make install` と再起動で依頼が消えると困る)。`creating` が再起動で `failed` になるのは今までどおり
+    - **測って止める案(load・メモリ・ディスク)は作らなかった**: 調べた結果、今は要らないと判断した。(1) 重さの元は「同時に setup とエージェントが何本動くか」で、`max_running` がそれを直接決める。(2) load average は遅れて上がる値で(1 分平均)、上がったのを見てから止めても、その時点で始まっている setup は止まらない。macOS の load は I/O 待ちも数えるので、閾値をマシンごとに決めにくい。(3) メモリは macOS では圧縮とスワップが効き、空きの量より `memory_pressure` の段階で見るべきだが、それを取るにはコマンドを定期的に動かすことになる。(4) ディスクは別の問題(worktree と `clone` した node_modules がたまる)で、片付けの一覧(`pekoe cleanup`)と、作る前に空きを確かめる程度で足りる。作るなら、`[orchestrator]` に既定 off の `min_free_disk` を足し、worktree を作る前に statfs で空きを見て、足りなければ待ち行列に残す形がいちばん安い(待ち行列の理由が 1 つ増えるだけ)。使ってみて上限だけで足りなければ足す
 - PR の集計、プロジェクト担当の層とプロジェクトのボード
   - 実装: PR の集計だけ(`pekoe stats` と `stats`。token なしでも読める)。gh で取るのではなく、pekoe が landed にしたマージと、hooks が渡す transcript から足したトークン(サブエージェント・tapi chat も)を、ローカルの日付・リポジトリごとに出す。セッションを rm しても state.db の `session_log` / `usage_days` に残る。過去のマージを GitHub から遡るのと料金への換算はしない。仕様は docs/api.md の「集計(stats)」
 

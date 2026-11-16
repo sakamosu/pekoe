@@ -270,6 +270,7 @@ type webSession struct {
 	Error       string      `json:"error,omitempty"`
 	Test        string      `json:"test,omitempty"`        // pass | fail | running
 	GitBlocked  bool        `json:"git_blocked,omitempty"` // its .git was changed: pekoe runs no git there
+	Queue       string      `json:"queue,omitempty"`       // queued: why it has not started (queue.go)
 	// Look and PRLook are the TUI's Sessions-panel symbol, color role and
 	// word (theme.Look / theme.PRLook, unicode icons): one table for both.
 	Look   webLook  `json:"look"`
@@ -298,7 +299,7 @@ func toWebSession(s *state.Session) webSession {
 		State: s.State, WaitKind: s.WaitKind, StateSince: s.StateSince,
 		Answerable: webAnswerable(s), PendingTool: s.PendingTool,
 		LastTool: s.LastTool, LastMessage: s.LastMessage, Diffstat: s.Diffstat,
-		PR: s.PR, Stopped: s.Stopped, Error: s.Error, GitBlocked: s.GitBlocked != "",
+		PR: s.PR, Stopped: s.Stopped, Error: s.Error, GitBlocked: s.GitBlocked != "", Queue: s.Queue,
 		Test: s.Test.Status, Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
 	}
 	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {
@@ -355,7 +356,7 @@ func webRank(s *state.Session) int {
 	switch s.State {
 	case state.Waiting:
 		return 0
-	case state.Running, state.Creating:
+	case state.Running, state.Creating, state.Queued:
 		return 1
 	case state.Done, state.Failed:
 		return 2

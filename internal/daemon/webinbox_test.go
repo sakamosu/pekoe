@@ -289,6 +289,42 @@ func TestWebOverview(t *testing.T) {
 	}
 }
 
+// A queued session is counted apart from the running ones, and its flow
+// has not reached impl yet (the reason is the detail).
+func TestWebOverviewQueued(t *testing.T) {
+	d, _, repo, h := webInboxSetup(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a"})
+	waitCreated(t, d, "feat-a")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "after": []string{"feat-a"}, "hold": true})
+	w := doWeb(t, h, webReq{path: "/api/overview", from: ipPhone})
+	var res struct {
+		Counts webCounts
+		Groups []webFlowGroup
+	}
+	json.Unmarshal(w.Body.Bytes(), &res)
+	if res.Counts.Queued != 1 {
+		t.Fatalf("counts: %+v", res.Counts)
+	}
+	found := false
+	for _, g := range res.Groups {
+		for _, f := range g.Rows {
+			if f.Slug == "feat-b" {
+				found = true
+				if f.Steps[0].Status != stepTodo || f.Steps[0].Detail != "queued: --hold: waiting for feat-a to land" || f.Look.Word != "queued" {
+					t.Fatalf("feat-b: %+v %+v", f.Steps[0], f.Look)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no feat-b: %s", w.Body)
+	}
+	w = doWeb(t, h, webReq{path: "/api/sessions", from: ipPhone})
+	if !strings.Contains(w.Body.String(), `"queue":"--hold: waiting for feat-a to land"`) {
+		t.Fatalf("sessions: %s", w.Body)
+	}
+}
+
 // Sessions are grouped by who asked for them and for which request.
 func TestWebOverviewGroups(t *testing.T) {
 	d, _, repo, h := webInboxSetup(t)

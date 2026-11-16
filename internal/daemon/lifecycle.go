@@ -108,6 +108,22 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.State == state.Queued {
+		// the queue must not start it while it goes (queue.go): with
+		// queueMu held it stays queued, or it has already left the queue
+		d.queueMu.Lock()
+		if s, err = d.snapshot(p.Slug); err != nil {
+			d.queueMu.Unlock()
+			return nil, err
+		}
+		if s.State == state.Queued {
+			defer d.queueMu.Unlock()
+		} else {
+			// it left the queue meanwhile: an ordinary rm, which must
+			// not hold the queue up through its teardown
+			d.queueMu.Unlock()
+		}
+	}
 	_, statErr := os.Stat(s.Path)
 	exists := statErr == nil
 	// the directory may belong to another repository of the same name (a
@@ -152,7 +168,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		}
 	}
 	held := d.purge(s)
-	d.emit("session.removed", s)
+	d.removed(s)
 	res := map[string]any{"removed": p.Slug, "worktree_deleted": deleted}
 	if held != nil {
 		res["port_held"] = held
@@ -204,7 +220,7 @@ func (d *Daemon) hAgentRm(p rmP) (any, error) {
 	}
 	held := d.holdDevPort(snap)
 	d.purgeFiles(snap)
-	d.emit("session.removed", snap)
+	d.removed(snap)
 	res := map[string]any{"removed": p.Slug, "worktree_deleted": false}
 	if held != nil {
 		res["port_held"] = held
@@ -414,6 +430,8 @@ func (d *Daemon) hRunStart(p runP) (any, error) {
 	switch s.State {
 	case state.Creating:
 		return nil, fmt.Errorf("%s is still being created", p.Slug)
+	case state.Queued:
+		return nil, fmt.Errorf("%s is queued; its worktree is not made yet", p.Slug)
 	case state.Landed:
 		return nil, fmt.Errorf("%s has landed; its worktree is gone", p.Slug)
 	}
