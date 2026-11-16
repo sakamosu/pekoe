@@ -2,8 +2,8 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +47,7 @@ func TestMissingTestCommandIsNotAFailure(t *testing.T) {
 	repoHooks(t, d, repo, `pekoe-no-such-command-for-test test`)
 	d.runTest("main")
 	s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
-	if s.Test.Status != "error" || !strings.Contains(s.Test.Summary, "not found") {
+	if s.Test.Status != "error" || s.Test.Summary != "command not found: pekoe-no-such-command-for-test" {
 		t.Fatalf("a missing command: %+v", s.Test)
 	}
 	repoHooks(t, d, repo, `echo '1 failed'; exit 1`)
@@ -74,4 +74,37 @@ func TestRemovedTestHookDropsTheOldResult(t *testing.T) {
 	if s := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); s.Test.Status != "none" {
 		t.Fatalf("the old result stayed: %+v", s.Test)
 	}
+}
+
+// The summary of a test command the shell could not start names what was
+// missing, whichever shell said it. bash puts the reason after the
+// command, so the whole line cut at 60 characters lost it.
+func TestNotFoundSummary(t *testing.T) {
+	for out, want := range map[string]string{
+		"zsh:1: command not found: yarn\n":                                     "command not found: yarn",
+		"/bin/bash: line 1: pekoe-no-such-command-for-test: command not found": "command not found: pekoe-no-such-command-for-test",
+		"bash: yarn: command not found\n":                                      "command not found: yarn",
+		"sh: 1: yarn: not found\n":                                             "command not found: yarn",
+		"$ jest\n/bin/sh: jest: command not found\n":                           "command not found: jest",
+		"zsh:1: no such file or directory: ./run\n":                            "no such file: ./run",
+		"/bin/bash: line 1: ./run-tests: No such file or directory":            "no such file: ./run-tests",
+		"something else\n":                                                     "",
+	} {
+		if got := notFound(out); got != want {
+			t.Errorf("notFound(%q) = %q, want %q", out, got, want)
+		}
+	}
+	if s := testResult("/bin/bash: line 1: pekoe-no-such-command-for-test: command not found\n", exit127(t)).Summary; s != "command not found: pekoe-no-such-command-for-test" {
+		t.Errorf("summary of exit 127 from bash: %q", s)
+	}
+}
+
+// exit127 is the error of a process that exited 127.
+func exit127(t *testing.T) error {
+	t.Helper()
+	err := exec.Command("/bin/sh", "-c", "exit 127").Run()
+	if err == nil {
+		t.Fatal("exit 127 succeeded")
+	}
+	return err
 }
