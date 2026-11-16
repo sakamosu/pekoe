@@ -58,7 +58,12 @@ func cmdNew(args []string) error {
 	}
 	cl.Subscribe("session.progress", "session.updated")
 	w, h := agentPaneSize()
-	var s state.Session
+	// the session, and the wait cursor from just before it was made: `pekoe
+	// wait --slug <slug> --since <cursor>` misses none of its changes
+	var res struct {
+		state.Session
+		Cursor string `json:"cursor,omitempty"`
+	}
 	prompt := f["prompt"]
 	if len(pos) > 1 && prompt == "" {
 		prompt = strings.Join(pos[1:], " ")
@@ -66,13 +71,14 @@ func cmdNew(args []string) error {
 	if err := cl.Call("session.new", map[string]any{
 		"repo": dir, "branch": pos[0], "from": f["from"], "agent": f["agent"], "prompt": prompt,
 		"model": f["model"], "effort": f["effort"], "base": f["base"], "after": multiVal(f, "after"), "width": w, "height": h, "request": request,
-	}, &s); err != nil {
+	}, &res); err != nil {
 		return err
 	}
 	if jsonOut {
-		printJSON(s)
+		printJSON(res)
 		return nil
 	}
+	s := res.Session
 	fmt.Printf("%s → %s :%d\n", s.Branch, s.Path, s.Port)
 	// follow progress until the agent starts or creation fails
 	icons := theme.Icons(theme.IconsFromEnv())
