@@ -102,6 +102,7 @@ func thread(path string, line int, resolved bool, at string, bodies ...string) m
 // prSession opens a session on the repo and gives it PR #42.
 func prSession(t *testing.T, d *Daemon, repo string) string {
 	t.Helper()
+	onGitHub(t, d, repo)
 	s := call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
 	d.update(s.Slug, func(x *state.Session) { x.PR = 42 })
 	return s.Slug
@@ -183,7 +184,7 @@ func TestPRViewParses(t *testing.T) {
 		t.Fatalf("comments: %+v", v.Comments)
 	}
 	log, _ := os.ReadFile(filepath.Join(ghd, "gh.log"))
-	if !strings.Contains(string(log), "api graphql -F owner={owner} -F name={repo} -F number=42") {
+	if !strings.Contains(string(log), "api graphql -F owner=me -F name=app -F number=42") {
 		t.Fatalf("gh calls: %s", log)
 	}
 	// the summary rides along on the session
@@ -363,7 +364,7 @@ func TestFailedLog(t *testing.T) {
 		t.Fatalf("tail: %q … %q", lines[0], lines[199])
 	}
 	log, _ := os.ReadFile(filepath.Join(ghd, "gh.log"))
-	if !strings.Contains(string(log), "run view --job 777 --log-failed") {
+	if !strings.Contains(string(log), "run view --job 777 --log-failed --repo github.com/me/app") {
 		t.Fatalf("gh calls: %s", log)
 	}
 

@@ -9,7 +9,10 @@ package gitx
 // included, which says where the git directory is), and it may be able to
 // write the repository's .git as well (a commit needs objects and refs), so
 // all of that configuration is the agent's. Three layers, all applied in
-// RunRaw (every git pekoed runs goes through it) and, for gh, in Env:
+// RunRaw (every git pekoed runs goes through it). gh, which runs git where
+// it starts, gets none of them: it is kept from running git at all (an
+// empty cwd in no repository, the repository by --repo: ghCommand in
+// internal/daemon).
 //
 //  1. Pinned git directory. A session's worktree is registered with Pin;
 //     its git directory is looked up in the repository's own
@@ -444,17 +447,6 @@ func sshEnv(user [][2]string) []string {
 		}
 	}
 	return []string{"GIT_SSH_COMMAND=" + cmd}
-}
-
-// Env is the environment for a program that runs git itself in dir (gh):
-// pekoed's, with the pinned git directory and the overrides. A tampered
-// pinned worktree is an error.
-func Env(dir string) ([]string, error) {
-	pinEnv, _, err := pinnedEnv(dir)
-	if err != nil {
-		return nil, err
-	}
-	return gitEnv(dir, pinEnv), nil
 }
 
 func gitEnv(dir string, pinEnv []string) []string {

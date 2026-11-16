@@ -70,6 +70,25 @@ esac
 	return dir
 }
 
+// onGitHub makes repo's origin read as github.com/me/app to pekoed (the
+// repository gh is asked about, ghRepoOf), whatever origin really is: a
+// local bare repository, so nothing is pushed to GitHub.
+func onGitHub(t *testing.T, d *Daemon, repo string) {
+	t.Helper()
+	for _, p := range []string{repo, evalSymlinks(t, repo)} {
+		d.webBases.Store(p, "https://github.com/me/app")
+	}
+}
+
+func evalSymlinks(t *testing.T, p string) string {
+	t.Helper()
+	r, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func withOrigin(t *testing.T, repo string) string {
 	t.Helper()
 	bare := filepath.Join(t.TempDir(), "origin.git")
@@ -83,6 +102,7 @@ func withOrigin(t *testing.T, repo string) string {
 func TestLandWithPRAndMergeTeardown(t *testing.T) {
 	d, _, repo := setup(t)
 	bare := withOrigin(t, repo)
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "MERGED")
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/land"})
 	for i := 0; i < 100; i++ {
@@ -106,7 +126,7 @@ func TestLandWithPRAndMergeTeardown(t *testing.T) {
 	}
 	// pushed to origin
 	out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
-	if !strings.Contains(string(out), "pr create --fill --head feat/land --base main") {
+	if !strings.Contains(string(out), "pr create --repo github.com/me/app --head feat/land --base main --title=b --body-file -") {
 		t.Fatalf("gh calls: %s", out)
 	}
 	run(t, repo, "git", "--git-dir", bare, "rev-parse", "--verify", "refs/heads/feat/land")
@@ -130,6 +150,7 @@ func TestReviewSomeoneElsesPR(t *testing.T) {
 	os.WriteFile(filepath.Join(other, "a.txt"), []byte("1\n2\nthree\n"), 0o644)
 	run(t, other, "git", "commit", "-qam", "their change")
 	run(t, other, "git", "push", "-q", "origin", "HEAD:refs/pull/7/head")
+	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
 
 	s := call[state.Session](t, d, "review.pr", map[string]any{"repo": repo, "number": 7})
@@ -157,6 +178,7 @@ func TestReviewSomeoneElsesPR(t *testing.T) {
 
 func TestWatchPRsPicksUpExternalPR(t *testing.T) {
 	d, _, repo := setup(t)
+	onGitHub(t, d, repo)
 	fakeGH(t, "OPEN")
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/pr"})
 	for i := 0; i < 100; i++ {
@@ -185,6 +207,7 @@ func TestReviewPRAgainTakesNewHead(t *testing.T) {
 	os.WriteFile(filepath.Join(other, "a.txt"), []byte("1\n2\nthree\n"), 0o644)
 	run(t, other, "git", "commit", "-qam", "their change")
 	run(t, other, "git", "push", "-q", "origin", "HEAD:refs/pull/7/head")
+	onGitHub(t, d, repo)
 	fakeGH(t, "OPEN")
 
 	s := call[state.Session](t, d, "review.pr", map[string]any{"repo": repo, "number": 7})

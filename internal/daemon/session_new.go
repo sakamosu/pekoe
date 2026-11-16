@@ -440,7 +440,7 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	}
 	prompt := p.Prompt
 	if strings.HasPrefix(p.From, "gh#") {
-		if body, err := issuePrompt(repo.Dir, strings.TrimPrefix(p.From, "gh#")); err == nil {
+		if body, err := issuePrompt(d.ghRepoOf(repo.Dir), strings.TrimPrefix(p.From, "gh#")); err == nil {
 			if prompt != "" {
 				prompt = body + "\n\n" + prompt
 			} else {
@@ -495,11 +495,13 @@ func tail(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-func issuePrompt(dir, n string) (string, error) {
-	c, err := ghCommand(context.Background(), dir, "issue", "view", n, "--json", "title,body,number")
+// issuePrompt is the prompt for issue n of repo (host/owner/name).
+func issuePrompt(repo, n string) (string, error) {
+	c, done, err := ghCommand(context.Background(), repo, "issue", "view", n, "--repo", repo, "--json", "title,body,number")
 	if err != nil {
 		return "", err
 	}
+	defer done()
 	out, err := c.Output()
 	if err != nil {
 		return "", err

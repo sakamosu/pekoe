@@ -557,17 +557,29 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	steps = append(steps, "pushed "+s.Branch)
 	pr := s.PR
 	if pr == 0 {
-		c, err := ghCommand(context.Background(), s.Path, "pr", "create", "--fill", "--head", s.Branch, "--base", base)
+		repo := d.ghRepo(s)
+		if repo == "" {
+			return nil, fmt.Errorf("pushed %s, but no PR: %w of %s", s.Branch, errNoGHRepo, s.RepoDir)
+		}
+		// what gh pr create --fill would read from git, read by pekoed's git
+		msgs, err := gitx.Run(s.Path, "log", "--reverse", "--format=%s%x00%b%x1e", "--end-of-options", onto+"..HEAD")
 		if err != nil {
 			return nil, err
 		}
+		title, body := prText(s.Branch, parseCommitMsgs(msgs))
+		c, done, err := ghCommand(context.Background(), repo, "pr", "create", "--repo", repo, "--head", s.Branch, "--base", base, "--title="+title, "--body-file", "-")
+		if err != nil {
+			return nil, err
+		}
+		c.Stdin = strings.NewReader(body)
 		out, err := c.CombinedOutput()
+		done()
 		if err != nil && !strings.Contains(string(out), "already exists") {
 			return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
 		}
 		pr = prNumber(string(out))
 		if pr == 0 {
-			pr = prForBranch(s.Path, s.Branch)
+			pr = prForBranch(repo, s.Branch)
 		}
 		steps = append(steps, fmt.Sprintf("PR #%d", pr))
 	}
@@ -585,11 +597,52 @@ func prNumber(s string) int {
 	return 0
 }
 
-func prForBranch(dir, branch string) int {
-	c, err := ghCommand(context.Background(), dir, "pr", "view", branch, "--json", "number")
+// commitMsg is one commit's message: its subject line and the rest.
+type commitMsg struct{ Subject, Body string }
+
+// parseCommitMsgs reads git log --format=%s%x00%b%x1e.
+func parseCommitMsgs(log string) []commitMsg {
+	var cs []commitMsg
+	for _, r := range strings.Split(log, "\x1e") {
+		r = strings.TrimLeft(r, "\n")
+		if r == "" {
+			continue
+		}
+		sub, body, _ := strings.Cut(r, "\x00")
+		cs = append(cs, commitMsg{Subject: strings.TrimSpace(sub), Body: strings.TrimSpace(body)})
+	}
+	return cs
+}
+
+// prText is the title and body of the PR for branch with commits cs
+// (oldest first), as gh pr create --fill makes them: one commit, its
+// subject and body; more (or none), the branch name as words and a list
+// of the subjects.
+func prText(branch string, cs []commitMsg) (title, body string) {
+	if len(cs) == 1 && cs[0].Subject != "" {
+		return cs[0].Subject, cs[0].Body
+	}
+	title = strings.Map(func(r rune) rune {
+		if r == '-' || r == '_' {
+			return ' '
+		}
+		return r
+	}, branch)
+	var b strings.Builder
+	for _, c := range cs {
+		fmt.Fprintf(&b, "- %s\n", c.Subject)
+	}
+	return title, b.String()
+}
+
+// prForBranch is the number of the PR of branch in repo (host/owner/name),
+// 0 when there is none or gh cannot tell.
+func prForBranch(repo, branch string) int {
+	c, done, err := ghCommand(context.Background(), repo, "pr", "view", branch, "--repo", repo, "--json", "number")
 	if err != nil {
 		return 0
 	}
+	defer done()
 	out, err := c.Output()
 	if err != nil {
 		return 0
@@ -662,7 +715,7 @@ func (d *Daemon) watchPRs() {
 	}
 	d.mu.Unlock()
 	for _, s := range check {
-		if pr := prForBranch(s.Path, s.Branch); pr > 0 {
+		if pr := prForBranch(d.ghRepo(&s), s.Branch); pr > 0 {
 			d.update(s.Slug, func(x *state.Session) {
 				if x.PR == 0 {
 					x.PR = pr
@@ -691,11 +744,13 @@ func (d *Daemon) watchMerges() {
 	}
 	d.mu.Unlock()
 	for _, s := range landing {
-		c, err := ghCommand(context.Background(), s.RepoDir, "pr", "view", strconv.Itoa(s.PR), "--json", "state")
+		repo := d.ghRepo(s)
+		c, done, err := ghCommand(context.Background(), repo, "pr", "view", strconv.Itoa(s.PR), "--repo", repo, "--json", "state")
 		if err != nil {
 			continue
 		}
 		out, err := c.Output()
+		done()
 		if err != nil {
 			continue
 		}

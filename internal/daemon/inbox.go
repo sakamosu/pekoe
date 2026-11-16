@@ -281,12 +281,18 @@ func (d *Daemon) webBase(repoDir string) string {
 	if v, ok := d.webBases.Load(repoDir); ok {
 		return v.(string)
 	}
-	base := ""
-	if u := gitx.NormalizeURL(gitx.Origin(repoDir)); strings.Count(u, "/") >= 2 && !strings.ContainsAny(u, " \"<>") {
-		base = "https://" + u
-	}
+	base := webBaseOf(gitx.Origin(repoDir))
 	d.webBases.Store(repoDir, base)
 	return base
+}
+
+// webBaseOf is https://<host>/<owner>/<name> of an origin URL ("" when it
+// names none).
+func webBaseOf(origin string) string {
+	if u := gitx.NormalizeURL(origin); strings.Count(u, "/") >= 2 && !strings.ContainsAny(u, " \"<>") {
+		return "https://" + u
+	}
+	return ""
 }
 
 // refreshFacts reads an open item's facts again; when they changed, the

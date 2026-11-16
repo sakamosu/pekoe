@@ -101,17 +101,25 @@ func (d *Daemon) mergeMethod(s *state.Session) (string, error) {
 }
 
 // ghRepo is host/owner/name of s's repository as its main checkout's origin
-// says ("" when it says none).
-// Each part is a plain name: nothing gh would read as a flag or, after
-// -F, as "@file".
-// "." and ".." are no owner or name either.
-func (d *Daemon) ghRepo(s *state.Session) string {
-	r := strings.TrimPrefix(d.webBase(s.RepoDir), "https://")
+// says ("" when it says none): what every gh pekoed runs for s is given
+// (ghCommand).
+func (d *Daemon) ghRepo(s *state.Session) string { return d.ghRepoOf(s.RepoDir) }
+
+// ghRepoOf is ghRepo for a repository without a session: host/owner/name
+// as origin of repoDir (its main checkout) says, "" when it says none.
+func (d *Daemon) ghRepoOf(repoDir string) string { return ghRepoFrom(d.webBase(repoDir)) }
+
+// ghRepoFrom is host/owner/name of a webBase ("" when it is no such
+// thing). Each part is a plain name: nothing gh would read as a flag or,
+// after -F, as "@file". "." and ".." are no owner or name either, and no
+// part starts with "-".
+func ghRepoFrom(base string) string {
+	r := strings.TrimPrefix(base, "https://")
 	if !ghRepoRe.MatchString(r) {
 		return ""
 	}
 	for _, p := range strings.Split(r, "/")[1:] {
-		if p == "." || p == ".." {
+		if p == "." || p == ".." || strings.HasPrefix(p, "-") {
 			return ""
 		}
 	}
@@ -195,7 +203,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	waitUntil := time.Now().Add(mergeComputeLimit)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), mergeReadTimeout)
-		v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR)
+		v, err := fetchPRView(ctx, repo, s.PR)
 		cancel()
 		if err != nil {
 			end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
@@ -239,7 +247,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 
 	args := []string{"pr", "merge", strconv.Itoa(s.PR), "--repo", repo, "--" + method, "--match-head-commit", run.Head}
 	ctx, cancel := context.WithTimeout(context.Background(), mergeRunTimeout)
-	_, err = ghMerge(ctx, s.RepoDir, args...)
+	_, err = ghMerge(ctx, repo, args...)
 	timedOut := err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
 	cancel()
 	rec2 := &state.SendRecord{At: time.Now(), From: callerPekoed, To: s.Slug, Kind: "merge", Via: it.Answer.Via, OK: err == nil,
@@ -269,7 +277,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// the poller's next round would see it within a minute; read it now so
 	// the landing starts right away
 	ctx, cancel = context.WithTimeout(context.Background(), mergeReadTimeout)
-	if v, err := fetchPRViewOf(ctx, s.RepoDir, repo, s.PR); err == nil {
+	if v, err := fetchPRView(ctx, repo, s.PR); err == nil {
 		d.applyPRStatus(s.Slug, v.Summary(), false)
 	}
 	cancel()
@@ -319,31 +327,15 @@ func (d *Daemon) failStaleMerges() {
 	}
 }
 
-// fetchPRViewOf is fetchPRView for repo (host/owner/name) given, not the
-// one gh reads from dir's git.
-func fetchPRViewOf(ctx context.Context, dir, repo string, number int) (*PRView, error) {
-	host, rest, _ := strings.Cut(repo, "/")
-	owner, name, _ := strings.Cut(rest, "/")
-	args := []string{"api", "graphql"}
-	if host != "github.com" {
-		args = append(args, "--hostname", host)
-	}
-	args = append(args, "-F", "owner="+owner, "-F", "name="+name, "-F", "number="+strconv.Itoa(number), "-f", "query="+prQuery)
-	out, err := gh(ctx, dir, args...)
-	if err != nil {
-		return nil, err
-	}
-	return parsePRView(out, time.Now())
-}
-
 // ghMerge is gh without prompts (it never waits on a terminal); the error
 // carries gh's stderr. Once ctx is done it returns within mergeWaitDelay,
 // even when a child of gh still holds its output.
-func ghMerge(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	c, err := ghCommand(ctx, dir, args...)
+func ghMerge(ctx context.Context, repo string, args ...string) ([]byte, error) {
+	c, done, err := ghCommand(ctx, repo, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
 	c.Env = append(c.Env, "GH_PROMPT_DISABLED=1")
 	c.WaitDelay = mergeWaitDelay
 	out, err := c.Output()

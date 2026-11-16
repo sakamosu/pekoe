@@ -7,13 +7,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"pekoe/internal/gitx"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -382,28 +384,86 @@ func ghAvailable() bool {
 	return err == nil
 }
 
-// ghCommand is the GitHub CLI in dir. gh runs git there itself (to find the
-// repository, and git status for pr create), and the worktree's git config
-// is the agent's: it gets the environment pekoed's own git runs with
-// (gitx.Env: the pinned git directory, no fsmonitor, no hooks, …). A
-// worktree whose .git was changed is an error.
-func ghCommand(ctx context.Context, dir string, args ...string) (*exec.Cmd, error) {
-	env, err := gitx.Env(dir)
-	if err != nil {
-		return nil, fmt.Errorf("gh %s: %w", args[0], err)
+// ghCommand is the GitHub CLI for repo (host/owner/name, from ghRepo /
+// ghRepoOf). gh does not run git: its cwd is an empty directory, and the
+// repository goes in by --repo (gh api, which takes none: --hostname and
+// the owner and name in the path or fields, ghAPIRepo). gh runs git where
+// it starts (git status for pr create, the remotes to find the
+// repository), and a worktree's git config and .gitattributes are the
+// agent's: filter drivers of any name would run outside the sandbox. So gh
+// never starts in a worktree or a checkout, and it gets an environment of
+// its own (ghEnv: no GIT_DIR / GIT_WORK_TREE, git discovery stopped above
+// the empty directory). What gh would have read from git (the title and
+// body of pr create) pekoed reads with gitx and passes in.
+//
+// done removes the directory; call it once the command has finished.
+func ghCommand(ctx context.Context, repo string, args ...string) (c *exec.Cmd, done func(), err error) {
+	if repo == "" {
+		return nil, nil, fmt.Errorf("gh %s: %w", args[0], errNoGHRepo)
 	}
-	c := exec.CommandContext(ctx, "gh", args...)
+	parent := filepath.Join(paths.DataDir(), "gh")
+	if err := os.MkdirAll(parent, 0o700); err != nil {
+		return nil, nil, err
+	}
+	dir, err := os.MkdirTemp(parent, "cwd-")
+	if err != nil {
+		return nil, nil, err
+	}
+	c = exec.CommandContext(ctx, "gh", args...)
 	c.Dir = dir
-	c.Env = env
-	return c, nil
+	c.Env = ghEnv(parent)
+	return c, func() { os.RemoveAll(dir) }, nil
 }
 
-// gh runs the GitHub CLI in dir; the error carries gh's stderr.
-func gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	c, err := ghCommand(ctx, dir, args...)
+var errNoGHRepo = errors.New("no GitHub repository in origin (host/owner/name)")
+
+// ghEnvKeep are what gh needs from pekoed's environment (with GH_* and
+// XDG_*): where it finds itself and its config and token (on Linux the
+// token may be in the Secret Service, reached over the session D-Bus), the
+// locale, proxies and certificates.
+var ghEnvKeep = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+	"DBUS_SESSION_BUS_ADDRESS",
+	"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+	"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "no_proxy", "all_proxy",
+	"SSL_CERT_FILE", "SSL_CERT_DIR",
+}
+
+// ghEnv is gh's environment: ghEnvKeep, GH_* and XDG_*, nothing of git's
+// (GIT_DIR, GIT_WORK_TREE, GIT_CONFIG_*, …), and GIT_CEILING_DIRECTORIES
+// at ceiling, so a git gh starts anyway finds no repository above its cwd.
+func ghEnv(ceiling string) []string {
+	if r, err := filepath.EvalSymlinks(ceiling); err == nil {
+		ceiling = r
+	}
+	var env []string
+	for _, e := range os.Environ() {
+		k, _, _ := strings.Cut(e, "=")
+		if strings.HasPrefix(k, "GH_") || strings.HasPrefix(k, "XDG_") || slices.Contains(ghEnvKeep, k) {
+			env = append(env, e)
+		}
+	}
+	return append(env, "GIT_CEILING_DIRECTORIES="+ceiling)
+}
+
+// ghAPIRepo splits repo (host/owner/name) for gh api, which takes no
+// --repo: host is the flags that name the host (none for github.com).
+func ghAPIRepo(repo string) (host []string, owner, name string) {
+	h, rest, _ := strings.Cut(repo, "/")
+	owner, name, _ = strings.Cut(rest, "/")
+	if h != "github.com" {
+		host = []string{"--hostname", h}
+	}
+	return host, owner, name
+}
+
+// gh runs the GitHub CLI for repo; the error carries gh's stderr.
+func gh(ctx context.Context, repo string, args ...string) ([]byte, error) {
+	c, done, err := ghCommand(ctx, repo, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer done()
 	out, err := c.Output()
 	if err != nil {
 		msg := err.Error()
@@ -416,19 +476,13 @@ func gh(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// ghDir is where gh resolves {owner}/{repo}: the worktree, or the main
-// worktree once the session's one is gone.
-func ghDir(s *state.Session) string {
-	if s.Path != "" {
-		if _, err := os.Stat(s.Path); err == nil {
-			return s.Path
-		}
-	}
-	return s.RepoDir
-}
-
-func fetchPRView(ctx context.Context, dir string, number int) (*PRView, error) {
-	out, err := gh(ctx, dir, "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", "number="+strconv.Itoa(number), "-f", "query="+prQuery)
+// fetchPRView reads PR number of repo (host/owner/name) in one gh api
+// graphql call.
+func fetchPRView(ctx context.Context, repo string, number int) (*PRView, error) {
+	host, owner, name := ghAPIRepo(repo)
+	args := append([]string{"api", "graphql"}, host...)
+	args = append(args, "-F", "owner="+owner, "-F", "name="+name, "-F", "number="+strconv.Itoa(number), "-f", "query="+prQuery)
+	out, err := gh(ctx, repo, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -453,9 +507,9 @@ func (d *Daemon) hPRView(p prViewP) (any, error) {
 	if !ghAvailable() {
 		return nil, errors.New("gh not found: install the GitHub CLI")
 	}
-	pr := s.PR
+	pr, repo := s.PR, d.ghRepo(s)
 	if pr == 0 && !s.PRReview && s.Branch != "" && s.Branch != s.Base {
-		if pr = prForBranch(ghDir(s), s.Branch); pr > 0 {
+		if pr = prForBranch(repo, s.Branch); pr > 0 {
 			d.update(p.Slug, func(x *state.Session) {
 				if x.PR == 0 {
 					x.PR = pr
@@ -468,7 +522,7 @@ func (d *Daemon) hPRView(p prViewP) (any, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	v, err := fetchPRView(ctx, ghDir(s), pr)
+	v, err := fetchPRView(ctx, repo, pr)
 	if err != nil {
 		return nil, err
 	}
@@ -607,7 +661,7 @@ func (d *Daemon) watchPRStatus() {
 	sort.Slice(due, func(i, j int) bool { return due[i].Slug < due[j].Slug })
 	for _, s := range due {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		v, err := fetchPRView(ctx, ghDir(&s), s.PR)
+		v, err := fetchPRView(ctx, d.ghRepo(&s), s.PR)
 		cancel()
 		if err != nil {
 			// unauthenticated, offline, rate limited: try again next round
@@ -666,14 +720,14 @@ func (d *Daemon) hFailedLog(p failedLogP) (any, error) {
 	if p.Lines <= 0 {
 		p.Lines = 200
 	}
-	dir := ghDir(s)
+	repo := d.ghRepo(s)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if p.RunID == 0 {
 		if s.PR == 0 {
 			return nil, errors.New("no PR for this session")
 		}
-		v, err := fetchPRView(ctx, dir, s.PR)
+		v, err := fetchPRView(ctx, repo, s.PR)
 		if err != nil {
 			return nil, err
 		}
@@ -688,10 +742,10 @@ func (d *Daemon) hFailedLog(p failedLogP) (any, error) {
 	}
 	var out []byte
 	if p.JobID > 0 {
-		out, err = gh(ctx, dir, "run", "view", "--job", strconv.FormatInt(p.JobID, 10), "--log-failed")
+		out, err = gh(ctx, repo, "run", "view", "--job", strconv.FormatInt(p.JobID, 10), "--log-failed", "--repo", repo)
 	}
 	if p.JobID == 0 || err != nil || len(strings.TrimSpace(string(out))) == 0 {
-		out, err = gh(ctx, dir, "run", "view", strconv.FormatInt(p.RunID, 10), "--log-failed")
+		out, err = gh(ctx, repo, "run", "view", strconv.FormatInt(p.RunID, 10), "--log-failed", "--repo", repo)
 		if err != nil {
 			return nil, err
 		}

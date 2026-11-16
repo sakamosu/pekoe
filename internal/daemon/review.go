@@ -494,11 +494,13 @@ func (d *Daemon) hReviewPR(p prP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := ghCommand(context.Background(), repo.Dir, "pr", "view", strconv.Itoa(p.Number), "--json", "headRefName,baseRefName,title")
+	ghr := d.ghRepoOf(repo.Dir)
+	c, done, err := ghCommand(context.Background(), ghr, "pr", "view", strconv.Itoa(p.Number), "--repo", ghr, "--json", "headRefName,baseRefName,title")
 	if err != nil {
 		return nil, err
 	}
 	out, err := c.Output()
+	done()
 	if err != nil {
 		return nil, fmt.Errorf("gh pr view %d failed: %v", p.Number, err)
 	}
@@ -622,10 +624,15 @@ func (d *Daemon) postGitHubReview(s *state.Session, cs []state.Comment) error {
 	body.Body = strings.Join(general, "\n\n")
 	b, _ := json.Marshal(body)
 	sort.Slice(body.Comments, func(i, j int) bool { return body.Comments[i].Path < body.Comments[j].Path })
-	c, err := ghCommand(context.Background(), s.RepoDir, "api", "--method", "POST", fmt.Sprintf("repos/{owner}/{repo}/pulls/%d/reviews", s.PR), "--input", "-")
+	repo := d.ghRepo(s)
+	host, owner, name := ghAPIRepo(repo)
+	args := append([]string{"api"}, host...)
+	args = append(args, "--method", "POST", fmt.Sprintf("repos/%s/%s/pulls/%d/reviews", owner, name, s.PR), "--input", "-")
+	c, done, err := ghCommand(context.Background(), repo, args...)
 	if err != nil {
 		return err
 	}
+	defer done()
 	c.Stdin = bytes.NewReader(b)
 	if out, err := c.CombinedOutput(); err != nil {
 		return fmt.Errorf("gh api review: %s", strings.TrimSpace(string(out)))
