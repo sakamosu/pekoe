@@ -80,14 +80,14 @@ func TestSessionListConflictTag(t *testing.T) {
 
 func TestPermissionModalAlsoChanged(t *testing.T) {
 	m := forecastModel(t, "none")
-	out := strings.Join(newPermissionModal(m, m.sessions[1]).view(), "\n")
+	out := strings.Join((&permissionModal{m: m, slug: m.sessions[1].Slug}).view(), "\n")
 	l := lineWith(t, out, "also changed in")
 	if !strings.Contains(l, "! also changed in feat-a") {
 		t.Fatalf("warning line: %q", l)
 	}
 	// nothing to warn about: no line
 	m.sessions[1].PendingTool.AlsoIn = nil
-	if out := ansi.Strip(strings.Join(newPermissionModal(m, m.sessions[1]).view(), "\n")); strings.Contains(out, "also changed") {
+	if out := ansi.Strip(strings.Join((&permissionModal{m: m, slug: m.sessions[1].Slug}).view(), "\n")); strings.Contains(out, "also changed") {
 		t.Fatalf("unexpected warning:\n%s", out)
 	}
 }

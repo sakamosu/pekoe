@@ -541,6 +541,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		_, cmd = m.route(msg)
 	}
+	m.closeStalePermission()
+	m.maybePermission() // e.g. typing just stopped: a prompt held back comes up now
 	m.tipSync()
 	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
 }
@@ -765,28 +767,35 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 	return nil
 }
 
-// maybePermission opens the permission modal for the selected session when
-// it waits for a permission and the user is not typing elsewhere.
-// closeStalePermission closes the permission dialog once its session no
-// longer waits for a permission (or is gone): it would keep every key.
+// closeStalePermission closes the permission dialog once its wait ended
+// (or the session is gone): it would keep every key.
 func (m *model) closeStalePermission() {
 	if p, ok := m.modal.(*permissionModal); ok && p.stale() {
 		m.modal = nil
 	}
 }
 
+// maybePermission puts the permission modal on top for the oldest
+// permission prompt not dismissed: any session's or tapi chat's, whatever
+// is selected or shows. Never while typing into [4] (the keys typed would
+// answer it), in the review surface or the tour; leaving them, it comes up
+// at once (Update). A dismissed wait (esc, g, answered) stays down until
+// its session waits again.
 func (m *model) maybePermission() tea.Cmd {
-	if m.modal != nil || m.typing || m.review != nil {
+	if m.modal != nil || m.typing || m.review != nil || m.tour != nil {
 		return nil
 	}
-	s := m.current()
-	if s == nil || s.State != state.Waiting || s.WaitKind != "permission" {
+	for _, w := range m.permWaits() {
+		if t, ok := m.dismissed[w.slug]; ok && !w.since.After(t) {
+			continue
+		}
+		m.modal = &permissionModal{m: m, slug: w.slug}
+		// the modal says it: a toast for the same wait would say it twice
+		if t := m.tapi; t != nil && t.toast != nil && t.toast.slug == w.slug && t.toast.react == nil {
+			t.toast = nil
+		}
 		return nil
 	}
-	if t, ok := m.dismissed[s.Slug]; ok && !s.StateSince.After(t) {
-		return nil
-	}
-	m.modal = newPermissionModal(m, s)
 	return nil
 }
 
