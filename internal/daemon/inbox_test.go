@@ -513,3 +513,36 @@ func TestInboxHumanWithdrawTellsAsker(t *testing.T) {
 		t.Fatalf("typed for an own withdraw: %v", got)
 	}
 }
+
+// ask-human and inbox --mine typed in a session's run window (TUI `!`)
+// with the token are a person's, not the session's agent's: the answer is
+// not typed into the agent's window.
+func TestInboxFromRunWindowIsHuman(t *testing.T) {
+	d, fe, _ := inboxSetup(t)
+	run := &Caller{human: true, Via: viaSocket, peer: fixedWindow("main", engine.WinRun)}
+	it := callAs[state.InboxItem](t, d, run, "inbox.post", map[string]any{"question": "どっち?", "kind": "decision", "options": []string{"A", "B"}})
+	if it.From != callerHuman {
+		t.Fatalf("from: %q", it.From)
+	}
+	agentQ := ask(t, d, "main", map[string]any{"question": "agent の問い", "kind": "decision"})
+	if l := callAs[[]state.InboxItem](t, d, run, "inbox.list", map[string]any{"mine": true}); len(l) != 1 || l[0].ID != it.ID {
+		t.Fatalf("mine from the run window: %+v", l)
+	}
+	// a person in the run window withdraws the agent's question: the agent is told
+	if w := callAs[state.InboxItem](t, d, run, "inbox.withdraw", map[string]any{"id": agentQ.ID}); w.Answer.By != callerHuman || w.Delivery == state.DeliveryNone {
+		t.Fatalf("withdraw from the run window: %+v", w)
+	}
+	n := len(fe.sent)
+	call[any](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": it.Rev, "choice": 0})
+	d.setState("main", state.Idle, "")
+	d.deliverAllInbox()
+	time.Sleep(50 * time.Millisecond)
+	for _, s := range sentSince(fe, n) {
+		if strings.Contains(s, "q"+itoa(it.ID)+"]") {
+			t.Fatalf("a person's answer typed into the agent's window: %v", sentSince(fe, n))
+		}
+	}
+	if g := inboxGet(t, d, it.ID); g.Delivery != state.DeliveryNone {
+		t.Fatalf("delivery: %+v", g.Delivery)
+	}
+}

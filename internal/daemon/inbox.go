@@ -89,14 +89,11 @@ type inboxPostP struct {
 	Decided   *int     `json:"decided"`
 }
 
-// inboxCaller is who an inbox call is from: the caller's window when it
-// has one (token or not, as report.post), else human / unknown.
-func inboxCaller(who *Caller) string {
-	if p := who.Pane(); p != "" {
-		return p
-	}
-	return who.ID()
-}
+// inboxCaller is who an inbox call is from: the caller as recorded
+// (Caller.ID). An agent window is its session, token or not; the token
+// from a session's run window (TUI `!`) or review window is a person's,
+// so a question asked there is the person's, not the agent's.
+func inboxCaller(who *Caller) string { return who.ID() }
 
 func (d *Daemon) hInboxPost(who *Caller, p inboxPostP) (any, error) {
 	from := inboxCaller(who)
