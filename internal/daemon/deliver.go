@@ -284,9 +284,12 @@ func deliverLine(cs []Change, its []state.InboxItem, epoch string) string {
 		names = append(names, c.Slug+" "+w)
 	}
 	for _, it := range its {
-		if it.Status == state.InboxDismissed {
+		switch it.Status {
+		case state.InboxDismissed:
 			names = append(names, "受信箱 "+ids.Question(it.ID)+" は答えずに閉じられた")
-		} else {
+		case state.InboxWithdrawn:
+			names = append(names, "受信箱 "+ids.Question(it.ID)+" は人が取り下げた")
+		default:
 			names = append(names, "受信箱 "+ids.Question(it.ID)+" に答え")
 		}
 	}

@@ -55,7 +55,7 @@
   | `send.log` | ハブのエージェントが自分の頼んだことを読み直す(token なしでは呼び出し元が送った・受けた記録だけ。下の「送信の記録」) |
   | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
-  | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
+  | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ。人は token つきで誰の問いでも取り下げられ、そのときは問いを出したエージェントに知らせる) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
   | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する。pekoed が読んだ `[keys] prefix` も返す) |
@@ -92,7 +92,8 @@ Claude Code のエージェントは pekoe が渡す sandbox の中で動き、t
 - `session.event`(hooks)は、窓に当たればその slug に振り分ける(`$PEKOE_SESSION` と cwd より優先)。Claude Code は hooks を sandbox の外で自分の子として起動するので、親を辿ると Bash のコマンドと同じ窓に当たる。当たらないもの(`pekoe adopt` で引き取った、tmux の外で動いているエージェントなど)は今までどおり `$PEKOE_SESSION` と cwd で決める。ただし `payload.transcript_path` が Claude Code の会話のファイル(`~/.claude/projects/<符号化した起動時の cwd>/<id>.jsonl`)なら、会話が始まった場所を先に見る: tapi の稼働ディレクトリなら tapi、あるセッションの worktree ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てる(cwd では決める)。Claude Code が会話をバックグラウンドのセッションに移すと、そのプロセスは別の窓の環境変数を持って窓の外で動くため(docs/tapi-chat.md「窓の外に出た会話」)。hooks は token を読めるので、ここでは token の有無ではなく窓を見る。tapi のリセット・起動し直しで pekoe が閉じた Claude Code の会話の hook(SIGHUP を受けて窓が消えた後に走る SessionEnd)は、閉じてから 1 分は窓に当たらなければ `{ignored: true}` で無視する(docs/tapi-chat.md「窓の外に出た会話」)
 - `dev.toggle` も token なしなら窓で決める(token つきは今までどおり `slug` の相手)
 - `dev.log` も同じ。token なしでは窓のセッションのログだけを返し(`slug` を省けば窓のセッション)、別の slug は `dev.log: a session reads only its own dev server's log (…)` で断る。ログは worktree のコマンドの出力で、起動時に `.env` の中身を出すような dev server だと秘密を含みうるので、ほかのセッションの分は読ませない
-- `report.post` と `inbox.*` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告と問いは自分の窓のセッションに付く)
+- `report.post` も token の有無より窓を優先する(token を読めてしまう sandbox なしのエージェントでも、報告は自分の窓のセッションに付く)
+- `inbox.*` は上の 3. と同じ判定(`Caller.ID()`)にする。エージェントの窓からは token つきでもそのセッション(sandbox なしのエージェントの問いも自分のセッションに付く)。同じセッションの run 窓(TUI の `!`)・review 窓から token つきで打った `ask-human`・`inbox --mine`・`inbox withdraw` は人の操作で `human`(問いはエージェントのものにならず、答えもエージェントの入力欄に打たない)
 
 ### hooks の sandbox
 
@@ -454,11 +455,11 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 
 - 添字(`recommend`・`decided`・`choice`)は 0 始まり。CLI と画面は 1 始まりで出す
 - `kind`: `decision`(選ぶ。選択肢なしなら答えはメモで)・`approve`(選択肢を省くと `approve`・`decline`)・`login`(人の手作業。選択肢は `done`・`can't` に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。`answered` で作られ、`answer.by` は呼び出し元)。選択肢が 1 つだけのものは断る
-- `from` は呼び出し元(上の「呼び出し元の識別」)の窓。窓がなく token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
-- 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない。数えるのは `from` の窓ごとで、token を読めるエージェントの窓(sandbox なし・tapi)も数える。数えないのは窓のない token つきの人だけ)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
+- `from` は呼び出し元(上の「呼び出し元の識別」)。エージェントの窓ならそのセッション。窓がない・run 窓・review 窓で token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
+- 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない。数えるのは `from` の窓ごとで、token を読めるエージェントの窓(sandbox なし・tapi)も数える。数えないのは `human`(窓のない token つきの人と、run 窓・review 窓から token つきで打った人)だけ)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
 - **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
-- `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)
-- **答えの届け方**(`answer` と `dismiss`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12`(閉じたものは `答えずに閉じられました`)。1 行に均し、先頭は `[`(数字にしない)
+- `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)。人(token つきで呼び出し元が `human`)がエージェントの問いを取り下げたら、`dismiss` と同じく問いを出したエージェントに届ける(下の「答えの届け方」。`answer.by` は `human`)。エージェントが自分の問いを取り下げたときは誰にも届けない(`delivery: none` のまま)
+- **答えの届け方**(`answer` と `dismiss`、人の `withdraw`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12`(閉じたものは `答えずに閉じられました`、人が取り下げたものは `人が取り下げました`)。1 行に均し、先頭は `[`(数字にしない)
   - 打つ条件: セッションなら `idle` か `done` で agent の窓が生きている、tapi chat なら起動していて `idle`。どちらも許可ダイアログが出ていない(hooks の状態と画面の両方。受け付けた時と、送信ロックを取って打つ直前の 2 回。`session.send` の token なしの経路と同じ)。人がその窓に打った(TUI・CLI・Web UI の `session.send`・`session.keys`・`tapi.send`・`tapi.keys`)のが 30 秒以内なら待つ
   - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
   - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。token を送るエージェントの窓から読んでも同じ(人とみなすのは窓のない token つきの呼び出しだけ)

@@ -35,7 +35,7 @@ const (
 	kindCI      = "ci" // a PR's CI settled: every check finished (once per head and result; addCIChange)
 	kindLanded  = "landed"
 	kindRemoved = "removed"
-	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
+	kindInbox   = "inbox" // a person answered, dismissed or withdrew the caller's own question
 )
 
 // waitKindList is the kinds wait --on takes, in the order the error lists them.
