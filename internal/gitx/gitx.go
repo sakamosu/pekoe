@@ -129,20 +129,59 @@ func CheckRefArg(what, name string) error {
 // outside the agents' sandbox, and quoting cannot protect a {{branch}} the
 // user put inside quotes of their own ("app_{{branch}}"). git itself allows
 // most of them ($ ( ) | { } …). Ordinary names (letters, digits, / - _ .)
-// pass, and so do the ones pekoe suggests (feat/12-csv-export).
+// pass, and so do the ones pekoe suggests (feat/12-csv-export). It also
+// applies git's own rules for a branch name (git check-ref-format --branch),
+// so a name git would refuse ("feat/", "a..b", "x.lock") is turned down
+// before a session, a port or a worktree is made.
 func CheckBranchName(name string) error {
 	if err := CheckRefArg("branch", name); err != nil {
 		return err
 	}
 	for _, r := range name {
-		if r < 0x20 || r == 0x7f || unicode.IsSpace(r) || strings.ContainsRune(shellSpecial, r) {
+		if r < 0x20 || r == 0x7f || unicode.IsSpace(r) || strings.ContainsRune(shellSpecial, r) || strings.ContainsRune(refSpecial, r) {
 			return fmt.Errorf("invalid branch %q: %q is not allowed (use letters, digits, / - _ .)", name, r)
 		}
+	}
+	if why := refFormat(name); why != "" {
+		return fmt.Errorf("invalid branch %q: %s", name, why)
 	}
 	return nil
 }
 
-const shellSpecial = "$`'\"\\;|&(){}<>*?[]~!#"
+const (
+	shellSpecial = "$`'\"\\;|&(){}<>*?[]~!#"
+	// refSpecial: characters git never allows in a ref (on top of the
+	// shell ones above, which already cover ~ ? * [ and the backslash)
+	refSpecial = ":^"
+)
+
+// refFormat checks the structural rules of git check-ref-format --branch
+// (the characters are checked by the caller). "" when name is fine.
+func refFormat(name string) string {
+	switch {
+	case name == "HEAD" || name == "@":
+		return "it names HEAD, not a branch"
+	case strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/"):
+		return "must not start or end with '/'"
+	case strings.Contains(name, "//"):
+		return "must not contain '//'"
+	case strings.Contains(name, ".."):
+		return "must not contain '..'"
+	case strings.Contains(name, "@{"):
+		return "must not contain '@{'"
+	case strings.HasSuffix(name, "."):
+		return "must not end with '.'"
+	}
+	for _, c := range strings.Split(name, "/") {
+		if strings.HasPrefix(c, ".") {
+			return "no part between '/' may start with '.'"
+		}
+		if strings.HasSuffix(c, ".lock") {
+			return "no part between '/' may end with '.lock'"
+		}
+	}
+	return ""
+}
 
 // MainWorktree returns the primary worktree path of the repository.
 func MainWorktree(dir string) (string, error) {
