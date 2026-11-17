@@ -525,8 +525,13 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	steps := []string{}
 	onto := base
 	if hasOrigin {
+		// base "origin/main" (session.new takes it) names origin's main:
+		// fetch, rebase onto and open the PR against main, as fetchBase does
+		base = strings.TrimPrefix(base, "origin/")
 		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
+		} else {
+			steps = append(steps, fmt.Sprintf("fetch origin %s failed (%v): rebasing onto %s as it is here", base, err, onto))
 		}
 	}
 	if _, err := gitx.Run(s.Path, "rebase", "--end-of-options", onto); err != nil {
@@ -576,6 +581,20 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	}
 	steps = append(steps, "pushed "+s.Branch)
 	pr := s.PR
+	if pr != 0 {
+		// a PR that is no longer open (merged or closed before this land:
+		// the agent's own gh pr create, a person) cannot carry the new
+		// commits: open a new one. Asked of GitHub now; PRStatus is what the
+		// poller saw last, and only when GitHub cannot be asked.
+		st := prState(d.ghRepo(s), pr)
+		if st == "" && s.PRStatus != nil {
+			st = s.PRStatus.State
+		}
+		if st != "" && st != "OPEN" {
+			steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
+			pr = 0
+		}
+	}
 	if pr == 0 {
 		ri := d.ghRepoInfoOf(s.RepoDir)
 		repo := ri.Base
@@ -600,11 +619,19 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		}
 		pr = prNumber(string(out))
 		if pr == 0 {
-			pr = prForBranch(ri, s.Branch, s.CreatedAt)
+			pr = openPRForBranch(ri, s.Branch)
 		}
 		steps = append(steps, fmt.Sprintf("PR #%d", pr))
 	}
-	d.update(p.Slug, func(x *state.Session) { x.PR = pr; x.Landing = true })
+	d.update(p.Slug, func(x *state.Session) {
+		if x.PR != pr {
+			// the summary and the held teardown were the old PR's
+			x.PRStatus = nil
+			x.LandHeld = ""
+		}
+		x.PR = pr
+		x.Landing = true
+	})
 	return map[string]any{"steps": steps, "pr": pr}, nil
 }
 
@@ -685,6 +712,49 @@ func prForBranch(r ghRepoInfo, branch string, since time.Time) int {
 		return 0
 	}
 	return v.Number
+}
+
+// openPRForBranch is prForBranch, but only an open PR: gh pr view
+// <branch> also answers with the branch's merged or closed PR when it has
+// no open one, and that PR cannot carry new commits.
+func openPRForBranch(r ghRepoInfo, branch string) int {
+	c, done, err := ghCommand(context.Background(), r.Base, "pr", "view", r.headRef(branch), "--repo", r.Base, "--json", "number,state")
+	if err != nil {
+		return 0
+	}
+	defer done()
+	out, err := c.Output()
+	if err != nil {
+		return 0
+	}
+	var v struct {
+		Number int    `json:"number"`
+		State  string `json:"state"`
+	}
+	json.Unmarshal(out, &v)
+	if v.State != "OPEN" {
+		return 0
+	}
+	return v.Number
+}
+
+// prState is the state of PR pr in repo as GitHub has it now (OPEN,
+// MERGED, CLOSED); "" when gh cannot tell.
+func prState(repo string, pr int) string {
+	c, done, err := ghCommand(context.Background(), repo, "pr", "view", strconv.Itoa(pr), "--repo", repo, "--json", "state")
+	if err != nil {
+		return ""
+	}
+	defer done()
+	out, err := c.Output()
+	if err != nil {
+		return ""
+	}
+	var v struct {
+		State string `json:"state"`
+	}
+	json.Unmarshal(out, &v)
+	return v.State
 }
 
 // finishLanding tears down a session whose work went in (pekoe land on a

@@ -43,7 +43,10 @@ case "$1 $2" in
       else echo '{"number":42,"state":"OPEN","closedAt":null}'; fi; exit 0 ;; esac
     case "$*" in
       *headRefName*) echo '{"headRefName":"their-branch","baseRefName":"main","title":"Their PR"}' ;;
-      *state*) echo '{"state":"` + prState + `"}' ;;
+      *number,state*) echo '{"number":42,"state":"` + prState + `"}' ;;
+      *state*)
+        # state-<n>: PR <n>'s own state, when it differs from prState
+        if [ -f ` + filepath.Join(dir, "state-") + `"$3" ]; then echo "{\"state\":\"$(cat ` + filepath.Join(dir, "state-") + `"$3")\"}"; else echo '{"state":"` + prState + `"}'; fi ;;
       *) echo '{"number":42}' ;;
     esac ;;
   "api --method") cat > ` + filepath.Join(dir, "review.json") + `; echo '{}' ;;
