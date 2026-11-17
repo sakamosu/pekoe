@@ -689,6 +689,7 @@ func (d *Daemon) registerHandlers() {
 		"ledger.reopen":         bind(d.hLedgerReopen),
 		"ledger.delete":         bind(d.hLedgerDelete),
 		"tips.next":             bind(d.hTipsNext),
+		"tips.prefix":           bind(d.hTipsPrefix),
 	}
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h
