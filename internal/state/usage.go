@@ -12,6 +12,7 @@ package state
 // used again later starts a record of its own.
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -32,6 +33,25 @@ func (u *Usage) Add(v Usage) {
 	u.Output += v.Output
 	u.CacheCreation += v.CacheCreation
 	u.CacheRead += v.CacheRead
+}
+
+// ShortTokens shortens a token count: 950, 12.3k, 4.56M, 1.23G. The unit
+// is chosen after rounding, so 999,960 is 1.00M, not 1000.0k.
+func ShortTokens(n int64) string {
+	if n < 1000 {
+		return strconv.FormatInt(n, 10)
+	}
+	for _, u := range []struct {
+		div  float64
+		prec int
+		unit string
+	}{{1e3, 1, "k"}, {1e6, 2, "M"}} {
+		s := strconv.FormatFloat(float64(n)/u.div, 'f', u.prec, 64)
+		if v, _ := strconv.ParseFloat(s, 64); v < 1000 {
+			return s + u.unit
+		}
+	}
+	return strconv.FormatFloat(float64(n)/1e9, 'f', 2, 64) + "G"
 }
 
 // UsageCursor is how far one transcript of one session's life was read:

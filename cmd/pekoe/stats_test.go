@@ -41,3 +41,13 @@ func TestPrintStats(t *testing.T) {
 		t.Errorf("empty: %s", out)
 	}
 }
+
+// ktok (and the TUI's shortTokens, the same code) rounds up across a unit
+// boundary without moving to the next unit.
+func TestKtokUnitBoundary(t *testing.T) {
+	for n, want := range map[int64]string{999_960: "1.00M", 999_995_000: "1.00G"} {
+		if got := ktok(n); got != want {
+			t.Errorf("ktok(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

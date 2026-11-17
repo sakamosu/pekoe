@@ -90,14 +90,4 @@ func tokenLine(u state.Usage) string {
 }
 
 // ktok shortens a token count: 950, 12.3k, 4.56M, 1.23G.
-func ktok(n int64) string {
-	switch {
-	case n < 1000:
-		return strconv.FormatInt(n, 10)
-	case n < 1_000_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1e3)
-	case n < 1_000_000_000:
-		return fmt.Sprintf("%.2fM", float64(n)/1e6)
-	}
-	return fmt.Sprintf("%.2fG", float64(n)/1e9)
-}
+func ktok(n int64) string { return state.ShortTokens(n) }
