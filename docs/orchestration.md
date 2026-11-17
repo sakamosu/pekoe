@@ -465,7 +465,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 | --- | --- | --- |
 | `pekoe`(今のもの) | main・tapi | 窓口からセッションを作って任せる基本(今の内容)。統括役のスキルへの入口を一言足す |
 | `pekoe-orchestrate`(新規) | tapi・main(ハブとして使うとき) | 依頼の受け方(1 PR で済むか分けるか)、プロンプトのテンプレート(何を・なぜ・分かっていること・完了条件・やらないこと・最後に `pekoe report`)、`pekoe wait --mine` の待ち方と cursor、人に上げる基準(人にしかできないこと / 取り消せない・外に出る操作)、前例の引き方(人が答えた受信箱の項目だけを前例にする。`fyi` は前例にしない)、人への報告の形(決定が必要 / 今やること / 進行中)、並列の約束ごと(共有ファイル — migration・スキーマ・lockfile — を触る作業は 1 本ずつ、`pekoe conflicts --json` を見て順番を決める、依存は `--after`) |
-| `pekoe-work`(新規) | 作業セッション | 計画 → 実装 → テスト → 独立レビュー → コミット → `pekoe land` → `pekoe report`。「CI が通っただけでは確かめたことにならない」(UI はスクショ・GIF、API はリクエストとレスポンスを evidence に)、何も実行せずに「直しました」と言わない、詰まったら `pekoe report --status blocked` か `pekoe ask-human`(人にしかできないことだけ) |
+| `pekoe-work`(新規) | 作業セッション | 計画 → 実装 → テスト → 独立レビュー → コミット → `pekoe land` → `pekoe report`。「CI が通っただけでは確かめたことにならない」(UI はスクショ・GIF、API はリクエストとレスポンスを evidence に)、何も実行せずに「直しました」と言わない、land と報告の前に独立レビューの pass の記録(`pekoe --json reports`)を自分で確かめる、詰まったら `pekoe report --status blocked` か `pekoe ask-human`(人にしかできないことだけ) |
 | `pekoe-review`(新規) | 独立レビューをする側 | 作者でないエージェントが差分を読み、合格・不合格をコミットの SHA と一緒に `pekoe report --status review --verdict pass\|fail --reviewed-sha <sha>` で残す。担い手(サブエージェントか別セッションか)は未決事項 U3 |
 
 - **配り方**(未決事項 U10): スキルをバイナリに同梱し(docs と同じく `pekoe tip --doc` が読める形)、`pekoe skills install` が `~/.claude/skills/pekoe*` にシンボリックリンク(リリースのバイナリならデータディレクトリに書き出してからリンク)を張る。`pekoe hooks install` と同じ流れ(確認つき、`--yes`、`status` / `uninstall`)。今の README の `ln -s` の手順はこれに置き換える。作業セッションは任意のリポジトリの worktree で動くので、ユーザーの `~/.claude/skills` に置けばどこでも読める

@@ -42,6 +42,8 @@ pekoe report "<合否の理由を 1〜3 行>" --status review \
 pekoe report - --status review --verdict fail --reviewed-sha <sha> < review.md
 ```
 
+- 合否を決めたら、上のコマンドを実際に打つ(作者への返事に「pass」と書くだけでは記録にならない。作者・依頼元・pekoed が見るのは pekoe reports の記録だけ)
+- 打った後、自分の記録が残ったことを確かめる: `pekoe --json reports <slug> --limit 3`(slug は報告が付くセッション。サブエージェントなら作者の `$PEKOE_SESSION`)の先頭に、`status` が `review`・自分の `verdict`・`reviewed_sha` が読んだ SHA の報告があること。無ければ(コマンドが断られた・エラーになった)、作者に「記録した」と返さず、断られた理由をそのまま返す
 - `--status review` には `--verdict` が要る(`pass`・`fail`。`pending` は作者がレビューを頼んだときに残す「レビュー中」の印で、レビュアーは使わない)。`--reviewed-sha` は実際に読んだ SHA。読んだ後に HEAD が動いていたら、その SHA の合否として残す(新しい SHA はもう一度レビューする)
 - 不合格なら、直すべき点を 1 つずつ、ファイルと行・何が問題か・どうなればよいかで書く。好みの指摘と、直さないとマージできない指摘を分ける
 - 合格でも、気になった点は書いてよい(合否は変えない)
