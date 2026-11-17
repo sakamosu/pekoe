@@ -38,7 +38,16 @@ const (
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
-var waitKinds = map[string]bool{kindReport: true, kindQueued: true, kindStarted: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
+// waitKindList is the kinds wait --on takes, in the order the error lists them.
+var waitKindList = []string{kindReport, kindQueued, kindStarted, kindDone, kindWaiting, kindIdle, kindFailed, kindPR, kindCI, kindLanded, kindRemoved, kindInbox}
+
+var waitKinds = func() map[string]bool {
+	m := map[string]bool{}
+	for _, k := range waitKindList {
+		m[k] = true
+	}
+	return m
+}()
 
 const (
 	changeRing     = 2000 // changes kept
@@ -286,7 +295,7 @@ type waitResult struct {
 func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	for _, k := range p.On {
 		if !waitKinds[k] {
-			return nil, fmt.Errorf("unknown kind %q (report, started, done, waiting, idle, failed, pr, ci, landed, removed, inbox)", k)
+			return nil, fmt.Errorf("unknown kind %q (%s)", k, strings.Join(waitKindList, ", "))
 		}
 	}
 	slugs := map[string]bool{}
