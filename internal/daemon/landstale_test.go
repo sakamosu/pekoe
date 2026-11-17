@@ -162,3 +162,32 @@ func TestLandAlreadyExistsTakesOnlyOpenPR(t *testing.T) {
 		})
 	}
 }
+
+// a merged PR with nothing new on the branch (a person merged the agent's
+// own PR; land is pressed for the teardown): no new PR (gh pr create
+// would fail with "No commits between"), the session lands on the merge.
+func TestLandMergedPRWithoutNewCommits(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	onGitHub(t, d, repo)
+	gh := fakeGH(t, "OPEN")
+	os.WriteFile(filepath.Join(gh, "state-41"), []byte("MERGED"), 0o644)
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/done"})
+	waitCreated(t, d, s.Slug)
+	s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+	os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
+	run(t, s.Path, "git", "add", ".")
+	run(t, s.Path, "git", "commit", "-qm", "x")
+	// PR #41 got merged: its commit is on origin's main
+	run(t, s.Path, "git", "push", "-q", bare, "HEAD:main")
+	d.update(s.Slug, func(x *state.Session) { x.PR = 41; x.PRStatus = &state.PRStatus{State: "MERGED"} })
+	res := call[map[string]any](t, d, "land", map[string]any{"slug": s.Slug})
+	out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
+	if strings.Contains(string(out), "pr create") || res["pr"].(float64) != 41 {
+		t.Fatalf("land opened a new PR with no new commits: %v (gh calls: %q)", res, out)
+	}
+	d.watchMerges()
+	if s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); s.State != state.Landed {
+		t.Fatalf("not landed on the merged PR: %s", s.State)
+	}
+}

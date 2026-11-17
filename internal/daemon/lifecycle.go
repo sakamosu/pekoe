@@ -591,8 +591,14 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			st = s.PRStatus.State
 		}
 		if st != "" && st != "OPEN" {
-			steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
-			pr = 0
+			// only with commits that are not in the base yet: with none (a
+			// person merged the agent's own PR, land is for the teardown)
+			// gh pr create fails with "No commits between", and the old PR's
+			// merge is what lands the session
+			if n, err := gitx.Run(s.Path, "rev-list", "--count", "--end-of-options", onto+"..HEAD"); err == nil && strings.TrimSpace(n) != "0" {
+				steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
+				pr = 0
+			}
 		}
 	}
 	if pr == 0 {
