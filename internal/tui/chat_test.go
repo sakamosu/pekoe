@@ -510,7 +510,10 @@ func TestClickEntersAgentPane(t *testing.T) {
 		m.window = engine.WinAgent
 		m.focus, m.typing = pSessions, false
 		m.unreadAt = map[string]int{"api-1": 3}
-		m.screen = &engine.Screen{Lines: []string{"hello", "see https://example.com/x ok"}, Width: 100, Height: 30, MouseAny: true, AltScreen: true}
+		// a full-screen program's screen has a line for every row of the pane
+		_, ah := m.agentSize()
+		lines := append([]string{"hello", "see https://example.com/x ok"}, make([]string, ah-2)...)
+		m.screen = &engine.Screen{Lines: lines, Width: 100, Height: ah, MouseAny: true, AltScreen: true}
 		m.screenOf = "api-1"
 		return m, f
 	}

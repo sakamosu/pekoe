@@ -280,7 +280,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `:cleanup` | The cleanup list (`pekoe cleanup`): landed, merged and long-stopped sessions with their warnings (uncommitted files, unpushed commits, an open PR). `space` marks one, `a` marks every landed one, `D` removes the marked ones (or the selected one) after a confirm that names each worktree it deletes and repeats the warnings |
 | `H` | Tutorial again (also `:tutorial`, see [Tutorial](#tutorial)) |
 | `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |
-| `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs |
+| `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs. Below 100 columns the left tab follows: `2` shows Worktrees (or Issues), `3` Changes |
 | `q` | Quit |
 
 - When any session, or tapi chat, waits for a permission, the Permission modal comes up on top of whatever you are looking at, naming the repository and the session (or tapi chat): `y` allow, `n` deny, `A` always allow, `g` go to that session (or open tapi chat), `esc` later. Answering doesn't change what is selected or shown. Several waits come up one after another, the oldest first. It holds back while you type text (into [4], the `/` filter, the Issues search, a pick's instruction: your keys would answer it) and comes up as soon as you leave. A prompt dismissed with `esc` stays down until that session waits again or asks for another tool
@@ -485,7 +485,7 @@ port = 47777                # for the Chrome extension (127.0.0.1)
 [ports]
 base = 3001                 # first port of the port ledger
 [keys]
-prefix = "ctrl+q"           # key to leave input
+prefix = "ctrl+q"           # key to leave input: ctrl+ a letter (not i / m), F1-F20 or alt+ a key; C-a / Ctrl+A / ^a also read as ctrl+a
 [review]
 surface = "nvim"            # nvim | tui
 [picks]

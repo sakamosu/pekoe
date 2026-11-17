@@ -74,6 +74,12 @@ func Check(b []byte) []Problem {
 	port("http.port", g.HTTP.Port)
 	port("ports.base", g.Ports.Base)
 
+	if p := g.Keys.Prefix; strings.TrimSpace(p) != "" {
+		if _, ok := PrefixKey(p); !ok {
+			add("keys.prefix", "%q is not a key the TUI can tell apart (ctrl+ a letter other than i or m, F1-F20, or alt+ a key; ctrl+i / ctrl+m / ctrl+[ arrive as tab / enter / esc): %s is used", p, DefaultPrefix)
+		}
+	}
+
 	oneOf("theme.mode", g.Theme.Mode, false, "auto", "truecolor", "ansi", "none")
 	oneOf("theme.icons", g.Theme.Icons, false, "nerd", "unicode", "ascii")
 	for _, k := range sortedKeys(g.Theme.Colors) {

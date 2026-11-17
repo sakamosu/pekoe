@@ -574,3 +574,28 @@ func TestInboxMergeConfirmReread(t *testing.T) {
 		t.Fatal("Enter answered merge on the newer item without a second Enter")
 	}
 }
+
+// A popup coming up while the prefix waits for its next key takes that
+// key: closing it, the prefix is spent (an = does not reset the layout).
+func TestInboxPopupDisarmsPrefix(t *testing.T) {
+	m := popupModel(t)
+	inboxEv(t, m, openItem(8))
+	m.layout = Layout{Left: 0.5}
+	m.focus = pSessions
+	runCmd(m, m.onKey(ctrlQ)) // not typing: the prefix waits for h / l / z …
+	if !m.prefix {
+		t.Fatal("prefix not armed")
+	}
+	m.Update(tickMsg{}) // the popup comes up on a tick
+	im := popupOf(t, m)
+	if m.prefix {
+		t.Fatal("prefix still armed under the popup")
+	}
+	past(im)
+	m.Update(key("esc"))
+	m.Update(modalDoneMsg{})
+	m.Update(key("="))
+	if m.layout != (Layout{Left: 0.5}) {
+		t.Errorf("= after the popup reset the layout: %+v", m.layout)
+	}
+}

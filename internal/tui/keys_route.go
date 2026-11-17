@@ -19,6 +19,7 @@ import (
 //  7. global keys, then the prefix itself
 //  8. the focused panel
 func (m *model) onKey(k tea.KeyMsg) tea.Cmd {
+	defer m.syncNarrowTab() // the focus moved: the narrow tab follows (Update does it too, for clicks and resizes)
 	if m.modal != nil {
 		return m.modal.key(k)
 	}

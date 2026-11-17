@@ -405,6 +405,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `D` | worktree 削除(確認あり) |
 | `/` | セッションの絞り込み(ブランチ名・slug・リポジトリ名) |
 | `[` `]` | パネル内のサブタブ切替([2] Worktrees → Browser → Issues、[3] Changes ⇄ Picks) |
+| `1`〜`4` `Tab` `Shift+Tab` | パネルのフォーカス移動。100 列未満では左のタブも合わせて切り替わる(`2` は Worktrees か Issues、`3` は Changes。Browser・Picks のタブは無いので、狭くするとそれぞれ Worktrees・Changes に戻る) |
 | Issues: `j` `k` | issue 選択(本文とコメントをメインパネルに。Esc で agent 窓へ) |
 | Issues: Enter / `n` | その issue のセッションへ飛ぶ / issue からセッション作成(ブランチ名を提案するモーダル) |
 | Issues: `f` `/` `o` `R` | 自分担当 → 全 open → ラベル指定 / 絞り込み / ブラウザで開く / 再取得 |
