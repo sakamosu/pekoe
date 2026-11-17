@@ -218,7 +218,7 @@ pekoe                                                 # TUI
 | `pekoe attach <slug> [agent\|review\|dev]` | tmux の窓に直接 attach(デバッグ用) |
 | `pekoe hooks install\|uninstall\|status [--yes]` | Claude Code の hooks を足す / 外す / 確認 |
 | `pekoe skills install\|uninstall\|status [--yes]` | pekoe の Claude Code スキルを `~/.claude/skills` にリンクする / 外す / 確認([Claude Code スキル](#claude-code-スキル)) |
-| `pekoe ext` | Chrome 拡張に入れる port と token |
+| `pekoe ext` | Chrome 拡張に入れる port と token(pekoed が実際に待ち受けている port。ほかの pekoed が使っているなどで待ち受けられなかったら、理由を出して断る。`pekoe daemon status` も `http off (…)` と出す) |
 | `pekoe web` | Web UI の状態・URL・初回のログイン URL |
 | `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
 | `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける |

@@ -251,7 +251,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 
 | method | params | result |
 | --- | --- | --- |
-| `daemon.status` | — | `{pid, version, sessions, http_port, config_restart?}`。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
+| `daemon.status` | — | `{pid, version, sessions, http_port, http_error?, config_restart?}`。`http_port` は拡張用の HTTP を実際に待ち受けている番号(設定の `[http] port` ではない)。待ち受けていなければ `0` で、`http_error` に理由(`listen tcp 127.0.0.1:47777: bind: address already in use` など)。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
 | `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる(処理中の hook(`session.event` と Stop の後処理)を最大 3 秒待ってから state.db を閉じる)。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
 | `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
@@ -334,7 +334,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `error.get` | `{id}` | `ErrorReport` + `excerpt`(先頭フレームが worktree 内なら前後 5 行の抜粋) |
 | `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/pekoe/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
-| `ext.info` | — | `{port, token}`(`pekoe ext`) |
+| `ext.info` | — | `{port, token}`(`pekoe ext`)。`port` は実際に待ち受けている番号。待ち受けていない(bind に失敗した)ときは理由を添えて断る |
 | `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?, backend?, backend_error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL。`backend` は Tailscale の backend の状態(`NoState` `Starting` `Running` など)、`backend_error` は backend が control から受け取った最後のエラー(Running になると消える)。`starting` のまま進まない理由を見るため |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
 | `tapi.get` | — | `Tapi`(下記) |
@@ -821,6 +821,8 @@ pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前
 ## 2. HTTP(Chrome 拡張)
 
 `http://127.0.0.1:<port>`(既定 47777、`~/.config/pekoe/config.toml` の `[http] port`)。
+
+起動時に bind できなければ(ほかの pekoed が同じ port を使っているなど)拡張なしで動き続け、ログに理由を書く。そのとき `daemon.status` は `http_port: 0` と `http_error`、`ext.info` は断る(設定の番号を出すと、拡張がその番号で別の pekoed につながってしまう)。
 
 - すべてのリクエストに `Authorization: Bearer <token>` が必要。token は初回起動時に `~/.local/share/pekoe/http-token` に生成される(`pekoe ext` で port と token を表示)
 - `Origin` が `chrome-extension://` で始まらないリクエストは 403

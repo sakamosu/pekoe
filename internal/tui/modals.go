@@ -895,7 +895,9 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 		case "ext":
 			return done(func() tea.Msg {
 				var info map[string]any
-				_ = m.cl.Call("ext.info", nil, &info)
+				if err := m.cl.Call("ext.info", nil, &info); err != nil {
+					return errMsg{err} // pekoed does not listen for the extension
+				}
 				return infoMsg(fmt.Sprintf("extension: port %v token %v", info["port"], info["token"]))
 			})
 		default:
