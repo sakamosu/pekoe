@@ -600,7 +600,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		}
 		pr = prNumber(string(out))
 		if pr == 0 {
-			pr = prForBranch(ri, s.Branch)
+			pr = prForBranch(ri, s.Branch, s.CreatedAt)
 		}
 		steps = append(steps, fmt.Sprintf("PR #%d", pr))
 	}
@@ -657,9 +657,14 @@ func prText(branch string, cs []commitMsg) (title, body string) {
 }
 
 // prForBranch is the number of the PR of branch in r.Base (from r.Origin's
-// owner, headRef), 0 when there is none or gh cannot tell.
-func prForBranch(r ghRepoInfo, branch string) int {
-	c, done, err := ghCommand(context.Background(), r.Base, "pr", "view", r.headRef(branch), "--repo", r.Base, "--json", "number")
+// owner, headRef), 0 when there is none or gh cannot tell. A PR merged or
+// closed before since (the session's created_at) is not the session's: a
+// branch name used again still has its old PR on GitHub, and gh pr view
+// <branch> returns it when no PR of the branch is open;
+// taken for the session's, land would open no PR and the old PR's MERGED
+// would tear the session down. Zero since takes any.
+func prForBranch(r ghRepoInfo, branch string, since time.Time) int {
+	c, done, err := ghCommand(context.Background(), r.Base, "pr", "view", r.headRef(branch), "--repo", r.Base, "--json", "number,state,closedAt")
 	if err != nil {
 		return 0
 	}
@@ -669,9 +674,16 @@ func prForBranch(r ghRepoInfo, branch string) int {
 		return 0
 	}
 	var v struct {
-		Number int `json:"number"`
+		Number   int        `json:"number"`
+		State    string     `json:"state"`
+		ClosedAt *time.Time `json:"closedAt"`
 	}
-	json.Unmarshal(out, &v)
+	if json.Unmarshal(out, &v) != nil {
+		return 0
+	}
+	if v.State != "OPEN" && v.ClosedAt != nil && !since.IsZero() && v.ClosedAt.Before(since) {
+		return 0
+	}
 	return v.Number
 }
 
@@ -780,7 +792,7 @@ func (d *Daemon) watchPRs() {
 	}
 	d.mu.Unlock()
 	for _, s := range check {
-		if pr := prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch); pr > 0 {
+		if pr := prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch, s.CreatedAt); pr > 0 {
 			d.update(s.Slug, func(x *state.Session) {
 				if x.PR == 0 {
 					x.PR = pr

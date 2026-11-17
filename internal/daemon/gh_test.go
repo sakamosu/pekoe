@@ -38,6 +38,9 @@ case "$1 $2" in
     if [ -f ` + filepath.Join(dir, "merge-fail") + ` ]; then cat ` + filepath.Join(dir, "merge-fail") + ` >&2; exit 1; fi
     if [ -f ` + filepath.Join(dir, "pr-merged.json") + ` ]; then cp ` + filepath.Join(dir, "pr-merged.json") + ` ` + filepath.Join(dir, "pr.json") + `; fi ;;
   "pr view")
+    # by branch name (prForBranch); branch-pr.json: the PR GitHub has for it
+    case "$3" in *[!0-9]*) if [ -f ` + filepath.Join(dir, "branch-pr.json") + ` ]; then cat ` + filepath.Join(dir, "branch-pr.json") + `
+      else echo '{"number":42,"state":"OPEN","closedAt":null}'; fi; exit 0 ;; esac
     case "$*" in
       *headRefName*) echo '{"headRefName":"their-branch","baseRefName":"main","title":"Their PR"}' ;;
       *state*) echo '{"state":"` + prState + `"}' ;;
