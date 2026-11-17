@@ -328,3 +328,39 @@ func TestStatsForgetsGoneTranscripts(t *testing.T) {
 		t.Fatalf("tokens = %d, want 111111", got)
 	}
 }
+
+// A copy longer than one count reads (usageChunk) is read on over several
+// counts. Its original deleted meanwhile is forgotten only once the copy
+// is read to its end: the ids not yet seen in the copy would go with it,
+// and the rest of the copy would count them again.
+func TestStatsForgetsGoneAfterCopyRead(t *testing.T) {
+	d, _, _ := setup(t)
+	dir := t.TempDir()
+	now := time.Now()
+	life := usageLife{Slug: TapiSlug}
+	a := filepath.Join(dir, "a.jsonl")
+	hist := usageLine("m1", now, 1, 0, 0, 0) + usageLine("m2", now, 10, 0, 0, 0) + usageLine("m3", now, 100, 0, 0, 0)
+	appendFile(t, a, hist)
+	d.countUsage(life, a, true)
+
+	defer func(n int) { usageChunk = n }(usageChunk)
+	usageChunk = len(usageLine("m4", now, 1000, 0, 0, 0)) + 1 // one line a count
+	b := filepath.Join(dir, "b.jsonl")
+	appendFile(t, b, hist+usageLine("m4", now, 1000, 0, 0, 0))
+	d.countUsage(life, b, true) // m1 of the copy
+	os.Remove(a)
+	for i := 0; i < 8; i++ {
+		d.countUsage(life, "", true)
+	}
+	st, err := d.stats(now, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Tokens.Total(); got != 1111 {
+		t.Fatalf("tokens = %d, want 1111; the rest of the copy was counted again", got)
+	}
+	cs, _ := d.DB.UsageCursors(TapiSlug, "")
+	if len(cs) != 1 || filepath.Base(cs[0].Path) != "b.jsonl" {
+		t.Fatalf("cursors = %+v, want only b.jsonl", cs)
+	}
+}

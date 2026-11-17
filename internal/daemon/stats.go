@@ -33,7 +33,7 @@ import (
 
 // usageChunk is the most read from one transcript in one count; the rest
 // waits for the next count.
-const usageChunk = 32 << 20
+var usageChunk = 32 << 20 // a variable for tests
 
 // usageLife names the life whose usage a count adds to.
 type usageLife struct {
@@ -114,6 +114,7 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 	}
 	sort.Strings(paths)
 	var gone []string
+	moved := false
 	for _, p := range paths {
 		c := known[p]
 		msgs, next, changed := readUsage(c)
@@ -123,13 +124,19 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 			}
 			continue
 		}
+		moved = true
 		if err := d.DB.AddUsage(next, life.Repo, msgs); err != nil {
 			log.Printf("usage %s %s: %v", life.Slug, p, err)
 		}
 	}
 	// transcripts deleted since (Claude Code's cleanup, tapi.reset): not
-	// tried again on every count. After the others were read, so the ids a
-	// copy of a gone one holds are already seen in the copy and stay.
+	// tried again on every count. Only in a count that found nothing new
+	// in the others: then every copy (claude --continue) of a gone one has
+	// been read to its end (one count reads at most usageChunk of each),
+	// the ids it holds are seen in the copy and stay.
+	if moved {
+		return
+	}
 	for _, p := range gone {
 		if err := d.DB.ForgetTranscript(life.Slug, life.Born, p); err != nil {
 			log.Printf("usage %s %s: %v", life.Slug, p, err)
@@ -166,7 +173,7 @@ func readUsage(c state.UsageCursor) (msgs []state.UsageMsg, next state.UsageCurs
 	if _, err := f.Seek(c.Offset, io.SeekStart); err != nil {
 		return nil, next, false
 	}
-	b, _ := io.ReadAll(io.LimitReader(f, usageChunk))
+	b, _ := io.ReadAll(io.LimitReader(f, int64(usageChunk)))
 	end := bytes.LastIndexByte(b, '\n')
 	if end < 0 {
 		if len(b) < usageChunk {
