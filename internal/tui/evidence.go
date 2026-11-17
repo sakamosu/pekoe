@@ -434,8 +434,11 @@ type evidenceMsg struct {
 // loadEvidence reads slug's reports and what their evidence is now.
 func (m *model) loadEvidence(slug string) tea.Cmd {
 	base := ""
-	if _, s := m.find(slug); s != nil {
-		base = s.Path
+	for _, s := range m.sessions { // not m.find: the dashboard lists sessions the [1] filter hides
+		if s.Slug == slug {
+			base = s.Path
+			break
+		}
 	}
 	cl := m.cl
 	return func() tea.Msg {

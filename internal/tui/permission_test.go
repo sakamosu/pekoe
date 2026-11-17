@@ -254,3 +254,49 @@ func TestPermissionModalDismissedPromptChanged(t *testing.T) {
 		t.Fatalf("another prompt in the same wait: modal %q", got)
 	}
 }
+
+// The prefix that left typing brings a held-back prompt up at once; the
+// modal takes the key after it, so the prefix is spent: after esc an = is
+// not a layout key (it would reset the saved pane width), and tapi chat
+// closed by the prefix does not come back on z.
+func TestPermissionModalDisarmsPrefix(t *testing.T) {
+	m, _, _ := chatModel(t)
+	m.focus, m.typing = pAgent, true
+	m.layout = Layout{Left: 0.5} // a saved width
+	sessionEvent(t, m, "session.waiting", permSess("api-2", time.Now(), "ls"))
+	upd(m, ctrlQ)
+	if shownPerm(m) != "api-2" {
+		t.Fatalf("modal %T", m.modal)
+	}
+	upd(m, key("esc"))
+	if m.modal != nil || m.prefix || m.prefixType || m.chat.reopen {
+		t.Fatalf("after esc: modal %T prefix %v prefixType %v reopen %v", m.modal, m.prefix, m.prefixType, m.chat.reopen)
+	}
+	upd(m, key("="))
+	if m.layout != (Layout{Left: 0.5}) {
+		t.Errorf("= after the modal reset the layout: %+v", m.layout)
+	}
+
+	// from tapi chat: z after the modal does not open it again
+	m, _, _ = chatModel(t)
+	runCmd(m, m.onKey(key("t")))
+	if !m.chat.open || !m.typing {
+		t.Fatalf("chat %v typing %v", m.chat.open, m.typing)
+	}
+	sessionEvent(t, m, "session.waiting", permSess("api-2", time.Now(), "ls"))
+	upd(m, ctrlQ)
+	if shownPerm(m) != "api-2" {
+		t.Fatalf("tapi chat: modal %T", m.modal)
+	}
+	upd(m, key("esc"))
+	upd(m, key("z"))
+	if m.chat.open {
+		t.Error("z after the modal opened tapi chat again")
+	}
+}
+
+// upd is a key or message through Update, its command run.
+func upd(m *model, msg tea.Msg) {
+	_, cmd := m.Update(msg)
+	runCmd(m, cmd)
+}

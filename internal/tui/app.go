@@ -543,6 +543,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.closeStalePermission()
 	m.maybePermission() // e.g. typing just stopped: a prompt held back comes up now
+	m.disarmUnderModal()
+	m.syncNarrowTab()
 	m.tipSync()
 	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
 }
@@ -814,6 +816,19 @@ func (m *model) maybePermission() tea.Cmd {
 
 // ---- keys ----
 
+// disarmUnderModal: a modal that came up on its own (a permission prompt
+// held back while typing, an inbox popup) while the prefix or ] / [ waited
+// for the next key takes that key, so it must not be spent after the modal
+// closes: an = meant for nothing would reset the saved pane width, an o
+// would open the dashboard, a z would bring back tapi chat closed by ^q.
+func (m *model) disarmUnderModal() {
+	if m.modal == nil {
+		return
+	}
+	m.prefix, m.prefixType, m.chat.reopen = false, false, false
+	m.bracket = ""
+}
+
 func (m *model) prefixKey(k tea.KeyMsg) bool {
 	p, _ := config.PrefixKey(m.g.Keys.Prefix) // C-a, Ctrl+A … read as ctrl+a
 	return k.String() == p
@@ -821,6 +836,29 @@ func (m *model) prefixKey(k tea.KeyMsg) bool {
 
 // narrowTabs are the tabs of the one left panel below 100 columns.
 var narrowTabs = []struct{ focus, sub2 int }{{pSessions, 0}, {pSecond, 0}, {pSecond, subIssues}, {pThird, 0}}
+
+// syncNarrowTab keeps the tab drawn below 100 columns on the focused panel:
+// 2 / 3 / tab / a click / a key that leaves the pty move only the focus, and
+// a terminal narrowed with Browser or Picks focused has no tab for them
+// (those fall back to Worktrees / Changes). Otherwise j / k / ↵ / D would act
+// on a panel that is not drawn.
+func (m *model) syncNarrowTab() {
+	if !narrow(m.width) {
+		return
+	}
+	switch m.focus {
+	case pSessions:
+		m.narrowTab = 0
+	case pSecond:
+		if m.sub2 == subIssues {
+			m.narrowTab = 2
+		} else {
+			m.narrowTab, m.sub2 = 1, 0
+		}
+	case pThird:
+		m.narrowTab, m.sub3 = 3, 0
+	}
+}
 
 // cycle steps i through n values forwards or backwards.
 func cycle(i, n int, next bool) int {

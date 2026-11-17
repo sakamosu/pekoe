@@ -652,3 +652,31 @@ func TestDashboardEvidenceNone(t *testing.T) {
 		t.Fatalf("modal %T, msg %q", m2.modal, m2.msg)
 	}
 }
+
+// The dashboard's timeline lists sessions the [1] filter hides; o on one
+// still finds its worktree, so evidence given relative to it opens.
+func TestDashboardEvidenceUnderFilter(t *testing.T) {
+	m, _, _, _ := evidenceDash(t, evReports2)
+	m.filter = "fix" // feat-csv is hidden from [1], not from the timeline
+	m.viewAgent(120, 60)
+	if m.dash.sel != "s:feat-csv" {
+		t.Fatalf("sel %q", m.dash.sel)
+	}
+	runCmd(m, m.onKey(key("o")))
+	em, ok := m.modal.(*evidenceModal)
+	if !ok {
+		t.Fatalf("modal %T msg %q", m.modal, m.msg)
+	}
+	found := false
+	for _, it := range em.items {
+		if it.raw == "before.txt" {
+			found = true
+			if it.kind != evText {
+				t.Errorf("before.txt (relative to the worktree) under a filter: kind %v, why %q (base %q)", it.kind, it.why, em.base)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("before.txt not listed")
+	}
+}

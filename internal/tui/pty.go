@@ -272,9 +272,16 @@ func (m *model) fitPty(p pty) tea.Cmd {
 // blank rows dropped, the unread line where the user left, and the way out
 // once the program exited.
 func (m *model) ptyRows(p pty, cw int) []row {
+	rows, _ := m.ptyRowsSrc(p, cw)
+	return rows
+}
+
+// ptyRowsSrc is ptyRows with, for each row, the pty's line it draws (-1
+// for the unread line and the rows of an exited program).
+func (m *model) ptyRowsSrc(p pty, cw int) ([]row, []int) {
 	sc := p.sc
 	if sc == nil {
-		return []row{{Text: m.th.FG(theme.Dim, "…")}}
+		return []row{{Text: m.th.FG(theme.Dim, "…")}}, []int{-1}
 	}
 	lines := append([]string(nil), sc.Lines...)
 	if m.typing && sc.Cursor.Visible && sc.Cursor.Y < len(lines) {
@@ -288,13 +295,19 @@ func (m *model) ptyRows(p pty, cw int) []row {
 		}
 	}
 	lines = lines[:end]
+	src := make([]int, len(lines))
+	for i := range src {
+		src[i] = i
+	}
 	if p.unread >= 0 {
 		if r := p.unread - sc.History + 1; r > 0 && r < len(lines) {
 			mark := m.th.FG(theme.Border, strings.Repeat("─", 3)) + m.th.FG(theme.Dim, " new ") + m.th.FG(theme.Border, strings.Repeat("─", max(cw-8, 0)))
 			lines = append(lines[:r], append([]string{mark}, lines[r:]...)...)
+			src = append(src[:r], append([]int{-1}, src[r:]...)...)
 		}
 	}
 	if sc.Dead {
+		src = nil // nothing to send a click to
 		if p.deadRows != nil {
 			lines = p.deadRows(lines)
 		} else {
@@ -308,13 +321,23 @@ func (m *model) ptyRows(p pty, cw int) []row {
 		// the border and whatever follows would inherit it: close it here.
 		rows = append(rows, row{Text: clip(l, cw) + "\x1b[0m"})
 	}
-	return rows
+	for len(src) < len(rows) {
+		src = append(src, -1)
+	}
+	return rows, src
 }
 
 // ptyBody is the pane's body as drawn: the pty's rows with its card at the
 // bottom. Rows are bottom-aligned in a ch-tall body.
 func (m *model) ptyBody(p pty, cw, ch int) []row {
-	rows := m.ptyRows(p, cw)
+	rows, _ := m.ptyBodySrc(p, cw, ch)
+	return rows
+}
+
+// ptyBodySrc is ptyBody with the pty's line each row draws (-1 for the
+// card and the rows not from the pty).
+func (m *model) ptyBodySrc(p pty, cw, ch int) ([]row, []int) {
+	rows, src := m.ptyRowsSrc(p, cw)
 	var card []row
 	if p.cards != nil {
 		card = p.cards(cw)
@@ -322,11 +345,41 @@ func (m *model) ptyBody(p pty, cw, ch int) []row {
 	if len(card) > 0 {
 		keep := max(ch-len(card), 0)
 		if len(rows) > keep {
-			rows = rows[len(rows)-keep:]
+			rows, src = rows[len(rows)-keep:], src[len(src)-keep:]
 		}
 		rows = append(rows, card...)
+		for range card {
+			src = append(src, -1)
+		}
 	}
-	return rows
+	return rows, src
+}
+
+// ptyLineAt maps y of [4]'s body to the pty's line drawn there: rows sit
+// at the bottom, a card can push the pty's top rows out and the unread
+// line pushes rows down. ok is false where no pty line is drawn (a card,
+// the unread line, the blank above short output); line is then the
+// nearest one drawn (the wheel, a drag or a release still go somewhere).
+func (m *model) ptyLineAt(p pty, y int) (line int, ok bool) {
+	cw, ch := m.agentSize()
+	_, src := m.ptyBodySrc(p, cw, ch)
+	if len(src) > ch {
+		src = src[len(src)-ch:]
+	}
+	i := y - (ch - len(src))
+	if i >= 0 && i < len(src) && src[i] >= 0 {
+		return src[i], true
+	}
+	best := -1
+	for j, l := range src {
+		if l >= 0 && (best < 0 || abs(j-i) < abs(best-i)) {
+			best = j
+		}
+	}
+	if best < 0 {
+		return max(y, 0), false
+	}
+	return src[best], false
 }
 
 // ptyLinkAt returns the URL drawn at (x, y) of [4]'s body.
@@ -407,7 +460,11 @@ func (m *model) ptyMouse(ev tea.MouseMsg, x, y int, p pty) tea.Cmd {
 		return nil
 	}
 	if sc.MouseAny {
-		if hex := sgrMouse(ev, x, y); hex != nil {
+		line, ok := m.ptyLineAt(p, y)
+		if !ok && ev.Action == tea.MouseActionPress && !wheel {
+			return nil // a click on a card or the unread line: nothing of the program's is there
+		}
+		if hex := sgrMouse(ev, x, line); hex != nil {
 			return m.ptyKeys(p, map[string]any{"hex": hex})
 		}
 		return nil
@@ -436,4 +493,11 @@ func (m *model) ptyTypingHints(p pty) [][2]string {
 		return [][2]string{{pf, p.leaveLabel}, {pf + " z", zoom}, {pf + " < >", "width"}}
 	}
 	return [][2]string{{pf, p.leaveLabel}}
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
