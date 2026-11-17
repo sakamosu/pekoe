@@ -313,11 +313,16 @@ func (d *Daemon) fallbackDetect() {
 // keeps it as it is and looks again after the next quiet spell; anything
 // else means the turn ended while pekoed was away, so it becomes idle. A
 // hook that arrived meanwhile cleared the mark and wins. text is the tail
-// of the screen, lines all of it (for Claude Code's permission dialogs,
-// "Do you want to make this edit …? ❯ 1. Yes", which permissionOnScreen
-// reads).
+// of the screen, lines all of it.
+//
+// A permission prompt is known by its shape, not by its words: Claude
+// Code's dialog ("Do you want to …" over a "❯ 1. Yes" choice) or a [y/n]
+// on the last line (permissionOnScreen). yesNoRe is not used here: it also
+// matches the agent's own reply ("Plan ready. Do you want to proceed with
+// …", "--force [y/N]"), which stays on a screen that will not change once
+// the turn is over, so the session would stay running for good.
 func (d *Daemon) recheckAfterRestart(slug, text string, lines []string) {
-	if busyRe.MatchString(text) || yesNoRe.MatchString(text) || permissionOnScreen(lines) {
+	if busyRe.MatchString(text) || permissionOnScreen(lines) {
 		return
 	}
 	d.update(slug, func(x *state.Session) {

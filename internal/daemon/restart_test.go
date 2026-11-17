@@ -194,3 +194,43 @@ func TestWaitHooks(t *testing.T) {
 		t.Fatalf("waitHooks with a stuck Stop took %v, want about its bound", el)
 	}
 }
+
+// A turn that ended while pekoed was away with ordinary words in its reply
+// that look like a question ("Do you want to proceed", "[y/N]", "allow
+// this") is over all the same: the agent's prompt is up and no Claude Code
+// dialog (a "1. Yes" choice under "Do you want to …") or [y/n] last line
+// is on screen. The recheck must bring it back to idle, not keep it running
+// until new output that never comes.
+func TestRestoreRecheckIgnoresQuestionWordsInReply(t *testing.T) {
+	for _, reply := range []string{
+		"Plan ready. Do you want to proceed with the migration",
+		"Run it again with --force [y/N] to overwrite.",
+		"If you allow this, the script deletes build/.",
+	} {
+		t.Run(reply, func(t *testing.T) {
+			d2, fe := runningAcrossRestart(t)
+			fe.mu.Lock()
+			fe.lines = []string{"⏺ " + reply, "", "> ", "  ? for shortcuts"}
+			fe.mu.Unlock()
+			quietSinceRestart(d2)
+			d2.fallbackDetect()
+			if s, _ := d2.snapshot("main"); s.State != state.Idle {
+				t.Fatalf("after restart with %q in the reply: %s, want idle (Stop hook lost during the restart)", reply, s.State)
+			}
+		})
+	}
+}
+
+// Claude Code's Bash permission dialog asks "Do you want to proceed?" over
+// its choices: that one is a real prompt and keeps the session as it is.
+func TestRestoreRecheckKeepsBashPermissionDialog(t *testing.T) {
+	d2, fe := runningAcrossRestart(t)
+	fe.mu.Lock()
+	fe.lines = []string{"Bash command", "  rm -rf build", "Do you want to proceed?", "❯ 1. Yes", "  2. Yes, and don't ask again for rm commands", "  3. No, and tell Claude what to do differently (esc)", ""}
+	fe.mu.Unlock()
+	quietSinceRestart(d2)
+	d2.fallbackDetect()
+	if s, _ := d2.snapshot("main"); s.State != state.Running {
+		t.Fatalf("Bash permission dialog after restart: %s, want running (unchanged)", s.State)
+	}
+}
