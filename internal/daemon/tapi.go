@@ -86,10 +86,13 @@ type tapiState struct {
 	// the ledger's view of tapi's turn (ledger.go, tapiTurnEnd): turnOn
 	// from a UserPromptSubmit to the Stop, turnEntry is the entry of the
 	// turn's input (0: none), turnKeep says it stays open (tapi asked
-	// someone for something, or ledger.keep)
+	// someone for something), turnKept is the entry ledger.keep or a
+	// person's ledger.reopen left open this turn (kept only while it is
+	// still the turn's input)
 	turnOn    bool
 	turnEntry int64
 	turnKeep  bool
+	turnKept  int64
 }
 
 func newTapiState() tapiState { return tapiState{state: state.Idle, since: time.Now()} }

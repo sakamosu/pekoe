@@ -21,9 +21,11 @@ package daemon
 //     input was no request: closed as chat, marked auto (tapiTurnEnd).
 //     That is pekoed's guess, so tapi may undo it (ledger.keep, or tying
 //     a session to the entry); what tapi or a person closed only a person
-//     reopens.
+//     reopens, and what a person reopened in the turn is not closed again
+//     by the turn's end.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -136,7 +138,7 @@ func (d *Daemon) recordRequest(prompt string) (e *state.LedgerEntry, folded bool
 
 // ---- tapi's turn: closing what was no request ----
 //
-// The turn's state (tapiState.turnOn, turnEntry, turnKeep) is in memory only: lost
+// The turn's state (tapiState.turnOn, turnEntry, turnKeep, turnKept) is in memory only: lost
 // with tapi.reset or a restart of pekoed, and then nothing is closed.
 
 // tapiPrompt is a UserPromptSubmit from tapi's window: the prompt goes
@@ -175,9 +177,11 @@ var tapiAsks = map[string]bool{"session.new": true, "session.send": true, "inbox
 // next prompt: an input added in the middle of a turn does not undo what
 // tapi asked for before it. Calls between turns do not count: what tapi
 // left running in the background (`pekoe ask-human --wait` calls wait
-// again every minute) says nothing about the next turn's input.
-func (d *Daemon) noteTapiAsk(who *Caller, method string) {
-	if !tapiAsks[method] || who.Pane() != TapiSlug {
+// again every minute) says nothing about the next turn's input, and
+// neither does such a call again that falls inside a turn: the CLI marks
+// it (rewaitCall).
+func (d *Daemon) noteTapiAsk(who *Caller, method string, params json.RawMessage) {
+	if !tapiAsks[method] || who.Pane() != TapiSlug || method == "wait" && rewaitCall(params) {
 		return
 	}
 	d.mu.Lock()
@@ -187,18 +191,33 @@ func (d *Daemon) noteTapiAsk(who *Caller, method string) {
 	d.mu.Unlock()
 }
 
+// rewaitCall: a wait the CLI calls again by itself, `pekoe ask-human
+// --wait` every minute until the answer comes (rewait: true). Its first
+// wait counts as any; the calls again only go on with it, often from the
+// background long after the turn that started it. An older CLI does not
+// mark them, and they count as before.
+func rewaitCall(params json.RawMessage) bool {
+	var p struct {
+		Rewait bool `json:"rewait"`
+	}
+	return json.Unmarshal(params, &p) == nil && p.Rewait
+}
+
 // tapiTurnEnd is a Stop from tapi's window: tapi finished its reply. The
 // turn's input is closed as chat (auto) when it is still open, no session
-// is tied to it and tapi neither asked anyone for anything this turn
-// (tapiAsks) nor kept it (ledger.keep): small talk, thanks, a report, a question answered
-// on the spot. Nothing else is ever closed here, so a request of an
-// earlier turn stays until tapi or a person closes it.
+// is tied to it, tapi neither asked anyone for anything this turn
+// (tapiAsks) nor kept it (ledger.keep), and no person reopened it during
+// the turn (ledger.reopen): small talk, thanks, a report, a question
+// answered on the spot. Nothing else is ever closed here, so a request of
+// an earlier turn stays until tapi or a person closes it. A keep of an
+// earlier turn's input that never ended (interrupted) keeps that entry
+// only, not this turn's.
 func (d *Daemon) tapiTurnEnd() {
 	d.mu.Lock()
-	id, keep := d.tapi.turnEntry, d.tapi.turnKeep
-	d.tapi.turnOn, d.tapi.turnEntry, d.tapi.turnKeep = false, 0, false
+	id, keep, kept := d.tapi.turnEntry, d.tapi.turnKeep, d.tapi.turnKept
+	d.tapi.turnOn, d.tapi.turnEntry, d.tapi.turnKeep, d.tapi.turnKept = false, 0, false, 0
 	d.mu.Unlock()
-	if id == 0 || keep {
+	if id == 0 || keep || kept == id {
 		return
 	}
 	closed := false
@@ -348,9 +367,17 @@ func (d *Daemon) hLedgerClose(who *Caller, p ledgerCloseP) (any, error) {
 		if e.Status != state.LedgerOpen {
 			return notOpen("ledger.close", e)
 		}
+		// what was kept from before a reopen (ledger.reopen leaves it)
+		// counts toward the same limit as one report's; an entry given
+		// again is not added twice. Without new ones it always closes (an
+		// entry over the limit from before this check stays closable)
+		add := newEvidence(e.Evidence, ev)
+		if len(add) > 0 && len(e.Evidence)+len(add) > reportEvidenceMax {
+			return fmt.Errorf("ledger.close: request %s has %d evidence entries already (kept from before it was reopened) and at most %d in all; give at most %d new ones, or none", ids.Request(e.ID), len(e.Evidence), reportEvidenceMax, max(reportEvidenceMax-len(e.Evidence), 0))
+		}
 		now := time.Now()
 		e.Status, e.Note, e.ClosedAt = p.As, note, &now
-		e.Evidence = append(e.Evidence, ev...)
+		e.Evidence = append(e.Evidence, add...)
 		return nil
 	})
 	if err != nil {
@@ -358,6 +385,22 @@ func (d *Daemon) hLedgerClose(who *Caller, p ledgerCloseP) (any, error) {
 	}
 	d.ledgerChanged(e)
 	return e, nil
+}
+
+// newEvidence is ev without the entries already in have (or twice in ev).
+func newEvidence(have, ev []string) []string {
+	seen := map[string]bool{}
+	for _, s := range have {
+		seen[s] = true
+	}
+	out := []string{}
+	for _, s := range ev {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 type ledgerLinkP struct {
@@ -446,7 +489,7 @@ func (d *Daemon) hLedgerKeep(who *Caller, p ledgerKeepP) (any, error) {
 		id = d.tapi.turnEntry
 	}
 	if id != 0 && id == d.tapi.turnEntry {
-		d.tapi.turnKeep = true
+		d.tapi.turnKept = id
 	}
 	d.mu.Unlock()
 	if id == 0 {
@@ -476,7 +519,9 @@ type ledgerIDP struct {
 	ID int64 `json:"id"`
 }
 
-// hLedgerReopen opens a closed entry again (a person only).
+// hLedgerReopen opens a closed entry again (a person only). When it is
+// the input of tapi's running turn, the turn's end leaves it open: the
+// person said it is a request, and pekoed's guess does not undo that.
 func (d *Daemon) hLedgerReopen(p ledgerIDP) (any, error) {
 	e, err := d.changeLedger(p.ID, func(e *state.LedgerEntry) error {
 		if e.Status == state.LedgerOpen {
@@ -488,6 +533,11 @@ func (d *Daemon) hLedgerReopen(p ledgerIDP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.mu.Lock()
+	if d.tapi.turnEntry == e.ID {
+		d.tapi.turnKept = e.ID
+	}
+	d.mu.Unlock()
 	d.ledgerChanged(e)
 	return e, nil
 }

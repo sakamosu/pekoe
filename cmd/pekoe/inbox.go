@@ -118,7 +118,7 @@ func askWait(id int64, timeout time.Duration) error {
 	defer cl.Close()
 	end := time.Now().Add(timeout)
 	cursor := ""
-	for {
+	for again := false; ; again = true {
 		var it state.InboxItem
 		if err := cl.Call("inbox.get", map[string]any{"id": id}, &it); err != nil {
 			return err
@@ -139,6 +139,11 @@ func askWait(id int64, timeout time.Duration) error {
 		// and the wait taking hold is seen on the next round
 		step := min(left, time.Minute)
 		p := map[string]any{"on": []string{"inbox"}, "since": cursor, "timeout_s": int(step / time.Second)}
+		if again {
+			// a call again: pekoed does not count it as tapi starting a
+			// wait in its turn (it may run in the background)
+			p["rewait"] = true
+		}
 		var w waitOut
 		if err := cl.CallTimeout("wait", p, &w, step+time.Minute); err != nil {
 			return err
