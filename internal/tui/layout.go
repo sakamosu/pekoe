@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pekoe/internal/config"
 	"pekoe/internal/paths"
 )
 
@@ -93,10 +94,7 @@ func saveLayout(path string, l Layout) error {
 
 // prefixLabel is the prefix key as the bar and the help show it: ^q.
 func (m *model) prefixLabel() string {
-	p := m.g.Keys.Prefix
-	if p == "" {
-		p = "ctrl+q"
-	}
+	p, _ := config.PrefixKey(m.g.Keys.Prefix)
 	return strings.ReplaceAll(p, "ctrl+", "^")
 }
 

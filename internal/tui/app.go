@@ -815,10 +815,7 @@ func (m *model) maybePermission() tea.Cmd {
 // ---- keys ----
 
 func (m *model) prefixKey(k tea.KeyMsg) bool {
-	p := m.g.Keys.Prefix
-	if p == "" {
-		p = "ctrl+q"
-	}
+	p, _ := config.PrefixKey(m.g.Keys.Prefix) // C-a, Ctrl+A … read as ctrl+a
 	return k.String() == p
 }
 

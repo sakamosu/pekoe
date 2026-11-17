@@ -434,9 +434,7 @@ func ParseGlobal(b []byte) (*Global, error) {
 	if g.Ports.Base == 0 {
 		g.Ports.Base = 3001
 	}
-	if g.Keys.Prefix == "" {
-		g.Keys.Prefix = "ctrl+q" // reachable on JIS keyboards; unused by Claude Code
-	}
+	g.Keys.Prefix, _ = PrefixKey(g.Keys.Prefix) // config check tells what is not taken
 	agents := DefaultAgents()
 	for k, v := range g.Agents {
 		d := agents[k]

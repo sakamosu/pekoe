@@ -107,3 +107,35 @@ func TestConfigReloaded(t *testing.T) {
 		t.Errorf("a broken file: prefix %q msg %q", m.g.Keys.Prefix, m.msg)
 	}
 }
+
+// [keys] prefix written as tmux or with capitals still leaves typing; one
+// that never arrives as itself (ctrl+i is tab) falls back to ^q, so the pty
+// can always be left from the keyboard.
+func TestPrefixKeyForms(t *testing.T) {
+	for _, c := range []struct {
+		prefix, label string
+		press         tea.KeyMsg
+	}{
+		{"C-a", "^a", tea.KeyMsg{Type: tea.KeyCtrlA}},
+		{"Ctrl+A", "^a", tea.KeyMsg{Type: tea.KeyCtrlA}},
+		{"ctrl+i", "^q", tea.KeyMsg{Type: tea.KeyCtrlQ}},
+		{"tab", "^q", tea.KeyMsg{Type: tea.KeyCtrlQ}},
+	} {
+		m, f, _ := chatModel(t)
+		m.g.Keys.Prefix = c.prefix
+		if got := m.prefixLabel(); got != c.label {
+			t.Errorf("%q: label %q, want %q", c.prefix, got, c.label)
+		}
+		m.focus, m.typing = pAgent, true
+		if c.prefix == "ctrl+i" { // tab, as the terminal sends ctrl+i, is typed
+			runCmd(m, m.onKey(tea.KeyMsg{Type: tea.KeyTab}))
+			if !m.typing || len(f.find("session.keys")) != 1 {
+				t.Errorf("%q: tab did not go to the pty", c.prefix)
+			}
+		}
+		runCmd(m, m.onKey(c.press))
+		if m.typing {
+			t.Errorf("prefix %q: %s did not leave typing", c.prefix, c.press)
+		}
+	}
+}
