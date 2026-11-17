@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -430,4 +432,101 @@ func TestQueueHoldOnUnmanagedRefused(t *testing.T) {
 		t.Errorf("after: %v", s.After)
 	}
 	waitCreations(t, d)
+}
+
+// A held session's fetch that runs into another worktree being added in
+// the same repository still starts from origin/<base>. git worktree add
+// makes .git/worktrees/<name>/ with gitdir and an empty commondir before
+// it writes it, and a fetch then (its connectivity check looks at every
+// worktree) fails: "failed to read .git/worktrees/<name>/commondir", then
+// "did not send all necessary objects". The test puts such an entry there
+// for the first fetch and takes it away before the next one, as the other
+// add would be over by then. What git does with the entry in between is
+// its own (git 2.56 drops it), so the test only makes it and removes it.
+func TestQueueHoldFetchDuringWorktreeAdd(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/o", "base": "main", "after": []string{"feat-a"}, "hold": true})
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, repo, "git", "clone", "-q", bare, other)
+	os.WriteFile(filepath.Join(other, "merged.txt"), []byte("a\n"), 0o644)
+	run(t, other, "git", "add", ".")
+	run(t, other, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a")
+	run(t, other, "git", "push", "-q", "origin", "main")
+
+	half := filepath.Join(repo, ".git", "worktrees", "feat-x")
+	real := fetchOrigin
+	var calls atomic.Int32
+	var first error
+	fetchOrigin = func(ctx context.Context, repoDir, branch string) error {
+		switch calls.Add(1) {
+		case 1: // another session's worktree add is half way
+			if err := os.MkdirAll(half, 0o755); err != nil {
+				t.Error(err)
+			}
+			gitdir := filepath.Join(t.TempDir(), "feat-x", ".git") + "\n"
+			if err := os.WriteFile(filepath.Join(half, "gitdir"), []byte(gitdir), 0o644); err != nil {
+				t.Error(err)
+			}
+			if err := os.WriteFile(filepath.Join(half, "commondir"), nil, 0o644); err != nil {
+				t.Error(err)
+			}
+			first = real(ctx, repoDir, branch)
+			return first
+		case 2: // ...and is over
+			if err := os.RemoveAll(half); err != nil {
+				t.Error(err)
+			}
+		}
+		return real(ctx, repoDir, branch)
+	}
+	t.Cleanup(func() { fetchOrigin = real })
+
+	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
+	d.pumpQueue()
+	o := waitState(t, d, "feat-o", state.Idle, state.Running)
+	if _, err := os.Stat(filepath.Join(o.Path, "merged.txt")); err != nil {
+		t.Fatalf("origin/main not fetched (fetched %d times): %v", calls.Load(), err)
+	}
+	if first == nil {
+		t.Error("the first fetch did not fail on the half-made worktree: this git no longer shows the race, and the test proves nothing")
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("fetched %d times, want 2 (the failed one and once more)", n)
+	}
+}
+
+// fetchBase tries a failed fetch once more, not again, and not at all
+// when the creation was cancelled.
+func TestFetchBaseRetriesOnce(t *testing.T) {
+	_, _, repo := setup(t)
+	withOrigin(t, repo)
+	real := fetchOrigin
+	t.Cleanup(func() { fetchOrigin = real })
+	var calls atomic.Int32
+	fetchOrigin = func(context.Context, string, string) error {
+		calls.Add(1)
+		return errors.New("fetch failed")
+	}
+	if ref, ok := fetchBase(context.Background(), repo, "main"); ok {
+		t.Errorf("failing fetch: %s", ref)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("failing fetch: fetched %d times, want 2", n)
+	}
+	calls.Store(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	fetchOrigin = func(context.Context, string, string) error {
+		calls.Add(1)
+		cancel()
+		return context.Canceled
+	}
+	if ref, ok := fetchBase(ctx, repo, "main"); ok {
+		t.Errorf("cancelled fetch: %s", ref)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("cancelled fetch: fetched %d times, want 1", n)
+	}
 }
