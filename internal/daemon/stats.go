@@ -8,7 +8,9 @@ package daemon
 // (transcript_path), read on from where the last count stopped, with the
 // subagents' transcripts next to them (<transcript>/subagents/*.jsonl). A
 // session's lines are counted under the local date of their timestamp, so
-// a session that runs past midnight shows on both days. Merges are what
+// a session that runs past midnight shows on both days. A message id is
+// counted once per life (state.AddUsage): claude --continue copies the
+// conversation so far into a new transcript. Merges are what
 // pekoe saw land (finishLanding); it does not ask GitHub about older ones.
 
 import (
@@ -109,23 +111,23 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 	sort.Strings(paths)
 	for _, p := range paths {
 		c := known[p]
-		byDay, next, changed := readUsage(c)
+		msgs, next, changed := readUsage(c)
 		if !changed {
 			continue
 		}
-		if err := d.DB.AddUsage(next, life.Repo, byDay); err != nil {
+		if err := d.DB.AddUsage(next, life.Repo, msgs); err != nil {
 			log.Printf("usage %s %s: %v", life.Slug, p, err)
 		}
 	}
 }
 
-// readUsage reads c's transcript from c.Offset: the usage of each new
-// assistant message by the local date of its line, and the cursor after
+// readUsage reads c's transcript from c.Offset: each new assistant message
+// with its id, the local date of its line and its usage, and the cursor after
 // the last whole line read. changed is false when there is nothing new
 // (or nothing readable). The path comes from a hook payload, which any
 // process of the user can send, so only a regular file is read (tailFile),
 // at most usageChunk bytes at a time.
-func readUsage(c state.UsageCursor) (byDay map[string]state.Usage, next state.UsageCursor, changed bool) {
+func readUsage(c state.UsageCursor) (msgs []state.UsageMsg, next state.UsageCursor, changed bool) {
 	next = c
 	f, err := os.OpenFile(c.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -159,7 +161,6 @@ func readUsage(c state.UsageCursor) (byDay map[string]state.Usage, next state.Us
 	}
 	b = b[:end+1]
 	next.Offset += int64(len(b))
-	byDay = map[string]state.Usage{}
 	for _, line := range bytes.Split(b, []byte("\n")) {
 		if len(line) == 0 || !bytes.Contains(line, []byte(`"usage"`)) {
 			continue
@@ -188,12 +189,10 @@ func readUsage(c state.UsageCursor) (byDay map[string]state.Usage, next state.Us
 			next.LastID = e.Message.ID
 		}
 		u := e.Message.Usage
-		day := localDay(e.Timestamp)
-		x := byDay[day]
-		x.Add(state.Usage{Input: u.In, Output: u.Out, CacheCreation: u.CacheC, CacheRead: u.CacheR})
-		byDay[day] = x
+		msgs = append(msgs, state.UsageMsg{ID: e.Message.ID, Day: localDay(e.Timestamp),
+			Usage: state.Usage{Input: u.In, Output: u.Out, CacheCreation: u.CacheC, CacheRead: u.CacheR}})
 	}
-	return byDay, next, true
+	return msgs, next, true
 }
 
 // localDay is the local date of a transcript timestamp (today when it has

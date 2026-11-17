@@ -70,10 +70,21 @@ func (d *DB) UsageCursors(slug, born string) ([]UsageCursor, error) {
 	return out, rows.Err()
 }
 
-// AddUsage moves c's cursor and adds byDay (local date → usage) to the
-// life's days, in one transaction: a crash between them would count the
-// same lines twice or not at all.
-func (d *DB) AddUsage(c UsageCursor, repo string, byDay map[string]Usage) error {
+// UsageMsg is one assistant message read from a transcript: its id ("" when
+// it has none), the local date of its line and its usage.
+type UsageMsg struct {
+	ID    string
+	Day   string
+	Usage Usage
+}
+
+// AddUsage moves c's cursor and adds msgs to the life's days, in one
+// transaction: a crash between them would count the same lines twice or
+// not at all. A message whose id the life already counted (in any of its
+// transcripts) is not added again: claude --continue starts a new
+// transcript with a copy of the conversation so far, the same ids and
+// usage.
+func (d *DB) AddUsage(c UsageCursor, repo string, msgs []UsageMsg) error {
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
@@ -83,6 +94,22 @@ func (d *DB) AddUsage(c UsageCursor, repo string, byDay map[string]Usage) error 
 		c.Slug, c.Born, c.Path, c.Offset, c.LastID); err != nil {
 		tx.Rollback()
 		return err
+	}
+	byDay := map[string]Usage{}
+	for _, m := range msgs {
+		if m.ID != "" {
+			r, err := tx.Exec(`INSERT OR IGNORE INTO usage_ids(slug,born,id) VALUES(?,?,?)`, c.Slug, c.Born, m.ID)
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+			if n, _ := r.RowsAffected(); n == 0 {
+				continue // counted already
+			}
+		}
+		x := byDay[m.Day]
+		x.Add(m.Usage)
+		byDay[m.Day] = x
 	}
 	for day, u := range byDay {
 		if _, err := tx.Exec(`INSERT INTO usage_days(slug,born,repo,day,input,output,cache_creation,cache_read) VALUES(?,?,?,?,?,?,?,?)
@@ -96,10 +123,13 @@ func (d *DB) AddUsage(c UsageCursor, repo string, byDay map[string]Usage) error 
 	return tx.Commit()
 }
 
-// DeleteUsageCursors forgets where slug's life born was read (after its
-// last count: the days stay).
+// DeleteUsageCursors forgets where slug's life born was read and which
+// messages it counted (after its last count: the days stay).
 func (d *DB) DeleteUsageCursors(slug, born string) error {
-	_, err := d.db.Exec(`DELETE FROM usage_cursors WHERE slug=? AND born=?`, slug, born)
+	if _, err := d.db.Exec(`DELETE FROM usage_cursors WHERE slug=? AND born=?`, slug, born); err != nil {
+		return err
+	}
+	_, err := d.db.Exec(`DELETE FROM usage_ids WHERE slug=? AND born=?`, slug, born)
 	return err
 }
 

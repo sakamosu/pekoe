@@ -33,6 +33,17 @@ func appendFile(t *testing.T, path, s string) {
 	f.Close()
 }
 
+// byDay sums msgs by their local date.
+func byDay(msgs []state.UsageMsg) map[string]state.Usage {
+	out := map[string]state.Usage{}
+	for _, m := range msgs {
+		x := out[m.Day]
+		x.Add(m.Usage)
+		out[m.Day] = x
+	}
+	return out
+}
+
 // Claude Code writes one line per content block of a message, each with the
 // message's usage: it counts once. Lines are read once (the cursor moves
 // on), a line still being written waits, and other line types are skipped.
@@ -42,7 +53,8 @@ func TestReadUsageSumsMessagesOnce(t *testing.T) {
 	appendFile(t, tr, `{"type":"user","message":{"role":"user","content":"hi"}}`+"\n"+
 		usageLine("m1", now, 3, 10, 100, 1000)+usageLine("m1", now, 3, 10, 100, 1000)+
 		usageLine("m2", now, 1, 20, 0, 2000)+`{"type":"assistant","message":{"id":"m3","usage":{"input_tokens":5`)
-	day, c, changed := readUsage(state.UsageCursor{Path: tr})
+	msgs, c, changed := readUsage(state.UsageCursor{Path: tr})
+	day := byDay(msgs)
 	want := state.Usage{Input: 4, Output: 30, CacheCreation: 100, CacheRead: 3000}
 	if !changed || len(day) != 1 || day[localDay(now.Format(time.RFC3339))] != want || c.LastID != "m2" {
 		t.Fatalf("first read: %+v %+v %v", day, c, changed)
@@ -52,13 +64,14 @@ func TestReadUsageSumsMessagesOnce(t *testing.T) {
 	}
 	// the half line ends; m2 again (one more block of it) does not count again
 	appendFile(t, tr, `,"output_tokens":7}}}`+"\n"+usageLine("m3", now, 0, 0, 0, 0))
-	day, c, _ = readUsage(c)
+	msgs, c, _ = readUsage(c)
+	day = byDay(msgs)
 	if got := day[localDay(now.Format(time.RFC3339))]; got != (state.Usage{Input: 5, Output: 7}) {
 		t.Fatalf("second read: %+v", day)
 	}
 	appendFile(t, tr, usageLine("m3", now, 9, 9, 9, 9))
-	if day, _, _ = readUsage(c); day[localDay(now.Format(time.RFC3339))].Total() != 0 {
-		t.Fatalf("a later block of m3 counted: %+v", day)
+	if msgs, _, _ = readUsage(c); byDay(msgs)[localDay(now.Format(time.RFC3339))].Total() != 0 {
+		t.Fatalf("a later block of m3 counted: %+v", msgs)
 	}
 	// not a regular file: nothing
 	if _, _, changed := readUsage(state.UsageCursor{Path: "/dev/zero"}); changed {
@@ -188,5 +201,33 @@ func TestStatsSlugReused(t *testing.T) {
 	}
 	if !strings.HasPrefix(recs[0].Slug, "feat-x") {
 		t.Fatal(recs[0].Slug)
+	}
+}
+
+// claude --continue (tapiCommand, session_spawn) starts a new transcript
+// that holds a copy of the conversation so far: the same message ids, the
+// same usage, the original timestamps (seen in
+// ~/.claude/projects/-…-pekoe-tapi: 139 messages, 14.7M tokens copied).
+// The hooks then name the new file; its copied lines must not count again.
+func TestStatsContinueCopiesHistory(t *testing.T) {
+	d, _, _ := setup(t)
+	dir := t.TempDir()
+	now := time.Now()
+	old := filepath.Join(dir, "old.jsonl")
+	appendFile(t, old, usageLine("m1", now, 1, 2, 3, 4)+usageLine("m2", now, 10, 20, 30, 40))
+	d.countUsage(usageLife{Slug: TapiSlug}, old, true)
+
+	// tapi.restart → claude --continue: a new session file, history copied
+	cont := filepath.Join(dir, "new.jsonl")
+	appendFile(t, cont, usageLine("m1", now, 1, 2, 3, 4)+usageLine("m2", now, 10, 20, 30, 40)+
+		usageLine("m3", now, 100, 0, 0, 0))
+	d.countUsage(usageLife{Slug: TapiSlug}, cont, true)
+
+	st, err := d.stats(now, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Tokens.Total(); got != 210 {
+		t.Fatalf("tokens = %d, want 210 (m1+m2 once, m3); the copy of the history was counted again", got)
 	}
 }
