@@ -247,6 +247,15 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Hold && len(after) == 0 {
 		return nil, errors.New("--hold waits for the --after sessions to land: give --after")
 	}
+	if p.Hold {
+		for _, dep := range after {
+			// only a session pekoe made lands (pekoe land); one opened on a
+			// checkout of its own (the repository's main one) never does
+			if x, err := d.snapshot(dep); err == nil && !x.Managed {
+				return nil, fmt.Errorf("--hold --after %s: %s is not a session pekoe made (pekoe open), so it never lands; leave out --hold or --after %s", dep, dep, dep)
+			}
+		}
+	}
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
@@ -489,7 +498,13 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		if s.Hold {
 			// queue.go: it waited for sessions to land (merge); start
 			// from the base as the remote has it now
-			if start, ok := fetchBase(repo.Dir, s.Base); ok {
+			start, ok := fetchBase(ctx, repo.Dir, s.Base)
+			if err := ctx.Err(); err != nil {
+				// cancelled (rm) during the fetch: no worktree or branch
+				// for a session that is being removed
+				return err
+			}
+			if ok {
 				return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, start)
 			}
 		}

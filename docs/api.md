@@ -234,12 +234,12 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
 
 **待ち行列**(`queued`、internal/daemon/queue.go) — `session.new` は、次のどちらかのときは作成(worktree・setup・エージェントの起動)を始めずに `state: queued` のセッションを返す。行・slug・ポートはあるが、worktree もエージェントもまだ無い。
 
-- `[orchestrator] max_running` が 1 以上で、作業中のセッション(pekoe が作ったもの(`managed`)で `creating`・`running`・`waiting`。止めたもの(`x`)とリポジトリ本体のチェックアウトは数えない)がその数に達している。`queue` は `max_running = 3: waiting for a session to stop working`
-- `hold`(`pekoe new --after X --hold`)で、`after` のうち landed でないものがある。`queue` は `--hold: waiting for X to land`。待っている相手が `failed` なら `(X failed)` を足して待ち続ける(failed は resume で戻りうる)。相手が landed にならずに rm されたら、このセッションを `failed`(`--hold: X was removed before it landed …`)にする。landed になってから rm された相手は揃ったものとして扱う
+- `[orchestrator] max_running` が 1 以上で、作業中のセッション(pekoe が作ったもの(`managed`)で `creating`・`running`・`waiting`。止めたもの(`x`)とリポジトリ本体のチェックアウトは数えない。`creating` は止めた印に関係なく数える)がその数に達している。`queue` は `max_running = 3: waiting for a session to stop working`
+- `hold`(`pekoe new --after X --hold`)で、`after` のうち landed でないものがある。`queue` は `--hold: waiting for X to land`。待っている相手が `failed` なら `(X failed)` を足して待ち続ける(failed は resume で戻りうる)。相手が landed にならずに rm されたら、このセッションを `failed`(`--hold: X was removed before it landed …`)にする。landed になってから rm された相手は揃ったものとして扱う。pekoe が作っていない相手(`managed` でない。`pekoe open` したリポジトリ本体のチェックアウトなど)は land しないので、`hold` の `after` には取らず、`session.new` が `--hold --after X: X is not a session pekoe made (pekoe open), so it never lands; …` で断る
 
-`max_running` を超えて上限を待つものは、作業中のものが止まる(idle・done・failed・landed・rm)たびに、古いもの(`created_at` の順)から起動する。hold で待つものは、揃ってからさらに上限を待つ(揃っていないものは後ろのものを止めない)。起動すると `creating` に移り、そこからは普通の作成と同じ(`session.progress`、`wait` の `started`)。hold で待ったものは、起動するときに origin から base を fetch して `origin/<base>` から(upstream は付けずに)ブランチを作る。待っていた相手のマージが入った base から始めるため。base が `origin/main` のようにすでに origin のブランチなら、そのブランチ(`main`)を fetch して同じ `origin/main` から。origin の無いリポジトリ、fetch が落ちたとき、base が origin のブランチでない(タグ・コミット。動かないので fetch しても変わらない)ときは、ふだんどおり base そのものから。上限も hold も無ければ、今までどおりすぐに作成を始める(`queued` は出ない)。
+`max_running` を超えて上限を待つものは、作業中のものが止まる(idle・done・failed・landed・rm)たびに、古いもの(`created_at` の順)から起動する。hold で待つものは、揃ってからさらに上限を待つ(揃っていないものは後ろのものを止めない)。起動すると `creating` に移り、そこからは普通の作成と同じ(`session.progress`、`wait` の `started`)。hold で待ったものは、起動するときに origin から base を fetch して `origin/<base>` から(upstream は付けずに)ブランチを作る。待っていた相手のマージが入った base から始めるため。base が `origin/main` のようにすでに origin のブランチなら、そのブランチ(`main`)を fetch して同じ `origin/main` から。fetch は 60 秒で打ち切る。fetch の間に `session.cancel`・rm されたら fetch を止め、worktree もブランチも作らない。origin の無いリポジトリ、fetch が落ちた・時間切れのとき、base が origin のブランチでない(タグ・コミット。動かないので fetch しても変わらない)ときは、ふだんどおり base そのものから。上限も hold も無ければ、今までどおりすぐに作成を始める(`queued` は出ない)。
 
-queued のセッションでは、エージェントの起動(`session.restart` など)・`run.start` を断る。`session.cancel` と `worktree.rm`(token あり)で消せる。起動に要るもの(プロンプト・`from`・窓の大きさ)は state.db の kv(`queued:<slug>`)に置くので、pekoed を再起動しても queued のまま残り、起動後に順に始まる(kv が無ければ `failed`: `interrupted by daemon restart (queued)`)。
+queued のセッションでは、エージェントの起動(`session.restart` など)・`run.start`・`session.kill` を断る。`creating` のセッションの `session.kill`(TUI の `x`)も断る(作成は止まらずにエージェントを起動するので、止めた印だけ付けると上限の数から外れてしまう。作成を止めるのは `session.cancel`・rm)。`session.cancel` と `worktree.rm`(token あり)で消せる。起動に要るもの(プロンプト・`from`・窓の大きさ)は state.db の kv(`queued:<slug>`)に置くので、pekoed を再起動しても queued のまま残り、起動後に順に始まる(kv が無ければ `failed`: `interrupted by daemon restart (queued)`)。
 
 **衝突予報** — 「触っているファイル」は base(merge-base)からの変更(コミット済み・未コミット・未追跡)と `pending_tool.touches` の和。同じ `repo_id` の、landed でも停止済み(`x`)でもないセッション同士で重なりを取り、pekoed が約 10 秒ごと(と Edit/Write の直後)に計算し直す。変化があれば `session.updated` が出る。重なったペアのうちコミット済みの内容も重なっているものは `git merge-tree --write-tree` で worktree を汚さずに試しマージし、衝突すれば `conflict: true`。未コミット分は重なり検知だけ。
 
@@ -266,7 +266,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"\|"run"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height, dead, exit_status, signal?}`(`exit_status` は終わった窓の終了コード。動いている間やシグナルで終わったときは -1。`signal` は `"SIGINT"` など) |
 | `session.resize` | `{slug, width, height}` | pty サイズ変更 |
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
-| `session.kill` | `{slug}` | セッション終了(worktree は残す) |
+| `session.kill` | `{slug}` | セッション終了(worktree は残す)。`creating`・`queued` のセッションは断る(`… is being created; …`・`… is queued (…); …`。止めるのは `session.cancel`。上の「待ち行列」) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
 | `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `payload.transcript_path` の会話の場所、`session`(`$PEKOE_SESSION`)、`payload.cwd`(上の「呼び出し元の識別」) |
 | `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pending"\|"pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |

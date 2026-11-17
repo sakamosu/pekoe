@@ -495,6 +495,9 @@ func run(ctx context.Context, dir string, env []string, stdin []byte, pinned boo
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	cmd.Env = append(gitEnv(dir, pinEnv), env...)
+	// once ctx is done, do not wait on a child git left behind (ssh on a
+	// stalled network keeps the pipes open after git itself was killed)
+	cmd.WaitDelay = time.Second
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
