@@ -365,3 +365,94 @@ func TestInboxLine(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+// tokenAgent is an agent window whose CLI sends the human token (tapi, or
+// an agent with sandbox = false): docs/api.md "token の有無より窓を優先".
+func tokenAgent(slug string) *Caller {
+	return &Caller{human: true, Via: viaSocket, peer: fixedPeer(slug)}
+}
+
+// The open limit is the window's, token or not.
+func TestInboxOpenLimitTokenAgent(t *testing.T) {
+	d, _, _ := inboxSetup(t)
+	for _, who := range []string{"main", TapiSlug} {
+		for i := 0; i < inboxOpenMax; i++ {
+			callAs[state.InboxItem](t, d, tokenAgent(who), "inbox.post", map[string]any{"question": "q", "kind": "decision"})
+		}
+		err := callAsErr(d, tokenAgent(who), "inbox.post", map[string]any{"question": "q", "kind": "decision"})
+		if err == nil || !strings.Contains(err.Error(), "fold") {
+			n, _ := d.DB.InboxOpenCount(who)
+			t.Errorf("%s with the token: 11th accepted (%d open): %v", who, n, err)
+		}
+	}
+	// a person (the token, no agent window) has no limit
+	for i := 0; i <= inboxOpenMax; i++ {
+		call[state.InboxItem](t, d, "inbox.post", map[string]any{"question": "q", "kind": "decision"})
+	}
+}
+
+// The asker reading its own answer counts as received when its CLI sends
+// the token too: nothing is typed into its window.
+func TestInboxGetByTokenAskerIsDelivery(t *testing.T) {
+	d, fe, _ := inboxSetup(t)
+	it := callAs[state.InboxItem](t, d, tokenAgent("main"), "inbox.post", map[string]any{"question": "名前は?", "kind": "decision"})
+	call[any](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": it.Rev, "note": "pekoe で"})
+	g := callAs[state.InboxItem](t, d, tokenAgent("main"), "inbox.get", map[string]any{"id": it.ID})
+	if g.Delivery != state.DeliveryWaited {
+		t.Errorf("asker (token, own window) read it: delivery %q, want waited", g.Delivery)
+	}
+	d.setState("main", state.Idle, "")
+	d.deliverAllInbox()
+	if sentText(fe, "[pekoe inbox ") {
+		t.Errorf("typed after the asker read it:\n%s", fe.last())
+	}
+}
+
+// An item belongs to a slug, which a later session of the same branch
+// takes again. When the session that asked is removed, its open items are
+// withdrawn by pekoed and an answer not yet typed is never typed: the new
+// session neither gets the old answers nor owns the old questions.
+func TestInboxSlugReuse(t *testing.T) {
+	d, fe, repo := inboxSetup(t)
+	old := newSession(t, d, repo, "feat/x")
+	d.setState(old.Slug, state.Running, "")
+	q := ask(t, d, old.Slug, map[string]any{"question": "旧セッションの問い", "kind": "decision", "options": []string{"A", "B"}})
+	a := ask(t, d, old.Slug, map[string]any{"question": "答えた問い", "kind": "decision", "options": []string{"A", "B"}})
+	call[any](t, d, "inbox.answer", map[string]any{"id": a.ID, "rev": a.Rev, "choice": 1})
+	if g := inboxGet(t, d, a.ID); g.Delivery != state.DeliveryPending {
+		t.Fatalf("answered while running: delivery %q", g.Delivery)
+	}
+	call[any](t, d, "worktree.rm", map[string]any{"slug": old.Slug, "force": true})
+	if _, err := d.get(old.Slug); err == nil {
+		t.Fatalf("%s not removed", old.Slug)
+	}
+	if g := inboxGet(t, d, q.ID); g.Status != state.InboxWithdrawn || g.Answer == nil || g.Answer.By != callerPekoed || g.Answer.Note != "session removed" {
+		t.Fatalf("open item of the removed session: %+v", g)
+	}
+	if g := inboxGet(t, d, a.ID); g.Delivery != state.DeliveryNone || g.Status != state.InboxAnswered {
+		t.Fatalf("pending answer of the removed session: %+v", g)
+	}
+	if n, _ := d.DB.InboxOpenCount(old.Slug); n != 0 {
+		t.Fatalf("%d open left", n)
+	}
+	cur := newSession(t, d, repo, "feat/x")
+	if cur.Slug != old.Slug {
+		t.Fatalf("slug not reused: %s vs %s", cur.Slug, old.Slug)
+	}
+	if err := callAsErr(d, &Caller{human: true}, "inbox.answer", map[string]any{"id": q.ID, "rev": inboxGet(t, d, q.ID).Rev, "choice": 0}); err == nil {
+		t.Error("answered the removed session's question")
+	}
+	n := len(fe.sent)
+	d.setState(cur.Slug, state.Idle, "")
+	d.deliverAllInbox()
+	time.Sleep(50 * time.Millisecond)
+	d.deliverAllInbox()
+	for _, s := range sentSince(fe, n) {
+		if strings.Contains(s, "[pekoe inbox ") {
+			t.Fatalf("the removed session's answer was typed into the new %s: %s", cur.Slug, s)
+		}
+	}
+	// the new session's own questions work as usual
+	mine := ask(t, d, cur.Slug, map[string]any{"question": "新しい問い", "kind": "decision"})
+	callAs[state.InboxItem](t, d, agentAs(cur.Slug), "inbox.withdraw", map[string]any{"id": mine.ID})
+}

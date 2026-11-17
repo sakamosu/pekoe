@@ -138,7 +138,7 @@ func (d *Daemon) hInboxPost(who *Caller, p inboxPostP) (any, error) {
 		it.Status = state.InboxOpen
 	}
 	d.inboxMu.Lock()
-	if it.Status == state.InboxOpen && !who.Human() {
+	if it.Status == state.InboxOpen && who.ID() != callerHuman {
 		n, err := d.DB.InboxOpenCount(from)
 		if err != nil {
 			d.inboxMu.Unlock()
@@ -371,9 +371,10 @@ func (d *Daemon) hInboxGet(who *Caller, p inboxIDP) (any, error) {
 }
 
 // inboxRead: the asker read its own answer through the API, so it needs
-// no line typed into its window.
+// no line typed into its window. The window decides, not the token: an
+// agent that reads the token (sandbox off) is still the asker.
 func (d *Daemon) inboxRead(who *Caller, it *state.InboxItem) {
-	if who.Human() || it.Delivery != state.DeliveryPending || inboxCaller(who) != inboxRecipient(it) {
+	if who.ID() == callerHuman || it.Delivery != state.DeliveryPending || inboxCaller(who) != inboxRecipient(it) {
 		return
 	}
 	if ok, _ := d.DB.SetInboxDelivery(it.ID, state.DeliveryPending, state.DeliveryWaited); ok {
@@ -584,6 +585,48 @@ func (d *Daemon) inboxClosed(it *state.InboxItem) {
 	d.emit("inbox.updated", it)
 	if it.Delivery == state.DeliveryPending {
 		go d.deliverInbox(it.From)
+	}
+}
+
+// inboxSessionGone: session slug is gone (rm), and an item belongs to a
+// slug, which a later session of the same branch takes again. What the
+// removed session asked must not become the new one's: its open items are
+// withdrawn by pekoed (no answer can reach it any more; nor do they count
+// against the new session's open limit, nor can it withdraw them), and an
+// answer not yet typed into its window is never typed (delivery none).
+func (d *Daemon) inboxSessionGone(slug string) {
+	if slug == "" || slug == TapiSlug || slug == callerHuman || slug == callerUnknown || slug == callerPekoed {
+		return
+	}
+	open, err := d.DB.InboxList(state.InboxFilter{Status: []string{state.InboxOpen}, From: slug})
+	if err != nil {
+		log.Printf("inbox of removed %s: %v", slug, err)
+	}
+	for _, o := range open {
+		it, err := d.closeInbox(o.ID, "session removed", func(it *state.InboxItem) error {
+			if it.From != slug {
+				return errInboxClosed
+			}
+			it.Status = state.InboxWithdrawn
+			it.Answer = &state.InboxAnswer{Note: "session removed", By: callerPekoed, Via: callerPekoed, At: time.Now()}
+			return nil
+		})
+		if err == nil {
+			d.emit("inbox.updated", it)
+		}
+	}
+	pending, err := d.DB.InboxList(state.InboxFilter{From: slug, Delivery: state.DeliveryPending})
+	if err != nil {
+		log.Printf("inbox of removed %s: %v", slug, err)
+	}
+	for _, p := range pending {
+		d.inboxMu.Lock()
+		ok, _ := d.DB.SetInboxDelivery(p.ID, state.DeliveryPending, state.DeliveryNone)
+		d.inboxMu.Unlock()
+		if ok {
+			p.Delivery = state.DeliveryNone
+			d.emit("inbox.updated", &p)
+		}
 	}
 }
 
