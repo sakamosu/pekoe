@@ -723,4 +723,22 @@ func TestLedgerEvidenceLimitAcrossReopen(t *testing.T) {
 	}
 	// closing without new evidence still works
 	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done"})
+
+	// an entry over the limit already (saved before the limit counted what
+	// a reopen kept) still closes without new evidence
+	call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 1})
+	e, err := d.DB.LedgerGet(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Evidence = evs(0, 25)
+	if err := d.DB.SaveLedger(e); err != nil {
+		t.Fatal(err)
+	}
+	if err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done", "evidence": evs(0, 3)}); err != nil {
+		t.Fatalf("evidence it has already, over the limit: %v", err)
+	}
+	if e := ledgerAll(t, d)[0]; e.Status != state.LedgerDone || len(e.Evidence) != 25 {
+		t.Fatalf("an entry over the limit: %+v", e)
+	}
 }

@@ -369,9 +369,10 @@ func (d *Daemon) hLedgerClose(who *Caller, p ledgerCloseP) (any, error) {
 		}
 		// what was kept from before a reopen (ledger.reopen leaves it)
 		// counts toward the same limit as one report's; an entry given
-		// again is not added twice
+		// again is not added twice. Without new ones it always closes (an
+		// entry over the limit from before this check stays closable)
 		add := newEvidence(e.Evidence, ev)
-		if n := len(e.Evidence) + len(add); n > reportEvidenceMax {
+		if len(add) > 0 && len(e.Evidence)+len(add) > reportEvidenceMax {
 			return fmt.Errorf("ledger.close: request %s has %d evidence entries already (kept from before it was reopened) and at most %d in all; give at most %d new ones, or none", ids.Request(e.ID), len(e.Evidence), reportEvidenceMax, max(reportEvidenceMax-len(e.Evidence), 0))
 		}
 		now := time.Now()
