@@ -78,10 +78,10 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since <cursor> --
 ```
 
 - `--on report,inbox,failed,waiting,ci` で、起きる理由を「報告が来た・人が答えた・セッションが落ちた・許可ダイアログや質問で止まった(報告できない)・PR の CI が決着した」に絞る。`done`・`idle`・`pr`・`landed`・`removed` は付けない。`done` の多くは報告の直前やレビュー待ちの空振りで、PR のレビューの様子は起きたときに `pekoe --json ls` の `pr_status` で見れば足りる。起きるたびに長い会話を読み直すので、空振りはそのままトークンの無駄になる
-- PR の CI は `ci` で待つ。自分で `gh pr checks <n> --watch` を回さない(`sleep` で `gh pr checks` を繰り返すのも同じ)。`ci` は、PR の HEAD のチェックが全部終わって結果が決まったときに 1 回だけ来る: `feat-csv: PR #42 ci green: 5 passed, head <SHA>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`。push で HEAD が変われば、次に決まったときにまた 1 回来る
+- PR の CI は `ci` で待つ。自分で `gh pr checks <n> --watch` を回さない(`sleep` で `gh pr checks` を繰り返すのも同じ)。`ci` は、PR の HEAD のチェックが全部終わって結果が決まったときに来る: `feat-csv: PR #42 ci green: 5 passed, head <SHA>` か `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head <SHA>`。push で HEAD が変われば、次に決まったときにまた来る。同じ HEAD でも結果が変われば(遅れて足されたチェックが落ちた・re-run で red が green になった)もう 1 回来る。同じ HEAD の `ci` は後に来たものが今の結果
   - 赤なら、落ちたチェックの名前(全部は `pekoe --json ls` の `pr_status.failed_checks`)を添えて `pekoe send <slug> -` で直しを頼む。直しの push の CI も同じ `ci` で待てる
-  - green を受けたら、人に上げる前に `pekoe --json ls` の `pr_status` で `pending` が 0・`fail` が 0 のままかを見る(別のワークフローが遅れて足されると、その前の「全部終わった」瞬間に green が来ていることがある。キャンセルされたチェックは数に入らない)
-  - 来ないもの: チェックが 1 件も無い PR(CI の無いリポジトリ)、同じ HEAD でやり直した(re-run)チェックの結果。`timed_out` で起きたときに `pekoe --json ls` の `pr_status`(`pass` / `fail` / `pending`)で見る
+  - green を受けたら、人に上げる前に `pekoe --json ls` の `pr_status` で `pending` が 0・`fail` が 0 のままかを見る(別のワークフローが遅れて足されると、その前の「全部終わった」瞬間に green が来ていることがある。そのワークフローが落ちれば同じ HEAD の red が後から来る。キャンセルされたチェックは数に入らない)
+  - 来ないもの: チェックが 1 件も無い PR(CI の無いリポジトリ)、同じ HEAD でやり直した(re-run)チェックが前と同じ結果で終わったとき。`timed_out` で起きたときに `pekoe --json ls` の `pr_status`(`pass` / `fail` / `pending`)で見る
 - 報告せずに止まったセッションは、`timed_out` で起きたときに `pekoe --json ls`(`state` が `done` / `idle` で `report` が古いもの)で気づく
 
 - 返り値は `{cursor, epoch, changes: [{seq, kind, slug, at, summary}], timed_out, reset}`。`cursor` を覚えておき、次の `wait` に必ず `--since` で渡す(取りこぼさない)。`timed_out` でも `reset` でも `cursor` は返るので、それを使う
