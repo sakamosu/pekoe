@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/engine"
 	"pekoe/internal/state"
@@ -152,5 +153,54 @@ func TestClaudeStaysInWindow(t *testing.T) {
 	}
 	if env := claudeStayEnv("claude --permission-mode plan", []string{"CLAUDE_CODE_DISABLE_AGENT_VIEW="}); len(env) != 1 {
 		t.Errorf("repository's value: %v", env)
+	}
+}
+
+// Resetting or restarting a live tapi kills its window. Claude Code
+// catches the SIGHUP and runs its SessionEnd hook after the window is gone
+// (2.1.326 with tmux kill-window): from no pekoe window, naming +tapi and
+// tapi's transcript. That is the agent pekoe killed itself, not tapi's
+// conversation running outside its window.
+func TestTapiKilledSessionEndIsNotOutside(t *testing.T) {
+	for _, how := range []string{"tapi.reset", "tapi.restart"} {
+		t.Run(how, func(t *testing.T) {
+			d, _, _ := setup(t)
+			call[Tapi](t, d, "tapi.open", nil)
+			const sid = "c6270ea4-8ca2-41a2-8b1b-2addbec46356"
+			conv := filepath.Join(tapiProjectDirs()[0], sid+".jsonl")
+			eventAs(t, d, agentAs(TapiSlug), "SessionStart", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv})
+
+			call[Tapi](t, d, how, nil)
+			// the killed Claude Code's SessionEnd, from a process no window holds
+			eventAs(t, d, nil, "SessionEnd", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv, "reason": "other"})
+			if v := call[Tapi](t, d, "tapi.get", nil); v.Outside != nil {
+				t.Fatalf("warns that the agent pekoe killed runs outside tapi's window: %+v", v.Outside)
+			}
+
+			// another conversation of tapi's out there is still told
+			const other = "c6270ea4-8ca2-41a2-8b1b-2addbec46357"
+			eventAs(t, d, nil, "PreToolUse", "main", map[string]any{"session_id": other, "transcript_path": filepath.Join(tapiProjectDirs()[0], other+".jsonl"), "tool_name": "Bash"})
+			if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil || v.Outside.ClaudeSessionID != other {
+				t.Fatalf("outside not told: %+v", v.Outside)
+			}
+		})
+	}
+}
+
+// Only lately: a conversation pekoe killed long ago that shows up outside
+// tapi's window again is told.
+func TestTapiKilledLongAgo(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	const sid = "c6270ea4-8ca2-41a2-8b1b-2addbec46356"
+	conv := filepath.Join(tapiProjectDirs()[0], sid+".jsonl")
+	eventAs(t, d, agentAs(TapiSlug), "SessionStart", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv})
+	call[Tapi](t, d, "tapi.restart", nil)
+	d.mu.Lock()
+	d.tapiKilled.at = time.Now().Add(-tapiKillGrace)
+	d.mu.Unlock()
+	eventAs(t, d, nil, "PreToolUse", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv, "tool_name": "Bash"})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil {
+		t.Fatal("outside not told")
 	}
 }

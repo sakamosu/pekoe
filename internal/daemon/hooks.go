@@ -248,6 +248,12 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 	pane := who.Pane()
 	var hp hookPayload
 	_ = json.Unmarshal(p.Payload, &hp)
+	if pane == "" && d.tapiWasKilled(hp.SessionID) {
+		// the agent pekoe killed with tapi's window (reset, restart) runs
+		// its SessionEnd after the window is gone: not tapi's conversation
+		// running outside its window, and nothing for tapi's state
+		return map[string]any{"ignored": true}, nil
+	}
 	if pane != TapiSlug && tapiTranscriptOK(hp.TranscriptPath) {
 		// tapi's conversation, running outside tapi's window: pekoe cannot
 		// tell it is tapi (the ledger refuses it), so say so

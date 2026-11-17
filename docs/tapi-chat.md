@@ -49,12 +49,12 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 
 | hook | tapi の状態 |
 | --- | --- |
-| SessionStart | idle(`claude_session_id` を記録) |
+| SessionStart | idle(`claude_session_id` を記録。待ちの種類・`pending_tool` も消す。esc で中断したターン(Stop が来ない)の後の `/clear` でも idle に戻る。`source: compact` はターンの途中の圧縮なので状態を変えない) |
 | UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打った受信箱の答え `[pekoe inbox q…]` と空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない)。直前の open の依頼と同じ文が 1 分以内に来たら、新しく記録せずにまとめる |
 | PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
 | PostToolUse | waiting なら running に戻す |
 | Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |
-| Stop | idle(`last_message` を記録)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
+| Stop | idle(`last_message` を記録)。`last_assistant_message` が無いと transcript を最大 2 秒待つので、その間に次のターンが始まった(UserPromptSubmit・compact 以外の SessionStart が来た)ら、状態と `pending_tool` は変えない(`last_message` だけ記録する)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | SessionEnd | idle |
 
 変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。
@@ -109,6 +109,7 @@ pekoe の側の防ぎ方:
 - 予防: claude のエージェント(セッションも tapi も)を `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` で起動する(`claudeStayEnv`)。Claude Code の agent view が切れて、← で会話が窓の外に出ない。リポジトリの `env` に同じ名前があればそちらを使う(空にすれば agent view が戻る)。Claude Code 2.1.325 の設定 `disableAgentView` の説明では、これで `claude agents`・`--bg`・`/background`・オンデマンドのサービスも止まる(同じ意味の環境変数として `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` が挙がっている)
 - 振り分け: 窓の外から来た hook は、`transcript_path` の会話の場所(`~/.claude/projects/<符号化した起動時の cwd>/`)で決める(`claimOutside`)。tapi の会話なら tapi、セッションの会話ならそのセッション、どちらでもなければ `$PEKOE_SESSION` を捨てて cwd で決める。依頼の記録(`UserPromptSubmit`)は今までどおり tapi の窓からだけ
 - 知らせる: tapi の会話の hook が tapi の窓の外(ほかのセッションの窓も含む)から来たら、`Tapi.outside` に会話の ID・窓・名乗りを残し、pekoed のログに 1 行書く。TUI の tapi の行に `outside`、`pekoe tapi` に警告と直し方を出す。tapi を起動し直す(`tapi.open` / `restart`)と消え、まだ外で動いていれば次の hook でまた付く
+- pekoe が殺したもの: リセットと、生きている窓を作り直す `restart` は tapi の窓を閉じる(tmux kill-window)。Claude Code は SIGHUP を受けると、窓が消えた後に SessionEnd の hook を走らせる(2.1.326 で確認)ので、その hook はどの窓にも当たらず、`+tapi` を名乗り tapi の会話を指して届く。窓の外の会話と取り違えないよう、pekoed は閉じる直前の会話の ID(hook が最後に名乗った `claude_session_id`。pekoed の再起動後でまだ無ければ、tapi の記録のいちばん新しい会話)を覚え、閉じてから 1 分(`tapiKillGrace`)は、窓に当たらないその ID の hook を無視する(`ignored`。`outside` も状態も変えない)
 - 断るときに理由を添える: 窓に当たらない呼び出しを ledger が断るとき、tapi なら Claude Code が会話を窓の外に移したかもしれないこと、人にそのバックグラウンドのセッションを止めて tapi を起動し直してもらう(または `pekoe tapi reset`)ことを添える
 
 直すのは人: Claude Code の agent view(`claude agents`)で窓の外のセッションを止め、tapi の窓の Claude Code を終えて ↵ で起動し直す(`--continue` で同じ会話を続ける)か、`T` / `pekoe tapi reset`。pekoe は Claude Code のサービスやそのセッションを止めない。
@@ -119,6 +120,7 @@ pekoe の側の防ぎ方:
 - tmux サーバーは pekoed より長生きなので、pekoed を再起動しても `+tapi~agent` の窓は残っている。`tapi.open` / `tapi.get` は窓の有無を tmux に聞くだけなので、そのままつながる(状態は idle から始まり、次の hook で正しくなる)
 - エージェントが終了した(窓が dead)ときは、TUI の ↵ で `tapi.restart`(claude なら `--continue` で同じ会話を続ける)
 - リセット(`tapi.reset`、TUI の `T`、`pekoe tapi reset`)でエージェントの窓を閉じ、Claude Code の記録 `~/.claude/projects/<符号化した tapi の cwd>/` を消し(シンボリックリンクを解決した cwd の分も)、メモリ上の状態を初期化する。次に開くと新しい会話になる
+- 符号化: Claude Code(2.1.326)と同じに、cwd の英数字(`[A-Za-z0-9]`)以外を UTF-16 の 1 単位ごとに `-` にし(BMP の外の文字は `--`)、200 文字を超えたら 200 文字で切って `-` と cwd のハッシュ(UTF-16 の単位で `h = h*31 + c` を 32 bit で回した値の絶対値の 36 進)を付ける(`claudeProjectName`)。ホームに `@` や空白があっても、`--continue`・リセット・transcript の判定が同じディレクトリを見る。セッションの resume と振り分け(`claimOutside`)も同じ関数を使う
 - リセットは会話(Claude Code の記録)とメモリ上の状態だけを消す。依頼・受信箱・報告・送信の記録(state.db)には触らない。依頼を消すのは人の `pekoe ledger rm`。次に開いた tapi は `CLAUDE.md` の「最初にすること」に従って依頼と受信箱を読み、続きから始める
 
 ## API(docs/api.md)
