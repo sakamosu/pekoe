@@ -9,7 +9,8 @@ import (
 
 // wait's ci (docs/orchestration.md "2. 待ち合わせ"): told once when every
 // check of a PR's head has finished, with the result and the head; again
-// only after the head moved. A PR without checks never tells.
+// after the head moved, or when the same head settles with another result
+// (TestWaitCILateCheck, TestWaitCIRerun). A PR without checks never tells.
 func TestWaitCI(t *testing.T) {
 	d, _, repo := setup(t)
 	ghd := fakeGH(t, "OPEN")
@@ -60,7 +61,7 @@ func TestWaitCI(t *testing.T) {
 	}
 	step("the same state again", prFixture{Head: head1, Checks: green}, 1)
 	step("something else changed", prFixture{Head: head1, Checks: green, Merge: "CLEAN", Decision: "APPROVED"}, 1)
-	// a re-run on the same head is not told again
+	// a re-run on the same head that ends the same is not told again
 	step("re-run started", prFixture{Head: head1, Checks: []map[string]any{check("test", ""), check("lint", "SUCCESS")}}, 1)
 	step("re-run finished", prFixture{Head: head1, Checks: green}, 1)
 	// after a restart of pekoed the head is still the one told about
@@ -108,6 +109,91 @@ func TestWaitCI(t *testing.T) {
 
 	// a merged PR is nobody's CI to wait for
 	step("merged on a third head", prFixture{State: "MERGED", Head: "3333333333333333333333333333333333333333", Checks: green}, 2)
+}
+
+// ciEvents returns the summaries of the ci changes so far.
+func ciEvents(d *Daemon) []string {
+	d.changes.mu.Lock()
+	defer d.changes.mu.Unlock()
+	var out []string
+	for _, c := range d.changes.ring {
+		if c.Kind == kindCI {
+			out = append(out, c.Summary)
+		}
+	}
+	return out
+}
+
+// A check that registers late (a second workflow queued after a fast check
+// already passed) must still reach the hub: the first poll sees only the
+// fast check and tells green, the late check failing on the same head is
+// told as red.
+func TestWaitCILateCheck(t *testing.T) {
+	d, _, repo := setup(t)
+	ghd := fakeGH(t, "OPEN")
+	slug := prSession(t, d, repo)
+	d.update(slug, func(s *state.Session) { s.Parent = TapiSlug })
+	const head = "1111111111111111111111111111111111111111"
+	fast := actionsCheck("label-check", "COMPLETED", "SUCCESS", 1, 2)
+	prFixture{Head: head, Checks: []map[string]any{fast}}.write(t, ghd)
+	poll(d)
+	prFixture{Head: head, Checks: []map[string]any{fast, actionsCheck("test", "IN_PROGRESS", "", 3, 4)}}.write(t, ghd)
+	poll(d)
+	prFixture{Head: head, Checks: []map[string]any{fast, actionsCheck("test", "COMPLETED", "FAILURE", 3, 4)}}.write(t, ghd)
+	poll(d)
+	got := ciEvents(d)
+	if len(got) != 2 || !strings.Contains(got[0], "ci green: 1 passed") ||
+		got[1] != slug+": PR #42 ci red: 1 failed (test), 1 passed, head "+head {
+		t.Fatalf("ci for head %s: %q, want the early green and then the head's real result (red)", head, got)
+	}
+	// nothing changed: not told a third time
+	poll(d)
+	if got := ciEvents(d); len(got) != 2 {
+		t.Fatalf("the same red again: %q", got)
+	}
+}
+
+// A re-run on the same head that changes the result is told; one that ends
+// as before is not. A record from before ci_result takes the result without
+// telling the head again.
+func TestWaitCIRerun(t *testing.T) {
+	d, _, repo := setup(t)
+	ghd := fakeGH(t, "OPEN")
+	slug := prSession(t, d, repo)
+	d.update(slug, func(s *state.Session) { s.Parent = TapiSlug })
+	const head = "1111111111111111111111111111111111111111"
+	lint := actionsCheck("lint", "COMPLETED", "SUCCESS", 1, 2)
+	step := func(what string, test map[string]any, want ...string) {
+		t.Helper()
+		prFixture{Head: head, Checks: []map[string]any{lint, test}}.write(t, ghd)
+		poll(d)
+		got := ciEvents(d)
+		if len(got) != len(want) {
+			t.Fatalf("%s: %q, want %d ci", what, got, len(want))
+		}
+		for i, w := range want {
+			if !strings.Contains(got[i], w) {
+				t.Fatalf("%s: ci %d is %q, want %q", what, i, got[i], w)
+			}
+		}
+	}
+	failed := actionsCheck("test", "COMPLETED", "FAILURE", 3, 4)
+	step("red", failed, "ci red: 1 failed (test)")
+	step("re-run started", actionsCheck("test", "IN_PROGRESS", "", 5, 6), "ci red")
+	step("re-run passed", actionsCheck("test", "COMPLETED", "SUCCESS", 5, 6), "ci red", "ci green: 2 passed")
+	step("re-run again, passed again", actionsCheck("test", "COMPLETED", "SUCCESS", 7, 8), "ci red", "ci green")
+
+	// a ci_head kept from before ci_result: no second ci for that head
+	d.update(slug, func(s *state.Session) {
+		c := *s.PRStatus
+		c.CIResult = ""
+		s.PRStatus = &c
+	})
+	step("an old record, failed now", failed, "ci red", "ci green")
+	if st := call[state.Session](t, d, "session.get", map[string]any{"slug": slug}).PRStatus; st.CIHead != head || !strings.HasPrefix(st.CIResult, "red 1/1 ") {
+		t.Fatalf("an old record takes the result: %+v", st)
+	}
+	step("then passed", actionsCheck("test", "COMPLETED", "SUCCESS", 9, 10), "ci red", "ci green", "ci green")
 }
 
 // A check's name is one line of the summary, whatever the repository calls it.

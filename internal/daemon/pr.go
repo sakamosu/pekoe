@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -302,6 +303,7 @@ func (v *PRView) Summary() *state.PRStatus {
 			st.Pending++
 		}
 	}
+	st.CIResult = ciResult(st, v.Checks)
 	later := func(t *time.Time, at time.Time) {
 		if at.After(*t) {
 			*t = at
@@ -356,6 +358,29 @@ func prAttention(prev, next *state.PRStatus) []string {
 // (or with skipped ones only) never settles.
 func ciSettled(st *state.PRStatus) bool {
 	return st != nil && st.State == "OPEN" && st.HeadSHA != "" && st.Pending == 0 && st.Pass+st.Fail > 0
+}
+
+// ciResult is what wait's ci tells about checks (counted in st): green or
+// red, the counts, and a hash of which checks passed and which failed
+// (workflow, name and bucket; not the run, so a re-run with the same
+// outcome is the same result). A check added late or a re-run that turns
+// red to green changes it, and the same head is told again (applyPRStatus).
+// Summary keeps it in PRStatus.CIResult; applyPRStatus replaces it with
+// the result told.
+func ciResult(st *state.PRStatus, checks []PRCheck) string {
+	var keys []string
+	for _, c := range checks {
+		if c.Bucket == "pass" || c.Bucket == "fail" {
+			keys = append(keys, c.Workflow+"\x00"+c.Name+"\x00"+c.Bucket)
+		}
+	}
+	sort.Strings(keys)
+	sum := sha256.Sum256([]byte(strings.Join(keys, "\n")))
+	res := "green"
+	if st.Fail > 0 {
+		res = "red"
+	}
+	return fmt.Sprintf("%s %d/%d %x", res, st.Pass, st.Fail, sum[:6])
 }
 
 // ciSummary is the one line wait's ci gives: green or red, the failed
@@ -571,21 +596,37 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 	if next.State != "OPEN" { // merged / closed: nothing left to act on
 		next.Attention, next.AttentionAt = nil, time.Time{}
 	}
-	// wait's ci: told once per head, when its CI settles (sessionChanges
-	// sees CIHead move). Kept across restarts with the session.
+	// wait's ci: told when the head's CI settles, once per head and result.
+	// A new head is told by sessionChanges (it sees CIHead move); the same
+	// head with another settled result (a check that registered after the
+	// first ones finished, a re-run) is told here. Kept across restarts with
+	// the session.
+	result := next.CIResult // Summary's: the checks now
+	next.CIHead, next.CIResult = "", ""
 	if prev != nil {
-		next.CIHead = prev.CIHead
+		next.CIHead, next.CIResult = prev.CIHead, prev.CIResult
 	}
+	again := false
 	if ciSettled(next) {
-		next.CIHead = next.HeadSHA
+		// a record from before ci_result (CIResult "") takes the result
+		// without telling the head again
+		again = next.CIHead == next.HeadSHA && next.CIResult != "" && next.CIResult != result
+		next.CIHead, next.CIResult = next.HeadSHA, result
 	}
 	if prev.Same(next) {
 		return
 	}
-	d.update(slug, func(x *state.Session) {
+	c, err := d.update(slug, func(x *state.Session) {
 		x.PRStatus = next
 		landedPRMerged(x) // a fetch from before the merge that finished after it
 	})
+	if again && err == nil && c.PRStatus != nil {
+		ci := "ci green"
+		if c.PRStatus.Fail > 0 {
+			ci = "ci red"
+		}
+		d.changes.add(Change{Kind: kindCI, Slug: c.Slug, Summary: ciSummary(c), parent: c.Parent, brief: ci})
+	}
 }
 
 // landedPRMerged marks a landed session's PR as merged. A session lands

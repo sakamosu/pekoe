@@ -73,7 +73,10 @@ type Stat struct {
 // (pr.view has the full picture). Attention lists what changed since the
 // user last opened the PR view: ci_failed | changes_requested |
 // new_comment | mergeable. CIHead is the head whose settled CI wait's ci
-// told about: it is told once per head.
+// told about, CIResult what it told (ciResult: green / red and which
+// checks passed and failed): told again when the head moves or the
+// head's settled result differs from the one told (a check added late,
+// a re-run).
 type PRStatus struct {
 	State          string    `json:"state"` // OPEN | MERGED | CLOSED
 	Draft          bool      `json:"draft,omitempty"`
@@ -86,6 +89,7 @@ type PRStatus struct {
 	MergeState     string    `json:"merge_state,omitempty"`     // mergeStateStatus: CLEAN | BLOCKED | DIRTY | …
 	HeadSHA        string    `json:"head_sha,omitempty"`        // the PR's head commit on GitHub (headRefOid)
 	CIHead         string    `json:"ci_head,omitempty"`         // the head wait's ci was told for (all checks finished)
+	CIResult       string    `json:"ci_result,omitempty"`       // the result told for CIHead (green|red, counts, a hash of the checks)
 	LastComment    time.Time `json:"last_comment,omitempty"`    // newest comment / review / thread comment
 	LastThread     time.Time `json:"last_thread,omitempty"`     // newest comment on an unresolved thread
 	Attention      []string  `json:"attention,omitempty"`
@@ -101,7 +105,7 @@ func (p *PRStatus) Same(q *PRStatus) bool {
 	if !slices.Equal(p.Attention, q.Attention) || !slices.Equal(p.FailedChecks, q.FailedChecks) {
 		return false
 	}
-	return p.CIHead == q.CIHead && p.State == q.State && p.Draft == q.Draft && p.Pass == q.Pass && p.Fail == q.Fail &&
+	return p.CIHead == q.CIHead && p.CIResult == q.CIResult && p.State == q.State && p.Draft == q.Draft && p.Pass == q.Pass && p.Fail == q.Fail &&
 		p.Pending == q.Pending && p.ReviewDecision == q.ReviewDecision && p.Unresolved == q.Unresolved &&
 		p.MergeState == q.MergeState && p.HeadSHA == q.HeadSHA && p.LastComment.Equal(q.LastComment) && p.LastThread.Equal(q.LastThread)
 }
