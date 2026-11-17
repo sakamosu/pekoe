@@ -174,6 +174,7 @@ type Daemon struct {
 	devlog      devLogs    // the dev hooks' logs (devlog.go)
 	tapiMu      sync.Mutex // tapi.open / restart / reset, one at a time (tapi.go)
 	tapi        tapiState  // tapi chat, in memory only (tapi.go; under mu)
+	tapiKilled  tapiKill   // the conversation pekoe last killed with tapi's window (tapi.go; under mu)
 	saveMu      sync.Mutex // orders session writes to state.db against rm (sessions.go persist)
 	evMu        sync.Mutex // held from a change under mu to its emit, so events go out in change order
 	sessions    map[string]*state.Session

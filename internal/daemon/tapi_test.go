@@ -334,3 +334,92 @@ func TestTapiAnswer(t *testing.T) {
 		t.Fatalf("after deny: %+v", v)
 	}
 }
+
+// Claude Code names a project directory after the cwd: every UTF-16 code
+// unit that is not [A-Za-z0-9] becomes "-", and a name over 200 units is
+// cut and gets a hash. Expected values come from Claude Code 2.1.326's own
+// function (nH and $Q, copied from its binary and run with node).
+func TestClaudeProjectName(t *testing.T) {
+	for _, c := range []struct{ path, want string }{
+		{"/Users/me/.local/share/pekoe/tapi", "-Users-me--local-share-pekoe-tapi"},
+		{"/home/me@corp home/.local/share/pekoe/tapi", "-home-me-corp-home--local-share-pekoe-tapi"},
+		{"/tmp/a+b~c/日本語/tapi", "-tmp-a-b-c-----tapi"},
+		{"/tmp/emoji😀dir", "-tmp-emoji--dir"},
+		{"/x/" + strings.Repeat("a", 250), "-x-" + strings.Repeat("a", 197) + "-bjrb96"},
+		{"/x/" + strings.Repeat("日本", 120), "-x-" + strings.Repeat("-", 197) + "-7a909e"},
+		{"/y/" + strings.Repeat("z", 197), "-y-" + strings.Repeat("z", 197)},
+		{"/y/" + strings.Repeat("z", 198), "-y-" + strings.Repeat("z", 197) + "-s7hq2t"},
+	} {
+		if got := claudeProjectName(c.path); got != c.want {
+			t.Errorf("%q:\n got %s\nwant %s", c.path, got, c.want)
+		}
+	}
+}
+
+// With a data directory whose path has a character other than / . _
+// (a home like /home/me@corp, a space), tapi still continues and resets
+// its conversation.
+func TestTapiProjectDirEncoding(t *testing.T) {
+	d, fe, _ := setup(t)
+	t.Setenv("PEKOE_HOME", filepath.Join(t.TempDir(), "me@corp home"))
+	proj := filepath.Join(claudeProjectsDir(), strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, paths.TapiDir()))
+	os.MkdirAll(proj, 0o755)
+	os.WriteFile(filepath.Join(proj, "c6270ea4-8ca2-41a2-8b1b-2addbec46356.jsonl"), []byte("{}\n"), 0o644)
+
+	call[Tapi](t, d, "tapi.open", nil)
+	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; !strings.Contains(c, "--continue") {
+		t.Errorf("conversation left in %s, but not continued", proj)
+	}
+	call[Tapi](t, d, "tapi.reset", nil)
+	if _, err := os.Stat(proj); err == nil {
+		t.Errorf("tapi.reset kept the conversation in %s", proj)
+	}
+}
+
+// tapi's Stop may wait up to 2 s for the transcript (no
+// last_assistant_message and none in the transcript yet). A turn that
+// begins meanwhile keeps its state and pending tool.
+func TestTapiLateStopKeepsNextTurn(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	conv := filepath.Join(tapiProjectDirs()[0], "c6270ea4-8ca2-41a2-8b1b-2addbec46356.jsonl")
+	event(t, d, "UserPromptSubmit", TapiSlug, map[string]any{"prompt": "hi"})
+	event(t, d, "Stop", TapiSlug, map[string]any{"transcript_path": conv})
+	// the next turn begins right away
+	event(t, d, "UserPromptSubmit", TapiSlug, map[string]any{"prompt": "and the CI?"})
+	event(t, d, "PreToolUse", TapiSlug, map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "pekoe --json ls"}})
+	time.Sleep(2500 * time.Millisecond)
+	if v := call[Tapi](t, d, "tapi.get", nil); v.State != state.Running || v.PendingTool == nil {
+		t.Fatalf("the previous turn's Stop overwrote the running turn: state %s, pending %+v", v.State, v.PendingTool)
+	}
+	// its own Stop still ends it
+	event(t, d, "Stop", TapiSlug, map[string]any{"last_assistant_message": "green"})
+	waitFor(t, func() bool {
+		v := call[Tapi](t, d, "tapi.get", nil)
+		return v.State == state.Idle && v.LastMessage == "green"
+	})
+}
+
+// SessionStart brings tapi back to idle (docs/tapi-chat.md): a turn
+// interrupted with esc fires no Stop, then /clear starts a new
+// conversation. Compacting in the middle of a turn does not.
+func TestTapiSessionStartIdle(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	event(t, d, "UserPromptSubmit", TapiSlug, map[string]any{"prompt": "long job"})
+	event(t, d, "SessionStart", TapiSlug, map[string]any{"session_id": "c6270ea4-8ca2-41a2-8b1b-2addbec46356", "source": "compact"})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.State != state.Running {
+		t.Fatalf("compact: %s", v.State)
+	}
+	event(t, d, "PreToolUse", TapiSlug, map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "sleep 100"}})
+	// esc: no Stop. Then /clear
+	event(t, d, "SessionStart", TapiSlug, map[string]any{"session_id": "c6270ea4-8ca2-41a2-8b1b-2addbec46357", "source": "clear"})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.State != state.Idle || v.PendingTool != nil || v.ClaudeSessionID != "c6270ea4-8ca2-41a2-8b1b-2addbec46357" {
+		t.Fatalf("SessionStart: %+v", v)
+	}
+}

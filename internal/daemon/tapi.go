@@ -93,6 +93,53 @@ type tapiState struct {
 	turnEntry int64
 	turnKeep  bool
 	turnKept  int64
+	// gen counts the turns tapiEvent saw begin (UserPromptSubmit,
+	// SessionStart): a Stop that settles late changes the state only if no
+	// turn began since it came
+	gen uint64
+}
+
+// tapiKill is the conversation pekoe killed with tapi's window (reset, or
+// a spawn over a live window). Claude Code catches the SIGHUP and runs
+// its SessionEnd hook after the window is gone, so it reaches pekoed from
+// no window, naming +tapi and tapi's transcript: it is not tapi's
+// conversation running outside its window (hEventAs).
+type tapiKill struct {
+	sessionID string
+	at        time.Time
+}
+
+// tapiKillGrace is how long the hooks of a killed conversation are
+// dropped. Claude Code runs SessionEnd within seconds of the SIGHUP.
+const tapiKillGrace = time.Minute
+
+// tapiNoteKilled remembers tapi's conversation before pekoe kills its
+// window: the session id its hooks named, else (pekoed restarted since)
+// the newest conversation in tapi's project directory. Under tapiMu.
+func (d *Daemon) tapiNoteKilled() {
+	d.mu.Lock()
+	id := d.tapi.sessionID
+	d.mu.Unlock()
+	if id == "" {
+		id = strings.TrimSuffix(filepath.Base(d.tapiTranscript()), ".jsonl")
+	}
+	if !validSessionID(id) {
+		return
+	}
+	d.mu.Lock()
+	d.tapiKilled = tapiKill{sessionID: id, at: time.Now()}
+	d.mu.Unlock()
+}
+
+// tapiWasKilled: a hook of the conversation pekoe killed lately.
+func (d *Daemon) tapiWasKilled(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	k := d.tapiKilled
+	return k.sessionID == sessionID && time.Since(k.at) < tapiKillGrace
 }
 
 func newTapiState() tapiState { return tapiState{state: state.Idle, since: time.Now()} }
@@ -195,12 +242,21 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 			if hp.SessionID != "" {
 				t.sessionID = hp.SessionID
 			}
+			if hp.Source == "compact" {
+				// compacting in the middle of a turn: the turn goes on
+				return
+			}
+			// a new conversation (startup, resume, /clear) waits for
+			// input, even after a turn interrupted with esc (no Stop)
+			t.gen++
+			t.state, t.waitKind, t.pending = state.Idle, "", nil
 		})
 	case "UserPromptSubmit":
 		d.tapiUpdate(func(t *tapiState) {
 			if hp.SessionID != "" {
 				t.sessionID = hp.SessionID
 			}
+			t.gen++
 			t.state, t.waitKind, t.pending = state.Running, "", nil
 		})
 	case "PreToolUse":
@@ -240,11 +296,19 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 			t.state, t.waitKind = state.Waiting, kind
 		})
 	case "Stop":
+		d.mu.Lock()
+		gen := d.tapi.gen
+		d.mu.Unlock()
 		go func() {
+			// stopMessage may wait for the transcript (up to 2 s): a turn
+			// that begins meanwhile keeps its state and pending tool
 			msg := stopMessage(hp)
 			d.tapiUpdate(func(t *tapiState) {
 				if msg != "" {
 					t.lastMessage = msg
+				}
+				if t.gen != gen {
+					return
 				}
 				t.state, t.waitKind, t.pending = state.Idle, "", nil
 			})
@@ -590,6 +654,9 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	}
 	w, h = d.spawnSize(w, h)
 	full := cmd + `; printf '\n[pekoe] tapi exited (%s)\n' "$?"`
+	if d.tapiStarted() {
+		d.tapiNoteKilled() // Spawn kills the window it replaces
+	}
 	if err := d.Eng.Spawn(engine.Spawn{Slug: TapiSlug, Window: engine.WinAgent, Dir: dir, Env: env, Command: full, Width: w, Height: h}); err != nil {
 		return err
 	}
@@ -640,6 +707,7 @@ func (d *Daemon) hTapiReset(struct{}) (any, error) {
 	d.tapiMu.Lock()
 	defer d.tapiMu.Unlock()
 	if d.tapiStarted() {
+		d.tapiNoteKilled()
 		if err := d.Eng.Kill(TapiSlug, engine.WinAgent); err != nil {
 			return nil, err
 		}

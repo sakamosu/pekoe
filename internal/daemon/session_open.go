@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"pekoe/internal/config"
 	"pekoe/internal/gitx"
@@ -30,8 +32,37 @@ type openP struct {
 
 // claudeProjectDir mirrors how Claude Code stores transcripts per cwd.
 func claudeProjectDir(path string) string {
-	enc := strings.NewReplacer("/", "-", ".", "-", "_", "-").Replace(path)
-	return filepath.Join(claudeProjectsDir(), enc)
+	return filepath.Join(claudeProjectsDir(), claudeProjectName(path))
+}
+
+// claudeProjectMax is where Claude Code cuts a long project name.
+const claudeProjectMax = 200
+
+// claudeProjectName is Claude Code's name for the project directory of a
+// cwd (2.1.326): every UTF-16 code unit that is not [A-Za-z0-9] becomes
+// "-" (a character outside the BMP gives two), and a name longer than 200
+// units is cut there and gets "-" and a hash of the path in base 36
+// (Math.abs of the 32-bit h = h*31 + unit over the code units).
+func claudeProjectName(path string) string {
+	units := utf16.Encode([]rune(path))
+	enc := make([]byte, len(units))
+	var h int32
+	for i, u := range units {
+		h = h*31 + int32(u)
+		if u < utf8.RuneSelf && (u >= 'a' && u <= 'z' || u >= 'A' && u <= 'Z' || u >= '0' && u <= '9') {
+			enc[i] = byte(u)
+		} else {
+			enc[i] = '-'
+		}
+	}
+	if len(enc) <= claudeProjectMax {
+		return string(enc)
+	}
+	abs := int64(h)
+	if abs < 0 {
+		abs = -abs
+	}
+	return string(enc[:claudeProjectMax]) + "-" + strconv.FormatInt(abs, 36)
 }
 
 // claudeProjectsDir holds one directory per starting cwd.
