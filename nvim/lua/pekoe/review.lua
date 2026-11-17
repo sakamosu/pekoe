@@ -244,7 +244,9 @@ local function render_diff(restore)
     end
   end
 
-  if valid_win(R.diff_win) then
+  -- 窓が別のファイルを映していれば(editor.open・:edit で差し替わった)、
+  -- winbar もカーソルも触らない: そのファイルのカーソルが飛ぶ
+  if valid_win(R.diff_win) and vim.api.nvim_win_get_buf(R.diff_win) == buf then
     local km = cfg().keymaps.review
     local hint = function(k, w)
       return k and string.format("%%#PekoeKey#%s %%#PekoeDim#%s ", k, w) or ""

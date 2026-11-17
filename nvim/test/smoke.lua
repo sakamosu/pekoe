@@ -230,6 +230,13 @@ local ok, err = xpcall(function()
     return vim.fn.resolve(vim.api.nvim_buf_get_name(0)) == vim.fn.resolve(tmp)
   end), "editor.open edits path")
   check(vim.api.nvim_win_get_cursor(0)[1] == 7, "editor.open jumps to line (" .. vim.api.nvim_win_get_cursor(0)[1] .. ")")
+  -- 開いた窓が review の diff 窓でも、review の再描画はそのファイルのカーソルと winbar に触らない
+  local opened_win = vim.api.nvim_get_current_win()
+  local refreshed = false
+  review.refresh({ cb = function() refreshed = true end })
+  check(wait(1500, function() return refreshed end), "review.refresh after editor.open")
+  check(vim.api.nvim_win_get_cursor(opened_win)[1] == 7, "review refresh keeps editor.open's line (" .. vim.api.nvim_win_get_cursor(opened_win)[1] .. ")")
+  check(not find(vim.wo[opened_win].winbar, "approve"), "review refresh leaves the opened file's winbar")
   local nw = require("pekoe.editor").note_win()
   check(nw and vim.api.nvim_win_is_valid(nw) and find(buf_text(vim.api.nvim_win_get_buf(nw)), "ここを見て"), "editor.open note float")
 

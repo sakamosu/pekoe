@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -121,9 +122,15 @@ func TestDeliverIdle(t *testing.T) {
 func TestDeliverHeld(t *testing.T) {
 	d, fe := deliverSetup(t, "idle")
 	tapiChange(d, kindReport, "feat-x", TapiSlug, "report done")
+	// tapi.deliver_pause off and going idle start a delivery of their own
+	// (go d.deliverTapi); one under way makes d.deliverTapi return at once
+	// and leave the old held. Wait for it, then look.
 	held := func(want string) {
 		t.Helper()
-		d.deliverTapi()
+		mu, _ := d.inboxDeliver.LoadOrStore(TapiSlug, &sync.Mutex{})
+		mu.(*sync.Mutex).Lock()
+		d.deliverTapiLocked()
+		mu.(*sync.Mutex).Unlock()
 		if got := delivered(fe, 0); len(got) != 0 {
 			t.Fatalf("%s: typed %v", want, got)
 		}
@@ -137,17 +144,19 @@ func TestDeliverHeld(t *testing.T) {
 
 	call[any](t, d, "tapi.deliver_pause", map[string]any{"on": true})
 	held(heldChat)
-	call[any](t, d, "tapi.deliver_pause", map[string]any{"on": false})
-
+	// the prompt comes up before the pause ends, and tapi works before it
+	// goes: the delivery the pause's end starts may run at any point after,
+	// and must never find tapi free
 	fe.mu.Lock()
 	fe.lines = []string{"Bash(rm -rf x)", "Do you want to proceed?", "❯ 1. Yes", "  2. No"}
 	fe.mu.Unlock()
+	call[any](t, d, "tapi.deliver_pause", map[string]any{"on": false})
 	held(heldPrompt)
+
+	d.tapiUpdate(func(t *tapiState) { t.state = state.Running })
 	fe.mu.Lock()
 	fe.lines = nil
 	fe.mu.Unlock()
-
-	d.tapiUpdate(func(t *tapiState) { t.state = state.Running })
 	held(heldBusy)
 	d.tapiUpdate(func(t *tapiState) { t.state = state.Idle }) // going idle delivers
 	waitFor(t, func() bool { return len(delivered(fe, 0)) == 1 })
