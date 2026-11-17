@@ -436,11 +436,13 @@ func TestQueueHoldOnUnmanagedRefused(t *testing.T) {
 
 // A held session's fetch that runs into another worktree being added in
 // the same repository still starts from origin/<base>. git worktree add
-// makes .git/worktrees/<name>/gitdir, then commondir, and a fetch
-// that reads it then (its connectivity check looks at every worktree's
-// HEAD) fails: "failed to read .git/worktrees/<name>/commondir", then
-// "did not send all necessary objects". The test makes that state for the
-// first fetch and finishes the worktree before the next one.
+// makes .git/worktrees/<name>/ with gitdir and an empty commondir before
+// it writes it, and a fetch then (its connectivity check looks at every
+// worktree) fails: "failed to read .git/worktrees/<name>/commondir", then
+// "did not send all necessary objects". The test puts such an entry there
+// for the first fetch and takes it away before the next one, as the other
+// add would be over by then. What git does with the entry in between is
+// its own (git 2.56 drops it), so the test only makes it and removes it.
 func TestQueueHoldFetchDuringWorktreeAdd(t *testing.T) {
 	d, _, repo := setup(t)
 	bare := withOrigin(t, repo)
@@ -457,6 +459,7 @@ func TestQueueHoldFetchDuringWorktreeAdd(t *testing.T) {
 	half := filepath.Join(repo, ".git", "worktrees", "feat-x")
 	real := fetchOrigin
 	var calls atomic.Int32
+	var first error
 	fetchOrigin = func(ctx context.Context, repoDir, branch string) error {
 		switch calls.Add(1) {
 		case 1: // another session's worktree add is half way
@@ -470,8 +473,10 @@ func TestQueueHoldFetchDuringWorktreeAdd(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(half, "commondir"), nil, 0o644); err != nil {
 				t.Error(err)
 			}
-		case 2: // ...and has written it
-			if err := os.WriteFile(filepath.Join(half, "commondir"), []byte("../..\n"), 0o644); err != nil {
+			first = real(ctx, repoDir, branch)
+			return first
+		case 2: // ...and is over
+			if err := os.RemoveAll(half); err != nil {
 				t.Error(err)
 			}
 		}
@@ -484,6 +489,9 @@ func TestQueueHoldFetchDuringWorktreeAdd(t *testing.T) {
 	o := waitState(t, d, "feat-o", state.Idle, state.Running)
 	if _, err := os.Stat(filepath.Join(o.Path, "merged.txt")); err != nil {
 		t.Fatalf("origin/main not fetched (fetched %d times): %v", calls.Load(), err)
+	}
+	if first == nil {
+		t.Error("the first fetch did not fail on the half-made worktree: this git no longer shows the race, and the test proves nothing")
 	}
 	if n := calls.Load(); n != 2 {
 		t.Errorf("fetched %d times, want 2 (the failed one and once more)", n)
