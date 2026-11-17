@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
 
@@ -267,12 +268,9 @@ func clampi(v, lo, hi int) int {
 	return v
 }
 
-func ktok(n int) string {
-	if n >= 1000 {
-		return fmt.Sprintf("%dk", (n+500)/1000)
-	}
-	return fmt.Sprint(n)
-}
+// ktok is the context size (Session.Tokens) shortened like the other
+// token counts: 950, 12.3k, 4.56M.
+func ktok(n int) string { return state.ShortTokens(int64(n)) }
 
 var logo = []string{
 	`             _`,
