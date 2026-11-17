@@ -32,7 +32,7 @@ const (
 	kindIdle    = "idle"
 	kindFailed  = "failed"
 	kindPR      = "pr"
-	kindCI      = "ci" // a PR's CI settled: every check finished (once per head)
+	kindCI      = "ci" // a PR's CI settled: every check finished (once per head and result; addCIChange)
 	kindLanded  = "landed"
 	kindRemoved = "removed"
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
@@ -247,11 +247,7 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 			}
 		}
 		if h := s.PRStatus.CIHead; h != "" && (prev.PRStatus == nil || prev.PRStatus.CIHead != h) {
-			ci := "ci green"
-			if s.PRStatus.Fail > 0 {
-				ci = "ci red"
-			}
-			d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent, brief: ci})
+			d.addCIChange(s) // a new head settled; the same head with another result: applyPRStatus
 		}
 	}
 }

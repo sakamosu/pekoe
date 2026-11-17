@@ -402,6 +402,18 @@ func ciSummary(s *state.Session) string {
 	return fmt.Sprintf("%s: PR #%d ci %s, head %s", s.Slug, s.PR, res, st.CIHead)
 }
 
+// addCIChange tells wait's ci for s's settled CI (s.PRStatus, its CIHead
+// and result). The one place a ci change is made: sessionChanges when
+// CIHead moves to a new head, applyPRStatus when the same head settles
+// with another result.
+func (d *Daemon) addCIChange(s *state.Session) {
+	brief := "ci green"
+	if s.PRStatus.Fail > 0 {
+		brief = "ci red"
+	}
+	d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent, brief: brief})
+}
+
 // ---- gh plumbing ----
 
 func ghAvailable() bool {
@@ -621,11 +633,7 @@ func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
 		landedPRMerged(x) // a fetch from before the merge that finished after it
 	})
 	if again && err == nil && c.PRStatus != nil {
-		ci := "ci green"
-		if c.PRStatus.Fail > 0 {
-			ci = "ci red"
-		}
-		d.changes.add(Change{Kind: kindCI, Slug: c.Slug, Summary: ciSummary(c), parent: c.Parent, brief: ci})
+		d.addCIChange(c)
 	}
 }
 
