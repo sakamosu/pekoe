@@ -50,17 +50,23 @@ func (d *Daemon) hWorktreeList(p wtListP) (any, error) {
 		}
 	}
 	d.mu.Lock()
-	bySlugPath := map[string]*state.Session{}
+	var ss []*state.Session
 	for _, s := range d.sessions {
 		if p.RepoID == "" || s.RepoID == p.RepoID {
 			if p.Repo == "" {
 				repoDirs[s.RepoDir] = true
 			}
 			c := *s
-			bySlugPath[s.Path] = &c
+			ss = append(ss, &c)
 		}
 	}
 	d.mu.Unlock()
+	// keyed by the resolved path: git lists worktrees with symlinks resolved
+	// (/private/tmp on macOS) while a session keeps PEKOE_WORKTREES as given
+	bySlugPath := map[string]*state.Session{}
+	for _, s := range ss {
+		bySlugPath[realpath(s.Path)] = s
+	}
 	out := []WorktreeView{}
 	for dir := range repoDirs {
 		wts, err := gitx.Worktrees(dir)
@@ -72,7 +78,7 @@ func (d *Daemon) hWorktreeList(p wtListP) (any, error) {
 				continue
 			}
 			v := WorktreeView{Path: w.Path, Branch: w.Branch, Main: i == 0, Managed: paths.UnderWorktrees(w.Path)}
-			if s := bySlugPath[w.Path]; s != nil {
+			if s := bySlugPath[realpath(w.Path)]; s != nil {
 				v.Slug, v.Port, v.State = s.Slug, s.Port, string(s.State)
 			}
 			out = append(out, v)

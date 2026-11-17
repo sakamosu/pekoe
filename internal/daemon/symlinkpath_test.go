@@ -87,3 +87,25 @@ func TestLandKeepsWorktreeSharedBySymlinkedPath(t *testing.T) {
 		t.Fatalf("worktree of feat-r was deleted: %v", err)
 	}
 }
+
+// The worktree list matches git's (resolved) paths to sessions made under a
+// symlinked PEKOE_WORKTREES.
+func TestWorktreeListMatchesSymlinkedSession(t *testing.T) {
+	d, _, repo := setup(t)
+	symlinkedWorktrees(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/r"})
+	s := waitState(t, d, "feat-r", state.Idle, state.Running, state.Waiting)
+	wts := call[[]WorktreeView](t, d, "worktree.list", map[string]any{})
+	found := false
+	for _, w := range wts {
+		if samePath(w.Path, s.Path) {
+			found = true
+			if w.Slug != "feat-r" || w.Port != s.Port {
+				t.Fatalf("worktree %s not matched to feat-r: %+v", w.Path, w)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("feat-r's worktree not listed: %+v", wts)
+	}
+}

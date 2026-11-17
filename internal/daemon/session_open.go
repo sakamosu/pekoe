@@ -280,12 +280,17 @@ func (d *Daemon) managedPath(top string) bool { return d.sessionAt(top) != "" }
 // sessionAt is the session whose worktree is path (compared with symlinks
 // resolved), "" if none. The smallest slug when two share it.
 func (d *Daemon) sessionAt(path string) string {
-	want := realpath(path)
 	d.mu.Lock()
-	defer d.mu.Unlock()
-	best := ""
+	at := make(map[string]string, len(d.sessions))
 	for slug, s := range d.sessions {
-		if samePath(s.Path, want) && (best == "" || slug < best) {
+		at[slug] = s.Path
+	}
+	d.mu.Unlock()
+	// resolved outside mu: EvalSymlinks per session must not hold it
+	want := realpath(path)
+	best := ""
+	for slug, p := range at {
+		if samePath(p, want) && (best == "" || slug < best) {
 			best = slug
 		}
 	}
