@@ -103,7 +103,9 @@ type UsageMsg struct {
 // not at all. A message whose id the life already counted (in any of its
 // transcripts) is not added again: claude --continue starts a new
 // transcript with a copy of the conversation so far, the same ids and
-// usage.
+// usage. Each id remembers the transcript it was last seen in (c.Path, a
+// copy moves it to the newer file), so ForgetTranscript keeps the ids a
+// transcript still on disk holds.
 func (d *DB) AddUsage(c UsageCursor, repo string, msgs []UsageMsg) error {
 	tx, err := d.db.Begin()
 	if err != nil {
@@ -118,13 +120,17 @@ func (d *DB) AddUsage(c UsageCursor, repo string, msgs []UsageMsg) error {
 	byDay := map[string]Usage{}
 	for _, m := range msgs {
 		if m.ID != "" {
-			r, err := tx.Exec(`INSERT OR IGNORE INTO usage_ids(slug,born,id) VALUES(?,?,?)`, c.Slug, c.Born, m.ID)
+			r, err := tx.Exec(`INSERT OR IGNORE INTO usage_ids(slug,born,id,path) VALUES(?,?,?,?)`, c.Slug, c.Born, m.ID, c.Path)
 			if err != nil {
 				tx.Rollback()
 				return err
 			}
-			if n, _ := r.RowsAffected(); n == 0 {
-				continue // counted already
+			if n, _ := r.RowsAffected(); n == 0 { // counted already: now seen here
+				if _, err := tx.Exec(`UPDATE usage_ids SET path=? WHERE slug=? AND born=? AND id=?`, c.Path, c.Slug, c.Born, m.ID); err != nil {
+					tx.Rollback()
+					return err
+				}
+				continue
 			}
 		}
 		x := byDay[m.Day]
@@ -151,6 +157,41 @@ func (d *DB) DeleteUsageCursors(slug, born string) error {
 	}
 	_, err := d.db.Exec(`DELETE FROM usage_ids WHERE slug=? AND born=?`, slug, born)
 	return err
+}
+
+// ForgetTranscript forgets a transcript of slug's life born that is gone
+// from disk (Claude Code's cleanup of old conversations, tapi.reset): its
+// cursor and the ids last seen in it. A later copy (claude --continue)
+// can only be made from a transcript still there, whose ids stay. When
+// the life has no transcript left, all its ids go (those counted before
+// ids knew their transcript too).
+func (d *DB) ForgetTranscript(slug, born, path string) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM usage_cursors WHERE slug=? AND born=? AND path=?`,
+		`DELETE FROM usage_ids WHERE slug=? AND born=? AND path=?`,
+	} {
+		if _, err := tx.Exec(q, slug, born, path); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM usage_ids WHERE slug=? AND born=? AND NOT EXISTS
+		(SELECT 1 FROM usage_cursors WHERE slug=? AND born=?)`, slug, born, slug, born); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// UsageIDs counts the message ids remembered for slug's life born.
+func (d *DB) UsageIDs(slug, born string) (int, error) {
+	var n int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM usage_ids WHERE slug=? AND born=?`, slug, born).Scan(&n)
+	return n, err
 }
 
 // UsageDay is one life's usage on one local date.
