@@ -19,7 +19,7 @@ description: pekoe の作業セッション(pekoe new で作られた linked wor
 4. **確かめる**: 下の「確かめ方」。テストが通っただけで終わりにしない
 5. **独立レビュー**: 下の「独立レビュー」
 6. **コミット**: 論理単位で分ける。メッセージはリポジトリの慣習に合わせる
-7. **land**: `pekoe land <slug>`(slug は `$PEKOE_SESSION`)。rebase → テスト → push → PR 作成を pekoed がやる。失敗したら理由を読んで直し、もう一度。マージは人がする
+7. **land**: 独立レビューの pass の記録を確かめてから(下の「独立レビュー」)`pekoe land <slug>`(slug は `$PEKOE_SESSION`)。rebase → テスト → push → PR 作成を pekoed がやる。失敗したら理由を読んで直し、もう一度。マージは人がする
 8. **報告**: `pekoe report`(下)
 
 ## 確かめ方
@@ -40,6 +40,13 @@ description: pekoe の作業セッション(pekoe new で作られた linked wor
 - レビュアーが合否を残さずに終わった(落ちた・止めた)ら、pending のままにせず、もう一度頼む
 - 不合格なら指摘を直し、コミットし直して、新しい SHA で印を残し直してから、もう一度レビューさせる
 - 合否はレビュアーが `pekoe report --status review --verdict pass|fail --reviewed-sha <sha>` で残す(サブエージェントはこのセッションの窓の中で動くので、報告はこのセッションに付く)。land するのは合格の後。land の rebase で SHA が変わっても、差分の中身が同じなら pekoed が合格を引き継ぐ(中身が変わったら再レビュー)
+- レビュアーの「pass を記録した」という返事を信じない。land の前と報告の前に、記録を自分で確かめる:
+  ```sh
+  pekoe --json reports "$PEKOE_SESSION"   # 新しい順に 20 件
+  git rev-parse HEAD
+  ```
+  `status` が `review`・`verdict` が `pass` で、`reviewed_sha` が今の HEAD(またはレビューを頼んだ SHA)と一致する報告があること。それより新しい `review` の報告(`pending`・`fail`)があれば、そちらが今の状態。無ければ合格ではない: レビュアー(サブエージェント)に `pekoe report --status review --verdict pass --reviewed-sha <sha>` を打つよう頼むか、レビューを頼み直す。記録を確かめるまで、land も「独立レビュー pass」の報告もしない
+- `reviewed_sha` と今の HEAD が違う(レビューの後に rebase した・land で rebase された)ときは、`git range-diff $(git merge-base <reviewed_sha> origin/<base>)..<reviewed_sha> origin/<base>..HEAD`(左がレビューしたコミットの列、右が今の列)で中身が同じこと(どの行も `=`。`!`・`<`・`>` があれば変わっている)を確かめ、報告にそう書く。中身が変わっていれば、新しい SHA でレビューを頼み直す
 - プロンプトに「独立レビューは別のセッションでやる」とあれば、サブエージェントは立てずに land まで進め、報告にそう書く
 
 ## 報告(pekoe report)
