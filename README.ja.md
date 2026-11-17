@@ -83,8 +83,10 @@ flowchart LR
 | [docs/web.md](docs/web.md) | iPhone 用 Web UI の構成・設定・脅威モデル |
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
-| [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(設計中) |
+| [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
+| [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかの設計記録(作らないと決めた。比べた案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
+| [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目が曖昧幅の字を使わない理由) |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim プラグイン / Chrome 拡張 |
 
 開発者向け: [CONTRIBUTING.md](CONTRIBUTING.md)(テスト・隔離環境・リリースの切り方。英語)、[docs/verification.md](docs/verification.md)(設計書・デザイン原則・モックと実装の対応表)
@@ -204,9 +206,9 @@ pekoe                                                 # TUI
 | `pekoe rm <slug> [--force] [--yes]` | teardown → worktree 削除(`~/worktrees` 配下のみ。外のものはセッションを忘れるだけ)。エージェントは landed のセッションを一覧から消すときだけ使える |
 | `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]... [--verdict pending\|pass\|fail --reviewed-sha SHA]` | セッションのエージェントが作業の結果を残す(`-` で stdin)。`--status review` に `--verdict` と `--reviewed-sha` を付けると、そのコミットへの独立レビューの結果を残す(レビュー中は `pending`。マージの根拠になるのは `pass` だけ)。どのセッションの報告かは pekoed が呼び出したプロセスから決める(`$PEKOE_SESSION` の名乗りは食い違いを出すだけ)。証拠のパスや URL は文字列として残すだけで pekoed は読まない |
 | `pekoe reports [<slug>] [--limit N]` | 報告を新しい順に(エージェントが書いた文は区切りで囲んで出す)。最新のものは `pekoe --json ls` の `report` にも出る |
-| `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | セッションに何か起きるまで待つ(報告・`queued`・`started`・`done`・`waiting`・`idle`・`failed`・`pr`・`ci`・`landed`・`removed`)。`ci` は PR の CI が全部終わって結果が決まったときに HEAD ごとに 1 回だけ(`summary` に green / red・落ちたチェック名・HEAD の SHA)。`started` は作ったセッションの setup が済んでエージェントが動き始めたときに 1 回だけ(setup が落ちたら `failed`)。`queued` は `pekoe new` が作成を始めずに待ち行列に入れた(`max_running`・`--hold`)ときに 1 回だけで、待ち行列から出て動き始めたら `started` が続く。`--mine` は自分が `pekoe new` で作ったセッションだけ(pekoe の窓の中から。pekoe の外で起動したエージェントは `--slug` で待つ)。返った `cursor` を次の `--since` に渡すと取りこぼさない。`pekoe --json new` も作る直前の `cursor` を返すので、`pekoe wait --slug <slug> --on started,failed,removed --since <cursor>` なら setup がすぐ済んでも取りこぼさない(`removed` は作成中に cancel・rm で消されたときも返るように)。pekoed を再起動すると `reset` が返るので `pekoe --json ls` から読み直す。報告なしで done になったものは `(no report)` と出る |
+| `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | セッションに何か起きるまで待つ(報告・`queued`・`started`・`done`・`waiting`・`idle`・`failed`・`pr`・`ci`・`landed`・`removed`・`inbox`)。`ci` は PR の CI が全部終わって結果が決まったときに HEAD ごとに 1 回だけ(`summary` に green / red・落ちたチェック名・HEAD の SHA)。`started` は作ったセッションの setup が済んでエージェントが動き始めたときに 1 回だけ(setup が落ちたら `failed`)。`queued` は `pekoe new` が作成を始めずに待ち行列に入れた(`max_running`・`--hold`)ときに 1 回だけで、待ち行列から出て動き始めたら `started` が続く。`--mine` は自分が `pekoe new` で作ったセッションだけ(pekoe の窓の中から。pekoe の外で起動したエージェントは `--slug` で待つ)。返った `cursor` を次の `--since` に渡すと取りこぼさない。`pekoe --json new` も作る直前の `cursor` を返すので、`pekoe wait --slug <slug> --on started,failed,removed --since <cursor>` なら setup がすぐ済んでも取りこぼさない(`removed` は作成中に cancel・rm で消されたときも返るように)。pekoed を再起動すると `reset` が返るので `pekoe --json ls` から読み直す。報告なしで done になったものは `(no report)` と出る |
 | `pekoe ask-human <question> [--option O]... [--recommend N] [--decided N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context TEXT\|-] [--link URL]... [--wait [--timeout 30m]]` / `pekoe ask-human --wait <id>` | エージェントが人に判断・承認・手作業を頼む(判断の受信箱)。`--decided` は自分で選んだ選択肢を残す(`fyi` と一緒に)。`--wait <id>` は前に出した問いの答えを待つ。pekoed が問いの元のセッションの事実(ブランチ・HEAD・差分・PR・CI・衝突)を自分で付ける。答えは `--wait`(や `pekoe wait --on inbox`)で待っていれば返り値で、待っていなければ手が空いたときに入力欄に `[pekoe inbox qN] 答え: …` と届く(許可ダイアログが出ている間は届けない) |
-| `pekoe inbox [<id>] [--all] [--mine]` / `pekoe inbox answer <id> [<n>] [--note …]` / `pekoe inbox dismiss\|withdraw <id> [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。問いを出したエージェントは自分の問いを取り下げられる(`withdraw`)。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。エージェントが答えを待つ新しい問いは、ほかに何も開いておらずキーが 2 秒止まったときに、その答える画面が自分から前に出る(1 件につき 1 回)。出てから 1 秒はキーを受け付けず、最初は「skip」が選ばれている(`↵` だけ・`esc` でスキップ。項目は受信箱に残り `]a` で答える)。`[orchestrator] inbox_popup = false` で出さない。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは `merge`・`wait`・`send back`(メモがセッションに届く)。TUI(ポップアップと `]a`)では `merge` は `↵` を 2 回: 1 回目で確認になり、もう一度 `↵`(すぐの連打は除く)で答える。確認中にほかのキーを押すと取り消す。`merge` と答えると、pekoed が PR を読み直して条件をもう一度確かめ、`gh pr merge --match-head-commit <項目の HEAD>` を実行する(方法はリポジトリの設定の `[merge] method`。`merge`・`squash`・`rebase`、既定 `merge`)。GitHub がまだマージできるかを計算している(`UNKNOWN`。同じ base に別の PR がマージされた直後など)だけで他が揃っていれば、待っていると出して 5 秒おきに 1 分まで読み直す。崩れていればマージせず理由を出す(TUI・Web UI の Inbox タブ・`pekoe inbox <id>`)。人の答えなしにはマージしない |
+| `pekoe inbox [<id>] [--all] [--mine]` / `pekoe inbox answer <id> [<n>] [--note …] [--rev N]` / `pekoe inbox dismiss\|withdraw <id> [--note …]` | 受信箱の一覧と 1 件の詳しい表示(エージェントの文は区切りで囲み、事実の後に出す)。答える(`answer`)・答えずに閉じる(`dismiss`)のは人だけ。問いを出したエージェントは自分の問いを取り下げられる(`withdraw`)。TUI では項目が来るとトーストが出て、`]a` で答える画面に回れる。エージェントが答えを待つ新しい問いは、ほかに何も開いておらずキーが 2 秒止まったときに、その答える画面が自分から前に出る(1 件につき 1 回)。出てから 1 秒はキーを受け付けず、最初は「skip」が選ばれている(`↵` だけ・`esc` でスキップ。項目は受信箱に残り `]a` で答える)。`[orchestrator] inbox_popup = false` で出さない。Web UI(iPhone)の Inbox タブからも答えられる。エージェントが答えを待つ問い(`fyi` と自分で出したもの以外)は、セッションの wait と同じく最下行に残り(`? feat-x asks · ]a`)、2 分で OS の通知になる(`[orchestrator] notify = "quiet"` ならメッセージ行だけ)。land した PR のマージしてよい根拠(PR の HEAD への独立レビューの合格・CI がすべて緑・`CLEAN`・衝突予報なし・`--after` の相手が landed)が揃うと、pekoed 自身が項目を 1 件作る。答えは `merge`・`wait`・`send back`(メモがセッションに届く)。TUI(ポップアップと `]a`)では `merge` は `↵` を 2 回: 1 回目で確認になり、もう一度 `↵`(すぐの連打は除く)で答える。確認中にほかのキーを押すと取り消す。`merge` と答えると、pekoed が PR を読み直して条件をもう一度確かめ、`gh pr merge --match-head-commit <項目の HEAD>` を実行する(方法はリポジトリの設定の `[merge] method`。`merge`・`squash`・`rebase`、既定 `merge`)。GitHub がまだマージできるかを計算している(`UNKNOWN`。同じ base に別の PR がマージされた直後など)だけで他が揃っていれば、待っていると出して 5 秒おきに 1 分まで読み直す。崩れていればマージせず理由を出す(TUI・Web UI の Inbox タブ・`pekoe inbox <id>`)。人の答えなしにはマージしない |
 | `pekoe ledger [<id>] [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger keep [<id>]` / `pekoe ledger reopen\|rm <id>` | 依頼(`ledger`)。tapi chat に打った文は pekoed が open で記録し(同じ文が 1 分以内に続けて来たら 1 件にまとめる)、tapi が `--request` でセッションと結び、`done --evidence <PR>`・`drop --note <理由>`・`close --as chat`(依頼ではなかった)で閉じる。雑談・お礼・その場で答えた質問は、tapi が返事を終えたときに pekoed が `chat` で閉じる(そのターンで tapi がセッションを結ばず、誰にも何も頼まず、待ち始めてもいないとき。一覧では `chat (auto)`)。依頼なのにすぐ任せないものは tapi が `keep` で残し、自動で閉じたものも `keep <id>` で戻せる(閉じてから 24 時間は、新しい 10 件が本文を短くして `pekoe ledger` とダッシュボードの Requests に open のものと分けて出る。全文は `pekoe ledger <id>`)。`pekoe tapi reset` でも消えない。tapi や人が閉じたものを開き直す(`reopen`)・消す(`rm`)のは人だけ |
 | `pekoe stats [--days N] [--repo R] [--json]` | ローカルの日付・リポジトリごとの、マージした PR の数と使ったトークン(既定は直近 7 日)。マージは pekoe が land を見届けたもの。トークンはエージェントの Claude Code の transcript(サブエージェント・tapi chat も)から、input・output・cache 書き込み・cache 読み出しの種類別に足す。rm したセッションの分も残り、動いているセッションはその時点までを数える。料金には換算しない。数だけなので、エージェントも token なしで読める |
 | `pekoe dev <slug>` | `dev` をそのセッションのポートで起動 / 停止。止めるとき(rm・dev 窓を閉じる・`pekoe daemon stop --kill-agents` も)と、hook が自分で終わったときは `[hooks] dev_stop` を実行する |
@@ -224,7 +226,7 @@ pekoe                                                 # TUI
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
 | `pekoe config edit\|check\|show\|path` | `config.toml` の入口。`edit` は `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめる。間違いがあれば、開き直す・そのまま保存・保存せずにやめるを聞く(visudo と同じ形)。ファイルが無ければ作る。`check` は構文エラー・知らないキー・受け付けない値を出す(あれば終了コード 1)。`show` は既定値込みの今の設定(`[web] auth_key` は伏せる)。`path` は置き場所。どれも pekoed を通さず自分でファイルを読み書きする(TUI では `^q ,`) |
-| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
+| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]` | GitHub の最新リリースに入れ替える([更新](#更新))。`--check` は新しい版があるか見るだけ。人間だけの操作 |
 | `pekoe version` | バージョン |
 
 - `R` は repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでもよい。slug を取るコマンドは `<repo>/<slug>` でも指定できる
@@ -243,9 +245,9 @@ pekoe                                                 # TUI
 | --- | --- | --- |
 | `⨯ ⨯` | error | エージェントの異常終了・コマンド失敗 |
 | `◕ ◕` | wait | 入力・許可を待っている |
-| `● ●` | work | 出力中・コマンド実行中 |
+| `◉ ◉` | work | 出力中・コマンド実行中 |
 | `^ ^` | done | ターンが終わり、まだ見ていない |
-| `• •` | idle | プロンプトで待機 |
+| `∙ ∙` | idle | プロンプトで待機 |
 | `- -` | sleep | 全セッションが 3 分以上 idle |
 
 見ていないセッションが wait / error になるとトーストが出る。PR のマージ・CI の失敗・レビューにも一度だけ反応する(詳細は [docs/mascot.md](docs/mascot.md))。
@@ -272,7 +274,7 @@ pekoe                                                 # TUI
 | `u` `R` | 最後のプロンプトを undo / エージェント再起動(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて出す)を送る / 無視 / 詳細。カードがある間、入力は `a` |
 | `x` `D` | セッション終了(worktree は残す)/ worktree 削除(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
+| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
 | `:cleanup` | 片付けの一覧(`pekoe cleanup`)。landed・マージ済み・止まって長いセッションを警告(未コミットのファイル・push していないコミット・開いている PR)つきで出す。`space` で 1 つ選び、`a` で landed をすべて選び、`D` で選んだもの(なければカーソルのもの)を消す。消す前の確認に、消す worktree と警告をもう一度出す |
 | `H` | チュートリアルをもう一度(`:tutorial` でも。[チュートリアル](#チュートリアル)) |
 | `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |
@@ -428,7 +430,7 @@ Web UI と Chrome 拡張はソケットを通らない人間の入口なので�
 
 ### iPhone から(Web UI)
 
-`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェント画面の表示(色つき)・受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に出す。推奨は `recommended (agent)` と書いて選んだ状態にしない。送る前に確認シートを挟み、見た後に内容が変わった項目は断られる)・Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。読むだけ)・tapi への話しかけ(画面・質問へのキーパッド・`send`。tapi への送信は `allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む(既定。`confirm_tapi_send = false` で切れる)。tapi の許可待ちへの allow / deny は Web に出さず端末で答える)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
+`make install WEB=1` のビルドだけ。pekoed に Tailscale の tsnet を埋め込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として HTTPS で待ち受ける。できるのはセッション一覧・許可待ちへの allow / deny(確認つき、`always` は出さない)・`send`・エージェントの質問(AskUserQuestion のメニュー)へのキーパッド・エージェント画面の表示(色つき)・受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に出す。推奨は `recommended (agent)` と書いて選んだ状態にしない。送る前に確認シートを挟み、見た後に内容が変わった項目は断られる)・Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。読むだけ)・tapi への話しかけ(画面・質問へのキーパッド・`send`。tapi への送信は `allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む(既定。`confirm_tapi_send = false` で切れる)。tapi の許可待ちへの allow / deny は Web に出さず端末で答える)だけ。localhost にポートは開けず、接続ごとに Tailscale の WhoIs で `allow_users` を確かめる。
 
 1. tailnet で MagicDNS と HTTPS を有効にし、`[web]` を書いて pekoed を再起動
 2. `pekoe web` に出るログイン URL を開いて tailnet に参加(`TS_AUTHKEY` でもよい)
@@ -499,7 +501,7 @@ icons = "nerd"              # nerd | unicode | ascii
 primary = "#ff87da"
 [mascot]                    # マスコット tapi(docs/mascot.md)
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
-glyphs  = "auto"            # auto(● の幅を測る) | unicode | narrow(● を 🞄 に) | ascii
+glyphs  = "auto"            # auto(● の幅を測る) | unicode | ascii(narrow は以前の値で unicode と同じ)
 palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
 sleep_after = "3m"          # 全セッションが idle でキー入力もなくこれだけ経つと tapi が眠る(下限 10s)
