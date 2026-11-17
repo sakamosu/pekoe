@@ -565,12 +565,14 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	}
 	steps := []string{}
 	onto := base
+	fetched := false
 	if hasOrigin {
 		// base "origin/main" (session.new takes it) names origin's main:
 		// fetch, rebase onto and open the PR against main, as fetchBase does
 		base = strings.TrimPrefix(base, "origin/")
 		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
+			fetched = true
 		} else {
 			steps = append(steps, fmt.Sprintf("fetch origin %s failed (%v): rebasing onto %s as it is here", base, err, onto))
 		}
@@ -637,6 +639,14 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			// gh pr create fails with "No commits between", and the old PR's
 			// merge is what lands the session
 			if n, err := gitx.Run(s.Path, "rev-list", "--count", "--end-of-options", onto+"..HEAD"); err == nil && strings.TrimSpace(n) != "0" {
+				if !fetched {
+					// the base here may be behind origin's and lack the
+					// merged PR's own commits: they would count as new, and
+					// gh pr create would fail with "No commits between".
+					// Neither a new PR nor the old one is safe to take.
+					return nil, fmt.Errorf("pushed %s, but no PR: PR #%d is %s and fetch origin %s failed, so whether HEAD has commits beyond origin's %s cannot be told (%s commits beyond %s here, which may be stale); run land again once origin can be fetched",
+						s.Branch, pr, st, base, base, strings.TrimSpace(n), onto)
+				}
 				steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
 				pr = 0
 			}
@@ -674,7 +684,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		if x.PR != pr {
 			// the summary and the held teardown were the old PR's
 			x.PRStatus = nil
-			x.LandHeld = ""
+			x.LandHeld, x.LandHeldAt = "", time.Time{}
 		}
 		x.PR = pr
 		x.Landing = true
@@ -851,7 +861,12 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 			return nil
 		}
 	}
-	mergedAt := time.Now() // when pekoe saw it merged, before the teardown's minutes
+	// when pekoe saw it merged, before the teardown's minutes; a held
+	// landing, when it was first seen merged, not when the hold ended
+	mergedAt := time.Now()
+	if !s.LandHeldAt.IsZero() {
+		mergedAt = s.LandHeldAt
+	}
 	foreign := errors.Is(gitx.CheckWorktreeOf(s.RepoDir, s.Path), gitx.ErrForeignWorktree)
 	if !foreign {
 		d.devMu.Lock()
@@ -864,8 +879,13 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 	if foreign {
 		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
 	} else {
-		if err := d.teardown(s); err != nil {
-			log.Printf("teardown %s: %v", slug, err)
+		// teardown undoes what setup did, and only pekoe's own worktrees
+		// had a setup: a checkout pekoe did not make (session.open on the
+		// repository itself) is only marked landed, as rm only forgets it
+		if s.Managed && paths.UnderWorktrees(s.Path) {
+			if err := d.teardown(s); err != nil {
+				log.Printf("teardown %s: %v", slug, err)
+			}
 		}
 		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+slug+"/") // shared by all worktrees
 	}
@@ -885,7 +905,7 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		}
 		ours = true
 		x.State, x.Landing, x.Dev, x.Stopped = state.Landed, false, false, true
-		x.LandHeld = ""
+		x.LandHeld, x.LandHeldAt = "", time.Time{}
 		landedPRMerged(x)
 	})
 	if landed != nil && ours {
@@ -912,6 +932,9 @@ func (d *Daemon) holdLanding(s *state.Session, why string) {
 		}
 		changed = x.LandHeld == "" // told once per hold; the text keeps up
 		x.LandHeld = note
+		if x.LandHeldAt.IsZero() {
+			x.LandHeldAt = time.Now() // the first sighting: stats' merge time
+		}
 	})
 	if err != nil || !changed {
 		return
