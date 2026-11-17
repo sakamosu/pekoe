@@ -231,3 +231,100 @@ func TestStatsContinueCopiesHistory(t *testing.T) {
 		t.Fatalf("tokens = %d, want 210 (m1+m2 once, m3); the copy of the history was counted again", got)
 	}
 }
+
+// A transcript deleted from disk (Claude Code's cleanup of old
+// conversations, tapi.reset) is forgotten: its cursor (not tried and
+// globbed on every count) and the message ids last seen only in it. The ids
+// a copy (claude --continue) still holds stay, so a later copy of the copy
+// does not count the history again.
+func TestStatsForgetsGoneTranscripts(t *testing.T) {
+	d, _, _ := setup(t)
+	dir := t.TempDir()
+	now := time.Now()
+	life := usageLife{Slug: TapiSlug}
+	total := func() int64 {
+		t.Helper()
+		st, err := d.stats(now, 1, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Tokens.Total()
+	}
+	paths := func() []string {
+		t.Helper()
+		cs, err := d.DB.UsageCursors(TapiSlug, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range cs {
+			out = append(out, filepath.Base(c.Path))
+		}
+		return out
+	}
+	ids := func() int {
+		t.Helper()
+		n, err := d.DB.UsageIDs(TapiSlug, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	a := filepath.Join(dir, "a.jsonl")
+	appendFile(t, a, usageLine("m1", now, 1, 0, 0, 0)+usageLine("m2", now, 10, 0, 0, 0))
+	appendFile(t, filepath.Join(dir, "a", "subagents", "s.jsonl"), usageLine("s1", now, 1000, 0, 0, 0))
+	d.countUsage(life, a, true)
+	// claude --continue: b copies a's history and goes on
+	b := filepath.Join(dir, "b.jsonl")
+	appendFile(t, b, usageLine("m1", now, 1, 0, 0, 0)+usageLine("m2", now, 10, 0, 0, 0)+usageLine("m3", now, 100, 0, 0, 0))
+	d.countUsage(life, b, true)
+	if got := total(); got != 1111 {
+		t.Fatalf("tokens = %d, want 1111", got)
+	}
+
+	// a (and its subagents) deleted: forgotten; b's ids stay
+	os.RemoveAll(filepath.Join(dir, "a"))
+	os.Remove(a)
+	d.countUsage(life, "", true)
+	if got := paths(); fmt.Sprint(got) != "[b.jsonl]" {
+		t.Fatalf("cursors = %v, want only b.jsonl", got)
+	}
+	if got := ids(); got != 3 {
+		t.Fatalf("ids = %d, want 3 (m1 m2 m3, seen in b)", got)
+	}
+
+	// another --continue copies b: nothing counted twice
+	c := filepath.Join(dir, "c.jsonl")
+	appendFile(t, c, usageLine("m1", now, 1, 0, 0, 0)+usageLine("m2", now, 10, 0, 0, 0)+usageLine("m3", now, 100, 0, 0, 0)+
+		usageLine("m4", now, 10000, 0, 0, 0))
+	d.countUsage(life, c, true)
+	os.Remove(b)
+	d.countUsage(life, "", true)
+	if got := total(); got != 11111 {
+		t.Fatalf("tokens = %d, want 11111; the copied history was counted again", got)
+	}
+	if got := paths(); fmt.Sprint(got) != "[c.jsonl]" {
+		t.Fatalf("cursors = %v, want only c.jsonl", got)
+	}
+	if got := ids(); got != 4 {
+		t.Fatalf("ids = %d, want 4", got)
+	}
+
+	// tapi.reset: every transcript gone, nothing left to copy from
+	os.Remove(c)
+	d.countUsage(life, "", true)
+	if got := paths(); len(got) != 0 {
+		t.Fatalf("cursors = %v, want none", got)
+	}
+	if got := ids(); got != 0 {
+		t.Fatalf("ids = %d, want 0", got)
+	}
+	// the days stay; a new conversation counts on
+	n := filepath.Join(dir, "n.jsonl")
+	appendFile(t, n, usageLine("m5", now, 100000, 0, 0, 0))
+	d.countUsage(life, n, true)
+	if got := total(); got != 111111 {
+		t.Fatalf("tokens = %d, want 111111", got)
+	}
+}

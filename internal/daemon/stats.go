@@ -16,8 +16,10 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -85,8 +87,10 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 		return
 	}
 	known := map[string]state.UsageCursor{}
+	stored := map[string]bool{}
 	for _, c := range cs {
 		known[c.Path] = c
+		stored[c.Path] = true
 	}
 	if path != "" && strings.HasSuffix(path, ".jsonl") {
 		if _, ok := known[path]; !ok {
@@ -109,13 +113,25 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
+	var gone []string
 	for _, p := range paths {
 		c := known[p]
 		msgs, next, changed := readUsage(c)
 		if !changed {
+			if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) && stored[p] {
+				gone = append(gone, p)
+			}
 			continue
 		}
 		if err := d.DB.AddUsage(next, life.Repo, msgs); err != nil {
+			log.Printf("usage %s %s: %v", life.Slug, p, err)
+		}
+	}
+	// transcripts deleted since (Claude Code's cleanup, tapi.reset): not
+	// tried again on every count. After the others were read, so the ids a
+	// copy of a gone one holds are already seen in the copy and stay.
+	for _, p := range gone {
+		if err := d.DB.ForgetTranscript(life.Slug, life.Born, p); err != nil {
 			log.Printf("usage %s %s: %v", life.Slug, p, err)
 		}
 	}
