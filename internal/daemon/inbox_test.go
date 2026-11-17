@@ -307,6 +307,14 @@ func TestInboxWithdraw(t *testing.T) {
 	if err := callAsErr(d, agentAs(TapiSlug), "inbox.withdraw", map[string]any{"id": it.ID}); err == nil || !strings.Contains(err.Error(), "only its own") {
 		t.Fatalf("someone else's: %v", err)
 	}
+	// an agent that reads the token (sandbox off, tapi chat) is still an
+	// agent: the token does not make it the person
+	for _, from := range []string{TapiSlug, "feat-b"} {
+		tok := &Caller{human: true, Via: viaSocket, peer: fixedPeer(from)}
+		if err := callAsErr(d, tok, "inbox.withdraw", map[string]any{"id": it.ID}); err == nil || !strings.Contains(err.Error(), "only its own") {
+			t.Fatalf("someone else's with the token from %s: %v", from, err)
+		}
+	}
 	if err := callAsErr(d, &Caller{peer: fixedPeer("")}, "inbox.withdraw", map[string]any{"id": it.ID}); err == nil {
 		t.Fatal("unknown caller")
 	}
