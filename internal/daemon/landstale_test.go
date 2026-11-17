@@ -84,6 +84,10 @@ func TestLandBaseOriginPrefix(t *testing.T) {
 	bare := withOrigin(t, repo)
 	onGitHub(t, d, repo)
 	gh := fakeGH(t, "OPEN")
+	// land's rebase (pekoed's git, in this process) replays the commit
+	// and needs a committer; run gives its own git one, as CI has none
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@t")
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/ob", "base": "origin/main"})
 	waitCreated(t, d, s.Slug)
 	s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
