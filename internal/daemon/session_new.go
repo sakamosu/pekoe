@@ -292,8 +292,10 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		}
 		return c, err
 	}
-	d.add(s)
+	// its creation is registered before rm can find the session, so an rm
+	// right away stops it (stopCreation)
 	c := d.prepareNew(s, repo)
+	d.add(s)
 	go d.runNew(c, s.Slug, repo, p)
 	return d.snapshot(slug)
 }

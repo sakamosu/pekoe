@@ -137,7 +137,7 @@ func TestFinishLandLeavesReplacedSession(t *testing.T) {
 	waitState(t, d, "feat-x", state.Running, state.Idle) // not waitCreations: it cancels the creation
 	done := make(chan struct{})
 	go func() { d.finishLanding("feat-x"); close(done) }()
-	waitFile(t, once) // finishLand is in its teardown
+	waitFile(t, once)  // finishLand is in its teardown
 	d.forget("feat-x") // gone without rm (which would wait for finishLand)
 	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x", "prompt": "NEW"})
 	waitState(t, d, "feat-x", state.Running, state.Idle)
@@ -168,5 +168,42 @@ func TestRmOfOpenedCheckoutRunsNoTeardown(t *testing.T) {
 	}
 	if _, err := d.snapshot(s.Slug); err == nil {
 		t.Errorf("%s still there after rm", s.Slug)
+	}
+}
+
+// rm of a queued session that leaves the queue while rm waits for queueMu
+// (pumpQueue starting it) stops the creation that just began, as for any
+// creating session.
+func TestRmAsQueuedSessionStartsStopsCreation(t *testing.T) {
+	d, _, repo := setup(t)
+	out := t.TempDir()
+	writeRepoConfig(t, d, repo, "[hooks]\nsetup = [\"sleep 1; touch "+out+"/setup-{{slug}}\"]\n")
+	setCap(d, 1)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "prompt": "go"})
+	waitState(t, d, "feat-b", state.Queued)
+	d.queueMu.Lock() // as pumpQueue holds it
+	rmDone := make(chan struct{})
+	go func() {
+		defer close(rmDone)
+		call[map[string]any](t, d, "worktree.rm", map[string]any{"slug": "feat-b", "force": true})
+	}()
+	time.Sleep(300 * time.Millisecond) // rm saw it queued and waits for queueMu
+	started := d.startQueued("feat-b")
+	d.queueMu.Unlock()
+	if !started {
+		t.Fatal("feat-b did not leave the queue")
+	}
+	<-rmDone
+	d.mu.Lock()
+	_, still := d.cancels["feat-b"]
+	d.mu.Unlock()
+	if still {
+		t.Errorf("feat-b's creation still running after rm returned")
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if fileExists(filepath.Join(out, "setup-feat-b")) {
+		t.Errorf("feat-b's setup ran to its end after rm")
 	}
 }

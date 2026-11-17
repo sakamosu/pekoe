@@ -126,14 +126,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	// finds the session landed and its worktree gone
 	release, _ := d.holdFinishing(p.Slug, true)
 	defer release()
-	if _, err := d.snapshot(p.Slug); err != nil {
-		return nil, err
-	}
-	// a session still being created: stop its creation and wait for it to
-	// end, so no setup hook or agent start comes after the teardown and the
-	// removal below
-	d.stopCreation(p.Slug)
-	s, err := d.snapshot(p.Slug) // as the creation left it (own_dir …)
+	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +145,18 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 			// not hold the queue up through its teardown
 			d.queueMu.Unlock()
 		}
+	} else if s.State == state.Creating {
+		// a session leaving the queue is creating before its creation is
+		// registered (startQueued, under queueMu): let that finish first
+		d.queueMu.Lock()
+		d.queueMu.Unlock()
+	}
+	// a session still being created: stop its creation and wait for it to
+	// end, so no setup hook or agent start comes after the teardown and the
+	// removal below (a session still queued under queueMu has none)
+	d.stopCreation(p.Slug)
+	if s, err = d.snapshot(p.Slug); err != nil { // as the creation left it (own_dir …)
+		return nil, err
 	}
 	_, statErr := os.Stat(s.Path)
 	exists := statErr == nil
