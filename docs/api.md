@@ -454,13 +454,14 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 - 添字(`recommend`・`decided`・`choice`)は 0 始まり。CLI と画面は 1 始まりで出す
 - `kind`: `decision`(選ぶ。選択肢なしなら答えはメモで)・`approve`(選択肢を省くと `approve`・`decline`)・`login`(人の手作業。選択肢は `done`・`can't` に固定)・`fyi`(エージェントが自分で決めたことの記録。`decided` に選んだもの。`answered` で作られ、`answer.by` は呼び出し元)。選択肢が 1 つだけのものは断る
 - `from` は呼び出し元(上の「呼び出し元の識別」)の窓。窓がなく token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
-- 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
+- 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない。数えるのは `from` の窓ごとで、token を読めるエージェントの窓(sandbox なし・tapi)も数える。数えないのは窓のない token つきの人だけ)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
 - **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
 - `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)
 - **答えの届け方**(`answer` と `dismiss`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12`(閉じたものは `答えずに閉じられました`)。1 行に均し、先頭は `[`(数字にしない)
   - 打つ条件: セッションなら `idle` か `done` で agent の窓が生きている、tapi chat なら起動していて `idle`。どちらも許可ダイアログが出ていない(hooks の状態と画面の両方。受け付けた時と、送信ロックを取って打つ直前の 2 回。`session.send` の token なしの経路と同じ)。人がその窓に打った(TUI・CLI・Web UI の `session.send`・`session.keys`・`tapi.send`・`tapi.keys`)のが 30 秒以内なら待つ
   - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
-  - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。依頼元のセッションが消えたら `none`
+  - 依頼元が API で答えを読んだ(`inbox.get` / `inbox.list`、`wait` の返り値)ら `waited` にして打たない。token を送るエージェントの窓から読んでも同じ(人とみなすのは窓のない token つきの呼び出しだけ)
+  - 依頼元のセッションが消えたら(`worktree.rm`、landed の slug を `session.new` で置き換えたとき)、そのセッションが出した未回答の項目は pekoed が `withdrawn` にし(`answer.by: "pekoed"`、`answer.note: "session removed"`)、打っていない答え(`pending`)は `none` にする。項目は `from` の slug で持ち主を表すので、こうしないと後で同じ slug で作り直したセッションが、前のセッションの問いの答えを受け取り、取り下げ、未回答の上限に数えられてしまう
   - 打ったものは送信の記録に `from: pekoed, kind: inbox` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、記録に `ok: false` で残す
 - `[orchestrator] deliver = "idle"` のとき、tapi が出した問いの答えはこの 1 行ではなく、tapi への配送の 1 行にまとめて入る(下の「tapi への配送」。`delivery` は同じく `delivered`)
 - `inbox.updated` は token つきの購読にだけ届く。エージェントは `pekoe wait --on inbox`(や `ask-human --wait`)で自分宛ての答えだけを受け取る

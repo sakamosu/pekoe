@@ -22,6 +22,18 @@ func TestOptionIndex(t *testing.T) {
 			t.Errorf("%q accepted", v)
 		}
 	}
+	// approve without --option: approve / decline, as pekoed fills them in
+	for v, want := range map[string]int{"1": 0, "approve": 0, "2": 1, "decline": 1} {
+		if got, err := optionIndex("recommend", v, askChoices("approve", nil)); err != nil || got != want {
+			t.Errorf("--kind approve --recommend %s: got %d, %v; want %d", v, got, err, want)
+		}
+	}
+	if got := askChoices("approve", []string{"a", "b"}); strings.Join(got, "|") != "a|b" {
+		t.Errorf("approve with --option: %q", got)
+	}
+	if got := askChoices("decision", nil); len(got) != 0 {
+		t.Errorf("decision without --option: %q", got)
+	}
 	f, pos, err := parseCmd("ask-human", []string{"変えてよい?", "--option", "変える", "--option=今のまま", "--recommend", "1", "--wait"})
 	if err != nil || len(pos) != 1 || strings.Join(multiVal(f, "option"), "|") != "変える|今のまま" || f["wait"] == "" {
 		t.Fatalf("parse: %v %q %v", f, pos, err)

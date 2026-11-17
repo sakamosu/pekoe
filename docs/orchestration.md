@@ -105,7 +105,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 | `report.post` | 可 | 作業セッションが自分の完了・詰まりを残す道。何も実行せず、ファイルも読まない(証拠のパスは文字列として保存するだけ) | 呼び出し元のセッションの分だけ。`unknown` は断る。長さと件数の上限 |
 | `report.list` | 可 | tapi・main が報告を読む。中身はエージェントが書いた要約で、`session.list` と同じ公開度 | — |
 | `wait` | 可 | 統括役が待つ道。返すのは `session.list` と `subscribe`(トークンなし)で見えるものの要約だけで、何も実行しない | 同時に待てるのは呼び出し元ごとに 8 本まで、`timeout` は 1 時間まで |
-| `inbox.post` | 可 | 人に頼む道。何も実行しない。害は人の注意を奪うことと誘導で、対策は下の「脅威モデル」 | 呼び出し元ごとに未回答 10 件まで。`unknown` は断る。長さの上限 |
+| `inbox.post` | 可 | 人に頼む道。何も実行しない。害は人の注意を奪うことと誘導で、対策は下の「脅威モデル」 | 呼び出し元(窓)ごとに未回答 10 件まで(token を読めるエージェントの窓も数える)。`unknown` は断る。長さの上限。セッションを rm すると、そのセッションの未回答は pekoed が取り下げる |
 | `inbox.list` / `inbox.get` | 可 | 統括役が「決定が必要なもの」を人にまとめて伝えるため。中身はエージェントが書いた問いと pekoed が付けた事実、人の答え(エージェントに宛てたもの) | — |
 | `inbox.withdraw` | 可 | 自分が出した問いを取り下げる(状況が変わった) | 自分が出したものだけ |
 | `inbox.answer` | **不可** | 人の判断そのもの。エージェントが答えられれば受信箱の意味がない | — |
@@ -275,7 +275,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 
 実装(段階 1。仕様の正は docs/api.md「判断の受信箱」):
 
-- **添字**: API の `recommend`・`decided`・`choice` は 0 始まり、CLI(`--recommend 1`・`inbox answer 12 1`)と画面は 1 始まり。`--recommend` / `--decided` は選択肢の文でも渡せる
+- **添字**: API の `recommend`・`decided`・`choice` は 0 始まり、CLI(`--recommend 1`・`inbox answer 12 1`)と画面は 1 始まり。`--recommend` / `--decided` は選択肢の文でも渡せる(`--option` を省いた `approve` は `approve`・`decline` の番号か文。`login` の推奨は断る)
 - **facts と rev**: 未回答の項目の facts は `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変われば `rev` を上げる。答えは読み直した後の `rev` と比べるので、人が見た後に HEAD が動いた・CI が落ちたものは `look again` で断られる(TUI のモーダルは選択を外して「変わった」と出す)。facts の `report` は id・状態・時刻・HEAD だけにした(要約はエージェントの文で、事実ではない)。`state`・`base`・`git_blocked`・`gone`(セッションが消えた)を足した
 - **kind**: `approve` は選択肢を省くと `approve`・`decline`。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
 - **取り除く文字**: 制御文字・ANSI に加えて、見えない書式文字(bidi の上書き・ゼロ幅。Unicode の Cf)も落とす(画面で文の順序を入れ替えられる)。TUI は描く前にもう一度落とす

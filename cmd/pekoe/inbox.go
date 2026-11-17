@@ -38,6 +38,15 @@ func optionIndex(flag, v string, opts []string) (int, error) {
 	return 0, fmt.Errorf("--%s %q is not one of the --option values", flag, v)
 }
 
+// askChoices is what an item of kind ends up with for options: opts, or
+// with none, the kind's fixed ones (state.InboxKindOptions, as pekoed).
+func askChoices(kind string, opts []string) []string {
+	if len(opts) == 0 {
+		return state.InboxKindOptions(kind)
+	}
+	return opts
+}
+
 func cmdAskHuman(args []string) error {
 	f, pos, err := parseCmd("ask-human", args)
 	if err != nil {
@@ -69,14 +78,17 @@ func cmdAskHuman(args []string) error {
 		kind = "decision"
 	}
 	p := map[string]any{"question": q, "kind": kind, "options": opts, "links": multiVal(f, "link")}
-	rec, err := optionIndex("recommend", f["recommend"], opts)
+	// --recommend / --decided name one of the options pekoed will keep:
+	// the kind's own when none are given (approve: approve / decline)
+	choices := askChoices(kind, opts)
+	rec, err := optionIndex("recommend", f["recommend"], choices)
 	if err != nil {
 		return &usageError{use: use, msg: err.Error()}
 	}
 	if rec >= 0 {
 		p["recommend"] = rec
 	}
-	dec, err := optionIndex("decided", f["decided"], opts)
+	dec, err := optionIndex("decided", f["decided"], choices)
 	if err != nil {
 		return &usageError{use: use, msg: err.Error()}
 	}

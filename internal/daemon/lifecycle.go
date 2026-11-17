@@ -286,6 +286,7 @@ func (d *Daemon) purgeFiles(s *state.Session) {
 		}
 	}
 	d.catch.Forget(s.Slug)
+	d.inboxSessionGone(s.Slug) // what it asked is not the next same-named session's
 	removeAttachments(s.RepoID, s.Slug)
 	d.dropPreview(s)
 	d.forgetDevLog(s.Slug)

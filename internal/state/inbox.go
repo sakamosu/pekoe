@@ -29,6 +29,26 @@ const (
 	DeliveryNone      = "none"      // nothing to deliver (open, fyi, a person or an unknown caller asked)
 )
 
+// Fixed choices: login is a person's chore, done or not; approve without
+// options of its own is yes or no.
+var (
+	inboxLoginOptions   = []string{"done", "can't"}
+	inboxApproveOptions = []string{"approve", "decline"}
+)
+
+// InboxKindOptions is what an item of kind has for options when the asker
+// gives none (pekoed fills them in; the CLI reads --recommend against
+// them): login done / can't, approve approve / decline, else none. A copy.
+func InboxKindOptions(kind string) []string {
+	switch kind {
+	case "login":
+		return append([]string(nil), inboxLoginOptions...)
+	case "approve":
+		return append([]string(nil), inboxApproveOptions...)
+	}
+	return nil
+}
+
 // InboxItem is one question in the inbox. Indexes (Recommend, Answer.Choice)
 // count from 0; the CLI and the screens show them from 1.
 type InboxItem struct {
