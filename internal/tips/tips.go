@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"syscall"
 
 	"github.com/BurntSushi/toml"
 
@@ -140,8 +141,14 @@ func (s *Shown) load() {
 // Next picks a random tip not shown in this round, records it and returns
 // it. When every tip has been shown a new round starts, never with the tip
 // shown last. The file is read again first: another TUI or tapi may have
-// shown one since.
+// shown one since. Reading, picking and writing hold a lock on the file
+// (tips.json.lock): the TUI and pekoed (tips.next) are separate processes,
+// and without it both could pick from the same record and one write would
+// lose the other's tip.
 func (s *Shown) Next() (Tip, error) {
+	if unlock := s.lock(); unlock != nil {
+		defer unlock()
+	}
 	s.load()
 	known := map[string]bool{}
 	for _, id := range s.seen {
@@ -189,9 +196,47 @@ func (s *Shown) save() error {
 	if err := os.MkdirAll(filepath.Dir(s.path), paths.DirPerm); err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, paths.FilePerm); err != nil {
+	// a temporary name of its own: a writer that did not take the lock
+	// (an older pekoe) must not move this one's half-written file
+	f, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	tmp := f.Name()
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil { // CreateTemp's mode is 0600 (paths.FilePerm)
+		err = os.Rename(tmp, s.path)
+	}
+	if err != nil {
+		os.Remove(tmp)
+	}
+	return err
+}
+
+// lock takes an exclusive flock on the record's lock file, waiting for
+// another holder, and returns its release. nil when there is no file or
+// the lock cannot be had: Next goes on without it (a failed write is
+// reported by save).
+func (s *Shown) lock() func() {
+	if s.path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), paths.DirPerm); err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, paths.FilePerm)
+	if err != nil {
+		return nil
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		f.Close()
+		return nil
+	}
+	return func() {
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		f.Close()
+	}
 }

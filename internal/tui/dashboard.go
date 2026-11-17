@@ -1276,17 +1276,7 @@ func (m *model) dashStatsWeek(room int) string {
 
 // shortTokens shortens a token count like pekoe stats does: 950, 12.3k,
 // 4.56M, 1.23G.
-func shortTokens(n int64) string {
-	switch {
-	case n < 1000:
-		return fmt.Sprint(n)
-	case n < 1_000_000:
-		return fmt.Sprintf("%.1fk", float64(n)/1e3)
-	case n < 1_000_000_000:
-		return fmt.Sprintf("%.2fM", float64(n)/1e6)
-	}
-	return fmt.Sprintf("%.2fG", float64(n)/1e9)
-}
+func shortTokens(n int64) string { return state.ShortTokens(n) }
 
 // dashGroupHead names a group: who asked, and the request (its number and
 // the start of its first line; the whole text is in Requests).

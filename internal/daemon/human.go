@@ -99,8 +99,11 @@ var agentMethods = map[string]string{
 	// the hooks already make pekoed read (readTokens), only the new lines
 	// a tip: pekoed picks it from the built-in list and writes only
 	// tips.json (the ids shown), which tapi chat's sandbox cannot write
-	"tips.next": "tapi chat's greeting (`pekoe tip`): the next built-in tip, recorded in tips.json like the TUI's; no params, writes only that file",
-	"stats":     "tapi chat and the hub agent answer how many PRs merged and how many tokens were used (`pekoe stats`); counts only, no agent text; reads only the new lines of the transcripts the hooks named",
+	"tips.next": "tapi chat's greeting (`pekoe tip`): the next built-in tip, recorded in tips.json like the TUI's, and [keys] prefix to write ^q as; no params, writes only that file",
+	// [keys] prefix only, which tapi chat's sandbox hides with the rest of
+	// config.toml; a key name, no secret
+	"tips.prefix": "`pekoe tip --list` / `pekoe tip <id>` in an agent's sandbox write ^q as [keys] prefix; no params, reads only that setting",
+	"stats":       "tapi chat and the hub agent answer how many PRs merged and how many tokens were used (`pekoe stats`); counts only, no agent text; reads only the new lines of the transcripts the hooks named",
 }
 
 // humanMethods: every other registered method, with why an agent may not

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"unicode"
 
@@ -210,5 +211,44 @@ func TestExpand(t *testing.T) {
 	}
 	if c := Classify("pekoe send <slug> -"); c[0] != (Ref{KindCommand, "pekoe send"}) {
 		t.Errorf("classify: %v", c)
+	}
+}
+
+// The TUI (its own process) and pekoed (tips.next, for tapi chat) both
+// record into tips.json through the same tips.json.tmp, without a lock.
+// Two at once: a write fails (rename of a tmp the other moved away), or one
+// record is lost and a tip shows twice in a round.
+func TestConcurrentNext(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "tips.json")
+	var mu sync.Mutex
+	var errs int
+	shown := map[string]int{}
+	var wg sync.WaitGroup
+	n := len(All()) / 2 // two writers together show fewer than a round
+	for w := 0; w < 2; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s := Open(p)
+			for i := 0; i < n; i++ {
+				tp, err := s.Next()
+				mu.Lock()
+				shown[tp.ID]++
+				if err != nil {
+					errs++
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	dups := 0
+	for _, c := range shown {
+		if c > 1 {
+			dups++
+		}
+	}
+	if errs > 0 || dups > 0 {
+		t.Fatalf("%d writes failed, %d tips shown twice within one round (%d shown)", errs, dups, 2*n)
 	}
 }

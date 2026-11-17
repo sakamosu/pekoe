@@ -114,3 +114,36 @@ func TestTipAsksPekoed(t *testing.T) {
 		t.Fatalf("an older pekoed: %v\n%s\nrecord %s", err, out, b)
 	}
 }
+
+// In an agent's sandbox (tapi chat) config.toml is hidden from the CLI,
+// which then reads the default ctrl+q: the tips write ^q as [keys] prefix
+// as pekoed read it (tips.next's prefix, tips.prefix for --list and <id>).
+// An older pekoed that does not say leaves the CLI's own reading.
+func TestTipPrefixFromPekoed(t *testing.T) {
+	fd := startFakeDaemon(t)
+	jsonOut = false
+	zoom, _ := tips.ByID("zoom")
+	set := func(next, prefix any) {
+		fd.mu.Lock()
+		fd.results = map[string]any{"tips.next": next, "tips.prefix": prefix}
+		fd.mu.Unlock()
+	}
+	set(map[string]any{"enabled": true, "tip": zoom, "prefix": "ctrl+a"}, map[string]any{"prefix": "ctrl+a"})
+	if out, _ := capture(t, func() error { return cmdTip(nil) }); !strings.HasPrefix(out, "[zoom] ^a z") {
+		t.Fatalf("pekoe tip: %s", out)
+	}
+	if out, _ := capture(t, func() error { return cmdTip([]string{"zoom"}) }); !strings.HasPrefix(out, "[zoom] ^a z") {
+		t.Fatalf("pekoe tip zoom: %s", out)
+	}
+	if out, _ := capture(t, func() error { return cmdTip([]string{"--list"}) }); !strings.Contains(out, "^a z") || strings.Contains(out, "^q") {
+		t.Fatalf("pekoe tip --list: %s", out)
+	}
+
+	set(map[string]any{"enabled": true, "tip": zoom}, nil) // an older pekoed
+	if out, _ := capture(t, func() error { return cmdTip(nil) }); !strings.HasPrefix(out, "[zoom] ^q z") {
+		t.Fatalf("older pekoed, pekoe tip: %s", out)
+	}
+	if out, _ := capture(t, func() error { return cmdTip([]string{"zoom"}) }); !strings.HasPrefix(out, "[zoom] ^q z") {
+		t.Fatalf("older pekoed, pekoe tip zoom: %s", out)
+	}
+}

@@ -58,7 +58,8 @@
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
-  | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する) |
+  | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する。pekoed が読んだ `[keys] prefix` も返す) |
+  | `tips.prefix` | `pekoe tip --list` / `pekoe tip <id>` が tip の `^q` を `[keys] prefix` に置き換えるため(pekoed が読んだ prefix だけを返す。params なし。tapi chat の sandbox は config.toml を隠すので、CLI が自分で読むと既定の `ctrl+q` になる) |
   | `ledger.list` / `ledger.close` / `ledger.link` / `ledger.keep` | tapi chat の `pekoe ledger`(依頼を読む・閉じる・セッションと結ぶ・依頼として残す。tapi の窓からだけ。下の「依頼(ledger)」) |
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
@@ -320,7 +321,8 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
 | `merge.check` | `{slug?}` | `[MergeCheck]`(slug 順)。landed でない自分の PR のセッション(他人の PR のレビューを除く)ごとに、マージしてよいかの条件の何が揃っていて何が足りないか。`slug` を渡すとそのセッションだけ(下の「マージしてよいかの根拠」) |
-| `tips.next` | — | `{enabled, tip?: Tip}`。まだ見せていない tip を 1 つ選び、`tips.json`(TUI の空き表示・`pekoe tip` と共通の記録)に書いて返す。`[tips] enable = false` なら `{enabled: false}` で何も書かない。`Tip` は `pekoe --json tip --list` の 1 件と同じ形(`id`・`short`・`detail`・`keys`・`docs`)。書けなかったらエラー |
+| `tips.next` | — | `{enabled, tip?: Tip, prefix?}`。まだ見せていない tip を 1 つ選び、`tips.json`(TUI の空き表示・`pekoe tip` と共通の記録)に書いて返す。`prefix` は pekoed が読んだ `[keys] prefix`(`ctrl+a` など。tip の文の `^q` を置き換える。`pekoe tip` は sandbox で config.toml を読めないのでこれを使い、無ければ自分で読んだもの)。`tips.json` は `tips.json.lock` の flock で囲んで読み・選び・書き、一意の一時ファイルから rename する(TUI と pekoed が同時に選んでも、同じ巡で同じ tip を出さない)。`[tips] enable = false` なら `{enabled: false}` で何も書かない。`Tip` は `pekoe --json tip --list` の 1 件と同じ形(`id`・`short`・`detail`・`keys`・`docs`)。書けなかったらエラー |
+| `tips.prefix` | — | `{prefix}`。pekoed が読んだ `[keys] prefix`(`pekoe tip --list` / `pekoe tip <id>` が tip の `^q` を置き換えるのに使う。何も書かない) |
 | `stats` | `{days?: 7, repo?}` | `Stats`(下の「集計(stats)」)。ローカルの日付で今日を含む `days` 日(1〜3660)・リポジトリごとのマージ数とトークン。`repo` はリポジトリの名前(マージの記録は repo-id でも当たるが、トークンは名前でだけ絞るので、CLI は名前に直して渡す。省くと全部。tapi chat の分も) |
 | `pr.failed_log` | `{slug, check, run_id?, job_id?, lines?: 200}` | 失敗した Actions の check のログ末尾 `{check, run_id, job_id, log, truncated}`(`gh run view --job <id> --log-failed`、取れなければ run 単位) |
 | `window.kill` | `{slug, window: "review"\|"dev"\|"run"}` | レビュー面 / dev server / run のウィンドウを閉じる(run は `run.close` と同じ) |
@@ -614,11 +616,11 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 }
 ```
 
-- **トークン**: hooks(PostToolUse・Stop。tapi chat も)が渡す `transcript_path` の Claude Code の transcript から、assistant の行の `message.usage` を種類別(`input_tokens`・`output_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens`)に足す。Claude Code は 1 つのメッセージを content block ごとに複数行に書き、どの行にも同じ usage が付くので、同じ `message.id` が続く行は 1 回だけ数える。サブエージェントの transcript(`<transcript から .jsonl を除いたもの>/subagents/*.jsonl`)も同じセッションに足す。行はその `timestamp` のローカルの日付に入るので、日付をまたいで動いたセッションは両方の日に出る。どこまで読んだか(バイト位置と最後のメッセージの id)を state.db の `usage_cursors` に、日ごとの和を `usage_days` に残し、次は増えた行だけを読む(1 回に 32 MiB まで、書きかけの最後の行は次に回す)。`stats` を呼ぶと、動いているセッションと tapi の分をその時点まで読んでから数える。`Session.tokens`(直前の文脈の大きさ)とは別の数で、そちらの意味は変えていない
+- **トークン**: hooks(PostToolUse・Stop。tapi chat も)が渡す `transcript_path` の Claude Code の transcript から、assistant の行の `message.usage` を種類別(`input_tokens`・`output_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens`)に足す。Claude Code は 1 つのメッセージを content block ごとに複数行に書き、どの行にも同じ usage が付くので、同じ `message.id` が続く行は 1 回だけ数える。`claude --continue`(tapi chat の再起動 `tapi.restart`、resume できないセッションの再起動)は新しい transcript を作り、それまでの会話を同じ `message.id`・同じ usage・元の `timestamp` のまま写すので、数えた `message.id` を生(slug と作成時刻)ごとに state.db の `usage_ids` に覚え、同じ生で一度数えた id の行は、どの transcript にあっても数えない(セッションを消すと `usage_cursors` と一緒に消す)。サブエージェントの transcript(`<transcript から .jsonl を除いたもの>/subagents/*.jsonl`)も同じセッションに足す。行はその `timestamp` のローカルの日付に入るので、日付をまたいで動いたセッションは両方の日に出る。どこまで読んだか(バイト位置と最後のメッセージの id)を state.db の `usage_cursors` に、日ごとの和を `usage_days` に残し、次は増えた行だけを読む(1 回に 32 MiB まで、書きかけの最後の行は次に回す)。`stats` を呼ぶと、動いているセッションと tapi の分をその時点まで読んでから数える。`Session.tokens`(直前の文脈の大きさ)とは別の数で、そちらの意味は変えていない
 - **マージ**: pekoe が landed にしたとき(PR の状態のポーリングか `watchMerges` が PR のマージを見て teardown するとき、origin のないリポジトリの land)に `session_log` に記録する。マージの日時は pekoed がマージを見た時刻(PR の状態のポーリングが PR ごとに 60 秒に 1 回なので、1 分強遅れることがある。pekoed が止まっていた間のマージは、起動直後の `watchMerges` が見た時刻)。GitHub に問い合わせて過去のマージを遡ることはしない(pekoe が見届けたものだけ)。他人の PR のレビュー(`pekoe review gh#N`)は数えない
 - **残す記録**: `session_log` は slug・リポジトリ(名前と repo-id)・ブランチ・PR 番号・作成日時・マージ日時・終了日時(landed になった時刻。land せずに rm したら rm の時刻)。セッションが landed になったときと rm されたとき(`worktree.rm`・landed の slug を `session.new` で置き換えたとき)に書き、rm の前に transcript の残りを読む。トークンの累計は `usage_days` の和。セッションの 1 生は slug と作成日時で区別するので、同じ slug を後で使い直しても別の記録になる。rm では読み位置(`usage_cursors`)だけを消し、日ごとの和と記録は残す
 - **token なしで読める**: 数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない(`session.list` で見えるものより少ない)。読む transcript は hooks が渡したもの(`readTokens` が既に読んでいるもの)の増えた行だけで、新しく何かを動かしたり、ほかのファイルを読んだりはしない。tapi chat が「今日いくつマージした? どれくらい使った?」に答えるために要る
-- **数の確かさ**: `transcript_path` は hooks の payload の値で、`session.event` は token なしで誰でも送れる。ほかのファイルを名乗られるとそのセッションの数が増えうる(通常のファイルで `.jsonl` で終わるものだけを読み、中身は数として足すだけ)。重複を除くのは同じファイルで続く同じ `message.id` の行だけなので、Claude Code が resume や fork で履歴を別の transcript に写したときは、写された分を二重に数えうる(pekoe の再開は `--resume` で同じファイルに続けるので、通常は起きない)。hooks の無いエージェント(codex など)のトークンは数えられない。料金への換算はしない
+- **数の確かさ**: `transcript_path` は hooks の payload の値で、`session.event` は token なしで誰でも送れる。ほかのファイルを名乗られるとそのセッションの数が増えうる(通常のファイルで `.jsonl` で終わるものだけを読み、中身は数として足すだけ)。重複は同じ生の中の `message.id` で除くので、`--continue` や resume で履歴を別の transcript に写しても二重には数えない。ただし `usage_ids` が無かった版(この表を足す前)で数えた生は、数えた id の記録が無いので、その後に写された分を一度だけ二重に数えうる。`message.id` の無い行は除けない。hooks の無いエージェント(codex など)のトークンは数えられない。料金への換算はしない
 
 ### Tapi オブジェクト
 

@@ -55,3 +55,21 @@ func TestTipsNextWithoutToken(t *testing.T) {
 		t.Fatalf("recorded with tips off: %s", after)
 	}
 }
+
+// tips.next and tips.prefix say [keys] prefix as pekoed read it, without
+// the token: `pekoe tip` in tapi chat's sandbox cannot read config.toml.
+func TestTipsPrefixWithoutToken(t *testing.T) {
+	d, _, _ := setup(t)
+	d.Global.Keys.Prefix = "ctrl+a"
+	c := dialPipe(t, d)
+	res, e := c.rawCall(map[string]any{"method": "tips.prefix"})
+	var p tipsPrefixR
+	if e != "" || json.Unmarshal(res, &p) != nil || p.Prefix != "ctrl+a" {
+		t.Fatalf("tips.prefix: %s %s", res, e)
+	}
+	res, e = c.rawCall(map[string]any{"method": "tips.next"})
+	var r tipsNextR
+	if e != "" || json.Unmarshal(res, &r) != nil || r.Prefix != "ctrl+a" {
+		t.Fatalf("tips.next: %s %s", res, e)
+	}
+}

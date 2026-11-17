@@ -33,7 +33,6 @@ func cmdTip(args []string) error {
 	if err != nil {
 		return err
 	}
-	prefix := strings.ReplaceAll(g.Keys.Prefix, "ctrl+", "^")
 	switch {
 	case f["doc"] != "":
 		return printDoc(os.Stdout, f["doc"])
@@ -43,6 +42,7 @@ func cmdTip(args []string) error {
 			printJSON(ts)
 			return nil
 		}
+		prefix := tipPrefix(g)
 		for _, t := range ts {
 			fmt.Printf("%-16s %s\n", t.ID, withPrefix(t.Short, prefix))
 		}
@@ -52,7 +52,7 @@ func cmdTip(args []string) error {
 		if !ok {
 			return fmt.Errorf("no tip %q (pekoe tip --list)", pos[0])
 		}
-		printTip(os.Stdout, t, prefix)
+		printTip(os.Stdout, t, tipPrefix(g))
 		return nil
 	}
 	if !g.TipsOn() {
@@ -63,7 +63,7 @@ func cmdTip(args []string) error {
 		fmt.Println("tips are off ([tips] enable = false)")
 		return nil
 	}
-	t, on := nextTip()
+	t, prefix, on := nextTip()
 	if !on { // pekoed read config.toml, which a sandbox may hide from us
 		if jsonOut {
 			printJSON(map[string]any{"enabled": false})
@@ -76,34 +76,59 @@ func cmdTip(args []string) error {
 		printJSON(map[string]any{"enabled": true, "tip": t})
 		return nil
 	}
-	printTip(os.Stdout, t, prefix)
+	if prefix == "" { // an older pekoed, or none
+		prefix = g.Keys.Prefix
+	}
+	printTip(os.Stdout, t, shortPrefix(prefix))
 	return nil
 }
 
 // nextTip asks pekoed for the next tip (tips.next) and falls back to
 // recording it here when pekoed cannot be reached or does not know the
-// method. on is false when pekoed says [tips] enable = false.
-func nextTip() (t tips.Tip, on bool) {
+// method. on is false when pekoed says [tips] enable = false. prefix is
+// [keys] prefix as pekoed read it ("" when it did not say).
+func nextTip() (t tips.Tip, prefix string, on bool) {
 	if cl, err := client.Dial(); err == nil {
 		defer cl.Close()
 		var r struct {
 			Enabled bool      `json:"enabled"`
 			Tip     *tips.Tip `json:"tip"`
+			Prefix  string    `json:"prefix"`
 		}
 		err := cl.CallTimeout("tips.next", nil, &r, 5*time.Second)
 		switch {
 		case err == nil && !r.Enabled:
-			return tips.Tip{}, false
+			return tips.Tip{}, "", false
 		case err == nil && r.Tip != nil:
-			return *r.Tip, true
+			return *r.Tip, r.Prefix, true
 		}
 	}
 	t, err := tips.Open(paths.TipsFile()).Next()
 	if err != nil { // still a tip: only the record failed (a sandbox, say)
 		fmt.Fprintln(os.Stderr, "pekoe: tips: not recorded:", err)
 	}
-	return t, true
+	return t, "", true
 }
+
+// tipPrefix is [keys] prefix as the tips should show it (^a for ctrl+a).
+// pekoed's reading comes first (tips.prefix): an agent's sandbox (tapi
+// chat's) hides config.toml from this process, which then reads the
+// default; without a pekoed (or an older one) it is g's.
+func tipPrefix(g *config.Global) string {
+	if cl, err := client.Dial(); err == nil {
+		defer cl.Close()
+		var r struct {
+			Prefix string `json:"prefix"`
+		}
+		if cl.CallTimeout("tips.prefix", nil, &r, 5*time.Second) == nil && r.Prefix != "" {
+			return shortPrefix(r.Prefix)
+		}
+	}
+	return shortPrefix(g.Keys.Prefix)
+}
+
+// shortPrefix writes a key the way the tips do: ctrl+a is ^a.
+func shortPrefix(p string) string { return strings.ReplaceAll(p, "ctrl+", "^") }
 
 func withPrefix(s, prefix string) string {
 	if prefix == "" || prefix == "^q" {
