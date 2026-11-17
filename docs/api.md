@@ -660,7 +660,7 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
 `[orchestrator] deliver = "idle"`(既定は `"off"`)のとき、pekoed は tapi に起きたことを、tapi の手が空いたときに入力欄へ 1 行で打つ。`pekoe wait` を使わないエージェントを tapi にしたときや、tapi が wait を張り直し損ねたときにも報告が届くように。off では何もしない(off の間に起きたことを後で on にしても送らない)。
 
 - 送るもの: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(`wait --mine --on report,failed,waiting,ci` が返すもの)と、tapi が出した問いの答え・答えずに閉じたもの(`delivery: pending` のもの)
-- 送らないもの: tapi の `wait` が返したもの(待たずに `--since` で読んだものも含む)と、今ブロックしている tapi の `wait` が受け取るもの(その wait が tapi を起こすので、送ると二重に起きる)。受信箱の答えは、tapi が wait で待っていれば答えた時点で `waited` になり送らない。wait が受け取らない種類(`--on report` だけで待っている間の `failed` など)は送る
+- 送らないもの: tapi の `wait` が返したもの(待たずに `--since` で読んだものも含む)と、今ブロックしている tapi の `wait` が受け取るもの(その wait が tapi を起こすので、送ると二重に起きる)。受信箱の答えは、tapi が wait で待っていれば答えた時点で `waited` になり送らない。wait が受け取らない種類(`--on report` だけで待っている間の `failed` など)と、その wait が返す範囲より前の変化(`--since` なしで張った wait なら、張る前に起きたもの)は送る
 - 打つ条件(すべて): tapi の窓がある、tapi が `idle`、許可ダイアログが出ていない(hooks の状態と画面。受け付けた時と Enter の直前の 2 回。`session.send` の token なしの経路と同じ)、人が tapi chat に打っていない(`tapi.send`・`tapi.keys` から 30 秒、`tapi.deliver_pause` の間)、前に打ってから 30 秒以上。試すのは tapi が `idle` に入ったとき・5 秒ごと・`tapi.deliver_pause` が off になったとき
 - 本文は 1 行: `[pekoe] 3 件の変化(feat-csv report done、fix-ci ci red、受信箱 q12 に答え)。詳しくは pekoe --json wait --mine --since <epoch>-<seq>、pekoe --json inbox q12`。書くのは pekoed の言葉(slug・種類・報告の status・CI の green / red)だけで、エージェントの要約や CI のチェック名は入れない。先頭は `[pekoe]`(数字にしない。依頼の記録にも入らない)。名前を挙げるのは 8 件までで、残りは `ほか N 件`。`--since` は 1 行に入れた最初の変化の直前の cursor で、受信箱の答えが 2 件以上なら `pekoe --json inbox --mine --all`
 - 打ったものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残る。Enter の直前に許可ダイアログが出た(文字は入力欄に残った)ときは打ち直さず、`ok: false` で残し、送ったものとして扱う(受信箱の答えと同じ)

@@ -119,7 +119,9 @@ func (l *changeLog) deliverSkip() {
 }
 
 // tapiPending is what would go to tapi now: tapi's changes not taken, and
-// not one a wait of tapi's blocked now would take (it gets it).
+// not one a wait of tapi's blocked now would take (it gets it). A change
+// older than what that wait returns from (wait without --since: from when
+// it started) is not one it takes, so it still goes.
 func (l *changeLog) tapiPending() []Change {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -131,7 +133,7 @@ func (l *changeLog) tapiPending() []Change {
 		}
 		watched := false
 		for w := range l.waiters {
-			if w.id == TapiSlug && w.match(c) {
+			if w.id == TapiSlug && w.takes(c) {
 				watched = true
 				break
 			}
