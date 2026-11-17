@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/charmbracelet/x/ansi"
@@ -163,6 +164,35 @@ func TestShownFile(t *testing.T) {
 	os.WriteFile(path, []byte("{"), 0o600)
 	if _, err := Open(path).Next(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// tips.json.tmp, the fixed-name temporary file older versions wrote, is
+// removed once it is old (an older pekoe may still be writing a fresh one)
+func TestOldTmpRemoved(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tips.json")
+	tmp := path + ".tmp"
+	os.WriteFile(tmp, []byte(`{"seen":[`), 0o600)
+	if _, err := Open(path).Next(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); err != nil {
+		t.Fatalf("a fresh %s was removed: %v", filepath.Base(tmp), err)
+	}
+	old := time.Now().Add(-time.Hour)
+	os.Chtimes(tmp, old, old)
+	if _, err := Open(path).Next(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Fatalf("%s left: %v", filepath.Base(tmp), err)
+	}
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("left %s", e.Name())
+		}
 	}
 }
 

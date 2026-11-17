@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -150,6 +151,7 @@ func (s *Shown) Next() (Tip, error) {
 		defer unlock()
 	}
 	s.load()
+	s.dropOldTmp()
 	known := map[string]bool{}
 	for _, id := range s.seen {
 		known[id] = true
@@ -214,6 +216,23 @@ func (s *Shown) save() error {
 		os.Remove(tmp)
 	}
 	return err
+}
+
+// oldTmpAge is how old the fixed-name temporary file must be to be removed:
+// an older pekoe may still be writing it (it takes no lock).
+const oldTmpAge = time.Minute
+
+// dropOldTmp removes tips.json.tmp, the temporary file older versions wrote
+// before renaming it over the record (save now makes one of its own name),
+// left behind when such a write failed or was cut short.
+func (s *Shown) dropOldTmp() {
+	if s.path == "" {
+		return
+	}
+	tmp := s.path + ".tmp"
+	if fi, err := os.Lstat(tmp); err == nil && fi.Mode().IsRegular() && time.Since(fi.ModTime()) > oldTmpAge {
+		os.Remove(tmp)
+	}
 }
 
 // lock takes an exclusive flock on the record's lock file, waiting for
