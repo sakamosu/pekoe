@@ -133,7 +133,7 @@ func gitOps(t *testing.T, d *Daemon, s state.Session) {
 	try("conflicts.list", map[string]any{})
 	d.scanConflicts("")
 	try("session.undo", sl)
-	prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch)
+	prForBranch(d.ghRepoInfoOf(s.RepoDir), s.Branch, s.CreatedAt)
 	os.Remove(filepath.Join(s.Path, "new.txt"))
 	try("land", sl)
 	time.Sleep(100 * time.Millisecond) // goroutines started by the events
