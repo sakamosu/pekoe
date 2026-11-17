@@ -209,12 +209,13 @@ type Daemon struct {
 	cf         conflictScan // conflict forecast (conflicts.go)
 	clean      cleanupCache // git readings of cleanup.list (cleanup.go)
 
-	prMu      sync.Mutex           // serializes PR summary updates
-	prFetched map[string]time.Time // slug -> last PR fetch (under mu)
-	prPolling atomic.Bool          // watchPRStatus is running
-	finishing sync.Map             // slug -> finishLanding is running for it
-	sendLocks sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
-	tests     testRuns             // [hooks] test runs (hooks.go)
+	prMu        sync.Mutex           // serializes PR summary updates
+	prFetched   map[string]time.Time // slug -> last PR fetch (under mu)
+	prPolling   atomic.Bool          // watchPRStatus is running
+	finishing   sync.Map             // slug -> finishLanding is running for it
+	sendLocks   sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
+	promptLocks sync.Map             // slug -> *sync.Mutex: one snapshotPrompt at a time (hooks.go)
+	tests       testRuns             // [hooks] test runs (hooks.go)
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)
 	devScan    map[string]*errcatch.Scanner // slug -> dev window scanner (output loop only)
@@ -236,6 +237,7 @@ type Daemon struct {
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 	mergeRuns    sync.Map             // slug -> state.MergeRun: pekoed's latest merge on a person's answer (mergerun.go)
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
+	hooking      atomic.Int32         // session.event calls being handled (hEvent); shutdown waits for them
 	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
 }
 
@@ -389,6 +391,7 @@ func (d *Daemon) shutdown() {
 			log.Printf("kill agents: %v", err)
 		}
 	}
+	d.waitHooks(hookDrain)
 	d.DB.Close()
 	// Only what is still ours: a stale path must not take down the socket
 	// or pid file of a daemon that started meanwhile (issue #42).
@@ -397,6 +400,23 @@ func (d *Daemon) shutdown() {
 	}
 	removePidFileIfOwned()
 	d.releaseLock() // last: the next pekoed may start from here on
+}
+
+// hookDrain bounds how long shutdown waits for the hooks it is handling:
+// a Stop's onStop reads the transcript for up to 2 s (stopMessage).
+const hookDrain = 3 * time.Second
+
+// waitHooks waits up to max for the hooks being handled (hEvent, onStop)
+// to finish, so that a Stop that came in just before the socket closed
+// still reaches state.db. Hooks that come later find no pekoed and are
+// lost; restore has those sessions re-read from the screen (markRecheck).
+func (d *Daemon) waitHooks(max time.Duration) {
+	for end := time.Now().Add(max); d.hooking.Load() > 0 || d.stopping.Load() > 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(end) {
+			log.Printf("shutdown: hooks still being handled after %v", max)
+			return
+		}
+	}
 }
 
 func (d *Daemon) releaseLock() {

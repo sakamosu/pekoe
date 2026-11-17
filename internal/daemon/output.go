@@ -34,6 +34,11 @@ type outState struct {
 	pending   bool
 	osc       map[string][]byte // window -> partial escape sequence carried between its chunks
 	checkedAt time.Time
+	// recheck: restore found the agent window alive and the session
+	// running or waiting, but its hooks may have been lost while pekoed was
+	// away (a Stop then leaves it running for good). fallbackDetect reads
+	// the screen until it shows the turn is over, or any hook clears it.
+	recheck bool
 }
 
 func (o *outState) roll(now time.Time) {
@@ -78,6 +83,9 @@ func (d *Daemon) activityLocked(slug string) []int {
 var (
 	oscRe   = regexp.MustCompile(`\x1b\]([0-9]+);([^\x07\x1b]*)(?:\x07|\x1b\\)`)
 	trustRe = regexp.MustCompile(`(?i)trust this folder|do you trust the files`)
+	// busyRe: Claude Code's screen while a turn is going on (its spinner
+	// line) or a menu waits for an answer (AskUserQuestion)
+	busyRe  = regexp.MustCompile(`(?i)esc to (interrupt|cancel)|enter to select`)
 	yesNoRe = regexp.MustCompile(`(?i)(\[y/n\]|\(y/n\)|\[Y/n\]|\[y/N\]|do you want to (proceed|allow|run)|allow this)`)
 )
 
@@ -258,11 +266,12 @@ func (d *Daemon) fallbackDetect() {
 		}
 		// agents with hooks are read from the screen only before their first
 		// hook arrives (Claude Code's folder trust dialog precedes all hooks)
-		if d.cfg().Agents[s.Agent].Hooks && s.ClaudeSessionID != "" {
+		if d.cfg().Agents[s.Agent].Hooks && s.ClaudeSessionID != "" && !st.recheck {
 			continue
 		}
 		quiet := now.Sub(st.lastOut)
-		active := s.State == state.Running || (s.State == state.Idle && s.ClaudeSessionID == "")
+		active := s.State == state.Running || (s.State == state.Idle && s.ClaudeSessionID == "") ||
+			(st.recheck && s.State == state.Waiting)
 		if active && quiet > 1500*time.Millisecond && st.lastOut.After(st.checkedAt) {
 			st.checkedAt = now
 			check = append(check, slug)
@@ -288,6 +297,7 @@ func (d *Daemon) fallbackDetect() {
 			continue
 		}
 		if d.cfg().Agents[d.sessionAgent(slug)].Hooks {
+			d.recheckAfterRestart(slug, text)
 			continue
 		}
 		if yesNoRe.MatchString(text) {
@@ -296,6 +306,27 @@ func (d *Daemon) fallbackDetect() {
 			d.setState(slug, state.Idle, "")
 		}
 	}
+}
+
+// recheckAfterRestart settles a session restore marked (outState.recheck)
+// from its screen: still busy (the spinner, a permission prompt, a menu)
+// keeps it as it is and looks again after the next quiet spell; anything
+// else means the turn ended while pekoed was away, so it becomes idle. A
+// hook that arrived meanwhile cleared the mark and wins.
+func (d *Daemon) recheckAfterRestart(slug, text string) {
+	if busyRe.MatchString(text) || yesNoRe.MatchString(text) {
+		return
+	}
+	d.update(slug, func(x *state.Session) {
+		st := d.out[slug] // update holds d.mu
+		if st == nil || !st.recheck {
+			return
+		}
+		st.recheck = false
+		if x.State == state.Running || x.State == state.Waiting {
+			x.State, x.WaitKind, x.PendingTool = state.Idle, "", nil
+		}
+	})
 }
 
 func (d *Daemon) sessionAgent(slug string) string {

@@ -280,6 +280,8 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 }
 
 func (d *Daemon) hEvent(p eventP) (any, error) {
+	d.hooking.Add(1) // shutdown waits for these before closing state.db
+	defer d.hooking.Add(-1)
 	var hp hookPayload
 	_ = json.Unmarshal(p.Payload, &hp)
 	if !validSessionID(hp.SessionID) {
@@ -298,6 +300,11 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		d.tapiEvent(hook, hp)
 		return map[string]any{"slug": slug}, nil
 	}
+	d.mu.Lock()
+	if st := d.out[slug]; st != nil {
+		st.recheck = false // the hooks speak again: no need to read the screen
+	}
+	d.mu.Unlock()
 	switch hook {
 	case "SessionStart":
 		d.update(slug, func(s *state.Session) {
@@ -431,7 +438,14 @@ func classifyNotification(hp hookPayload) string {
 	return "permission"
 }
 
+// snapshotPrompt numbers the prompt from Session.prompts and stores it
+// (and its snapshot ref) under that number. One at a time per session
+// (promptLocks): two UserPromptSubmit handled at once would both read the
+// same count and take the same number, the second overwriting the first.
 func (d *Daemon) snapshotPrompt(slug, prompt string) {
+	mu, _ := d.promptLocks.LoadOrStore(slug, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
 	s, err := d.snapshot(slug)
 	if err != nil {
 		return
