@@ -634,3 +634,93 @@ func TestLedgerListShowsLatelyAuto(t *testing.T) {
 		t.Fatalf("all: %d", len(es))
 	}
 }
+
+// ledger.keep keeps the entry it was given in its turn only: a turn that
+// never ended (interrupted) does not hand it to the next turn's input.
+func TestLedgerKeepStaysInItsTurn(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "A を後でやって")
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{})
+	// interrupted (no Stop); the next turn is small talk
+	promptEvent(t, d, tapi, TapiSlug, "ありがと")
+	stopEvent(t, d, tapi, TapiSlug)
+	es := ledgerAll(t, d)
+	if es[0].Status != state.LedgerOpen {
+		t.Fatalf("the kept request closed: %+v", es[0])
+	}
+	if es[1].Status != state.LedgerChat || !es[1].Auto {
+		t.Fatalf("the next turn's small talk stayed open: %+v", es[1])
+	}
+}
+
+// `pekoe ask-human --wait` calls wait again every minute, marked rewait;
+// one of those that falls inside a turn is not tapi starting a wait.
+// Its first wait (and an unmarked one, from an older CLI) still counts.
+func TestLedgerRewaitInsideTurn(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "いま何時?")
+	callAs[any](t, d, tapi, "wait", map[string]any{"on": []string{"inbox"}, "since": "", "timeout_s": 1, "rewait": true})
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[0]; e.Status != state.LedgerChat || !e.Auto {
+		t.Fatalf("small talk with a wait called again in its turn stayed open: %+v", e)
+	}
+	promptEvent(t, d, tapi, TapiSlug, "q3 の答えを待って続けて")
+	callAs[any](t, d, tapi, "wait", map[string]any{"on": []string{"inbox"}, "timeout_s": 1})
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[1]; e.Status != state.LedgerOpen {
+		t.Fatalf("a wait started in the turn did not count: %+v", e)
+	}
+}
+
+// What a person reopened is a request: the end of the turn whose input
+// it is does not close it again by pekoed's guess.
+func TestLedgerReopenInTurnStaysOpen(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "B を直して")
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "chat"})
+	call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 1}) // a person: "it is a request"
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[0]; e.Status != state.LedgerOpen {
+		t.Fatalf("a request a person reopened closed itself: %+v", e)
+	}
+	// the next turn's small talk still closes
+	promptEvent(t, d, tapi, TapiSlug, "ありがと")
+	stopEvent(t, d, tapi, TapiSlug)
+	if e := ledgerAll(t, d)[1]; e.Status != state.LedgerChat || !e.Auto {
+		t.Fatalf("the next turn's small talk: %+v", e)
+	}
+}
+
+// Evidence kept across a reopen counts toward the limit of 20: the same
+// entries given again are not added twice, more than 20 in all is refused.
+func TestLedgerEvidenceLimitAcrossReopen(t *testing.T) {
+	d, _, _ := setup(t)
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "C を直して")
+	evs := func(from, n int) []string {
+		ev := []string{}
+		for i := from; i < from+n; i++ {
+			ev = append(ev, fmt.Sprintf("https://x/%d", i))
+		}
+		return ev
+	}
+	for i := 0; i < 2; i++ {
+		callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done", "evidence": evs(0, 20)})
+		call[state.LedgerEntry](t, d, "ledger.reopen", map[string]any{"id": 1})
+	}
+	if e := ledgerAll(t, d)[0]; len(e.Evidence) != 20 {
+		t.Fatalf("the same evidence given again: %d entries", len(e.Evidence))
+	}
+	err := callAsErr(d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done", "evidence": evs(20, 1)})
+	if err == nil || !strings.Contains(err.Error(), "at most 0 new") {
+		t.Fatalf("a 21st entry: %v", err)
+	}
+	if e := ledgerAll(t, d)[0]; e.Status != state.LedgerOpen || len(e.Evidence) != 20 {
+		t.Fatalf("after a refused close: %+v", e)
+	}
+	// closing without new evidence still works
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 1, "as": "done"})
+}

@@ -450,7 +450,7 @@ func (d *Daemon) serve(nc net.Conn) {
 		who := &Caller{human: d.isHuman(req.Token), Claimed: req.Session, Via: viaSocket, peer: pr, done: c.done}
 		go func(req Request) {
 			if err := d.authorize(req, who); err != nil {
-				d.noteTapiAsk(who, req.Method) // a refused ask is still one (ledger.go)
+				d.noteTapiAsk(who, req.Method, req.Params) // a refused ask is still one (ledger.go)
 				c.send(Response{ID: req.ID, Error: err.Error()})
 				return
 			}
@@ -489,7 +489,7 @@ func (d *Daemon) call(method string, params json.RawMessage, who *Caller) (res a
 		return nil, fmt.Errorf("unknown method: %s", method)
 	}
 	agent := !who.Human()
-	d.noteTapiAsk(who, method) // ledger.go: tapi's turn works on a request
+	d.noteTapiAsk(who, method, params) // ledger.go: tapi's turn works on a request
 	switch {
 	case agent && method == "land":
 		h = bind(d.hAgentLand)

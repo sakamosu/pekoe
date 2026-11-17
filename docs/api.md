@@ -269,7 +269,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `session.event` | `{hook, session?, payload}` | hooks から(`pekoe event` が呼ぶ)。振り分けは窓が先、なければ `payload.transcript_path` の会話の場所、`session`(`$PEKOE_SESSION`)、`payload.cwd`(上の「呼び出し元の識別」) |
 | `report.post` | `{summary, status: "done"\|"blocked"\|"progress"\|"review", evidence?: [string], verdict?: "pending"\|"pass"\|"fail", reviewed_sha?}` | `Report`(下記)。呼び出し元のセッションの報告(下の「報告」)。token つきなら `slug` で相手を指定できる |
 | `report.list` | `{slug?, since?: id, limit?: 20}` | `[Report]`(新しい順。`limit` は 200 まで) |
-| `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
+| `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?: 1800, rewait?: bool}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}`(下の「待ち合わせ」) |
 | `send.log` | `{to?, from?, since?: id, limit?: 100}` | `[SendRecord]`(新しい順。下の「送信の記録」) |
 | `inbox.post` | `{question, kind: "decision"\|"approve"\|"login"\|"fyi", options?: [string], recommend?: int, context?, links?: [string], about?: slug, decided?: int}` | `InboxItem`(下の「判断の受信箱」) |
 | `inbox.list` | `{status?: "open"\|"answered"\|"withdrawn"\|"dismissed"\|"all", mine?: bool, limit?: 100}` | `[InboxItem]`(新しい順。既定は `open`。`limit` は 500 まで) |
@@ -582,13 +582,14 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 - **自動で閉じる**: tapi の窓から Stop hook が来たとき(tapi が返事を終えたとき)に、そのターンの入力を `chat` で閉じて `auto: true` を付ける。条件は次のすべて。外れたものは `open` のまま残る
   - そのターンを始めた UserPromptSubmit で記録した(またはそのターンの中でまとめた)1 件であること。前のターンからある依頼、Stop が来なかったターン(中断・会話の終了や開始(SessionEnd / SessionStart。会話の圧縮の後の SessionStart も)・pekoed の再起動・`tapi.reset`)の入力、ターンの途中で次の入力が来たときの前の入力、記録しない入力(受信箱の答え・タスクの完了通知)で始まったターンは対象にならない
   - `open` で、`sessions` が空であること
-  - そのターンの間(UserPromptSubmit から Stop まで。前のターンが Stop なしで終わっていれば、そこから)に、tapi の窓から `session.new`・`session.send`・`inbox.post`・`land`・`wait` が呼ばれていないこと(断られた呼び出しも数える。tapi が誰かに何かを頼んだ・待ち始めたターンの入力は依頼として残す。待ちを張り直したターンの雑談も残るので、それは tapi が `--as chat` で閉じる。ターンの外の呼び出し、たとえばバックグラウンドに置いた `pekoe ask-human --wait` が 1 分ごとに呼び直す `wait` は数えない)
-  - `ledger.keep` で残されていないこと
+  - そのターンの間(UserPromptSubmit から Stop まで。前のターンが Stop なしで終わっていれば、そこから)に、tapi の窓から `session.new`・`session.send`・`inbox.post`・`land`・`wait` が呼ばれていないこと(断られた呼び出しも数える。tapi が誰かに何かを頼んだ・待ち始めたターンの入力は依頼として残す。待ちを張り直したターンの雑談も残るので、それは tapi が `--as chat` で閉じる。ターンの外の呼び出しは数えない。`pekoe ask-human --wait` が 1 分ごとに呼び直す `wait` は、CLI が `rewait: true` の印を付け、ターンの中に来ても数えない(バックグラウンドに置いたものが、たまたまターンに重なることがあるため)。最初の 1 回の `wait` は数える。印を付けない古い CLI の呼び直しは今までどおり数える)
+  - `ledger.keep` で残されていないこと。`keep` が効くのは、そのとき「このターンの入力」だった 1 件だけ(Stop なしで終わったターンで `keep` したものは残り、次のターンの入力には及ばない)
+  - そのターンの間に、人が `ledger.reopen` でその入力を開き直していないこと(人が「依頼だ」と戻したものを、pekoed の推測で閉じ直さない)
 - **残す・戻す**: `ledger.keep`(`pekoe ledger keep [<id>]`)。`id` なしはこのターンの入力を閉じる対象から外す(依頼なのにこのターンで誰にも頼まないとき。このターンの入力が無ければ断る)。`id` つきは、pekoed が自動で閉じたもの(`chat` で `auto`)を `open` に戻す(`closed_at` と `auto` を消す)。`session.new` の `request` と `ledger.link` も、自動で閉じたものなら `open` に戻して結ぶ。tapi か人が閉じたもの(`auto` でないもの)はどれも断る
 - **自動で閉じたものを見せる**: 自動で閉じるのは pekoed の推測なので、閉じてから 24 時間(`ledgerAutoShown`。定数で、設定にはしていない)は、open のものと一緒に出す。`ledger.list` の `auto: true` がそれで、`pekoe ledger` / `pekoe --json ledger`(tapi が会話の最初に読む)と TUI のダッシュボードの Requests が使う。出すのは新しい 10 件(`ledgerAutoMax`)だけで、本文は 200 文字(`ledgerAutoText`)で切り、残りは件数だけ(tapi は会話の最初と依頼の id を調べるたびにこれを読み、雑談を閉じるのはトークンを減らすため)。全文は `pekoe ledger <id>`(1 件表示。`ledger.list` の `status: all`・`since: id-1` で読む)。`pekoe ledger` は open のものの後に `closed by pekoe as no request in the last 24h (N)` の見出しで分けて出し(切ったものは見出しの行に `cut (pekoe ledger <id>)`、残りは `+N older`)、`--json` は `LedgerView` をそのまま出す(`--all` は今までどおり配列)。古い pekoed は配列を返すので、CLI とダッシュボードは open だけとして読む。ダッシュボードは open の依頼の下に薄い色で出し、残りを `+N older` で出す。`Tapi.ledger_open`・Overview の件数・Web UI は open だけのまま。24 時間を過ぎたものは `pekoe ledger --all` で見える。`keep` の打ち忘れで閉じた依頼を、次の tapi(リセットの後も)と人が見つけて戻すためのもの
-- **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)、`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`。自動で閉じたものには `pekoe ledger keep <id>` で戻せることを添える)
+- **閉じる**: tapi が `ledger.close`(`pekoe ledger done <id> --evidence …`・`drop <id> --note …`・`close <id> --as chat`)。`evidence` は `report.post` と同じ上限(20 件・各 500 文字、1 行)。`reopen` の前から残っている `evidence` も合わせて 20 件までで、超える呼び出しは断る(`… has N evidence entries already … give at most M new ones, or none`。`evidence` なしなら閉じられる)。もうあるものと同じ文字列は足さない。`note` は 4000 文字まで。`open` 以外は断る(`… is done already (a person can reopen it …)`。自動で閉じたものには `pekoe ledger keep <id>` で戻せることを添える)
 - **結ぶ**: `session.new` の `request`(`pekoe new … --request <id>`)か `ledger.link`。どちらも `Session.request` を入れ、依頼の `sessions` に slug を足す(同じものは 1 回)。`request` の依頼が無い・閉じているとき(自動で閉じたものを除く)は、セッションを作らずに断る
-- **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` と `auto` を消し、`note` と `evidence` は残す)・`ledger.delete`。tapi が自分の取りこぼしを消したり、自分や人が閉じたものを戻したりできないように(tapi が戻せるのは、pekoed が推測で閉じた `auto` のものだけ)
+- **人だけ**: `ledger.reopen`(閉じたものを `open` に戻す。`closed_at` と `auto` を消し、`note` と `evidence` は残す。tapi のいまのターンの入力なら、そのターンの終わりに自動で閉じない)・`ledger.delete`。tapi が自分の取りこぼしを消したり、自分や人が閉じたものを戻したりできないように(tapi が戻せるのは、pekoed が推測で閉じた `auto` のものだけ)
 - token なしでは `ledger.*` はすべて tapi の窓からだけ(main セッションのハブは依頼(ledger)を使わない。docs/orchestration.md の U13)
 - 依頼か受信箱が変わると `tapi.updated` も出る(`Tapi.ledger_open` / `inbox_open`)
 
