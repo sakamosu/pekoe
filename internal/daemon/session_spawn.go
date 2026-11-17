@@ -238,8 +238,17 @@ func (d *Daemon) hResize(p resizeP) (any, error) {
 }
 
 func (d *Daemon) hKill(p slugP) (any, error) {
-	if _, err := d.get(p.Slug); err != nil {
+	s, err := d.snapshot(p.Slug)
+	if err != nil {
 		return nil, err
+	}
+	switch s.State {
+	case state.Creating:
+		// its creation goes on and starts the agent: stopped would only
+		// take it off max_running's count (queue.go working)
+		return nil, fmt.Errorf("%s is being created; its agent can be ended once it starts (pekoe rm %s cancels the creation)", p.Slug, p.Slug)
+	case state.Queued:
+		return nil, fmt.Errorf("%s is queued (%s); nothing runs yet (pekoe rm %s cancels it)", p.Slug, s.Queue, p.Slug)
 	}
 	d.devMu.Lock()
 	if err := d.stopDev(p.Slug, false); err != nil {

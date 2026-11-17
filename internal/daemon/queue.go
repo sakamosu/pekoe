@@ -27,12 +27,14 @@ package daemon
 // session survives a restart of pekoed and starts after it.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"pekoe/internal/gitx"
 	"pekoe/internal/state"
@@ -48,14 +50,17 @@ type queuedNew struct {
 
 func queuedKey(slug string) string { return "queued:" + slug }
 
-// working: s counts against max_running.
+// working: s counts against max_running. A creation always counts: it
+// goes on to start the agent whatever stopped says.
 func working(s *state.Session) bool {
-	if !s.Managed || s.Stopped {
+	if !s.Managed {
 		return false
 	}
 	switch s.State {
-	case state.Creating, state.Running, state.Waiting:
+	case state.Creating:
 		return true
+	case state.Running, state.Waiting:
+		return !s.Stopped
 	}
 	return false
 }
@@ -236,17 +241,24 @@ func (d *Daemon) afterGone(s *state.Session) {
 	d.kickQueue()
 }
 
+// fetchBaseTimeout bounds fetchBase's fetch (a stalled network).
+var fetchBaseTimeout = 60 * time.Second
+
 // fetchBase fetches base's branch from origin into repoDir and answers
 // origin/<branch>: base "main" and base "origin/main" both start from
 // origin/main as the remote has it now. false when there is no origin, the
-// fetch fails, or base is not one of origin's branches (a tag, a commit:
-// they do not move, so the local base is used, as for any new session).
-func fetchBase(repoDir, base string) (string, bool) {
+// fetch fails or takes longer than fetchBaseTimeout, ctx is done (the
+// creation was cancelled: the caller looks at ctx), or base is not one of
+// origin's branches (a tag, a commit: they do not move, so the local base
+// is used, as for any new session).
+func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
 	if gitx.Origin(repoDir) == "" {
 		return "", false
 	}
 	branch := strings.TrimPrefix(base, "origin/")
-	if _, err := gitx.Run(repoDir, "fetch", "--end-of-options", "origin", branch); err != nil {
+	fctx, cancel := context.WithTimeout(ctx, fetchBaseTimeout)
+	defer cancel()
+	if _, err := gitx.RunRaw(fctx, repoDir, nil, nil, "fetch", "--end-of-options", "origin", branch); err != nil {
 		log.Printf("hold: fetch origin %s: %v (starting from %s)", branch, err, base)
 		return "", false
 	}

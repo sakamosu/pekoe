@@ -316,3 +316,118 @@ func TestQueueRestore(t *testing.T) {
 		t.Fatalf("c: %s %q", s.State, s.Error)
 	}
 }
+
+// session.kill does not stop a creation (it goes on and starts the agent),
+// so it is refused while creating, and while queued (nothing runs yet): a
+// stopped mark would take the session off max_running's count, and the
+// next one would start beyond the cap.
+func TestQueueKillCreatingRefused(t *testing.T) {
+	d, _, repo := setup(t)
+	writeRepoConfig(t, d, repo, "[hooks]\nsetup = [\"sleep 1\"]\n")
+	setCap(d, 1)
+	a := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	if a.State != state.Creating {
+		t.Fatalf("a: %s", a.State)
+	}
+	if err := callErr(d, "session.kill", map[string]any{"slug": "feat-a"}); err == nil || !strings.Contains(err.Error(), "being created") {
+		t.Errorf("kill while creating: %v", err)
+	}
+	b := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "prompt": "go"})
+	if b.State != state.Queued {
+		t.Errorf("b started while a is still being created under max_running = 1: %s", b.State)
+	}
+	if err := callErr(d, "session.kill", map[string]any{"slug": "feat-b"}); err == nil || !strings.Contains(err.Error(), "queued") {
+		t.Errorf("kill while queued: %v", err)
+	}
+	if s, _ := d.snapshot("feat-b"); s.State != state.Queued || s.Stopped {
+		t.Errorf("b after the refused kill: %s stopped=%v", s.State, s.Stopped)
+	}
+	waitState(t, d, "feat-a", state.Running)
+	// once its agent runs, kill ends it and the queue goes on
+	call[state.Session](t, d, "session.kill", map[string]any{"slug": "feat-a"})
+	d.pumpQueue()
+	waitState(t, d, "feat-b", state.Creating, state.Running)
+	waitCreations(t, d)
+}
+
+// A creation counts against max_running even when stopped is set (it starts
+// the agent whatever stopped says).
+func TestWorkingCountsCreating(t *testing.T) {
+	if !working(&state.Session{Managed: true, State: state.Creating, Stopped: true}) {
+		t.Error("a stopped creating session does not count")
+	}
+	if working(&state.Session{Managed: true, State: state.Running, Stopped: true}) {
+		t.Error("a stopped running session counts")
+	}
+}
+
+// session.cancel of a held session while its origin fetch runs stops the
+// fetch, and the worktree step does not go on afterwards: no worktree or
+// branch is left for a session that no longer exists.
+func TestQueueHoldCancelDuringFetch(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	// a remote that answers slowly (a stalled network)
+	run(t, repo, "git", "remote", "set-url", "origin", "ssh://example.invalid/x.git")
+	t.Setenv("GIT_SSH_COMMAND", "sleep 5;false")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	b := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "after": []string{"feat-a"}, "hold": true})
+	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
+	d.pumpQueue()
+	waitState(t, d, "feat-b", state.Creating)
+	time.Sleep(300 * time.Millisecond) // in the fetch
+	t0 := time.Now()
+	call[map[string]any](t, d, "session.cancel", map[string]any{"slug": "feat-b"})
+	if el := time.Since(t0); el > 4*time.Second {
+		t.Errorf("cancel waited %s for the fetch", el)
+	}
+	if _, err := d.snapshot("feat-b"); err == nil {
+		t.Fatal("still there")
+	}
+	waitCreations(t, d)
+	if _, err := os.Stat(b.Path); err == nil {
+		t.Errorf("worktree %s made after the session was cancelled", b.Path)
+	}
+	if gitx.BranchExists(repo, "feat/b") {
+		t.Errorf("branch feat/b made after the session was cancelled")
+	}
+}
+
+// A held fetch that takes too long gives up and starts from the local base.
+func TestQueueHoldFetchTimeout(t *testing.T) {
+	_, _, repo := setup(t)
+	withOrigin(t, repo)
+	run(t, repo, "git", "remote", "set-url", "origin", "ssh://example.invalid/x.git")
+	t.Setenv("GIT_SSH_COMMAND", "sleep 5;false")
+	old := fetchBaseTimeout
+	fetchBaseTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { fetchBaseTimeout = old })
+	t0 := time.Now()
+	if ref, ok := fetchBase(context.Background(), repo, "main"); ok {
+		t.Errorf("fetch from a stalled remote: %s", ref)
+	}
+	if el := time.Since(t0); el > 4*time.Second {
+		t.Errorf("fetch took %s past its timeout", el)
+	}
+}
+
+// --hold on a session that never lands (one pekoe did not make, such as the
+// repository's own checkout) is refused instead of waiting forever.
+func TestQueueHoldOnUnmanagedRefused(t *testing.T) {
+	d, _, repo := setup(t)
+	d.add(&state.Session{Slug: "main", Branch: "main", RepoDir: repo, Path: repo, State: state.Idle, Managed: false, CreatedAt: time.Now()})
+	err := callErr(d, "session.new", map[string]any{"repo": repo, "branch": "feat/h", "after": []string{"main"}, "hold": true})
+	if err == nil || !strings.Contains(err.Error(), "never lands") {
+		t.Fatalf("--hold on an unmanaged session: %v", err)
+	}
+	if _, err := d.snapshot("feat-h"); err == nil {
+		t.Error("made a session though refused")
+	}
+	// without --hold it is only recorded, as before
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/h", "after": []string{"main"}})
+	if len(s.After) != 1 || s.After[0] != "main" {
+		t.Errorf("after: %v", s.After)
+	}
+	waitCreations(t, d)
+}
