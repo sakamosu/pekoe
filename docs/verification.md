@@ -26,7 +26,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 | Notification → 許可待ちか質問かを区別 | `notification_type`(permission_prompt / idle_prompt / elicitation_dialog)で判別。旧形式は文面から判断。知らない種類・判断できない文面は permission(Web から許可/拒否しかできない側)にする。`TestClassifyNotification`、実機で Bash の許可待ちを検知 |
 | Stop → done・`test` 自動実行・結果を左ペインへ | 実機と e2e(`✓test`) |
 | PreToolUse → 直近のツールを左ペインへ | Sessions パネルのフッターに選択中セッションの直近ツールを表示 |
-| OSC 9/99/777・タイトル・`[y/n]` のフォールバック | hooks のないエージェント向けに `output.go` で実装。Claude Code の信頼確認ダイアログは hooks より前に出るので、最初の hook が届くまでは画面を読んで検知する(実機で検知・許可まで確認) |
+| OSC 9/99/777・タイトル・`[y/n]` のフォールバック | hooks のないエージェント向けに `output.go` で実装。Claude Code の信頼確認ダイアログは hooks より前に出るので、最初の hook が届くまでは画面を読んで検知する(実機で検知・許可まで確認)。pekoed の再起動の間に来た hook(Stop など)は届かずに失われるので、窓が生きていて running・waiting のまま戻したセッションも、次の hook が届くまで画面を読み、静かになって作業中(`esc to interrupt` の行・許可の確認・選択肢)でなければ idle に戻す(`restore` の `markRecheck`。テストは `restart_test.go`) |
 | 左ペインの 1 行(状態・待ち時間・diffstat・テスト・ポート) | `pekoe ls` と Sessions パネル |
 | Attention queue `]a` / `[a` | `attention.next` と TUI の `returnTo`、e2e |
 | 未読ライン | 離れた時点の行位置を記録し、戻ったときに `── new ──` を差し込む |

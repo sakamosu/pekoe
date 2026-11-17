@@ -205,6 +205,28 @@ func (d *Daemon) hList(p listP) (any, error) {
 
 // ---- restore after daemon restart ----
 
+// markRecheck: the agent kept running while pekoed was away, and a hook
+// it sent then (Stop above all) was lost, as pekoe event gives up when it
+// cannot dial. An agent with hooks is not read from the screen once it has
+// a Claude session id, so nothing would ever move a lost Stop's session out
+// of running; have fallbackDetect look at its screen (recheckAfterRestart),
+// counting the quiet time from now so that the output it is still writing
+// has time to arrive.
+func (d *Daemon) markRecheck(s *state.Session) {
+	if s.State != state.Running && s.State != state.Waiting {
+		return
+	}
+	if !d.cfg().Agents[s.Agent].Hooks || s.ClaudeSessionID == "" {
+		return
+	}
+	d.mu.Lock()
+	if st := d.out[s.Slug]; st != nil {
+		st.recheck = true
+		st.lastOut = time.Now()
+	}
+	d.mu.Unlock()
+}
+
 // worktreeMissing starts the error restore gives a session whose worktree
 // is gone (it resumes the session if the directory comes back).
 const worktreeMissing = "worktree missing: "
@@ -219,7 +241,7 @@ func (d *Daemon) restore() {
 	d.mu.Lock()
 	for _, s := range list {
 		d.sessions[s.Slug] = s
-		d.out[s.Slug] = &outState{}
+		d.out[s.Slug] = &outState{unread: s.Unread} // the mark survives the restart
 		gitx.Pin(s.Path, s.RepoDir)
 	}
 	d.mu.Unlock()
@@ -291,7 +313,11 @@ func (d *Daemon) restore() {
 		if s.Run != "" && !hasRun { // the tmux server went away with it
 			d.update(s.Slug, func(x *state.Session) { x.Run = "" })
 		}
-		if hasAgent || s.Stopped {
+		if hasAgent {
+			d.markRecheck(s)
+			continue
+		}
+		if s.Stopped {
 			continue
 		}
 		// the pty is gone (tmux server restarted): resume the agent session
