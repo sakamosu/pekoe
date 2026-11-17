@@ -221,7 +221,7 @@ pekoe                                                 # TUI
 | `pekoe ext` | Chrome 拡張に入れる port と token |
 | `pekoe web` | Web UI の状態・URL・初回のログイン URL |
 | `pekoe mcp` | エージェント用 MCP サーバ(stdio) |
-| `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける |
+| `pekoe daemon start\|stop\|restart\|status` | デーモン操作。`stop` はプロセスが終わるまで待つ。`restart` は止まるのを待ってから起動し直し、前後のバージョンを出す(`make install` の後に。動いていなければ起動するだけ)。エージェントは tmux の中で動き続ける。開いている TUI は pekoed を失う(再起動・停止)と端末にそう出し、pekoed がまた応答するまで最大 20 秒待って開き直す。戻らなければ、そう書いたエラーで終わる(終了コード 1)。このとき TUI が pekoed を自分で起動することはない |
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止める。**既定のソケット `pekoe` に使うと全エージェントが止まる**。隔離環境の片付け用 |
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残りの件数も)/ 終了して会話を忘れる(TUI の `T` と同じ。依頼と受信箱は残る) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介する(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を出す(バイナリに同梱) |
