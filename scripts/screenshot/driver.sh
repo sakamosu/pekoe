@@ -11,7 +11,8 @@
 # OUT (required): where the capture goes. "$OUT.sockets" gets the names of
 # the tmux servers involved, so the caller can check they are gone.
 # FAKE_AGENT: the fake agent (default: fake-agent.sh next to this file).
-# COLS / ROWS: the TUI's size. KEYS: tmux keys to send before capturing.
+# COLS / ROWS: the TUI's size. KEYS: tmux keys to send before capturing
+# (default Escape, which closes the permission modal; KEYS= sends none).
 set -euo pipefail
 S=$(cd "$(dirname "$0")" && pwd)
 : "${OUT:?set OUT to the capture file}"
@@ -69,7 +70,7 @@ printf '# shop\n' >README.md
 git add -A && git -c user.name=demo -c user.email=demo@example.com commit -qm init
 git remote add origin https://github.com/acme/shop.git
 
-for b in feat/csv-export fix/cart-rounding feat/invoice-pdf chore/bump-deps; do
+for b in feat/csv-export fix/cart-total feat/invoice-pdf chore/bump-deps; do
 	pekoe --json new "$b" >/dev/null
 	sleep 1.5
 done
@@ -84,10 +85,14 @@ tmux -L "$SHOT" -f /dev/null new-session -d -x "$COLS" -y "$ROWS" -c "$R" \
 	-e PEKOE_WORKTREES="$PEKOE_WORKTREES" -e PATH="$PATH" -e HOME="$FAKEHOME" -e COLORTERM=truecolor -e TERM=xterm-256color \
 	"pekoe"
 sleep 4
-if [ -n "${KEYS:-}" ]; then
-	# shellcheck disable=SC2086 # KEYS is a list of tmux key names
-	tmux -L "$SHOT" send-keys $KEYS
-fi
+# fix/cart-total's permission prompt comes up over everything as a modal;
+# Escape ("later") puts it down so the screen behind it shows
+# shellcheck disable=SC2086 # KEYS is a list of tmux key names
+for k in ${KEYS-Escape}; do
+	# one key at a time: Escape followed at once by a key reads as Alt+key
+	tmux -L "$SHOT" send-keys "$k"
+	sleep 0.5
+done
 sleep 2
 tmux -L "$SHOT" capture-pane -p -e >"$OUT"
 echo "captured $OUT" >&2

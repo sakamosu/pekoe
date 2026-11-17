@@ -61,7 +61,7 @@ feat-csv-export)
 	printf '\n%s✶%s Running tests… %s(12s · esc to interrupt)%s\n' "$M" "$R" "$D" "$R"
 	prompt_box ""
 	;;
-fix-cart-rounding)
+fix-cart-total)
 	ask="Totals are off by a cent for some carts. Fix the rounding."
 	printf '%s> %s%s\n\n' "$C" "$ask" "$R"
 	ev UserPromptSubmit "\"prompt\":\"$ask\""
