@@ -260,6 +260,13 @@ func TestWaitSinceMissesNothing(t *testing.T) {
 	}
 	if err := callAsErr(d, tapi, "wait", map[string]any{"on": []string{"nope"}}); err == nil {
 		t.Fatal("unknown kind")
+	} else {
+		// the error lists every kind wait takes
+		for _, k := range waitKindList {
+			if !strings.Contains(err.Error(), k) {
+				t.Errorf("unknown kind: %q does not list %s", err, k)
+			}
+		}
 	}
 	if err := callAsErr(d, tapi, "wait", map[string]any{"timeout_s": 3601}); err == nil {
 		t.Fatal("over an hour")

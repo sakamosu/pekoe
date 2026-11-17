@@ -38,7 +38,16 @@ const (
 	kindInbox   = "inbox" // a person answered (or dismissed) the caller's own question
 )
 
-var waitKinds = map[string]bool{kindReport: true, kindQueued: true, kindStarted: true, kindDone: true, kindWaiting: true, kindIdle: true, kindFailed: true, kindPR: true, kindCI: true, kindLanded: true, kindRemoved: true, kindInbox: true}
+// waitKindList is the kinds wait --on takes, in the order the error lists them.
+var waitKindList = []string{kindReport, kindQueued, kindStarted, kindDone, kindWaiting, kindIdle, kindFailed, kindPR, kindCI, kindLanded, kindRemoved, kindInbox}
+
+var waitKinds = func() map[string]bool {
+	m := map[string]bool{}
+	for _, k := range waitKindList {
+		m[k] = true
+	}
+	return m
+}()
 
 const (
 	changeRing     = 2000 // changes kept
@@ -80,7 +89,12 @@ type changeLog struct {
 type waiter struct {
 	id    string
 	match func(Change) bool
+	after int64 // it returns only changes after this one (under l.mu)
 }
+
+// takes says whether w would return c: c is newer than what it returns
+// from and matches. Under l.mu.
+func (w *waiter) takes(c Change) bool { return c.Seq > w.after && w.match(c) }
 
 func newChangeLog() *changeLog {
 	b := make([]byte, 4)
@@ -112,7 +126,7 @@ func (l *changeLog) addSeen(c Change) bool {
 	defer l.mu.Unlock()
 	seen := false
 	for w := range l.waiters {
-		if w.match(c) {
+		if w.match(c) { // c is newer than any wait's after
 			seen = true
 			break
 		}
@@ -281,7 +295,7 @@ type waitResult struct {
 func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	for _, k := range p.On {
 		if !waitKinds[k] {
-			return nil, fmt.Errorf("unknown kind %q (report, started, done, waiting, idle, failed, pr, ci, landed, removed, inbox)", k)
+			return nil, fmt.Errorf("unknown kind %q (%s)", k, strings.Join(waitKindList, ", "))
 		}
 	}
 	slugs := map[string]bool{}
@@ -356,7 +370,7 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	// blocked from here on: addSeen counts this wait as the receiver of
 	// what it matches until it leaves waiters, under the same lock as it
 	// takes its result
-	w := &waiter{id: id, match: match}
+	w := &waiter{id: id, match: match, after: after}
 	l.waiters[w] = true
 	l.mu.Unlock()
 
@@ -383,6 +397,7 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 			return res, nil
 		}
 		after = l.seq // nothing that matched so far: only newer ones count
+		w.after = after
 		wake := l.wake
 		l.mu.Unlock()
 		select {

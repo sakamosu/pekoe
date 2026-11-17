@@ -197,6 +197,35 @@ func TestDeliverNotWhileWaiting(t *testing.T) {
 	<-res
 }
 
+// A change of tapi's from before its wait began (no --since: from now) is
+// not one that wait returns, so a blocked wait does not hold it back: it is
+// delivered, or tapi waiting again and again would never get it.
+func TestDeliverOlderThanWait(t *testing.T) {
+	d, fe := deliverSetup(t, "idle")
+	tapiChange(d, kindReport, "feat-x", TapiSlug, "report done") // before the wait
+	res := make(chan waitResult, 1)
+	go func() {
+		res <- callAs[waitResult](t, d, agentAs(TapiSlug), "wait", map[string]any{"mine": true, "on": []string{"report"}, "timeout_s": 2})
+	}()
+	waitFor(t, func() bool {
+		d.changes.mu.Lock()
+		defer d.changes.mu.Unlock()
+		return len(d.changes.waiters) == 1
+	})
+	if n := len(d.changes.tapiPending()); n != 1 {
+		t.Errorf("while blocked: tapiPending=%d, want 1 (the wait never returns it)", n)
+	}
+	noPause(d)
+	d.deliverTapi()
+	got := delivered(fe, 0)
+	if r := <-res; len(r.Changes) != 0 {
+		t.Fatalf("wait returned the older change: %+v", r)
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "feat-x report done") {
+		t.Fatalf("held back a change the blocked wait never returns: delivered %v", got)
+	}
+}
+
 // Answers to tapi's questions go in the line (marked delivered), not in a
 // line of their own.
 func TestDeliverInbox(t *testing.T) {
