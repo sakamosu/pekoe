@@ -29,6 +29,8 @@ case "$1 $2" in
   "pr create")
     # create-exists: GitHub already has a PR of the branch (no URL printed)
     if [ -f ` + filepath.Join(dir, "create-exists") + ` ]; then echo 'a pull request for branch "x" into branch "main" already exists' >&2; exit 1; fi
+    # create-nocommits: the head has nothing beyond GitHub's base
+    if [ -f ` + filepath.Join(dir, "create-nocommits") + ` ]; then echo 'pull request create failed: GraphQL: No commits between main and x (createPullRequest)' >&2; exit 1; fi
     echo "https://github.com/me/app/pull/42" ;;
   "pr merge")
     pwd -P >> ` + filepath.Join(dir, "merge.cwd") + `

@@ -193,6 +193,10 @@ type Session struct {
 	// not committed in the worktree). Its window and worktree stay; it
 	// lands once that is over. Empty: not held.
 	LandHeld string `json:"land_held,omitempty"`
+	// LandHeldAt is when pekoe first saw the PR merged while the landing
+	// was held (LandHeld): the merge time stats counts once it lands, not
+	// when the hold ended. Zero: not held.
+	LandHeldAt time.Time `json:"land_held_at,omitempty"`
 }
 
 // DevExit is how a session's dev hook ended.
