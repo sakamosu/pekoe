@@ -179,10 +179,10 @@ type Daemon struct {
 	evMu        sync.Mutex // held from a change under mu to its emit, so events go out in change order
 	sessions    map[string]*state.Session
 	conns       map[*conn]bool
-	cancels     map[string]context.CancelFunc // creating sessions
-	queueMu     sync.Mutex                    // one pumpQueue at a time (queue.go)
-	queueKick   chan struct{}                 // wakes queueLoop
-	asks        map[string]string             // slug -> hunk id awaiting an answer
+	cancels     map[string]*creation // creating sessions (session_new.go)
+	queueMu     sync.Mutex           // one pumpQueue at a time (queue.go)
+	queueKick   chan struct{}        // wakes queueLoop
+	asks        map[string]string    // slug -> hunk id awaiting an answer
 	tabs        []Tab
 	errors      map[int][]ConsoleError // port -> recent errors
 	consoleRate map[int]consoleWindow  // port -> errors taken this minute (http.go, under mu)
@@ -213,7 +213,7 @@ type Daemon struct {
 	prMu        sync.Mutex           // serializes PR summary updates
 	prFetched   map[string]time.Time // slug -> last PR fetch (under mu)
 	prPolling   atomic.Bool          // watchPRStatus is running
-	finishing   sync.Map             // slug -> finishLanding is running for it
+	finishing   sync.Map             // slug -> chan closed when finishLand or rm of it ends (holdFinishing)
 	sendLocks   sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
 	promptLocks sync.Map             // slug -> *sync.Mutex: one snapshotPrompt at a time (hooks.go)
 	tests       testRuns             // [hooks] test runs (hooks.go)
@@ -279,7 +279,7 @@ func New() (*Daemon, error) {
 		Eng:       newTmux(),
 		sessions:  map[string]*state.Session{},
 		conns:     map[*conn]bool{},
-		cancels:   map[string]context.CancelFunc{},
+		cancels:   map[string]*creation{},
 		queueKick: make(chan struct{}, 1),
 		asks:      map[string]string{},
 		errors:    map[int][]ConsoleError{},

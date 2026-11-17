@@ -103,8 +103,37 @@ func (d *Daemon) teardown(s *state.Session) error {
 	return nil
 }
 
+// holdFinishing takes slug's place in d.finishing: one finishLand or rm of
+// a session at a time, so neither tears down a worktree the other has
+// already handed on (to a new session of the same slug, at the same path).
+// With wait it waits for the one running; without, it gives up (ok false).
+func (d *Daemon) holdFinishing(slug string, wait bool) (release func(), ok bool) {
+	ch := make(chan struct{})
+	for {
+		v, busy := d.finishing.LoadOrStore(slug, ch)
+		if !busy {
+			return func() { d.finishing.Delete(slug); close(ch) }, true
+		}
+		if !wait {
+			return nil, false
+		}
+		<-v.(chan struct{})
+	}
+}
+
 func (d *Daemon) hRm(p rmP) (any, error) {
-	s, err := d.snapshot(p.Slug)
+	// a teardown after a merge (finishLand) runs to its end first: rm then
+	// finds the session landed and its worktree gone
+	release, _ := d.holdFinishing(p.Slug, true)
+	defer release()
+	if _, err := d.snapshot(p.Slug); err != nil {
+		return nil, err
+	}
+	// a session still being created: stop its creation and wait for it to
+	// end, so no setup hook or agent start comes after the teardown and the
+	// removal below
+	d.stopCreation(p.Slug)
+	s, err := d.snapshot(p.Slug) // as the creation left it (own_dir …)
 	if err != nil {
 		return nil, err
 	}
@@ -151,11 +180,17 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if exists && foreign {
 		log.Printf("rm %s: %s is a worktree of another repository; left as is", p.Slug, s.Path)
 	} else if exists {
-		if err := d.teardown(s); err != nil && !p.Force {
-			return nil, err
+		// teardown undoes what setup did, and only pekoe's own worktrees
+		// had a setup: a checkout pekoe did not make (session.open on the
+		// repository itself) is only forgotten
+		ours := s.Managed && paths.UnderWorktrees(s.Path)
+		if ours {
+			if err := d.teardown(s); err != nil && !p.Force {
+				return nil, err
+			}
 		}
 		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/") // shared by all worktrees
-		if s.Managed && paths.UnderWorktrees(s.Path) {
+		if ours {
 			if owner == nil {
 				deleted = gitx.RemoveWorktree(s.RepoDir, s.Path, true) == nil
 			}
@@ -779,13 +814,28 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 	// one at a time per session: watchMerges (at start and every 2 minutes)
 	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
 	// slow teardown must not run twice in the same worktree
-	if _, busy := d.finishing.LoadOrStore(slug, true); busy {
+	// rm takes the same place (holdFinishing), and waits for this one
+	release, ok := d.holdFinishing(slug, false)
+	if !ok {
 		return nil
 	}
-	defer d.finishing.Delete(slug)
-	s, err := d.snapshot(slug)
-	if err != nil {
-		return err
+	defer release()
+	d.mu.Lock()
+	orig := d.sessions[slug]
+	var s *state.Session
+	if orig != nil {
+		s = d.copyLocked(orig)
+	}
+	d.mu.Unlock()
+	if orig == nil {
+		return fmt.Errorf("no such session: %s", slug)
+	}
+	// still: the session is the one torn down here, not a new one of the
+	// same slug (and path) that replaced it meanwhile
+	still := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.sessions[slug] == orig
 	}
 	if s.State == state.Landed { // finished by a run that started earlier
 		return nil
@@ -814,17 +864,26 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		}
 		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+slug+"/") // shared by all worktrees
 	}
+	if !still() {
+		log.Printf("land %s: replaced by a new session during the teardown; its worktree is left as is", slug)
+		return nil
+	}
 	if s.Managed && paths.UnderWorktrees(s.Path) {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
 			log.Printf("remove worktree %s: %v", s.Path, err)
 		}
 	}
+	ours := false
 	landed, _ := d.update(slug, func(x *state.Session) {
+		if x != orig {
+			return
+		}
+		ours = true
 		x.State, x.Landing, x.Dev, x.Stopped = state.Landed, false, false, true
 		x.LandHeld = ""
 		landedPRMerged(x)
 	})
-	if landed != nil {
+	if landed != nil && ours {
 		d.recordSession(landed, &mergedAt, false) // stats.go
 	}
 	return nil

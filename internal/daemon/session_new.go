@@ -293,14 +293,22 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		return c, err
 	}
 	d.add(s)
-	ctx := d.prepareNew(s, repo)
-	go d.runNew(ctx, s.Slug, repo, p)
+	c := d.prepareNew(s, repo)
+	go d.runNew(c, s.Slug, repo, p)
 	return d.snapshot(slug)
+}
+
+// creation is a runNew in progress (d.cancels): cancel stops it, done is
+// closed once it has returned (after it took itself out of d.cancels).
+type creation struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
 }
 
 // prepareNew sets up the steps a new session's creation shows and its
 // cancel, for runNew.
-func (d *Daemon) prepareNew(s *state.Session, repo *repoInfo) context.Context {
+func (d *Daemon) prepareNew(s *state.Session, repo *repoInfo) *creation {
 	steps := []Step{
 		{Name: "worktree", Label: "worktree", Detail: s.Path},
 		{Name: "env", Label: "env", Detail: strings.Join(append(slices.Clone(repo.Config.Worktree.Copy), repo.Config.Worktree.Clone...), " ")},
@@ -315,11 +323,26 @@ func (d *Daemon) prepareNew(s *state.Session, repo *repoInfo) context.Context {
 		steps[i].Status = "pending"
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	c := &creation{ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	d.mu.Lock()
 	d.progress[s.Slug] = steps
-	d.cancels[s.Slug] = cancel
+	d.cancels[s.Slug] = c
 	d.mu.Unlock()
-	return ctx
+	return c
+}
+
+// stopCreation cancels slug's creation, if one is running, and waits until
+// runNew has returned: nothing it does (a setup hook, starting the agent)
+// can then come after what the caller does next (rm's teardown and removal).
+func (d *Daemon) stopCreation(slug string) {
+	d.mu.Lock()
+	c := d.cancels[slug]
+	d.mu.Unlock()
+	if c == nil {
+		return
+	}
+	c.cancel()
+	<-c.done
 }
 
 func (d *Daemon) stepUpdate(slug string, i int, status, detail string, started time.Time) {
@@ -387,15 +410,34 @@ func (d *Daemon) failNew(slug string, i int, err error, started time.Time) {
 	})
 }
 
-func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP) {
+func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
+	ctx := c.ctx
 	defer func() {
 		d.mu.Lock()
-		delete(d.cancels, slug)
+		if d.cancels[slug] == c { // not a later creation of the same slug
+			delete(d.cancels, slug)
+		}
 		d.mu.Unlock()
+		c.cancel()
+		close(c.done)
 	}()
-	s, err := d.snapshot(slug)
-	if err != nil {
+	d.mu.Lock()
+	own := d.sessions[slug]
+	var s *state.Session
+	if own != nil {
+		s = d.copyLocked(own)
+	}
+	d.mu.Unlock()
+	if s == nil {
 		return // removed between leaving the queue and here (queue.go)
+	}
+	// ours: the session is still the one this creation was started for (rm
+	// waits for runNew, but a step must never go on into a new session of
+	// the same slug)
+	ours := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.sessions[slug] == own
 	}
 	vars := config.Vars{Slug: slug, Branch: s.Branch, Path: s.Path, Repo: repo.Name, Port: s.Port}
 	i := 0
@@ -405,16 +447,19 @@ func (d *Daemon) runNew(ctx context.Context, slug string, repo *repoInfo, p newP
 	durKey := func(name string) string { return "dur:" + repo.ID + ":" + name }
 	run := func(name string, f func() error) bool {
 		t0 = time.Now()
-		d.stepUpdate(slug, i, "running", "", time.Time{})
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || !ours() {
 			return false
 		}
+		d.stepUpdate(slug, i, "running", "", time.Time{})
 		stopGauge := make(chan struct{})
 		if prev, _ := time.ParseDuration(d.DB.Get(durKey(name))); prev >= 2*time.Second {
 			go d.gauge(slug, i, t0, prev, stopGauge)
 		}
 		err := f()
 		close(stopGauge)
+		if !ours() {
+			return false
+		}
 		if err != nil {
 			d.failNew(slug, i, fmt.Errorf("%s: %w", name, err), t0)
 			return false
