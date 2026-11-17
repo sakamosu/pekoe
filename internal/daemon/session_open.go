@@ -122,14 +122,11 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 		return nil, err
 	}
 	d.resolved(repo)
-	d.mu.Lock()
-	for _, s := range d.sessions {
-		if s.Path == top {
-			d.mu.Unlock()
-			return nil, fmt.Errorf("already managed as %s", s.Slug)
-		}
+	// by the resolved path: top is git's (symlinks resolved, /private/tmp
+	// on macOS) while a session made by new keeps PEKOE_WORKTREES as given
+	if slug := d.sessionAt(top); slug != "" {
+		return nil, fmt.Errorf("already managed as %s", slug)
 	}
-	d.mu.Unlock()
 	agent := newAgentName(p.Agent, repo)
 	if _, ok := d.cfg().Agents[agent]; !ok {
 		return nil, fmt.Errorf("unknown agent: %s", agent)
@@ -278,15 +275,21 @@ func (d *Daemon) hAdopt(p adoptP) (any, error) {
 }
 
 // managedPath reports whether a session already lives in the worktree.
-func (d *Daemon) managedPath(top string) bool {
+func (d *Daemon) managedPath(top string) bool { return d.sessionAt(top) != "" }
+
+// sessionAt is the session whose worktree is path (compared with symlinks
+// resolved), "" if none. The smallest slug when two share it.
+func (d *Daemon) sessionAt(path string) string {
+	want := realpath(path)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for _, s := range d.sessions {
-		if s.Path == top {
-			return true
+	best := ""
+	for slug, s := range d.sessions {
+		if samePath(s.Path, want) && (best == "" || slug < best) {
+			best = slug
 		}
 	}
-	return false
+	return best
 }
 
 func orNew(id string) string {

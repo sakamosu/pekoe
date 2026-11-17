@@ -168,7 +168,10 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
 	}
 	foreign := errors.Is(owner, gitx.ErrForeignWorktree)
-	if !p.Force && s.Managed && !foreign {
+	// another session may live in the same worktree (an open of it by a
+	// symlinked name before paths were compared resolved): then it stays
+	shared := d.pathShared(s.Path, p.Slug)
+	if !p.Force && s.Managed && !foreign && !shared {
 		if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
 			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
 		}
@@ -184,6 +187,11 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	deleted := false
 	if exists && foreign {
 		log.Printf("rm %s: %s is a worktree of another repository; left as is", p.Slug, s.Path)
+	} else if exists && shared {
+		// another session still works there: neither its teardown nor its
+		// directory is this session's to take
+		log.Printf("rm %s: %s is another session's worktree too; left as is", p.Slug, s.Path)
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/")
 	} else if exists {
 		// teardown undoes what setup did, and only pekoe's own worktrees
 		// had a setup: a checkout pekoe did not make (session.open on the
@@ -886,8 +894,12 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		d.devMu.Unlock()
 	}
 	_ = d.Eng.KillSession(slug)
+	shared := d.pathShared(s.Path, slug)
 	if foreign {
 		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
+	} else if shared {
+		log.Printf("land %s: %s is another session's worktree too; left as is", slug, s.Path)
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+slug+"/")
 	} else {
 		// teardown undoes what setup did, and only pekoe's own worktrees
 		// had a setup: a checkout pekoe did not make (session.open on the
@@ -903,7 +915,7 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		log.Printf("land %s: replaced by a new session during the teardown; its worktree is left as is", slug)
 		return nil
 	}
-	if s.Managed && paths.UnderWorktrees(s.Path) {
+	if s.Managed && paths.UnderWorktrees(s.Path) && !shared {
 		if err := gitx.RemoveWorktree(s.RepoDir, s.Path, false); err != nil {
 			log.Printf("remove worktree %s: %v", s.Path, err)
 		}
