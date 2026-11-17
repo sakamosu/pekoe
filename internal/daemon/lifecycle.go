@@ -624,6 +624,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	}
 	steps = append(steps, "pushed "+s.Branch)
 	pr := s.PR
+	kept := 0 // the old PR, when only GitHub can tell whether a new one is needed
 	if pr != 0 {
 		// a PR that is no longer open (merged or closed before this land:
 		// the agent's own gh pr create, a person) cannot carry the new
@@ -639,15 +640,17 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			// gh pr create fails with "No commits between", and the old PR's
 			// merge is what lands the session
 			if n, err := gitx.Run(s.Path, "rev-list", "--count", "--end-of-options", onto+"..HEAD"); err == nil && strings.TrimSpace(n) != "0" {
-				if !fetched {
-					// the base here may be behind origin's and lack the
-					// merged PR's own commits: they would count as new, and
-					// gh pr create would fail with "No commits between".
-					// Neither a new PR nor the old one is safe to take.
-					return nil, fmt.Errorf("pushed %s, but no PR: PR #%d is %s and fetch origin %s failed, so whether HEAD has commits beyond origin's %s cannot be told (%s commits beyond %s here, which may be stale); run land again once origin can be fetched",
-						s.Branch, pr, st, base, base, strings.TrimSpace(n), onto)
+				if fetched {
+					steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
+				} else {
+					// the base here may be behind origin's and lack the old
+					// PR's own commits, which then count as new: GitHub,
+					// which has origin's base, tells (gh pr create answers
+					// "No commits between" when there is nothing new), and
+					// with nothing new the old PR stays the session's
+					steps = append(steps, fmt.Sprintf("PR #%d is %s, and %s here may be stale (fetch failed): asking GitHub for a new PR", pr, st, onto))
+					kept = pr
 				}
-				steps = append(steps, fmt.Sprintf("PR #%d is %s: opening a new one", pr, st))
 				pr = 0
 			}
 		}
@@ -671,14 +674,21 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		c.Stdin = strings.NewReader(body)
 		out, err := c.CombinedOutput()
 		done()
-		if err != nil && !strings.Contains(string(out), "already exists") {
-			return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
+		if err != nil && kept != 0 && strings.Contains(string(out), "No commits between") {
+			// nothing beyond origin's base after all: the old PR's merge
+			// is what lands the session, as with a fetch that worked
+			pr = kept
+			steps = append(steps, fmt.Sprintf("no commits beyond origin's %s: PR #%d kept", base, pr))
+		} else {
+			if err != nil && !strings.Contains(string(out), "already exists") {
+				return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
+			}
+			pr = prNumber(string(out))
+			if pr == 0 {
+				pr = openPRForBranch(ri, s.Branch)
+			}
+			steps = append(steps, fmt.Sprintf("PR #%d", pr))
 		}
-		pr = prNumber(string(out))
-		if pr == 0 {
-			pr = openPRForBranch(ri, s.Branch)
-		}
-		steps = append(steps, fmt.Sprintf("PR #%d", pr))
 	}
 	d.update(p.Slug, func(x *state.Session) {
 		if x.PR != pr {

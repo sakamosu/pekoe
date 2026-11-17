@@ -76,39 +76,61 @@ func TestHeldLandingKeepsFirstSeenMergeTime(t *testing.T) {
 	}
 }
 
-// land whose fetch of origin fails, with the session's earlier PR merged:
-// the local base may be behind origin's (without the merged PR's commits),
-// so "commits beyond the base" cannot be told. land does not go on to gh
-// pr create (GitHub answers "No commits between" when there are none):
-// it stops with an error that says the fetch failed and what to do.
+// land whose fetch of origin fails, with the session's earlier PR #41
+// merged: the local base may be behind origin's (without #41's commits),
+// which then count as new. GitHub, which has origin's base, decides: with
+// nothing new (gh pr create says "No commits between") land keeps #41 and
+// does not fail, and #41's merge lands the session; with new commits it
+// opens a new PR, as with a fetch that worked.
 func TestLandFetchFailedAfterMergedPR(t *testing.T) {
-	d, _, repo := setup(t)
-	bare := withOrigin(t, repo)
-	onGitHub(t, d, repo)
-	gh := fakeGH(t, "OPEN")
-	os.WriteFile(filepath.Join(gh, "state-41"), []byte("MERGED"), 0o644)
-	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/stale"})
-	waitCreated(t, d, s.Slug)
-	s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
-	os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
-	run(t, s.Path, "git", "add", ".")
-	run(t, s.Path, "git", "commit", "-qm", "x")
-	// PR #41 got merged on GitHub: its commit is on origin's main, not on
-	// the main here
-	run(t, s.Path, "git", "push", "-q", bare, "HEAD:main")
-	d.update(s.Slug, func(x *state.Session) { x.PR = 41; x.PRStatus = &state.PRStatus{State: "MERGED"} })
-	// origin cannot be fetched now (the network is down); push still works
-	run(t, repo, "git", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
-	run(t, repo, "git", "remote", "set-url", "--push", "origin", bare)
-	err := callErr(d, "land", map[string]any{"slug": s.Slug})
-	out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
-	if strings.Contains(string(out), "pr create") {
-		t.Fatalf("land went on to gh pr create against a stale base (gh calls: %q)", out)
-	}
-	if err == nil || !strings.Contains(err.Error(), "fetch") || !strings.Contains(err.Error(), "#41") {
-		t.Fatalf("land: %v, want an error naming the failed fetch and PR #41", err)
-	}
-	if x, _ := d.snapshot(s.Slug); x.PR != 41 || x.State == state.Landed {
-		t.Fatalf("session after land: pr=%d state=%s", x.PR, x.State)
+	for _, tc := range []struct {
+		name    string
+		newWork bool
+		want    float64
+		landed  bool
+	}{{"nothing new", false, 41, true}, {"new commits", true, 42, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, repo := setup(t)
+			bare := withOrigin(t, repo)
+			onGitHub(t, d, repo)
+			gh := fakeGH(t, "OPEN")
+			os.WriteFile(filepath.Join(gh, "state-41"), []byte("MERGED"), 0o644)
+			s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/stale"})
+			waitCreated(t, d, s.Slug)
+			s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+			os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
+			run(t, s.Path, "git", "add", ".")
+			run(t, s.Path, "git", "commit", "-qm", "x")
+			// PR #41 got merged on GitHub: its commit is on origin's main,
+			// not on the main here
+			run(t, s.Path, "git", "push", "-q", bare, "HEAD:main")
+			d.update(s.Slug, func(x *state.Session) { x.PR = 41; x.PRStatus = &state.PRStatus{State: "MERGED"} })
+			if tc.newWork {
+				os.WriteFile(filepath.Join(s.Path, "more.txt"), []byte("more\n"), 0o644)
+				run(t, s.Path, "git", "add", ".")
+				run(t, s.Path, "git", "commit", "-qm", "follow-up work")
+			} else {
+				os.WriteFile(filepath.Join(gh, "create-nocommits"), nil, 0o644)
+			}
+			// origin cannot be fetched now (the network is down); push still works
+			run(t, repo, "git", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+			run(t, repo, "git", "remote", "set-url", "--push", "origin", bare)
+			var res map[string]any
+			if err := callErr(d, "land", map[string]any{"slug": s.Slug}); err != nil {
+				out, _ := os.ReadFile(filepath.Join(gh, "gh.log"))
+				t.Fatalf("land: %v (gh calls: %q)", err, out)
+			}
+			res = call[map[string]any](t, d, "land", map[string]any{"slug": s.Slug}) // again: the same answer
+			if got, _ := res["pr"].(float64); got != tc.want {
+				t.Fatalf("land: %v, want PR %v", res, tc.want)
+			}
+			if x, _ := d.snapshot(s.Slug); !x.Landing || float64(x.PR) != tc.want {
+				t.Fatalf("session after land: pr=%d landing=%v", x.PR, x.Landing)
+			}
+			d.watchMerges()
+			if x := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); (x.State == state.Landed) != tc.landed {
+				t.Fatalf("after watchMerges: %s, want landed %v", x.State, tc.landed)
+			}
+		})
 	}
 }
