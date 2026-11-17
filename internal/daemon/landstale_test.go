@@ -133,3 +133,32 @@ func TestLandFetchFailedInSteps(t *testing.T) {
 		t.Fatalf("steps do not say the fetch failed: %v", res)
 	}
 }
+
+// gh pr create says the branch already has a PR: land takes the branch's
+// PR only when it is open, not a merged one gh pr view <branch> answers
+// with when none is open.
+func TestLandAlreadyExistsTakesOnlyOpenPR(t *testing.T) {
+	for _, tc := range []struct {
+		state string
+		want  float64
+	}{{"OPEN", 42}, {"MERGED", 0}} {
+		t.Run(tc.state, func(t *testing.T) {
+			d, _, repo := setup(t)
+			withOrigin(t, repo)
+			onGitHub(t, d, repo)
+			gh := fakeGH(t, "OPEN")
+			os.WriteFile(filepath.Join(gh, "create-exists"), nil, 0o644)
+			os.WriteFile(filepath.Join(gh, "branch-pr.json"), []byte(`{"number":42,"state":"`+tc.state+`","closedAt":null}`), 0o644)
+			s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/exists"})
+			waitCreated(t, d, s.Slug)
+			s = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+			os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
+			run(t, s.Path, "git", "add", ".")
+			run(t, s.Path, "git", "commit", "-qm", "x")
+			res := call[map[string]any](t, d, "land", map[string]any{"slug": s.Slug})
+			if got, _ := res["pr"].(float64); got != tc.want {
+				t.Fatalf("land with the branch's PR %s: %v, want PR %v", tc.state, res, tc.want)
+			}
+		})
+	}
+}

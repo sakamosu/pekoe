@@ -26,7 +26,10 @@ func fakeGH(t *testing.T, prState string) string {
 	script := `#!/bin/sh
 echo "$@" >> ` + log + `
 case "$1 $2" in
-  "pr create") echo "https://github.com/me/app/pull/42" ;;
+  "pr create")
+    # create-exists: GitHub already has a PR of the branch (no URL printed)
+    if [ -f ` + filepath.Join(dir, "create-exists") + ` ]; then echo 'a pull request for branch "x" into branch "main" already exists' >&2; exit 1; fi
+    echo "https://github.com/me/app/pull/42" ;;
   "pr merge")
     pwd -P >> ` + filepath.Join(dir, "merge.cwd") + `
     if [ -f ` + filepath.Join(dir, "merge-hang") + ` ]; then
@@ -43,7 +46,6 @@ case "$1 $2" in
       else echo '{"number":42,"state":"OPEN","closedAt":null}'; fi; exit 0 ;; esac
     case "$*" in
       *headRefName*) echo '{"headRefName":"their-branch","baseRefName":"main","title":"Their PR"}' ;;
-      *number,state*) echo '{"number":42,"state":"` + prState + `"}' ;;
       *state*)
         # state-<n>: PR <n>'s own state, when it differs from prState
         if [ -f ` + filepath.Join(dir, "state-") + `"$3" ]; then echo "{\"state\":\"$(cat ` + filepath.Join(dir, "state-") + `"$3")\"}"; else echo '{"state":"` + prState + `"}'; fi ;;
