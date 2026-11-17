@@ -85,7 +85,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 
 実装: pekoe のセッションの中の Claude Code から親を辿ると、Bash ツールのコマンド → (sandbox の)シェル → claude → ペインのシェル(`#{pane_pid}`)→ tmux サーバー、と当たることを確かめた(`sysctl kern.proc.pid` は Claude Code の sandbox の中でも引ける)。hooks は同じ claude の子として起動されるので同じペインに当たる。そこで `session.event` は、ペインに当たればその slug に振り分け、当たらなければ今までどおり `$PEKOE_SESSION` と cwd で決める(tmux の外のエージェントを `adopt` したときなど)。hooks は sandbox の外で動き token を読めるので、hooks と `report.post` では token の有無ではなくペインを見る(token を読める sandbox なしのエージェントでも、報告は自分のセッションに付く)。名乗り(`claimed`)はクライアントがリクエストの最上位の `session` に `$PEKOE_SESSION` を入れて送る。
 
-実装(追記): ユーザーは委任を優先して `[agents.claude] sandbox = false` で使うので、エージェントも tapi も `human-token` を読み、`pekoe` CLI は token を付けて送る。token を窓より優先すると、tapi が `pekoe new` したセッションの `parent` が `human` になり、人が作ったものと区別がつかず、`wait --mine` も人のセッションで起きてしまう。そこで記録と所有の判定(`Caller.ID()`: `parent`・送信の記録・`wait` の `mine`・`send.log` の絞り込み)は、token つきでもエージェントの窓(`<slug>~agent`、`+tapi~agent`)から来ればその slug にした。同じセッションの run 窓(TUI の `!`)と review 窓(nvim)は人の操作なので `human` のまま。認可(token で human-only のメソッドを許すこと)は変えない。sandbox なしで token が読める以上、そこは守れないことを前提にする。
+実装(追記): ユーザーは委任を優先して `[agents.claude] sandbox = false` で使うので、エージェントも tapi も `human-token` を読み、`pekoe` CLI は token を付けて送る。token を窓より優先すると、tapi が `pekoe new` したセッションの `parent` が `human` になり、人が作ったものと区別がつかず、`wait --mine` も人のセッションで起きてしまう。そこで記録と所有の判定(`Caller.ID()`: `parent`・送信の記録・`wait` の `mine`・`send.log` の絞り込み・受信箱の `from` と `--mine`)は、token つきでもエージェントの窓(`<slug>~agent`、`+tapi~agent`)から来ればその slug にした。同じセッションの run 窓(TUI の `!`)と review 窓(nvim)は人の操作なので `human` のまま。認可(token で human-only のメソッドを許すこと)は変えない。sandbox なしで token が読める以上、そこは守れないことを前提にする。
 
 ## 新しく足す仕組み
 
@@ -107,7 +107,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 | `wait` | 可 | 統括役が待つ道。返すのは `session.list` と `subscribe`(トークンなし)で見えるものの要約だけで、何も実行しない | 同時に待てるのは呼び出し元ごとに 8 本まで、`timeout` は 1 時間まで |
 | `inbox.post` | 可 | 人に頼む道。何も実行しない。害は人の注意を奪うことと誘導で、対策は下の「脅威モデル」 | 呼び出し元(窓)ごとに未回答 10 件まで(token を読めるエージェントの窓も数える)。`unknown` は断る。長さの上限。セッションを rm すると、そのセッションの未回答は pekoed が取り下げる |
 | `inbox.list` / `inbox.get` | 可 | 統括役が「決定が必要なもの」を人にまとめて伝えるため。中身はエージェントが書いた問いと pekoed が付けた事実、人の答え(エージェントに宛てたもの) | — |
-| `inbox.withdraw` | 可 | 自分が出した問いを取り下げる(状況が変わった) | 自分が出したものだけ |
+| `inbox.withdraw` | 可 | 自分が出した問いを取り下げる(状況が変わった) | 自分が出したものだけ(人は誰の問いでも取り下げられ、問いを出したエージェントに知らせる) |
 | `inbox.answer` | **不可** | 人の判断そのもの。エージェントが答えられれば受信箱の意味がない | — |
 | `inbox.dismiss` | **不可** | 人の判断(答えずに閉じる) | — |
 | `send.log` | 可(絞る) | tapi が「自分が誰に何を頼んだか」を読み直す。他人宛ての本文は他のセッションの中身なので見せない | トークンなしでは呼び出し元が from か to の記録だけ |
@@ -280,6 +280,8 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **kind**: `approve` は選択肢を省くと `approve`・`decline`。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
 - **取り除く文字**: 制御文字・ANSI に加えて、見えない書式文字(bidi の上書き・ゼロ幅。Unicode の Cf)も落とす(画面で文の順序を入れ替えられる)。TUI は描く前にもう一度落とす
 - **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
+- **人の withdraw も届ける**(受信箱 q120 で決めた): 人が `pekoe inbox withdraw` でエージェントの問いを取り下げたら、`dismiss` と同じ経路(`wait` の `inbox`・pty の 1 行 `人が取り下げました`・`ask-human --wait` が返る)で依頼元に知らせる。前は届けず、待っているエージェントが答えを待ち続けた。エージェントが自分の問いを取り下げたときは自分には知らせない
+- **run 窓・review 窓から打った受信箱の操作は人のもの**(受信箱 q122 で決めた): 受信箱の呼び出し元は `Caller.ID()` と同じ判定にした。前は窓の種類を見ずに窓の slug を使ったので、TUI の `!` から打った `ask-human` がそのセッションのエージェントの問いになり、答えがエージェントの入力欄に打たれた。今は token つきなら `human` で、エージェントの窓からのもの(sandbox なしのエージェント)だけがそのセッションのもの
 - **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と 1 分ずつの `wait` を繰り返す)
 - **pty への配送**: 1 回に 1 件(古い順)。打つ条件は依頼元が `idle` か `done`(tapi chat は `idle`)・許可ダイアログなし(hooks と画面、受け付け時と打つ直前の 2 回)。試すのは依頼元が `idle` / `done` に入ったとき・答えた直後・5 秒ごと。1 行は `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12` に均す(メモの改行で入力が途中送信されないように)。Enter の直前に許可ダイアログが出たときは文字が入力欄に残るので、打ち直さず送信の記録に `ok: false` で残す
 - **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作った(上の「3. tapi への配送」の「実装」。受信箱の答えも deliver が idle のときはその 1 行で届くので同じ印で止まる)ので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
