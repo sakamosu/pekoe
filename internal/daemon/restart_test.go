@@ -98,6 +98,29 @@ func TestRestoreRecheckKeepsBusyAgent(t *testing.T) {
 	}
 }
 
+// An Edit permission dialog that was up when pekoed restarted keeps the
+// session waiting: it has no spinner line and no [y/n], only Claude
+// Code's "Do you want to make this edit" menu.
+func TestRestoreRecheckKeepsPermissionDialog(t *testing.T) {
+	d, fe, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	event(t, d, "SessionStart", "main", map[string]any{"session_id": "abc", "cwd": repo})
+	event(t, d, "UserPromptSubmit", "main", map[string]any{"session_id": "abc", "prompt": "do it"})
+	event(t, d, "Notification", "main", map[string]any{"session_id": "abc", "notification_type": "permission_prompt", "message": "Claude needs your permission to use Edit"})
+	if s, _ := d.snapshot("main"); s.State != state.Waiting {
+		t.Fatalf("before restart: %s", s.State)
+	}
+	d2 := restartWith(t, d, fe)
+	fe.mu.Lock()
+	fe.lines = []string{"Do you want to make this edit to a.ts?", "❯ 1. Yes", "  2. Yes, allow all edits", "  3. No", "", ""}
+	fe.mu.Unlock()
+	quietSinceRestart(d2)
+	d2.fallbackDetect()
+	if s, _ := d2.snapshot("main"); s.State != state.Waiting || s.WaitKind != "permission" {
+		t.Fatalf("permission dialog after restart: %s/%s, want waiting/permission", s.State, s.WaitKind)
+	}
+}
+
 // Session.unread is saved in state.db (copyLocked fills it from outState):
 // restore must start the outState from it, or every unread mark is gone
 // after a restart.

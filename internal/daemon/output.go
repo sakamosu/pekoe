@@ -297,7 +297,7 @@ func (d *Daemon) fallbackDetect() {
 			continue
 		}
 		if d.cfg().Agents[d.sessionAgent(slug)].Hooks {
-			d.recheckAfterRestart(slug, text)
+			d.recheckAfterRestart(slug, text, sc.Lines)
 			continue
 		}
 		if yesNoRe.MatchString(text) {
@@ -312,9 +312,12 @@ func (d *Daemon) fallbackDetect() {
 // from its screen: still busy (the spinner, a permission prompt, a menu)
 // keeps it as it is and looks again after the next quiet spell; anything
 // else means the turn ended while pekoed was away, so it becomes idle. A
-// hook that arrived meanwhile cleared the mark and wins.
-func (d *Daemon) recheckAfterRestart(slug, text string) {
-	if busyRe.MatchString(text) || yesNoRe.MatchString(text) {
+// hook that arrived meanwhile cleared the mark and wins. text is the tail
+// of the screen, lines all of it (for Claude Code's permission dialogs,
+// "Do you want to make this edit …? ❯ 1. Yes", which permissionOnScreen
+// reads).
+func (d *Daemon) recheckAfterRestart(slug, text string, lines []string) {
+	if busyRe.MatchString(text) || yesNoRe.MatchString(text) || permissionOnScreen(lines) {
 		return
 	}
 	d.update(slug, func(x *state.Session) {

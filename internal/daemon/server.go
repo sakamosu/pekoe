@@ -385,13 +385,13 @@ func (d *Daemon) shutdown() {
 		d.httpSrv.Shutdown(ctx)
 		cancel()
 	}
+	d.waitHooks(hookDrain)   // before the engine and state.db go
 	d.Eng.Close()            // agents keep running inside tmux …
 	if d.killAgents.Load() { // … unless asked to end them (sandboxes)
 		if err := d.Eng.KillServer(); err != nil {
 			log.Printf("kill agents: %v", err)
 		}
 	}
-	d.waitHooks(hookDrain)
 	d.DB.Close()
 	// Only what is still ours: a stale path must not take down the socket
 	// or pid file of a daemon that started meanwhile (issue #42).
