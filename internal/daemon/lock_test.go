@@ -212,6 +212,12 @@ func (s slowClose) Close() { time.Sleep(s.delay) }
 func TestStopThenConcurrentStartsYieldOne(t *testing.T) {
 	testenv.NeedUnixSocket(t)
 	lockEnv(t)
+	// The starters wait out the old daemon's slow shutdown within lockWait.
+	// lockEnv's 3s left about 2s to spare, and a busy machine (go test ./...)
+	// can stall the process that long: all six gave up, none started. The
+	// losers leave as soon as the winner serves, so a long bound costs
+	// nothing when the test passes. (lockEnv's cleanup restores it.)
+	lockWait = 30 * time.Second
 	old, err := newServing(t)
 	if err != nil {
 		t.Fatal(err)
