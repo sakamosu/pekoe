@@ -440,6 +440,12 @@ func (d *Daemon) hInboxWithdraw(who *Caller, p inboxIDP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if it.From != me {
+		// a person withdrew someone else's question: the asker is told as
+		// of a dismissal, so it does not wait for an answer
+		d.inboxClosed(it)
+		return it, nil
+	}
 	d.emit("inbox.updated", it)
 	return it, nil
 }
@@ -542,10 +548,11 @@ func (d *Daemon) hInboxDismiss(who *Caller, p inboxIDP) (any, error) {
 	return it, nil
 }
 
-// inboxClosed sends a person's answer (or dismissal), saved already, on
-// its way to the asker: a wait of the asker's that takes it gets it now
-// (waited); else it waits for the asker's input box (pending). A person
-// or an unknown caller is told nothing.
+// inboxClosed sends a person's answer (or dismissal, or withdrawal of
+// someone else's question), saved already, on its way to the asker: a
+// wait of the asker's that takes it gets it now (waited); else it waits
+// for the asker's input box (pending). A person or an unknown caller is
+// told nothing.
 func (d *Daemon) inboxClosed(it *state.InboxItem) {
 	switch it.From {
 	case callerHuman, callerUnknown, "":
@@ -666,6 +673,8 @@ func inboxLine(it *state.InboxItem) string {
 		fmt.Fprintf(&b, "人が PR #%d のマージを差し戻しました", pr)
 	case it.Status == state.InboxDismissed:
 		b.WriteString("答えずに閉じられました")
+	case it.Status == state.InboxWithdrawn:
+		b.WriteString("人が取り下げました")
 	case a != nil && a.Choice != nil && *a.Choice < len(it.Options):
 		fmt.Fprintf(&b, "答え: %d「%s」", *a.Choice+1, lineCut(it.Options[*a.Choice], 200))
 	default:

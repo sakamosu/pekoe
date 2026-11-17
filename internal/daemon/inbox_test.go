@@ -456,3 +456,60 @@ func TestInboxSlugReuse(t *testing.T) {
 	mine := ask(t, d, cur.Slug, map[string]any{"question": "新しい問い", "kind": "decision"})
 	callAs[state.InboxItem](t, d, agentAs(cur.Slug), "inbox.withdraw", map[string]any{"id": mine.ID})
 }
+
+// A person withdrawing an agent's question tells the asker as a dismissal
+// does: a wait of its own takes it, else a line is typed into its window.
+// The asker's own withdraw tells it nothing.
+func TestInboxHumanWithdrawTellsAsker(t *testing.T) {
+	d, fe, _ := inboxSetup(t)
+	d.setState("main", state.Idle, "")
+	it := ask(t, d, "main", map[string]any{"question": "どっち?", "kind": "decision", "options": []string{"A", "B"}})
+	got := make(chan waitRes, 1)
+	go func() {
+		got <- callAs[waitRes](t, d, agentAs("main"), "wait", map[string]any{"on": []string{"inbox"}, "timeout_s": 10})
+	}()
+	waitFor(t, func() bool {
+		d.changes.mu.Lock()
+		defer d.changes.mu.Unlock()
+		return len(d.changes.waiters) == 1
+	})
+	w := call[state.InboxItem](t, d, "inbox.withdraw", map[string]any{"id": it.ID, "note": "もう要らない"})
+	if w.Status != state.InboxWithdrawn || w.Answer.By != callerHuman {
+		t.Fatalf("withdrawn: %+v", w)
+	}
+	select {
+	case r := <-got:
+		if len(r.Changes) != 1 || r.Changes[0].Kind != kindInbox || !strings.Contains(r.Changes[0].Summary, "withdrawn") {
+			t.Fatalf("wait: %+v", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not return")
+	}
+	if g := inboxGet(t, d, it.ID); g.Delivery != state.DeliveryWaited {
+		t.Fatalf("delivery: %+v", g.Delivery)
+	}
+
+	// nobody waits: typed into the asker's window
+	it2 := ask(t, d, "main", map[string]any{"question": "名前は?", "kind": "decision"})
+	call[any](t, d, "inbox.withdraw", map[string]any{"id": it2.ID})
+	deliverUntil(t, d, func() bool { return sentText(fe, "[pekoe inbox q"+itoa(it2.ID)+"] 人が取り下げました") })
+	waitFor(t, func() bool { return inboxGet(t, d, it2.ID).Delivery == state.DeliveryDelivered })
+
+	// the asker's own withdraw: nothing goes to it
+	it3 := ask(t, d, "main", map[string]any{"question": "x", "kind": "decision"})
+	n := len(fe.sent)
+	if w := callAs[state.InboxItem](t, d, agentAs("main"), "inbox.withdraw", map[string]any{"id": it3.ID}); w.Delivery != state.DeliveryNone {
+		t.Fatalf("own withdraw: %+v", w)
+	}
+	// with the token from its own agent window (sandbox off): still its own
+	it4 := ask(t, d, "main", map[string]any{"question": "y", "kind": "decision"})
+	self := &Caller{human: true, Via: viaSocket, peer: fixedPeer("main")}
+	if w := callAs[state.InboxItem](t, d, self, "inbox.withdraw", map[string]any{"id": it4.ID}); w.Delivery != state.DeliveryNone || w.Answer.By != "main" {
+		t.Fatalf("own withdraw with the token: %+v", w)
+	}
+	d.deliverAllInbox()
+	time.Sleep(50 * time.Millisecond)
+	if got := sentSince(fe, n); len(got) != 0 {
+		t.Fatalf("typed for an own withdraw: %v", got)
+	}
+}
