@@ -57,13 +57,6 @@ const (
 
 var inboxKinds = map[string]bool{"decision": true, "approve": true, "login": true, "fyi": true}
 
-// Fixed choices: login is a person's chore, done or not; approve without
-// options of its own is yes or no.
-var (
-	loginOptions   = []string{"done", "can't"}
-	approveOptions = []string{"approve", "decline"}
-)
-
 // cleanInbox drops ANSI sequences, control characters (line breaks and
 // tabs stay when multiline) and the invisible format characters that can
 // reorder or hide text (bidi overrides, zero-width), so the text shows on
@@ -201,10 +194,10 @@ func cleanInboxPost(p inboxPostP) (*state.InboxItem, error) {
 		if len(opts) > 0 || p.Recommend != nil {
 			return nil, errors.New("inbox.post: login has fixed choices (done / can't): no options or recommend")
 		}
-		opts = append([]string(nil), loginOptions...)
+		opts = state.InboxKindOptions(p.Kind)
 	case "approve":
 		if len(opts) == 0 {
-			opts = append([]string(nil), approveOptions...)
+			opts = state.InboxKindOptions(p.Kind)
 		}
 	}
 	if len(opts) == 1 {
