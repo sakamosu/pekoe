@@ -241,13 +241,17 @@ func (d *Daemon) afterGone(s *state.Session) {
 	d.kickQueue()
 }
 
-// fetchBaseTimeout bounds fetchBase's fetch (a stalled network).
+// fetchBaseTimeout bounds fetchBase's fetch, both tries (a stalled network).
 var fetchBaseTimeout = 60 * time.Second
+
+// fetchBaseRetryDelay is how long fetchBase waits before it fetches again.
+var fetchBaseRetryDelay = 200 * time.Millisecond
 
 // fetchBase fetches base's branch from origin into repoDir and answers
 // origin/<branch>: base "main" and base "origin/main" both start from
-// origin/main as the remote has it now. false when there is no origin, the
-// fetch fails or takes longer than fetchBaseTimeout, ctx is done (the
+// origin/main as the remote has it now. A fetch that fails is tried once
+// more (see below). false when there is no origin, the fetch fails twice
+// or takes longer than fetchBaseTimeout, ctx is done (the
 // creation was cancelled: the caller looks at ctx), or base is not one of
 // origin's branches (a tag, a commit: they do not move, so the local base
 // is used, as for any new session).
@@ -258,7 +262,22 @@ func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
 	branch := strings.TrimPrefix(base, "origin/")
 	fctx, cancel := context.WithTimeout(ctx, fetchBaseTimeout)
 	defer cancel()
-	if _, err := gitx.RunRaw(fctx, repoDir, nil, nil, "fetch", "--end-of-options", "origin", branch); err != nil {
+	err := fetchOrigin(fctx, repoDir, branch)
+	if err != nil && fctx.Err() == nil {
+		// once more: the fetch's connectivity check reads every
+		// worktree's HEAD, and fails on one that another git in the same
+		// repository is adding just then (another session's creation, an
+		// agent): "failed to read .git/worktrees/<name>/commondir", then
+		// "did not send all necessary objects". That lasts a moment.
+		// Not when it timed out or was cancelled.
+		log.Printf("hold: fetch origin %s: %v (trying once more)", branch, err)
+		select {
+		case <-fctx.Done():
+		case <-time.After(fetchBaseRetryDelay):
+			err = fetchOrigin(fctx, repoDir, branch)
+		}
+	}
+	if err != nil {
 		log.Printf("hold: fetch origin %s: %v (starting from %s)", branch, err, base)
 		return "", false
 	}
@@ -267,6 +286,13 @@ func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
 		return "", false // a tag or a commit: no remote-tracking branch of that name
 	}
 	return ref, true
+}
+
+// fetchOrigin fetches branch from origin into repoDir (a variable so a test
+// can run something between the attempts).
+var fetchOrigin = func(ctx context.Context, repoDir, branch string) error {
+	_, err := gitx.RunRaw(ctx, repoDir, nil, nil, "fetch", "--end-of-options", "origin", branch)
+	return err
 }
 
 // removed is the session.removed event plus what the queue makes of it.
