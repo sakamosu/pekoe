@@ -106,8 +106,8 @@ func (m *model) onTimeMsg(msg tea.Msg) (tea.Cmd, bool) {
 		m.frame++
 		return spin(m.g.AnimateOn()), true
 
-	case disconnectedMsg:
-		m.setMsg("lost connection to pekoed", true)
+	case disconnectedMsg: // Run returns ErrDisconnected; the caller says it
+		m.lost = true
 		return tea.Quit, true
 	}
 	return nil, false

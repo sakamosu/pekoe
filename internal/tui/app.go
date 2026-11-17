@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,6 +31,12 @@ import (
 
 type evMsg client.Event
 type disconnectedMsg struct{}
+
+// ErrDisconnected is what Run returns when the connection to pekoed ended
+// (pekoed restarted or stopped): the message line goes with the alt screen,
+// so the caller says it on the terminal (and may wait for pekoed to return).
+var ErrDisconnected = errors.New("lost connection to pekoed")
+
 type tickMsg time.Time
 type spinMsg time.Time
 type screenMsg struct {
@@ -66,6 +73,7 @@ const (
 
 type model struct {
 	ime    *imeCursor // IME 用に本物のカーソルを置く位置(View が更新)
+	lost   bool       // the connection to pekoed ended: Run returns ErrDisconnected
 	cl     *client.Client
 	cwd    string
 	th     *theme.Theme
@@ -247,6 +255,9 @@ func Run(cl *client.Client, cwd string) error {
 	p := tea.NewProgram(m, opts...)
 	go pump(cl, p)
 	_, err := p.Run()
+	if err == nil {
+		err = m.exitErr()
+	}
 	if seq := m.pv.deleteAll(); seq != "" {
 		os.Stdout.WriteString(seq) // leave no preview image behind in the terminal
 	}
@@ -257,6 +268,14 @@ func Run(cl *client.Client, cwd string) error {
 		os.Stdout.WriteString(kittyPop)
 	}
 	return err
+}
+
+// exitErr is why the TUI ended, when not by the person: ErrDisconnected.
+func (m *model) exitErr() error {
+	if m.lost {
+		return ErrDisconnected
+	}
+	return nil
 }
 
 func pump(cl *client.Client, p *tea.Program) {
