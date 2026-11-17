@@ -121,9 +121,9 @@ func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 	case err != nil:
 		why = append(why, "could not read the send log: "+err.Error())
 	case r != nil && rp != nil:
-		why = append(why, fmt.Sprintf("%s sent it more (%s, %s) after its last report %s", r.From, r.Kind, r.At.Format("15:04:05"), ids.Report(rp.ID)))
+		why = append(why, fmt.Sprintf("%s sent it more (%s, %s) after its last report %s", r.From, r.Kind, r.At.Local().Format("15:04:05"), ids.Report(rp.ID)))
 	case r != nil:
-		why = append(why, fmt.Sprintf("%s sent it more (%s, %s) and it has not reported done since", r.From, r.Kind, r.At.Format("15:04:05")))
+		why = append(why, fmt.Sprintf("%s sent it more (%s, %s) and it has not reported done since", r.From, r.Kind, r.At.Local().Format("15:04:05")))
 	}
 	if len(why) > 0 {
 		return false, strings.Join(why, "; ")

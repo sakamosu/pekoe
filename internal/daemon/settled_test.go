@@ -189,3 +189,17 @@ func heldChanges(d *Daemon, slug string) int {
 	}
 	return n
 }
+
+// The time in the settled reason is local, like the rest of what pekoe
+// shows (the send log keeps it in UTC). On a machine whose zone is UTC the
+// two are the same and this only checks the format.
+func TestMergeSettledLocalTime(t *testing.T) {
+	d, _ := mergeSetup(t)
+	at := time.Now().Add(time.Second).Truncate(time.Second)
+	d.DB.AddSend(&state.SendRecord{At: at.UTC(), From: "human", To: "main", Kind: "send", Text: "one more", Via: "socket", OK: true})
+	c := mergeCheckOf(t, d)
+	got := c.Conds[len(c.Conds)-1].Detail
+	if want := "(send, " + at.Local().Format("15:04:05") + ")"; !strings.Contains(got, want) {
+		t.Fatalf("settled detail %q, want %q", got, want)
+	}
+}
