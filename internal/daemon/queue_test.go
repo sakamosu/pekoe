@@ -291,7 +291,8 @@ func TestRunNewGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d.runNew(context.Background(), "nope", r, newP{})
+	ctx, cancel := context.WithCancel(context.Background())
+	d.runNew(&creation{ctx: ctx, cancel: cancel, done: make(chan struct{})}, "nope", r, newP{})
 }
 
 // A queued session stays queued across a restart while its start is kept,

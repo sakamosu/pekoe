@@ -198,8 +198,8 @@ func (d *Daemon) startQueued(slug string) bool {
 		return false
 	}
 	d.dropQueued(slug)
-	ctx := d.prepareNew(s, repo)
-	go d.runNew(ctx, slug, repo, newP{Prompt: qn.Prompt, From: qn.From, Width: qn.Width, Height: qn.Height})
+	c := d.prepareNew(s, repo)
+	go d.runNew(c, slug, repo, newP{Prompt: qn.Prompt, From: qn.From, Width: qn.Width, Height: qn.Height})
 	return true
 }
 

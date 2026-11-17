@@ -180,13 +180,9 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 	return nil
 }
 
+// hCancel is rm of a session still being created (or queued, or failed):
+// hRm stops its creation and waits for it to end before the teardown.
 func (d *Daemon) hCancel(p slugP) (any, error) {
-	d.mu.Lock()
-	cancel := d.cancels[p.Slug]
-	d.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err

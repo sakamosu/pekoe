@@ -215,8 +215,8 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 func waitCreations(t *testing.T, d *Daemon) {
 	t.Helper()
 	d.mu.Lock()
-	for _, cancel := range d.cancels {
-		cancel()
+	for _, c := range d.cancels {
+		c.cancel()
 	}
 	d.mu.Unlock()
 	for end := time.Now().Add(30 * time.Second); ; sleep10ms() {
