@@ -142,7 +142,8 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 	case c.PRHead == "":
 		add("review", false, "PR HEAD not read yet (review is of %s)", shortSHA(rv.ReviewedSHA))
 	case !strings.HasPrefix(c.PRHead, rv.ReviewedSHA):
-		switch d.sameChange(s, rv.ReviewedSHA, c.PRHead) {
+		same, why := d.sameChange(s, rv.ReviewedSHA, c.PRHead)
+		switch same {
 		case changeSame:
 			add("review", true, "pass in report %s (%s · %s); PR HEAD %s is a rebase with the same diff", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA), reviewBy(s, rv), shortSHA(c.PRHead))
 		case changeDiffers:
@@ -150,7 +151,7 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 			add("review", false, "diff changed from reviewed %s to PR HEAD %s (needs a new review)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
 		default:
 			c.ReviewStale = true
-			add("review", false, "reviewed %s differs from PR HEAD %s (could not compare the diffs)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead))
+			add("review", false, "reviewed %s differs from PR HEAD %s (could not compare the diffs: %s)", shortSHA(rv.ReviewedSHA), shortSHA(c.PRHead), why)
 		}
 	default:
 		add("review", true, "pass in report %s (%s · %s)", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA), reviewBy(s, rv))
@@ -257,36 +258,45 @@ const (
 // PR goes into? pekoe land rebases onto origin/<base>, which gives the PR
 // a new head though nothing the review read changed; gitx.SameChange
 // tells that apart from a head that changes more, less or elsewhere: the
-// reviewed change put onto the head's base must give the head's tree. A known answer is kept per pair of commits: neither the
-// commits nor their merge-bases with the base move.
-func (d *Daemon) sameChange(s *state.Session, reviewed, head string) int {
-	key := s.RepoID + " " + reviewed + " " + head
-	if v, ok := d.changeSame.Load(key); ok {
-		return v.(int)
-	}
+// reviewed change put onto the head's base must give the head's tree (a
+// conflict only when both sides added lines at one place and head keeps
+// both). A known answer is kept per pair of commits and the commit the
+// base is at: neither the commits nor their merge-bases with that commit
+// move, and an origin/<base> that was behind (head's merge-base with it
+// is not where land put head) is read again once it moves. why says what
+// kept git from telling (changeUnknown).
+func (d *Daemon) sameChange(s *state.Session, reviewed, head string) (r int, why string) {
 	if s.Path == "" || !d.checkGitDir(s) {
-		return changeUnknown
+		return changeUnknown, "the worktree is gone or its git dir is blocked"
 	}
 	base := s.Base
 	if base == "" {
 		base = gitx.DefaultBase(s.Path)
 	}
-	if gitx.CheckRefArg("base", base) != nil {
-		return changeUnknown
+	if err := gitx.CheckRefArg("base", base); err != nil {
+		return changeUnknown, err.Error()
 	}
 	if _, err := gitx.RevParse(s.Path, "origin/"+base); err == nil {
 		base = "origin/" + base
 	}
-	same, err := gitx.SameChange(s.Path, reviewed, head, base)
+	at, err := gitx.RevParse(s.Path, base)
 	if err != nil {
-		return changeUnknown
+		return changeUnknown, fmt.Sprintf("%s not found", base)
 	}
-	r := changeDiffers
+	key := s.RepoID + " " + reviewed + " " + head + " " + at
+	if v, ok := d.changeSame.Load(key); ok {
+		return v.(int), ""
+	}
+	same, err := gitx.SameChange(s.Path, reviewed, head, at)
+	if err != nil {
+		return changeUnknown, cutRunes(err.Error(), 200)
+	}
+	r = changeDiffers
 	if same {
 		r = changeSame
 	}
 	d.changeSame.Store(key, r)
-	return r
+	return r, ""
 }
 
 // mergeDetails is the one line of what is missing in c.
@@ -348,11 +358,19 @@ func (d *Daemon) checkMerges() {
 			open[its[i].About] = &its[i]
 		}
 	}
+	waiting := map[string]bool{}
 	for i := range landing {
 		s := &landing[i]
+		waiting[s.Slug] = true
 		d.syncMerge(s, open[s.Slug])
 		delete(open, s.Slug)
 	}
+	d.mergeLogged.Range(func(k, _ any) bool {
+		if !waiting[k.(string)] {
+			d.mergeLogged.Delete(k)
+		}
+		return true
+	})
 	// items about sessions that are not waiting for a merge any more
 	for slug, it := range open {
 		note := "no longer after pekoe land"
@@ -369,6 +387,7 @@ func (d *Daemon) checkMerges() {
 // it, its open item, when not (or when the PR's head moved).
 func (d *Daemon) syncMerge(s *state.Session, it *state.InboxItem) {
 	c := d.mergeCheck(s)
+	d.logMerge(c)
 	rec := d.mergeRecordOf(s.Slug)
 	if it != nil {
 		switch {
@@ -397,6 +416,24 @@ func (d *Daemon) syncMerge(s *state.Session, it *state.InboxItem) {
 		}
 	}
 	d.askMerge(s, c)
+}
+
+// logMerge writes to pekoed.log what the merge check found for a session
+// after pekoe land, each time it changes: why no item was asked for stays
+// readable after the PR merged and the session went (merge.check only
+// shows sessions that have not landed).
+func (d *Daemon) logMerge(c *state.MergeCheck) {
+	line := fmt.Sprintf("PR #%d HEAD %s: ", c.PR, shortSHA(c.PRHead))
+	if c.Ready {
+		line += "evidence ready"
+	} else {
+		line += "not ready: " + mergeDetails(c)
+	}
+	if prev, ok := d.mergeLogged.Load(c.Slug); ok && prev.(string) == line {
+		return
+	}
+	d.mergeLogged.Store(c.Slug, line)
+	log.Printf("merge evidence %s: %s", c.Slug, line)
 }
 
 // askAgain: pekoed may ask about the same PR and head as prev again: it

@@ -476,8 +476,13 @@ func MergeBase(dir, a, b string) (string, error) {
 // rebase would (a three-way merge from reviewed's merge-base, in memory:
 // merge-tree writes no ref and touches no worktree), and the change is the
 // same only when that gives head's tree exactly: every file, every byte,
-// every place. A merge that conflicts is not the same change. Commits git
-// cannot find are an error (nothing to compare).
+// every place. A merge that conflicts is the same change only when every
+// conflict is two additions at one place (the base side of the hunk is
+// empty: both the new base and the reviewed change only added lines
+// there) and head keeps both, whole and in one order (sameAfterAdditions);
+// any other conflict (both sides changed the same lines, a file changed
+// on one side and deleted on the other) is not. Commits git cannot find
+// are an error (nothing to compare).
 func SameChange(dir, reviewed, head, base string) (bool, error) {
 	r, err := RevParse(dir, reviewed)
 	if err != nil {
@@ -502,18 +507,175 @@ func SameChange(dir, reviewed, head, base string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	out, err := RunRaw(context.Background(), dir, nil, nil, "merge-tree", "--write-tree", "--no-messages", "--merge-base", mbR, "--end-of-options", mbH, r)
+	// diff3: a conflict shows the base's lines too, so that two additions
+	// at one place (an empty base side) can be told from two edits
+	out, err := RunRaw(context.Background(), dir, nil, nil, "-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "-z", "--no-messages", "--merge-base", mbR, "--end-of-options", mbH, r)
+	conflicts := false
 	if err != nil {
 		var ge *Error
-		if errors.As(err, &ge) {
-			if ee, ok := ge.Err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
-				return false, nil // conflicts: not the change that was reviewed
-			}
+		var ee *exec.ExitError
+		if !errors.As(err, &ge) || !errors.As(ge.Err, &ee) || ee.ExitCode() != 1 {
+			return false, err
 		}
+		conflicts = true
+	}
+	fields := strings.Split(string(out), "\x00")
+	got := fields[0]
+	if got == "" {
+		return false, nil
+	}
+	if !conflicts {
+		return got == want, nil
+	}
+	return sameAfterAdditions(dir, got, h, [3]string{mbH, mbR, r}, fields[1:])
+}
+
+// sameAfterAdditions: does head's tree hold the merge tree got (with
+// conflict markers) resolved by keeping both sides of every conflict, when
+// every conflict is two additions at one place? info is merge-tree -z's
+// conflicted file info ("<mode> <oid> <stage>\t<path>", up to an empty
+// field); labels are what merge-tree was given for ours, the base and
+// theirs (its markers name them). Anything else is not the same change: a
+// path not conflicted that differs from head, a conflict without both
+// sides' content (one side deleted or renamed the file), a hunk whose base
+// side has lines, a marker git did not write the usual way, and a file
+// whose own lines (in any of its three versions) look like markers: those
+// could not be told from git's.
+func sameAfterAdditions(dir, got, head string, labels [3]string, info []string) (bool, error) {
+	stages := map[string]map[string]bool{}
+	var blobs []string
+	for _, f := range info {
+		if f == "" {
+			break
+		}
+		meta, path, ok := strings.Cut(f, "\t")
+		parts := strings.Fields(meta)
+		if !ok || len(parts) != 3 {
+			return false, nil
+		}
+		if stages[path] == nil {
+			stages[path] = map[string]bool{}
+		}
+		stages[path][parts[2]] = true
+		blobs = append(blobs, parts[1])
+	}
+	if len(stages) == 0 {
+		return false, nil
+	}
+	diff, err := RunRaw(context.Background(), dir, nil, nil, "diff-tree", "-r", "-z", "--no-renames", "--name-only", "--end-of-options", got, head+"^{tree}")
+	if err != nil {
 		return false, err
 	}
-	got, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
-	return got != "" && got == want, nil
+	for _, p := range strings.Split(string(diff), "\x00") {
+		if p != "" && stages[p] == nil {
+			return false, nil // a file the merge did not conflict on differs
+		}
+	}
+	for _, oid := range blobs {
+		b, err := RunRaw(context.Background(), dir, nil, nil, "cat-file", "blob", oid)
+		if err != nil {
+			return false, err
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if markerLike(strings.TrimSuffix(l, "\r")) {
+				return false, nil
+			}
+		}
+	}
+	for path, st := range stages {
+		if !st["2"] || !st["3"] {
+			return false, nil // one side has no content for it (deleted, renamed)
+		}
+		// the same mode and type as head's (a symlink or a submodule is not text)
+		gm, err := Run(dir, "ls-tree", "-z", "--format=%(objectmode)", "--end-of-options", got, "--", path)
+		if err != nil {
+			return false, err
+		}
+		hm, err := Run(dir, "ls-tree", "-z", "--format=%(objectmode)", "--end-of-options", head, "--", path)
+		if err != nil {
+			return false, err
+		}
+		if gm != "100644\x00" && gm != "100755\x00" || gm != hm {
+			return false, nil
+		}
+		merged, err := RunRaw(context.Background(), dir, nil, nil, "cat-file", "blob", got+":"+path)
+		if err != nil {
+			return false, err
+		}
+		want, err := RunRaw(context.Background(), dir, nil, nil, "cat-file", "blob", head+":"+path)
+		if err != nil {
+			return false, err
+		}
+		ours, theirs, ok := keepBoth(string(merged), labels)
+		if !ok || (ours != string(want) && theirs != string(want)) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// markerLike: a line git could have written as a conflict marker (any
+// label, any of the four kinds).
+func markerLike(l string) bool {
+	for _, m := range []string{"<<<<<<<", "|||||||", "=======", ">>>>>>>"} {
+		if strings.HasPrefix(l, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// keepBoth resolves the diff3 conflicts in text by keeping both sides,
+// ours first (ours) and theirs first (theirs). ok is false when a hunk's
+// base side has lines (both sides changed what was there: no order of the
+// two keeps the change that was reviewed), when text has no conflict, or
+// when a marker line shows up where git does not write one, or names
+// other than labels (ours, base, theirs: what merge-tree was given). A
+// file whose own lines look like markers is not told apart here: the
+// caller turns those down first.
+func keepBoth(text string, labels [3]string) (ours, theirs string, ok bool) {
+	start, base, mid, end := "<<<<<<< "+labels[0], "||||||| "+labels[1], "=======", ">>>>>>> "+labels[2]
+	marker := markerLike
+	lines := strings.SplitAfter(text, "\n")
+	var a, b strings.Builder
+	hunks := 0
+	for i := 0; i < len(lines); i++ {
+		l := strings.TrimSuffix(lines[i], "\n")
+		if !marker(l) {
+			a.WriteString(lines[i])
+			b.WriteString(lines[i])
+			continue
+		}
+		if l != start {
+			return "", "", false
+		}
+		var o, t []string
+		i++
+		for ; i < len(lines) && !marker(strings.TrimSuffix(lines[i], "\n")); i++ {
+			o = append(o, lines[i])
+		}
+		if i >= len(lines) || strings.TrimSuffix(lines[i], "\n") != base {
+			return "", "", false
+		}
+		i++
+		if i >= len(lines) || strings.TrimSuffix(lines[i], "\n") != mid {
+			return "", "", false // the base side has lines
+		}
+		i++
+		for ; i < len(lines) && !marker(strings.TrimSuffix(lines[i], "\n")); i++ {
+			t = append(t, lines[i])
+		}
+		if i >= len(lines) || lines[i] != end+"\n" {
+			return "", "", false
+		}
+		hunks++
+		a.WriteString(strings.Join(o, "") + strings.Join(t, ""))
+		b.WriteString(strings.Join(t, "") + strings.Join(o, ""))
+	}
+	if hunks == 0 {
+		return "", "", false
+	}
+	return a.String(), b.String(), true
 }
 
 // beforeRemove runs between RestoreSnapshot's diff and its removes (tests).
