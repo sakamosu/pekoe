@@ -384,6 +384,83 @@ func (d *Daemon) stepWarn(slug string, i int, warns []string) {
 	}
 }
 
+// stepDetail replaces step i's detail; the step's next update shows it.
+func (d *Daemon) stepDetail(slug string, i int, detail string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if steps := d.progress[slug]; i < len(steps) {
+		steps[i].Detail = detail
+	}
+}
+
+// start is where a new session's branch starts from (freshStart).
+type start struct {
+	start  string // the ref the branch is made from
+	remote bool   // start is origin/<base> (the branch gets no upstream)
+	note   string // for the worktree step: "from origin/main (fetched, local main 3 behind)"
+	warn   string // something the person should know (fetch failed, diverged)
+}
+
+// freshStart decides where a session.new without --base starts: base is
+// the repository's base (a branch name, normally main). It fetches base
+// from origin, as --hold does (fetchBase: once more on failure, within
+// fetchBaseTimeout), and starts from origin/<base> only when the local
+// base is behind it (or there is no local branch of that name); a local
+// base that has commits origin does not (unpushed work, a branch kept
+// only here) is used as it is. No origin, a failed fetch, or a base that
+// is not one of origin's branches: the local base, as before. The caller
+// looks at ctx (cancelled during the fetch).
+func freshStart(ctx context.Context, repoDir, base string) start {
+	local := start{start: base}
+	ref, err := fetchBaseRef(ctx, repoDir, base)
+	switch {
+	case errors.Is(err, errNoOrigin):
+		local.note = "from " + base + " (no origin)"
+		return local
+	case err != nil:
+		local.note = "from " + base + " (fetch failed)"
+		local.warn = fmt.Sprintf("could not fetch %s from origin (%v): started from the local %s, which may be behind origin", strings.TrimPrefix(base, "origin/"), firstLine(err.Error()), base)
+		return local
+	case ref == "" || ref == base:
+		// a tag or a commit, or base is already origin/x
+		local.note = "from " + base
+		return local
+	}
+	if _, err := gitx.Run(repoDir, "rev-parse", "--verify", "--quiet", "--end-of-options", "refs/heads/"+base+"^{commit}"); err != nil {
+		// no local branch of that name: origin's
+		return start{start: ref, remote: true, note: "from " + ref + " (fetched)"}
+	}
+	count := func(rng string) int {
+		out, err := gitx.Run(repoDir, "rev-list", "--count", "--end-of-options", rng)
+		if err != nil {
+			return -1
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(out))
+		if err != nil {
+			return -1
+		}
+		return n
+	}
+	behind := count("refs/heads/" + base + ".." + ref)
+	ahead := count(ref + "..refs/heads/" + base)
+	switch {
+	case behind < 0 || ahead < 0:
+		local.note = "from " + base
+		return local
+	case behind == 0 && ahead == 0:
+		local.note = "from " + base + " (= " + ref + ", fetched)"
+		return local
+	case ahead == 0:
+		return start{start: ref, remote: true, note: fmt.Sprintf("from %s (fetched, local %s %d behind)", ref, base, behind)}
+	case behind == 0:
+		local.note = fmt.Sprintf("from %s (%d commit%s not on %s)", base, ahead, plural(ahead), ref)
+		return local
+	}
+	local.note = fmt.Sprintf("from %s (diverged from %s)", base, ref)
+	local.warn = fmt.Sprintf("the local %s and %s have diverged (%d and %d commits of their own): started from the local %s; pull it if the session should have origin's", base, ref, ahead, behind, base)
+	return local
+}
+
 // gauge reports progress of a running step against its last duration
 // (capped at 99% until the step really ends).
 func (d *Daemon) gauge(slug string, i int, t0 time.Time, prev time.Duration, stop <-chan struct{}) {
@@ -505,10 +582,35 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 				return err
 			}
 			if ok {
+				d.stepDetail(slug, i, s.Path+" · from "+start+" (fetched)")
 				return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, start)
 			}
 		}
-		return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
+		if gitx.BranchExists(repo.Dir, s.Branch) {
+			// an existing branch is checked out as it is
+			d.stepDetail(slug, i, s.Path+" · existing branch "+s.Branch)
+			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
+		}
+		if s.Hold || p.Base != "" {
+			// --hold whose fetch gave nothing; --base as given (a tag, a
+			// commit, origin/x: as before, not fetched)
+			d.stepDetail(slug, i, s.Path+" · from "+s.Base)
+			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
+		}
+		fs := freshStart(ctx, repo.Dir, s.Base)
+		if err := ctx.Err(); err != nil {
+			return err // cancelled during the fetch, as for --hold
+		}
+		d.stepDetail(slug, i, s.Path+" · "+fs.note)
+		if fs.warn != "" {
+			log.Printf("new %s: %s", slug, fs.warn)
+			d.stepWarn(slug, i, []string{fs.warn})
+			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), fs.warn) })
+		}
+		if fs.remote {
+			return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, fs.start)
+		}
+		return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, fs.start)
 	}) {
 		return
 	}
