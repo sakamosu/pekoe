@@ -468,3 +468,95 @@ func TestSameChangeSurvivesRebase(t *testing.T) {
 		}
 	}
 }
+
+// pekoe land rebases a change that adds lines where the new base added
+// lines too (two tests appended to the end of one file, PR #223): git
+// cannot replay it without a conflict, and the agent kept both. That head
+// is still the reviewed change: both additions whole, nothing else. A
+// resolution that does more (edits a kept side, drops one, mixes two
+// edits of one line, keeps a file the other side deleted) is not.
+func TestSameChangeBothAddedAtOnePlace(t *testing.T) {
+	isolatedConfig(t, "")
+	repo, wt := repoWithWorktree(t, false)
+	commit := func(dir, file, content, msg string) string {
+		t.Helper()
+		if content == "" {
+			gitT(t, dir, "rm", "-q", file)
+		} else {
+			os.WriteFile(filepath.Join(dir, file), []byte(content), 0o644)
+			gitT(t, dir, "add", "-A")
+		}
+		gitT(t, dir, "commit", "-q", "--no-gpg-sign", "-m", msg)
+		return gitT(t, dir, "rev-parse", "HEAD")
+	}
+	fn := func(name string) string { return "\nfunc " + name + "() {\n\tcheck()\n}\n" }
+	top := "package a\n\nfunc A() {\n\tcheck()\n}\n"
+	commit(repo, "a.go", top, "base")
+	commit(repo, "c.txt", "one\ntwo\n", "base 2")
+	gitT(t, wt, "rebase", "-q", "main")
+	reviewed := commit(wt, "a.go", top+fn("Ours"), "feat")
+	commit(repo, "a.go", top+fn("Main"), "main adds at the same place")
+	main := gitT(t, repo, "rev-parse", "main")
+	// a head on main with a.go (and c.txt) as given
+	head := func(name, a, c string) string {
+		t.Helper()
+		gitT(t, wt, "checkout", "-q", "-B", name, main)
+		commit(wt, "a.go", a, name)
+		if c != "" {
+			commit(wt, "c.txt", c, name+" c")
+		}
+		return gitT(t, wt, "rev-parse", "HEAD")
+	}
+	check := func(name, h string, want bool) {
+		t.Helper()
+		if got, err := SameChange(wt, reviewed, h, "main"); err != nil || got != want {
+			t.Errorf("%s: SameChange = %v, %v; want %v", name, got, err, want)
+		}
+	}
+	check("main first", head("main-first", top+fn("Main")+fn("Ours"), ""), true)
+	check("ours first", head("ours-first", top+fn("Ours")+fn("Main"), ""), true)
+	check("a kept side edited", head("edited", top+fn("Main")+fn("Ours2"), ""), false)
+	check("main's dropped", head("dropped", top+fn("Ours"), ""), false)
+	check("both kept, and more elsewhere", head("more", top+fn("Main")+fn("Ours"), "one\ntwo\nthree\n"), false)
+
+	// both sides changed one line: a resolution that mixes them is new text
+	gitT(t, wt, "checkout", "-q", "-B", "edit", main)
+	reviewedEdit := commit(wt, "c.txt", "one\nTWO\n", "edit")
+	commit(repo, "c.txt", "one\ntwo!\n", "main edits the same line")
+	main2 := gitT(t, repo, "rev-parse", "main")
+	gitT(t, wt, "checkout", "-q", "-B", "edit-head", main2)
+	mixed := commit(wt, "c.txt", "one\nTWO!\n", "mixed")
+	if got, err := SameChange(wt, reviewedEdit, mixed, "main"); err != nil || got {
+		t.Errorf("mixed edits: SameChange = %v, %v; want false", got, err)
+	}
+	// main deleted the file the change added to
+	gitT(t, wt, "checkout", "-q", "-B", "del", main2)
+	reviewedDel := commit(wt, "c.txt", "one\ntwo!\nthree\n", "append")
+	commit(repo, "c.txt", "", "main deletes c.txt")
+	gitT(t, wt, "checkout", "-q", "-B", "del-head", gitT(t, repo, "rev-parse", "main"))
+	kept := commit(wt, "c.txt", "one\ntwo!\nthree\n", "kept")
+	if got, err := SameChange(wt, reviewedDel, kept, "main"); err != nil || got {
+		t.Errorf("modify/delete: SameChange = %v, %v; want false", got, err)
+	}
+}
+
+// keepBoth reads only the diff3 hunks git writes: a base side with lines,
+// a marker out of place or no hunk at all is not two additions.
+func TestKeepBoth(t *testing.T) {
+	hunk := "a\n<<<<<<< x\no\n||||||| b\n=======\nt\n>>>>>>> y\nz\n"
+	if o, th, ok := keepBoth(hunk); !ok || o != "a\no\nt\nz\n" || th != "a\nt\no\nz\n" {
+		t.Errorf("hunk: %q %q %v", o, th, ok)
+	}
+	for _, s := range []string{
+		"a\nb\n", // no conflict
+		"<<<<<<< x\no\n||||||| b\nwas\n=======\nt\n>>>>>>> y\n", // the base side has lines
+		"<<<<<<< x\no\n=======\nt\n>>>>>>> y\n",                 // not diff3
+		"<<<<<<< x\no\n||||||| b\n=======\nt\n=======\n>>>>>>> y\n",
+		"<<<<<<< x\no\n||||||| b\n=======\nt\n", // no end
+		"=======\n",
+	} {
+		if _, _, ok := keepBoth(s); ok {
+			t.Errorf("%q: ok", s)
+		}
+	}
+}
