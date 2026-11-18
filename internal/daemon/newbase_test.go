@@ -162,3 +162,26 @@ func TestNewNoOriginFromLocal(t *testing.T) {
 	}
 	waitCreations(t, d)
 }
+
+// A base only this repository has (not on origin) is used as it is, with
+// no fetch-failed warning: git fetch answers "couldn't find remote ref",
+// which is not a failure to reach origin.
+func TestFreshStartLocalOnlyBranch(t *testing.T) {
+	_, _, repo := setup(t)
+	withOrigin(t, repo)
+	run(t, repo, "git", "branch", "local-only")
+	real := fetchOrigin
+	t.Cleanup(func() { fetchOrigin = real })
+	calls := 0
+	fetchOrigin = func(ctx context.Context, dir, branch string) error {
+		calls++
+		return real(ctx, dir, branch)
+	}
+	fs := freshStart(context.Background(), repo, "local-only")
+	if fs.start != "local-only" || fs.remote || fs.warn != "" || fs.note != "from local-only" {
+		t.Errorf("freshStart: %+v", fs)
+	}
+	if calls != 1 {
+		t.Errorf("fetched %d times, want 1 (no retry for a ref origin does not have)", calls)
+	}
+}

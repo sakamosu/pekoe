@@ -278,6 +278,11 @@ func fetchBaseRef(ctx context.Context, repoDir, base string) (string, error) {
 	fctx, cancel := context.WithTimeout(ctx, fetchBaseTimeout)
 	defer cancel()
 	err := fetchOrigin(fctx, repoDir, branch)
+	if noRemoteRef(err) {
+		// a branch only this repository has (or a tag, a commit): not one
+		// of origin's branches, nothing to fetch and nothing failed
+		return "", nil
+	}
 	if err != nil && fctx.Err() == nil {
 		// once more: the fetch's connectivity check reads every
 		// worktree's HEAD, and fails on one that another git in the same
@@ -301,6 +306,12 @@ func fetchBaseRef(ctx context.Context, repoDir, base string) (string, error) {
 		return "", nil // a tag or a commit: no remote-tracking branch of that name
 	}
 	return ref, nil
+}
+
+// noRemoteRef: err is a fetch that found no such ref on origin.
+func noRemoteRef(err error) bool {
+	var ge *gitx.Error
+	return errors.As(err, &ge) && strings.Contains(ge.Stderr, "couldn't find remote ref")
 }
 
 // fetchOrigin fetches branch from origin into repoDir (a variable so a test
