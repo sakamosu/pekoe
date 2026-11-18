@@ -162,7 +162,11 @@ type Daemon struct {
 	lock    *os.File // flock on pekoed.lock, held for the daemon's lifetime (lock.go)
 	sockID  fileID   // the socket file this daemon created
 	httpSrv *http.Server
-	token   string
+	// http is what the extension's port came to (listenHTTP): the port
+	// pekoed listens on, or why it does not. Not the configured port:
+	// another pekoed may hold that one.
+	http  httpListen
+	token string
 	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
 	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
@@ -348,9 +352,7 @@ func (d *Daemon) Run() error {
 	d.kickQueue()
 	go d.outputLoop()
 	go d.tickLoop()
-	if err := d.startHTTP(); err != nil {
-		log.Printf("http: %v (extension disabled)", err)
-	}
+	d.listenHTTP()
 	d.startWeb() // no-op (tsnet untouched) unless [web] enable = true
 	log.Printf("pekoed %s listening on %s", Version, sock)
 
@@ -592,7 +594,11 @@ func (d *Daemon) registerHandlers() {
 			d.mu.Lock()
 			n := len(d.sessions)
 			d.mu.Unlock()
-			st := map[string]any{"pid": os.Getpid(), "version": Version, "sessions": n, "http_port": d.cfg().HTTP.Port, "socket": paths.Socket()}
+			h := d.httpState()
+			st := map[string]any{"pid": os.Getpid(), "version": Version, "sessions": n, "http_port": h.port, "socket": paths.Socket()}
+			if h.port == 0 {
+				st["http_error"] = h.why() // the extension cannot reach this pekoed
+			}
 			if r := d.configRestart(); len(r) > 0 {
 				st["config_restart"] = r // config.toml changed these: they wait for a restart
 			}
@@ -615,7 +621,11 @@ func (d *Daemon) registerHandlers() {
 			return nil, nil
 		},
 		"ext.info": func(json.RawMessage) (any, error) {
-			return map[string]any{"port": d.cfg().HTTP.Port, "token": d.token}, nil
+			h := d.httpState()
+			if h.port == 0 {
+				return nil, fmt.Errorf("ext.info: pekoed is not listening for the extension (%s); free the port or set another [http] port in config.toml, then restart pekoed", h.why())
+			}
+			return map[string]any{"port": h.port, "token": d.token}, nil
 		},
 		"web.status": func(json.RawMessage) (any, error) {
 			st := d.web.get()

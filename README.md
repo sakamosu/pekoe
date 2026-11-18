@@ -220,7 +220,7 @@ pekoe                                                 # TUI
 | `pekoe attach <slug> [agent\|review\|dev]` | Attach to the tmux window directly (for debugging) |
 | `pekoe hooks install\|uninstall\|status [--yes]` | Add / remove / check the Claude Code hooks |
 | `pekoe skills install\|uninstall\|status [--yes]` | Link / unlink / check pekoe's Claude Code skills in `~/.claude/skills` ([Claude Code skills](#claude-code-skills)) |
-| `pekoe ext` | The port and token for the Chrome extension |
+| `pekoe ext` | The port and token for the Chrome extension (the port pekoed actually listens on; if it could not listen, say because another pekoed holds the port, it refuses and says why, and `pekoe daemon status` shows `http off (…)`) |
 | `pekoe web` | Web UI status, URL and first-time login URL |
 | `pekoe mcp` | MCP server (stdio) for agents |
 | `pekoe daemon start\|stop\|restart\|status` | Daemon control. `stop` waits until the process exits. `restart` waits for it to stop, starts it again and prints the versions before and after (use it after `make install`; if it isn't running, it just starts). Agents keep running inside tmux |

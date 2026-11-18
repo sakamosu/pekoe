@@ -61,3 +61,18 @@ func TestNewAfterRefused(t *testing.T) {
 		t.Fatalf("repeats count once: %v", err)
 	}
 }
+
+// A branch name git would refuse ("feat/") is turned down before a session
+// row or a port is made (it used to leave a fail row behind once git
+// worktree add refused it).
+func TestNewRefusesInvalidRef(t *testing.T) {
+	d, _, repo := setup(t)
+	for _, b := range []string{"feat/", "a..b", "feat/x.lock"} {
+		if err := callErr(d, "session.new", map[string]any{"repo": repo, "branch": b, "prompt": "x"}); err == nil || !strings.Contains(err.Error(), "invalid branch") {
+			t.Fatalf("%s: %v", b, err)
+		}
+	}
+	if n := len(call[[]state.Session](t, d, "session.list", map[string]any{})); n != 0 {
+		t.Fatalf("%d sessions made", n)
+	}
+}

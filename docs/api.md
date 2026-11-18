@@ -55,7 +55,7 @@
   | `send.log` | ハブのエージェントが自分の頼んだことを読み直す(token なしでは呼び出し元が送った・受けた記録だけ。下の「送信の記録」) |
   | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
-  | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ。人は token つきで誰の問いでも取り下げられ、そのときは問いを出したエージェントに知らせる) |
+  | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ。エージェントの窓からは token つきでも同じ。人(呼び出し元が `human`)は誰の問いでも取り下げられ、そのときは問いを出したエージェントに知らせる) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
   | `stats` | tapi chat・ハブのエージェントの `pekoe stats`(日ごと・リポジトリごとのマージ数とトークン。数・日付・リポジトリ名・slug・PR 番号だけで、エージェントが書いた文を含まない。下の「集計」) |
   | `tips.next` | tapi chat のあいさつの `pekoe tip`(組み込みの一覧から次の tip を選び、TUI と共通の `tips.json` に記録する。params なし。pekoed が書くのはこのファイルだけ。tapi chat の sandbox は DataDir に書けないので pekoed が代わりに記録する。pekoed が読んだ `[keys] prefix` も返す) |
@@ -251,7 +251,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 
 | method | params | result |
 | --- | --- | --- |
-| `daemon.status` | — | `{pid, version, sessions, http_port, config_restart?}`。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
+| `daemon.status` | — | `{pid, version, sessions, http_port, http_error?, config_restart?}`。`http_port` は拡張用の HTTP を実際に待ち受けている番号(設定の `[http] port` ではない)。待ち受けていなければ `0` で、`http_error` に理由(`listen tcp 127.0.0.1:47777: bind: address already in use` など)。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
 | `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる(処理中の hook(`session.event` と Stop の後処理)を最大 3 秒待ってから state.db を閉じる)。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
 | `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
@@ -278,7 +278,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `inbox.post` | `{question, kind: "decision"\|"approve"\|"login"\|"fyi", options?: [string], recommend?: int, context?, links?: [string], about?: slug, decided?: int}` | `InboxItem`(下の「判断の受信箱」) |
 | `inbox.list` | `{status?: "open"\|"answered"\|"withdrawn"\|"dismissed"\|"all", mine?: bool, limit?: 100}` | `[InboxItem]`(新しい順。既定は `open`。`limit` は 500 まで) |
 | `inbox.get` | `{id}` | `InboxItem` |
-| `inbox.withdraw` | `{id, note?}` | `InboxItem`。token なしでは自分が出したものだけ |
+| `inbox.withdraw` | `{id, note?}` | `InboxItem`。呼び出し元が `human` でなければ自分が出したものだけ |
 | `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。人だけ。`rev` が今のものと違えば `… the item changed; look again` |
 | `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
 | `ledger.list` | `{status?: "open"\|"all", since?: id, auto?: bool}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼(ledger)」)。`status: open` で `auto: true` なら `LedgerView` = `{open: [LedgerEntry], auto_closed: [LedgerEntry], auto_closed_more}` を返す: `open` のもの(全文)と、pekoed が直近 24 時間に自動で閉じたもの(`status: chat`・`auto: true`)の新しい 10 件(古い順。本文は 200 文字で切り、切ったものは `cut: true`)と、残りの件数。token なしでは tapi の窓からだけ |
@@ -334,7 +334,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `error.get` | `{id}` | `ErrorReport` + `excerpt`(先頭フレームが worktree 内なら前後 5 行の抜粋) |
 | `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/pekoe/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
-| `ext.info` | — | `{port, token}`(`pekoe ext`) |
+| `ext.info` | — | `{port, token}`(`pekoe ext`)。`port` は実際に待ち受けている番号。待ち受けていない(bind に失敗した)ときは理由を添えて断る |
 | `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?, backend?, backend_error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL。`backend` は Tailscale の backend の状態(`NoState` `Starting` `Running` など)、`backend_error` は backend が control から受け取った最後のエラー(Running になると消える)。`starting` のまま進まない理由を見るため |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
 | `tapi.get` | — | `Tapi`(下記) |
@@ -458,7 +458,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 - `from` は呼び出し元(上の「呼び出し元の識別」)。エージェントの窓ならそのセッション。窓がない・run 窓・review 窓で token つきなら `human`(人の問いは誰にも届けない)、token なしで窓に当たらなければ断る
 - 上限(超えたら切らずに断る): question 500 文字、options 6 個・各 200 文字、context 4000 文字、links 10 件・各 500 文字、メモ 4000 文字。呼び出し元ごとに未回答 10 件まで(`fyi` は数えない。数えるのは `from` の窓ごとで、token を読めるエージェントの窓(sandbox なし・tapi)も数える。数えないのは `human`(窓のない token つきの人と、run 窓・review 窓から token つきで打った人)だけ)。保存の前に ANSI・改行とタブ以外の制御文字・見えない書式文字(bidi の上書き・ゼロ幅)を落とす。選択肢とリンクは 1 行
 - **facts と rev**: `facts` は `about` のセッションを pekoed が読んだもの(HEAD は git、ほかは pekoed が持つセッションの状態)。未回答のものは `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変わっていれば `rev` を上げて `inbox.updated` を出す。`inbox.answer` は読み直した後の `rev` と比べるので、人が見てから HEAD が動いた・CI が落ちたなどの答えは断られる
-- `inbox.withdraw` は token なしでは自分が出したものだけ。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)。人(token つきで呼び出し元が `human`)がエージェントの問いを取り下げたら、`dismiss` と同じく問いを出したエージェントに届ける(下の「答えの届け方」。`answer.by` は `human`)。エージェントが自分の問いを取り下げたときは誰にも届けない(`delivery: none` のまま)
+- `inbox.withdraw` は呼び出し元(`Caller.ID()`)が `human` でなければ自分が出したものだけ。token を読めるエージェント(sandbox なし・tapi chat)も、エージェントの窓から呼べばそのセッションなので、ほかのセッションの問いは断る。未回答のものだけ閉じられる(答え・取り下げ・閉じるのどれも、`open` 以外には断る)。人(token つきで呼び出し元が `human`)がエージェントの問いを取り下げたら、`dismiss` と同じく問いを出したエージェントに届ける(下の「答えの届け方」。`answer.by` は `human`)。エージェントが自分の問いを取り下げたときは誰にも届けない(`delivery: none` のまま)
 - **答えの届け方**(`answer` と `dismiss`、人の `withdraw`): 問いを出したエージェントが今 `wait` で待っていて、その `wait` が `inbox` を受け取るなら、その返り値で渡す(`delivery: waited`)。待っていなければ `pending` にして、依頼元のエージェントの入力欄が空いたときに 1 行打つ: `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12`(閉じたものは `答えずに閉じられました`、人が取り下げたものは `人が取り下げました`)。1 行に均し、先頭は `[`(数字にしない)
   - 打つ条件: セッションなら `idle` か `done` で agent の窓が生きている、tapi chat なら起動していて `idle`。どちらも許可ダイアログが出ていない(hooks の状態と画面の両方。受け付けた時と、送信ロックを取って打つ直前の 2 回。`session.send` の token なしの経路と同じ)。人がその窓に打った(TUI・CLI・Web UI の `session.send`・`session.keys`・`tapi.send`・`tapi.keys`)のが 30 秒以内なら待つ
   - 試すのは、依頼元が `idle` / `done` に入ったとき、答えた直後、5 秒ごと。1 回に 1 件(古い順)で、次は次に空いたとき
@@ -821,6 +821,8 @@ pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前
 ## 2. HTTP(Chrome 拡張)
 
 `http://127.0.0.1:<port>`(既定 47777、`~/.config/pekoe/config.toml` の `[http] port`)。
+
+起動時に bind できなければ(ほかの pekoed が同じ port を使っているなど)拡張なしで動き続け、ログに理由を書く。そのとき `daemon.status` は `http_port: 0` と `http_error`、`ext.info` は断る(設定の番号を出すと、拡張がその番号で別の pekoed につながってしまう)。
 
 - すべてのリクエストに `Authorization: Bearer <token>` が必要。token は初回起動時に `~/.local/share/pekoe/http-token` に生成される(`pekoe ext` で port と token を表示)
 - `Origin` が `chrome-extension://` で始まらないリクエストは 403

@@ -60,10 +60,46 @@ func loadOrCreateToken() (string, error) {
 	return t, nil
 }
 
-func (d *Daemon) startHTTP() error {
+// httpListen is the outcome of listenHTTP: port when listening, else err
+// (both zero before it ran).
+type httpListen struct {
+	port int
+	err  string
+}
+
+func (h httpListen) why() string {
+	if h.err == "" {
+		return "the HTTP port was not opened"
+	}
+	return h.err
+}
+
+func (d *Daemon) httpState() httpListen {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.http
+}
+
+// listenHTTP starts the extension's HTTP server and records where it
+// listens, or why it does not (the port taken by another pekoed, say):
+// daemon.status and ext.info report that, not the configured port.
+func (d *Daemon) listenHTTP() {
+	port, err := d.startHTTP()
+	h := httpListen{port: port}
+	if err != nil {
+		log.Printf("http: %v (extension disabled)", err)
+		h = httpListen{err: err.Error()}
+	}
+	d.mu.Lock()
+	d.http = h
+	d.mu.Unlock()
+}
+
+// startHTTP listens on [http] port and returns the port it got.
+func (d *Daemon) startHTTP() (int, error) {
 	tok, err := loadOrCreateToken()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	d.token = tok
 	mux := http.NewServeMux()
@@ -75,7 +111,7 @@ func (d *Daemon) startHTTP() error {
 	mux.HandleFunc("/tabs", d.guard(d.httpTabs))
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", d.cfg().HTTP.Port))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	d.httpSrv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -83,7 +119,7 @@ func (d *Daemon) startHTTP() error {
 			log.Printf("http: %v", err)
 		}
 	}()
-	return nil
+	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
 // guard: any web page can POST to localhost, so require the install-time

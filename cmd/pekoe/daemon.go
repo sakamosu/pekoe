@@ -95,13 +95,25 @@ func cmdDaemon(args []string) error {
 			printJSON(st)
 			return nil
 		}
-		fmt.Printf("pekoed %v · pid %v · %v sessions · socket %v · http :%v\n", st["version"], st["pid"], st["sessions"], st["socket"], st["http_port"])
+		fmt.Printf("pekoed %v · pid %v · %v sessions · socket %v · %s\n", st["version"], st["pid"], st["sessions"], st["socket"], httpStatus(st))
 		if r, ok := st["config_restart"].([]any); ok && len(r) > 0 {
 			fmt.Printf("config.toml changed %v: they apply after pekoe daemon restart\n", r)
 		}
 		return nil
 	}
 	return &usageError{use: specs["daemon"].use, msg: "unknown subcommand " + sub}
+}
+
+// httpStatus is daemon status's word on the extension's port: the one
+// pekoed listens on, or that it does not (and why).
+func httpStatus(st map[string]any) string {
+	if p, _ := st["http_port"].(float64); p > 0 {
+		return fmt.Sprintf("http :%d", int(p))
+	}
+	if e, _ := st["http_error"].(string); e != "" {
+		return "http off (" + e + ")"
+	}
+	return "http off"
 }
 
 // stopKillAgents stops pekoed and its tmux server ($PEKOE_TMUX_SOCKET), ending

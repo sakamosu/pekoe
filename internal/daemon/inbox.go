@@ -427,7 +427,10 @@ func (d *Daemon) hInboxWithdraw(who *Caller, p inboxIDP) (any, error) {
 		return nil, err
 	}
 	it, err := d.closeInbox(p.ID, "inbox.withdraw", func(it *state.InboxItem) error {
-		if !who.Human() && it.From != me {
+		// the person is told by the caller's window, not by the token: an
+		// agent that reads the token (sandbox off, tapi chat) is still an
+		// agent and takes back only its own questions
+		if me != callerHuman && it.From != me {
 			return fmt.Errorf("inbox.withdraw: %s was asked by %s; a caller withdraws only its own questions", ids.Question(it.ID), it.From)
 		}
 		it.Status = state.InboxWithdrawn
