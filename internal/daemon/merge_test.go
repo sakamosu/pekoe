@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"bytes"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -370,5 +372,67 @@ func TestMergeEvidenceRebasedReview(t *testing.T) {
 	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.HeadSHA = mergeHead2; x.PRStatus = &c })
 	if c = mergeCheckOf(t, d); c.Ready || !strings.Contains(c.Conds[1].Detail, "could not compare") {
 		t.Fatalf("unknown head: %+v", c)
+	}
+}
+
+// land's rebase stops where the base added lines at the same place as the
+// reviewed change (PR #223: a test appended to one file on both sides),
+// and the agent keeps both: the pass carries over. A base that was behind
+// when pekoed first compared (head's merge-base with it is not where land
+// put head) says the diff changed, and is compared again once it moves.
+func TestMergeEvidenceRebaseKeptBoth(t *testing.T) {
+	d, _ := mergeSetup(t)
+	s, _ := d.snapshot("main")
+	repo := s.Path
+	commit := func(file, body, msg string) string {
+		os.WriteFile(filepath.Join(repo, file), []byte(body), 0o644)
+		run(t, repo, "git", "add", "-A")
+		run(t, repo, "git", "commit", "-qm", msg)
+		return strings.TrimSpace(gitOut(t, repo, "rev-parse", "HEAD"))
+	}
+	top := "package a\n\nfunc A() {}\n"
+	old := commit("a.go", top, "base")
+	run(t, repo, "git", "branch", "base")
+	reviewed := commit("a.go", top+"\nfunc Ours() {}\n", "feature")
+	run(t, repo, "git", "checkout", "-q", "base")
+	commit("a.go", top+"\nfunc Main() {}\n", "the base adds at the same place")
+	run(t, repo, "git", "checkout", "-q", "-b", "landed")
+	head := commit("a.go", top+"\nfunc Main() {}\n\nfunc Ours() {}\n", "feature, both kept")
+	newBase := strings.TrimSpace(gitOut(t, repo, "rev-parse", "base"))
+	run(t, repo, "git", "branch", "-f", "base", old) // pekoed reads a base that is behind
+	d.update("main", func(x *state.Session) {
+		x.Base = "base"
+		c := *x.PRStatus
+		c.HeadSHA = head
+		x.PRStatus = &c
+	})
+	review(t, d, "pass", reviewed)
+	if c := mergeCheckOf(t, d); c.Ready || !c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "needs a new review") {
+		t.Fatalf("base behind: %+v", c)
+	}
+	run(t, repo, "git", "branch", "-f", "base", newBase)
+	if c := mergeCheckOf(t, d); !c.Ready || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "a rebase with the same diff") {
+		t.Fatalf("kept both: %+v", c)
+	}
+}
+
+// What the merge check found after pekoe land goes to pekoed.log each
+// time it changes (merge.check stops showing a session once it lands).
+func TestMergeCheckLogged(t *testing.T) {
+	d, _ := mergeSetup(t)
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	d.checkMerges()
+	d.checkMerges()
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.Pending = 1; x.PRStatus = &c })
+	d.checkMerges()
+	log.SetOutput(os.Stderr)
+	out := buf.String()
+	if n := strings.Count(out, "merge evidence main: PR #42 HEAD "+shortSHA(mergeHead)+": "); n != 2 {
+		t.Fatalf("%d lines logged, want 2:\n%s", n, out)
+	}
+	if !strings.Contains(out, "evidence ready") || !strings.Contains(out, "not ready: ci: 1 pending") {
+		t.Fatalf("log:\n%s", out)
 	}
 }

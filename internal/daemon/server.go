@@ -146,9 +146,11 @@ func (c *conn) wants(ev string) bool {
 
 type Daemon struct {
 	DB *state.DB
-	// changeSame caches merge.go's sameChange per repo and pair of commits
+	// changeSame caches merge.go's sameChange per repo, pair of commits and base commit
 	changeSame sync.Map
-	Eng        engine.Engine
+	// mergeLogged is the last merge check merge.go logged per session after pekoe land
+	mergeLogged sync.Map
+	Eng         engine.Engine
 	// Global is config.toml as pekoed uses it now: replaced (never changed
 	// in place) when the file changes (config.go). Read it with cfg().
 	Global     *config.Global
@@ -165,8 +167,8 @@ type Daemon struct {
 	// http is what the extension's port came to (listenHTTP): the port
 	// pekoed listens on, or why it does not. Not the configured port:
 	// another pekoed may hold that one.
-	http  httpListen
-	token string
+	http    httpListen
+	token   string
 	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
 	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
