@@ -29,6 +29,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -46,6 +47,9 @@ type queuedNew struct {
 	From   string `json:"from,omitempty"`
 	Width  int    `json:"width,omitempty"`
 	Height int    `json:"height,omitempty"`
+	// Base: the base given to session.new (--base), "" when none was
+	// (the repository's base: fetched, see freshStart)
+	Base string `json:"base,omitempty"`
 }
 
 func queuedKey(slug string) string { return "queued:" + slug }
@@ -67,7 +71,7 @@ func working(s *state.Session) bool {
 
 // queueNew keeps p for when the queued session slug starts.
 func (d *Daemon) queueNew(slug string, p newP) {
-	b, _ := json.Marshal(queuedNew{Prompt: p.Prompt, From: p.From, Width: p.Width, Height: p.Height})
+	b, _ := json.Marshal(queuedNew{Prompt: p.Prompt, From: p.From, Width: p.Width, Height: p.Height, Base: p.Base})
 	if err := d.DB.Set(queuedKey(slug), string(b)); err != nil {
 		log.Printf("queue %s: %v", slug, err)
 	}
@@ -204,7 +208,7 @@ func (d *Daemon) startQueued(slug string) bool {
 	}
 	d.dropQueued(slug)
 	c := d.prepareNew(s, repo)
-	go d.runNew(c, slug, repo, newP{Prompt: qn.Prompt, From: qn.From, Width: qn.Width, Height: qn.Height})
+	go d.runNew(c, slug, repo, newP{Prompt: qn.Prompt, From: qn.From, Width: qn.Width, Height: qn.Height, Base: qn.Base})
 	return true
 }
 
@@ -256,13 +260,29 @@ var fetchBaseRetryDelay = 200 * time.Millisecond
 // origin's branches (a tag, a commit: they do not move, so the local base
 // is used, as for any new session).
 func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
+	ref, err := fetchBaseRef(ctx, repoDir, base)
+	return ref, err == nil && ref != ""
+}
+
+// errNoOrigin: fetchBaseRef had nothing to fetch from.
+var errNoOrigin = errors.New("no origin")
+
+// fetchBaseRef is fetchBase telling why there is no ref: errNoOrigin
+// (no origin), the fetch's error (failed twice, timed out, cancelled), or
+// "" with a nil error (fetched, but base is not one of origin's branches).
+func fetchBaseRef(ctx context.Context, repoDir, base string) (string, error) {
 	if gitx.Origin(repoDir) == "" {
-		return "", false
+		return "", errNoOrigin
 	}
 	branch := strings.TrimPrefix(base, "origin/")
 	fctx, cancel := context.WithTimeout(ctx, fetchBaseTimeout)
 	defer cancel()
 	err := fetchOrigin(fctx, repoDir, branch)
+	if noRemoteRef(err) {
+		// a branch only this repository has (or a tag, a commit): not one
+		// of origin's branches, nothing to fetch and nothing failed
+		return "", nil
+	}
 	if err != nil && fctx.Err() == nil {
 		// once more: the fetch's connectivity check reads every
 		// worktree's HEAD, and fails on one that another git in the same
@@ -270,7 +290,7 @@ func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
 		// agent): "failed to read .git/worktrees/<name>/commondir", then
 		// "did not send all necessary objects". That lasts a moment.
 		// Not when it timed out or was cancelled.
-		log.Printf("hold: fetch origin %s: %v (trying once more)", branch, err)
+		log.Printf("new: fetch origin %s: %v (trying once more)", branch, err)
 		select {
 		case <-fctx.Done():
 		case <-time.After(fetchBaseRetryDelay):
@@ -278,14 +298,20 @@ func fetchBase(ctx context.Context, repoDir, base string) (string, bool) {
 		}
 	}
 	if err != nil {
-		log.Printf("hold: fetch origin %s: %v (starting from %s)", branch, err, base)
-		return "", false
+		log.Printf("new: fetch origin %s: %v (starting from %s)", branch, err, base)
+		return "", err
 	}
 	ref := "origin/" + branch
 	if _, err := gitx.Run(repoDir, "rev-parse", "--verify", "--quiet", "--end-of-options", "refs/remotes/"+ref+"^{commit}"); err != nil {
-		return "", false // a tag or a commit: no remote-tracking branch of that name
+		return "", nil // a tag or a commit: no remote-tracking branch of that name
 	}
-	return ref, true
+	return ref, nil
+}
+
+// noRemoteRef: err is a fetch that found no such ref on origin.
+func noRemoteRef(err error) bool {
+	var ge *gitx.Error
+	return errors.As(err, &ge) && strings.Contains(ge.Stderr, "couldn't find remote ref")
 }
 
 // fetchOrigin fetches branch from origin into repoDir (a variable so a test

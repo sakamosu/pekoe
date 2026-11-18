@@ -248,11 +248,12 @@ func TestQueueHoldStartsFromOrigin(t *testing.T) {
 	if up, err := gitx.Run(s.Path, "rev-parse", "--abbrev-ref", "feat/b@{upstream}"); err == nil {
 		t.Fatalf("branch tracks %s", up)
 	}
-	// not held: from the local base, as before
-	n := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/c"})
+	// not held, --base given: from the local base as it is, as before
+	// (without --base it is fetched too: newbase_test.go)
+	n := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/c", "base": "main"})
 	waitState(t, d, "feat-c", state.Idle, state.Running)
 	if _, err := os.Stat(filepath.Join(n.Path, "merged.txt")); err == nil {
-		t.Fatal("a session without --hold started from origin")
+		t.Fatal("a session without --hold, with --base main, started from origin")
 	}
 }
 
