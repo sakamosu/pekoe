@@ -324,8 +324,41 @@ var fetchOrigin = func(ctx context.Context, repoDir, branch string) error {
 // removed is the session.removed event plus what the queue makes of it.
 func (d *Daemon) removed(s *state.Session) {
 	d.dropQueued(s.Slug)
+	d.recordGone(s)
 	d.emit("session.removed", s)
 	d.afterGone(s)
+}
+
+// goneKey keeps how the last session of slug went (goneRecord), in kv.
+func goneKey(slug string) string { return "gone:" + slug }
+
+// goneRecord is what is kept of a removed session for the sessions that
+// come after it (merge.go's after condition): whether it had landed, and
+// which life it was (Born). Only the last removed life of a slug is kept;
+// while a session of that slug exists, its own state counts instead.
+type goneRecord struct {
+	Born   string `json:"born"`
+	Landed bool   `json:"landed"`
+	At     string `json:"at"`
+}
+
+// recordGone keeps how s went (removed, or replaced by a new session of
+// its slug), over what an earlier life of its slug left.
+func (d *Daemon) recordGone(s *state.Session) {
+	b, _ := json.Marshal(goneRecord{Born: state.Born(s), Landed: s.State == state.Landed, At: time.Now().UTC().Format(time.RFC3339)})
+	if err := d.DB.Set(goneKey(s.Slug), string(b)); err != nil {
+		log.Printf("record %s removed: %v", s.Slug, err)
+	}
+}
+
+// goneLanded tells whether the last removed session of slug had landed.
+func (d *Daemon) goneLanded(slug string) bool {
+	raw := d.DB.Get(goneKey(slug))
+	if raw == "" {
+		return false
+	}
+	var g goneRecord
+	return json.Unmarshal([]byte(raw), &g) == nil && g.Landed
 }
 
 // restoreQueued keeps a queued session queued across a restart of pekoed
