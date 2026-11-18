@@ -204,21 +204,28 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 		add("conflicts", true, "no conflicts forecast")
 	}
 
-	var notYet []string
+	// a session removed (pekoe rm) after it landed is met (queue.go's
+	// recordGone kept that); one removed before is not. A session made
+	// again with its slug is judged by its own state.
+	var notYet, landed []string
 	for _, dep := range s.After {
 		ds, err := d.snapshot(dep)
 		switch {
+		case err != nil && d.goneLanded(dep):
+			landed = append(landed, dep+" landed and was removed")
 		case err != nil:
 			notYet = append(notYet, dep+" is gone")
 		case ds.State != state.Landed:
 			notYet = append(notYet, fmt.Sprintf("%s is %s", dep, ds.State))
+		default:
+			landed = append(landed, dep+" landed")
 		}
 	}
 	switch {
 	case len(notYet) > 0:
 		add("after", false, "%s", strings.Join(notYet, "; "))
 	case len(s.After) > 0:
-		add("after", true, "%s landed", strings.Join(s.After, ", "))
+		add("after", true, "%s", strings.Join(landed, ", "))
 	default:
 		add("after", true, "no sessions to land first")
 	}
