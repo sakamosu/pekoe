@@ -527,19 +527,23 @@ func SameChange(dir, reviewed, head, base string) (bool, error) {
 	if !conflicts {
 		return got == want, nil
 	}
-	return sameAfterAdditions(dir, got, h, fields[1:])
+	return sameAfterAdditions(dir, got, h, [3]string{mbH, mbR, r}, fields[1:])
 }
 
 // sameAfterAdditions: does head's tree hold the merge tree got (with
 // conflict markers) resolved by keeping both sides of every conflict, when
 // every conflict is two additions at one place? info is merge-tree -z's
 // conflicted file info ("<mode> <oid> <stage>\t<path>", up to an empty
-// field). Anything else is not the same change: a path not conflicted
-// that differs from head, a conflict without both sides' content (one
-// side deleted or renamed the file), a hunk whose base side has lines, a
-// marker git did not write the usual way.
-func sameAfterAdditions(dir, got, head string, info []string) (bool, error) {
+// field); labels are what merge-tree was given for ours, the base and
+// theirs (its markers name them). Anything else is not the same change: a
+// path not conflicted that differs from head, a conflict without both
+// sides' content (one side deleted or renamed the file), a hunk whose base
+// side has lines, a marker git did not write the usual way, and a file
+// whose own lines (in any of its three versions) look like markers: those
+// could not be told from git's.
+func sameAfterAdditions(dir, got, head string, labels [3]string, info []string) (bool, error) {
 	stages := map[string]map[string]bool{}
+	var blobs []string
 	for _, f := range info {
 		if f == "" {
 			break
@@ -553,6 +557,7 @@ func sameAfterAdditions(dir, got, head string, info []string) (bool, error) {
 			stages[path] = map[string]bool{}
 		}
 		stages[path][parts[2]] = true
+		blobs = append(blobs, parts[1])
 	}
 	if len(stages) == 0 {
 		return false, nil
@@ -564,6 +569,17 @@ func sameAfterAdditions(dir, got, head string, info []string) (bool, error) {
 	for _, p := range strings.Split(string(diff), "\x00") {
 		if p != "" && stages[p] == nil {
 			return false, nil // a file the merge did not conflict on differs
+		}
+	}
+	for _, oid := range blobs {
+		b, err := RunRaw(context.Background(), dir, nil, nil, "cat-file", "blob", oid)
+		if err != nil {
+			return false, err
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if markerLike(strings.TrimSuffix(l, "\r")) {
+				return false, nil
+			}
 		}
 	}
 	for path, st := range stages {
@@ -590,7 +606,7 @@ func sameAfterAdditions(dir, got, head string, info []string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		ours, theirs, ok := keepBoth(string(merged))
+		ours, theirs, ok := keepBoth(string(merged), labels)
 		if !ok || (ours != string(want) && theirs != string(want)) {
 			return false, nil
 		}
@@ -598,22 +614,28 @@ func sameAfterAdditions(dir, got, head string, info []string) (bool, error) {
 	return true, nil
 }
 
+// markerLike: a line git could have written as a conflict marker (any
+// label, any of the four kinds).
+func markerLike(l string) bool {
+	for _, m := range []string{"<<<<<<<", "|||||||", "=======", ">>>>>>>"} {
+		if strings.HasPrefix(l, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // keepBoth resolves the diff3 conflicts in text by keeping both sides,
 // ours first (ours) and theirs first (theirs). ok is false when a hunk's
 // base side has lines (both sides changed what was there: no order of the
 // two keeps the change that was reviewed), when text has no conflict, or
-// when a marker line shows up where git does not write one (a file whose
-// own lines look like markers is not told apart: not the same).
-func keepBoth(text string) (ours, theirs string, ok bool) {
-	const (
-		start = "<<<<<<< "
-		base  = "||||||| "
-		mid   = "======="
-		end   = ">>>>>>> "
-	)
-	marker := func(l string) bool {
-		return strings.HasPrefix(l, start) || strings.HasPrefix(l, base) || l == mid || strings.HasPrefix(l, end)
-	}
+// when a marker line shows up where git does not write one, or names
+// other than labels (ours, base, theirs: what merge-tree was given). A
+// file whose own lines look like markers is not told apart here: the
+// caller turns those down first.
+func keepBoth(text string, labels [3]string) (ours, theirs string, ok bool) {
+	start, base, mid, end := "<<<<<<< "+labels[0], "||||||| "+labels[1], "=======", ">>>>>>> "+labels[2]
+	marker := markerLike
 	lines := strings.SplitAfter(text, "\n")
 	var a, b strings.Builder
 	hunks := 0
@@ -624,7 +646,7 @@ func keepBoth(text string) (ours, theirs string, ok bool) {
 			b.WriteString(lines[i])
 			continue
 		}
-		if !strings.HasPrefix(l, start) {
+		if l != start {
 			return "", "", false
 		}
 		var o, t []string
@@ -632,7 +654,7 @@ func keepBoth(text string) (ours, theirs string, ok bool) {
 		for ; i < len(lines) && !marker(strings.TrimSuffix(lines[i], "\n")); i++ {
 			o = append(o, lines[i])
 		}
-		if i >= len(lines) || !strings.HasPrefix(lines[i], base) {
+		if i >= len(lines) || strings.TrimSuffix(lines[i], "\n") != base {
 			return "", "", false
 		}
 		i++
@@ -643,7 +665,7 @@ func keepBoth(text string) (ours, theirs string, ok bool) {
 		for ; i < len(lines) && !marker(strings.TrimSuffix(lines[i], "\n")); i++ {
 			t = append(t, lines[i])
 		}
-		if i >= len(lines) || !strings.HasPrefix(lines[i], end) || !strings.HasSuffix(lines[i], "\n") {
+		if i >= len(lines) || lines[i] != end+"\n" {
 			return "", "", false
 		}
 		hunks++

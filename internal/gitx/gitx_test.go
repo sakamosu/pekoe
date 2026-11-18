@@ -538,13 +538,34 @@ func TestSameChangeBothAddedAtOnePlace(t *testing.T) {
 	if got, err := SameChange(wt, reviewedDel, kept, "main"); err != nil || got {
 		t.Errorf("modify/delete: SameChange = %v, %v; want false", got, err)
 	}
+	// the reviewed change adds lines that look like conflict markers: a
+	// head that drops them must not pass as "both kept" (a reviewer's
+	// finding: the markers were read by prefix only), nor does one that
+	// keeps them (git's markers and the file's cannot be told apart)
+	mkBase := commit(repo, "m.txt", "a\nb\n", "m")
+	gitT(t, wt, "checkout", "-q", "-B", "mk", mkBase)
+	reviewedMk := commit(wt, "m.txt", "a\nb\nX\n>>>>>>> z\nM\n<<<<<<< w\n||||||| q\n=======\nY\n", "markers")
+	commit(repo, "m.txt", "a\nb\nT\n", "main appends")
+	mainMk := gitT(t, repo, "rev-parse", "main")
+	for name, body := range map[string]string{
+		"lines dropped":       "a\nb\nT\nX\nM\nY\n",
+		"lines dropped, swap": "a\nb\nX\nT\nM\nY\n",
+		"both kept":           "a\nb\nT\nX\n>>>>>>> z\nM\n<<<<<<< w\n||||||| q\n=======\nY\n",
+	} {
+		gitT(t, wt, "checkout", "-q", "-B", "mk-head", mainMk)
+		h := commit(wt, "m.txt", body, name)
+		if got, err := SameChange(wt, reviewedMk, h, "main"); err != nil || got {
+			t.Errorf("markers, %s: SameChange = %v, %v; want false", name, got, err)
+		}
+	}
 }
 
 // keepBoth reads only the diff3 hunks git writes: a base side with lines,
 // a marker out of place or no hunk at all is not two additions.
 func TestKeepBoth(t *testing.T) {
+	l := [3]string{"x", "b", "y"}
 	hunk := "a\n<<<<<<< x\no\n||||||| b\n=======\nt\n>>>>>>> y\nz\n"
-	if o, th, ok := keepBoth(hunk); !ok || o != "a\no\nt\nz\n" || th != "a\nt\no\nz\n" {
+	if o, th, ok := keepBoth(hunk, l); !ok || o != "a\no\nt\nz\n" || th != "a\nt\no\nz\n" {
 		t.Errorf("hunk: %q %q %v", o, th, ok)
 	}
 	for _, s := range []string{
@@ -554,8 +575,9 @@ func TestKeepBoth(t *testing.T) {
 		"<<<<<<< x\no\n||||||| b\n=======\nt\n=======\n>>>>>>> y\n",
 		"<<<<<<< x\no\n||||||| b\n=======\nt\n", // no end
 		"=======\n",
+		"a\n<<<<<<< other\no\n||||||| b\n=======\nt\n>>>>>>> y\nz\n", // another label
 	} {
-		if _, _, ok := keepBoth(s); ok {
+		if _, _, ok := keepBoth(s, l); ok {
 			t.Errorf("%q: ok", s)
 		}
 	}
