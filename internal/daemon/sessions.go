@@ -154,11 +154,25 @@ func (d *Daemon) setState(slug string, st state.State, waitKind string) {
 // pathUsedLocked: another session than slug has its worktree at path.
 func (d *Daemon) pathUsedLocked(path, slug string) bool {
 	for sl, s := range d.sessions {
-		if sl != slug && s.Path == path {
+		if sl != slug && samePath(s.Path, path) {
 			return true
 		}
 	}
 	return false
+}
+
+// pathShared: another session than slug lives in the worktree at path (a
+// duplicate made by an open before paths were compared resolved).
+func (d *Daemon) pathShared(path, slug string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.pathUsedLocked(path, slug)
+}
+
+// samePath: a and b name the same directory once symlinks are resolved
+// (macOS /tmp → /private/tmp, a PEKOE_WORKTREES given through a symlink).
+func samePath(a, b string) bool {
+	return a == b || (a != "" && b != "" && realpath(a) == realpath(b))
 }
 
 func (d *Daemon) add(s *state.Session) {
