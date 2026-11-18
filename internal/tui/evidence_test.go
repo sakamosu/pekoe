@@ -680,3 +680,60 @@ func TestDashboardEvidenceUnderFilter(t *testing.T) {
 		t.Fatal("before.txt not listed")
 	}
 }
+
+// On a narrow terminal the name keeps its room: what follows it (the PNG's
+// size in pixels, then its size in bytes) gives way first.
+func TestEvidenceNarrowKeepsName(t *testing.T) {
+	m, _, _, _ := evidenceDash(t, func(dir string) []state.Report {
+		f, err := os.Create(filepath.Join(dir, "after-shot.png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		// one color: small, and read in time under -race
+		if err := png.Encode(f, image.NewPaletted(image.Rect(0, 0, 1400, 900), color.Palette{color.Black})); err != nil {
+			t.Fatal(err)
+		}
+		return []state.Report{{ID: 7, Slug: "feat-csv", Status: "done", At: time.Now(), Evidence: []string{
+			filepath.Join(dir, "after-shot.png"), filepath.Join(dir, "before.txt"),
+		}}}
+	})
+	runCmd(m, m.onKey(key("o")))
+	em, ok := m.modal.(*evidenceModal)
+	if !ok {
+		t.Fatalf("modal %T, msg %q", m.modal, m.msg)
+	}
+	for _, tc := range []struct {
+		width      int
+		want, gone []string
+	}{
+		{120, []string{"after-shot.png  png 1400×900 · ", "before.txt  7 B"}, nil},
+		{60, []string{"after-shot.png", "before.txt  7 B"}, []string{"1400×900"}},
+		{40, []string{"after-shot", "before.txt"}, []string{"1400×900", " B"}},
+	} {
+		m.width, m.height = tc.width, 20
+		lines := em.view()
+		var rows []string // the list's rows, not the path under them
+		for _, l := range lines {
+			if l := ansi.Strip(l); strings.Contains(l, " image ") || strings.Contains(l, " text ") {
+				rows = append(rows, l)
+			}
+		}
+		out := strings.Join(rows, "\n")
+		for _, s := range tc.want {
+			if !strings.Contains(out, s) {
+				t.Errorf("width %d: %q is not shown:\n%s", tc.width, s, out)
+			}
+		}
+		for _, s := range tc.gone {
+			if strings.Contains(out, s) {
+				t.Errorf("width %d: %q is shown, the name should have the room:\n%s", tc.width, s, out)
+			}
+		}
+		for _, l := range lines {
+			if w(l) != w(lines[0]) {
+				t.Fatalf("width %d: a modal line is %d cells, not %d: %q", tc.width, w(l), w(lines[0]), ansi.Strip(l))
+			}
+		}
+	}
+}

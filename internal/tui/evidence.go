@@ -593,7 +593,9 @@ func (em *evidenceModal) view() []string {
 			list = append(list, dim(fit(head, cw)))
 		}
 		word, role := evKindWords[it.kind], theme.Dim
-		detail := ""
+		// what follows the name, longest first: on a narrow terminal the
+		// name keeps its room and these give way
+		details := []string{""}
 		switch {
 		case it.kind == evNone: // why is on the line under the path
 			word, role = "refused", theme.Err
@@ -601,11 +603,18 @@ func (em *evidenceModal) view() []string {
 				word = it.why
 			}
 		case it.inline():
-			detail = fmt.Sprintf("  png %d×%d · %s", it.imgW, it.imgH, evSize(it.size))
+			details = []string{fmt.Sprintf("  png %d×%d · %s", it.imgW, it.imgH, evSize(it.size)), "  " + evSize(it.size), ""}
 		case it.kind != evLink && it.kind != evFolder:
-			detail = "  " + evSize(it.size)
+			details = []string{"  " + evSize(it.size), ""}
 		}
 		name := it.name()
+		detail := details[len(details)-1]
+		for _, d := range details {
+			if w(name)+w(d) <= cw-11 {
+				detail = d
+				break
+			}
+		}
 		if room := cw - 11 - w(detail); it.kind == evNone {
 			name = clipLeft(name, room) // a path: its end names the file
 		} else {

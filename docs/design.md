@@ -376,7 +376,7 @@ CLI は人間とエージェントの両方が叩く。出力は `--json` で機
 | `pekoe land <slug>` / `pekoe rm <slug>` | 取り込む / 消す |
 | `pekoe dev <slug>` | 設定の `dev` をその worktree のポートで起動(動いていれば止めて `dev_stop`) |
 | `pekoe dev --log [<slug>]` | dev hook のログの末尾と、動いているか・どう終わったか |
-| `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す) |
+| `pekoe daemon start\|stop\|restart\|status` | デーモン操作(`restart` は止まるのを待ってから起動し直す)。開いている TUI は pekoed との接続が切れると、端末に `lost connection to pekoed …` と出して最大 20 秒つなぎ直しを待ち、戻れば開き直す。戻らなければ理由を書いて終了コード 1 で終わる(このとき pekoed を自分では起動しない。止めたものを起こさないため) |
 | `pekoe tapi [reset]` | tapi chat の状態 / 終了して会話を忘れる(docs/tapi-chat.md) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | 機能の紹介(TIPS)を 1 つ。まだ見せていないものを選んで `tips.json` に記録する。記録は pekoed に頼み(`tips.next`。エージェントの sandbox は `tips.json` を書けない)、pekoed が無ければ自分で書く(pekoed を起動はしない) |
 | `pekoe config edit\|check\|show\|path` | `config.toml` の入口(`internal/config` の `Check`・`Effective`)。`edit` は visudo と同じ形: 同じディレクトリの一時ファイルを `$EDITOR`(無ければ `vi`)で開き、閉じたら確かめ、問題があれば開き直す・そのまま保存・やめるを聞き、置き換えは rename 1 回(読む側が書きかけを見ない)。リンクならリンク先を置き換える。編集中に元のファイルが変わっていたら上書きしてよいか聞く。`check` は構文エラー(fatal)と、知らないキー(`toml.MetaData.Undecoded`)・受け付けない値(警告)。`show` は既定値込み、`[web] auth_key` は伏せる。どれも pekoed にはつながらない(`~/.config/pekoe` はエージェントの sandbox から読み書きできない。RPC にするとその抜け道になる) |

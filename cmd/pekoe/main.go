@@ -40,11 +40,9 @@ import (
 	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
-	"pekoe/internal/hooks"
 	"pekoe/internal/mascot"
 	"pekoe/internal/mcp"
 	"pekoe/internal/theme"
-	"pekoe/internal/tui"
 )
 
 var jsonOut bool
@@ -269,15 +267,6 @@ func cwd() string {
 }
 
 // ---- commands ----
-
-func runTUI() error {
-	cl := connect()
-	defer cl.Close()
-	if !hooks.Installed() {
-		fmt.Fprintln(os.Stderr, "hint: Claude Code hooks are not installed; run `pekoe hooks install` so pekoe can see agent states.")
-	}
-	return tui.Run(cl, cwd())
-}
 
 func confirm(q string) bool {
 	fmt.Printf("%s [y/N] ", q)
