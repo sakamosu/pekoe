@@ -482,7 +482,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 | `ci` | PR の HEAD のチェックが 1 件以上あり、失敗も実行中もない |
 | `merge_state` | `pr_status.merge_state` が `CLEAN` |
 | `conflicts` | 衝突予報(`overlaps`)に `conflict` がない(自動で合わさる重なりはよい) |
-| `after` | `after` のセッションがすべて `landed`(`pekoe rm` された相手は `is gone` で揃わない) |
+| `after` | `after` のセッションがすべて `landed`。landed になってから `pekoe rm` された相手も揃ったものとして扱う(`<slug> landed and was removed`。消えたときに landed だったかを state.db に残すので、pekoed を再起動しても変わらない)。landed になる前に rm された相手は `is gone` で揃わない。同じ slug で作り直されたセッションがあれば、そのセッションの状態で見る(作り直した方も landed の前に rm されたら `is gone`) |
 | `settled` | セッションの作業が済んでいる: エージェントが `running`・`waiting` でない、worktree にコミットしていない変更・追跡していないファイルがない(`git status --porcelain`。読めなければ揃わない)、最後の `done`・`blocked` の報告の後にそのセッションへ届いた送信(送信の記録の `kind: send`(人・tapi・ほかのセッションの `pekoe send`)と `kind: inbox`(受信箱の答え・差し戻し)で `ok: true` のもの)がない。報告が無ければ、`send`・`inbox` が 1 件でも届いていれば揃わない。worktree を読むのは `landing` のセッションだけ(ほかは状態だけを見る) |
 
 ```jsonc
