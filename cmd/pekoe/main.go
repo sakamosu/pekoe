@@ -121,6 +121,8 @@ func main() {
 		err = cmdLedger(args)
 	case "stats":
 		err = cmdStats(args)
+	case "repo":
+		err = cmdRepo(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -193,6 +195,9 @@ func usage() {
   pekoe review [<slug> | gh#N [--repo R]]
   pekoe land <slug>             rebase → test → gh pr create (teardown after merge)
   pekoe rm <slug> [--force]     teardown → delete worktree
+  pekoe repo forget <R> [--config] [--yes]
+                               pekoe stops knowing a repository (no sessions left;
+                               the repository, worktrees and branches are kept)
   pekoe report <summary> --status done|blocked|progress|review [--evidence E]...
                                a session reports its work (run by its agent)
   pekoe reports [<slug>] [--json]   the sessions' reports, newest first

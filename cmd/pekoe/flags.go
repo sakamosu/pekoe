@@ -187,6 +187,9 @@ var specs = map[string]spec{
 	"ledger reopen": {use: "pekoe ledger reopen <id>   open a closed request again (a person only)"},
 	"ledger rm":     {use: "pekoe ledger rm <id> [--yes]   delete a request (a person only)", bools: []string{"yes"}},
 
+	"repo":        {use: "pekoe repo forget <name|repo-id|path> [--config] [--yes]   make pekoe forget a repository"},
+	"repo forget": {use: "pekoe repo forget <name|repo-id|path> [--config] [--yes]   drop a repository from what pekoe knows (a person only; not while it has sessions; --config: delete repos/<repo-id>.toml too). The repository, worktrees and branches are kept", bools: []string{"config", "yes"}},
+
 	"stats": {use: "pekoe stats [--days N] [--repo R] [--json]   PRs merged and tokens used, by local date and repository (default: the last 7 days)", vals: []string{"days", "repo"}},
 
 	"daemon":         {use: "pekoe daemon start|stop|restart|status"},

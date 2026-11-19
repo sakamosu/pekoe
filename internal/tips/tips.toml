@@ -531,6 +531,13 @@ keys = ["pekoe cleanup", "--rm", "--landed", "--stale", "[cleanup]"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 
 [[tip]]
+id = "repo-forget"
+short = "pekoe repo forget で使わなくなったリポジトリを忘れさせる"
+detail = "w のリポジトリ選びや tapi が知るリポジトリから外す。セッションが残っていれば断る(先に pekoe rm)。repos/<repo-id>.toml は --config のときだけ消す。リポジトリ・worktree・ブランチ・stats は残る。"
+keys = ["pekoe repo", "--config"]
+docs = ["README.ja.md#コマンド", "docs/api.md"]
+
+[[tip]]
 id = "stats"
 short = "pekoe stats で日ごとのマージ数とトークンを見る"
 detail = "pekoe が見届けたマージと、エージェント(サブエージェント・tapi も)が使ったトークンを日付・リポジトリごとに出す。rm した分も残り、動いている分はその時点まで。--days N(既定 7)、--repo R。"
