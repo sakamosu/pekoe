@@ -122,7 +122,7 @@ brew upgrade pekoe      # update (pekoe update refuses a Homebrew install), then
 
 ### From a release (prebuilt binaries)
 
-GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. Download with `gh` (any logged-in account; for the Web UI build, add `_web` before `.tar.gz`), or with curl without a token:
+GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. Download with `gh` (any logged-in account; for the Web UI build, add `_web` before `.tar.gz` in the archive names and at the end of the directory the `ln -sfn` line points to (`pekoe_${ver}_darwin_arm64_web`)), or with curl without a token:
 
 ```sh
 ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest version (or ver=<version>)
@@ -203,7 +203,7 @@ pekoe                                                 # TUI
 | `pekoe conflicts [--repo R]` | Conflict forecast: pairs of sessions touching the same files, and whether they conflict (`git merge-tree`) |
 | `pekoe send <slug> <text> [--no-enter]` | Type text into the pty (adds Enter by default; `-` reads stdin) |
 | `pekoe review [<slug> \| gh#N [--repo R]]` | Review surface. Without arguments, the next session waiting for review. `gh#N` for someone else's PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected (pekoed checks the PR about once a minute), teardown and remove the worktree (as with `pekoe rm`, only a worktree pekoe made under `~/worktrees`; the repository's own checkout opened as a session is only marked landed). If fetching origin fails while the session's earlier PR is already merged or closed, GitHub (which has origin's base) decides whether there is anything new: when `gh pr create` answers "No commits between", land keeps the earlier PR instead of failing. Agents can run it too (merging stays yours) |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected (pekoed checks the PR about once a minute), teardown and remove the worktree (as with `pekoe rm`, only a worktree pekoe made under `~/worktrees`; the repository's own checkout opened as a session is only marked landed). If fetching origin fails while the session's earlier PR is already merged or closed, GitHub (which has origin's base) decides whether there is anything new: when `gh pr create` answers "No commits between", land keeps the earlier PR instead of failing. Agents can run it too (merging stays yours; answer `merge` in the inbox and pekoed merges it) |
 | `pekoe cleanup [--all\|--repo R] [--stale 72h]` / `pekoe cleanup --rm <slug>… \| --rm --landed [--force] [--yes]` | What could be cleaned up: landed sessions (only pekoe's record is left), sessions whose PR was merged on GitHub without `pekoe land` (the worktree is still there) and sessions stopped (done, idle, failed …) for longer than `[cleanup] stale_after` (72h), each with its uncommitted files and the commits on no remote. `--rm` removes the ones you name (`--landed`: every landed one) after asking, like `pekoe rm`; agents can list them, but remove only landed ones. Nothing is removed by itself. In the TUI: `:cleanup` |
 | `pekoe rm <slug> [--force] [--yes]` | teardown → remove the worktree (only a worktree pekoe made under `~/worktrees`; for others, such as the repository's own checkout, pekoe runs no teardown and only forgets the session). A session still being set up has its setup stopped first; a teardown after a merge still running is waited for. Agents can use it only on a landed session, to clear it from the list |
 | `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]... [--verdict pending\|pass\|fail --reviewed-sha SHA]` | A session's agent leaves word of its work (`-` reads stdin). With `--status review`, `--verdict` and `--reviewed-sha` record an independent review's result for that commit (`pending` while it runs; only `pass` counts as merge evidence). pekoed tells which session reports from the calling process (`$PEKOE_SESSION` is only shown when it differs). Evidence paths and URLs are kept as text; pekoed never reads them |
@@ -485,7 +485,7 @@ port = 47777                # for the Chrome extension (127.0.0.1)
 [ports]
 base = 3001                 # first port of the port ledger
 [keys]
-prefix = "ctrl+q"           # key to leave input: ctrl+ a letter (not i / m), F1-F20 or alt+ a key; C-a / Ctrl+A / ^a also read as ctrl+a
+prefix = "ctrl+q"           # key to leave input: ctrl+ a letter (not i / m), ctrl+@ \ ] ^ _, F1-F20 or alt+ a key; C-a / Ctrl+A / ^a also read as ctrl+a
 [review]
 surface = "nvim"            # nvim | tui
 [picks]
