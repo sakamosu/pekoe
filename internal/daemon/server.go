@@ -639,6 +639,7 @@ func (d *Daemon) registerHandlers() {
 		},
 		"repo.list":      bind(d.hRepoList),
 		"repo.resolve":   bind(d.hRepoResolve),
+		"repo.forget":    bind(d.hRepoForget),
 		"session.list":   bind(d.hList),
 		"session.get":    bind(func(p slugP) (any, error) { return d.snapshot(p.Slug) }),
 		"session.cancel": bind(d.hCancel),

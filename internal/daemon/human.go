@@ -133,6 +133,7 @@ var humanMethods = map[string]string{
 	"inbox.dismiss":         "a person's decision (closing a question unanswered)",
 	"ledger.reopen":         "a person's decision: tapi must not undo how a request was closed",
 	"ledger.delete":         "a person's decision: tapi must not erase a request it let slip",
+	"repo.forget":           "a person's decision: drops a repository from what pekoe knows (and may delete its config file)",
 	// runs something outside the agent's sandbox
 	"init.write":      "repo config: setup / dev commands run outside the agent",
 	"run.start":       "runs a command in the worktree",

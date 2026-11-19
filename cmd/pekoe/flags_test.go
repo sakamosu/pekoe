@@ -103,6 +103,8 @@ func dispatch(args ...string) error {
 		return cmdDaemon(rest)
 	case "rm":
 		return cmdRm(rest)
+	case "repo":
+		return cmdRepo(rest)
 	case "land":
 		return cmdSimple("land", "land", rest)
 	case "dev":
@@ -161,6 +163,8 @@ func TestHelpDoesNothing(t *testing.T) {
 		{"daemon", "restart", "-h"},
 		{"rm", "feat-x", "--yes", "--force", "--help"},
 		{"rm", "-h", "feat-x"},
+		{"repo", "forget", "app", "--yes", "--config", "--help"},
+		{"repo", "--help"},
 		{"cleanup", "--rm", "feat-x", "--yes", "--force", "--help"},
 		{"land", "feat-x", "--help"},
 		{"dev", "feat-x", "-h"},
@@ -205,6 +209,11 @@ func TestUnknownFlagRefused(t *testing.T) {
 		{"rm", "feat-x", "--forse"},
 		{"rm", "feat-x", "-f"},
 		{"rm", "feat-x", "--yes=1"},
+		{"repo", "forget", "app", "--force"},
+		{"repo", "forget", "app", "extra"},
+		{"repo", "forget"},
+		{"repo", "frobnicate"},
+		{"repo"},
 		{"land", "feat-x", "--yes"},
 		{"send", "feat-x", "--bogus", "hello"},
 		{"new", "feat/x", "--repo"},           // value missing
@@ -291,7 +300,7 @@ func TestSplitGlobal(t *testing.T) {
 
 // Every subcommand main dispatches has a declared spec.
 func TestEverySubcommandHasSpec(t *testing.T) {
-	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "cleanup", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss", "ledger", "ledger done", "ledger drop", "ledger close", "ledger link", "ledger keep", "ledger reopen", "ledger rm", "stats", "config", "config edit", "config check", "config show", "config path"} {
+	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "cleanup", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss", "ledger", "ledger done", "ledger drop", "ledger close", "ledger link", "ledger keep", "ledger reopen", "ledger rm", "stats", "repo", "repo forget", "config", "config edit", "config check", "config show", "config path"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
 		}
