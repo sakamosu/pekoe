@@ -30,8 +30,36 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        id: setup-go
         with:
           go-version-file: go.mod
+          # setup-go のキャッシュはキーが go.mod のハッシュだけで、一度当たると
+          # 保存し直さない。Go のビルドキャッシュは 5 日使わないものを消すので、
+          # 古いまま当たり続けると毎回コンパイルし直す。下で日ごとに保存し直す
+          cache: false
+
+      # Go のモジュールとビルドのキャッシュ。キーに日付を入れ、main への push
+      # でその日の最初の 1 回だけ保存する(PR では保存しない)。PR は main の
+      # 保存から前方一致で戻す。パスの並びは setup-go と同じにしてあり、
+      # 最後の restore-keys で setup-go が保存した古いものも拾える(移行用)
+      - name: Go cache paths
+        id: go-cache
+        run: |
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Restore Go cache
+        id: restore-go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}-${{ steps.go-cache.outputs.day }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
+            setup-go-${{ runner.os }}-
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
@@ -68,6 +96,18 @@ jobs:
         run: |
           set -o pipefail
           GOFLAGS=-v make test 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      # テストが落ちてもビルドキャッシュは使えるので保存する(取り消しは除く)
+      - name: Save Go cache
+        if: >-
+          !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+          && steps.restore-go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ steps.go-cache.outputs.gomodcache }}
+            ${{ steps.go-cache.outputs.gocache }}
+          key: ${{ steps.restore-go-cache.outputs.cache-primary-key }}
 
       # go test -v は t.Skip の理由を "--- SKIP" の行より前に、そのテストの名前の
       # 見出し(=== RUN / CONT / NAME)の下に出す。テストごとにログの行をためて、
