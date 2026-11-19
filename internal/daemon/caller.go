@@ -77,6 +77,19 @@ func (c *Caller) ID() string {
 	return callerUnknown
 }
 
+// reservedWindow is the reserved name (session_new.go reservedSlug) the
+// caller's ID came from when that ID is its window's slug, not the token
+// ("" otherwise): a session named human, unknown or pekoed made before the
+// names were reserved, which would read as a person, an unknown caller or
+// pekoed itself.
+func (c *Caller) reservedWindow() string {
+	id := c.ID()
+	if id == c.Pane() && reservedSlug(id) && !(c.human && c.peer.window() != engine.WinAgent) {
+		return id
+	}
+	return ""
+}
+
 // ClaimedDiff is Claimed when it names someone else than by ("" when it
 // agrees or is missing): what a report or an inbox item shows as a warning.
 func (c *Caller) ClaimedDiff(by string) string {

@@ -53,7 +53,7 @@
   | `report.list` | ハブのエージェントの `pekoe reports`(エージェントが書いた要約で、`session.list` と同じ公開度) |
   | `wait` | ハブのエージェントの `pekoe wait`(呼び出し元ごとに 8 本、1 時間まで。下の「待ち合わせ」) |
   | `send.log` | ハブのエージェントが自分の頼んだことを読み直す(token なしでは呼び出し元が送った・受けた記録だけ。下の「送信の記録」) |
-  | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` は断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
+  | `inbox.post` | エージェントの `pekoe ask-human`(人への問い。`unknown` と、`human`・`unknown`・`pekoed` という名前のセッション(名前の予約より前に作られたもの)の窓からは token つきでも断る。呼び出し元ごとに未回答 10 件、長さの上限。下の「判断の受信箱」) |
   | `inbox.list` / `inbox.get` | ハブのエージェントの `pekoe inbox`、`ask-human --wait`(エージェントが書いた問い・pekoed が付けた事実・人の答え) |
   | `inbox.withdraw` | エージェントが自分の問いを取り下げる(自分が出したものだけ。エージェントの窓からは token つきでも同じ。人(呼び出し元が `human`)は誰の問いでも取り下げられ、そのときは問いを出したエージェントに知らせる) |
   | `merge.check` | ハブのエージェント・ダッシュボードが「マージしてよい根拠」の何が足りないかを読む(`session.list` と `report.list` で見えるものからの計算だけ。下の「マージしてよいかの根拠」) |
@@ -280,7 +280,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `inbox.post` | `{question, kind: "decision"\|"approve"\|"login"\|"fyi", options?: [string], recommend?: int, context?, links?: [string], about?: slug, decided?: int}` | `InboxItem`(下の「判断の受信箱」) |
 | `inbox.list` | `{status?: "open"\|"answered"\|"withdrawn"\|"dismissed"\|"all", mine?: bool, limit?: 100}` | `[InboxItem]`(新しい順。既定は `open`。`limit` は 500 まで) |
 | `inbox.get` | `{id}` | `InboxItem` |
-| `inbox.withdraw` | `{id, note?}` | `InboxItem`。呼び出し元が `human` でなければ自分が出したものだけ |
+| `inbox.withdraw` | `{id, note?}` | `InboxItem`。呼び出し元が `human` でなければ自分が出したものだけ。`human`・`unknown`・`pekoed` という名前のセッションの窓からは断る(`inbox.list --mine` も) |
 | `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。人だけ。`rev` が今のものと違えば `… the item changed; look again` |
 | `inbox.dismiss` | `{id, note?}` | `InboxItem`。人だけ(答えずに閉じる) |
 | `ledger.list` | `{status?: "open"\|"all", since?: id, auto?: bool}` | `[LedgerEntry]`(古い順。既定は `open`。下の「依頼(ledger)」)。`status: open` で `auto: true` なら `LedgerView` = `{open: [LedgerEntry], auto_closed: [LedgerEntry], auto_closed_more}` を返す: `open` のもの(全文)と、pekoed が直近 24 時間に自動で閉じたもの(`status: chat`・`auto: true`)の新しい 10 件(古い順。本文は 200 文字で切り、切ったものは `cut: true`)と、残りの件数。token なしでは tapi の窓からだけ |

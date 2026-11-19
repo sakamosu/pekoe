@@ -554,3 +554,37 @@ func TestInboxFromRunWindowIsHuman(t *testing.T) {
 		t.Fatalf("delivery: %+v", g.Delivery)
 	}
 }
+
+// A window named human (a session made before the name was reserved) is
+// not a person: it cannot post (from would read human and lift the open
+// cap), withdraw someone else's question or read the person's items as its
+// own. The same goes for a window named unknown. The token from a run
+// window of such a session is still a person's.
+func TestInboxReservedWindowIsNotHuman(t *testing.T) {
+	d, _, _ := inboxSetup(t)
+	agentQ := ask(t, d, "main", map[string]any{"question": "agent の問い", "kind": "decision"})
+	for _, name := range []string{callerHuman, callerUnknown} {
+		for _, who := range []*Caller{agentAs(name), {human: true, Via: viaSocket, peer: fixedPeer(name)}} {
+			if err := callAsErr(d, who, "inbox.post", map[string]any{"question": "q", "kind": "decision"}); err == nil || !strings.Contains(err.Error(), "named "+name) {
+				t.Fatalf("post from a window named %s (token %v): %v", name, who.human, err)
+			}
+			if err := callAsErr(d, who, "inbox.withdraw", map[string]any{"id": agentQ.ID}); err == nil || !strings.Contains(err.Error(), "named "+name) {
+				t.Fatalf("withdraw from a window named %s (token %v): %v", name, who.human, err)
+			}
+			if err := callAsErr(d, who, "inbox.list", map[string]any{"mine": true}); err == nil || !strings.Contains(err.Error(), "named "+name) {
+				t.Fatalf("list --mine from a window named %s (token %v): %v", name, who.human, err)
+			}
+		}
+	}
+	if g := inboxGet(t, d, agentQ.ID); g.Status != state.InboxOpen {
+		t.Fatalf("withdrawn: %+v", g)
+	}
+	// the token from the run window of a session named human is a person
+	run := &Caller{human: true, Via: viaSocket, peer: fixedWindow(callerHuman, engine.WinRun)}
+	if it := callAs[state.InboxItem](t, d, run, "inbox.post", map[string]any{"question": "どっち?", "kind": "decision"}); it.From != callerHuman {
+		t.Fatalf("from: %q", it.From)
+	}
+	if w := callAs[state.InboxItem](t, d, run, "inbox.withdraw", map[string]any{"id": agentQ.ID}); w.Status != state.InboxWithdrawn {
+		t.Fatalf("withdraw: %+v", w)
+	}
+}

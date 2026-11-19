@@ -95,15 +95,26 @@ type inboxPostP struct {
 // so a question asked there is the person's, not the agent's.
 func inboxCaller(who *Caller) string { return who.ID() }
 
+// errReservedWindow refuses an inbox call from a window named like pekoed,
+// a person or an unknown caller (a session made before the names were
+// reserved): its items would read as pekoed's own or a person's, and as
+// "human" it would also lift the open-item cap and withdraw anyone's
+// questions.
+func errReservedWindow(method, name string) error {
+	return fmt.Errorf("%s: a session named %s cannot use the inbox (rename its branch)", method, name)
+}
+
 func (d *Daemon) hInboxPost(who *Caller, p inboxPostP) (any, error) {
+	if name := who.reservedWindow(); name != "" {
+		return nil, errReservedWindow("inbox.post", name)
+	}
 	from := inboxCaller(who)
 	if from == callerUnknown {
 		return nil, errUnknownCaller("inbox.post")
 	}
 	if from == callerPekoed {
-		// a window named like pekoed itself (a session made before the name
-		// was reserved): its items would read as pekoed's own
-		return nil, errors.New("inbox.post: a session named pekoed cannot post to the inbox (rename its branch)")
+		// unreachable: pekoed is reserved (above); kept as a guard
+		return nil, errReservedWindow("inbox.post", callerPekoed)
 	}
 	it, err := cleanInboxPost(p)
 	if err != nil {
@@ -321,6 +332,9 @@ func (d *Daemon) hInboxList(who *Caller, p inboxListP) (any, error) {
 	}
 	me := inboxCaller(who)
 	if p.Mine {
+		if name := who.reservedWindow(); name != "" {
+			return nil, errReservedWindow("inbox.list --mine", name)
+		}
 		if me == callerUnknown {
 			return nil, errUnknownCaller("inbox.list --mine")
 		}
@@ -418,6 +432,9 @@ func (d *Daemon) closeInbox(id int64, method string, f func(it *state.InboxItem)
 }
 
 func (d *Daemon) hInboxWithdraw(who *Caller, p inboxIDP) (any, error) {
+	if name := who.reservedWindow(); name != "" {
+		return nil, errReservedWindow("inbox.withdraw", name)
+	}
 	me := inboxCaller(who)
 	if me == callerUnknown {
 		return nil, errUnknownCaller("inbox.withdraw")
