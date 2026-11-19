@@ -253,7 +253,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 
 | method | params | result |
 | --- | --- | --- |
-| `daemon.status` | — | `{pid, version, sessions, http_port, http_error?, config_restart?}`。`http_port` は拡張用の HTTP を実際に待ち受けている番号(設定の `[http] port` ではない)。待ち受けていなければ `0` で、`http_error` に理由(`listen tcp 127.0.0.1:47777: bind: address already in use` など)。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
+| `daemon.status` | — | `{pid, version, sessions, http_port, socket, http_error?, config_restart?}`。`socket` は pekoed が待ち受けている unix ソケットのパス。`http_port` は拡張用の HTTP を実際に待ち受けている番号(設定の `[http] port` ではない)。待ち受けていなければ `0` で、`http_error` に理由(`listen tcp 127.0.0.1:47777: bind: address already in use` など)。`config_restart` は config.toml で変わったが再起動まで効かない設定の名前(下の「config.toml の再読み込み」) |
 | `daemon.stop` | `{kill_agents?}` | `null`。既定ではエージェント(tmux サーバー)を残す。`kill_agents: true` なら、止まる直前に tmux サーバーも止める(使い捨ての隔離環境向け。CLI は `pekoe daemon stop --kill-agents`)。応答はすぐ返り、プロセスはその後に終わる(処理中の hook(`session.event` と Stop の後処理)を最大 3 秒待ってから state.db を閉じる)。終了を待つには `daemon.status` の `pid` を見る(`pekoe daemon stop` と `pekoe daemon restart` はそうしている) |
 | `subscribe` | `{events: [prefix]}` | `null` |
 | `repo.list` | `{cwd?}` | `[KnownRepo]`(下記)。既知のリポジトリ = セッションがあるもの + 一度解決したもの(`session.new` / `session.open` / `init.*` / `repo.list` の `cwd`。state.db の kv に `repo:<repo-id>` で覚える) + `~/.config/pekoe/repos/*.toml` があるもの。設定ファイルしかないものは、`path_` の repo-id ならそのパス、それ以外は `~/worktrees/<name>/` の worktree から場所を探す。`cwd` を渡すと、そのリポジトリ(worktree の中ならメイン)を覚えたうえで `cwd: true` を付ける。名前順 |
@@ -262,13 +262,14 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `session.get` | `{slug}` | `Session` |
 | `session.new` | `{repo, branch, from?, agent?, model?, effort?, prompt?, base?, request?: id, after?: [slug], hold?: bool}` | `Session` に `cursor` を足したもの(state = creating。進捗は `session.progress` イベント。上限(`[orchestrator] max_running`)に達しているときと `hold` のときは state = queued で、起動したら creating に移る。上の「待ち行列」)。`hold` は `after` がすべて landed になるまで起動しない(`after` が無ければ `--hold waits for the --after sessions to land: give --after` で断る)。`cursor` は作る直前の `wait` の cursor で、`wait --slug <slug> --since <cursor>` ならこのセッションの変化(`started`・`failed`・`report` …)を、返ってから待ち始めるまでの間に起きたものも取りこぼさない(下の「待ち合わせ」)。setup を待つなら `--on started,failed,removed`(`removed` は作成中に cancel・rm で消されたときも返るように)。`model` / `effort` はこのセッションだけ `[agents.*] model` / `effort` を上書きし、`Session.model` / `effort` に残して resume・再起動でも渡す(Claude Code のエージェントだけ。それ以外のエージェント・モデル名として読めないもの・`low`〜`max` 以外の effort は断り、何も作らない)。呼び出し元を `parent` に入れ、`prompt` を送信の記録に残す。`request` は依頼(open のもの)とセッションを結ぶ(token なしでは tapi の窓からだけ。断るときはセッションを作らない)。`after` は `Session.after` に入る(`<repo>/<slug>` も可、重複は 1 つに、10 個まで)。今ないセッション(`no such session`)・自分自身(着地済みの同じ slug を作り直すとき)・循環(`feat-a → feat-b → feat-a`)は断り、何も作らない。後から `pekoe rm` された相手は残る(TUI は `gone`) |
 | `session.cancel` | `{slug}` | 作成中・待ち行列(queued)を中止し worktree を消す |
-| `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?}` | `Session`。すでにセッションのある worktree は `already managed as <slug>` で断る(パスは symlink を解いて比べる。macOS の `/tmp` → `/private/tmp` や symlink 越しの `PEKOE_WORKTREES` で別の名前を渡しても同じ worktree) |
+| `session.open` | `{path, resume?: "ask"\|"resume"\|"new", agent?, prompt?, width?, height?}` | `Session`。すでにセッションのある worktree は `already managed as <slug>` で断る(パスは symlink を解いて比べる。macOS の `/tmp` → `/private/tmp` や symlink 越しの `PEKOE_WORKTREES` で別の名前を渡しても同じ worktree) |
 | `session.adopt` | `{path?}` | `[Session]` |
-| `session.send` | `{slug, text, submit?: bool}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」)。agent の窓への指示(`submit` つき、または token なし)は送信の記録に残す(断ったものも) |
-| `session.keys` | `{slug, keys: [tmuxKey]}` / `{slug, literal: "abc"}` / `{slug, hex: "1b5b..."}` | 生キー転送(TUI の右ペインフォーカス時) |
+| `session.send` | `{slug, text, submit?: bool, window?}` | pty に文字を書く。複数行は bracketed paste。`submit` で最後に Enter。テキストとして送るので、改行(CR・CRLF は LF に)とタブ以外の制御文字は落とす。キーは `session.keys` で送る。許可ダイアログが出ている間は送らない(下の「send と許可ダイアログ」)。token なしでは agent の窓だけ(上の「人間だけの操作」)。agent の窓への指示(`submit` つき、または token なし)は送信の記録に残す(断ったものも) |
+| `session.keys` | `{slug, window?, keys: [tmuxKey]}` / `{slug, window?, literal: "abc"}` / `{slug, window?, hex: ["1b", "5b", …]}` | 生キー転送(TUI の右ペインフォーカス時)。`window` は `session.screen` と同じ(省略で agent) |
 | `session.answer` | `{slug, answer: "allow"\|"deny"\|"always", expect?: {tool}}` | 許可待ちに答える。`expect` を渡すと、待っているのがそのツール(`pending_tool` の name と input)のときだけ答え、違えば `the prompt changed; look again` のエラー(Web UI が使う) |
 | `session.screen` | `{slug, window?: "agent"\|"review"\|"dev"\|"run"}` | `{lines: [ansi string], cursor: {x,y,visible}, width, height, dead, exit_status, signal?}`(`exit_status` は終わった窓の終了コード。動いている間やシグナルで終わったときは -1。`signal` は `"SIGINT"` など) |
 | `session.resize` | `{slug, width, height}` | pty サイズ変更 |
+| `term.caps` | `{kitty_graphics}` | TUI が外側の端末にできること(今は Kitty graphics を描けるか)を知らせる。結果は空 |
 | `session.seen` | `{slug}` | 未読ラインの基点を今に |
 | `session.kill` | `{slug}` | セッション終了(worktree は残す)。`creating`・`queued` のセッションは断る(`… is being created; …`・`… is queued (…); …`。止めるのは `session.cancel`。上の「待ち行列」) |
 | `session.undo` | `{slug, n?}` | プロンプト単位 undo(省略時は最後のプロンプト前に戻す) |
@@ -291,7 +292,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `ledger.delete` | `{id}` | `null`。人だけ |
 | `attention.next` | `{from?: slug}` | 待ち時間順で次の waiting セッション。いなければ `pr_status.attention` のあるセッション(古い順) |
 | `review.next` | — | 次のレビュー待ち(done) |
-| `worktree.list` | `{repo_id?}` | `[{path, branch, slug, port, managed, current}]` |
+| `worktree.list` | `{repo_id?, repo?}` | `[{path, branch, slug?, port?, managed, main, state?}]`。`repo` はリポジトリの中のパス。`main` は本体のチェックアウト、`state` は結びついたセッションの状態 |
 | `worktree.rm` | `{slug, force}` | `{removed, worktree_deleted, port_held?: {port, repo_id, slug, until}}`。作成中(creating)のセッションは、まず作成(setup など)を止め、それが終わるのを待ってから先へ進む(`session.cancel` も同じ)。マージ後の後片付け(teardown と worktree の削除)が走っている最中なら、その終わりを待つ。dev hook を止めて `dev_stop`(dev hook を起動したことがあり、最後の `dev_stop` が成功していなければ、dev が false でも)→ teardown → worktree 削除(teardown と削除は pekoe が作った `~/worktrees` 配下の worktree だけ。`session.open` で開いたリポジトリ本体などは teardown も走らせず、記録を消すだけ)。`dev_stop` が成功しないまま(失敗・走らなかった)消すときは、`[hooks] dev_stop` のあるリポジトリならそのポートを 7 日間ポート台帳から外し(`held_ports`。期限が過ぎたら次の割り当てで消す)、`port_held` で返す。token なしでは landed のセッションの記録を消すだけ(上)。同じ worktree(symlink を解いて同じ場所)にほかのセッションがいれば、teardown も worktree の削除もせず記録だけ消す(land 後の片付けも同じ) |
 | `land` | `{slug}` | `{steps, pr}`(origin の無いリポジトリでは `{steps, landed: true}`)。rebase → test → push → `gh pr create`。マージ検出後に自動 teardown。base は origin から fetch してその `origin/<base>` へ rebase し、PR もその branch に向ける(base が `origin/main` なら `origin/` を外した `main`)。fetch が落ちたら `steps` にそう書き、手元の base へ rebase する。セッションに PR があっても、GitHub で今 OPEN でない(MERGED・CLOSED。読めなければ `pr_status.state`)で、base に入っていないコミットがあれば、使わずに新しい PR を作り、`pr_status` を空にする(コミットが無ければ前の PR のまま。マージ済みならその検出で後片付けする)。ただし fetch が落ちていたら、手元の base が origin より古く、前の PR のコミットまで「base に入っていない」と数えうる(そのまま `gh pr create` に進むと No commits between で落ちる)ので、手元の base と比べてコミットがあれば `gh pr create` を試し、origin の base を持つ GitHub が No commits between と答えたら、エラーにせず前の PR のままにする(`steps` に `no commits beyond origin's main: PR #41 kept`)。PR ができれば新しい PR に移る。手元の base と比べてもコミットが無ければ前の PR のまま。`gh pr create` が already exists で番号を返さなければ、そのブランチの OPEN の PR だけを拾う |
 | `dev.toggle` | `{slug}` | dev server の起動/停止。答えはセッション。止めるときは `[hooks] dev_stop` を dev と同じ worktree・環境変数・sandbox で実行し(5 分まで)、結果を `dev_exit.dev_stop` とログに残す(失敗したら止めたうえでエラー)。hook が自分で終わったときも(2 秒ごとの tick が見つけたとき、または見つける前の `dev.toggle` の起動の前に)同じように `dev_stop` を実行する。`[hooks] dev` が無いときのエラーには設定ファイルの様子(無い・読めない・`[hooks]` が無い・`[hooks]` にあるキー)を添える。token なしでは呼び出し元のセッションの分だけ(上の「人間だけの操作」) |
@@ -321,7 +322,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `init.write` | `{path, toml, overwrite?}` | `{path}` |
 | `session.restart` | `{slug, width?, height?}` | エージェントを再起動(Claude Code セッションを resume) |
 | `session.progress` | `{slug}` | 作成中の手順 `{slug, steps}` |
-| `review.surface` | `{slug, width, height}` | 右ペインを nvim(pekoe.nvim のレビュー面)に入れ替える。claude は裏で動き続ける。読み込むプラグインは pekoed 自身のもの(`PEKOE_NVIM_RTP` か実行ファイルの隣の `nvim/`)だけで、呼び出し元からは指定できない |
+| `review.surface` | `{slug, width, height}` | 右ペインを nvim(pekoe.nvim のレビュー面)に入れ替える。claude は裏で動き続ける。読み込むプラグインは pekoed 自身のもの(`PEKOE_NVIM_RTP`、なければ実行ファイル(symlink を解いたもの)の 1 つ上の `nvim/` か `share/pekoe/nvim/`)だけで、呼び出し元からは指定できない |
 | `review.pr` | `{repo, number}` | `pekoe review gh#N`: PR ブランチの worktree を作り、同じレビュー面で開く。コメントは GitHub review に送られる |
 | `pr.view` | `{slug, seen?: bool}` | `PRView`(下記)。PR が無ければ `null`(番号未登録ならブランチから探す)。`gh api graphql` 1 回で取り、ついでに `pr_status` を更新する。`seen` で attention を既読に |
 | `pr.seen` | `{slug}` | `pr_status.attention` を既読にする(取得はしない) |
@@ -546,7 +547,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
   "items": [
     {
       "kind": "stale",                // landed | merged | stale(この順に並ぶ)
-      "slug": "feat-csv", "repo": "app", "repo_id": "github.com/me/app",
+      "slug": "feat-csv", "repo": "app", "repo_id": "github.com_me_app",
       "branch": "feat/csv", "state": "idle",
       "since": "2026-11-06T09:12:00Z",  // 最後に状態が変わった時刻
       "pr": 42,                       // 無ければ省く
@@ -828,7 +829,7 @@ pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前
 起動時に bind できなければ(ほかの pekoed が同じ port を使っているなど)拡張なしで動き続け、ログに理由を書く。そのとき `daemon.status` は `http_port: 0` と `http_error`、`ext.info` は断る(設定の番号を出すと、拡張がその番号で別の pekoed につながってしまう)。
 
 - すべてのリクエストに `Authorization: Bearer <token>` が必要。token は初回起動時に `~/.local/share/pekoe/http-token` に生成される(`pekoe ext` で port と token を表示)
-- `Origin` が `chrome-extension://` で始まらないリクエストは 403
+- `Origin` ヘッダがあり、`chrome-extension://` で始まらないリクエストは 403。例外として、`Origin` の無いリクエスト(curl などブラウザ以外)は token の確認だけで通す(ブラウザのページからの要求には `Origin` が付くので断れる。token が要ることは変わらない)
 - 一方向。拡張は「その場で POST、送ったら終わり」
 
 | path | body | 処理 |
@@ -836,7 +837,7 @@ pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前
 | `POST /pick` | `Pick` 入力(下記) | 保存して URL のポートからセッションを解決。指示つきで解決できれば即 pty へ。できなければ TUI に「どのセッションに送る?」 |
 | `POST /console` | `{url, errors: [{message, source?, line?, stack?, at}]}` | Browser パネルにエラー数、`E` でセッションに送れる。ポートの持ち主のセッションがあれば、スタックかスクリプト位置のあるものはエラーカード(`error.*`)にもなる。localhost のページなら何でも送れるので上限がある: 本文 1 MiB、1 回 50 件(超えた分は捨てる)、message 2000 文字・stack 8000 文字・source / at / url 500 文字で切る、1 ポートにつき 1 分 120 件(超えた分は捨てる)。拡張も中継の前に同じ件数と長さに切る |
 | `POST /tabs` | `{tabs: [{url, title}]}` | 開いている localhost タブの一覧 |
-| `GET /health` | — | `{ok: true}`(token 必須) |
+| `GET /health` | — | `{ok: true, version}`(token 必須) |
 
 Pick 入力:
 
@@ -861,13 +862,17 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | --- | --- | --- |
 | `GET /api/me` | — | `{login, device}` |
 | `GET /api/sessions` | — | `session.list` を待ち優先に並べ、表示用に絞ったもの |
-| `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行を色なしで |
+| `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行。`{slug, rows, lines, dead}` で、`rows` は色つき、`lines` は同じ行のテキストだけ([web.md](web.md)) |
+| `POST /api/sessions/{slug}/keys` | `{keys}` | `session.keys`。質問待ちのときだけ、決まったキーを 1〜8 個 |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400、待っていない・質問・プロンプトが変わったら 409 |
 | `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409。改行・タブ以外の制御文字を含むと 400 |
-| `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], at}` |
+| `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], merges: [InboxItem], at}`。`merges` は人が `merge` と答えた根拠の項目のうち、24 時間以内に変わったもの([web.md](web.md)) |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤りは 400 |
 | `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と依頼の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |
+| `GET /api/tapi/screen` | — | `tapi.screen`(セッションの `/screen` と同じ形)。409: tapi が起動していない |
 | `GET /api/tapi/transcript?after=<cursor>` | — | `tapi.transcript`(吹き出しの差分)。404: transcript が無い / 409: tapi が起動していない |
+| `POST /api/tapi/send` | `{text}` | `tapi.send`(`submit: true`)。`allow_devices` が無ければ 403 |
+| `POST /api/tapi/keys` | `{keys}` | `tapi.keys`。tapi が質問待ちのときだけ |
 | `GET /api/overview` | — | 件数と、セッションごとの工程(`impl → review → PR → CI → merge`)を依頼元・依頼でまとめたもの。足りない条件は `merge.check` から(読むだけ) |
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。

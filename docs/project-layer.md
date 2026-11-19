@@ -20,14 +20,14 @@
 今あるもの(仕様は [api.md](api.md) の「依頼(ledger)」「Session オブジェクト」「集計(stats)」、理由は [orchestration.md](orchestration.md)):
 
 - 依頼(ledger): tapi への人の入力を記録し、tapi が `done` / `drop` / `chat` で閉じる。雑談は pekoed が自動で閉じる(U16)。セッションは `--request` / `ledger link` で結ぶ。main をハブにするときは使わない(U13)
-- `Session.parent`(依頼元)・`Session.request`(依頼)・`Session.after`(順序。今は記録と表示だけで、起動は止めない)
+- `Session.parent`(依頼元)・`Session.request`(依頼)・`Session.after`(順序。`--after` だけなら記録と表示だけで起動は止めず、`--hold` を足すと相手が landed になるまで待ち行列(queued)で待つ)
 - ダッシュボード(TUI の [4]・Web UI)の工程表: 依頼元と依頼でまとめ、セッションごとに `impl → review → PR → CI → merge`
 - `pekoe stats`: 日付・リポジトリごとのマージ数とトークン
 
-並行して進んでいて、**まだマージされていない**もの(この文書は入った後の姿を前提にする。中身が変われば、下の「前提が変わったら」を見直す):
+この文書を書いた時点では並行して進んでいて、まだマージされていなかったもの(この文書は入った後の姿を前提にした)。**どちらもその後マージされた**(下の各項目の「実装:」)。中身が前提と違えば、下の「前提が変わったら」を見直す:
 
-- **tapi への配送**(orchestration.md の「3. tapi への配送」): `pekoe wait` を使わないエージェントにも、たまった変化を 1 通にまとめて tapi に届ける
-- **負荷の制御**(段階 4 の G の残り): 同時に動かすセッションの上限と、`--after` の待ち合わせ(先のセッションが済むまで後のセッションを起動しない)。ここでは「作ったセッションが、上限か `--after` で待ち行列に入れる」ようになると仮定する
+- **tapi への配送**(orchestration.md の「3. tapi への配送」): `pekoe wait` を使わないエージェントにも、たまった変化を 1 通にまとめて tapi に届ける。実装: `[orchestrator] deliver`(既定は off。`internal/daemon/deliver.go`)
+- **負荷の制御**(段階 4 の G の残り): 同時に動かすセッションの上限と、`--after` の待ち合わせ(先のセッションが済むまで後のセッションを起動しない)。ここでは「作ったセッションが、上限か `--after` で待ち行列に入れる」ようになると仮定する。実装: `[orchestrator] max_running` の上限と `pekoe new --after X --hold`(`internal/daemon/queue.go`)。仮定と違い、`--after` だけでは起動を止めず、`--hold` を足したときだけ相手が landed になるまで待つ
 
 ## 困りごと(数えた根拠)
 

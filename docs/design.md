@@ -18,7 +18,7 @@ pekoe は、ターミナルの中で複数のコーディングエージェン�
 **非目標**
 
 - GUI ターミナルの新規開発(ロードマップ最終フェーズに任意項目として残すのみ)
-- 判断の中身をデーモンに持たせない。pekoed は仕組み(状態・報告・待ち合わせ・判断の受信箱・送信の記録・依頼(`ledger`)・決まった条件の判定)を持ち、作業の分け方・振り分け・人に上げるかどうかといった判断はスキル(エージェント)が持つ。pekoed はモデルを呼ばない。統括役(tapi)を中心にした「セッションを人が管理しない」使い方は [orchestration.md](orchestration.md)(設計中)
+- 判断の中身をデーモンに持たせない。pekoed は仕組み(状態・報告・待ち合わせ・判断の受信箱・送信の記録・依頼(`ledger`)・決まった条件の判定)を持ち、作業の分け方・振り分け・人に上げるかどうかといった判断はスキル(エージェント)が持つ。pekoed はモデルを呼ばない。統括役(tapi)を中心にした「セッションを人が管理しない」使い方は [orchestration.md](orchestration.md)(段階 1〜3 は実装済み。どこまで済んだかは同書の冒頭)
 - マージをエージェントに任せない(v1)。着地の条件判定は「マージしてよいかの根拠」を人に並べるところまで
 - チームでの運用や拡張のストア公開は考えない(設計上は後から足せる形にはしておく)
 
@@ -85,6 +85,9 @@ flowchart LR
 ```mermaid
 stateDiagram-v2
   [*] --> creating: pekoe new
+  [*] --> queued: pekoe new(max_running の上限・--hold)
+  queued --> creating: 空きができた・--after の相手が landed
+  queued --> failed: --hold の相手が landed せずに消えた
   creating --> idle: エージェント起動(プロンプトなし)・SessionStart
   creating --> running: エージェント起動(初期プロンプトあり)
   creating --> failed: setup の失敗・起動中のデーモン再起動
@@ -109,13 +112,13 @@ stateDiagram-v2
   landed --> [*]
 ```
 
-状態は 9 つ(`internal/state`)。遷移の大半は hooks(`internal/daemon/hooks.go`)で起き、reviewing・approved はレビュー面(`internal/daemon/review.go`)、landed は land の後片付けで決まる。レビュー中(reviewing)は UserPromptSubmit が来ても reviewing のまま。hooks のないエージェントは画面(OSC 9 / 99 / 777、BEL、`[y/n]`)から running・waiting・idle だけを推し量る。
+状態は 10 個(`internal/state`)。queued は待ち行列(`[orchestrator] max_running`・`pekoe new --after X --hold`。`internal/daemon/queue.go`)で起動を待っている間で、worktree もエージェントもまだない。遷移の大半は hooks(`internal/daemon/hooks.go`)で起き、reviewing・approved はレビュー面(`internal/daemon/review.go`)、landed は land の後片付けで決まる。レビュー中(reviewing)は UserPromptSubmit が来ても reviewing のまま。hooks のないエージェントは画面(OSC 9 / 99 / 777、BEL、`[y/n]`)から running・waiting・idle だけを推し量る。
 
 **hooks と状態の対応**(`~/.claude/settings.json` に書き、すべて `pekoe event` を呼ぶ。hooks は stdin の JSON で session\_id と cwd を渡すので、cwd → worktree → セッションの解決ができる)
 
 | 信号 | 状態・処理 |
 | --- | --- |
-| SessionStart | running。session\_id を保存して `--resume` に使う |
+| SessionStart | creating・failed なら idle(ほかの状態は変えない)。session\_id を保存して `--resume` に使う |
 | UserPromptSubmit | running。`refs/pekoe/<slug>/prompt-<n>` にスナップショット |
 | Notification | waiting。入力 JSON の `notification_type` で判別する(`permission_prompt` → 許可待ち、`elicitation_dialog` → 質問、`idle_prompt` → idle)。AskUserQuestion の PreToolUse の直後の許可待ちは質問として扱う |
 | Stop | done。`test` を自動実行して結果を左ペインに |
@@ -215,7 +218,7 @@ pekoe は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 
 | 段階 | エンジン | 利点 | 欠点 |
 | --- | --- | --- | --- |
-| 1 | tmux control mode(`tmux -CC`) | pty 管理・描画・永続化を tmux が全部やる。左ペインと機能に集中できる | 見た目とペイン操作が tmux の制約を受ける |
+| 1 | tmux control mode(`tmux -C`) | pty 管理・描画・永続化を tmux が全部やる。左ペインと機能に集中できる | 見た目とペイン操作が tmux の制約を受ける |
 | 2 | libghostty-vt を使った自前 mux | 描画とレイアウトを完全に握れる。ベル・タイトル変更などのイベントを直接取れる | VT 周りの実装とパススルーを自分で持つ |
 
 デーモンとクライアントの境界を守れば、段階 1 で作った機能は段階 2 でそのまま残る。
@@ -262,7 +265,7 @@ pekoe は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 **落とし穴**
 
 - service worker の寿命: MV3 の SW は 30 秒放置で止まる。常時 WebSocket は不安定になるので「その場で HTTP POST、送ったら終わり」に徹する
-- セキュリティ: localhost の HTTP には任意の Web ページからも POST が届きうる。デーモンはインストール時に生成したトークンを要求し、Origin が `chrome-extension://` であることも確認する
+- セキュリティ: localhost の HTTP には任意の Web ページからも POST が届きうる。デーモンはインストール時に生成したトークンを要求し、`Origin` ヘッダがあれば `chrome-extension://` で始まることも確認する(例外: `Origin` の無い要求(curl など、ブラウザ以外)は token の確認だけで通す。ブラウザの Web ページからの要求には `Origin` が付くので、それは断れる)
 - console / network の取得: content script からは見えない。まずはページ側に小さなスクリプトを注入して `window.onerror` と `console.error` を拾う。`chrome.debugger` 権限で CDP を使う道もあるが「デバッグ中」の黄色バーが出るので後回し
 
 **run 窓(`!`)** — エージェントが「このコマンドを実行してください」と渡してくるものには、確認ダイアログやパスワード入力のようにエージェントのシェルモード(Claude Code の `!`)では答えられないものがある。そのためだけに別のペインを開かずに済むよう、Sessions の `!` でそのセッションの worktree に 1 回だけのコマンド窓を開く。常駐シェルではない。
@@ -278,7 +281,7 @@ pekoe は Ghostty の中で動く TUI であり、Ghostty を置き換えない�
 - 検出は `internal/errcatch` の表(`Rules`)で、1 形式 1 行。ANSI を除いてから、エラーの始まりの行・続きの行(スタックやコードフレーム)・終わりの行を正規表現で判定する。複数行は次の無関係な行か、出力が 0.5 秒止まった時点で 1 件に確定する
 - 同じエラーはメッセージ(数字・アドレス・`?t=` を除く)と先頭フレーム(行番号を除く)の指紋でまとめて回数を数える。先頭フレームは worktree 内の最初のフレーム(node_modules やランタイムは飛ばす)
 - 送った・無視したものは同じ指紋が再発するまで出さない
-- 送るときは出力と、先頭フレームの前後 5 行の抜粋を `~/.local/share/pekoe/<repo-id>/errors/` の md に書き、pty には `@` 参照の 1 行だけ貼る(ピックと同じ)
+- 送るときは出力と、先頭フレームの前後 5 行の抜粋を `~/.local/share/pekoe/<repo-id>/errors/` の md に書き、pty には `@` 参照の 1 行だけ貼る(ピックと同じ)。抜粋が無く 1 行(200 文字まで)で済むエラーに指示を足さずに送るときは、md を作らずにエラー文を 1 行のプロンプトにして送る(`errcatch.Short`)
 
 **逆方向(エージェントがブラウザを操作)** は自作しない。Chrome DevTools MCP や Playwright MCP を各セッションに繋ぐ。
 
@@ -300,7 +303,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | --- | --- | --- | --- |
 | A. レビュー | TUI で `r` → `:PekoeReview` | 左に変更ファイル一覧、右に差分。`]h` `[h` で hunk 移動、`a` 承認、`c` コメント、`x` 差し戻し、`?` 意図を聞く。`:PekoeSend` でコメントを 1 通にまとめて pty に送る | 本体 |
 | B. 範囲送信 | visual 選択 → `<leader>bs` | セッションをピッカーで選び、フロートに指示を打つ。`path:L40-72` + コード + 指示が送られる。`<leader>bn` はその選択を初期指示に新セッション | 日常 |
-| C. 承認 | 自動 | 待ちが発生すると右下にフロート。`y` / `n` が pty にそのまま流れる。`g` でそのセッションに飛ぶ、Esc で無視 | 日常 |
+| C. 承認 | 自動 | 待ちが発生すると右下にフロート(フォーカスは奪わない)。`<leader>ba`(`:PekoeApproval`)で入り、エージェントの画面の末尾を見て `y` / `n` / `A`(always)で答える(pty に直接流さず `session.answer` を通す)。`g` でそのセッションに飛ぶ、Esc で無視 | 日常 |
 | D. Follow | `:PekoeFollow <slug>` | エージェントが保存したファイルが split に順に開き、変更箇所にスクロールする。`!` で停止 | 後回し |
 | E. 診断送信 | `:PekoeFixDiagnostics[!]` | バッファ(`!` でワークスペース)の LSP 診断を一覧にして送る | 後回し |
 | F. 逆方向 | エージェントが呼ぶ | デーモンが MCP サーバを兼ね、`open_in_editor(path, line, note)` で nvim がその行に飛びフロートにメモが出る | 後回し |
@@ -359,7 +362,7 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 
 ## CLI コマンドとキーバインド
 
-CLI は人間とエージェントの両方が叩く。出力は `--json` で機械可読にできる。各サブコマンドは受け付けるフラグ(bool と値つき)を宣言し(`cmd/pekoe/flags.go`)、知らないフラグはエラーにする。`--help` / `-h` は何も実行せずに使い方だけを出す。打ち間違いや `--help` が状態を変えるコマンドにそのまま流れないようにするため。
+CLI は人間とエージェントの両方が叩く。出力は `--json` で機械可読にできる。各サブコマンドは受け付けるフラグ(bool と値つき)を宣言し(`cmd/pekoe/flags.go`)、知らないフラグはエラーにする(例外: hook から呼ばれる `pekoe event` は hook を失敗させないため、知らないフラグも黙って受け流す)。`--help` / `-h` は何も実行せずに使い方だけを出す。打ち間違いや `--help` が状態を変えるコマンドにそのまま流れないようにするため。
 
 | コマンド | すること |
 | --- | --- |
@@ -453,7 +456,7 @@ PR の状態はデーモンが 60 秒ごとに `gh api graphql` で要約を取�
 | 3 | ブラウザ連携。ポート台帳、Chrome 拡張のピック、エラーの拾い上げ、TUI 内のプレビュー | 済み |
 | 4 | 周辺の連携。Neovim、MCP、Issue インボックスと PR ビュー、衝突予報、Web UI、tapi chat | 済み(使いながら足している) |
 | 5 | libghostty-vt による自前 mux(tmux エンジンの置き換え) | 未着手。やらない選択もある |
-| — | 統括役(tapi)・報告・待ち合わせ・判断の受信箱・ダッシュボード([orchestration.md](orchestration.md)) | 設計中。フェーズ 5 とは独立に進める |
+| — | 統括役(tapi)・報告・待ち合わせ・判断の受信箱・ダッシュボード([orchestration.md](orchestration.md)) | 段階 1〜3 は済み。段階 4 は一部(後片付け・待ち行列など)を実装し、残りは設計中。フェーズ 5 とは独立に進める |
 | 6 | GUI ターミナル | 任意。予定なし |
 
 **技術選定**

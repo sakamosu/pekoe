@@ -170,7 +170,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | 脅威 | 対策 | 残る穴 |
 | --- | --- | --- |
 | **Mac 上のプロセス(エージェント自身を含む)がなりすます** | localhost に何も開かない。ヘッダ(`Tailscale-User-Login` など)を信じず、接続ごとに WhoIs。Mac 自身(アドレス、または WhoIs のホスト名)からの接続は拒否するので、エージェントが Mac の Tailscale 経由で `https://pekoe…/` を叩いて自分の許可待ちに allow を返すことはできない。`TS_AUTHKEY` はエージェントに渡さない | Mac 上で同じユーザーとして動くプロセスは、もともと `tmux -L pekoe send-keys` で自分の pty にキーを送れる(下の「pekoe の API」も)。Web UI はその穴を広げないが、塞ぎもしない。また、エージェントが同じユーザーの**別の端末**(ssh できる Linux 機など)に入って叩くことはできる → `allow_devices` で iPhone だけに絞る |
-| **エージェントが pekoe の API(unix ソケット)で許可待ちに答える** | ソケットは 0600 だが、同じユーザーのエージェントはつなげる。そこで token なしで受け付けるのはエージェントに要るメソッド(`session.event` `session.list` `session.get` `session.new` `session.send` `repo.resolve` `editor.open`)だけにし、許可待ちへの回答・生キー・tapi chat への入力・設定の書き込み・コマンドの実行・他のセッションの画面や抜粋・デーモンの停止を含むほかのすべては、`human-token`(データディレクトリの 0600 のファイル)を付けた呼び出しだけ受け付ける(許可リスト。一覧は [api.md](api.md) の「人間だけの操作」)。TUI・CLI・Neovim はファイルを読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。`session.send` はハブのために token なしでも使えるが、エージェントの入力欄だけに限る(許可ダイアログが出ている間の扱いは次の行) | 同じユーザーのエージェントは、Bash でファイルを読めば token を手に入れられる。Claude Code のエージェントには pekoe が sandbox の設定(`--settings`: sandbox を有効、`human-token`・`http-token`・tsnet の state・設定ディレクトリを `denyRead` と `Read` / `Edit` の deny、pekoed のソケットだけ許す)を渡すので読めない。ほかのエージェント、`[agents.claude] sandbox = false`、`~/.claude/settings.json` の `excludedCommands` に挙げたコマンド(sandbox の外で動く)は自分で塞ぐ(README の「エージェントに pekoe を使わせるときの権限」)。token なしの `session.new` は既知のリポジトリに限る(エージェントが自作したリポジトリで pekoed に git を動かさせない)。また `Bash(pekoe *)` のように pekoe を丸ごと許可しない。許可するなら `pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` に絞る。状態はエージェントの hook(`pekoe event`)が報告するので、`pekoe event` を叩けるエージェントは状態を偽って、send の確認のうち hook の状態を見る方をすり抜けうる(画面の判定は残る。`pekoe event` も許可しない) |
+| **エージェントが pekoe の API(unix ソケット)で許可待ちに答える** | ソケットは 0600 だが、同じユーザーのエージェントはつなげる。そこで token なしで受け付けるのはエージェントに要るメソッドだけにし(許可リスト。どれを通すかと理由は [api.md](api.md) の「人間だけの操作」の表。`land`・自分のセッションの `dev.toggle` のように pekoed にテストや dev server を動かさせるものも入る)、許可待ちへの回答・生キー・tapi chat への入力・設定の書き込み・他のセッションの画面や抜粋・デーモンの停止を含むほかのすべては、`human-token`(データディレクトリの 0600 のファイル)を付けた呼び出しだけ受け付ける。TUI・CLI・Neovim はファイルを読んで付ける。エージェントのペインの環境には token もそのパスも渡さない。`session.send` はハブのために token なしでも使えるが、エージェントの入力欄だけに限る(許可ダイアログが出ている間の扱いは次の行) | 同じユーザーのエージェントは、Bash でファイルを読めば token を手に入れられる。Claude Code のエージェントには pekoe が sandbox の設定(`--settings`: sandbox を有効、`human-token`・`http-token`・tsnet の state・設定ディレクトリを `denyRead` と `Read` / `Edit` の deny、pekoed のソケットだけ許す)を渡すので読めない。ほかのエージェント、`[agents.claude] sandbox = false`、`~/.claude/settings.json` の `excludedCommands` に挙げたコマンド(sandbox の外で動く)は自分で塞ぐ(README の「エージェントに pekoe を使わせるときの権限」)。token なしの `session.new` は既知のリポジトリに限る(エージェントが自作したリポジトリで pekoed に git を動かさせない)。また `Bash(pekoe *)` のように pekoe を丸ごと許可しない。許可するなら `pekoe ls` / `pekoe --json ls` / `pekoe --json new …` / `pekoe send …` に絞る。状態はエージェントの hook(`pekoe event`)が報告するので、`pekoe event` を叩けるエージェントは状態を偽って、send の確認のうち hook の状態を見る方をすり抜けうる(画面の判定は残る。`pekoe event` も許可しない) |
 | **エージェントが書いたコードを pekoed に実行させて token を読む** | pekoed が worktree のコードを実行するもの(Stop のたびの `[hooks] test`、門番、`setup`、`dev`、`teardown`、`land` のテスト)は sandbox で包む(macOS は `sandbox-exec`、Linux は `bwrap`)。`human-token`・`http-token`・tsnet の state・`config.toml`・`state.db` は読めず、pekoe のデータ・設定ディレクトリやシェルの起動ファイル・`~/.claude.json`・`~/.claude` の skills / hooks / plugins など、あとで外で実行される場所には書けず、tmux とレビュー面の nvim のソケットにもつなげない。sandbox が使えない環境では動かさない(`[sandbox] enable = false` で明示的に外したときだけ素のまま動かす)。詳しくは [api.md](api.md) の「hooks の sandbox」 | 塞ぐのは秘密と知られた場所だけで、ホームのほかの場所(キャッシュなど)には書ける。リポジトリ本体の `.git/hooks`・`.git/config` にも書ける(husky などのため。変わったら pekoed が受信箱に出す。api.md の「本体の .git の見張り」)。Docker・ssh-agent などの unix ソケットにはつながる(テストが使う)。人間が run 窓(`!`)で打ったコマンドは包まない |
 | **tailnet 上の他人・他の端末** | `allow_users` / `allow_devices`。タグつきノード(サーバー・CI)は常に拒否 | tailnet の ACL で他人から `pekoe:443` への到達自体を止めておくとなお良い |
 | **iPhone のブラウザで開いた悪意あるページ(CSRF・DNS rebinding)** | 書き込みにはカスタムヘッダと JSON が必須(クロスオリジンではプリフライトになり通らない)。`Origin` / `Sec-Fetch-Site` を確認。`Host` が自分の名前でなければ拒否 | — |
@@ -188,7 +188,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | method / path | body | 返り値 |
 | --- | --- | --- |
 | `GET /api/me` | — | `{login, device}` |
-| `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中 → その他(新しい順) |
+| `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中(creating・queued を含む)→ done・failed → そのほか(idle など)→ landed。待ち以外はそれぞれの中で新しい順 |
 | `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
@@ -202,21 +202,21 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `GET /api/overview` | — | `{counts, groups, at}`。下の「Overview」 |
 | `POST /api/sessions/{slug}/keys` | `{keys: ["Down", …]}` | `{ok: true}`。1〜8 個のキーを順に送る。キーは `Up Down Left Right Tab BTab Space Enter Escape 0`〜`9` だけ。400: 許可外のキー・個数 / 409: 質問待ち(`wait_kind == question`、`stopped` でない)以外 |
 
-Overview: `counts` は `{running, waiting, review (done の数), open_prs, ready (根拠が揃った PR), inbox_open, ledger_open}`。`groups` は依頼元(`parent`)と依頼(`request`)ごとのまとまりで、tapi の依頼(新しい依頼が上)→ ほかのセッションが作ったもの → 人・unknown → 直接開いたもの、の順。各まとまりは `{parent, request?: {id, text (200 文字で切る), status}, rows: [Flow]}`。他人の PR のレビュー(`pr_review`)は工程表に入れない。
+Overview: `counts` は `{running, queued, waiting, review (done の数), open_prs, ready (根拠が揃った PR), inbox_open, ledger_open}`。`groups` は依頼元(`parent`)と依頼(`request`)ごとのまとまりで、tapi の依頼(新しい依頼が上)→ ほかのセッションが作ったもの → 人・unknown → 直接開いたもの、の順。各まとまりは `{parent, request?: {id, text (200 文字で切る), status}, rows: [Flow]}`。他人の PR のレビュー(`pr_review`)は工程表に入れない。
 
-Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, report (最新の報告の status), steps, merge?}`。`steps` は `impl` `pr` `ci` `review` `merge` の 5 つで、それぞれ `{name, status: done|now|fail|todo, detail}`:
+Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, report (最新の報告の status), steps, merge?}`。`steps` は `impl` `review` `pr` `ci` `merge` の 5 つ(この順。独立レビューは PR の前にするので)で、それぞれ `{name, status: done|now|fail|todo, detail}`:
 
 | step | done | now | fail |
 | --- | --- | --- | --- |
-| impl(実装) | PR がある・`pekoe land` 済み・landed | それ以外 | `failed`・エラー・最新の報告が `blocked` |
+| impl(実装) | PR がある・`pekoe land` 済み・landed・独立レビューの報告(`status: review`、pending を含む)がある | それ以外(queued は todo で、`detail` に待っている理由) | `failed`・エラー・最新の報告が `blocked` |
 | pr | PR がある | — | PR が閉じられた |
 | ci | PR のチェックがすべて成功 | 実行中・まだ読んでいない | 失敗がある |
-| review | 最新の `status: review` の報告が pass(PR があれば `merge.check` の `review` が揃っている = PR の HEAD をレビューした) | pass だが PR の HEAD と違う | 最新のレビューが pass でない |
+| review | 最新の `status: review` の報告が pass(PR があれば `merge.check` の `review` が揃っている = PR の HEAD をレビューした) | 最新のレビューが pending(レビュー中)・pass だが PR の HEAD と違う | 最新のレビューが pass でも pending でもない |
 | merge | landed(PR がマージされた) | `merge.check` が ready(人の答え待ち)、pekoed がマージ中、pekoed がマージして landed 待ち | 人の `merge` で pekoed がマージできなかった(根拠の項目がまだ作り直されていない間。`detail` に理由) |
 
 `merge` は自分の PR があり landed でないセッションの `merge.check`(docs/api.md の「マージしてよいかの根拠」)で、ページは揃っていない条件を `detail` つきで出す。
 
-WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test look pr_look`。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
+WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test git_blocked queue look pr_look`(`git_blocked` は本体の .git が変わって git を止めている、`queue` は queued のときに起動していない理由)。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
 
 Run は 1 行の中の同じ見た目の区間: `{t, fg?, bg?, b?, d?, i?, u?, s?}`(テキスト、文字色、背景色、太字・薄字・斜体・下線・取り消し線)。pekoed が `capture-pane -e` の SGR を解析して作る(`internal/termstyle`)。色は 16 色なら TUI の役割名(`err ok warn primary secondary text dim border primary-end`、反転の既定色は `bg` / `text`)で、ユーザーのテーマがそのまま効く。256 色と truecolor は `#rrggbb`。OSC 8 のリンクやカーソル移動など、色以外のエスケープと制御文字は捨てる。行ごとに既定の見た目から始め(TUI と同じ)、行末の空白は背景色があっても落とす。
 

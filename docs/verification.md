@@ -108,7 +108,7 @@ Nov 7, 2026 時点。各項目の実装箇所と、どう確かめたかの記�
 
 設計書の CLI 一覧(`pekoe` `init` `new` `open` `adopt` `ls` `send` `event` `review` `land` `rm` `dev` `daemon`)はすべて実装済み。追加で `undo` `answer` `attach` `hooks` `ext` `mcp`。`--json` に対応。
 
-TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、prefix + `h` `l`)はすべて実装済み。prefix は `[keys] prefix` で変更できる。既定は `ctrl+q`(JIS 配列で押しやすく、Claude Code が使わない)。`C-a`・`Ctrl+A`・`^a` は `ctrl+a` として読む。使えるのは ctrl+ 英字(i・m を除く)・F1〜F20・それらや 1 文字への alt+ だけで、tab・enter・esc として届く `ctrl+i`・`ctrl+m`・`ctrl+[` や修飾キーの無いキーは `ctrl+q` に戻し、`pekoe config check` が警告する(入力中の pty からキーボードで抜けられなくならないように)。入力モード中は prefix だけで抜けて Sessions に戻る。
+TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、prefix + `h` `l`)はすべて実装済み。prefix は `[keys] prefix` で変更できる。既定は `ctrl+q`(JIS 配列で押しやすく、Claude Code が使わない)。`C-a`・`Ctrl+A`・`^a` は `ctrl+a` として読む。使えるのは ctrl+ 英字(i・m を除く)・`ctrl+@` `ctrl+\` `ctrl+]` `ctrl+^` `ctrl+_`・F1〜F20・それらや 1 文字への alt+ だけで、tab・enter・esc として届く `ctrl+i`・`ctrl+m`・`ctrl+[` や修飾キーの無いキーは `ctrl+q` に戻し、`pekoe config check` が警告する(入力中の pty からキーボードで抜けられなくならないように)。入力モード中は prefix だけで抜けて Sessions に戻る。
 
 複数リポジトリ(`repo.list`、[1] のリポジトリ見出し、今のリポジトリ、`w`): デーモン側は `TestRepoListCwdAndRemembered`(セッション・cwd(worktree の中から)・覚えたもの(`repo.resolve` でも引ける)・`path_` の設定ファイル・場所不明の設定ファイル)と main の `TestKnownReposIncludeConfigOnly` `TestResolveRepoRef`。TUI は `TestSessionsGroupedByRepo`(truecolor/ansi/none × nerd/unicode/ascii × 180/90 列で全行が端末幅ちょうど)、`TestSingleRepoHasHeading` `TestTapiHeadingStandsOut` `TestSelectionSkipsHeadings` `TestSelectedSessionStaysInView` `TestCurrentRepoFollowsSelection` `TestRepoPickerModal` `TestCommandsTargetCurrentRepo`(偽 pekoed で `session.new` / `worktree.list` / `issues.list` / `pick.send` の `repo` を確認) `TestOutsideRepo` `TestStartRepoWithoutSessions` `TestStartUpFollowsStartRepo`。隔離したデーモンで、一時ディレクトリの 2 リポジトリに交互にセッションを作り、web で起動 → web のセッションが選ばれ Worktrees とバーが web、`k` で見出しを飛ばして api に移ると Worktrees・バーも api に変わり `n` のセッションが api に、`w` → web → `n` のセッションが web に作られることを確認。90 列のタブ表示、リポジトリの外での起動(設定ファイルだけから `w` の一覧を作り、`n` → リポジトリ選択 → 作成)も確認。
 
@@ -118,7 +118,7 @@ TUI キー(`j` `k` Enter `n` `]a` `[a` `]r` `r` `b` `l` `d` `x` `D` `/` `?`、pr
 
 | 項目 | 結果 |
 | --- | --- |
-| 色の付いた要素すべてに、トークン表の「用途」に合う意味がある | ✓ 役割名だけを参照し、hex は `theme.go` にだけある |
+| 色の付いた要素すべてに、トークン表の「用途」に合う意味がある | ✓ 役割名だけを参照し、hex は `theme.go` にだけある(注: この確認の後、例外として `internal/theme/gradient.go` のグラデーションの既定の終端色と、`internal/mascot/mascot.go` のマスコットのパレットにも hex を置いた。どちらも色の定義で、描画側は役割名を参照する) |
 | ネオンの面積 10% 以下(塗りはモードセグメントだけ) | ✓ |
 | フォーカスは 1 つで、枠線とタイトルだけで示す。モーダル中は背後を border に落とす | ✓ `box()` |
 | タイトルは `[n] アイコン 名前 位置 状態` の形式 | ✓ |
