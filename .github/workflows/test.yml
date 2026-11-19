@@ -92,10 +92,12 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then bwrap --version; bwrap --ro-bind / / true && echo "bwrap works"; fi
 
       - name: make test
-        # -v で飛ばしたテストとその理由もログに残す(次の step で拾う)
+        # -v で飛ばしたテストとその理由もログに残す(次の step で拾う)。
+        # -count=1: 戻したキャッシュにあるテストの結果を使い回さず、毎回走らせる
+        # (テストが使う tmux・git などの変化は Go のテストキャッシュに映らない)
         run: |
           set -o pipefail
-          GOFLAGS=-v make test 2>&1 | tee "$RUNNER_TEMP/test.log"
+          GOFLAGS='-v -count=1' make test 2>&1 | tee "$RUNNER_TEMP/test.log"
 
       # テストが落ちてもビルドキャッシュは使えるので保存する(取り消しは除く)
       - name: Save Go cache
