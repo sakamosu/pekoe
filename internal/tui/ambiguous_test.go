@@ -40,7 +40,8 @@ func TestDashBarNotWide(t *testing.T) {
 // knownMarkViolations shrinks as docs/ambiguous-width.md「実装の段階」
 // replaces them.
 var knownMarkViolations = []glyphguard.Known{
-	// the work face's bubbles: not in 段階 3's list yet, decided there
-	{Where: "workBubbles", Rune: '·', Stage: "段階 3"},
-	{Where: "workBubbles", Rune: '°', Stage: "段階 3"},
+	// the work face's bubbles: 段階 3 kept them as an exception (no report
+	// of them drawing wrong), so they stay listed here
+	{Where: "workBubbles", Rune: '·', Stage: "段階 3 の例外(残す)"},
+	{Where: "workBubbles", Rune: '°', Stage: "段階 3 の例外(残す)"},
 }
