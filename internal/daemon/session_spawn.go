@@ -53,9 +53,6 @@ func (d *Daemon) shell(ctx context.Context, dir string, env []string, cmdline st
 		}
 		return nil
 	}
-	// and does not wait on a child that left the group (setsid) holding
-	// the output
-	c.WaitDelay = time.Second
 	out, err := c.CombinedOutput()
 	return string(out), err
 }
