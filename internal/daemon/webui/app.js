@@ -19,6 +19,8 @@ let sending = false; // a send is in flight
 let pressing = false; // a keypad key is in flight
 let touching = false; // a finger is on the list: do not move rows under it
 const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
+const attachments = new Map(); // slug → images for the next send (same rule): [{data (base64), thumb (data URL), w, h, bytes, type}]
+let preparing = false; // images being read and re-encoded
 
 // pekoe's own numbers carry a letter for their kind (internal/ids), so they
 // are not taken for a GitHub PR or issue (#185): r651 a request, q12 an
@@ -318,7 +320,8 @@ function renderTarget(s) {
     // itself) is what shows the send goes to tapi. When tapi is not
     // running it stays, to say why nothing can be sent
     to.hidden = !!s;
-    $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending;
+    $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending || preparing;
+    $("d-attach").hidden = !!tapi && !tapi.sendable;
     return;
   }
   note.hidden = true;
@@ -326,7 +329,8 @@ function renderTarget(s) {
   $("d-to-slug").textContent = current || "";
   $("d-to-repo").textContent = s ? [s.repo, s.branch !== s.slug ? s.branch : ""].filter(Boolean).join(" · ") : "is gone";
   to.classList.toggle("gone", !s);
-  $("d-send-btn").disabled = !s || sending;
+  $("d-send-btn").disabled = !s || sending || preparing;
+  $("d-attach").hidden = false;
 }
 
 // renderTapiHead: tapi's state in the detail view. Its permission prompts
@@ -563,22 +567,39 @@ async function doSend(ev) {
   const text = ta.value.trim();
   // the target is fixed here, from the same `current` the label shows
   const slug = current;
-  if (!text || !slug || sending) return;
+  const images = attached(slug);
+  if ((!text && !images.length) || !slug || sending || preparing) return;
   if (slug === TAPI) {
-    openTapiSheet(text);
+    openTapiSheet(text, images);
     return;
   }
   if (!sessions.some((x) => x.slug === slug)) {
     toast(slug + " is gone");
     return;
   }
+  // images go through the sheet: the target, the text and each image
+  // seen once more before they leave the phone
+  if (images.length) {
+    openSendSheet(slug, text, images);
+    return;
+  }
+  sendTo(slug, text, []);
+}
+
+// sendTo posts a send to a session. images: the prepared attachments.
+async function sendTo(slug, text, images) {
+  if (sending) return;
   sending = true;
   $("d-send-btn").disabled = true;
+  const ta = $("d-text");
   try {
-    await api("/api/sessions/" + encodeURIComponent(slug) + "/send", { text });
+    const body = { text };
+    if (images.length) body.images = images.map((im) => ({ data: im.data }));
+    await api("/api/sessions/" + encodeURIComponent(slug) + "/send", body);
     drafts.delete(slug);
+    dropAttached(slug, images);
     if (current === slug && ta.value.trim() === text) ta.value = "";
-    toast("sent → " + slug, true);
+    toast("sent → " + slug + (images.length ? " (" + images.length + " image" + (images.length > 1 ? "s" : "") + ")" : ""), true);
     setTimeout(refreshScreen, 600);
   } catch (e) {
     toast(slug + ": " + e.message);
@@ -587,21 +608,169 @@ async function doSend(ev) {
   if (current) renderTarget(detailTarget());
 }
 
-// ---- send to tapi: through a sheet with the whole text ----
+// ---- images: attached to the next send ----
+// Each is read here and drawn again on a canvas, as JPEG (PNG stays PNG,
+// for a screenshot's text), at most IMG_SIDE pixels on a side: a HEIC
+// photo becomes a JPEG the agent can read, the location and the rest of
+// the photo's metadata stay on the phone, and the upload stays small.
+// pekoed checks each again (PNG / JPEG / GIF by its bytes, the limits) and
+// names the file itself. Kept per target, like the drafts: one session's
+// images never ride along to another.
+
+const IMG_MAX = 4; // images in one send (pekoed: webMaxImages)
+const IMG_SIDE = 2048; // pixels on the long side
+const IMG_BYTES = 5 * 1024 * 1024; // one image (pekoed: webMaxImageBytes)
+
+function attached(slug) {
+  return (slug && attachments.get(slug)) || [];
+}
+
+function dropAttached(slug, images) {
+  const left = attached(slug).filter((im) => !images.includes(im));
+  if (left.length) attachments.set(slug, left);
+  else attachments.delete(slug);
+  if (current === slug) renderThumbs();
+}
+
+function readDataURL(file) {
+  return new Promise((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result));
+    r.onerror = () => fail(new Error("could not read " + (file.name || "the file")));
+    r.readAsDataURL(file);
+  });
+}
+
+function loadImage(url) {
+  return new Promise((ok, fail) => {
+    const img = new Image();
+    img.onload = () => ok(img);
+    img.onerror = () => fail(new Error("not an image this browser can open"));
+    img.src = url;
+  });
+}
+
+const b64Bytes = (url) => Math.floor((url.length - url.indexOf(",") - 1) * 3 / 4);
+
+// draw: img on a canvas of at most side pixels, as type (a data URL)
+function draw(img, side, type, quality) {
+  const w0 = img.naturalWidth, h0 = img.naturalHeight;
+  const k = Math.min(1, side / Math.max(w0, h0));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w0 * k));
+  c.height = Math.max(1, Math.round(h0 * k));
+  const g = c.getContext("2d");
+  if (type === "image/jpeg") {
+    g.fillStyle = "#fff"; // JPEG has no transparency
+    g.fillRect(0, 0, c.width, c.height);
+  }
+  g.drawImage(img, 0, 0, c.width, c.height);
+  return { url: c.toDataURL(type, quality), w: c.width, h: c.height };
+}
+
+async function prepareImage(file) {
+  if (file.type && !file.type.startsWith("image/")) throw new Error((file.name || "a file") + " is not an image");
+  const img = await loadImage(await readDataURL(file));
+  if (!img.naturalWidth || !img.naturalHeight) throw new Error("not an image this browser can open");
+  let type = file.type === "image/png" ? "image/png" : "image/jpeg";
+  let out = draw(img, IMG_SIDE, type, 0.85);
+  if (type === "image/png" && b64Bytes(out.url) > IMG_BYTES) {
+    type = "image/jpeg"; // a photo saved as PNG
+    out = draw(img, IMG_SIDE, type, 0.85);
+  }
+  for (const q of [0.7, 0.5]) {
+    if (b64Bytes(out.url) <= IMG_BYTES) break;
+    out = draw(img, IMG_SIDE, "image/jpeg", q);
+    type = "image/jpeg";
+  }
+  const bytes = b64Bytes(out.url);
+  if (bytes > IMG_BYTES) throw new Error("an image is too large even at " + IMG_SIDE + "px");
+  return {
+    data: out.url.slice(out.url.indexOf(",") + 1),
+    thumb: draw(img, 160, "image/jpeg", 0.7).url,
+    w: out.w, h: out.h, bytes, type,
+  };
+}
+
+async function addImages(files) {
+  const slug = current;
+  if (!slug || !files.length) return;
+  const have = attached(slug);
+  const room = IMG_MAX - have.length;
+  if (room <= 0) {
+    toast("at most " + IMG_MAX + " images in one send");
+    return;
+  }
+  if (files.length > room) toast("at most " + IMG_MAX + " images in one send: took the first " + room);
+  preparing = true;
+  renderThumbs();
+  const got = [];
+  for (const f of files.slice(0, room)) {
+    try {
+      got.push(await prepareImage(f));
+    } catch (e) {
+      toast(e.message);
+    }
+  }
+  preparing = false;
+  if (got.length) attachments.set(slug, [...attached(slug), ...got]);
+  if (current === slug) renderThumbs();
+  if (current) renderTarget(detailTarget());
+}
+
+// thumbs: the images as small pictures, each with × to take it out (box) or
+// without (the sheet)
+function thumbs(box, images, removable) {
+  box.replaceChildren();
+  images.forEach((im) => {
+    const t = el("span", "thumb");
+    const img = el("img");
+    img.alt = "image " + im.w + "×" + im.h;
+    img.src = im.thumb; // a data: URL drawn here, from the phone's own file
+    t.append(img, el("span", "size", kb(im.bytes)));
+    if (removable) {
+      const x = el("button", "x", "×");
+      x.type = "button";
+      x.setAttribute("aria-label", "remove the image");
+      x.addEventListener("click", () => dropAttached(current, [im]));
+      t.append(x);
+    }
+    box.append(t);
+  });
+  box.hidden = !images.length;
+}
+
+const kb = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
+
+function renderThumbs() {
+  const box = $("d-thumbs");
+  const images = attached(current);
+  thumbs(box, images, true);
+  if (preparing) {
+    box.append(el("span", "thumb-note", "reading…"));
+    box.hidden = false;
+  } else if (images.length) {
+    box.append(el("span", "thumb-note", images.length + "/" + IMG_MAX));
+  }
+  $("d-attach").classList.toggle("off", preparing || images.length >= IMG_MAX);
+}
+
+// ---- the send sheet: tapi's (the whole text, every time unless
+// [web] confirm_tapi_send = false) and a session's when images go along ----
 // tapi acts on every repository, so its send weighs more than one
 // session's: the sheet says the target is tapi and shows every character
-// that will be typed. The text is fixed when the sheet opens.
-// [web] confirm_tapi_send = false (tapi.confirm_send) leaves the sheet out
-// and sends at once; pekoed checks the send the same way either way. An
-// older pekoed without the field gets the sheet.
+// that will be typed. The text and the images are fixed when the sheet
+// opens. [web] confirm_tapi_send = false (tapi.confirm_send) leaves the
+// sheet out and sends at once; pekoed checks the send the same way either
+// way. An older pekoed without the field gets the sheet.
 
-let tsend = null; // the text in the sheet (or being sent without one)
+let tsend = null; // {slug, text, images} in the sheet (or being sent without one)
 
 function tapiConfirm() {
   return !tapi || tapi.confirm_send !== false;
 }
 
-function openTapiSheet(text) {
+function openTapiSheet(text, images) {
   if (!tapiUp()) {
     toast("tapi is not running");
     return;
@@ -610,15 +779,36 @@ function openTapiSheet(text) {
     toast("sending to tapi needs [web] allow_devices");
     return;
   }
-  tsend = text;
+  tsend = { slug: TAPI, text, images };
   if (!tapiConfirm()) {
-    doTapiSend();
+    doSheetSend();
     return;
   }
+  showSheet();
+}
+
+function openSendSheet(slug, text, images) {
+  tsend = { slug, text, images };
+  showSheet();
+}
+
+function showSheet() {
+  const { slug, text, images } = tsend;
+  const isTapi = slug === TAPI;
   busy = true;
-  $("tsheet-cap").textContent = "text — all of it, as it will be typed (" + [...text].length + " chars, " + text.split("\n").length + " lines)";
+  $("tsheet-title").textContent = isTapi ? "send to tapi" : "send to " + slug;
+  $("tsheet-to-cap").textContent = isTapi ? "to — the orchestrator, not one session" : "to — the session";
+  const s = sessions.find((x) => x.slug === slug);
+  $("tsheet-to").textContent = isTapi ? "tapi (orchestrator)" : slug + (s ? " · " + s.repo : "");
+  $("tsheet-warn").hidden = !isTapi;
+  $("tsheet-cap").textContent = text ? "text — all of it, as it will be typed (" + [...text].length + " chars, " + text.split("\n").length + " lines)" : "text — none (the images alone)";
   $("tsheet-text").textContent = text;
+  $("tsheet-text").hidden = !text;
   $("tsheet-text").scrollTop = 0;
+  $("tsheet-imgs-cap").textContent = images.length + " image" + (images.length > 1 ? "s" : "") + " — pekoed saves them outside the worktree and adds a line with each one's path, for the agent to open";
+  $("tsheet-imgs-cap").hidden = !images.length;
+  thumbs($("tsheet-imgs"), images, false);
+  $("tsheet-ok").textContent = isTapi ? "send to tapi" : "send";
   $("tsheet-ok").disabled = false;
   $("tsheet").hidden = false;
 }
@@ -629,23 +819,35 @@ function closeTapiSheet() {
   busy = false;
 }
 
-async function doTapiSend() {
-  const text = tsend;
-  if (text == null || sending) return;
+async function doSheetSend() {
+  if (!tsend || sending) return;
+  if (tsend.slug !== TAPI) {
+    const { slug, text, images } = tsend;
+    $("tsheet-ok").disabled = true;
+    await sendTo(slug, text, images);
+    closeTapiSheet();
+    refresh();
+    return;
+  }
+  const { text, images } = tsend;
   $("tsheet-ok").disabled = true;
   sending = true;
   $("d-send-btn").disabled = true; // no second send while this one is out
   try {
-    await api("/api/tapi/send", { text });
+    const body = { text };
+    if (images.length) body.images = images.map((im) => ({ data: im.data }));
+    const r = await api("/api/tapi/send", body);
     drafts.delete(TAPI);
+    dropAttached(TAPI, images);
     const ta = $("d-text");
     if (current === TAPI && ta.value.trim() === text) {
       ta.value = "";
       fitComposer();
     }
-    toast("sent → tapi", true);
-    // ● until it shows up in the transcript (✓)
-    chat.pending.push({ text, at: Date.now() });
+    toast("sent → tapi" + (images.length ? " (" + images.length + " image" + (images.length > 1 ? "s" : "") + ")" : ""), true);
+    // ● until it shows up in the transcript (✓): what was typed, with
+    // the image lines pekoed added
+    chat.pending.push({ text: (r && typeof r.text === "string" && r.text) || text, at: Date.now() });
     if (current === TAPI && tapiMode() === "chat") {
       renderChat(true);
       toBottom();
@@ -1720,6 +1922,7 @@ function route() {
   inboxTyping = false; // a hidden note box may never get its blur
   if (!current) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
   ta.value = (current && drafts.get(current)) || "";
+  renderThumbs(); // the images attached for this target (kept per target, like the drafts)
   for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
   if (view !== "detail") document.body.classList.remove("chat-on");
   fitComposer();
@@ -1781,7 +1984,12 @@ $("sheet-ok").addEventListener("click", doAnswer);
 $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
 $("tsheet-cancel").addEventListener("click", closeTapiSheet);
-$("tsheet-ok").addEventListener("click", doTapiSend);
+$("tsheet-ok").addEventListener("click", doSheetSend);
+$("d-file").addEventListener("change", (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = ""; // the same photo can be chosen again
+  addImages(files);
+});
 $("tsheet").addEventListener("click", (e) => { if (e.target === $("tsheet")) closeTapiSheet(); });
 $("isheet-cancel").addEventListener("click", closeInboxSheet);
 $("isheet-ok").addEventListener("click", doInboxAnswer);

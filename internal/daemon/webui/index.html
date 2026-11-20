@@ -131,7 +131,11 @@
       <span class="to-repo" id="d-to-repo"></span>
     </div>
     <div class="send-note" id="d-send-note" hidden></div>
+    <!-- images to go with the next send (photos, screenshots, files): the
+         page re-encodes each as JPEG or PNG; pekoed checks and saves them -->
+    <div class="thumbs" id="d-thumbs" hidden></div>
     <div class="send-row">
+      <label class="btn key attach" id="d-attach" for="d-file" aria-label="attach images" title="attach images">＋<input type="file" id="d-file" accept="image/*" multiple></label>
       <textarea id="d-text" rows="2" maxlength="4000" placeholder="send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
       <button type="submit" class="btn key" id="d-send-btn">send</button>
     </div>
@@ -172,14 +176,18 @@
   </div>
 </div>
 
+<!-- the send sheet: every send to tapi (unless confirm_tapi_send = false),
+     and a send to a session that carries images -->
 <div class="sheet-back" id="tsheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tsheet-title">
     <h2 id="tsheet-title">send to tapi</h2>
-    <div class="sheet-cap">to — the orchestrator, not one session</div>
-    <div class="target">tapi (orchestrator)</div>
-    <div class="sheet-warn">⚠ tapi reads every repository, starts sessions and hands work to them: heavier than a send to one session. Read all of it before sending.</div>
+    <div class="sheet-cap" id="tsheet-to-cap">to — the orchestrator, not one session</div>
+    <div class="target" id="tsheet-to">tapi (orchestrator)</div>
+    <div class="sheet-warn" id="tsheet-warn">⚠ tapi reads every repository, starts sessions and hands work to them: heavier than a send to one session. Read all of it before sending.</div>
     <div class="sheet-cap" id="tsheet-cap">text — all of it, as it will be typed</div>
     <pre class="input whole" id="tsheet-text"></pre>
+    <div class="sheet-cap" id="tsheet-imgs-cap" hidden></div>
+    <div class="thumbs" id="tsheet-imgs" hidden></div>
     <div class="row">
       <button class="btn" id="tsheet-cancel">cancel</button>
       <button class="btn allow" id="tsheet-ok">send to tapi</button>
