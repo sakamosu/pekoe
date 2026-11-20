@@ -8,7 +8,8 @@ package daemon
 // A dependency must be a session pekoed has when the new one is made: a
 // slug that does not exist (a typo) would be recorded as a dependency that
 // is never met, so it is refused, and the orchestrator makes the session it
-// depends on first. The list is fixed at creation, so a cycle can only come
+// depends on first. So is a session pekoe did not make (pekoe open of the
+// repository's main checkout): it never lands. The list is fixed at creation, so a cycle can only come
 // from replacing a landed session with one of the same slug (A landed, B
 // after A, a new A after B); that, and a session after itself, are refused.
 // A dependency removed later (pekoe rm) stays in the list; the TUI shows it
@@ -39,8 +40,15 @@ func (d *Daemon) resolveAfter(refs []string, slug string) ([]string, error) {
 		if dep == slug {
 			return nil, fmt.Errorf("--after %s: a session cannot come after itself", ref)
 		}
-		if _, err := d.snapshot(dep); err != nil {
+		x, err := d.snapshot(dep)
+		if err != nil {
 			return nil, fmt.Errorf("--after %s: no such session (make the session it comes after first)", ref)
+		}
+		if !x.Managed {
+			// only a session pekoe made lands (pekoe land); one opened on a
+			// checkout of its own (the repository's main one) never does,
+			// so merge.check's after would never hold, nor --hold start
+			return nil, fmt.Errorf("--after %s: %s is not a session pekoe made (pekoe open), so it never lands; leave out --after %s", ref, dep, ref)
 		}
 		if seen[dep] {
 			continue

@@ -247,15 +247,6 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if p.Hold && len(after) == 0 {
 		return nil, errors.New("--hold waits for the --after sessions to land: give --after")
 	}
-	if p.Hold {
-		for _, dep := range after {
-			// only a session pekoe made lands (pekoe land); one opened on a
-			// checkout of its own (the repository's main one) never does
-			if x, err := d.snapshot(dep); err == nil && !x.Managed {
-				return nil, fmt.Errorf("--hold --after %s: %s is not a session pekoe made (pekoe open), so it never lands; leave out --hold or --after %s", dep, dep, dep)
-			}
-		}
-	}
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err

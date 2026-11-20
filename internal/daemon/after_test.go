@@ -3,6 +3,7 @@ package daemon
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/state"
 )
@@ -74,5 +75,22 @@ func TestNewRefusesInvalidRef(t *testing.T) {
 	}
 	if n := len(call[[]state.Session](t, d, "session.list", map[string]any{})); n != 0 {
 		t.Fatalf("%d sessions made", n)
+	}
+}
+
+// --after a session that never lands (one pekoe did not make, such as the
+// repository's own checkout) is refused, with --hold (it would wait
+// forever) and without (merge.check's after would never hold).
+func TestNewAfterUnmanagedRefused(t *testing.T) {
+	d, _, repo := setup(t)
+	d.add(&state.Session{Slug: "main", Branch: "main", RepoDir: repo, Path: repo, State: state.Idle, Managed: false, CreatedAt: time.Now()})
+	for _, hold := range []bool{true, false} {
+		err := callErr(d, "session.new", map[string]any{"repo": repo, "branch": "feat/h", "after": []string{"main"}, "hold": hold})
+		if err == nil || !strings.Contains(err.Error(), "--after main: main is not a session pekoe made") {
+			t.Fatalf("hold %v: %v", hold, err)
+		}
+		if _, err := d.snapshot("feat-h"); err == nil {
+			t.Fatalf("hold %v: made a session though refused", hold)
+		}
 	}
 }

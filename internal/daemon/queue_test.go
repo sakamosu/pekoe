@@ -417,26 +417,6 @@ func TestQueueHoldFetchTimeout(t *testing.T) {
 	}
 }
 
-// --hold on a session that never lands (one pekoe did not make, such as the
-// repository's own checkout) is refused instead of waiting forever.
-func TestQueueHoldOnUnmanagedRefused(t *testing.T) {
-	d, _, repo := setup(t)
-	d.add(&state.Session{Slug: "main", Branch: "main", RepoDir: repo, Path: repo, State: state.Idle, Managed: false, CreatedAt: time.Now()})
-	err := callErr(d, "session.new", map[string]any{"repo": repo, "branch": "feat/h", "after": []string{"main"}, "hold": true})
-	if err == nil || !strings.Contains(err.Error(), "never lands") {
-		t.Fatalf("--hold on an unmanaged session: %v", err)
-	}
-	if _, err := d.snapshot("feat-h"); err == nil {
-		t.Error("made a session though refused")
-	}
-	// without --hold it is only recorded, as before
-	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/h", "after": []string{"main"}})
-	if len(s.After) != 1 || s.After[0] != "main" {
-		t.Errorf("after: %v", s.After)
-	}
-	waitCreations(t, d)
-}
-
 // A held session's fetch that runs into another worktree being added in
 // the same repository still starts from origin/<base>. git worktree add
 // makes .git/worktrees/<name>/ with gitdir and an empty commondir before
