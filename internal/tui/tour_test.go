@@ -282,6 +282,39 @@ func TestTourSampleAndRestore(t *testing.T) {
 	}
 }
 
+// pekoed going away during the tour ends the TUI at once, as without the
+// tour, so the caller reconnects: it used to wait with the kept messages
+// until the tour closed (and was dropped after tourKeep of them). The real
+// model comes back, and the tour is not recorded as seen.
+func TestTourDisconnectQuits(t *testing.T) {
+	m := tourModel(t, "none", 120, 40)
+	m.sessions = realSessions()
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if m.tour == nil {
+		t.Fatal("no tour")
+	}
+	for range tourKeep { // the kept messages are full
+		m.Update(errsMsg(nil))
+	}
+	_, cmd := m.Update(disconnectedMsg{})
+	quit := false
+	if cmd != nil {
+		_, quit = cmd().(tea.QuitMsg)
+	}
+	if !quit || !m.lost || m.exitErr() != ErrDisconnected {
+		t.Fatalf("disconnect during the tour: quit %v lost %v", quit, m.lost)
+	}
+	if m.tour != nil {
+		t.Error("the tour is still up")
+	}
+	if _, s := m.find("real-one"); s == nil {
+		t.Error("the real model is not back")
+	}
+	if _, err := os.Stat(m.tourPath); !os.IsNotExist(err) {
+		t.Errorf("the tour was recorded as seen: %v", err)
+	}
+}
+
 // no key reaches pekoed while the tour runs, destructive or not
 func TestTourSwallowsKeys(t *testing.T) {
 	f, cl := startFakePekoed(t)

@@ -273,6 +273,14 @@ func (m *model) tourUpdate(msg tea.Msg) tea.Cmd {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.tourApply() // narrow ↔ wide shows the left panels differently
+	case disconnectedMsg:
+		// pekoed went away: end now, as without the tour, so the caller
+		// reconnects (kept for the end, it waited until the tour closed, and
+		// was dropped after tourKeep messages). The real model goes back
+		// first; the tour is not recorded as seen and comes again next time.
+		*m = t.saved
+		m.lost = true
+		return tea.Quit
 	case evMsg:
 		if client.Event(msg).Event == "session.output" {
 			return nil // only says "fetch the screen": the end fetches it anyway
