@@ -97,3 +97,51 @@ func TestAskWaitOnItem(t *testing.T) {
 		t.Fatalf("wait params %s: want on [inbox] and inbox 12", raw)
 	}
 }
+
+// pekoe inbox answer <id> --note TEXT without a choice answers with the
+// note alone: no choice goes to inbox.answer (pekoed takes it as none of
+// the options).
+func TestInboxAnswerNoteOnly(t *testing.T) {
+	fd := startFakeDaemon(t)
+	fd.mu.Lock()
+	fd.results = map[string]any{"inbox.answer": state.InboxItem{ID: 12, Status: state.InboxAnswered}}
+	fd.mu.Unlock()
+	if _, err := capture(t, func() error { return cmdInbox([]string{"answer", "q12", "--note", "画像を送りたい", "--rev", "3"}) }); err != nil {
+		t.Fatal(err)
+	}
+	fd.mu.Lock()
+	raw := fd.params["inbox.answer"]
+	fd.mu.Unlock()
+	var p map[string]any
+	if err := json.Unmarshal(raw, &p); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p["choice"]; ok || p["note"] != "画像を送りたい" || p["rev"] != float64(3) {
+		t.Fatalf("inbox.answer params %s", raw)
+	}
+}
+
+// An answer of a note alone reads as none of the options (not option 1),
+// in the text and in --json (answer.choice absent), as ask-human --wait
+// prints it.
+func TestAskWaitNoteOnly(t *testing.T) {
+	it := state.InboxItem{ID: 12, Kind: "decision", From: "main", Status: state.InboxAnswered, Question: "どれ?", Options: []string{"a", "b"},
+		Answer: &state.InboxAnswer{Note: "画像を送りたい", By: "human"}, Delivery: state.DeliveryWaited}
+	fd := startFakeDaemon(t)
+	fd.mu.Lock()
+	fd.results = map[string]any{"inbox.get": it}
+	fd.mu.Unlock()
+	old := jsonOut
+	t.Cleanup(func() { jsonOut = old })
+	jsonOut = false
+	out, err := capture(t, func() error { return askWait(12, time.Minute) })
+	if err != nil || !strings.Contains(out, "answered by human: none of the options · note: 画像を送りたい") {
+		t.Fatalf("text: %v\n%s", err, out)
+	}
+	jsonOut = true
+	out, err = capture(t, func() error { return askWait(12, time.Minute) })
+	var got state.InboxItem
+	if err != nil || json.Unmarshal([]byte(out), &got) != nil || strings.Contains(out, `"choice"`) || got.Answer.Choice != nil || got.Answer.Note != "画像を送りたい" {
+		t.Fatalf("json: %v\n%s", err, out)
+	}
+}
