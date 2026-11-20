@@ -32,7 +32,8 @@ import (
 
 type claudeSettings struct {
 	Permissions struct {
-		Deny []string `json:"deny"`
+		Allow []string `json:"allow,omitempty"`
+		Deny  []string `json:"deny"`
 	} `json:"permissions"`
 	Sandbox struct {
 		Enabled                  bool `json:"enabled"`
@@ -121,8 +122,10 @@ func permPath(p string) string { return "/" + p }
 // directories Claude Code lets it write, --add-dir included) nor by the
 // Edit and Write tools (permissions.deny): tapi chat's repositories and
 // worktrees (docs/orchestration.md「自分で作業しすぎないようにする」).
-// Sessions get none.
-func (d *Daemon) claudeSandboxSettings(repoDirs, readOnly []string) string {
+// Sessions get none. slug's directory of images sent from the web UI
+// (webimage.go) is readable with the Read tool without asking: the agent is
+// told to open them, and they are outside its worktree.
+func (d *Daemon) claudeSandboxSettings(slug string, repoDirs, readOnly []string) string {
 	sf, sd := d.agentSecrets()
 	gf, gd := gitProtected(repoDirs)
 	sf, sd, gf, gd = withReal(sf), withReal(sd), withReal(gf), withReal(gd)
@@ -160,6 +163,11 @@ func (d *Daemon) claudeSandboxSettings(repoDirs, readOnly []string) string {
 		deny = append(deny, "Edit("+permPath(dir)+"/**)")
 	}
 	c.Permissions.Deny = deny
+	if webImageDirOK(slug) {
+		for _, dir := range withReal([]string{webImageDir(slug)}) {
+			c.Permissions.Allow = append(c.Permissions.Allow, "Read("+permPath(dir)+"/**)")
+		}
+	}
 	b, _ := json.Marshal(c)
 	return string(b)
 }
@@ -191,7 +199,7 @@ func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs, read
 	if err != nil {
 		return "", err
 	}
-	_, err = tmp.WriteString(d.claudeSandboxSettings(repoDirs, readOnly))
+	_, err = tmp.WriteString(d.claudeSandboxSettings(slug, repoDirs, readOnly))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
