@@ -558,6 +558,15 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	if s.PRReview {
 		return nil, errors.New("this is someone else's PR; nothing to land")
 	}
+	if !s.Managed {
+		// a checkout pekoe did not make (pekoe open of the repository's
+		// main checkout, or of a worktree outside ~/worktrees): land would
+		// rebase and push someone's own checkout, its base branch among them
+		return nil, fmt.Errorf("%s is not a session pekoe made (pekoe open of %s): land only sessions made with pekoe new", p.Slug, s.Path)
+	}
+	if s.Branch == "" || s.Branch == "HEAD" {
+		return nil, fmt.Errorf("%s has no branch to push: nothing to land", p.Slug)
+	}
 	if out, err := gitx.Run(s.Path, "status", "--porcelain"); err != nil {
 		return nil, err
 	} else if out != "" {
@@ -572,6 +581,14 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	}
 	if err := gitx.CheckRefArg("branch", s.Branch); err != nil {
 		return nil, err
+	}
+	if s.Branch == originBranch(base) {
+		// pushing it would put the commits on the base itself, with no PR
+		return nil, fmt.Errorf("%s is on %s, its base: land pushes a branch and opens a PR into the base, so there is nothing to land", p.Slug, s.Branch)
+	}
+	if cur := gitx.CurrentBranch(s.Path); cur != s.Branch {
+		// land rebases and pushes HEAD as s.Branch: what is checked out now
+		return nil, fmt.Errorf("the worktree has %s checked out, not the session's branch %s: check out %s first", cur, s.Branch, s.Branch)
 	}
 	hasOrigin := gitx.Origin(s.Path) != ""
 	if !hasOrigin && agent {
