@@ -228,3 +228,51 @@ func TestReadChatLimits(t *testing.T) {
 		t.Fatalf("long text: %d bytes", len(c[0].Text))
 	}
 }
+
+// A send of more than one line (every send with images) reaches Claude Code
+// as a paste, and the transcript wraps it in <pasted_content id="…">. The
+// bubble has the words alone, as the page sent them (so the "not sent yet"
+// bubble finds them); a paste among typed words, a part of one or a body
+// holding its own closing tag stays as it was.
+func TestReadChatUnwrapsPaste(t *testing.T) {
+	human := func(content string) string {
+		b, _ := json.Marshal(content)
+		return `{"type":"user","timestamp":"2026-11-20T14:03:13Z","origin":{"kind":"human"},"message":{"role":"user","content":` + string(b) + `}}`
+	}
+	img := "[image] /Users/me/.local/share/pekoe/images/+tapi/20261120-230313-c0892131-1.png"
+	for _, c := range []struct{ name, content, want string }{
+		{"one line, typed", "直して", "直して"},
+		{"one line, pasted", "<pasted_content id=\"a1b2\">\n直して\n</pasted_content id=\"a1b2\">", "直して"},
+		{"lines, pasted", "\n\n<pasted_content id=\"3b15\">\n一行目\n\n  二行目(字下げ)\n</pasted_content id=\"3b15\">\n", "一行目\n\n  二行目(字下げ)"},
+		{"with an image", "\n\n<pasted_content id=\"3b15\">\nじゃあ直して\n\n" + img + "\n</pasted_content id=\"3b15\">\n", "じゃあ直して\n\n" + img},
+		{"typed words and a paste", "これ見て\n<pasted_content id=\"dbc0\">\nlog\n</pasted_content id=\"dbc0\">", "これ見て\n<pasted_content id=\"dbc0\">\nlog\n</pasted_content id=\"dbc0\">"},
+		{"a paste and typed words", "<pasted_content id=\"3554\">\nlog\n</pasted_content id=\"3554\">\n\n直して", "<pasted_content id=\"3554\">\nlog\n</pasted_content id=\"3554\">\n\n直して"},
+		{"not closed", "<pasted_content id=\"a1b2\">\n直して", "<pasted_content id=\"a1b2\">\n直して"},
+		{"closed with another id", "<pasted_content id=\"a1b2\">\n直して\n</pasted_content id=\"ffff\">", "<pasted_content id=\"a1b2\">\n直して\n</pasted_content id=\"ffff\">"},
+		{"two pastes", "<pasted_content id=\"7a80\">\nA\n</pasted_content id=\"7a80\">\n<pasted_content id=\"7a80\">\nB\n</pasted_content id=\"7a80\">", "<pasted_content id=\"7a80\">\nA\n</pasted_content id=\"7a80\">\n<pasted_content id=\"7a80\">\nB\n</pasted_content id=\"7a80\">"},
+		{"no id", "<pasted_content id=\"\">\nA\n</pasted_content id=\"\">", "<pasted_content id=\"\">\nA\n</pasted_content id=\"\">"},
+	} {
+		path := filepath.Join(t.TempDir(), "22222222-bbbb.jsonl")
+		writeChat(t, path, []string{human(c.content)})
+		page, err := readChat(path, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Items) != 1 || page.Items[0].Kind != "human" || page.Items[0].Text != c.want {
+			t.Errorf("%s: %+v\nwant %q", c.name, page.Items, c.want)
+		}
+	}
+	// an empty paste is no bubble; a pekoed line in one is still pekoed's
+	path := filepath.Join(t.TempDir(), "33333333-cccc.jsonl")
+	writeChat(t, path, []string{
+		human("<pasted_content id=\"e0e0\">\n\n</pasted_content id=\"e0e0\">"),
+		human("<pasted_content id=\"e1e1\">\n[pekoe inbox q3] 答え: yes\n</pasted_content id=\"e1e1\">"),
+	})
+	page, err := readChat(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Kind != "pekoe" || page.Items[0].Text != "[pekoe inbox q3] 答え: yes" {
+		t.Fatalf("items: %+v", page.Items)
+	}
+}

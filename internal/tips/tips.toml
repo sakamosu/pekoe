@@ -127,7 +127,7 @@ docs = ["docs/web.md", "README.ja.md#iphone-からweb-ui"]
 [[tip]]
 id = "web-image"
 short = "Web UI の send に写真・スクショを添えられる"
-detail = "送信欄の ＋ で 4 枚まで選ぶ。pekoed が worktree の外に保存し、文の後に [image] <パス> を添えるので、エージェントは Read で開ける。セッションの rm と 7 日で消える。"
+detail = "送信欄の ＋ で 4 枚まで選ぶ(隣のカメラでその場で撮れる)。pekoed が worktree の外に保存し、文の後に [image] <パス> を添えるので、エージェントは Read で開ける。セッションの rm と 7 日で消える。"
 keys = ["pekoe web"]
 docs = ["docs/web.md#画像の扱い", "README.ja.md#iphone-からweb-ui"]
 
