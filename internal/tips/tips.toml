@@ -232,7 +232,7 @@ docs = ["docs/orchestration.md", "docs/tapi-chat.md"]
 [[tip]]
 id = "inbox"
 short = "pekoe inbox で受信箱を見て、inbox answer で答える"
-detail = "エージェントが人に頼んだことの一覧。pekoe inbox <id> で 1 件を詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ。エージェントからは断られる)。--all で答えたものも出る。"
+detail = "エージェントからの問いの一覧。pekoe inbox <id> で詳しく、pekoe inbox answer <id> <番号> --note … で答える(人だけ)。合う選択肢が無ければ番号を省き --note だけで。--all で答えたものも出る。"
 keys = ["pekoe inbox", "pekoe inbox answer <id>", "--all", "--note"]
 docs = ["docs/api.md"]
 
