@@ -253,8 +253,14 @@ func (d *Daemon) tapiTurnEnd() {
 	if id == 0 || keep || kept == id {
 		return
 	}
-	closed := false
+	// closed: this Stop closed it; auto: an earlier Stop of this turn did
+	// (the turn went on and ends again, and may go on once more)
+	closed, auto := false, false
 	e, err := d.changeLedger(id, func(e *state.LedgerEntry) error {
+		if autoClosed(e) {
+			auto = true
+			return nil
+		}
 		if e.Status != state.LedgerOpen || len(e.Sessions) > 0 {
 			return nil
 		}
@@ -263,16 +269,29 @@ func (d *Daemon) tapiTurnEnd() {
 		closed = true
 		return nil
 	})
-	if err == nil && closed {
+	if err != nil || !closed && !auto {
+		return
+	}
+	if closed {
 		d.ledgerChanged(e)
-		d.mu.Lock()
-		switch {
-		case d.tapi.ended && d.tapi.endedEntry == id:
-			d.tapi.endedClosed = true
-		case d.tapi.turnOn && d.tapi.turnEntry == id:
-			d.tapi.turnClosed = id // the turn went on while it was being closed
+	}
+	reopen := false
+	d.mu.Lock()
+	switch t := &d.tapi; {
+	case t.ended && t.endedEntry == id:
+		t.endedClosed = true
+	case t.turnOn && t.turnEntry == id:
+		// the turn went on while it was being closed: if it has asked
+		// someone or kept it already, open it now, else when it does
+		if t.turnKeep || t.turnKept == id {
+			reopen = true
+		} else {
+			t.turnClosed = id
 		}
-		d.mu.Unlock()
+	}
+	d.mu.Unlock()
+	if reopen {
+		d.reopenAuto(id)
 	}
 }
 

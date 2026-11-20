@@ -788,6 +788,12 @@ func TestLedgerStopHookBlockedTurnGoesOn(t *testing.T) {
 		{"small talk", func(t *testing.T, d *Daemon, tapi *Caller) {
 			preToolEvent(t, d, tapi, "pekoe --json ls")
 		}, true, state.LedgerChat},
+		{"blocked twice, then send", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe --json ls")
+			stopAgain(t, d, tapi) // blocked once more
+			preToolEvent(t, d, tapi, "pekoe send main 'README の誤字を直して'")
+			callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "README の誤字を直して", "submit": true})
+		}, true, state.LedgerOpen},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, _, repo := setup(t)
