@@ -28,7 +28,7 @@ func TestLandedSessionShowsPRMerged(t *testing.T) {
 	}
 
 	// a fetch that started before the merge and lands after it
-	d.applyPRStatus(s.Slug, &state.PRStatus{State: "OPEN", Pass: 3}, false)
+	d.applyPRStatus(s.Slug, 89, &state.PRStatus{State: "OPEN", Pass: 3}, false)
 	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug}); got.PRStatus.State != "MERGED" {
 		t.Fatalf("late fetch: %+v", got.PRStatus)
 	}
@@ -66,5 +66,32 @@ func TestRestoreMarksLandedPRMerged(t *testing.T) {
 	}
 	if got := call[state.Session](t, d2, "session.get", map[string]any{"slug": b.Slug}); got.PRStatus != nil {
 		t.Fatalf("landed without a PR got a summary: %+v", got.PRStatus)
+	}
+}
+
+// A read of the old PR (#10) that finishes after land moved the session to
+// a new one (#11, its summary emptied) is dropped: stored, the old PR's
+// CLOSED would stop the poller reading #11 (not OPEN), and its MERGED would
+// start the teardown of a session whose PR is open.
+func TestApplyPRStatusDropsOldPR(t *testing.T) {
+	for _, st := range []string{"CLOSED", "MERGED"} {
+		t.Run(st, func(t *testing.T) {
+			d, _, _ := inboxSetup(t)
+			d.update("main", func(x *state.Session) {
+				x.PR, x.Landing, x.PRStatus = 10, true, &state.PRStatus{State: "OPEN", HeadSHA: "aaaa"}
+			})
+			// the poller read #10 (snapshot taken, gh running) … land opened #11 meanwhile
+			d.update("main", func(x *state.Session) { x.PR, x.PRStatus = 11, nil })
+			d.applyPRStatus("main", 10, &state.PRStatus{State: st, HeadSHA: "aaaa"}, false)
+			s, _ := d.snapshot("main")
+			if s.PRStatus != nil || s.LandHeld != "" || s.State == state.Landed {
+				t.Fatalf("PR #%d took the old PR's status: %+v (held %q, %s)", s.PR, s.PRStatus, s.LandHeld, s.State)
+			}
+			// #11's own read is taken
+			d.applyPRStatus("main", 11, &state.PRStatus{State: "OPEN", HeadSHA: "bbbb"}, false)
+			if s, _ := d.snapshot("main"); s.PRStatus == nil || s.PRStatus.HeadSHA != "bbbb" {
+				t.Fatalf("PR #11's status: %+v", s.PRStatus)
+			}
+		})
 	}
 }

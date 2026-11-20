@@ -563,18 +563,21 @@ func (d *Daemon) hPRView(p prViewP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	d.applyPRStatus(p.Slug, v.Summary(), p.Seen)
+	d.applyPRStatus(p.Slug, pr, v.Summary(), p.Seen)
 	return v, nil
 }
 
-// applyPRStatus stores a fresh summary, adds attention for what changed and
-// emits session.updated only when something did.
-func (d *Daemon) applyPRStatus(slug string, next *state.PRStatus, seen bool) {
+// applyPRStatus stores a fresh summary of PR pr, adds attention for what
+// changed and emits session.updated only when something did. A summary
+// of a PR that is no longer the session's (land moved it to a new PR
+// while gh read the old one) is dropped: it would show the old PR's
+// state as the new one's, and a MERGED one would tear the session down.
+func (d *Daemon) applyPRStatus(slug string, pr int, next *state.PRStatus, seen bool) {
 	d.prMu.Lock()
 	defer d.prMu.Unlock()
 	d.mu.Lock()
 	s, ok := d.sessions[slug]
-	if !ok {
+	if !ok || s.PR != pr {
 		d.mu.Unlock()
 		return
 	}
@@ -719,7 +722,7 @@ func (d *Daemon) watchPRStatus() {
 			d.mu.Unlock()
 			continue
 		}
-		d.applyPRStatus(s.Slug, v.Summary(), false)
+		d.applyPRStatus(s.Slug, s.PR, v.Summary(), false)
 	}
 }
 

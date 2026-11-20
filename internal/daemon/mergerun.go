@@ -224,7 +224,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 			end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
 			return
 		}
-		d.applyPRStatus(s.Slug, v.Summary(), false)
+		d.applyPRStatus(s.Slug, s.PR, v.Summary(), false)
 		if base := prBase(s); v.Base != base {
 			// the base was changed after the person looked: not what they agreed to
 			end(state.MergeFailed, "not merged: PR #%d goes into %s now, not %s", s.PR, v.Base, base)
@@ -293,7 +293,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// the landing starts right away
 	ctx, cancel = context.WithTimeout(context.Background(), mergeReadTimeout)
 	if v, err := fetchPRView(ctx, repo, s.PR); err == nil {
-		d.applyPRStatus(s.Slug, v.Summary(), false)
+		d.applyPRStatus(s.Slug, s.PR, v.Summary(), false)
 	}
 	cancel()
 }

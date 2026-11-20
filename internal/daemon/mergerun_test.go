@@ -576,7 +576,7 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.applyPRStatus("main", v.Summary(), false)
+		d.applyPRStatus("main", 42, v.Summary(), false)
 		d.checkMerges()
 		if its := mergeItems(t, d, "open"); len(its) != 1 || its[0].ID == it.ID {
 			t.Fatalf("asked again: %+v", its)
