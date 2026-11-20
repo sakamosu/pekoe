@@ -23,17 +23,49 @@ import (
 
 type reposMsg []daemon.KnownRepo
 
+// homeReposMsg answers the repo.list that passed the cwd pekoe was started
+// in (marked Cwd there).
+type homeReposMsg []daemon.KnownRepo
+
+// loadRepos reloads the known repositories. Only until the start-up's list
+// is in does it pass the cwd (repo.list remembers the repository there and
+// marks it): a reload after that, on the session.removed pekoe repo forget
+// sends while the TUI is open in that repository, would remember it again
+// at once. Later lists are marked from the start-up's (onLoadedMsg).
 func (m *model) loadRepos() tea.Cmd {
-	cwd := m.cwd
+	cwd := ""
+	if !m.homeAsked {
+		cwd = m.cwd
+	}
 	return func() tea.Msg {
 		if m.cl == nil {
 			return nil
 		}
 		var rs []daemon.KnownRepo
+		if cwd == "" {
+			if err := m.cl.Call("repo.list", map[string]any{}, &rs); err != nil {
+				return errMsg{err}
+			}
+			return reposMsg(rs)
+		}
 		if err := m.cl.Call("repo.list", map[string]any{"cwd": cwd}, &rs); err != nil {
 			return errMsg{err}
 		}
-		return reposMsg(rs)
+		return homeReposMsg(rs)
+	}
+}
+
+// markHome keeps the repository pekoe was started in (homeID) marked Cwd in
+// a list loaded without the cwd.
+func (m *model) markHome(rs []daemon.KnownRepo) {
+	for _, r := range rs {
+		if r.Cwd {
+			m.homeID = r.ID
+			return
+		}
+	}
+	for i := range rs {
+		rs[i].Cwd = m.homeID != "" && rs[i].ID == m.homeID
 	}
 }
 

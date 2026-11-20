@@ -54,6 +54,11 @@ func (d *Daemon) hRepoForget(p repoForgetP) (any, error) {
 	mine := func(s *state.Session) bool {
 		return s.RepoID == r.ID || (r.Dir != "" && s.RepoDir == r.Dir)
 	}
+	// from the check that no session is left to the deletions: a
+	// session.new or open of the repository at the same time either comes
+	// first (and is refused here) or after (and makes pekoe know it again)
+	unlock := d.lockNew()
+	defer unlock()
 	var live []string
 	d.mu.Lock()
 	for slug, s := range d.sessions {
@@ -110,19 +115,27 @@ func (d *Daemon) hRepoForget(p repoForgetP) (any, error) {
 		d.purgeFiles(snap) // records what stats keeps of it first
 		d.removed(snap)
 	}
-	for _, k := range keys {
-		if err := d.DB.Delete(k); err != nil {
-			return nil, err
-		}
-	}
+	// the config file before repo:<id>: a repo.list in between that saw
+	// the file but not where the repository is would find it and remember
+	// it again (knownRepos → locateRepos)
 	if res.ConfigFile != "" {
 		if err := os.Remove(res.ConfigFile); err != nil {
 			return nil, err
 		}
 		res.ConfigGone = true
 	}
+	forgetBetween()
+	for _, k := range keys {
+		if err := d.DB.Delete(k); err != nil {
+			return nil, err
+		}
+	}
 	return res, nil
 }
+
+// forgetBetween runs between the two deletions of repo.forget (tests: a
+// repo.list there).
+var forgetBetween = func() {}
 
 // rememberedKeys are the state DB keys that remember r: its own id, and an
 // older id of the same directory realignRepo has not moved yet.

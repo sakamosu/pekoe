@@ -364,3 +364,75 @@ func TestStatsForgetsGoneAfterCopyRead(t *testing.T) {
 		t.Fatalf("cursors = %+v, want only b.jsonl", cs)
 	}
 }
+
+// The original transcript (b.jsonl) still has lines not read before the
+// restart (m2) when its --continue copy is read, and the copy's name sorts
+// first (a.jsonl). Read oldest first, m2 is filed under the copy: when
+// Claude Code deletes the original, m2's id stays, and the next copy of
+// the copy (c.jsonl) does not count it again.
+func TestStatsContinueCopyNamedFirst(t *testing.T) {
+	d, _, _ := setup(t)
+	dir := t.TempDir()
+	now := time.Now()
+	life := usageLife{Slug: TapiSlug}
+	orig := filepath.Join(dir, "b.jsonl")
+	appendFile(t, orig, usageLine("m1", now, 1, 0, 0, 0))
+	d.countUsage(life, orig, true)
+	// the last lines of the first process, written after its last hook
+	appendFile(t, orig, usageLine("m2", now, 10, 0, 0, 0))
+	old := now.Add(-time.Minute) // written before the restart made the copy
+	os.Chtimes(orig, old, old)
+	// restart with --continue: the copy holds m1, m2, then m3
+	cp := filepath.Join(dir, "a.jsonl")
+	appendFile(t, cp, usageLine("m1", now, 1, 0, 0, 0)+usageLine("m2", now, 10, 0, 0, 0)+usageLine("m3", now, 100, 0, 0, 0))
+	d.countUsage(life, cp, true)
+	// Claude Code's cleanup deletes the original
+	os.Remove(orig)
+	d.countUsage(life, "", true)
+	// another restart: c.jsonl copies a.jsonl and adds m4
+	cp2 := filepath.Join(dir, "c.jsonl")
+	appendFile(t, cp2, usageLine("m1", now, 1, 0, 0, 0)+usageLine("m2", now, 10, 0, 0, 0)+usageLine("m3", now, 100, 0, 0, 0)+usageLine("m4", now, 1000, 0, 0, 0))
+	d.countUsage(life, cp2, true)
+	st, err := d.stats(now, 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := st.Tokens.Total(); got != 1111 {
+		t.Fatalf("tokens = %d, want 1111 (m1+m2+m3+m4 once each)", got)
+	}
+}
+
+// After pekoe repo forget the CLI cannot turn a repo-id into a name and
+// passes the id on: stats by the id counts the tokens of the repository's
+// sessions as by its name, not only its merges.
+func TestStatsByRepoIDAfterForget(t *testing.T) {
+	d, _, app := setup(t)
+	s := readySession(t, d, app, "feat/x")
+	tr := t.TempDir() + "/t.jsonl"
+	appendFile(t, tr, usageLine("m1", time.Now(), 1, 2, 3, 4))
+	d.countUsage(usageLife{Slug: s.Slug, Born: state.Born(&s), Repo: s.Repo}, tr, true)
+	// a session still there: its tokens count by the id too
+	byIDLive := call[Stats](t, d, "stats", map[string]any{"days": 1, "repo": s.RepoID})
+	if byIDLive.Tokens.Total() != 10 {
+		t.Fatalf("by id, session there: tokens %d, want 10", byIDLive.Tokens.Total())
+	}
+	d.update(s.Slug, func(x *state.Session) { x.Landing, x.PR = true, 7 })
+	if err := d.finishLanding(s.Slug); err != nil {
+		t.Fatal(err)
+	}
+	call[RepoForget](t, d, "repo.forget", map[string]any{"repo": app})
+	if err := callErr(d, "repo.resolve", map[string]any{"repo": s.RepoID}); err == nil {
+		t.Fatal("still resolvable")
+	}
+	byName := call[Stats](t, d, "stats", map[string]any{"days": 1, "repo": s.Repo})
+	byID := call[Stats](t, d, "stats", map[string]any{"days": 1, "repo": s.RepoID})
+	if byName.Merged != 1 || byName.Tokens.Total() != 10 {
+		t.Fatalf("by name: merged %d tokens %d, want 1 and 10", byName.Merged, byName.Tokens.Total())
+	}
+	if byID.Merged != byName.Merged || byID.Tokens.Total() != byName.Tokens.Total() {
+		t.Fatalf("by id: merged %d tokens %d; by name: merged %d tokens %d", byID.Merged, byID.Tokens.Total(), byName.Merged, byName.Tokens.Total())
+	}
+	if other := call[Stats](t, d, "stats", map[string]any{"days": 1, "repo": "github.com_someone_else"}); other.Tokens.Total() != 0 || other.Merged != 0 {
+		t.Fatalf("another id: %+v", other)
+	}
+}

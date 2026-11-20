@@ -533,7 +533,7 @@ docs = ["README.ja.md#コマンド", "docs/api.md"]
 [[tip]]
 id = "repo-forget"
 short = "pekoe repo forget で使わなくなったリポジトリを忘れさせる"
-detail = "w のリポジトリ選びや tapi が知るリポジトリから外す。セッションが残っていれば断る(先に pekoe rm)。repos/<repo-id>.toml は --config のときだけ消す。リポジトリ・worktree・ブランチ・stats は残る。"
+detail = "w のリポジトリ選びや tapi が知るリポジトリから外す。landed でないセッションがあれば断る(先に pekoe rm)。repos/<repo-id>.toml は --config のときだけ消す。リポジトリ・worktree・ブランチ・stats は残る。"
 keys = ["pekoe repo", "--config"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 

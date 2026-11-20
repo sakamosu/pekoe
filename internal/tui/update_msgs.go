@@ -157,7 +157,11 @@ func (m *model) onStatusMsg(msg tea.Msg) (tea.Cmd, bool) {
 // onLoadedMsg: lists and screens loaded from pekoed.
 func (m *model) onLoadedMsg(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
+	case homeReposMsg:
+		m.homeAsked = true
+		return m.onLoadedMsg(reposMsg(msg))
 	case reposMsg:
+		m.markHome(msg)
 		m.repos, m.reposLoaded = msg, true
 		if m.sessionsIn && !m.homePicked {
 			m.pickHome()
