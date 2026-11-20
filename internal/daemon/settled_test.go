@@ -203,3 +203,77 @@ func TestMergeSettledLocalTime(t *testing.T) {
 		t.Fatalf("settled detail %q, want %q", got, want)
 	}
 }
+
+// A commit after pekoe land (not pushed, not reviewed) is in no PR: the
+// PR's head lacks it, so the session is not settled and nobody is asked
+// to merge a PR that would leave it out.
+func TestMergeSettledCommitAfterLand(t *testing.T) {
+	d, _ := mergeSetup(t)
+	s, _ := d.snapshot("main")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("main", func(x *state.Session) { x.PRStatus.HeadSHA = head })
+	review(t, d, "pass", head)
+	d.setState("main", state.Done, "")
+	if c := mergeCheckOf(t, d); !c.Ready {
+		t.Fatalf("at the PR's head: %+v", c.Conds)
+	}
+	os.WriteFile(filepath.Join(s.Path, "later.txt"), []byte("x\n"), 0o644)
+	run(t, s.Path, "git", "add", "later.txt")
+	run(t, s.Path, "git", "commit", "-qm", "later work, not pushed")
+	c := mergeCheckOf(t, d)
+	if c.Ready || strings.Join(c.Missing, ",") != "settled" {
+		t.Fatalf("check: %+v", c)
+	}
+	if got := c.Conds[len(c.Conds)-1]; !strings.Contains(got.Detail, "HEAD has 1 commit not in PR #42 (run pekoe land)") {
+		t.Fatalf("settled: %+v", got)
+	}
+	d.checkMerges()
+	if its := mergeItems(t, d, "open"); len(its) != 0 {
+		t.Fatalf("asked to merge without the commit: %+v", its)
+	}
+}
+
+// A PR merged while the agent worked (land held); the agent commits more
+// and stops before pekoe land: the commit is in no PR, so the landing
+// stays held (window and worktree kept) and says so. Once the commit is
+// gone from HEAD (a person dropped it), it lands.
+func TestMergedWhileWorkingCommitAfterMerge(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitCreated(t, d, "feat-x")
+	s, _ := d.snapshot("feat-x")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) {
+		x.Landing, x.PR = true, 7
+		x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: head}
+	})
+	d.setState("feat-x", state.Running, "")
+	d.landMerged("feat-x") // GitHub: merged at head, the agent still at work
+	if x, _ := d.snapshot("feat-x"); x.LandHeld == "" || x.State == state.Landed {
+		t.Fatalf("not held: %+v", x.State)
+	}
+	os.WriteFile(filepath.Join(s.Path, "more.txt"), []byte("more\n"), 0o644)
+	run(t, s.Path, "git", "add", "more.txt")
+	run(t, s.Path, "git", "commit", "-qm", "more work after the merge")
+	d.setState("feat-x", state.Done, "") // it stops to ask something before pekoe land
+	var x *state.Session
+	waitFor(t, func() bool {
+		x, _ = d.snapshot("feat-x")
+		_, busy := d.finishing.Load("feat-x")
+		return !busy && strings.Contains(x.LandHeld, "HEAD has 1 commit not in the merged PR #7")
+	})
+	if x.State == state.Landed || !x.Landing {
+		t.Fatalf("held session: %+v", x)
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatal("worktree removed with a commit in no PR")
+	}
+	d.watchMerges() // still there: held again
+	if x, _ := d.snapshot("feat-x"); x.State == state.Landed {
+		t.Fatal("landed with a commit in no PR")
+	}
+
+	run(t, s.Path, "git", "reset", "-q", "--hard", head)
+	d.watchMerges()
+	waitLanded(t, d, "feat-x")
+}

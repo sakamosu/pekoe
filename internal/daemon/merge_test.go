@@ -354,6 +354,9 @@ func TestMergeEvidenceRebasedReview(t *testing.T) {
 		x.PRStatus = &c
 	})
 	review(t, d, "pass", reviewed[:10])
+	// the worktree at the PR's head, where land leaves it (settled: no
+	// commit beyond the PR)
+	run(t, repo, "git", "checkout", "-q", rebased)
 
 	c := mergeCheckOf(t, d)
 	if !c.Ready || c.ReviewStale || !strings.Contains(c.Conds[1].Detail, "a rebase with the same diff") {
