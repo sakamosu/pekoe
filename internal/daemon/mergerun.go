@@ -163,7 +163,11 @@ func (d *Daemon) lastMergeRun(slug string) *state.MergeRun {
 // the merge goes on in the background, the answer returns now.
 func (d *Daemon) startMerge(it *state.InboxItem) {
 	d.mergeRuns.Store(it.About, *it.Answer.Merge)
-	go d.runMerge(*it)
+	d.merging.Add(1)
+	go func() {
+		defer d.merging.Done()
+		d.runMerge(*it)
+	}()
 }
 
 // runMerge checks again and merges (see the top of this file). It ends

@@ -545,30 +545,49 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 		var mu sync.Mutex
 		start := time.Now()
 		now := start
+		var pauses []time.Duration // each pause the merge took, in order
 		oldNow, oldSleep := mergeNow, mergeSleep
 		mergeNow = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
-		mergeSleep = func(dt time.Duration) { mu.Lock(); now = now.Add(dt); mu.Unlock() }
+		mergeSleep = func(dt time.Duration) { mu.Lock(); now = now.Add(dt); pauses = append(pauses, dt); mu.Unlock() }
 		t.Cleanup(func() { mergeNow, mergeSleep = oldNow, oldSleep })
-		waited := func() time.Duration { mu.Lock(); defer mu.Unlock(); return now.Sub(start) }
+		waited := func() (time.Duration, []time.Duration) {
+			mu.Lock()
+			defer mu.Unlock()
+			return now.Sub(start), append([]time.Duration(nil), pauses...)
+		}
 		d, _, ghd, it := mergeRunSetup(t)
 		swap(t, ghd, unknown(mergeHead))
 		answerMerge(t, d, it.ID)
 		run := waitMergeEnd(t, d, it.ID)
-		if run.State != state.MergeFailed || waited() != 300*time.Millisecond ||
+		w, ps := waited()
+		if run.State != state.MergeFailed ||
 			run.Detail != "not merged: evidence no longer holds: merge_state: merge_state is UNKNOWN (GitHub was still computing it after 300ms)" {
-			t.Fatalf("run after %s waited: %+v", waited(), run)
+			t.Fatalf("run after %s waited: %+v", w, run)
+		}
+		// waited up to the limit and no longer, pausing every 20ms: on the
+		// clock only those pauses move, so this does not hang on how long
+		// gh takes
+		if w != 300*time.Millisecond || len(ps) == 0 {
+			t.Fatalf("waited %s in %d pauses", w, len(ps))
+		}
+		for _, p := range ps {
+			if p != 20*time.Millisecond {
+				t.Fatalf("pauses: %v", ps)
+			}
 		}
 		if ms := ghMerges(ghd); len(ms) != 0 {
 			t.Fatalf("merged: %q", ms)
 		}
+		// read once, then again after each pause. At least that many: the
+		// fake gh logs every read of PR #42, not only this merge's
 		reads := 0
 		for _, l := range ghLog(ghd) {
 			if strings.HasPrefix(l, "api graphql -F owner=me -F name=app -F number=42") {
 				reads++
 			}
 		}
-		if reads != 16 { // once, then again after each of the 15 pauses of 20ms
-			t.Fatalf("read %d times", reads)
+		if reads < len(ps)+1 {
+			t.Fatalf("read %d times in %d pauses", reads, len(ps))
 		}
 		// asked again once it holds, as after any failed merge
 		swap(t, ghd, greenPR(mergeHead))
