@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"pekoe/internal/config"
@@ -40,6 +41,21 @@ func (d *Daemon) shell(ctx context.Context, dir string, env []string, cmdline st
 	c := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	c.Dir = dir
 	c.Env = append(os.Environ(), env...)
+	// in a process group of its own, which goes as a whole when ctx ends
+	// (rm or session.cancel stopping a creation, a timeout): killing only
+	// the shell left the hook's children running (cd web && npm ci, a make
+	// recipe, a subshell), which then finished their work after rm's
+	// teardown, or kept the output open so that rm waited for them
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	c.Cancel = func() error {
+		if err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+		return nil
+	}
+	// and does not wait on a child that left the group (setsid) holding
+	// the output
+	c.WaitDelay = time.Second
 	out, err := c.CombinedOutput()
 	return string(out), err
 }
