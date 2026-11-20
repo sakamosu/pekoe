@@ -602,28 +602,42 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		// whatever is at s.Path from here on is ours, even if git stops
 		// half way: rm may delete it
 		d.update(slug, func(x *state.Session) { x.OwnDir = true })
+		// warn: something the person should know about where it started
+		warn := func(w string) {
+			log.Printf("new %s: %s", slug, w)
+			d.stepWarn(slug, i, []string{w})
+			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), w) })
+		}
+		if gitx.BranchExists(repo.Dir, s.Branch) {
+			// an existing branch is checked out as it is (nothing to
+			// fetch: it does not start from the base, --hold or not)
+			d.stepDetail(slug, i, s.Path+" · existing branch "+s.Branch)
+			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
+		}
 		if s.Hold {
 			// queue.go: it waited for sessions to land (merge); start
 			// from the base as the remote has it now
-			start, ok := fetchBase(ctx, repo.Dir, s.Base)
+			start, err := fetchBaseRef(ctx, repo.Dir, s.Base)
 			if err := ctx.Err(); err != nil {
 				// cancelled (rm) during the fetch: no worktree or branch
 				// for a session that is being removed
 				return err
 			}
-			if ok {
+			switch {
+			case err == nil && start != "":
 				d.stepDetail(slug, i, s.Path+" · from "+start+" (fetched)")
 				return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, start)
+			case err != nil && !errors.Is(err, errNoOrigin):
+				// the local base may lack the merges it waited for
+				d.stepDetail(slug, i, s.Path+" · from "+s.Base+" (fetch failed)")
+				warn(fmt.Sprintf("could not fetch %s from origin (%v): started from the local %s, which may be behind origin", strings.TrimPrefix(s.Base, "origin/"), firstLine(err.Error()), s.Base))
+				return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 			}
 		}
-		if gitx.BranchExists(repo.Dir, s.Branch) {
-			// an existing branch is checked out as it is
-			d.stepDetail(slug, i, s.Path+" · existing branch "+s.Branch)
-			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
-		}
 		if s.Hold || p.Base != "" {
-			// --hold whose fetch gave nothing; --base as given (a tag, a
-			// commit, origin/x: as before, not fetched)
+			// --hold with no origin, or a base that is not one of its
+			// branches; --base as given (a tag, a commit, origin/x: as
+			// before, not fetched)
 			d.stepDetail(slug, i, s.Path+" · from "+s.Base)
 			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 		}
@@ -633,9 +647,7 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		}
 		d.stepDetail(slug, i, s.Path+" · "+fs.note)
 		if fs.warn != "" {
-			log.Printf("new %s: %s", slug, fs.warn)
-			d.stepWarn(slug, i, []string{fs.warn})
-			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), fs.warn) })
+			warn(fs.warn)
 		}
 		if fs.remote {
 			return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, fs.start)

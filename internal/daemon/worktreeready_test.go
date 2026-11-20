@@ -128,3 +128,69 @@ func TestRestartRefusesCreatingSession(t *testing.T) {
 		t.Errorf("feat-a's agent started %d times (want 1)", spawns)
 	}
 }
+
+// A --hold session whose fetch of the base fails starts from the local
+// base, which may lack what it waited for: it says so in warnings (as a
+// session.new without --base does) and in the worktree step's detail. It
+// used to say nothing.
+func TestHoldFetchFailureWarns(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "after": []string{"feat-a"}, "hold": true})
+	run(t, repo, "git", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
+	d.pumpQueue()
+	b := waitState(t, d, "feat-b", state.Idle, state.Running, state.Failed)
+	if b.State == state.Failed {
+		t.Fatalf("feat-b failed: %s", b.Error)
+	}
+	d.mu.Lock()
+	step := d.progress["feat-b"][0]
+	d.mu.Unlock()
+	if len(b.Warnings) != 1 || !strings.Contains(b.Warnings[0], "could not fetch main from origin") || !strings.Contains(b.Warnings[0], "started from the local main") {
+		t.Errorf("warnings %q", b.Warnings)
+	}
+	if len(step.Warnings) != 1 {
+		t.Errorf("worktree step warnings %q", step.Warnings)
+	}
+	if !strings.HasSuffix(step.Detail, " · from main (fetch failed)") {
+		t.Errorf("worktree step detail %q", step.Detail)
+	}
+}
+
+// A --hold session whose branch already exists checks that branch out as
+// it is, as any session.new does (docs/api.md: existing branch, not
+// fetched); it used to fetch and say "from origin/main (fetched)".
+func TestHoldExistingBranch(t *testing.T) {
+	d, _, repo := setup(t)
+	bare := withOrigin(t, repo)
+	run(t, repo, "git", "branch", "feat/b")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	waitState(t, d, "feat-a", state.Running)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "after": []string{"feat-a"}, "hold": true})
+	// origin's main moves on (feat-a's merge): a fetch would bring it in
+	other := filepath.Join(t.TempDir(), "other")
+	run(t, repo, "git", "clone", "-q", bare, other)
+	os.WriteFile(filepath.Join(other, "merged.txt"), []byte("a\n"), 0o644)
+	run(t, other, "git", "add", ".")
+	run(t, other, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "a")
+	run(t, other, "git", "push", "-q", "origin", "main")
+	before := gitOut(t, repo, "rev-parse", "origin/main")
+	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
+	d.pumpQueue()
+	b := waitState(t, d, "feat-b", state.Idle, state.Running, state.Failed)
+	if b.State == state.Failed {
+		t.Fatalf("feat-b failed: %s", b.Error)
+	}
+	d.mu.Lock()
+	det := d.progress["feat-b"][0].Detail
+	d.mu.Unlock()
+	if !strings.HasSuffix(det, " · existing branch feat/b") {
+		t.Errorf("worktree step detail %q for an existing branch", det)
+	}
+	if after := gitOut(t, repo, "rev-parse", "origin/main"); after != before {
+		t.Errorf("origin/main moved from %s to %s: it fetched", strings.TrimSpace(before), strings.TrimSpace(after))
+	}
+}
