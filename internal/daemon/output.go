@@ -39,6 +39,11 @@ type outState struct {
 	// away (a Stop then leaves it running for good). fallbackDetect reads
 	// the screen until it shows the turn is over, or any hook clears it.
 	recheck bool
+	// turn counts the hooks that show the agent at work after a Stop
+	// could have ended its turn (UserPromptSubmit, PreToolUse): a Stop that
+	// settles late (onStop waits up to 2 s for the transcript) changes the
+	// state only if none came since it (tapiState.gen is the same for tapi)
+	turn uint64
 }
 
 func (o *outState) roll(now time.Time) {
@@ -84,8 +89,9 @@ var (
 	oscRe   = regexp.MustCompile(`\x1b\]([0-9]+);([^\x07\x1b]*)(?:\x07|\x1b\\)`)
 	trustRe = regexp.MustCompile(`(?i)trust this folder|do you trust the files`)
 	// busyRe: Claude Code's screen while a turn is going on (its spinner
-	// line) or a menu waits for an answer (AskUserQuestion)
+	// line) or a menu waits for an answer (AskUserQuestion: menuRe)
 	busyRe  = regexp.MustCompile(`(?i)esc to (interrupt|cancel)|enter to select`)
+	menuRe  = regexp.MustCompile(`(?i)enter to select`)
 	yesNoRe = regexp.MustCompile(`(?i)(\[y/n\]|\(y/n\)|\[Y/n\]|\[y/N\]|do you want to (proceed|allow|run)|allow this)`)
 )
 
@@ -259,6 +265,12 @@ func (d *Daemon) fallbackDetect() {
 	now := time.Now()
 	d.mu.Lock()
 	var check []string
+	// trust: Claude Code's folder trust dialog comes before any hook, so
+	// its words are read only while there is none yet (no Claude session
+	// id). After that they are only words on a screen: a grep result, a
+	// quoted README, the agent's reply, that restore's recheck would take
+	// for a dialog that never goes away
+	trust := map[string]bool{}
 	for slug, s := range d.sessions {
 		st := d.out[slug]
 		if st == nil {
@@ -275,6 +287,7 @@ func (d *Daemon) fallbackDetect() {
 		if active && quiet > 1500*time.Millisecond && st.lastOut.After(st.checkedAt) {
 			st.checkedAt = now
 			check = append(check, slug)
+			trust[slug] = s.ClaudeSessionID == ""
 		}
 	}
 	d.mu.Unlock()
@@ -289,7 +302,7 @@ func (d *Daemon) fallbackDetect() {
 		}
 		text := stripANSI(strings.Join(tailLines, "\n"))
 		full := stripANSI(strings.Join(sc.Lines, "\n"))
-		if trustRe.MatchString(full) {
+		if trust[slug] && trustRe.MatchString(full) {
 			d.update(slug, func(x *state.Session) {
 				x.State, x.WaitKind = state.Waiting, "permission"
 				x.PendingTool = &state.Tool{Name: "Trust", Input: "trust this folder: " + x.Path}
@@ -309,20 +322,36 @@ func (d *Daemon) fallbackDetect() {
 }
 
 // recheckAfterRestart settles a session restore marked (outState.recheck)
-// from its screen: still busy (the spinner, a permission prompt, a menu)
-// keeps it as it is and looks again after the next quiet spell; anything
-// else means the turn ended while pekoed was away, so it becomes idle. A
-// hook that arrived meanwhile cleared the mark and wins. text is the tail
-// of the screen, lines all of it.
+// from its screen, as the hook lost while pekoed was away would have:
+//   - a permission prompt makes a running session waiting for permission
+//     (the lost Notification), and a menu (AskUserQuestion's "enter to
+//     select") waiting for an answer, so that the permission modal, wait
+//     --on waiting and the OS notification still come. The mark stays: the
+//     answer's hook (PostToolUse) clears it
+//   - still in its turn (the spinner line) keeps it as it is and looks
+//     again after the next quiet spell
+//   - anything else means the turn ended while pekoed was away: a running
+//     session is done (the lost Stop, so wait --on done returns, with no
+//     report if there was none), a waiting one idle (its prompt went away
+//     with no Stop: answered no, or esc, in the pane)
+//
+// A hook that arrived meanwhile cleared the mark and wins. text is the
+// tail of the screen, lines all of it.
 //
 // A permission prompt is known by its shape, not by its words: Claude
 // Code's dialog ("Do you want to …" over a "❯ 1. Yes" choice) or a [y/n]
 // on the last line (permissionOnScreen). yesNoRe is not used here: it also
 // matches the agent's own reply ("Plan ready. Do you want to proceed with
 // …", "--force [y/N]"), which stays on a screen that will not change once
-// the turn is over, so the session would stay running for good.
+// the turn is over, so the session would wait for an answer for good.
 func (d *Daemon) recheckAfterRestart(slug, text string, lines []string) {
-	if busyRe.MatchString(text) || permissionOnScreen(lines) {
+	kind := ""
+	switch {
+	case permissionOnScreen(lines):
+		kind = "permission"
+	case menuRe.MatchString(text):
+		kind = "question"
+	case busyRe.MatchString(text):
 		return
 	}
 	d.update(slug, func(x *state.Session) {
@@ -330,10 +359,18 @@ func (d *Daemon) recheckAfterRestart(slug, text string, lines []string) {
 		if st == nil || !st.recheck {
 			return
 		}
-		st.recheck = false
-		if x.State == state.Running || x.State == state.Waiting {
+		switch {
+		case kind != "":
+			if x.State == state.Running {
+				x.State, x.WaitKind = state.Waiting, kind
+			}
+			return
+		case x.State == state.Running:
+			x.State, x.WaitKind, x.PendingTool = state.Done, "", nil
+		case x.State == state.Waiting:
 			x.State, x.WaitKind, x.PendingTool = state.Idle, "", nil
 		}
+		st.recheck = false
 	})
 }
 

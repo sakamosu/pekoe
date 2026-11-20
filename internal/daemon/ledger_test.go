@@ -742,3 +742,87 @@ func TestLedgerEvidenceLimitAcrossReopen(t *testing.T) {
 		t.Fatalf("an entry over the limit: %+v", e)
 	}
 }
+
+func preToolEvent(t *testing.T, d *Daemon, who *Caller, command string) {
+	t.Helper()
+	callAs[any](t, d, who, "session.event", map[string]any{
+		"hook": "PreToolUse", "session": TapiSlug,
+		"payload": map[string]any{"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": map[string]any{"command": command}},
+	})
+}
+
+// Claude Code runs its Stop hooks side by side: when another one blocks
+// tapi's stop (exit 2, decision "block"), pekoe's Stop has come all the
+// same, and the turn goes on (PreToolUse from tapi's window) to end with a
+// Stop that says stop_hook_active. What tapi asks for or keeps in that
+// part counts as in any turn: the input the first Stop closed as chat
+// opens again, and `pekoe ledger keep` (no id) is not refused. A turn that
+// goes on with small talk only stays chat, and the next prompt's turn
+// does not take up the one before it.
+func TestLedgerStopHookBlockedTurnGoesOn(t *testing.T) {
+	stopAgain := func(t *testing.T, d *Daemon, tapi *Caller) {
+		t.Helper()
+		callAs[any](t, d, tapi, "session.event", map[string]any{"hook": "Stop", "session": TapiSlug,
+			"payload": map[string]any{"hook_event_name": "Stop", "stop_hook_active": true, "last_assistant_message": "…"}})
+	}
+	for _, tc := range []struct {
+		name    string
+		goOn    func(t *testing.T, d *Daemon, tapi *Caller)
+		stopped bool // the part that went on ended with a Stop
+		want    string
+	}{
+		{"send", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe send main 'README の誤字を直して'")
+			callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "README の誤字を直して", "submit": true})
+		}, true, state.LedgerOpen},
+		{"keep", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe ledger keep")
+			if err := callAsErr(d, tapi, "ledger.keep", map[string]any{}); err != nil {
+				t.Fatalf("keep in the turn that went on: %v", err)
+			}
+		}, true, state.LedgerOpen},
+		{"send, then interrupted", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe send main 'README の誤字を直して'")
+			callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "README の誤字を直して", "submit": true})
+		}, false, state.LedgerOpen},
+		{"small talk", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe --json ls")
+		}, true, state.LedgerChat},
+		{"blocked twice, then send", func(t *testing.T, d *Daemon, tapi *Caller) {
+			preToolEvent(t, d, tapi, "pekoe --json ls")
+			stopAgain(t, d, tapi) // blocked once more
+			preToolEvent(t, d, tapi, "pekoe send main 'README の誤字を直して'")
+			callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "README の誤字を直して", "submit": true})
+		}, true, state.LedgerOpen},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, repo := setup(t)
+			call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+			tapi := agentAs(TapiSlug)
+			promptEvent(t, d, tapi, TapiSlug, "README の誤字を直して")
+			stopEvent(t, d, tapi, TapiSlug) // another Stop hook blocks it
+			tc.goOn(t, d, tapi)
+			if tc.stopped {
+				stopAgain(t, d, tapi)
+			}
+			if e := ledgerAll(t, d)[0]; e.Status != tc.want || e.Auto != (tc.want == state.LedgerChat) {
+				t.Fatalf("the input after a turn that went on (%s): %s (auto %v), want %s", tc.name, e.Status, e.Auto, tc.want)
+			}
+		})
+	}
+	t.Run("next prompt", func(t *testing.T) {
+		d, _, repo := setup(t)
+		call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+		tapi := agentAs(TapiSlug)
+		promptEvent(t, d, tapi, TapiSlug, "ありがと")
+		stopEvent(t, d, tapi, TapiSlug)
+		promptEvent(t, d, tapi, TapiSlug, "README の誤字を直して")
+		preToolEvent(t, d, tapi, "pekoe send main 'README の誤字を直して'")
+		callAs[any](t, d, tapi, "session.send", map[string]any{"slug": "main", "text": "README の誤字を直して", "submit": true})
+		stopEvent(t, d, tapi, TapiSlug)
+		es := ledgerAll(t, d)
+		if es[0].Status != state.LedgerChat || !es[0].Auto || es[1].Status != state.LedgerOpen {
+			t.Fatalf("the earlier turn's small talk %s, this turn's request %s; want chat and open", es[0].Status, es[1].Status)
+		}
+	})
+}

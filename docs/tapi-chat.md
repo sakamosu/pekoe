@@ -51,10 +51,10 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | --- | --- |
 | SessionStart | idle(`claude_session_id` を記録。待ちの種類・`pending_tool` も消す。esc で中断したターン(Stop が来ない)の後の `/clear` でも idle に戻る。`source: compact` はターンの途中の圧縮なので状態を変えない) |
 | UserPromptSubmit | running。tapi の窓から来たもの(呼び出し元の識別で窓が `+tapi`)なら、`prompt` を依頼として `open` で記録する(pekoed が打ったもの(受信箱の答え `[pekoe inbox q…]`・配送の 1 行など、`[pekoe` で始まるもの全部)、Claude Code の `<task-notification>` で始まる入力、空の入力は除く。`$PEKOE_SESSION` の名乗りだけでは記録しない)。直前の open の依頼と同じ文が 1 分以内に来たら、新しく記録せずにまとめる |
-| PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録 |
+| PreToolUse | running(AskUserQuestion なら waiting / question)、`pending_tool` を記録。tapi の窓から Stop の直後(次の UserPromptSubmit の前)に来たものは、ほかの Stop hook が止めを差し戻してターンが続いたしるしなので、そのターンを Stop の前の続きとして扱う(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | PostToolUse | waiting なら running に戻す |
 | Notification | permission_prompt → waiting / permission(AskUserQuestion の PreToolUse 直後なら question のまま。セッションと同じ)、elicitation_dialog → waiting / question、idle_prompt → idle、知らない種類 → waiting / permission |
-| Stop | idle(`last_message` を記録)。`last_assistant_message` が無いと transcript を最大 2 秒待つので、その間に次のターンが始まった(UserPromptSubmit・compact 以外の SessionStart が来た)ら、状態と `pending_tool` は変えない(`last_message` だけ記録する)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
+| Stop | idle(`last_message` を記録)。`last_assistant_message` が無いと transcript を最大 2 秒待つので、その間に次のターンが始まった(UserPromptSubmit・compact 以外の SessionStart が来た)・ターンが続いた(ほかの Stop hook が止めを差し戻して PreToolUse が来た)ら、状態と `pending_tool` は変えない(`last_message` だけ記録する)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | SessionEnd | idle |
 
 変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。
