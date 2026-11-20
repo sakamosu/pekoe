@@ -11,6 +11,7 @@ import (
 	"pekoe/internal/engine"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
+	"pekoe/internal/testenv"
 )
 
 func (f *fakeEngine) spawns(prefix string) int {
@@ -361,7 +362,10 @@ func TestClaudeProjectName(t *testing.T) {
 // its conversation.
 func TestTapiProjectDirEncoding(t *testing.T) {
 	d, fe, _ := setup(t)
-	t.Setenv("PEKOE_HOME", filepath.Join(t.TempDir(), "me@corp home"))
+	// a short base (not t.TempDir: its length follows $TMPDIR): the name
+	// built below is Claude Code's only up to 200 characters, past which it
+	// cuts the name short
+	t.Setenv("PEKOE_HOME", filepath.Join(testenv.ShortDir(t, "pkh"), "me@corp home"))
 	proj := filepath.Join(claudeProjectsDir(), strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
 			return r

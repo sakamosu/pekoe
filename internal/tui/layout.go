@@ -134,7 +134,7 @@ func (m *model) layoutKey(key string) (tea.Cmd, bool) {
 	}
 	m.layoutSeq++
 	seq := m.layoutSeq
-	return tea.Tick(layoutSettle, func(time.Time) tea.Msg { return layoutSettledMsg{seq} }), true
+	return after(layoutSettle, func(time.Time) tea.Msg { return layoutSettledMsg{seq} }), true
 }
 
 // layoutPending: a layout change waits for layoutSettled; until then the
@@ -171,5 +171,5 @@ func (m *model) unzoomIfLeft() tea.Cmd {
 	m.layout.Zoom = false
 	m.layoutSeq++
 	seq := m.layoutSeq
-	return tea.Tick(layoutSettle, func(time.Time) tea.Msg { return layoutSettledMsg{seq} })
+	return after(layoutSettle, func(time.Time) tea.Msg { return layoutSettledMsg{seq} })
 }

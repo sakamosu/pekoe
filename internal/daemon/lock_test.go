@@ -98,7 +98,9 @@ func TestSecondDaemonRefused(t *testing.T) {
 	if _, err := New(); !errors.Is(err, ErrAlreadyRunning) {
 		t.Fatalf("second New before Run: err = %v, want ErrAlreadyRunning", err)
 	}
-	lockWait = 3 * time.Second
+	// a serving daemon is detected at once: New does not get to wait out
+	// the lock
+	lockWait = time.Hour
 
 	// from here on d1 serves its socket
 	if testenv.CanBindUnix() != nil {
@@ -108,13 +110,17 @@ func TestSecondDaemonRefused(t *testing.T) {
 	testenv.NeedUnixSocket(t)
 	done := runBG(d1)
 	waitServing(t)
-	start := time.Now()
-	if _, err := New(); !errors.Is(err, ErrAlreadyRunning) {
-		t.Fatalf("second New while serving: err = %v, want ErrAlreadyRunning", err)
+	refused := make(chan error, 1)
+	go func() { _, err := New(); refused <- err }()
+	select {
+	case err := <-refused:
+		if !errors.Is(err, ErrAlreadyRunning) {
+			t.Fatalf("second New while serving: err = %v, want ErrAlreadyRunning", err)
+		}
+	case <-time.After(30 * time.Second): // only so a waiting New fails the test
+		t.Fatal("second New while serving waits for the lock; a serving daemon should be detected at once")
 	}
-	if time.Since(start) > time.Second {
-		t.Fatalf("refusal took %s; a serving daemon should be detected at once", time.Since(start))
-	}
+	lockWait = 3 * time.Second
 	stopAndWait(t, d1, done)
 
 	// once the first has exited, a new one starts

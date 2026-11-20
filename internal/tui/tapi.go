@@ -114,7 +114,7 @@ func measureTTY() *os.File {
 func blinkGap() time.Duration { return 4*time.Second + rand.N(2*time.Second) }
 
 func tapiTick() tea.Cmd {
-	return tea.Tick(tapiFrame, func(time.Time) tea.Msg { return tapiTickMsg{} })
+	return after(tapiFrame, func(time.Time) tea.Msg { return tapiTickMsg{} })
 }
 
 func (m *model) animating() bool { return m.g.AnimateOn() && m.tapi.focused }
@@ -126,7 +126,7 @@ func (m *model) tapiInit() []tea.Cmd {
 		cmds = append(cmds, tapiTick())
 	}
 	if m.tapi.splash {
-		cmds = append(cmds, tea.Tick(splashFor, func(time.Time) tea.Msg { return splashDoneMsg{} }))
+		cmds = append(cmds, after(splashFor, func(time.Time) tea.Msg { return splashDoneMsg{} }))
 	}
 	if demoOn() {
 		cmds = append(cmds, demoTick())

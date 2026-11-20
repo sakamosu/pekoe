@@ -94,8 +94,15 @@ func startFakePekoed(t *testing.T) (*fakePekoed, *client.Client) {
 	return f, cl
 }
 
+// timerFires: runCmd fires the timers shorter than this at once (the mouse
+// guard's flush, the layout settling, the spinner: done before a user's next
+// key) and drops the others (the prefix timeout, tapi's frames, the 1s tick,
+// the splash), whose time the test steps never wait out.
+const timerFires = 300 * time.Millisecond
+
 // run executes a command tree (batches and sequences), feeding every
-// message back into the model, like the tea runtime does.
+// message back into the model, like the tea runtime does. Timers answer at
+// once (TestMain); every other command is waited for, however long it takes.
 func runCmd(m *model, cmd tea.Cmd) {
 	if cmd == nil {
 		return
@@ -105,8 +112,14 @@ func runCmd(m *model, cmd tea.Cmd) {
 	var msg tea.Msg
 	select {
 	case msg = <-done:
-	case <-time.After(300 * time.Millisecond):
-		return // a tick: never answers in time
+	case <-time.After(30 * time.Second): // a hung test fails with this rather than go test's timeout
+		panic(fmt.Sprintf("runCmd: a command did not return: %p", cmd))
+	}
+	if tm, ok := msg.(timerMsg); ok {
+		if tm.d >= timerFires {
+			return
+		}
+		msg = tm.fn(time.Now())
 	}
 	switch msg := msg.(type) {
 	case tea.BatchMsg:

@@ -94,23 +94,32 @@ func TestPRPollerLandsMergedLanding(t *testing.T) {
 }
 
 // The poller does not wait for the teardown: it returns while the hook still
-// sleeps.
+// runs. The hook waits for a file the test makes only after poll returned,
+// so a poller that waited for it would never return.
 func TestPRPollerDoesNotWaitForTeardown(t *testing.T) {
 	d, count := landingSetup(t)
+	release := filepath.Join(t.TempDir(), "release")
+	// the hook ends even when the test fails before releasing it
+	t.Cleanup(func() { os.WriteFile(release, nil, 0o644) })
 	cfgDir := filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos")
 	ents, _ := os.ReadDir(cfgDir)
 	os.WriteFile(filepath.Join(cfgDir, ents[0].Name()),
-		[]byte("[hooks]\nteardown = [\"sleep 2; basename \\\"$PWD\\\" >> "+count+"\"]\n"), 0o644)
-	start := time.Now()
-	poll(d)
-	if el := time.Since(start); el > 1500*time.Millisecond {
-		t.Fatalf("poller waited for the teardown: %v", el)
+		[]byte("[hooks]\nteardown = [\"while [ ! -e "+release+" ]; do sleep 0.05; done; basename \\\"$PWD\\\" >> "+count+"\"]\n"), 0o644)
+	returned := make(chan struct{})
+	go func() { poll(d); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(30 * time.Second): // only so a waiting poller fails the test
+		t.Fatal("the poller waits for the teardown hook")
 	}
-	waitUntil := time.Now().Add(5 * time.Second)
-	for len(teardowns(count)) == 0 && time.Now().Before(waitUntil) {
-		sleep10ms()
+	if got := teardowns(count); len(got) != 0 {
+		t.Fatalf("the hook ran past its wait: %v", got)
 	}
-	waitLanded(t, d, "feat-x")
+	os.WriteFile(release, nil, 0o644)
+	x := waitLanded(t, d, "feat-x")
+	if got := teardowns(count); len(got) != 1 || !strings.HasSuffix(got[0], "feat-x") {
+		t.Fatalf("teardowns: %v (landed %+v)", got, x)
+	}
 }
 
 // pekoed starting up looks for merged landing PRs at once (a merge that

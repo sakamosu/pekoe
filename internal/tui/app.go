@@ -300,13 +300,17 @@ func (m *model) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func tick() tea.Cmd { return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }) }
+// after is tea.Tick, a variable so the tests (runCmd) see each timer's
+// duration and do not wait for it.
+var after = tea.Tick
+
+func tick() tea.Cmd { return after(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }) }
 
 func spin(on bool) tea.Cmd {
 	if !on {
 		return nil
 	}
-	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg { return spinMsg(t) })
+	return after(80*time.Millisecond, func(t time.Time) tea.Msg { return spinMsg(t) })
 }
 
 // ---- loaders (commands) ----

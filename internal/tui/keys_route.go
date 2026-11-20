@@ -156,7 +156,7 @@ func (m *model) onKeyBracket(k tea.KeyMsg) (tea.Cmd, bool) {
 		m.bracket = key
 		m.bracketSeq++
 		seq := m.bracketSeq
-		return tea.Tick(350*time.Millisecond, func(time.Time) tea.Msg { return prefixTimeoutMsg{seq} }), true
+		return after(350*time.Millisecond, func(time.Time) tea.Msg { return prefixTimeoutMsg{seq} }), true
 	}
 	return nil, false
 }
