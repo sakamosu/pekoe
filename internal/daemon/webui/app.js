@@ -1554,6 +1554,24 @@ function metaOf(top, topRole, at) {
   return m;
 }
 
+// markRewound marks the words a person took back (rewound: true): a prompt
+// interrupted (ctrl+c, esc) before the first word of the reply leaves the
+// conversation and Claude Code's screen, and the prompt sent after it is
+// written as another child of the same parent. The chat leaves them out
+// as the screen does. Only lines typed at the prompt have a parent; one
+// taken in the middle of a turn (typed while the agent worked) never is
+// (docs/web.md 「取り消された発言」).
+function markRewound(items) {
+  const last = new Map(); // parent -> the newest item typed after it
+  for (const it of items) {
+    if (it.kind !== "human" && it.kind !== "pekoe") continue;
+    if (!it.parent || !it.id) continue;
+    const prev = last.get(it.parent);
+    if (prev && prev.id !== it.id) prev.rewound = true;
+    last.set(it.parent, it);
+  }
+}
+
 // chatBlocks groups items into what is drawn: day lines, the person's
 // turns, the agent's turns (tool lines and bubbles), pekoe's lines.
 function chatBlocks(items, pending) {
@@ -1577,6 +1595,7 @@ function chatBlocks(items, pending) {
       if (cur && cur.type === "agent") cur.ms = it.ms;
       return;
     }
+    if (it.rewound) return; // taken back (markRewound): not on the agent's screen either
     dayOf(it.at);
     if (it.kind === "pekoe") {
       out.push({ type: "pekoe", text: it.text, at: it.at });
@@ -1995,6 +2014,7 @@ async function refreshChat() {
       chat.open.clear();
       chat.earlier = true;
     }
+    markRewound(chat.items);
     chat.cursor = String(r.cursor || "");
     // the person's words that came through are no longer "not sent". A
     // send of more than one line comes back as a paste (pekoed takes the
