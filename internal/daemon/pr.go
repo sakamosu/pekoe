@@ -584,13 +584,18 @@ func (d *Daemon) applyPRStatus(slug string, pr int, next *state.PRStatus, seen b
 	prev, landing := s.PRStatus, s.Landing
 	d.prFetched[slug] = time.Now()
 	d.mu.Unlock()
+	ours := true // pr is still the session's when stored (update below)
 	if landing && next.State == "MERGED" {
 		// pekoe land's PR got merged: land it now rather than at watchMerges'
 		// next round (every 2 minutes). Polling stops at MERGED, so this is
 		// the one chance; the teardown can take minutes, so not on the
 		// poller's goroutine. finishLanding runs once per session even when
 		// watchMerges starts it too.
-		defer func() { go d.landMerged(slug) }()
+		defer func() {
+			if ours {
+				go d.landMerged(slug)
+			}
+		}()
 	}
 	if prev != nil && !seen {
 		next.Attention, next.AttentionAt = append([]string(nil), prev.Attention...), prev.AttentionAt
@@ -632,10 +637,14 @@ func (d *Daemon) applyPRStatus(slug string, pr int, next *state.PRStatus, seen b
 		return
 	}
 	c, err := d.update(slug, func(x *state.Session) {
+		if x.PR != pr { // land moved it to a new PR since the check above
+			ours = false
+			return
+		}
 		x.PRStatus = next
 		landedPRMerged(x) // a fetch from before the merge that finished after it
 	})
-	if again && err == nil && c.PRStatus != nil {
+	if again && ours && err == nil && c.PRStatus != nil {
 		d.addCIChange(c)
 	}
 }
