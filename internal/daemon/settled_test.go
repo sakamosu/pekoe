@@ -310,3 +310,36 @@ func TestMergedWhileWorkingHeadOnBase(t *testing.T) {
 	d.setState("feat-x", state.Done, "")
 	waitLanded(t, d, "feat-x")
 }
+
+// A second pekoe land into the same open PR, merged before the poller read
+// its new head (or seen by watchMerges, which reads only the state): the
+// commits land pushed are in the PR, though the head pekoed had lacks
+// them. The merge reads the head again and the session lands.
+func TestMergedAfterSecondLandLands(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	onGitHub(t, d, repo)
+	ghd := fakeGH(t, "OPEN")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	s := waitCreated(t, d, "feat-x")
+	commit := func(name string) string {
+		os.WriteFile(filepath.Join(s.Path, name), []byte(name+"\n"), 0o644)
+		run(t, s.Path, "git", "add", name)
+		run(t, s.Path, "git", "commit", "-qm", name)
+		return strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	}
+	commit("one.txt")
+	callAs[map[string]any](t, d, agentAs("feat-x"), "land", map[string]any{"slug": "feat-x"})
+	first := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) { x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: first} }) // the poller's read
+	commit("two.txt")
+	callAs[map[string]any](t, d, agentAs("feat-x"), "land", map[string]any{"slug": "feat-x"})
+	second := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	if x, _ := d.snapshot("feat-x"); x.PR != 42 || x.PRStatus == nil || x.PRStatus.HeadSHA != first {
+		t.Fatalf("after the second land: PR %d, %+v", x.PR, x.PRStatus)
+	}
+	prFixture{State: "MERGED", Merge: "UNKNOWN", Head: second}.write(t, ghd) // GitHub merged #42 at second
+	d.setState("feat-x", state.Done, "")
+	d.landMerged("feat-x")
+	waitLanded(t, d, "feat-x")
+}

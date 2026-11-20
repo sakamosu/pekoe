@@ -208,7 +208,7 @@ func (d *Daemon) landHold(s *state.Session) string {
 	if n, err := d.commitsBeyondPR(s); err != nil {
 		why = append(why, "could not tell whether HEAD has commits not in the merged PR: "+cutRunes(err.Error(), 200))
 	} else if n > 0 {
-		why = append(why, fmt.Sprintf("HEAD has %d commit%s not in the merged PR #%d (pekoe land opens a new PR for them)", n, plural(n), s.PR))
+		why = append(why, fmt.Sprintf("HEAD has %d commit%s not in the merged PR #%d (pekoe land them as a new PR, or drop them)", n, plural(n), s.PR))
 	}
 	return strings.Join(why, "; ")
 }

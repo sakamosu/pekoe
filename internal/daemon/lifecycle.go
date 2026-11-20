@@ -897,6 +897,7 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		return nil
 	}
 	if merged {
+		d.readMergedHead(s)
 		if why := d.landHold(s); why != "" {
 			d.holdLanding(s, why)
 			return nil
@@ -957,6 +958,50 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		d.recordSession(landed, &mergedAt, false) // stats.go
 	}
 	return nil
+}
+
+// readMergedHead reads the merged PR's head from GitHub when s's worktree
+// has commits the head pekoed has lacks (landHold would hold for them).
+// That head is what the PR poller read last: a second pekoe land into the
+// same PR, merged before the poller's next read or seen by watchMerges
+// (which reads only the state), pushed commits it does not know, and
+// MERGED is never read again. s and the session take the head read; when
+// gh cannot tell, the head stays as it was (and the landing held).
+func (d *Daemon) readMergedHead(s *state.Session) {
+	if n, err := d.commitsBeyondPR(s); err != nil || n == 0 {
+		return
+	}
+	repo := d.ghRepo(s)
+	if repo == "" || s.PR == 0 || !ghAvailable() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	v, err := fetchPRView(ctx, repo, s.PR)
+	cancel()
+	if err != nil {
+		return
+	}
+	head := v.Summary().HeadSHA
+	if head == "" || (s.PRStatus != nil && head == s.PRStatus.HeadSHA) {
+		return
+	}
+	ps := state.PRStatus{State: "MERGED"}
+	if s.PRStatus != nil {
+		ps = *s.PRStatus
+	}
+	ps.HeadSHA = head
+	s.PRStatus = &ps
+	d.update(s.Slug, func(x *state.Session) {
+		if x.PR != s.PR {
+			return
+		}
+		c := state.PRStatus{State: "MERGED"}
+		if x.PRStatus != nil {
+			c = *x.PRStatus
+		}
+		c.HeadSHA = head
+		x.PRStatus = &c
+	})
 }
 
 // holdLanding records s's PR merged without tearing s down (finishLand):
