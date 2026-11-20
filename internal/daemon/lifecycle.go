@@ -109,6 +109,45 @@ func (d *Daemon) teardown(s *state.Session) error {
 	return nil
 }
 
+// stopLeftovers stops what s's closed windows left running (a busy loop
+// or a server an agent sent to the background: Engine.KillLeftovers) and
+// logs how many and the head of each command. what names the caller (rm,
+// land); own: s's worktree is its own (pekoe made it, no other session
+// lives there), so a process there whose environment cannot be read is
+// judged by the place. Only a session that goes: a stopped one
+// (session.kill) keeps what it started for when it runs again.
+func (d *Daemon) stopLeftovers(what string, s *state.Session, own bool) {
+	scope := engine.LeftoverScope{Slug: s.Slug, Since: s.CreatedAt}
+	if own && s.Managed && paths.UnderWorktrees(s.Path) {
+		scope.Dir = s.Path
+	}
+	slug := s.Slug
+	ps, err := d.Eng.KillLeftovers(scope)
+	if err != nil {
+		log.Printf("%s %s: leftover processes: %v", what, slug, err)
+	}
+	if len(ps) == 0 {
+		return
+	}
+	heads := make([]string, 0, len(ps))
+	for i, p := range ps {
+		if i == 10 {
+			heads = append(heads, fmt.Sprintf("… %d more", len(ps)-i))
+			break
+		}
+		heads = append(heads, fmt.Sprintf("%d %s", p.PID, commandHead(p.Command)))
+	}
+	log.Printf("%s %s: stopped %d leftover process(es): %s", what, slug, len(ps), strings.Join(heads, "; "))
+}
+
+// commandHead is the start of a command line, for a log line.
+func commandHead(c string) string {
+	if r := []rune(c); len(r) > 60 {
+		return string(r[:60]) + "…"
+	}
+	return c
+}
+
 // holdFinishing takes slug's place in d.finishing: one finishLand or rm of
 // a session at a time, so neither tears down a worktree the other has
 // already handed on (to a new session of the same slug, at the same path).
@@ -180,6 +219,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		d.devMu.Unlock()
 	}
 	_ = d.Eng.KillSession(p.Slug)
+	d.stopLeftovers("rm", s, exists && !foreign && !shared)
 	deleted := false
 	if exists && foreign {
 		log.Printf("rm %s: %s is a worktree of another repository; left as is", p.Slug, s.Path)
@@ -1000,6 +1040,7 @@ func (d *Daemon) finishLandOf(slug string, merged bool, want *state.Session) err
 	}
 	_ = d.Eng.KillSession(slug)
 	shared := d.pathShared(s.Path, slug)
+	d.stopLeftovers("land", s, !foreign && !shared)
 	if foreign {
 		log.Printf("land %s: %s is a worktree of another repository; left as is", slug, s.Path)
 	} else if shared {

@@ -150,6 +150,9 @@ func (f *fakeEngine) Sessions() (map[string][]string, error) {
 func (f *fakeEngine) Output() <-chan engine.Output { return f.out }
 func (f *fakeEngine) Close()                       {}
 func (f *fakeEngine) KillServer() error            { return f.rec("killserver") }
+func (f *fakeEngine) KillLeftovers(s engine.LeftoverScope) ([]engine.Leftover, error) {
+	return nil, f.rec("leftovers:" + s.Slug + ":" + s.Dir)
+}
 
 // Panes gives each window the pid a test set in panes (none: no panes).
 func (f *fakeEngine) Panes() ([]engine.Pane, error) {
