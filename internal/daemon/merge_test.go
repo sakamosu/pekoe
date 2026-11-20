@@ -208,6 +208,26 @@ func TestMergeEvidenceWithdrawnOnLanded(t *testing.T) {
 	}
 }
 
+// pekoed's merge item takes no note-only answer: a note without a choice
+// is refused, the item stays open and nothing is merged or sent.
+func TestMergeEvidenceNoteOnlyRefused(t *testing.T) {
+	d, fe := mergeSetup(t)
+	d.checkMerges()
+	it := mergeItems(t, d, "open")[0]
+	n := len(fe.sent)
+	err := callErr(d, "inbox.answer", map[string]any{"id": it.ID, "rev": inboxGet(t, d, it.ID).Rev, "note": "マージして"})
+	if err == nil || !strings.Contains(err.Error(), "no note-only answer") {
+		t.Fatalf("note only: %v", err)
+	}
+	g := inboxGet(t, d, it.ID)
+	if g.Status != state.InboxOpen || g.Answer != nil {
+		t.Fatalf("after: %+v", g)
+	}
+	if got := sentSince(fe, n); len(got) != 0 {
+		t.Fatalf("sent: %v", got)
+	}
+}
+
 // Completion criterion: send back sends the note to the session, through
 // the inbox's typing path (idle, no permission prompt); it needs a note.
 func TestMergeEvidenceSendBack(t *testing.T) {
