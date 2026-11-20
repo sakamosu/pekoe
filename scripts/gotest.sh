@@ -69,6 +69,12 @@ daemon_shards() {
 	fi
 	grep -E '^(Test|Example|Fuzz)' "$tmp/$name.list.log" | sort >"$tmp/$name.names"
 	total=$(wc -l <"$tmp/$name.names" | tr -d ' ')
+	if [ "$total" -eq 0 ]; then
+		# no names read from the listing: fail rather than run nothing
+		echo "no tests in the listing" >>"$tmp/$name.list.log"
+		echo 1 >"$tmp/$name.list.rc"
+		return
+	fi
 	i=0
 	while [ "$i" -lt "$shards" ]; do
 		awk -v n="$shards" -v i="$i" '(NR - 1) % n == i' "$tmp/$name.names" >"$tmp/$name.$i.names"
