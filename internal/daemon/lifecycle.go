@@ -583,7 +583,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	if hasOrigin {
 		// base "origin/main" (session.new takes it) names origin's main:
 		// fetch, rebase onto and open the PR against main, as fetchBase does
-		base = strings.TrimPrefix(base, "origin/")
+		base = originBranch(base)
 		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
 			fetched = true

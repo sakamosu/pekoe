@@ -138,13 +138,18 @@ func ghRepoFrom(base string) string {
 
 var ghRepoRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// prBase is the branch s's PR goes into (what land rebased onto).
+// prBase is the branch s's PR goes into (what land opened it against).
 func prBase(s *state.Session) string {
 	if s.Base != "" {
-		return s.Base
+		return originBranch(s.Base)
 	}
 	return gitx.DefaultBase(s.RepoDir)
 }
+
+// originBranch is the branch on origin that base names: session.new takes
+// base "origin/main" for origin's main, and land fetches main, rebases onto
+// origin/main and opens the PR against main.
+func originBranch(base string) string { return strings.TrimPrefix(base, "origin/") }
 
 func (d *Daemon) lastMergeRun(slug string) *state.MergeRun {
 	if v, ok := d.mergeRuns.Load(slug); ok {
