@@ -41,6 +41,7 @@ func cmdDaemon(args []string) error {
 	switch sub {
 	case "run":
 		log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+		daemon.ForgetWindowEnv() // started from a session's window: not its process
 		d, err := daemon.New()
 		if err != nil {
 			return err

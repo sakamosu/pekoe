@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -38,5 +39,24 @@ func TestRmAndLandStopLeftovers(t *testing.T) {
 	call[map[string]any](t, d, "worktree.rm", map[string]any{"slug": o.Slug})
 	if want := "leftovers:" + o.Slug + ":\n"; !strings.Contains(f.last()+"\n", want) {
 		t.Errorf("rm of an opened checkout: no %q in\n%s", want, f.last())
+	}
+}
+
+// pekoed started from a session's window (an agent's pekoe while pekoed
+// was down) drops what says so: what it starts and leaves behind must not
+// pass for that session's leftovers.
+func TestForgetWindowEnv(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-501/pekoe,1,0")
+	t.Setenv("TMUX_PANE", "%3")
+	t.Setenv("PEKOE_SESSION", "feat-x")
+	t.Setenv("PEKOE_SOCK", "/s")
+	ForgetWindowEnv()
+	for _, k := range []string{"TMUX", "TMUX_PANE", "PEKOE_SESSION"} {
+		if v, ok := os.LookupEnv(k); ok {
+			t.Errorf("%s=%s still set", k, v)
+		}
+	}
+	if os.Getenv("PEKOE_SOCK") != "/s" {
+		t.Error("PEKOE_SOCK went too")
 	}
 }

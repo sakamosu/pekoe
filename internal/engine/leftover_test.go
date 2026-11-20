@@ -251,7 +251,9 @@ func TestKillLeftovers(t *testing.T) {
 	bg := func(name string, cmd ...string) string {
 		return "PIDFILE=" + pf(name) + " sh " + shq(append([]string{script}, cmd...)...)
 	}
-	loop := []string{"sh", "-c", "while :; do :; done"}
+	// a busy loop that ends with the test process: even a test killed
+	// before its cleanups (-timeout) leaves none behind
+	loop := []string{"sh", "-c", "while kill -0 " + strconv.Itoa(os.Getpid()) + " 2>/dev/null; do :; done"}
 	setsid := []string{"perl", "-MPOSIX", "-e", "defined(POSIX::setsid()) or die; exec @ARGV", "sh", script}
 	window := func(slug, dir, cmd string) {
 		t.Helper()
@@ -264,9 +266,14 @@ func TestKillLeftovers(t *testing.T) {
 		"; cd "+shq(other)+" && PEKOE_LEFTOVER_HELPER=1 "+bg("a3", helperArgs()...)+
 		"; exec sleep 120")
 	window("b", other, bg("b1", "sleep", "120")+"; PEKOE_LEFTOVER_HELPER=1 "+bg("b2", helperArgs()...)+"; exec sleep 120")
-	a1, a2, a3 := readPid(t, pf("a1")), readPid(t, pf("a2")), readPid(t, pf("a3"))
-	b1, b2 := readPid(t, pf("b1")), readPid(t, pf("b2"))
-	pids = append(pids, a1, a2, a3, b1, b2)
+	// each pid goes to the cleanup as soon as it is read
+	read := func(name string) int {
+		t.Helper()
+		pid := readPid(t, pf(name))
+		pids = append(pids, pid)
+		return pid
+	}
+	a1, a2, a3, b1, b2 := read("a1"), read("a2"), read("a3"), read("b1"), read("b2")
 	if s1, s2 := procSid(a1), procSid(a2); s1 <= 0 || s2 <= 0 || s1 == s2 {
 		t.Fatalf("loops in sessions %d and %d: setsid did not take", s1, s2)
 	}
@@ -286,12 +293,11 @@ func TestKillLeftovers(t *testing.T) {
 		if out, err := c.CombinedOutput(); err != nil {
 			t.Fatalf("%v: %s", err, out)
 		}
-		return readPid(t, pf(name))
+		return read(name)
 	}
 	o1 := outside("o1", []string{"PEKOE_LEFTOVER_HELPER=1", "PEKOE_SESSION=a", "TMUX=/elsewhere/pekoe,1,0"}, helperArgs()...)
 	o2 := outside("o2", []string{"PEKOE_LEFTOVER_HELPER=1", "PEKOE_SESSION=a"}, helperArgs()...)
 	o3 := outside("o3", nil, "sleep", "120")
-	pids = append(pids, o1, o2, o3)
 
 	if err := tm.KillSession("a"); err != nil {
 		t.Fatal(err)
@@ -304,8 +310,7 @@ func TestKillLeftovers(t *testing.T) {
 	}
 	// a new session a, started after the old one went: its window stays
 	window("a", wt, "sleep 120 & echo $! > "+pf("n1")+"; wait")
-	n1 := readPid(t, pf("n1"))
-	pids = append(pids, n1)
+	n1 := read("n1")
 
 	stopped, err := tm.KillLeftovers(LeftoverScope{Slug: "a", Dir: wt, Since: since})
 	if err != nil {

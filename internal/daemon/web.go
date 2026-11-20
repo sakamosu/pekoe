@@ -634,6 +634,20 @@ func takeAuthKeyEnv() string {
 	return key
 }
 
+// ForgetWindowEnv removes from pekoed's environment what says which
+// pekoe window it was started from ($TMUX / $TMUX_PANE of a pane,
+// $PEKOE_SESSION): an agent that runs pekoe while pekoed is down starts
+// it with the agent's environment. Everything pekoed starts inherits its
+// environment, and what of that outlives pekoed's tree (a git fsmonitor,
+// a database a setup hook started) would then pass for a process born in
+// that session's window, stopped when the session goes
+// (engine.KillLeftovers). `pekoe daemon run` calls it first.
+func ForgetWindowEnv() {
+	for _, k := range []string{"TMUX", "TMUX_PANE", "PEKOE_SESSION"} {
+		os.Unsetenv(k)
+	}
+}
+
 // ---- status (pekoe web) ----
 
 // webStatus is what `pekoe web` shows: whether the node is up, and the
