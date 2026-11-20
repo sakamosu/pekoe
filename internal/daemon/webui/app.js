@@ -800,8 +800,18 @@ function draftOf(it) {
   return d;
 }
 
+// pekoedItem: pekoed's own item (merge / wait / send back): answered by
+// choosing only, never by a note alone (pekoed refuses that too).
+function pekoedItem(it) {
+  return it.from === "pekoed" && it.kind === "approve";
+}
+
+// canAnswer: an option chosen, or a note written (with options and none
+// chosen, the note alone is the answer: none of them; not pekoed's item).
 function canAnswer(it, d) {
-  return (it.options || []).length ? d.choice !== null : d.note.trim() !== "";
+  if (d.choice !== null) return true;
+  if ((it.options || []).length && pekoedItem(it)) return false;
+  return d.note.trim() !== "";
 }
 
 function inboxCard(it) {
@@ -852,7 +862,7 @@ function inboxCard(it) {
   const ta = el("textarea", "note");
   ta.rows = 2;
   ta.maxLength = 4000;
-  ta.placeholder = (it.options || []).length ? "note (optional; send back needs one)" : "answer in words";
+  ta.placeholder = !(it.options || []).length ? "answer in words" : pekoedItem(it) ? "note (optional; send back needs one)" : "note (optional; or, with nothing chosen, the answer on its own: none of these)";
   ta.value = d.note;
   ta.addEventListener("input", () => {
     d.note = ta.value;
@@ -943,6 +953,7 @@ function openInboxSheet(it) {
   $("isheet-q").textContent = it.question;
   const a = [];
   if (d.choice !== null) a.push(d.choice + 1 + ". " + it.options[d.choice] + (it.recommend === d.choice ? "  (same as the agent recommended)" : ""));
+  else if ((it.options || []).length) a.push("none of the options (the note alone)");
   if (note) a.push("note: " + note);
   $("isheet-a").textContent = a.join("\n");
   $("isheet-warn").hidden = false;
