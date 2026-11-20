@@ -158,6 +158,7 @@ main { padding: 4px 10px 8px; }
 .keys-grid .btn:active:not(:disabled) { background: var(--select); }
 
 .send { margin-top: 12px; }
+.send .to, .send .send-note, .send .thumbs { margin-left: 2px; margin-right: 2px; }
 /* where send goes: the slug the button will hit, right above the box */
 .to {
   display: flex; align-items: baseline; gap: 8px; min-width: 0;
@@ -176,23 +177,49 @@ main { padding: 4px 10px 8px; }
 .to.tapi { border-left-color: var(--warn); }
 .to.tapi .to-slug { color: var(--warn); }
 .send-note { margin-bottom: 6px; font-size: 12px; color: var(--warn); }
-.send-row { display: flex; gap: 8px; align-items: flex-end; }
+/* the composer row, as in a messenger: borderless icons on the left, a
+   rounded box (one line, growing with its lines), send on the right. The
+   icons keep a 44px hit area; the row stays low */
+.send-row { display: flex; gap: 2px; align-items: flex-end; }
 .send textarea {
-  flex: 1; min-height: 44px; max-height: 30vh; resize: vertical;
-  padding: 10px; border-radius: 6px;
-  border: 1px solid var(--border); background: var(--bg);
-  font: 16px/1.4 var(--mono); /* 16px: no zoom on focus (iOS) */
+  flex: 1; min-width: 0; height: 40px; min-height: 40px; max-height: 9em; resize: none;
+  margin: 0 0 2px; padding: 8px 14px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface);
+  font: 16px/1.35 var(--mono); /* 16px: no zoom on focus (iOS) */
 }
 .send textarea:focus { outline: none; border-color: var(--primary); }
+/* the hint stays on the one line (it would grow the box) */
+.send textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+.ibtn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--secondary); cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.ibtn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ibtn:active:not(:disabled) { background: var(--select); }
 /* attach images: a label around the file input (iOS opens the picker:
    photos, camera, files); the input itself stays out of sight */
-.attach {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  min-width: 44px; padding: 0; font-size: 20px; cursor: pointer;
-}
+.attach { flex: none; display: inline-flex; }
 .attach input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .attach.off { opacity: .45; pointer-events: none; }
-.send.chat .attach { border-radius: 50%; min-height: 40px; min-width: 40px; }
+/* typing (focus and words in the box): the attach icon folds into ›; ›
+   brings it back */
+.unfold { display: none; }
+.send.folded .attach { display: none; }
+.send.folded .unfold { display: inline-flex; }
+/* send: quiet (dim) while there is nothing to send, a secondary ring when
+   there is */
+.go { color: var(--dim); }
+.go svg { width: 22px; height: 22px; stroke-width: 1.8; }
+.go::before {
+  content: ""; position: absolute; width: 36px; height: 36px; border-radius: 50%;
+  border: 1.5px solid transparent;
+}
+.go { position: relative; }
+.send.ready .go { color: var(--secondary); }
+.send.ready .go::before { border-color: var(--secondary); }
+.go:disabled { opacity: .45; }
 /* the images going with the next send, and in the send sheet */
 .thumbs { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
 .sheet .thumbs { margin: 6px 0 0; }
@@ -384,22 +411,37 @@ main { padding: 4px 10px 8px; }
 .seg button:last-child[aria-pressed="true"] { border-left: 1px solid var(--primary); }
 .c-why { color: var(--warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
-/* the page while tapi chat shows: the bar on top, the composer at the
-   bottom, the log takes all between (no fixed sum to subtract). It follows
-   the visual viewport (--vvh / --vvt, app.js fitViewport), so the composer
-   sits right above the software keyboard; the bottom inset (home
-   indicator) is kept unless the keyboard covers it */
-body.chat-on {
+/* the detail view (a session, tapi chat or tapi's screen) is an app
+   screen: the bar on top, the composer at the bottom, the panel takes all
+   between (no fixed sum to subtract). Its height comes from app.js
+   (fitViewport, --vvh / --vvt), not from 100vh / 100dvh: on iOS the
+   software keyboard shrinks only the visual viewport, and a home-screen
+   app can report every height (innerHeight, visualViewport, 100dvh) short
+   by the status bar, which left a band under the composer. The bottom
+   inset (home indicator) is kept unless the keyboard covers it */
+body.pinned {
   position: fixed; left: 0; right: 0; top: var(--vvt, 0px);
-  height: 100vh; height: 100dvh; height: var(--vvh, 100dvh); min-height: 0;
+  height: 100vh; height: var(--vvh, 100vh); min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
 }
-body.chat-on.kb { padding-bottom: 0; }
-body.chat-on > .bar { flex: none; }
-body.chat-on > .who { display: none; }
-body.chat-on #detail { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body.chat-on #d-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-body.chat-on #d-send { flex: none; margin-top: 10px; }
+body.pinned.kb { padding-bottom: 0; }
+body.pinned > .bar { flex: none; }
+body.pinned > .who { display: none; }
+/* what does not fit (a tall question card, the keypad) scrolls above the
+   composer; the composer stays at the bottom */
+body.pinned #detail {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  overflow-y: auto; overscroll-behavior: contain; padding-bottom: 6px;
+}
+body.pinned #d-panel { flex: 1 1 0; min-height: 14em; display: flex; flex-direction: column; }
+body.pinned #d-screen-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.pinned #d-screen { flex: 1; min-height: 0; max-height: none; }
+body.pinned #d-send {
+  flex: none; position: sticky; bottom: 0; z-index: 1;
+  margin-top: auto; padding-top: 8px; background: var(--bg);
+}
+body.chat-on #detail { overflow: hidden; }
+body.chat-on #d-panel { min-height: 0; }
 
 .chat { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat .log {
@@ -487,12 +529,8 @@ body.chat-on #d-send { flex: none; margin-top: 10px; }
   background: var(--surface); color: var(--dim); font: 12px var(--mono);
 }
 
-/* the composer under tapi chat: outside the focus frame, rounded, the
-   words' font; send in secondary */
-.send.chat textarea {
-  border-radius: 20px; padding: 9px 14px; background: var(--surface);
-  font: 16px/1.35 var(--sans); resize: none;
-}
-.send.chat .btn.key { border-radius: 18px; min-height: 40px; padding: 0 14px; }
+/* the composer under tapi chat: outside the focus frame, the words' font */
+.send.chat textarea { font: 16px/1.35 var(--sans); }
 .screen-tools > .btn, #d-live { flex: none; white-space: nowrap; }
 .screen-tools .c-why { flex: 1; }
+.bubble strong { font-weight: 700; }

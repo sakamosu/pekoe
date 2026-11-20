@@ -322,6 +322,7 @@ function renderTarget(s) {
     to.hidden = !!s;
     $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending || preparing;
     $("d-attach").hidden = !!tapi && !tapi.sendable;
+    renderComposer(); // no attach, nothing to fold
     return;
   }
   note.hidden = true;
@@ -331,6 +332,7 @@ function renderTarget(s) {
   to.classList.toggle("gone", !s);
   $("d-send-btn").disabled = !s || sending || preparing;
   $("d-attach").hidden = false;
+  renderComposer();
 }
 
 // renderTapiHead: tapi's state in the detail view. Its permission prompts
@@ -598,7 +600,10 @@ async function sendTo(slug, text, images) {
     await api("/api/sessions/" + encodeURIComponent(slug) + "/send", body);
     drafts.delete(slug);
     dropAttached(slug, images);
-    if (current === slug && ta.value.trim() === text) ta.value = "";
+    if (current === slug && ta.value.trim() === text) {
+      ta.value = "";
+      fitComposer();
+    }
     toast("sent → " + slug + (images.length ? " (" + images.length + " image" + (images.length > 1 ? "s" : "") + ")" : ""), true);
     setTimeout(refreshScreen, 600);
   } catch (e) {
@@ -753,6 +758,7 @@ function renderThumbs() {
     box.append(el("span", "thumb-note", images.length + "/" + IMG_MAX));
   }
   $("d-attach").classList.toggle("off", preparing || images.length >= IMG_MAX);
+  renderComposer();
 }
 
 // ---- the send sheet: tapi's (the whole text, every time unless
@@ -1396,21 +1402,80 @@ function dur(ms) {
   return Math.floor(s / 3600) + "h" + pad2(Math.floor(s / 60) % 60) + "m";
 }
 
-// mdInline: `code` as code, the rest as text
-function mdInline(parent, s) {
-  const re = /`([^`\n]+)`/g;
-  let at = 0, m;
-  while ((m = re.exec(s))) {
-    if (m.index > at) parent.append(txt(s.slice(at, m.index)));
-    parent.append(el("code", null, m[1]));
-    at = re.lastIndex;
+// mdSpans: a line's inline parts, as data (no HTML is ever built):
+// {code} for `code`, {bold: [parts]} for **bold**, {text} for the rest.
+// Bold opens on ** with no blank after it and closes on the next ** with
+// no blank before it; neither may sit inside code (code inside bold is
+// fine). An unclosed ** stays as written.
+function mdSpans(s) {
+  const codes = [];
+  const cre = /`([^`\n]+)`/g;
+  let m;
+  while ((m = cre.exec(s))) codes.push([m.index, cre.lastIndex]);
+  const codeAt = (i) => codes.find(([a, b]) => i >= a && i < b);
+  const plain = (a, b) => {
+    const out = [];
+    let at = a;
+    for (const [x, y] of codes) {
+      if (x < a || y > b) continue;
+      if (x > at) out.push({ text: s.slice(at, x) });
+      out.push({ code: s.slice(x + 1, y - 1) });
+      at = y;
+    }
+    if (at < b) out.push({ text: s.slice(at, b) });
+    return out;
+  };
+  const out = [];
+  let at = 0, i = 0;
+  while ((i = s.indexOf("**", i)) >= 0) {
+    const c = codeAt(i) || codeAt(i + 1);
+    if (c) {
+      i = c[1];
+      continue;
+    }
+    if (!/\S/.test(s[i + 2] || "")) {
+      i += 2;
+      continue;
+    }
+    let j = i + 3, close = -1;
+    while ((j = s.indexOf("**", j)) >= 0) {
+      const d = codeAt(j) || codeAt(j + 1);
+      if (d) {
+        j = d[1];
+        continue;
+      }
+      if (/\S/.test(s[j - 1])) {
+        close = j;
+        break;
+      }
+      j++;
+    }
+    if (close < 0) {
+      i += 2;
+      continue;
+    }
+    out.push(...plain(at, i), { bold: plain(i + 2, close) });
+    at = i = close + 2;
   }
-  if (at < s.length) parent.append(txt(s.slice(at)));
+  out.push(...plain(at, s.length));
+  return out;
+}
+
+// mdInline: a line's parts as elements, every word through textContent
+function mdInline(parent, s) {
+  const put = (to, parts) => {
+    for (const p of parts) {
+      if (p.bold) put(to.appendChild(el("strong")), p.bold);
+      else if (p.code !== undefined) to.append(el("code", null, p.code));
+      else to.append(txt(p.text));
+    }
+  };
+  put(parent, mdSpans(s));
 }
 
 // mdLines: a naive markdown, one element per line. Headings, list markers
-// and checkboxes (dim, monospace), inline code, fenced code (monospace, as
-// written). Nothing becomes a link.
+// and checkboxes (dim, monospace), inline code, bold, fenced code
+// (monospace, as written). Nothing becomes a link.
 function mdLines(lines) {
   const frag = document.createDocumentFragment();
   let fence = null;
@@ -1629,36 +1694,67 @@ function updateJump() {
   $("c-jump").hidden = tapiMode() !== "chat" || atBottom(log);
 }
 
-// fitComposer: in tapi chat the box grows with its lines (up to its
-// max-height, 30vh). Elsewhere it keeps its own (resizable) height: only
-// the height set here is taken back when leaving tapi.
+// fitComposer: the box grows with its lines (one line to start, up to its
+// max-height), and the row shows what can be done now (renderComposer).
 function fitComposer() {
   const ta = $("d-text");
-  if (current !== TAPI) {
-    if (ta.dataset.fit) {
-      ta.style.height = "";
-      delete ta.dataset.fit;
-    }
-    return;
-  }
   ta.style.height = "";
-  ta.style.height = Math.max(ta.scrollHeight + 2, 44) + "px"; // + the border
-  ta.dataset.fit = "1";
+  ta.style.height = Math.max(ta.scrollHeight + 2, 40) + "px"; // + the border
+  renderComposer();
 }
 
-// fitViewport: tapi chat fills what can be seen. On iOS the software
-// keyboard does not shrink the layout viewport (nor 100dvh); it shrinks the
-// visual viewport and pans it. So the page takes its height and offset,
-// and the composer stays right above the keyboard.
+// renderComposer: send is quiet with nothing to send and stands out with
+// something (words or images). While typing (focus and words in the box)
+// the attach icon folds into ›, as in a messenger; › (or leaving the box)
+// brings it back until the next keystroke.
+let unfolded = false;
+function renderComposer() {
+  const ta = $("d-text"), form = $("d-send");
+  const words = ta.value.trim() !== "";
+  form.classList.toggle("ready", words || attached(current).length > 0);
+  const typing = document.activeElement === ta && words;
+  if (!typing) unfolded = false;
+  form.classList.toggle("folded", typing && !unfolded && !$("d-attach").hidden);
+}
+
+// fitViewport: the detail view fills what can be seen (body.pinned). On iOS
+// the software keyboard does not shrink the layout viewport (nor 100dvh); it
+// shrinks the visual viewport and pans it. So the page takes the visual
+// viewport's height and offset while the keyboard is up, and the composer
+// stays right above it; without the keyboard it takes the whole height
+// (fullHeight).
 function fitViewport() {
+  if (!document.body.classList.contains("pinned")) return;
   const vv = window.visualViewport;
-  if (!vv || !document.body.classList.contains("chat-on")) return;
-  if (vv.scale > 1.01) return; // pinch-zoomed: keep the page as it was, let it pan
+  if (vv && vv.scale > 1.01) return; // pinch-zoomed: keep the page as it was, let it pan
+  const full = fullHeight();
+  const seen = vv ? vv.height + full.short : full.h;
+  const kb = full.h - seen > 120; // the keyboard covers the bottom
   const r = document.documentElement.style;
-  r.setProperty("--vvh", vv.height + "px");
-  r.setProperty("--vvt", vv.offsetTop + "px");
+  r.setProperty("--vvh", (kb ? seen : full.h) + "px");
+  r.setProperty("--vvt", (kb && vv ? vv.offsetTop : 0) + "px");
   // the keyboard covers the home indicator: no bottom inset above it
-  document.body.classList.toggle("kb", document.documentElement.clientHeight - vv.height > 120);
+  document.body.classList.toggle("kb", kb);
+}
+
+// fullHeight: the page's height without the keyboard. A home-screen app on
+// iOS can report innerHeight, visualViewport.height and 100dvh all short by
+// the status bar (a WebKit bug, seen after the keyboard has been up), which
+// left an empty band under the composer. There the screen's
+// height is the truth: it is taken when the app is full width and the
+// heights fall short of it by no more than a status bar. short: by how much
+// (the visual viewport is short by as much, the keyboard aside).
+function fullHeight() {
+  const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
+  const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  if (standalone && window.screen) {
+    const land = window.innerWidth > h;
+    const sw = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    const sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    const short = sh - h;
+    if (Math.abs(window.innerWidth - sw) <= 1 && short > 0 && short <= 80) return { h: sh, short };
+  }
+  return { h, short: 0 };
 }
 
 function toBottom() {
@@ -1813,7 +1909,6 @@ function applyTapiMode() {
   $("d-head-panel").hidden = chatOn;
   $("d-panel").classList.toggle("chat-panel", chatOn);
   document.body.classList.toggle("chat-on", chatOn);
-  if (chatOn) fitViewport();
   const why = $("c-why");
   why.hidden = !isTapi || chatOn || chatChoice !== "chat" || chat.ok !== false;
   why.textContent = why.hidden ? "" : "chat unavailable: " + chat.why;
@@ -1846,6 +1941,9 @@ function chooseTapiView(v) {
   }
 }
 
+// sameWords: a text as compared between a send and the transcript
+const sameWords = (s) => String(s || "").replace(/\s+/g, " ").trim();
+
 // refreshChat reads what is new after the cursor. A new conversation
 // (/clear) keeps the old bubbles above a divider.
 async function refreshChat() {
@@ -1873,10 +1971,13 @@ async function refreshChat() {
       chat.earlier = true;
     }
     chat.cursor = String(r.cursor || "");
-    // the person's words that came through are no longer "not sent"
-    const seen = new Set(chat.items.filter((it) => it.kind === "human").slice(-20).map((it) => it.text));
+    // the person's words that came through are no longer "not sent". A
+    // send of more than one line comes back as a paste (pekoed takes the
+    // wrapping off); the blank around and between the words is not
+    // compared, so the same words never show twice
+    const seen = new Set(chat.items.filter((it) => it.kind === "human").slice(-20).map((it) => sameWords(it.text)));
     const old = Date.now() - 5 * 60 * 1000;
-    chat.pending = chat.pending.filter((p) => !seen.has(p.text) && p.at > old);
+    chat.pending = chat.pending.filter((p) => !seen.has(sameWords(p.text)) && p.at > old);
     chat.ok = true;
     chat.why = "";
   } catch (e) {
@@ -1925,6 +2026,8 @@ function route() {
   renderThumbs(); // the images attached for this target (kept per target, like the drafts)
   for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
   if (view !== "detail") document.body.classList.remove("chat-on");
+  document.body.classList.toggle("pinned", view === "detail");
+  fitViewport();
   fitComposer();
   $("tabs").hidden = view === "detail";
   for (const v of ["list", "inbox", "overview"]) {
@@ -2015,7 +2118,20 @@ if (window.ResizeObserver) {
     if (chat.stuck && !$("c-chat").hidden) toBottom();
   }).observe($("c-log"));
 }
-$("d-text").addEventListener("input", fitComposer);
+$("d-text").addEventListener("input", () => {
+  unfolded = false; // the next keystroke folds the icons again
+  fitComposer();
+});
+$("d-text").addEventListener("focus", renderComposer);
+// leaving the box: a moment later, so a tap on › or send lands first
+$("d-text").addEventListener("blur", () => setTimeout(renderComposer, 0));
+// › : the icons back, the keyboard stays up (no focus leaves the box)
+$("d-unfold").addEventListener("pointerdown", (e) => e.preventDefault());
+$("d-unfold").addEventListener("click", () => {
+  unfolded = true;
+  renderComposer();
+  $("d-text").focus();
+});
 if (window.visualViewport) {
   visualViewport.addEventListener("resize", fitViewport);
   visualViewport.addEventListener("scroll", fitViewport);

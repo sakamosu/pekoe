@@ -134,10 +134,16 @@
     <!-- images to go with the next send (photos, screenshots, files): the
          page re-encodes each as JPEG or PNG; pekoed checks and saves them -->
     <div class="thumbs" id="d-thumbs" hidden></div>
+    <!-- one row, as in a messenger: the attach icon on the left (images:
+         iOS offers photos, taking one, files), folded into › while typing;
+         the box; send -->
     <div class="send-row">
-      <label class="btn key attach" id="d-attach" for="d-file" aria-label="attach images" title="attach images">＋<input type="file" id="d-file" accept="image/*" multiple></label>
-      <textarea id="d-text" rows="2" maxlength="4000" placeholder="send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
-      <button type="submit" class="btn key" id="d-send-btn">send</button>
+      <span class="attach" id="d-attach">
+        <label class="ibtn" for="d-file" aria-label="attach images" title="attach images"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg><input type="file" id="d-file" accept="image/*" multiple></label>
+      </span>
+      <button type="button" class="ibtn unfold" id="d-unfold" aria-label="show attach" title="show attach"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+      <textarea id="d-text" rows="1" maxlength="4000" placeholder="send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
+      <button type="submit" class="ibtn go" id="d-send-btn" aria-label="send" title="send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l16 7.5-16 7.5 2.5-7.5z"/><path d="M7 12h6"/></svg></button>
     </div>
   </form>
 </main>

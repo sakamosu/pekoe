@@ -243,6 +243,10 @@ func chatItems(line []byte) []ChatItem {
 		if !ok || text == "" || injected(text) {
 			return nil
 		}
+		text = unwrapPasted(text)
+		if text == "" {
+			return nil
+		}
 		if strings.HasPrefix(text, "[pekoe") {
 			return []ChatItem{{Kind: "pekoe", Text: cutBytes(oneLine(text), chatMaxPekoe), At: e.Timestamp}}
 		}
@@ -314,6 +318,41 @@ func userText(raw json.RawMessage) (string, bool) {
 		}
 	}
 	return b.String(), true
+}
+
+// unwrapPasted takes off the wrapping Claude Code records a paste in. A
+// send of more than one line (an image's line makes every send with images
+// one) reaches Claude Code as a paste from tmux, and the transcript has it
+// as <pasted_content id="…">\n…\n</pasted_content id="…">: the bubble
+// showed the tags, and did not match the words the page had sent. Only a
+// text that is one such paste, from its first byte to its last, is
+// unwrapped (the words inside as they were, but for the blank around
+// them); a paste among typed words, a part of one, or a body that holds its
+// own closing tag again stays as it is.
+func unwrapPasted(text string) string {
+	const open, closeTag = `<pasted_content id="`, `</pasted_content id="`
+	if !strings.HasPrefix(text, open) {
+		return text
+	}
+	rest := text[len(open):]
+	q := strings.Index(rest, `">`)
+	if q <= 0 {
+		return text
+	}
+	id := rest[:q]
+	if strings.ContainsAny(id, "\"<>\n") {
+		return text
+	}
+	end := closeTag + id + `">`
+	body := rest[q+len(`">`):]
+	if !strings.HasSuffix(body, end) {
+		return text
+	}
+	body = body[:len(body)-len(end)]
+	if strings.Contains(body, end) {
+		return text
+	}
+	return strings.TrimSpace(body)
 }
 
 // injectedPrefixes start the user lines Claude Code writes itself: slash
