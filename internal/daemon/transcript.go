@@ -55,8 +55,21 @@ const (
 //   - tool: a tool call (name, input: its main argument, 200 bytes at most;
 //     question: an AskUserQuestion's questions and options)
 //   - turn: a turn ended (ms: how long it took)
+//
+// A human or pekoe line typed at the prompt also has its id (the line's
+// uuid) and parent (the uuid it follows). A prompt the person interrupted
+// (ctrl+c, esc) before the first word of the reply leaves the
+// conversation, and Claude Code writes the prompt sent after it as another
+// child of the same parent: the earlier one was taken back and never
+// reached the agent (docs/web.md 「取り消された発言」). The page leaves it
+// out (markRewound in app.js); the later prompt can come in a later read,
+// so the reader cannot. A line the agent took in the middle of a turn
+// (typed while it worked, Claude Code's queue) has its id only: it was
+// delivered, and is never taken back.
 type ChatItem struct {
 	Kind     string    `json:"kind"`
+	ID       string    `json:"id,omitempty"`
+	Parent   string    `json:"parent,omitempty"`
 	Text     string    `json:"text,omitempty"`
 	Name     string    `json:"name,omitempty"`
 	Input    string    `json:"input,omitempty"`
@@ -196,21 +209,31 @@ func readLine(r *bufio.Reader) (int64, []byte, error) {
 
 // chatLine is the part of a transcript line chatItems looks at.
 type chatLine struct {
-	Type              string    `json:"type"`
-	Subtype           string    `json:"subtype"`
-	Timestamp         time.Time `json:"timestamp"`
-	IsMeta            bool      `json:"isMeta"`
-	IsSidechain       bool      `json:"isSidechain"`
-	IsCompactSummary  bool      `json:"isCompactSummary"`
-	IsVisibleOnlyInTr bool      `json:"isVisibleInTranscriptOnly"`
-	DurationMs        int64     `json:"durationMs"`
-	Origin            *struct {
-		Kind string `json:"kind"`
-	} `json:"origin"`
+	Type              string      `json:"type"`
+	Subtype           string      `json:"subtype"`
+	Timestamp         time.Time   `json:"timestamp"`
+	IsMeta            bool        `json:"isMeta"`
+	IsSidechain       bool        `json:"isSidechain"`
+	IsCompactSummary  bool        `json:"isCompactSummary"`
+	IsVisibleOnlyInTr bool        `json:"isVisibleInTranscriptOnly"`
+	DurationMs        int64       `json:"durationMs"`
+	UUID              string      `json:"uuid"`
+	ParentUUID        string      `json:"parentUuid"`
+	Origin            *chatOrigin `json:"origin"`
+	Attachment        *struct {
+		Type        string          `json:"type"`
+		CommandMode string          `json:"commandMode"`
+		Prompt      json.RawMessage `json:"prompt"`
+		Origin      *chatOrigin     `json:"origin"`
+	} `json:"attachment"`
 	Message struct {
 		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
+}
+
+type chatOrigin struct {
+	Kind string `json:"kind"`
 }
 
 type chatPart struct {
@@ -239,18 +262,17 @@ func chatItems(line []byte) []ChatItem {
 		if e.Origin != nil && e.Origin.Kind != "human" {
 			return nil // task notifications and the like: Claude Code's, not the person's
 		}
-		text, ok := userText(e.Message.Content)
-		if !ok || text == "" || injected(text) {
+		return typedItem(e.Message.Content, e.UUID, e.ParentUUID, e.Timestamp)
+	case "attachment":
+		// what the person typed while the agent worked, taken in the
+		// middle of its turn (Claude Code's queue, "absorbed_mid_turn"):
+		// no user line of its own. One that waited for the turn to end
+		// comes as a user line instead.
+		a := e.Attachment
+		if a == nil || a.Type != "queued_command" || a.CommandMode != "prompt" || a.Origin == nil || a.Origin.Kind != "human" {
 			return nil
 		}
-		text = unwrapPasted(text)
-		if text == "" {
-			return nil
-		}
-		if strings.HasPrefix(text, "[pekoe") {
-			return []ChatItem{{Kind: "pekoe", Text: cutBytes(oneLine(text), chatMaxPekoe), At: e.Timestamp}}
-		}
-		return []ChatItem{{Kind: "human", Text: cutBytes(text, chatMaxText), At: e.Timestamp}}
+		return typedItem(a.Prompt, e.UUID, "", e.Timestamp)
 	case "assistant":
 		if e.Message.Model == "<synthetic>" {
 			return nil // "No response requested." and the like
@@ -287,6 +309,23 @@ func chatItems(line []byte) []ChatItem {
 		return out
 	}
 	return nil
+}
+
+// typedItem is a line typed at the prompt: the person's words, or a line
+// pekoed typed (nothing for a tool result or what Claude Code injects).
+func typedItem(content json.RawMessage, id, parent string, at time.Time) []ChatItem {
+	text, ok := userText(content)
+	if !ok || text == "" || injected(text) {
+		return nil
+	}
+	text = unwrapPasted(text)
+	if text == "" {
+		return nil
+	}
+	if strings.HasPrefix(text, "[pekoe") {
+		return []ChatItem{{Kind: "pekoe", ID: id, Parent: parent, Text: cutBytes(oneLine(text), chatMaxPekoe), At: at}}
+	}
+	return []ChatItem{{Kind: "human", ID: id, Parent: parent, Text: cutBytes(text, chatMaxText), At: at}}
 }
 
 // userText is the person's words in a user line. ok is false for a line
