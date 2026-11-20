@@ -155,3 +155,77 @@ func TestNewRefusesWorktreeOfAnotherSession(t *testing.T) {
 		t.Errorf("a session foo was made in feat-x's worktree")
 	}
 }
+
+// rm of a session whose worktree directory is gone (deleted by hand, or
+// restore found it missing) removes git's registration of it and its
+// refs: a new session of the same branch then gets its worktree, where git
+// used to refuse ("missing but already registered worktree").
+func TestRmOfMissingWorktreeThenNew(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	s := waitState(t, d, "feat-x", state.Idle, state.Running, state.Waiting)
+	if err := os.RemoveAll(s.Path); err != nil {
+		t.Fatal(err)
+	}
+	call[map[string]any](t, d, "worktree.rm", map[string]any{"slug": "feat-x"})
+	if out := gitOut(t, repo, "worktree", "list", "--porcelain"); strings.Contains(out, "feat-x") {
+		t.Errorf("git still has the missing worktree registered:\n%s", out)
+	}
+	if out := gitOut(t, repo, "for-each-ref", "refs/pekoe/feat-x/"); out != "" {
+		t.Errorf("refs/pekoe/feat-x/ left:\n%s", out)
+	}
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	n := waitState(t, d, "feat-x", state.Idle, state.Running, state.Waiting, state.Failed)
+	if n.State == state.Failed {
+		t.Errorf("new feat/x after rm of its missing worktree failed: %s", n.Error)
+	}
+}
+
+// rm without force of a session being created, whose setup has written
+// files into the worktree its creation made: those are not work to lose,
+// so rm stops the creation and removes it (as session.cancel does). It
+// used to stop the creation and then refuse (uncommitted changes),
+// leaving a failed session behind a refusal.
+func TestRmWithoutForceOfCreatingSession(t *testing.T) {
+	d, _, repo := setup(t)
+	goFile := filepath.Join(t.TempDir(), "go")
+	writeRepoConfig(t, d, repo, "[hooks]\nsetup = [\"touch made-by-setup; "+waitGo(goFile)+"\"]\n")
+	s := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitFile(t, filepath.Join(s.Path, "made-by-setup"))
+	if err := callErr(d, "worktree.rm", map[string]any{"slug": "feat-x"}); err != nil {
+		cur, _ := d.snapshot("feat-x")
+		t.Fatalf("rm: %v (state now %s)", err, cur.State)
+	}
+	if _, err := d.snapshot("feat-x"); err == nil {
+		t.Errorf("feat-x still there after rm")
+	}
+	if fileExists(s.Path) {
+		t.Errorf("worktree %s left", s.Path)
+	}
+}
+
+// rm without force of a session whose creation reuses an existing
+// worktree with uncommitted changes is refused before anything is
+// stopped: the creation goes on, and the session is not left failed.
+func TestRmWithoutForceRefusesBeforeStoppingCreation(t *testing.T) {
+	d, _, repo := setup(t)
+	wt := filepath.Join(os.Getenv("PEKOE_WORKTREES"), "app", "feat-x")
+	run(t, repo, "git", "worktree", "add", "-q", "-b", "feat/x", wt)
+	os.WriteFile(filepath.Join(wt, "work.txt"), []byte("not committed\n"), 0o644)
+	goFile := filepath.Join(t.TempDir(), "go")
+	writeRepoConfig(t, d, repo, "[hooks]\nsetup = [\""+waitGo(goFile)+"\"]\n")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitStepRunning(t, d, "feat-x", "setup")
+	err := callErr(d, "worktree.rm", map[string]any{"slug": "feat-x"})
+	if err == nil || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("rm without force of a reused dirty worktree: %v", err)
+	}
+	if cur, _ := d.snapshot("feat-x"); cur.State != state.Creating {
+		t.Errorf("refused rm left feat-x %s (%s); want creating", cur.State, cur.Error)
+	}
+	os.WriteFile(goFile, nil, 0o644)
+	waitState(t, d, "feat-x", state.Idle, state.Running)
+	if !fileExists(filepath.Join(wt, "work.txt")) {
+		t.Errorf("the uncommitted work is gone")
+	}
+}

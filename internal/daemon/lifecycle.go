@@ -157,6 +157,13 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		d.queueMu.Lock()
 		d.queueMu.Unlock()
 	}
+	// without force, uncommitted changes refuse the rm: checked before a
+	// creation is stopped, so that a refusal leaves the session as it was
+	if !p.Force {
+		if err := d.rmDirty(p.Slug); err != nil {
+			return nil, err
+		}
+	}
 	// a session still being created: stop its creation and wait for it to
 	// end, so no setup hook or agent start comes after the teardown and the
 	// removal below (a session still queued under queueMu has none)
@@ -164,24 +171,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if s, err = d.snapshot(p.Slug); err != nil { // as the creation left it (own_dir …)
 		return nil, err
 	}
-	_, statErr := os.Stat(s.Path)
-	exists := statErr == nil
-	// the directory may belong to another repository of the same name (a
-	// fork shares ~/worktrees/<name>): then it is not ours to run hooks in or
-	// to delete
-	owner := error(nil)
-	if exists {
-		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
-	}
-	foreign := errors.Is(owner, gitx.ErrForeignWorktree)
-	// another session may live in the same worktree (an open of it by a
-	// symlinked name before paths were compared resolved): then it stays
-	shared := d.pathShared(s.Path, p.Slug)
-	if !p.Force && s.Managed && !foreign && !shared {
-		if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
-			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
-		}
-	}
+	exists, owner, foreign, shared := d.rmWhere(s)
 	if !foreign {
 		d.devMu.Lock()
 		if err := d.stopDev(p.Slug, true); err != nil {
@@ -220,6 +210,15 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 				_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
 			}
 		}
+	} else if !exists && !shared && s.Path != "" {
+		// the directory is gone (deleted by hand, restore found it missing):
+		// git still has it registered, which would refuse a new worktree at
+		// the same path ("missing but already registered"), and its refs
+		// are still there. git removes the registration of a missing
+		// worktree and nothing else; one this repository does not have
+		// registered is an error, left alone.
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/")
+		_ = gitx.RemoveWorktree(s.RepoDir, s.Path, true)
 	}
 	held := d.purge(s)
 	d.removed(s)
@@ -228,6 +227,48 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		res["port_held"] = held
 	}
 	return res, nil
+}
+
+// rmWhere is where rm of s stands: whether its directory exists, whose
+// worktree it is (owner: CheckWorktreeOf's answer), whether that is
+// another repository's (foreign: a fork shares ~/worktrees/<name>, so it
+// is not ours to run hooks in or to delete), and whether another session
+// lives in it too (shared: an open of it by a symlinked name before paths
+// were compared resolved; then it stays).
+func (d *Daemon) rmWhere(s *state.Session) (exists bool, owner error, foreign, shared bool) {
+	_, statErr := os.Stat(s.Path)
+	exists = statErr == nil
+	if exists {
+		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
+	}
+	foreign = errors.Is(owner, gitx.ErrForeignWorktree)
+	shared = d.pathShared(s.Path, s.Slug)
+	return exists, owner, foreign, shared
+}
+
+// rmDirty refuses rm without force of a session whose worktree has
+// uncommitted changes. A session being created whose directory its
+// creation made (own_dir) has only what the creation put there (setup's
+// files): nothing to lose, and rm stops the creation as session.cancel
+// does. One whose creation reuses an existing worktree is checked.
+func (d *Daemon) rmDirty(slug string) error {
+	s, err := d.snapshot(slug)
+	if err != nil {
+		return err
+	}
+	// the directory is looked at first: a creation sets own_dir before it
+	// makes it, so a directory there with own_dir unset is not its own
+	exists, _, foreign, shared := d.rmWhere(s)
+	if s, err = d.snapshot(slug); err != nil {
+		return err
+	}
+	if !exists || !s.Managed || foreign || shared || (s.State == state.Creating && s.OwnDir) {
+		return nil
+	}
+	if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
+		return fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
+	}
+	return nil
 }
 
 // hAgentRm is rm without the human token (call routes it here), for the
