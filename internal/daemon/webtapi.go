@@ -181,13 +181,15 @@ func (d *Daemon) webTapiSend(sendable bool) http.HandlerFunc {
 			return
 		}
 		// the images go in only now: a refused send above leaves nothing behind
-		typed, files, ok := webStoreImages(w, TapiSlug, text, imgs)
-		if !ok {
+		typed, files, err := webStoreImages(w, TapiSlug, text, imgs)
+		if err != nil {
+			id := d.recordSend(who, TapiSlug, "send", withImageCount(text, len(imgs)), err)
+			log.Printf("web: %s's send to tapi failed (send #%d, from %s): %v", p.Login, id, p.Device, err)
 			return
 		}
 		// tapi.send checks for a prompt again (hook state and the screen),
 		// before typing and right before Enter
-		_, err := d.CallAs(who, "tapi.send", mustJSON(tapiSendP{Text: typed, Submit: true}))
+		_, err = d.CallAs(who, "tapi.send", mustJSON(tapiSendP{Text: typed, Submit: true}))
 		keepImagesAfter(err, files)
 		id := d.recordSend(who, TapiSlug, "send", typed, err)
 		if err != nil {

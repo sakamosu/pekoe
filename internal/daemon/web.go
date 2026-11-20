@@ -504,8 +504,10 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// the images go in only now: a refused send above leaves nothing behind
-	typed, files, ok := webStoreImages(w, s.Slug, text, imgs)
-	if !ok {
+	typed, files, err := webStoreImages(w, s.Slug, text, imgs)
+	if err != nil {
+		// as a send refused before typing: in the send log, the images counted
+		d.recordSend(humanCaller(webVia(peerFrom(r))), s.Slug, "send", withImageCount(text, len(imgs)), err)
 		return
 	}
 	p := peerFrom(r)

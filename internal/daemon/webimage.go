@@ -48,6 +48,10 @@ const (
 // webImageKeep: how long a sent image stays (a removed session's go at once).
 var webImageKeep = 7 * 24 * time.Hour
 
+// afterImageDir, when set (tests), runs between making the directory and
+// writing the images: where sweepWebImages may remove it.
+var afterImageDir func(dir string)
+
 // webImage is one checked image, not written yet.
 type webImage struct {
 	ext  string // png | jpg | gif
@@ -178,6 +182,9 @@ func saveWebImages(slug string, imgs []webImage) ([]string, error) {
 	if err := paths.Ensure(dir); err != nil {
 		return nil, err
 	}
+	if afterImageDir != nil {
+		afterImageDir(dir)
+	}
 	var rnd [4]byte
 	_, _ = rand.Read(rnd[:])
 	stamp := time.Now().Format("20060102-150405") + "-" + hex.EncodeToString(rnd[:])
@@ -185,6 +192,12 @@ func saveWebImages(slug string, imgs []webImage) ([]string, error) {
 	for i, im := range imgs {
 		p := filepath.Join(dir, fmt.Sprintf("%s-%d.%s", stamp, i+1, im.ext))
 		f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, paths.FilePerm)
+		if errors.Is(err, fs.ErrNotExist) {
+			// sweepWebImages removed the directory, empty, in between: once more
+			if err = paths.Ensure(dir); err == nil {
+				f, err = os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, paths.FilePerm)
+			}
+		}
 		if err == nil {
 			_, err = f.Write(im.data)
 			if cerr := f.Close(); err == nil {
@@ -228,15 +241,16 @@ func withImageLines(text string, files []string) string {
 }
 
 // webStoreImages saves imgs for slug and returns what to type with the
-// paths in it. On an error it has written the 500.
-func webStoreImages(w http.ResponseWriter, slug, text string, imgs []webImage) (string, []string, bool) {
+// paths in it. On an error it has written the 500 and returns the error.
+func webStoreImages(w http.ResponseWriter, slug, text string, imgs []webImage) (string, []string, error) {
 	files, err := saveWebImages(slug, imgs)
 	if err != nil {
 		log.Printf("web: images for %s: %v", slug, err)
-		http.Error(w, "could not save the images: "+err.Error(), http.StatusInternalServerError)
-		return "", nil, false
+		err = fmt.Errorf("could not save the images: %w", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return "", nil, err
 	}
-	return withImageLines(text, files), files, true
+	return withImageLines(text, files), files, nil
 }
 
 // keepImagesAfter: a failed send leaves its images only when the text was
@@ -302,13 +316,13 @@ func sweepWebImages(now time.Time) {
 	}
 }
 
-// withImageCount is a refused send's record: the images were not saved,
-// so the record says how many there were instead of their paths.
+// withImageCount is the record of a send whose images were not saved
+// (refused before, or saving failed): how many there were, no paths.
 func withImageCount(text string, n int) string {
 	if n == 0 {
 		return text
 	}
-	line := fmt.Sprintf("[image] ×%d (not saved: the send was refused)", n)
+	line := fmt.Sprintf("[image] ×%d (not saved)", n)
 	if text == "" {
 		return line
 	}

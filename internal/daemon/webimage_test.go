@@ -181,8 +181,8 @@ func TestWebSendImagesRefused(t *testing.T) {
 }
 
 // While a permission prompt waits, a send with images is refused and
-// nothing is saved; if the prompt comes up between typing and Enter, the
-// images stay (their paths are in the input box), otherwise they go.
+// nothing is saved, nor kept when the menu is found on the screen before
+// typing (between typing and Enter: TestWebSendImagesTypedKept).
 func TestWebSendImagesWhileWaiting(t *testing.T) {
 	d, fe, repo, h := webSetup(t)
 	waitingSession(t, d, repo)
@@ -248,7 +248,7 @@ func TestWebTapiSendImages(t *testing.T) {
 	if fs := imageFiles(t, TapiSlug); len(fs) != 1 {
 		t.Fatalf("saved for a refused send: %v", fs)
 	}
-	if rs := tapiSends(t, d); len(rs) != 2 || rs[0].OK || rs[0].Text != "2つ目も\n\n[image] ×2 (not saved: the send was refused)" {
+	if rs := tapiSends(t, d); len(rs) != 2 || rs[0].OK || rs[0].Text != "2つ目も\n\n[image] ×2 (not saved)" {
 		t.Fatalf("refused record: %+v", rs[0])
 	}
 }
@@ -333,5 +333,89 @@ func TestClaudeSandboxImages(t *testing.T) {
 		if strings.Contains(a, "/images/feat-y") || strings.HasSuffix(a, "/images/**)") {
 			t.Errorf("allow rule reaches other sessions' images: %s", a)
 		}
+	}
+}
+
+// A permission prompt that comes up after the text is typed, before
+// Enter: the images stay (their paths are in the agent's input box).
+func TestWebSendImagesTypedKept(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	fe.mu.Lock()
+	fe.onText = func(string) {
+		fe.mu.Lock()
+		fe.lines = []string{"│ Bash command", "│   rm -rf x", "│ Do you want to proceed?", "│ ❯ 1. Yes", "│   2. No", ""}
+		fe.mu.Unlock()
+	}
+	fe.mu.Unlock()
+	w := doWeb(t, h, sendImagesReq("/api/sessions/main/send", "見て", testJPEG(t)))
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "typed but not submitted") {
+		t.Fatalf("send: %d %s", w.Code, w.Body)
+	}
+	if strings.HasSuffix(fe.last(), "keys:Enter") {
+		t.Fatalf("Enter went into the menu: %s", fe.last())
+	}
+	files := typedImages(lastText(fe))
+	if len(files) != 1 {
+		t.Fatalf("typed: %q", lastText(fe))
+	}
+	if _, err := os.Stat(files[0]); err != nil {
+		t.Fatalf("the typed image is gone: %v", err)
+	}
+}
+
+// Saving fails (here: a file where the directory goes): 500, nothing
+// typed, and the send log says how many images there were.
+func TestWebSendImagesSaveFails(t *testing.T) {
+	d, fe, repo, h := webSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	call[Tapi](t, d, "tapi.open", nil)
+	paths.Ensure(paths.WebImagesDir())
+	for _, slug := range []string{"main", TapiSlug} {
+		os.WriteFile(filepath.Join(paths.WebImagesDir(), slug), []byte("x"), 0o600)
+	}
+	before := sentCount(fe)
+	if w := doWeb(t, h, sendImagesReq("/api/sessions/main/send", "見て", testJPEG(t))); w.Code != http.StatusInternalServerError {
+		t.Fatalf("session: %d %s", w.Code, w.Body)
+	}
+	h2 := testWebHandler(d, "iphone")
+	if w := doWeb(t, h2, sendImagesReq("/api/tapi/send", "これ", testJPEG(t), testJPEG(t))); w.Code != http.StatusInternalServerError {
+		t.Fatalf("tapi: %d %s", w.Code, w.Body)
+	}
+	if sentCount(fe) != before {
+		t.Fatalf("typed: %s", fe.last())
+	}
+	for slug, want := range map[string]string{"main": "見て\n\n[image] ×1 (not saved)", TapiSlug: "これ\n\n[image] ×2 (not saved)"} {
+		rs, _ := d.DB.Sends(state.SendFilter{To: slug, Limit: 10})
+		if len(rs) != 1 || rs[0].OK || rs[0].Text != want || !strings.Contains(rs[0].Error, "could not save the images") {
+			t.Errorf("%s: send log %+v", slug, rs)
+		}
+	}
+}
+
+// The sweep took the empty directory between Ensure and the file: saving
+// makes it again instead of failing.
+func TestSaveWebImagesDirGone(t *testing.T) {
+	setup(t)
+	img, err := webCheckImage(testJPEG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	swept := false
+	afterImageDir = func(dir string) {
+		sweepWebImages(time.Now()) // finds it empty and removes it
+		_, err := os.Stat(dir)
+		swept = os.IsNotExist(err)
+	}
+	t.Cleanup(func() { afterImageDir = nil })
+	files, err := saveWebImages("main", []webImage{img})
+	if !swept {
+		t.Fatal("the sweep did not remove the directory: nothing tested")
+	}
+	if err != nil || len(files) != 1 {
+		t.Fatalf("save: %v %v", files, err)
+	}
+	if _, err := os.Stat(files[0]); err != nil {
+		t.Fatal(err)
 	}
 }
