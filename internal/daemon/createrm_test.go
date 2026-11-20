@@ -267,3 +267,24 @@ func TestLandStopsWhenSessionIsReplaced(t *testing.T) {
 		t.Errorf("main moved from %s to %s: the old land fast-forwarded it", mainBefore, after)
 	}
 }
+
+// rm of an opened checkout pekoe did not make, whose directory is not
+// there now (a disk not mounted), only forgets the session: git's
+// registration of that worktree stays, as rm leaves such a checkout alone
+// when it is there.
+func TestRmOfMissingOpenedCheckoutKeepsRegistration(t *testing.T) {
+	d, _, repo := setup(t)
+	wt := filepath.Join(t.TempDir(), "mine")
+	run(t, repo, "git", "worktree", "add", "-q", "-b", "feat/mine", wt)
+	o := call[state.Session](t, d, "session.open", map[string]any{"path": wt, "resume": "new"})
+	if o.Managed {
+		t.Fatalf("%s outside the worktrees root opened as managed", wt)
+	}
+	if err := os.RemoveAll(wt); err != nil {
+		t.Fatal(err)
+	}
+	call[map[string]any](t, d, "worktree.rm", map[string]any{"slug": o.Slug})
+	if out := gitOut(t, repo, "worktree", "list", "--porcelain"); !strings.Contains(out, "feat/mine") {
+		t.Errorf("rm removed git's registration of a checkout pekoe did not make:\n%s", out)
+	}
+}

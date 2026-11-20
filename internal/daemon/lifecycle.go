@@ -210,13 +210,15 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 				_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
 			}
 		}
-	} else if !exists && !shared && s.Path != "" {
-		// the directory is gone (deleted by hand, restore found it missing):
-		// git still has it registered, which would refuse a new worktree at
-		// the same path ("missing but already registered"), and its refs
-		// are still there. git removes the registration of a missing
-		// worktree and nothing else; one this repository does not have
-		// registered is an error, left alone.
+	} else if !exists && !shared && s.Managed && paths.UnderWorktrees(s.Path) {
+		// pekoe's own worktree whose directory is gone (deleted by hand,
+		// restore found it missing): git still has it registered, which
+		// would refuse a new worktree at the same path ("missing but
+		// already registered"), and its refs are still there. git removes
+		// the registration of a missing worktree and nothing else; one this
+		// repository does not have registered is an error, left alone. A
+		// checkout pekoe did not make (one on a disk not mounted now) is
+		// only forgotten, as when it is there.
 		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/")
 		_ = gitx.RemoveWorktree(s.RepoDir, s.Path, true)
 	}
