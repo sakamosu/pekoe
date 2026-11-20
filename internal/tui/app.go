@@ -1310,6 +1310,13 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		m.clickEntered = false
 		if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
+			if narrow(m.width) { // the one tabbed panel: its tab stays and takes the focus
+				t := narrowTabs[m.narrowTab]
+				m.focus = t.focus
+				if t.focus == pSecond { // Worktrees / Issues; [2] on Issues stays there behind the others
+					m.sub2 = t.sub2
+				}
+			}
 			m.stopTyping()
 		}
 	}

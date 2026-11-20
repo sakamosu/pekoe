@@ -64,3 +64,40 @@ func TestNarrowFocusFollowsTab(t *testing.T) {
 		t.Errorf("narrowed on Picks: tab %d sub3 %d", m.narrowTab, m.sub3)
 	}
 }
+
+// A click on the narrow top panel (a row or its title) leaves the tab drawn
+// and focuses it: it used to focus [1], and the tab followed the focus back
+// to Sessions, so the list clicked on went away.
+func TestNarrowClickKeepsTab(t *testing.T) {
+	for _, c := range []struct {
+		key        string
+		focus, tab int
+		y          int
+	}{
+		{"3", pThird, 3, 2},  // a row of Changes
+		{"3", pThird, 3, 0},  // the title (the tab names)
+		{"2", pSecond, 1, 1}, // a row of Worktrees
+	} {
+		m, _, _ := chatModel(t)
+		m.Update(tea.WindowSizeMsg{Width: 90, Height: m.height})
+		m.worktrees = []daemon.WorktreeView{{Path: "/w/a", Branch: "wt-a"}, {Path: "/w/b", Branch: "wt-b"}}
+		m.changes = []change{{Status: "M", Path: "a.go"}, {Status: "M", Path: "b.go"}, {Status: "A", Path: "c.go"}}
+		m.Update(key(c.key))
+		m.focus, m.typing = pAgent, true // typing into [4]: the click leaves it
+		m.Update(tea.MouseMsg{X: 5, Y: c.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		m.Update(tea.MouseMsg{X: 5, Y: c.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+		if m.focus != c.focus || m.narrowTab != c.tab || m.typing {
+			t.Errorf("%s, click at y=%d: focus %d tab %d typing %v, want focus %d tab %d", c.key, c.y, m.focus, m.narrowTab, m.typing, c.focus, c.tab)
+		}
+	}
+
+	// a click on the Sessions tab leaves [2] on Issues: 2 goes back there
+	m, _, _ := chatModel(t)
+	m.Update(tea.WindowSizeMsg{Width: 90, Height: m.height})
+	m.focus, m.sub2 = pSessions, subIssues
+	m.Update(tea.MouseMsg{X: 5, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m.Update(tea.MouseMsg{X: 5, Y: 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	if m.focus != pSessions || m.narrowTab != 0 || m.sub2 != subIssues {
+		t.Errorf("click on Sessions: focus %d tab %d sub2 %d, want [2] still on Issues", m.focus, m.narrowTab, m.sub2)
+	}
+}
