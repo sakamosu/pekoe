@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"pekoe/internal/config"
 )
 
 func TestToTmux(t *testing.T) {
@@ -50,6 +52,17 @@ func TestDecodeCSIu(t *testing.T) {
 		"\x1b[106;3u": tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j"), Alt: true},
 		"\x1b[9;2u":   tea.KeyMsg{Type: tea.KeyShiftTab},
 		"\x1b[99;69u": tea.KeyMsg{Type: tea.KeyCtrlC}, // caps lock bit ignored
+		// report alternate keys: a shifted symbol is what it types; a
+		// letter keeps shift, and without a legacy form the name stays
+		"\x1b[97:65;6u":    kittyKeyMsg{name: "C-S-a"},
+		"\x1b[49:33;6u":    kittyKeyMsg{name: "C-S-1"},
+		"\x1b[97:65;4u":    tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("A"), Alt: true},
+		"\x1b[54:94;8u":    tea.KeyMsg{Type: tea.KeyCtrlCaret, Alt: true},
+		"\x1b[57377u":      tea.KeyMsg{Type: tea.KeyF14},
+		"\x1b[57383;3u":    tea.KeyMsg{Type: tea.KeyF20, Alt: true},
+		"\x1b[57376;5u":    kittyKeyMsg{name: "C-F13"},
+		"\x1b[57384u":      tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{57384}}, // F21: no tea key
+		"\x1b[54:94:54;6u": tea.KeyMsg{Type: tea.KeyCtrlCaret},                   // with the base layout key
 	}
 	for in, want := range cases {
 		got, ok := decodeCSIu([]byte(in))
@@ -59,5 +72,39 @@ func TestDecodeCSIu(t *testing.T) {
 	}
 	if _, ok := decodeCSIu([]byte("\x1b[1;2A")); ok {
 		t.Error("non-u sequence must be left alone")
+	}
+}
+
+// Every [keys] prefix PrefixKey takes matches when pressed under the Kitty
+// keyboard protocol. ctrl+^ _ @ (shifted on a US keyboard) and alt+ a
+// shifted symbol come with the key unshifted plus what it types (report
+// alternate keys, which kittyPush asks for), F13 and up as kitty's own
+// codes. The sequences follow the protocol's spec; not checked on a real
+// terminal.
+func TestKittyPrefixMatches(t *testing.T) {
+	if kittyPush != "\x1b[>5u" {
+		t.Fatalf("kittyPush %q: the shifted keys below need report alternate keys (flag 4)", kittyPush)
+	}
+	for _, c := range []struct{ prefix, seq string }{
+		{"ctrl+q", "\x1b[113;5u"},
+		{"ctrl+]", "\x1b[93;5u"},
+		{"ctrl+^", "\x1b[54:94;6u"}, // US: ctrl+shift+6
+		{"ctrl+^", "\x1b[94;5u"},    // JIS: ^ without shift
+		{"ctrl+_", "\x1b[45:95;6u"}, // US: ctrl+shift+-
+		{"ctrl+@", "\x1b[50:64;6u"}, // US: ctrl+shift+2
+		{"ctrl+@", "\x1b[64;5u"},    // JIS
+		{"alt+!", "\x1b[49:33;4u"},
+		{"alt+A", "\x1b[97:65;4u"},
+		{"f13", "\x1b[57376u"},
+		{"f20", "\x1b[57383u"},
+		{"alt+f13", "\x1b[57376;3u"},
+	} {
+		m := &model{g: &config.Global{}}
+		m.g.Keys.Prefix = c.prefix
+		msg, ok := decodeCSIu([]byte(c.seq))
+		k, isKey := msg.(tea.KeyMsg)
+		if !ok || !isKey || !m.prefixKey(k) {
+			t.Errorf("prefix %q pressed as %q: got %#v (%v), not the prefix", c.prefix, c.seq, msg, msg)
+		}
 	}
 }

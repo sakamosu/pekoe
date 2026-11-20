@@ -290,7 +290,7 @@ func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadInbox(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
-		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
+		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate, report alternate keys
 	}
 	g := m.graphics
 	cmds = append(cmds, func() tea.Msg { // lets pekoed answer agents' graphics queries
