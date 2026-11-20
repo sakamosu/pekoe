@@ -272,6 +272,14 @@ func TestDeliverLine(t *testing.T) {
 	if l != "[pekoe] 2 件の変化(受信箱 q3 は答えずに閉じられた、受信箱 q4 に答え)。詳しくは pekoe --json inbox --mine --all" {
 		t.Fatalf("inbox only: %s", l)
 	}
+	// an answer's note goes in, cut short and on one line
+	its = []state.InboxItem{{ID: 155, Status: state.InboxAnswered, Options: []string{"a", "b"}, Answer: &state.InboxAnswer{Choice: intp(1), Note: "画像を送りたい"}},
+		{ID: 156, Status: state.InboxAnswered, Options: []string{"a", "b"}, Answer: &state.InboxAnswer{Note: strings.Repeat("い", 100) + "\n次の行"}}}
+	l = deliverLine(nil, its, "ab")
+	want := "[pekoe] 2 件の変化(受信箱 q155 に答え(メモ: 画像を送りたい)、受信箱 q156 に答え(メモ: " + strings.Repeat("い", inboxNoteCut) + "…))。詳しくは pekoe --json inbox --mine --all"
+	if l != want {
+		t.Fatalf("with notes:\n%s\nwant\n%s", l, want)
+	}
 }
 
 // tapi's CLAUDE.md shows the line as pekoed types it, and says to read it
