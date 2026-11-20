@@ -108,11 +108,26 @@ func (d *Daemon) countUsage(life usageLife, path string, live bool) {
 			}
 		}
 	}
+	// oldest first: a claude --continue copy is read after the transcript
+	// it copied, so an id in both (the original's last lines, not read
+	// before the restart) is filed under the copy, which outlives it. Read
+	// the other way round, the original would take the id back and its
+	// deletion forget it while the copy holds it: the next copy of the
+	// copy would count it again.
 	paths := make([]string, 0, len(known))
+	mtime := map[string]time.Time{}
 	for p := range known {
 		paths = append(paths, p)
+		if fi, err := os.Stat(p); err == nil {
+			mtime[p] = fi.ModTime()
+		}
 	}
-	sort.Strings(paths)
+	sort.Slice(paths, func(i, j int) bool {
+		if a, b := mtime[paths[i]], mtime[paths[j]]; !a.Equal(b) {
+			return a.Before(b)
+		}
+		return paths[i] < paths[j]
+	})
 	var gone []string
 	moved := false
 	for _, p := range paths {
@@ -332,20 +347,40 @@ func (d *Daemon) stats(now time.Time, days int, repo string) (*Stats, error) {
 		}
 		return rows[k]
 	}
+	recs, err := d.DB.SessionRecords(start)
+	if err != nil {
+		return nil, err
+	}
+	// the usage days keep the repository's name only: repo as a repo-id
+	// (what the CLI passes on when it no longer resolves, after pekoe repo
+	// forget) matches the lives of its sessions, the removed (their
+	// records: a life with usage on from or later ended on from or later)
+	// and the ones still there
+	ofRepo := map[[2]string]bool{}
+	if repo != "" {
+		for _, r := range recs {
+			if r.RepoID == repo {
+				ofRepo[[2]string{r.Slug, state.Born(&state.Session{CreatedAt: r.CreatedAt})}] = true
+			}
+		}
+		d.mu.Lock()
+		for _, s := range d.sessions {
+			if s.RepoID == repo {
+				ofRepo[[2]string{s.Slug, state.Born(s)}] = true
+			}
+		}
+		d.mu.Unlock()
+	}
 	uds, err := d.DB.UsageDays(from)
 	if err != nil {
 		return nil, err
 	}
 	for _, u := range uds {
-		if !match(u.Repo, "") {
+		if !match(u.Repo, "") && !ofRepo[[2]string{u.Slug, u.Born}] {
 			continue
 		}
 		row(u.Day, u.Repo).Tokens.Add(u.Usage)
 		st.Tokens.Add(u.Usage)
-	}
-	recs, err := d.DB.SessionRecords(start)
-	if err != nil {
-		return nil, err
 	}
 	for _, r := range recs {
 		if r.MergedAt == nil || r.MergedAt.Before(start) || !match(r.Repo, r.RepoID) {
