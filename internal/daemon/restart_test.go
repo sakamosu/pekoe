@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -49,11 +50,13 @@ func quietSinceRestart(d *Daemon) {
 
 // A Stop hook that fires while pekoed is restarting is lost (pekoe event
 // cannot dial and returns silently). The agent is idle, its window alive:
-// restore has fallbackDetect read its screen once, which brings the session
-// back to idle, so `pekoe wait --on done,idle` returns and the
-// max_running slot is freed.
+// restore has fallbackDetect read its screen once, which settles the
+// session as the Stop would have: done, so that the pekoe skill's wait for
+// one session (--on report,done,failed,waiting,removed, without idle)
+// returns, with "no report", and the max_running slot is freed.
 func TestRestoreRechecksLostStop(t *testing.T) {
 	d2, fe := runningAcrossRestart(t)
+	cur := d2.changes.cursor()
 	fe.mu.Lock()
 	fe.lines = []string{"> ", "  ? for shortcuts"} // the agent's prompt is up: idle
 	fe.mu.Unlock()
@@ -63,8 +66,12 @@ func TestRestoreRechecksLostStop(t *testing.T) {
 	}
 	quietSinceRestart(d2)
 	d2.fallbackDetect()
-	if s, _ := d2.snapshot("main"); s.State != state.Idle {
-		t.Fatalf("after restart the idle agent is %q, want idle (Stop hook lost during the restart)", s.State)
+	if s, _ := d2.snapshot("main"); s.State != state.Done {
+		t.Fatalf("after restart the idle agent is %q, want done (Stop hook lost during the restart)", s.State)
+	}
+	res := call[waitResult](t, d2, "wait", map[string]any{"slugs": []string{"main"}, "on": []string{"report", "done", "failed", "waiting", "removed"}, "since": cur, "timeout_s": 1})
+	if len(res.Changes) != 1 || res.Changes[0].Kind != "done" || !strings.Contains(res.Changes[0].Summary, "no report") {
+		t.Fatalf("wait --on report,done,failed,waiting,removed after the lost Stop: %+v", res)
 	}
 }
 
@@ -118,6 +125,103 @@ func TestRestoreRecheckKeepsPermissionDialog(t *testing.T) {
 	d2.fallbackDetect()
 	if s, _ := d2.snapshot("main"); s.State != state.Waiting || s.WaitKind != "permission" {
 		t.Fatalf("permission dialog after restart: %s/%s, want waiting/permission", s.State, s.WaitKind)
+	}
+}
+
+// The Notification (permission_prompt) is what was lost while pekoed
+// restarted: the session comes back running with Claude Code's
+// permission dialog (or AskUserQuestion's menu) on screen. The recheck
+// makes it wait, as the Notification would have: the permission modal,
+// wait --on waiting and the OS notification come, and nothing types into
+// the dialog. The answer's hook ends the recheck.
+func TestRestoreRecheckLostPermissionNotification(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lines []string
+		kind  string
+	}{
+		{"edit", []string{"Do you want to make this edit to a.ts?", "❯ 1. Yes", "  2. Yes, allow all edits", "  3. No", "", ""}, "permission"},
+		{"bash", []string{"Bash command", "  rm -rf build", "Do you want to proceed?", "❯ 1. Yes", "  2. Yes, and don't ask again for rm commands", "  3. No, and tell Claude what to do differently (esc)", ""}, "permission"},
+		{"menu", []string{"☐ Format", "Which format should the export use?", "❯ 1. CSV", "  2. JSON", "Enter to select · ↑/↓ to navigate · Esc to cancel"}, "question"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d2, fe := runningAcrossRestart(t)
+			cur := d2.changes.cursor()
+			fe.mu.Lock()
+			fe.lines = tc.lines
+			fe.mu.Unlock()
+			quietSinceRestart(d2)
+			d2.fallbackDetect()
+			if s, _ := d2.snapshot("main"); s.State != state.Waiting || s.WaitKind != tc.kind {
+				t.Fatalf("%s on screen after restart: %s/%s, want waiting/%s", tc.name, s.State, s.WaitKind, tc.kind)
+			}
+			res := call[waitResult](t, d2, "wait", map[string]any{"slugs": []string{"main"}, "on": []string{"waiting"}, "since": cur, "timeout_s": 1})
+			if len(res.Changes) != 1 {
+				t.Fatalf("wait --on waiting: %+v", res)
+			}
+			// answered: the hooks speak again and the screen is not read
+			event(t, d2, "PostToolUse", "main", map[string]any{"session_id": "abc", "tool_name": "Bash"})
+			d2.mu.Lock()
+			recheck := d2.out["main"].recheck
+			d2.mu.Unlock()
+			if s, _ := d2.snapshot("main"); s.State != state.Running || recheck {
+				t.Fatalf("after the answer: %s, recheck %v; want running from the hooks", s.State, recheck)
+			}
+		})
+	}
+}
+
+// A turn that ended while pekoed was away with "trust this folder" on
+// screen (a grep of output.go, a quoted README, the reply) is over all the
+// same. Claude Code's trust dialog comes before any hook, so the words
+// count only for a session with no Claude session id yet; one with hooks
+// does not become a Trust prompt that then refuses every send.
+func TestRestoreRecheckIgnoresTrustWords(t *testing.T) {
+	d2, fe := runningAcrossRestart(t)
+	fe.mu.Lock()
+	fe.lines = []string{
+		"⏺ Bash(grep -n trustRe internal/daemon/output.go)",
+		"  ⎿  84:	trustRe = regexp.MustCompile(`(?i)trust this folder|do you trust the files`)",
+		"⏺ 見つけました。",
+		"╭──────────╮",
+		"│ >        │",
+		"╰──────────╯",
+		"  ? for shortcuts",
+	}
+	fe.mu.Unlock()
+	quietSinceRestart(d2)
+	d2.fallbackDetect()
+	if s, _ := d2.snapshot("main"); s.State != state.Done || s.PendingTool != nil {
+		t.Fatalf("finished turn after restart: %s/%s pending %+v, want done", s.State, s.WaitKind, s.PendingTool)
+	}
+}
+
+// Before the first hook the trust dialog is still read from the screen.
+func TestTrustDialogBeforeFirstHook(t *testing.T) {
+	d, fe, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	fe.mu.Lock()
+	fe.lines = []string{"Do you trust the files in this folder?", "❯ 1. Yes, proceed", "  2. No, exit", ""}
+	fe.mu.Unlock()
+	d.mu.Lock()
+	d.out["main"].lastOut = time.Now().Add(-2 * time.Second)
+	d.mu.Unlock()
+	d.fallbackDetect()
+	if s, _ := d.snapshot("main"); s.State != state.Waiting || s.PendingTool == nil || s.PendingTool.Name != "Trust" {
+		t.Fatalf("trust dialog before the first hook: %s pending %+v, want waiting on Trust", s.State, s.PendingTool)
+	}
+}
+
+// runTest saves test.status = running before the [hooks] test starts. If
+// pekoed goes away meanwhile (make install, then a restart), nobody runs
+// it any more: restore must not show it running until the next Stop.
+func TestRestoreDropsRunningTest(t *testing.T) {
+	d, fe, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	d.update("main", func(x *state.Session) { x.Test = state.Test{Status: "running", At: time.Now()} })
+	d2 := restartWith(t, d, fe)
+	if s, _ := d2.snapshot("main"); s.Test.Status == "running" {
+		t.Fatalf("after restart nobody runs the test, but test = %+v", s.Test)
 	}
 }
 
@@ -199,8 +303,8 @@ func TestWaitHooks(t *testing.T) {
 // that look like a question ("Do you want to proceed", "[y/N]", "allow
 // this") is over all the same: the agent's prompt is up and no Claude Code
 // dialog (a "1. Yes" choice under "Do you want to …") or [y/n] last line
-// is on screen. The recheck must bring it back to idle, not keep it running
-// until new output that never comes.
+// is on screen. The recheck must settle it as done, not keep it running
+// (or make it wait for an answer) until new output that never comes.
 func TestRestoreRecheckIgnoresQuestionWordsInReply(t *testing.T) {
 	for _, reply := range []string{
 		"Plan ready. Do you want to proceed with the migration",
@@ -214,23 +318,9 @@ func TestRestoreRecheckIgnoresQuestionWordsInReply(t *testing.T) {
 			fe.mu.Unlock()
 			quietSinceRestart(d2)
 			d2.fallbackDetect()
-			if s, _ := d2.snapshot("main"); s.State != state.Idle {
-				t.Fatalf("after restart with %q in the reply: %s, want idle (Stop hook lost during the restart)", reply, s.State)
+			if s, _ := d2.snapshot("main"); s.State != state.Done {
+				t.Fatalf("after restart with %q in the reply: %s, want done (Stop hook lost during the restart)", reply, s.State)
 			}
 		})
-	}
-}
-
-// Claude Code's Bash permission dialog asks "Do you want to proceed?" over
-// its choices: that one is a real prompt and keeps the session as it is.
-func TestRestoreRecheckKeepsBashPermissionDialog(t *testing.T) {
-	d2, fe := runningAcrossRestart(t)
-	fe.mu.Lock()
-	fe.lines = []string{"Bash command", "  rm -rf build", "Do you want to proceed?", "❯ 1. Yes", "  2. Yes, and don't ask again for rm commands", "  3. No, and tell Claude what to do differently (esc)", ""}
-	fe.mu.Unlock()
-	quietSinceRestart(d2)
-	d2.fallbackDetect()
-	if s, _ := d2.snapshot("main"); s.State != state.Running {
-		t.Fatalf("Bash permission dialog after restart: %s, want running (unchanged)", s.State)
 	}
 }

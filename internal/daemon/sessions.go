@@ -262,6 +262,14 @@ func (d *Daemon) restore() {
 	// before anything reads per-repo config or files by repo-id
 	d.realignRepoIDs()
 	for _, s := range list {
+		if s.Test.Status == "running" {
+			// the [hooks] test ran in the pekoed that went away (runTest
+			// saves running before it starts): nobody runs it now, and the
+			// next Stop runs it again
+			d.update(s.Slug, func(x *state.Session) {
+				x.Test = state.Test{Status: "none", Summary: "pekoed restarted while the test ran", At: time.Now()}
+			})
+		}
 		// sessions saved before Session.review existed: their latest
 		// review is in the reports
 		if s.Review == nil && s.State != state.Landed {
