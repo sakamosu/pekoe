@@ -306,9 +306,14 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		d.tapiEvent(hook, hp)
 		return map[string]any{"slug": slug}, nil
 	}
+	var turn uint64
 	d.mu.Lock()
 	if st := d.out[slug]; st != nil {
 		st.recheck = false // the hooks speak again: no need to read the screen
+		if hook == "UserPromptSubmit" || hook == "PreToolUse" {
+			st.turn++
+		}
+		turn = st.turn
 	}
 	d.mu.Unlock()
 	switch hook {
@@ -388,7 +393,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		d.stopping.Add(1)
 		go func() {
 			defer d.stopping.Add(-1)
-			d.onStop(slug, hp)
+			d.onStop(slug, hp, turn)
 		}()
 	case "SessionEnd":
 		d.update(slug, func(s *state.Session) {
@@ -489,7 +494,13 @@ func stopMessage(hp hookPayload) string {
 	return ""
 }
 
-func (d *Daemon) onStop(slug string, hp hookPayload) {
+// onStop settles a Stop. turn is the session's outState.turn when the Stop
+// came: stopMessage may wait for the transcript, and a turn that begins
+// meanwhile (UserPromptSubmit: a person, pekoe send, an inbox answer) or
+// goes on (PreToolUse: another Stop hook sent the agent back to work)
+// keeps its state, and runs no test or gatekeeper for the turn before it
+// (its own Stop does). The reply still becomes LastMessage.
+func (d *Daemon) onStop(slug string, hp hookPayload, turn uint64) {
 	msg := stopMessage(hp)
 	d.mu.Lock()
 	hunk, asking := d.asks[slug]
@@ -498,12 +509,17 @@ func (d *Daemon) onStop(slug string, hp hookPayload) {
 	if asking {
 		d.emit("review.answer", map[string]any{"slug": slug, "hunk_id": hunk, "text": msg})
 	}
+	stale := false
 	s, _ := d.update(slug, func(s *state.Session) {
 		if hp.SessionID != "" {
 			s.ClaudeSessionID = hp.SessionID
 		}
 		if msg != "" {
 			s.LastMessage = msg
+		}
+		if st := d.out[slug]; st != nil && st.turn != turn { // update holds d.mu
+			stale = true
+			return
 		}
 		if asking && s.State == state.Reviewing {
 			return // answering a review question keeps us in review
@@ -513,7 +529,7 @@ func (d *Daemon) onStop(slug string, hp hookPayload) {
 	go d.readTokens(slug, hp.TranscriptPath)
 	go d.noteTranscript(slug, hp.TranscriptPath)
 	d.refreshDiffstat(slug)
-	if s != nil && !asking {
+	if s != nil && !asking && !stale {
 		go d.runTest(slug)
 		go d.runGatekeeper(slug)
 	}

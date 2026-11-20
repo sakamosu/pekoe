@@ -563,11 +563,7 @@ func TestReviewEnd(t *testing.T) {
 func stop(t *testing.T, d *Daemon, slug string, payload map[string]any) {
 	t.Helper()
 	event(t, d, "Stop", slug, payload)
-	for end := time.Now().Add(30 * time.Second); d.stopping.Load() != 0; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(end) {
-			t.Fatal("the Stop hook is still being handled")
-		}
-	}
+	stopsSettled(t, d)
 }
 
 // A session id that Claude Code never stored (no prompt was sent) must not

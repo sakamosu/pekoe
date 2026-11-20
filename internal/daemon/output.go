@@ -39,6 +39,11 @@ type outState struct {
 	// away (a Stop then leaves it running for good). fallbackDetect reads
 	// the screen until it shows the turn is over, or any hook clears it.
 	recheck bool
+	// turn counts the hooks that show the agent at work after a Stop
+	// could have ended its turn (UserPromptSubmit, PreToolUse): a Stop that
+	// settles late (onStop waits up to 2 s for the transcript) changes the
+	// state only if none came since it (tapiState.gen is the same for tapi)
+	turn uint64
 }
 
 func (o *outState) roll(now time.Time) {
