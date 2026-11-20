@@ -594,9 +594,25 @@ func (d *Daemon) hLand(p slugP) (any, error) { return d.land(p, false) }
 func (d *Daemon) hAgentLand(p slugP) (any, error) { return d.land(p, true) }
 
 func (d *Daemon) land(p slugP, agent bool) (any, error) {
+	own, err := d.get(p.Slug)
+	if err != nil {
+		return nil, err
+	}
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
+	}
+	// still: the session is the one this land started for. rm does not
+	// wait for a land (its test may run for minutes), and a new session of
+	// the same branch then has the same slug, path and branch: this land
+	// must not push, fast-forward, record or tear down that one
+	still := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.sessions[p.Slug] == own
+	}
+	gone := func() error {
+		return fmt.Errorf("%s was removed while landing (a new session of the same name may have taken its place): not landed", p.Slug)
 	}
 	if s.PRReview {
 		return nil, errors.New("this is someone else's PR; nothing to land")
@@ -666,7 +682,11 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			return nil, fmt.Errorf("tests %w", err)
 		}
 		t := testResult(out, err)
-		d.update(p.Slug, func(x *state.Session) { x.Test = t })
+		d.update(p.Slug, func(x *state.Session) {
+			if x == own {
+				x.Test = t
+			}
+		})
 		if t.Status == "error" {
 			return nil, fmt.Errorf("tests could not run ([hooks] test: command not found): %s", t.Summary)
 		}
@@ -676,6 +696,9 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		steps = append(steps, "tests passed")
 	} else {
 		d.dropTest(s)
+	}
+	if !still() {
+		return nil, gone()
 	}
 	if !hasOrigin {
 		// local-only repository: fast-forward the base branch in the main worktree
@@ -688,7 +711,8 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			return nil, err
 		}
 		steps = append(steps, "fast-forwarded "+base)
-		if err := d.finishLanding(p.Slug); err != nil {
+		// of own: not a new session of the same slug that took its place
+		if err := d.finishLandOf(p.Slug, false, own); err != nil {
 			return nil, err
 		}
 		return map[string]any{"steps": steps, "landed": true}, nil
@@ -764,7 +788,13 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			steps = append(steps, fmt.Sprintf("PR #%d", pr))
 		}
 	}
+	if !still() {
+		return nil, gone()
+	}
 	d.update(p.Slug, func(x *state.Session) {
+		if x != own {
+			return
+		}
 		if x.PR != pr {
 			// the summary and the held teardown were the old PR's
 			x.PRStatus = nil
@@ -909,7 +939,10 @@ func (d *Daemon) finishLanding(slug string) error { return d.finishLand(slug, fa
 // recorded merged, the window and worktree stay, land_held and a pr
 // change say why, and watchMerges (every 2 minutes) or the agent going
 // idle or done tries again.
-func (d *Daemon) finishLand(slug string, merged bool) error {
+func (d *Daemon) finishLand(slug string, merged bool) error { return d.finishLandOf(slug, merged, nil) }
+
+// finishLandOf is finishLand of the session want (any, when nil).
+func (d *Daemon) finishLandOf(slug string, merged bool, want *state.Session) error {
 	// one at a time per session: watchMerges (at start and every 2 minutes)
 	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
 	// slow teardown must not run twice in the same worktree
@@ -928,6 +961,9 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 	d.mu.Unlock()
 	if orig == nil {
 		return fmt.Errorf("no such session: %s", slug)
+	}
+	if want != nil && orig != want {
+		return fmt.Errorf("%s was removed while landing (a new session of the same name took its place): not landed", slug)
 	}
 	// still: the session is the one torn down here, not a new one of the
 	// same slug (and path) that replaced it meanwhile

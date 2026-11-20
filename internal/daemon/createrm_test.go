@@ -229,3 +229,41 @@ func TestRmWithoutForceRefusesBeforeStoppingCreation(t *testing.T) {
 		t.Errorf("the uncommitted work is gone")
 	}
 }
+
+// A land whose [hooks] test is still running when a person rm's the
+// session and makes a new one of the same branch: the land stops there.
+// It used to go on and land the new session (fast-forward its branch,
+// kill its agent, remove its worktree, mark it landed).
+func TestLandStopsWhenSessionIsReplaced(t *testing.T) {
+	d, _, repo := setup(t)
+	dir := t.TempDir()
+	started, goFile := filepath.Join(dir, "started"), filepath.Join(dir, "go")
+	writeRepoConfig(t, d, repo, "[hooks]\ntest = \"touch "+started+"; "+waitGo(goFile)+"\"\n")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	s := waitState(t, d, "feat-x", state.Running, state.Idle)
+	os.WriteFile(filepath.Join(s.Path, "b.txt"), []byte("b\n"), 0o644)
+	run(t, s.Path, "git", "add", ".")
+	run(t, s.Path, "git", "commit", "-qm", "b")
+	mainBefore := strings.TrimSpace(gitOut(t, repo, "rev-parse", "main"))
+	landErr := make(chan error, 1)
+	go func() { landErr <- callErr(d, "land", map[string]any{"slug": "feat-x"}) }()
+	waitFile(t, started) // land is in its test
+	call[map[string]any](t, d, "worktree.rm", map[string]any{"slug": "feat-x", "force": true})
+	n := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x", "prompt": "NEW"})
+	waitState(t, d, "feat-x", state.Running, state.Idle)
+	os.WriteFile(goFile, nil, 0o644)
+	err := <-landErr
+	if err == nil || !strings.Contains(err.Error(), "removed while landing") {
+		t.Errorf("land of the removed session: %v", err)
+	}
+	cur := call[state.Session](t, d, "session.get", map[string]any{"slug": "feat-x"})
+	if cur.State == state.Landed || !fileExists(n.Path) {
+		t.Errorf("the old session's land finished the new feat-x (state %s, worktree there %v)", cur.State, fileExists(n.Path))
+	}
+	if cur.Test.Status != "none" {
+		t.Errorf("the old land's test result went on the new session: %+v", cur.Test)
+	}
+	if after := strings.TrimSpace(gitOut(t, repo, "rev-parse", "main")); after != mainBefore {
+		t.Errorf("main moved from %s to %s: the old land fast-forwarded it", mainBefore, after)
+	}
+}
