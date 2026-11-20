@@ -239,6 +239,7 @@ func (m *model) enterPty(p pty) bool {
 	}
 	m.focus = pAgent
 	m.typing = true
+	m.disarm() // the wheel enters too: a prefix pressed before is not spent later
 	return true
 }
 

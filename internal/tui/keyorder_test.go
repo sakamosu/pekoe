@@ -299,3 +299,53 @@ func TestKittyKeyRouting(t *testing.T) {
 		t.Fatalf("tapi.keys %v", tk)
 	}
 }
+
+// The prefix that left typing is spent by the next key only: a click back
+// into [4] (or the wheel there) and a click out of it drop it, so a plain z
+// typed much later does not zoom and go back to typing.
+func TestClickDisarmsPrefix(t *testing.T) {
+	setup := func() *model {
+		m, _, _ := chatModel(t)
+		m.window = engine.WinAgent
+		m.screen = &engine.Screen{Lines: []string{"hello"}, Width: 100, Height: 30}
+		m.screenOf = "api-1"
+		m.focus, m.typing = pAgent, true
+		m.Update(ctrlQ) // leave typing: the prefix waits for a key
+		if m.typing || !m.prefix || !m.prefixType {
+			t.Fatalf("after ^q: typing %v prefix %v fromTyping %v", m.typing, m.prefix, m.prefixType)
+		}
+		return m
+	}
+	click := func(m *model, x, y int) {
+		m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+		m.Update(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+	}
+
+	m := setup()
+	x0, y0 := m.agentOrigin()
+	click(m, x0+1, y0+1) // back into [4]
+	if !m.typing || m.prefix || m.prefixType {
+		t.Fatalf("click into [4]: typing %v prefix %v fromTyping %v", m.typing, m.prefix, m.prefixType)
+	}
+	m.Update(key("x")) // typed into the agent
+	click(m, 1, 3)     // out of it, on the left column
+	if m.typing {
+		t.Fatal("click on the left: still typing")
+	}
+	m.Update(key("z"))
+	if m.layout.Zoom || m.typing {
+		t.Errorf("a plain z after the clicks: zoom %v typing %v (the ^q from before was spent)", m.layout.Zoom, m.typing)
+	}
+
+	m = setup()
+	m.Update(tea.MouseMsg{X: x0 + 1, Y: y0 + 1, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if !m.typing || m.prefix || m.prefixType {
+		t.Errorf("wheel into [4]: typing %v prefix %v fromTyping %v", m.typing, m.prefix, m.prefixType)
+	}
+
+	m = setup()
+	click(m, 1, 3) // straight to the left column, not typing
+	if m.prefix || m.prefixType {
+		t.Errorf("click on the left after ^q: prefix %v fromTyping %v", m.prefix, m.prefixType)
+	}
+}

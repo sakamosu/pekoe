@@ -15,15 +15,17 @@ import (
 // Kitty keyboard protocol passthrough (design: 入れ子の税).
 //
 // The TUI asks the outer terminal (Ghostty) for the "disambiguate" mode
-// (CSI > 1 u), so keys like Shift+Enter arrive as CSI u sequences instead of
-// a plain CR. Bubble Tea v1 reports those as unknown CSI sequences; they are
+// with "report alternate keys" (CSI > 5 u), so keys like Shift+Enter arrive
+// as CSI u sequences instead of a plain CR, and a shifted key carries what it
+// types too (ctrl+shift+6 on a US keyboard is ctrl+^, a prefix that would
+// otherwise never match). Bubble Tea v1 reports those as unknown CSI sequences; they are
 // decoded here. Keys that have a legacy meaning (Esc, Ctrl+C, Alt+x …) turn
 // back into ordinary tea.KeyMsg; the rest become kittyKeyMsg carrying a tmux
 // key name (S-Enter …), which tmux (extended-keys on, csi-u) delivers to the
 // agent in CSI u form when the agent asked for extended keys.
 
 const (
-	kittyPush = "\x1b[>1u"
+	kittyPush = "\x1b[>5u" // 1 disambiguate | 4 report alternate keys
 	kittyPop  = "\x1b[<u"
 )
 
@@ -53,9 +55,16 @@ func decodeCSIu(b []byte) (tea.Msg, bool) {
 		return nil, false
 	}
 	parts := strings.Split(s[2:len(s)-1], ";")
-	code, err := strconv.Atoi(strings.SplitN(parts[0], ":", 2)[0])
+	codes := strings.Split(parts[0], ":") // code[:shifted[:base layout]]
+	code, err := strconv.Atoi(codes[0])
 	if err != nil {
 		return nil, false
+	}
+	shifted := 0
+	if len(codes) > 1 && codes[1] != "" {
+		if shifted, err = strconv.Atoi(codes[1]); err != nil {
+			return nil, false
+		}
 	}
 	mods := 0
 	if len(parts) > 1 && parts[1] != "" {
@@ -70,6 +79,37 @@ func decodeCSIu(b []byte) (tea.Msg, bool) {
 	}
 	mods &^= 64 | 128 // caps lock, num lock
 	shift, alt, ctrl := mods&1 != 0, mods&2 != 0, mods&4 != 0
+
+	// a shifted symbol with a legacy form is what it types, as without the
+	// protocol: ctrl+shift+6 (US) is ctrl+^, alt+shift+1 is alt+!. Letters
+	// keep shift (ctrl+shift+a is not ctrl+a); the rest pass by name below.
+	if shift && shifted >= 32 && shifted <= 0x10ffff && !(code >= 'a' && code <= 'z') {
+		switch {
+		case ctrl && (shifted == '@' || shifted >= '[' && shifted <= '_'):
+			return tea.KeyMsg{Type: tea.KeyType(shifted & 0x1f), Alt: alt}, true
+		case !ctrl && alt && shifted != 127:
+			return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{rune(shifted)}, Alt: true}, true
+		}
+	}
+
+	// F13–F20 come as kitty's own codes (Unicode private use), never as
+	// legacy sequences
+	if i := code - kittyF13; i >= 0 && i < len(kittyFKeys) {
+		if !ctrl && !shift {
+			return tea.KeyMsg{Type: kittyFKeys[i], Alt: alt}, true
+		}
+		name := fmt.Sprintf("F%d", 13+i)
+		if shift {
+			name = "S-" + name
+		}
+		if alt {
+			name = "M-" + name
+		}
+		if ctrl {
+			name = "C-" + name
+		}
+		return kittyKeyMsg{name: name}, true
+	}
 
 	var name string
 	switch code {
@@ -135,6 +175,11 @@ func decodeCSIu(b []byte) (tea.Msg, bool) {
 	}
 	return kittyKeyMsg{name: prefix + name}, true
 }
+
+// kittyF13 is F13's code in the protocol; F14 … F20 follow it.
+const kittyF13 = 57376
+
+var kittyFKeys = []tea.KeyType{tea.KeyF13, tea.KeyF14, tea.KeyF15, tea.KeyF16, tea.KeyF17, tea.KeyF18, tea.KeyF19, tea.KeyF20}
 
 func (k kittyKeyMsg) String() string { return fmt.Sprintf("kitty(%s)", k.name) }
 

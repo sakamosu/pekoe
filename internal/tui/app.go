@@ -290,7 +290,7 @@ func (m *model) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadInbox(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
-		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate
+		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate, report alternate keys
 	}
 	g := m.graphics
 	cmds = append(cmds, func() tea.Msg { // lets pekoed answer agents' graphics queries
@@ -844,6 +844,13 @@ func (m *model) disarmUnderModal() {
 	if m.modal == nil {
 		return
 	}
+	m.disarm()
+}
+
+// disarm drops the prefix and ] / [ waiting for the next key: a modal took
+// that key (disarmUnderModal), or a click went into or out of the pty, after
+// which the next key is a plain one (a z typed long after ^q must not zoom).
+func (m *model) disarm() {
 	m.prefix, m.prefixType, m.chat.reopen = false, false, false
 	m.bracket = ""
 }
@@ -1249,6 +1256,9 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 	if m.modal != nil {
 		return nil
 	}
+	if ev.Action == tea.MouseActionPress && ev.Button == tea.MouseButtonLeft {
+		m.disarm() // a click spends no prefix: the key after it is a plain one
+	}
 	if m.issueShown() {
 		if cmd, ok := m.issueMouse(ev); ok {
 			return cmd
@@ -1310,6 +1320,13 @@ func (m *model) onMouse(ev tea.MouseMsg) tea.Cmd {
 		m.clickEntered = false
 		if !m.zoomed() && (ev.X < x0 || ev.Y < y0) {
 			m.focus = pSessions
+			if narrow(m.width) { // the one tabbed panel: its tab stays and takes the focus
+				t := narrowTabs[m.narrowTab]
+				m.focus = t.focus
+				if t.focus == pSecond { // Worktrees / Issues; [2] on Issues stays there behind the others
+					m.sub2 = t.sub2
+				}
+			}
 			m.stopTyping()
 		}
 	}
