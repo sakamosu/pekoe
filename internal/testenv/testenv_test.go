@@ -18,8 +18,9 @@ func TestMain(m *testing.M) { Main(m) }
 
 // TestStoppedChild is the test binary that TestStoppedRemovesTemp stops: it
 // starts a process that keeps writing into its t.TempDir (as a headless
-// Chrome does into its profile), notes its directories and that process,
-// and waits.
+// Chrome does into its profile) through processes of its own (mkdir -p,
+// which would make the directory again), notes its directories and that
+// process, and waits.
 func TestStoppedChild(t *testing.T) {
 	out := os.Getenv("TESTENV_STOPPED_OUT")
 	if out == "" {

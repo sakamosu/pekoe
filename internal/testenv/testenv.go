@@ -75,9 +75,9 @@ func Main(m *testing.M) {
 			unix.Dup2(int(null.Fd()), 1)
 			unix.Dup2(int(null.Fd()), 2)
 		}
-		// what the tests started (a headless Chrome, a hook's shell) would
-		// go on writing into the directories
-		exec.Command("pkill", "-KILL", "-P", strconv.Itoa(os.Getpid())).Run()
+		// what the tests started (a headless Chrome, a hook's shell and
+		// what it runs) would go on writing into the directories
+		stopDescendants()
 		removeAll(dir)
 		os.Exit(1)
 	}()
@@ -85,6 +85,44 @@ func Main(m *testing.M) {
 	signal.Stop(sig)
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// stopDescendants kills the processes this one started and theirs. It
+// freezes them first (SIGSTOP), until no new one turns up: one still
+// running could start another between the listing and the kill.
+func stopDescendants() {
+	seen := map[int]bool{}
+	for range 50 {
+		found := false
+		for _, p := range descendants(os.Getpid()) {
+			if !seen[p] {
+				seen[p], found = true, true
+				syscall.Kill(p, syscall.SIGSTOP)
+			}
+		}
+		if !found {
+			break
+		}
+	}
+	for p := range seen {
+		syscall.Kill(p, syscall.SIGKILL)
+	}
+}
+
+// descendants lists pid's children, theirs and so on (pgrep never lists
+// itself).
+func descendants(pid int) []int {
+	var all []int
+	for queue := []int{pid}; len(queue) > 0; queue = queue[1:] {
+		out, _ := exec.Command("pgrep", "-P", strconv.Itoa(queue[0])).Output()
+		for _, f := range strings.Fields(string(out)) {
+			if c, err := strconv.Atoi(f); err == nil {
+				all = append(all, c)
+				queue = append(queue, c)
+			}
+		}
+	}
+	return all
 }
 
 // shortBase is where ShortDir makes its directories: the TMPDIR from before
