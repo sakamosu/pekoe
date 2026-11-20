@@ -98,13 +98,17 @@ func TestPRPollerLandsMergedLanding(t *testing.T) {
 // so a poller that waited for it would never return.
 func TestPRPollerDoesNotWaitForTeardown(t *testing.T) {
 	d, count := landingSetup(t)
-	release := filepath.Join(t.TempDir(), "release")
-	// the hook ends even when the test fails before releasing it
+	rdir := t.TempDir()
+	release := filepath.Join(rdir, "release")
+	// the hook ends even when the test fails before releasing it, and
+	// never outlives the test: it also stops once the directory is gone
+	// (TempDir's cleanup can remove it before the hook sees release) or
+	// after a minute (the test binary killed before its cleanups)
 	t.Cleanup(func() { os.WriteFile(release, nil, 0o644) })
 	cfgDir := filepath.Join(os.Getenv("PEKOE_HOME"), "config", "repos")
 	ents, _ := os.ReadDir(cfgDir)
 	os.WriteFile(filepath.Join(cfgDir, ents[0].Name()),
-		[]byte("[hooks]\nteardown = [\"while [ ! -e "+release+" ]; do sleep 0.05; done; basename \\\"$PWD\\\" >> "+count+"\"]\n"), 0o644)
+		[]byte("[hooks]\nteardown = [\"i=0; while [ ! -e "+release+" ] && [ -d "+rdir+" ] && [ $i -lt 1200 ]; do sleep 0.05; i=$((i+1)); done; basename \\\"$PWD\\\" >> "+count+"\"]\n"), 0o644)
 	returned := make(chan struct{})
 	go func() { poll(d); close(returned) }()
 	select {
