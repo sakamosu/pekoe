@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/engine"
 	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/untrusted"
@@ -43,7 +44,7 @@ var deliverKinds = map[string]bool{kindReport: true, kindFailed: true, kindWaiti
 
 // The reasons a delivery waits (TapiDeliver.Held).
 const (
-	heldStopped  = "stopped"  // tapi's window is not there
+	heldStopped  = "stopped"  // tapi's window is not there, or its agent exited
 	heldBusy     = "busy"     // tapi is not idle
 	heldPrompt   = "prompt"   // a permission prompt is up
 	heldTyping   = "typing"   // a person typed into tapi chat in the last 30 s
@@ -174,7 +175,9 @@ func (d *Daemon) tapiInboxPending() []state.InboxItem {
 
 // deliverHeld says why no line may go now ("" it may).
 func (d *Daemon) deliverHeld() string {
-	if !d.tapiStarted() {
+	if !d.tapiStarted() || !d.Eng.Alive(TapiSlug, engine.WinAgent) {
+		// not started, or its agent exited and tmux kept the window: a
+		// line typed into the dead pane would be taken as delivered
 		return heldStopped
 	}
 	if d.typedRecently(TapiSlug) {

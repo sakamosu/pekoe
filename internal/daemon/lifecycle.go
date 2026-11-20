@@ -968,7 +968,7 @@ func (d *Daemon) holdLanding(s *state.Session, why string) {
 		return
 	}
 	log.Printf("land %s: %s", s.Slug, note)
-	d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: s.Slug + ": " + note, parent: c.Parent})
+	d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: s.Slug + ": " + note, parent: c.Parent, parentBorn: c.ParentBorn})
 }
 
 // watchPRs fills in the PR number of sessions whose branch got a PR outside

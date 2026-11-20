@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pekoe/internal/engine"
+	"pekoe/internal/ids"
 	"pekoe/internal/state"
 )
 
@@ -586,5 +587,149 @@ func TestInboxReservedWindowIsNotHuman(t *testing.T) {
 	}
 	if w := callAs[state.InboxItem](t, d, run, "inbox.withdraw", map[string]any{"id": agentQ.ID}); w.Status != state.InboxWithdrawn {
 		t.Fatalf("withdraw: %+v", w)
+	}
+}
+
+// waitAsync runs wait as who in the background; the result (or error)
+// comes on the channel.
+func waitAsync(d *Daemon, who *Caller, p map[string]any) <-chan waitRes {
+	ch := make(chan waitRes, 1)
+	go func() {
+		b, _ := json.Marshal(p)
+		res, err := d.CallAs(who, "wait", b)
+		var out waitRes
+		if err == nil {
+			rb, _ := json.Marshal(res)
+			json.Unmarshal(rb, &out)
+		}
+		ch <- out
+	}()
+	return ch
+}
+
+func waiters(d *Daemon) int {
+	d.changes.mu.Lock()
+	defer d.changes.mu.Unlock()
+	return len(d.changes.waiters)
+}
+
+// ask-human --wait q1 is a wait on q1 (wait's inbox): an answer to the
+// same asker's q2 that comes meanwhile is not taken by it (it stays
+// pending and is typed when the asker is free), and q1's answer is.
+func TestInboxWaitOnItemLeavesOtherAnswers(t *testing.T) {
+	d, fe, _ := inboxSetup(t)
+	q1 := ask(t, d, "main", map[string]any{"question": "q1", "kind": "decision", "options": []string{"A", "B"}})
+	q2 := ask(t, d, "main", map[string]any{"question": "q2", "kind": "decision", "options": []string{"A", "B"}})
+	got := waitAsync(d, agentAs("main"), map[string]any{"on": []string{"inbox"}, "inbox": q1.ID, "timeout_s": 60})
+	waitFor(t, func() bool { return waiters(d) == 1 })
+
+	call[any](t, d, "inbox.answer", map[string]any{"id": q2.ID, "rev": q2.Rev, "choice": 1, "note": "q2 は B"})
+	if g := inboxGet(t, d, q2.ID); g.Delivery != state.DeliveryPending {
+		t.Fatalf("q2's answer: delivery %s; the wait on q%d took it", g.Delivery, q1.ID)
+	}
+	d.changes.add(Change{Kind: kindReport, Slug: "main", Summary: "main: report done", parent: "main"}) // not an inbox change
+	call[any](t, d, "inbox.answer", map[string]any{"id": q1.ID, "rev": q1.Rev, "choice": 0})
+	w := <-got
+	if len(w.Changes) != 1 || w.Changes[0].Kind != kindInbox || !strings.Contains(w.Changes[0].Summary, ids.Question(q1.ID)+" ") {
+		t.Fatalf("the wait on q%d returned %+v", q1.ID, w.Changes)
+	}
+	if g := inboxGet(t, d, q1.ID); g.Delivery != state.DeliveryWaited {
+		t.Fatalf("q1: delivery %s, want waited", g.Delivery)
+	}
+	d.setState("main", state.Idle, "")
+	deliverUntil(t, d, func() bool { return inboxGet(t, d, q2.ID).Delivery == state.DeliveryDelivered })
+	if !sentText(fe, "[pekoe inbox "+ids.Question(q2.ID)+"]") {
+		t.Fatalf("q2's line not typed: %q", fe.last())
+	}
+}
+
+// An answer that comes after the asker's inbox.get and before its wait on
+// the item takes hold: the wait returns it at once (an item closes once,
+// so its change counts from before since), and it is not typed too.
+func TestInboxWaitOnItemAnsweredBeforeWait(t *testing.T) {
+	d, fe, _ := inboxSetup(t) // main is running: nothing is typed meanwhile
+	q := ask(t, d, "main", map[string]any{"question": "q", "kind": "decision", "options": []string{"A", "B"}})
+	if g := callAs[state.InboxItem](t, d, agentAs("main"), "inbox.get", map[string]any{"id": q.ID}); g.Status != state.InboxOpen {
+		t.Fatal(g.Status)
+	}
+	call[any](t, d, "inbox.answer", map[string]any{"id": q.ID, "rev": q.Rev, "choice": 0})
+	w := callAs[waitRes](t, d, agentAs("main"), "wait", map[string]any{"on": []string{"inbox"}, "inbox": q.ID, "since": "", "timeout_s": 2})
+	if w.TimedOut || len(w.Changes) != 1 || w.Changes[0].Kind != kindInbox {
+		t.Fatalf("the wait missed the answer given before it: %+v", w)
+	}
+	if g := inboxGet(t, d, q.ID); g.Delivery != state.DeliveryWaited {
+		t.Fatalf("delivery %s, want waited", g.Delivery)
+	}
+	n := len(fe.sent)
+	d.setState("main", state.Idle, "")
+	d.deliverAllInbox()
+	if s := sentSince(fe, n); len(s) > 0 {
+		t.Fatalf("typed as well: %v", s)
+	}
+}
+
+// pekoed's merge item sent back to a session waits (pending) to be typed
+// into that session; when the session goes (rm, or a landed one replaced
+// by session.new) the line is never typed: not into the next session of
+// the same slug.
+func TestInboxSendBackNotTypedIntoSlugReuse(t *testing.T) {
+	for _, how := range []string{"rm", "replace-landed"} {
+		t.Run(how, func(t *testing.T) {
+			d, _, repo := inboxSetup(t)
+			old := newSession(t, d, repo, "feat/x")
+			d.setState(old.Slug, state.Running, "")
+			it := &state.InboxItem{From: callerPekoed, Kind: "approve", About: old.Slug, Question: "evidence ready to merge #42",
+				Options: []string{mergeOptionMerge, "wait", "send back"}, Status: state.InboxOpen, Rev: 1,
+				CreatedAt: time.Now(), UpdatedAt: time.Now(), Delivery: state.DeliveryNone}
+			it.Facts = d.inboxFacts(old.Slug)
+			if err := d.DB.AddInbox(it); err != nil {
+				t.Fatal(err)
+			}
+			cur := inboxGet(t, d, it.ID)
+			g := call[state.InboxItem](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": cur.Rev, "choice": mergeSendBack, "note": "前のセッションへの差し戻し"})
+			if g.Delivery != state.DeliveryPending {
+				t.Fatalf("delivery %s", g.Delivery)
+			}
+			switch how {
+			case "rm":
+				call[any](t, d, "worktree.rm", map[string]any{"slug": old.Slug, "force": true})
+			case "replace-landed":
+				d.setState(old.Slug, state.Landed, "")
+			}
+			nw := newSession(t, d, repo, "feat/x")
+			if nw.Slug != old.Slug {
+				t.Fatalf("slug %s vs %s", nw.Slug, old.Slug)
+			}
+			if g := inboxGet(t, d, it.ID); g.Delivery != state.DeliveryNone {
+				t.Fatalf("after %s and a new %s: delivery %s, want none (it would be typed into the new session)", how, nw.Slug, g.Delivery)
+			}
+			d.setState(nw.Slug, state.Idle, "")
+			d.deliverAllInbox()
+			for _, r := range call[[]state.SendRecord](t, d, "send.log", nil) {
+				if r.To == nw.Slug && strings.Contains(r.Text, "差し戻しました") {
+					t.Fatalf("the old session's send back was typed into the new %s: %s", nw.Slug, r.Text)
+				}
+			}
+		})
+	}
+}
+
+// An agent that reads the token (tapi chat, sandbox off) may answer and
+// dismiss (the token cannot be kept from it), but the record says it did,
+// not a person: precedents are the items a person answered.
+func TestInboxAnswerByTokenAgent(t *testing.T) {
+	d, _, _ := inboxSetup(t)
+	q := ask(t, d, "main", map[string]any{"question": "q", "kind": "decision", "options": []string{"A", "B"}})
+	q2 := ask(t, d, "main", map[string]any{"question": "q2", "kind": "decision"})
+	q3 := ask(t, d, "main", map[string]any{"question": "q3", "kind": "decision", "options": []string{"A", "B"}})
+	tapi := tokenAgent(TapiSlug)
+	a := callAs[state.InboxItem](t, d, tapi, "inbox.answer", map[string]any{"id": q.ID, "rev": inboxGet(t, d, q.ID).Rev, "choice": 0})
+	x := callAs[state.InboxItem](t, d, tapi, "inbox.dismiss", map[string]any{"id": q2.ID})
+	if a.Answer.By != TapiSlug || x.Answer.By != TapiSlug {
+		t.Fatalf("tapi's answer / dismissal recorded as by %q / %q, want %q", a.Answer.By, x.Answer.By, TapiSlug)
+	}
+	// a person (the token outside any agent window) is still a person
+	if h := call[state.InboxItem](t, d, "inbox.answer", map[string]any{"id": q3.ID, "rev": q3.Rev, "choice": 1}); h.Answer.By != callerHuman {
+		t.Fatalf("a person's answer by %q", h.Answer.By)
 	}
 }

@@ -36,6 +36,7 @@ type newResult struct {
 func (d *Daemon) hNewAs(who *Caller, p newP) (any, error) {
 	p.parent = who.ID()
 	cursor := d.changes.cursor() // before runNew can change anything
+	p.cursor = &cursor           // after a replaced landed session's removed (hNew)
 	var res any
 	err := d.checkRequest(who, p.Request)
 	switch {

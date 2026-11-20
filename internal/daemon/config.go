@@ -64,7 +64,14 @@ func (d *Daemon) reloadConfig() {
 		return
 	}
 	restart := config.RestartNeeded(running, next)
+	wasOn := d.Global.Orchestrator.DeliverIdle()
 	d.Global = config.KeepRunning(running, next)
+	if !wasOn && d.Global.Orchestrator.DeliverIdle() {
+		// [orchestrator] deliver turned on: what happened while it was off
+		// does not go (the tick's deliverSkip ran up to 5 s ago at best).
+		// Before anyone reads the new settings (cfgMu is held)
+		d.changes.deliverSkip()
+	}
 	changed := !slices.Equal(restart, d.cfgRestart)
 	d.cfgRestart = restart
 	d.cfgMu.Unlock()

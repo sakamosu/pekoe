@@ -175,6 +175,9 @@ type newP struct {
 	// hNewAs checks it and links the entry)
 	Request int64  `json:"request"`
 	parent  string // the caller (hNewAs); "" is a person (the Chrome extension)
+	// cursor, when set (hNewAs), is moved past a replaced landed session's
+	// removed: what one waits on with the returned cursor is the new life
+	cursor *string
 
 	After []string `json:"after"` // slugs this one comes after (after.go)
 	// Hold: do not start before every After session has landed (queue.go)
@@ -266,6 +269,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// whose snapshot ref landing deleted)
 		d.purge(old)
 		d.removed(old)
+		if p.cursor != nil {
+			// wait --slug <slug> --on started,failed,removed --since it
+			// must not return the old life's removed
+			*p.cursor = d.changes.cursor()
+		}
 	}
 	port, err := d.DB.AllocPort(repo.ID, slug, d.cfg().Ports.Base, d.busyPort)
 	if err != nil {
@@ -283,6 +291,9 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
 		Parent: p.parent, Request: p.Request, After: after,
 	}
+	if ps, err := d.snapshot(p.parent); p.parent != "" && err == nil {
+		s.ParentBorn = state.Born(ps) // which life of the parent made it (wait --mine)
+	}
 	if p.Hold {
 		s.Hold, s.Holding = true, slices.Clone(after)
 	}
@@ -297,7 +308,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		d.pumpQueue()
 		c, err := d.snapshot(slug)
 		if err == nil && c.State == state.Queued {
-			d.changes.add(Change{Kind: kindQueued, Slug: slug, Summary: slug + ": queued (" + c.Queue + ")", parent: c.Parent})
+			d.changes.add(Change{Kind: kindQueued, Slug: slug, Summary: slug + ": queued (" + c.Queue + ")", parent: c.Parent, parentBorn: c.ParentBorn})
 		}
 		return c, err
 	}

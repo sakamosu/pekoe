@@ -147,10 +147,12 @@ func askWait(id int64, timeout time.Duration) error {
 			}
 			return nil
 		}
-		// at most a minute per wait: an answer given between the get above
-		// and the wait taking hold is seen on the next round
+		// only this item's change: the answers to the caller's other
+		// questions stay theirs (pending, typed or taken by their own
+		// wait). pekoed returns it even when it came between the get above
+		// and the wait taking hold. At most a minute per wait all the same
 		step := min(left, time.Minute)
-		p := map[string]any{"on": []string{"inbox"}, "since": cursor, "timeout_s": int(step / time.Second)}
+		p := map[string]any{"on": []string{"inbox"}, "inbox": id, "since": cursor, "timeout_s": int(step / time.Second)}
 		if again {
 			// a call again: pekoed does not count it as tapi starting a
 			// wait in its turn (it may run in the background)

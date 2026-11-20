@@ -1,11 +1,15 @@
 package daemon
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"pekoe/internal/engine"
+	"pekoe/internal/ids"
+	"pekoe/internal/paths"
 	"pekoe/internal/state"
 )
 
@@ -284,5 +288,92 @@ func TestTapiInstructionsDeliver(t *testing.T) {
 		if !strings.Contains(doc, want) {
 			t.Errorf("CLAUDE.md lacks %q", want)
 		}
+	}
+}
+
+// tapiExited: tapi's agent exited and tmux kept its window
+// (remain-on-exit): the pane is dead, the window still listed, and Claude
+// Code's SessionEnd left tapi idle.
+func tapiExited(d *Daemon, fe *fakeEngine) {
+	fe.mu.Lock()
+	fe.dead[TapiSlug+"~"+engine.WinAgent] = true
+	fe.mu.Unlock()
+	d.tapiUpdate(func(t *tapiState) { t.state, t.waitKind, t.pending = state.Idle, "", nil })
+	if d.Eng.Alive(TapiSlug, engine.WinAgent) || !d.tapiStarted() {
+		panic("tapiExited: setup")
+	}
+}
+
+func tapiRevive(fe *fakeEngine) {
+	fe.mu.Lock()
+	delete(fe.dead, TapiSlug+"~"+engine.WinAgent)
+	fe.mu.Unlock()
+}
+
+// deliver = "idle": nothing is typed into tapi's dead pane (send-keys
+// there succeeds and the changes would count as delivered); they go once
+// tapi runs again.
+func TestDeliverNotIntoExitedTapi(t *testing.T) {
+	d, fe := deliverSetup(t, "idle")
+	tapiExited(d, fe)
+	tapiChange(d, kindReport, "feat-x", TapiSlug, "report done")
+	noPause(d)
+	d.deliverTapi()
+	if got := delivered(fe, 0); len(got) > 0 {
+		t.Fatalf("typed into the exited tapi: %v", got)
+	}
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Deliver.Held != heldStopped || v.Deliver.Pending != 1 {
+		t.Fatalf("deliver: %+v", v.Deliver)
+	}
+	tapiRevive(fe)
+	d.deliverTapi()
+	if got := delivered(fe, 0); len(got) != 1 || !strings.Contains(got[0], "feat-x report done") {
+		t.Fatalf("after tapi runs again: %v", got)
+	}
+}
+
+// deliver off (the default): an answer to tapi's question is not typed
+// into its dead pane and marked delivered; it is typed once tapi runs.
+func TestInboxNotIntoExitedTapi(t *testing.T) {
+	d, fe := deliverSetup(t, "")
+	it := ask(t, d, TapiSlug, map[string]any{"question": "どっち?", "kind": "decision", "options": []string{"A", "B"}})
+	tapiExited(d, fe)
+	if ready, err := d.inboxReady(TapiSlug); ready || err != nil {
+		t.Fatalf("inboxReady for the exited tapi: %v %v", ready, err)
+	}
+	call[any](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": it.Rev, "choice": 1})
+	d.deliverAllInbox()
+	if g := inboxGet(t, d, it.ID); g.Delivery != state.DeliveryPending {
+		t.Fatalf("delivery %s into the exited tapi (sent %v)", g.Delivery, sentSince(fe, 0))
+	}
+	tapiRevive(fe)
+	deliverUntil(t, d, func() bool { return inboxGet(t, d, it.ID).Delivery == state.DeliveryDelivered })
+	if !sentText(fe, "[pekoe inbox "+ids.Question(it.ID)+"]") {
+		t.Fatalf("not typed after tapi runs again: %q", fe.last())
+	}
+}
+
+// deliver turned on by a config.toml reload: what happened while it was
+// off does not go, though the tick's deliverSkip has not run since.
+func TestDeliverOffThenOnSkipsOffChanges(t *testing.T) {
+	d, fe := deliverSetup(t, "") // off; the tick's deliverSkip ran
+	tapiChange(d, kindReport, "feat-x", TapiSlug, "report while off")
+	if err := os.WriteFile(paths.GlobalConfig(), []byte("[orchestrator]\ndeliver = \"idle\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.reloadConfig()
+	if !d.deliverOn() {
+		t.Fatal("deliver not on after the reload")
+	}
+	noPause(d)
+	d.deliverTapi()
+	if got := delivered(fe, 0); len(got) != 0 {
+		t.Fatalf("typed what happened while off: %v", got)
+	}
+	tapiChange(d, kindReport, "feat-y", TapiSlug, "report while on")
+	noPause(d)
+	d.deliverTapi()
+	if got := delivered(fe, 0); len(got) != 1 || !strings.Contains(got[0], "feat-y") || strings.Contains(got[0], "feat-x") {
+		t.Fatalf("after it is on: %v", got)
 	}
 }
