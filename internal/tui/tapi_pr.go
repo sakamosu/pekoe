@@ -370,7 +370,7 @@ func (m *model) confettiRun(n int, sparks []spark, e int) string {
 type tapiDemoMsg struct{}
 
 func demoTick() tea.Cmd {
-	return tea.Tick(demoEvery, func(time.Time) tea.Msg { return tapiDemoMsg{} })
+	return after(demoEvery, func(time.Time) tea.Msg { return tapiDemoMsg{} })
 }
 
 func demoScript(now time.Time) []mascot.PR {

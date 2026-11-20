@@ -138,5 +138,5 @@ func (g *mouseGuard) flush(gen int) []tea.KeyMsg {
 }
 
 func guardTick(gen int) tea.Cmd {
-	return tea.Tick(guardWait, func(time.Time) tea.Msg { return guardFlushMsg(gen) })
+	return after(guardWait, func(time.Time) tea.Msg { return guardFlushMsg(gen) })
 }
