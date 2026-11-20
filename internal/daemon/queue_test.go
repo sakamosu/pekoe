@@ -373,7 +373,9 @@ func TestQueueHoldCancelDuringFetch(t *testing.T) {
 	// a remote that answers slowly (a stalled network)
 	run(t, repo, "git", "remote", "set-url", "origin", "ssh://example.invalid/x.git")
 	t.Setenv("GIT_SSH_COMMAND", "sleep 5;false")
-	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "prompt": "go"})
+	// feat-a with --base: it starts from the local main without fetching
+	// (a fresh start would wait the slow remote out, twice, before feat-b)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/a", "base": "main", "prompt": "go"})
 	waitState(t, d, "feat-a", state.Running)
 	b := call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/b", "after": []string{"feat-a"}, "hold": true})
 	d.update("feat-a", func(x *state.Session) { x.State = state.Landed })
