@@ -380,6 +380,13 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 			return nil, err
 		}
 	}
+	// never outside the worktree (worktreeReady), as run.start
+	if s.State == state.Creating {
+		return nil, fmt.Errorf("%s is still being created", p.Slug)
+	}
+	if err := worktreeReady(s); err != nil {
+		return nil, err
+	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Dev == "" {
 		path := paths.RepoConfig(s.RepoID)
@@ -482,16 +489,11 @@ func (d *Daemon) hRunStart(p runP) (any, error) {
 		return RunState{ExitStatus: -1}, nil
 	}
 	// never outside the worktree: tmux starts in $HOME when -c is missing
-	switch s.State {
-	case state.Creating:
+	if s.State == state.Creating {
 		return nil, fmt.Errorf("%s is still being created", p.Slug)
-	case state.Queued:
-		return nil, fmt.Errorf("%s is queued; its worktree is not made yet", p.Slug)
-	case state.Landed:
-		return nil, fmt.Errorf("%s has landed; its worktree is gone", p.Slug)
 	}
-	if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("worktree missing: %s", s.Path)
+	if err := worktreeReady(s); err != nil {
+		return nil, err
 	}
 	sh := os.Getenv("SHELL")
 	if sh == "" {

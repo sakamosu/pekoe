@@ -93,6 +93,9 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 		// no worktree yet: the queue starts it (queue.go)
 		return fmt.Errorf("%s is queued (%s); it starts by itself", slug, s.Queue)
 	}
+	if err := worktreeReady(s); err != nil {
+		return err
+	}
 	ag := d.cfg().Agents[s.Agent]
 	cmd := ag.Command
 	if resume != "" && resume != "continue" && !validSessionID(resume) {
@@ -176,6 +179,26 @@ func (d *Daemon) spawnAgent(slug, prompt, resume string, w, h int) error {
 			_ = d.Eng.SendText(slug, engine.WinAgent, pasteLater)
 			_ = d.Eng.SendKeys(slug, engine.WinAgent, "Enter")
 		}()
+	}
+	return nil
+}
+
+// worktreeReady: s has a worktree to start a window in (agent, dev
+// server, run). tmux starts a window whose directory is missing in $HOME,
+// and an agent's sandbox lets it write its working directory: a queued
+// session (no worktree yet), a landed one (its worktree removed) or one
+// whose creation failed before the worktree, or whose directory went
+// away, starts nothing. A session being created has its worktree only
+// part way: the callers that refuse it say so themselves.
+func worktreeReady(s *state.Session) error {
+	switch s.State {
+	case state.Queued:
+		return fmt.Errorf("%s is queued; its worktree is not made yet", s.Slug)
+	case state.Landed:
+		return fmt.Errorf("%s has landed; its worktree is gone", s.Slug)
+	}
+	if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
+		return fmt.Errorf("worktree missing: %s", s.Path)
 	}
 	return nil
 }
@@ -277,6 +300,15 @@ func (d *Daemon) hRestart(p restartP) (any, error) {
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
+	}
+	switch s.State {
+	case state.Creating:
+		// its creation starts the agent once setup is done: an agent
+		// started now would run beside setup, take the session off
+		// max_running's count (Creating → Idle) and be started again
+		return nil, fmt.Errorf("%s is being created; its agent starts once setup is done (pekoe rm %s cancels the creation)", p.Slug, p.Slug)
+	case state.Queued:
+		return nil, fmt.Errorf("%s is queued (%s); it starts by itself (pekoe rm %s cancels it)", p.Slug, s.Queue, p.Slug)
 	}
 	resume := s.ClaudeSessionID
 	if resume == "" && s.Agent == "claude" && len(pastClaudeSessions(s.Path)) > 0 {
