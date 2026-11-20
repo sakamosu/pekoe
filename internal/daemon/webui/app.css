@@ -203,8 +203,8 @@ main { padding: 4px 10px 8px; }
 .attach { flex: none; display: inline-flex; }
 .attach input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .attach.off { opacity: .45; pointer-events: none; }
-/* typing (focus and words in the box): the attach icons fold into ›, the
-   box takes their room; › brings them back */
+/* typing (focus and words in the box): the attach icon folds into ›; ›
+   brings it back */
 .unfold { display: none; }
 .send.folded .attach { display: none; }
 .send.folded .unfold { display: inline-flex; }

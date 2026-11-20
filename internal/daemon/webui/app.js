@@ -1705,8 +1705,8 @@ function fitComposer() {
 
 // renderComposer: send is quiet with nothing to send and stands out with
 // something (words or images). While typing (focus and words in the box)
-// the attach icons fold into ›, as in a messenger, and the box takes their
-// room; › (or leaving the box) brings them back until the next keystroke.
+// the attach icon folds into ›, as in a messenger; › (or leaving the box)
+// brings it back until the next keystroke.
 let unfolded = false;
 function renderComposer() {
   const ta = $("d-text"), form = $("d-send");
@@ -2088,13 +2088,11 @@ $("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) close
 $("d-send").addEventListener("submit", doSend);
 $("tsheet-cancel").addEventListener("click", closeTapiSheet);
 $("tsheet-ok").addEventListener("click", doSheetSend);
-for (const id of ["d-file", "d-cam"]) {
-  $(id).addEventListener("change", (e) => {
-    const files = [...(e.target.files || [])];
-    e.target.value = ""; // the same photo can be chosen again
-    addImages(files);
-  });
-}
+$("d-file").addEventListener("change", (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = ""; // the same photo can be chosen again
+  addImages(files);
+});
 $("tsheet").addEventListener("click", (e) => { if (e.target === $("tsheet")) closeTapiSheet(); });
 $("isheet-cancel").addEventListener("click", closeInboxSheet);
 $("isheet-ok").addEventListener("click", doInboxAnswer);
