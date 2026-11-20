@@ -80,6 +80,11 @@ type Engine interface {
 	Resize(slug, window string, w, h int) error
 	Kill(slug, window string) error
 	KillSession(slug string) error
+	// KillLeftovers stops what a session's windows started and left
+	// running after KillSession closed them (a background job reparented
+	// to launchd: leftover.go), and lists what it stopped. Only a session
+	// that goes (rm, landed) calls it.
+	KillLeftovers(scope LeftoverScope) ([]Leftover, error)
 	// Sessions lists pekoe windows currently alive: slug -> windows.
 	Sessions() (map[string][]string, error)
 	Output() <-chan Output

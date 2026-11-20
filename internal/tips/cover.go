@@ -40,7 +40,6 @@ var NoTip = map[string]string{
 
 	// subcommands
 	"pekoe ls":     "基本の一覧。README の最初に出てくる",
-	"pekoe rm":     "後片付け。TUI の D と同じで、tip にするほどの発見がない",
 	"pekoe attach": "デバッグ用(tmux の窓に直接 attach)",
 	"pekoe hooks":  "インストール時に一度だけ使う",
 	"pekoe event":  "hooks から呼ばれる内部用",

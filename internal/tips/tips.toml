@@ -531,6 +531,13 @@ keys = ["pekoe cleanup", "--rm", "--landed", "--stale", "[cleanup]"]
 docs = ["README.ja.md#コマンド", "docs/api.md"]
 
 [[tip]]
+id = "leftover-procs"
+short = "rm と land の片付けは窓が残したプロセスも止める"
+detail = "窓を閉じた後、エージェントが & で放った busy loop やサーバーを環境変数($PEKOE_SESSION・$TMUX)で探して止め、数とコマンドを pekoed のログに残す。止めた・再起動したセッションのものは止めない。"
+keys = ["pekoe rm <slug>"]
+docs = ["docs/design.md", "README.ja.md#コマンド"]
+
+[[tip]]
 id = "repo-forget"
 short = "pekoe repo forget で使わなくなったリポジトリを忘れさせる"
 detail = "w のリポジトリ選びや tapi が知るリポジトリから外す。landed でないセッションがあれば断る(先に pekoe rm)。repos/<repo-id>.toml は --config のときだけ消す。リポジトリ・worktree・ブランチ・stats は残る。"
