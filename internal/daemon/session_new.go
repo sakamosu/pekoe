@@ -220,6 +220,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
+	// from the check that the slug is free to the session's registration
+	// (d.add below): another session.new of the same slug waits, and then
+	// finds this one
+	unlock := d.lockNew()
+	defer func() { unlock() }()
 	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
 	old, err := d.snapshot(slug)
 	if err == nil && old.State != state.Landed {
@@ -253,6 +258,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
+	}
+	// a worktree another session lives in (pekoe open of it, under a slug
+	// from its branch) is not reused for a second one, as open refuses it
+	if at := d.sessionAt(wt); at != "" && at != slug {
+		return nil, fmt.Errorf("worktree %s is already managed as %s", wt, at)
 	}
 	if old != nil {
 		// a landed session of this slug is replaced: its prompts, reviews
@@ -296,6 +306,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// the row finds what to start it with
 		d.queueNew(slug, p)
 		d.add(s)
+		unlock()
+		unlock = func() {}
 		d.pumpQueue()
 		c, err := d.snapshot(slug)
 		if err == nil && c.State == state.Queued {
@@ -309,6 +321,17 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	d.add(s)
 	go d.runNew(c, s.Slug, repo, p)
 	return d.snapshot(slug)
+}
+
+// lockNew keeps any other session from being registered (session.new,
+// session.open) until unlock is called. Those hold it from their checks
+// (the slug is free, no other session lives in the worktree) until the
+// session is in d.sessions, so that two of them at once cannot both pass
+// the checks and the second overwrite the first. Whatever must not
+// interleave with a new session appearing can hold it too.
+func (d *Daemon) lockNew() (unlock func()) {
+	d.newMu.Lock()
+	return d.newMu.Unlock
 }
 
 // creation is a runNew in progress (d.cancels): cancel stops it, done is
@@ -569,33 +592,52 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		if _, err := os.Stat(s.Path); err == nil {
 			// an existing worktree for this branch: reuse it, but only when
 			// it is this repository's (a fork shares ~/worktrees/<name>)
+			// and no other session lives in it (opened while this one was
+			// queued)
+			if at := d.sessionAt(s.Path); at != "" && at != slug {
+				return fmt.Errorf("%s is already managed as %s; not reusing it", s.Path, at)
+			}
 			return reusableWorktree(repo.Dir, s.Path)
 		}
 		// whatever is at s.Path from here on is ours, even if git stops
 		// half way: rm may delete it
 		d.update(slug, func(x *state.Session) { x.OwnDir = true })
+		// warn: something the person should know about where it started
+		warn := func(w string) {
+			log.Printf("new %s: %s", slug, w)
+			d.stepWarn(slug, i, []string{w})
+			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), w) })
+		}
+		if gitx.BranchExists(repo.Dir, s.Branch) {
+			// an existing branch is checked out as it is (nothing to
+			// fetch: it does not start from the base, --hold or not)
+			d.stepDetail(slug, i, s.Path+" · existing branch "+s.Branch)
+			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
+		}
 		if s.Hold {
 			// queue.go: it waited for sessions to land (merge); start
 			// from the base as the remote has it now
-			start, ok := fetchBase(ctx, repo.Dir, s.Base)
+			start, err := fetchBaseRef(ctx, repo.Dir, s.Base)
 			if err := ctx.Err(); err != nil {
 				// cancelled (rm) during the fetch: no worktree or branch
 				// for a session that is being removed
 				return err
 			}
-			if ok {
+			switch {
+			case err == nil && start != "":
 				d.stepDetail(slug, i, s.Path+" · from "+start+" (fetched)")
 				return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, start)
+			case err != nil && !errors.Is(err, errNoOrigin):
+				// the local base may lack the merges it waited for
+				d.stepDetail(slug, i, s.Path+" · from "+s.Base+" (fetch failed)")
+				warn(fmt.Sprintf("could not fetch %s from origin (%v): started from the local %s, which may be behind origin", strings.TrimPrefix(s.Base, "origin/"), firstLine(err.Error()), s.Base))
+				return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 			}
 		}
-		if gitx.BranchExists(repo.Dir, s.Branch) {
-			// an existing branch is checked out as it is
-			d.stepDetail(slug, i, s.Path+" · existing branch "+s.Branch)
-			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
-		}
 		if s.Hold || p.Base != "" {
-			// --hold whose fetch gave nothing; --base as given (a tag, a
-			// commit, origin/x: as before, not fetched)
+			// --hold with no origin, or a base that is not one of its
+			// branches; --base as given (a tag, a commit, origin/x: as
+			// before, not fetched)
 			d.stepDetail(slug, i, s.Path+" · from "+s.Base)
 			return gitx.AddWorktree(repo.Dir, s.Path, s.Branch, s.Base)
 		}
@@ -605,9 +647,7 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		}
 		d.stepDetail(slug, i, s.Path+" · "+fs.note)
 		if fs.warn != "" {
-			log.Printf("new %s: %s", slug, fs.warn)
-			d.stepWarn(slug, i, []string{fs.warn})
-			d.update(slug, func(x *state.Session) { x.Warnings = append(append([]string{}, x.Warnings...), fs.warn) })
+			warn(fs.warn)
 		}
 		if fs.remote {
 			return gitx.AddWorktreeNoTrack(repo.Dir, s.Path, s.Branch, fs.start)

@@ -122,6 +122,10 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 		return nil, err
 	}
 	d.resolved(repo)
+	// from the checks to d.add: a session.new or open at the same time
+	// cannot take the same slug or worktree
+	unlock := d.lockNew()
+	defer func() { unlock() }()
 	// by the resolved path: top is git's (symlinks resolved, /private/tmp
 	// on macOS) while a session made by new keeps PEKOE_WORKTREES as given
 	if slug := d.sessionAt(top); slug != "" {
@@ -163,6 +167,8 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 		Env: append(repo.Config.EnvList(vars), "PEKOE_PORT="+strconv.Itoa(port)),
 	}
 	d.add(s)
+	unlock()
+	unlock = func() {}
 	if sha, err := gitx.SnapshotCommit(top, "pekoe snapshot #0"); err == nil {
 		ref := fmt.Sprintf("refs/pekoe/%s/prompt-0", slug)
 		_ = gitx.UpdateRef(top, ref, sha)

@@ -157,6 +157,13 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		d.queueMu.Lock()
 		d.queueMu.Unlock()
 	}
+	// without force, uncommitted changes refuse the rm: checked before a
+	// creation is stopped, so that a refusal leaves the session as it was
+	if !p.Force {
+		if err := d.rmDirty(p.Slug); err != nil {
+			return nil, err
+		}
+	}
 	// a session still being created: stop its creation and wait for it to
 	// end, so no setup hook or agent start comes after the teardown and the
 	// removal below (a session still queued under queueMu has none)
@@ -164,24 +171,7 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 	if s, err = d.snapshot(p.Slug); err != nil { // as the creation left it (own_dir …)
 		return nil, err
 	}
-	_, statErr := os.Stat(s.Path)
-	exists := statErr == nil
-	// the directory may belong to another repository of the same name (a
-	// fork shares ~/worktrees/<name>): then it is not ours to run hooks in or
-	// to delete
-	owner := error(nil)
-	if exists {
-		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
-	}
-	foreign := errors.Is(owner, gitx.ErrForeignWorktree)
-	// another session may live in the same worktree (an open of it by a
-	// symlinked name before paths were compared resolved): then it stays
-	shared := d.pathShared(s.Path, p.Slug)
-	if !p.Force && s.Managed && !foreign && !shared {
-		if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
-			return nil, fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
-		}
-	}
+	exists, owner, foreign, shared := d.rmWhere(s)
 	if !foreign {
 		d.devMu.Lock()
 		if err := d.stopDev(p.Slug, true); err != nil {
@@ -220,6 +210,17 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 				_, _ = gitx.Run(s.RepoDir, "worktree", "prune")
 			}
 		}
+	} else if !exists && !shared && s.Managed && paths.UnderWorktrees(s.Path) {
+		// pekoe's own worktree whose directory is gone (deleted by hand,
+		// restore found it missing): git still has it registered, which
+		// would refuse a new worktree at the same path ("missing but
+		// already registered"), and its refs are still there. git removes
+		// the registration of a missing worktree and nothing else; one this
+		// repository does not have registered is an error, left alone. A
+		// checkout pekoe did not make (one on a disk not mounted now) is
+		// only forgotten, as when it is there.
+		gitx.DeleteRefs(s.RepoDir, "refs/pekoe/"+p.Slug+"/")
+		_ = gitx.RemoveWorktree(s.RepoDir, s.Path, true)
 	}
 	held := d.purge(s)
 	d.removed(s)
@@ -228,6 +229,48 @@ func (d *Daemon) hRm(p rmP) (any, error) {
 		res["port_held"] = held
 	}
 	return res, nil
+}
+
+// rmWhere is where rm of s stands: whether its directory exists, whose
+// worktree it is (owner: CheckWorktreeOf's answer), whether that is
+// another repository's (foreign: a fork shares ~/worktrees/<name>, so it
+// is not ours to run hooks in or to delete), and whether another session
+// lives in it too (shared: an open of it by a symlinked name before paths
+// were compared resolved; then it stays).
+func (d *Daemon) rmWhere(s *state.Session) (exists bool, owner error, foreign, shared bool) {
+	_, statErr := os.Stat(s.Path)
+	exists = statErr == nil
+	if exists {
+		owner = gitx.CheckWorktreeOf(s.RepoDir, s.Path)
+	}
+	foreign = errors.Is(owner, gitx.ErrForeignWorktree)
+	shared = d.pathShared(s.Path, s.Slug)
+	return exists, owner, foreign, shared
+}
+
+// rmDirty refuses rm without force of a session whose worktree has
+// uncommitted changes. A session being created whose directory its
+// creation made (own_dir) has only what the creation put there (setup's
+// files): nothing to lose, and rm stops the creation as session.cancel
+// does. One whose creation reuses an existing worktree is checked.
+func (d *Daemon) rmDirty(slug string) error {
+	s, err := d.snapshot(slug)
+	if err != nil {
+		return err
+	}
+	// the directory is looked at first: a creation sets own_dir before it
+	// makes it, so a directory there with own_dir unset is not its own
+	exists, _, foreign, shared := d.rmWhere(s)
+	if s, err = d.snapshot(slug); err != nil {
+		return err
+	}
+	if !exists || !s.Managed || foreign || shared || (s.State == state.Creating && s.OwnDir) {
+		return nil
+	}
+	if out, _ := gitx.Run(s.Path, "status", "--porcelain"); out != "" {
+		return fmt.Errorf("%s has uncommitted changes (use force)", s.Path)
+	}
+	return nil
 }
 
 // hAgentRm is rm without the human token (call routes it here), for the
@@ -380,6 +423,13 @@ func (d *Daemon) hDevToggle(p slugP) (any, error) {
 			return nil, err
 		}
 	}
+	// never outside the worktree (worktreeReady), as run.start
+	if s.State == state.Creating {
+		return nil, fmt.Errorf("%s is still being created", p.Slug)
+	}
+	if err := worktreeReady(s); err != nil {
+		return nil, err
+	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Dev == "" {
 		path := paths.RepoConfig(s.RepoID)
@@ -482,16 +532,11 @@ func (d *Daemon) hRunStart(p runP) (any, error) {
 		return RunState{ExitStatus: -1}, nil
 	}
 	// never outside the worktree: tmux starts in $HOME when -c is missing
-	switch s.State {
-	case state.Creating:
+	if s.State == state.Creating {
 		return nil, fmt.Errorf("%s is still being created", p.Slug)
-	case state.Queued:
-		return nil, fmt.Errorf("%s is queued; its worktree is not made yet", p.Slug)
-	case state.Landed:
-		return nil, fmt.Errorf("%s has landed; its worktree is gone", p.Slug)
 	}
-	if fi, err := os.Stat(s.Path); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("worktree missing: %s", s.Path)
+	if err := worktreeReady(s); err != nil {
+		return nil, err
 	}
 	sh := os.Getenv("SHELL")
 	if sh == "" {
@@ -551,9 +596,25 @@ func (d *Daemon) hLand(p slugP) (any, error) { return d.land(p, false) }
 func (d *Daemon) hAgentLand(p slugP) (any, error) { return d.land(p, true) }
 
 func (d *Daemon) land(p slugP, agent bool) (any, error) {
+	own, err := d.get(p.Slug)
+	if err != nil {
+		return nil, err
+	}
 	s, err := d.snapshot(p.Slug)
 	if err != nil {
 		return nil, err
+	}
+	// still: the session is the one this land started for. rm does not
+	// wait for a land (its test may run for minutes), and a new session of
+	// the same branch then has the same slug, path and branch: this land
+	// must not push, fast-forward, record or tear down that one
+	still := func() bool {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.sessions[p.Slug] == own
+	}
+	gone := func() error {
+		return fmt.Errorf("%s was removed while landing (a new session of the same name may have taken its place): not landed", p.Slug)
 	}
 	if s.PRReview {
 		return nil, errors.New("this is someone else's PR; nothing to land")
@@ -623,7 +684,11 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			return nil, fmt.Errorf("tests %w", err)
 		}
 		t := testResult(out, err)
-		d.update(p.Slug, func(x *state.Session) { x.Test = t })
+		d.update(p.Slug, func(x *state.Session) {
+			if x == own {
+				x.Test = t
+			}
+		})
 		if t.Status == "error" {
 			return nil, fmt.Errorf("tests could not run ([hooks] test: command not found): %s", t.Summary)
 		}
@@ -633,6 +698,9 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		steps = append(steps, "tests passed")
 	} else {
 		d.dropTest(s)
+	}
+	if !still() {
+		return nil, gone()
 	}
 	if !hasOrigin {
 		// local-only repository: fast-forward the base branch in the main worktree
@@ -645,7 +713,8 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			return nil, err
 		}
 		steps = append(steps, "fast-forwarded "+base)
-		if err := d.finishLanding(p.Slug); err != nil {
+		// of own: not a new session of the same slug that took its place
+		if err := d.finishLandOf(p.Slug, false, own); err != nil {
 			return nil, err
 		}
 		return map[string]any{"steps": steps, "landed": true}, nil
@@ -721,7 +790,13 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			steps = append(steps, fmt.Sprintf("PR #%d", pr))
 		}
 	}
+	if !still() {
+		return nil, gone()
+	}
 	d.update(p.Slug, func(x *state.Session) {
+		if x != own {
+			return
+		}
 		if x.PR != pr {
 			// the summary and the held teardown were the old PR's
 			x.PRStatus = nil
@@ -866,7 +941,10 @@ func (d *Daemon) finishLanding(slug string) error { return d.finishLand(slug, fa
 // recorded merged, the window and worktree stay, land_held and a pr
 // change say why, and watchMerges (every 2 minutes) or the agent going
 // idle or done tries again.
-func (d *Daemon) finishLand(slug string, merged bool) error {
+func (d *Daemon) finishLand(slug string, merged bool) error { return d.finishLandOf(slug, merged, nil) }
+
+// finishLandOf is finishLand of the session want (any, when nil).
+func (d *Daemon) finishLandOf(slug string, merged bool, want *state.Session) error {
 	// one at a time per session: watchMerges (at start and every 2 minutes)
 	// and the PR poller seeing MERGED (applyPRStatus) both start it, and a
 	// slow teardown must not run twice in the same worktree
@@ -885,6 +963,9 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 	d.mu.Unlock()
 	if orig == nil {
 		return fmt.Errorf("no such session: %s", slug)
+	}
+	if want != nil && orig != want {
+		return fmt.Errorf("%s was removed while landing (a new session of the same name took its place): not landed", slug)
 	}
 	// still: the session is the one torn down here, not a new one of the
 	// same slug (and path) that replaced it meanwhile
