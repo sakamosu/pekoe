@@ -78,3 +78,26 @@ func TestLateStopKeepsNextTurn(t *testing.T) {
 		})
 	}
 }
+
+// tapi's turn may go on after its Stop: another Stop hook blocks the stop
+// and Claude Code goes back to work (PreToolUse, then a Stop with
+// stop_hook_active). The first Stop, settling late, must not make tapi idle
+// in the middle of it (deliver would type into it).
+func TestTapiLateStopKeepsTurnThatGoesOn(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	event(t, d, "UserPromptSubmit", TapiSlug, map[string]any{"prompt": "fix the typo in README"})
+	tr, reply := lateTranscript(t)
+	event(t, d, "Stop", TapiSlug, map[string]any{"transcript_path": tr})
+	event(t, d, "PreToolUse", TapiSlug, map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "pekoe ledger keep"}})
+	reply("first")
+	waitFor(t, func() bool { return call[Tapi](t, d, "tapi.get", nil).LastMessage == "first" })
+	if v := call[Tapi](t, d, "tapi.get", nil); v.State != state.Running || v.PendingTool == nil {
+		t.Fatalf("the first Stop made the turn that goes on %s (pending %+v), want running", v.State, v.PendingTool)
+	}
+	event(t, d, "Stop", TapiSlug, map[string]any{"stop_hook_active": true, "last_assistant_message": "kept it"})
+	waitFor(t, func() bool {
+		v := call[Tapi](t, d, "tapi.get", nil)
+		return v.State == state.Idle && v.LastMessage == "kept it"
+	})
+}

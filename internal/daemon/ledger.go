@@ -138,8 +138,9 @@ func (d *Daemon) recordRequest(prompt string) (e *state.LedgerEntry, folded bool
 
 // ---- tapi's turn: closing what was no request ----
 //
-// The turn's state (tapiState.turnOn, turnEntry, turnKeep, turnKept) is in memory only: lost
-// with tapi.reset or a restart of pekoed, and then nothing is closed.
+// The turn's state (tapiState.turnOn, turnEntry, turnKeep, turnKept, the
+// ended* fields, turnClosed) is in memory only: lost with tapi.reset or a
+// restart of pekoed, and then nothing is closed.
 
 // tapiPrompt is a UserPromptSubmit from tapi's window: the prompt goes
 // into the ledger and becomes the input of tapi's turn, the one entry
@@ -153,6 +154,7 @@ func (d *Daemon) tapiPrompt(prompt string) {
 	d.mu.Lock()
 	prev := d.tapi.turnEntry
 	d.tapi.turnOn, d.tapi.turnEntry = true, 0
+	d.tapi.ended, d.tapi.turnClosed = false, 0
 	d.mu.Unlock()
 	e, folded := d.recordRequest(prompt)
 	if e == nil || folded && e.ID != prev {
@@ -185,10 +187,31 @@ func (d *Daemon) noteTapiAsk(who *Caller, method string, params json.RawMessage)
 		return
 	}
 	d.mu.Lock()
+	closed := int64(0)
 	if d.tapi.turnOn {
 		d.tapi.turnKeep = true
+		closed, d.tapi.turnClosed = d.tapi.turnClosed, 0
 	}
 	d.mu.Unlock()
+	if closed != 0 {
+		d.reopenAuto(closed)
+	}
+}
+
+// reopenAuto opens id again if it is still as tapiTurnEnd closed it
+// (chat, auto): not what tapi or a person has closed since.
+func (d *Daemon) reopenAuto(id int64) {
+	reopened := false
+	e, err := d.changeLedger(id, func(e *state.LedgerEntry) error {
+		if autoClosed(e) {
+			reopenLedger(e)
+			reopened = true
+		}
+		return nil
+	})
+	if err == nil && reopened {
+		d.ledgerChanged(e)
+	}
 }
 
 // rewaitCall: a wait the CLI calls again by itself, `pekoe ask-human
@@ -212,10 +235,20 @@ func rewaitCall(params json.RawMessage) bool {
 // an earlier turn stays until tapi or a person closes it. A keep of an
 // earlier turn's input that never ended (interrupted) keeps that entry
 // only, not this turn's.
+//
+// The Stop may not be the end: Claude Code runs its Stop hooks side by
+// side, and when another one blocks the stop (exit 2, decision "block")
+// the turn goes on, to end with a Stop that says stop_hook_active. So the
+// turn is kept as it was (tapiState.ended) until the next prompt, and a
+// PreToolUse from tapi's window before that takes it up again
+// (tapiTurnGoesOn): what tapi asks for or keeps then counts, and the next
+// Stop decides again.
 func (d *Daemon) tapiTurnEnd() {
 	d.mu.Lock()
 	id, keep, kept := d.tapi.turnEntry, d.tapi.turnKeep, d.tapi.turnKept
 	d.tapi.turnOn, d.tapi.turnEntry, d.tapi.turnKeep, d.tapi.turnKept = false, 0, false, 0
+	d.tapi.ended, d.tapi.endedEntry, d.tapi.endedKeep, d.tapi.endedKept, d.tapi.endedClosed = true, id, keep, kept, false
+	d.tapi.turnClosed = 0
 	d.mu.Unlock()
 	if id == 0 || keep || kept == id {
 		return
@@ -232,7 +265,34 @@ func (d *Daemon) tapiTurnEnd() {
 	})
 	if err == nil && closed {
 		d.ledgerChanged(e)
+		d.mu.Lock()
+		switch {
+		case d.tapi.ended && d.tapi.endedEntry == id:
+			d.tapi.endedClosed = true
+		case d.tapi.turnOn && d.tapi.turnEntry == id:
+			d.tapi.turnClosed = id // the turn went on while it was being closed
+		}
+		d.mu.Unlock()
 	}
+}
+
+// tapiTurnGoesOn is a PreToolUse from tapi's window. Right after a Stop
+// (no prompt since) it means the turn did not end there (tapiTurnEnd):
+// the turn is taken up again as that Stop left it, its input to be opened
+// again if the turn asks someone for something (turnClosed). Within a
+// turn it changes nothing.
+func (d *Daemon) tapiTurnGoesOn() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	t := &d.tapi
+	if t.turnOn || !t.ended {
+		return
+	}
+	t.turnOn, t.turnEntry, t.turnKeep, t.turnKept = true, t.endedEntry, t.endedKeep, t.endedKept
+	if t.endedClosed {
+		t.turnClosed = t.endedEntry
+	}
+	t.ended = false
 }
 
 // tapiTurnGone is a SessionStart or SessionEnd from tapi's window: the
@@ -242,6 +302,7 @@ func (d *Daemon) tapiTurnEnd() {
 func (d *Daemon) tapiTurnGone() {
 	d.mu.Lock()
 	d.tapi.turnEntry = 0
+	d.tapi.ended = false
 	d.mu.Unlock()
 }
 

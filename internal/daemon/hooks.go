@@ -276,6 +276,8 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 		switch hook {
 		case "UserPromptSubmit":
 			d.tapiPrompt(hp.Prompt)
+		case "PreToolUse":
+			d.tapiTurnGoesOn()
 		case "Stop":
 			d.tapiTurnEnd()
 		case "SessionStart", "SessionEnd":

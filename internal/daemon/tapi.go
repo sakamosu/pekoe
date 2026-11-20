@@ -93,9 +93,24 @@ type tapiState struct {
 	turnEntry int64
 	turnKeep  bool
 	turnKept  int64
+	// the turn as its Stop left it (tapiTurnEnd), until the next prompt or
+	// conversation: a PreToolUse from tapi's window meanwhile means it was
+	// not the end (another Stop hook sent Claude Code back to work), and
+	// the turn goes on (tapiTurnGoesOn). ended says these hold one;
+	// endedClosed, that the Stop closed endedEntry as chat
+	ended       bool
+	endedEntry  int64
+	endedKeep   bool
+	endedKept   int64
+	endedClosed bool
+	// turnClosed is the turn's input that a Stop closed as chat although
+	// the turn went on: it opens again when the turn asks someone for
+	// something (noteTapiAsk). ledger.keep opens it as any auto-closed one
+	turnClosed int64
 	// gen counts the turns tapiEvent saw begin (UserPromptSubmit,
-	// SessionStart): a Stop that settles late changes the state only if no
-	// turn began since it came
+	// SessionStart) or go on (PreToolUse: after a Stop, another Stop hook
+	// sent Claude Code back to work): a Stop that settles late changes the
+	// state only if none of them came since it
 	gen uint64
 }
 
@@ -262,6 +277,7 @@ func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
 	case "PreToolUse":
 		tool := summarizeTool(hp.ToolName, hp.ToolInput)
 		d.tapiUpdate(func(t *tapiState) {
+			t.gen++
 			t.pending = &tool
 			if hp.ToolName == "AskUserQuestion" {
 				t.state, t.waitKind = state.Waiting, "question"
