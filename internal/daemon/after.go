@@ -9,9 +9,10 @@ package daemon
 // slug that does not exist (a typo) would be recorded as a dependency that
 // is never met, so it is refused, and the orchestrator makes the session it
 // depends on first. So is a session pekoe did not make (pekoe open of the
-// repository's main checkout): it never lands. The list is fixed at creation, so a cycle can only come
-// from replacing a landed session with one of the same slug (A landed, B
-// after A, a new A after B); that, and a session after itself, are refused.
+// repository's main checkout): it never lands. The list is fixed at
+// creation, so a cycle can only come from replacing a landed session with
+// one of the same slug (A landed, B after A, a new A after B); that, and a
+// session after itself, are refused.
 // A dependency removed later (pekoe rm) stays in the list; the TUI shows it
 // as gone.
 

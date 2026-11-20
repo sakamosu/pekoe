@@ -69,8 +69,9 @@ func (d *Daemon) worktreeChanges(s *state.Session) (int, error) {
 // from the PR's head (PRStatus.HeadSHA). When that commit is not here (a
 // push to the PR from elsewhere, or no head read yet), it is the commits
 // not in origin/<branch>, what land pushed last; with neither, nothing
-// tells (0). A worktree that is not there has none; err: git could not
-// tell.
+// tells (0). Commits already in origin's base are in no danger either (an
+// agent that moved HEAD onto origin/main after the merge). A worktree that
+// is not there has none; err: git could not tell.
 func (d *Daemon) commitsBeyondPR(s *state.Session) (int, error) {
 	if s.Path == "" {
 		return 0, nil
@@ -99,6 +100,15 @@ func (d *Daemon) commitsBeyondPR(s *state.Session) (int, error) {
 			return 0, nil
 		}
 		not = []string{pushed}
+	}
+	base := s.Base
+	if base == "" {
+		base = gitx.DefaultBase(s.Path)
+	}
+	if b := "refs/remotes/origin/" + originBranch(base); gitx.CheckRefArg("base", base) == nil {
+		if _, err := gitx.Run(s.Path, "rev-parse", "--verify", "--quiet", b+"^{commit}"); err == nil {
+			not = append(not, b)
+		}
 	}
 	out, err := gitx.Run(s.Path, append([]string{"rev-list", "--count", "HEAD", "--not"}, not...)...)
 	if err != nil {

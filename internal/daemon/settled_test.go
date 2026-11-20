@@ -277,3 +277,36 @@ func TestMergedWhileWorkingCommitAfterMerge(t *testing.T) {
 	d.watchMerges()
 	waitLanded(t, d, "feat-x")
 }
+
+// Commits already in origin's base are in no danger: a held landing whose
+// agent moved HEAD onto origin/main after the (squash) merge lands, though
+// HEAD's commits are not in the PR's head.
+func TestMergedWhileWorkingHeadOnBase(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitCreated(t, d, "feat-x")
+	s, _ := d.snapshot("feat-x")
+	os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
+	run(t, s.Path, "git", "add", "x.txt")
+	run(t, s.Path, "git", "commit", "-qm", "x")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) {
+		x.Landing, x.PR = true, 7
+		x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: head}
+	})
+	d.setState("feat-x", state.Running, "")
+	d.landMerged("feat-x")
+	if x, _ := d.snapshot("feat-x"); x.LandHeld == "" {
+		t.Fatal("not held")
+	}
+	// GitHub squash-merged #7 into main; the agent takes origin/main
+	os.WriteFile(filepath.Join(repo, "x.txt"), []byte("x\n"), 0o644)
+	run(t, repo, "git", "add", "x.txt")
+	run(t, repo, "git", "commit", "-qm", "x (#7)")
+	run(t, repo, "git", "push", "-q", "origin", "main")
+	run(t, s.Path, "git", "fetch", "-q", "origin")
+	run(t, s.Path, "git", "reset", "-q", "--hard", "origin/main")
+	d.setState("feat-x", state.Done, "")
+	waitLanded(t, d, "feat-x")
+}
