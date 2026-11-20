@@ -203,7 +203,10 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	// ports are free unless a test says otherwise: the real check binds
 	// them, which an agent's sandbox refuses
 	d.portBusy = func(int) bool { return false }
-	t.Cleanup(func() { waitCreations(t, d); d.DB.Close(); d.releaseLock() })
+	// a merge on a person's answer goes on after it says merged (it reads
+	// the PR once more): waited for, or that read runs the next test's gh
+	// (PATH is per test) and writes to a closed DB
+	t.Cleanup(func() { waitCreations(t, d); d.merging.Wait(); d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
 }
 

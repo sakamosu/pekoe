@@ -243,6 +243,7 @@ type Daemon struct {
 	ghRepos      sync.Map             // repo dir -> ghRepoInfo
 	mergeTick    atomic.Bool          // checkMerges is running (merge.go)
 	mergeRuns    sync.Map             // slug -> state.MergeRun: pekoed's latest merge on a person's answer (mergerun.go)
+	merging      sync.WaitGroup       // runMerge goroutines (mergerun.go); tests wait for them before cleaning up
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
 	hooking      atomic.Int32         // session.event calls being handled (hEvent); shutdown waits for them
 	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
