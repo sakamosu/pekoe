@@ -187,6 +187,7 @@ type Daemon struct {
 	conns       map[*conn]bool
 	cancels     map[string]*creation // creating sessions (session_new.go)
 	queueMu     sync.Mutex           // one pumpQueue at a time (queue.go)
+	newMu       sync.Mutex           // from a new session's checks to its registration (lockNew)
 	queueKick   chan struct{}        // wakes queueLoop
 	asks        map[string]string    // slug -> hunk id awaiting an answer
 	tabs        []Tab

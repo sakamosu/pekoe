@@ -220,6 +220,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
+	// from the check that the slug is free to the session's registration
+	// (d.add below): another session.new of the same slug waits, and then
+	// finds this one
+	unlock := d.lockNew()
+	defer func() { unlock() }()
 	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
 	old, err := d.snapshot(slug)
 	if err == nil && old.State != state.Landed {
@@ -253,6 +258,11 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	wt, err := worktreePath(repo.Name, slug)
 	if err != nil {
 		return nil, err
+	}
+	// a worktree another session lives in (pekoe open of it, under a slug
+	// from its branch) is not reused for a second one, as open refuses it
+	if at := d.sessionAt(wt); at != "" && at != slug {
+		return nil, fmt.Errorf("worktree %s is already managed as %s", wt, at)
 	}
 	if old != nil {
 		// a landed session of this slug is replaced: its prompts, reviews
@@ -296,6 +306,8 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// the row finds what to start it with
 		d.queueNew(slug, p)
 		d.add(s)
+		unlock()
+		unlock = func() {}
 		d.pumpQueue()
 		c, err := d.snapshot(slug)
 		if err == nil && c.State == state.Queued {
@@ -309,6 +321,17 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	d.add(s)
 	go d.runNew(c, s.Slug, repo, p)
 	return d.snapshot(slug)
+}
+
+// lockNew keeps any other session from being registered (session.new,
+// session.open) until unlock is called. Those hold it from their checks
+// (the slug is free, no other session lives in the worktree) until the
+// session is in d.sessions, so that two of them at once cannot both pass
+// the checks and the second overwrite the first. Whatever must not
+// interleave with a new session appearing can hold it too.
+func (d *Daemon) lockNew() (unlock func()) {
+	d.newMu.Lock()
+	return d.newMu.Unlock
 }
 
 // creation is a runNew in progress (d.cancels): cancel stops it, done is
@@ -569,6 +592,11 @@ func (d *Daemon) runNew(c *creation, slug string, repo *repoInfo, p newP) {
 		if _, err := os.Stat(s.Path); err == nil {
 			// an existing worktree for this branch: reuse it, but only when
 			// it is this repository's (a fork shares ~/worktrees/<name>)
+			// and no other session lives in it (opened while this one was
+			// queued)
+			if at := d.sessionAt(s.Path); at != "" && at != slug {
+				return fmt.Errorf("%s is already managed as %s; not reusing it", s.Path, at)
+			}
 			return reusableWorktree(repo.Dir, s.Path)
 		}
 		// whatever is at s.Path from here on is ours, even if git stops
