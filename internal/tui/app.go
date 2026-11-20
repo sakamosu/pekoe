@@ -106,6 +106,8 @@ type model struct {
 	repoTitle   string // the repository name in the window title (repoSync)
 	sessionsIn  bool   // the first session.list answered
 	homePicked  bool   // the start-up selection followed the repository pekoe was started in
+	homeAsked   bool   // a repo.list with the cwd answered (loadRepos passes it no more)
+	homeID      string // the repository pekoe was started in, as that list marked it
 	filter      string
 	filterOn    bool
 

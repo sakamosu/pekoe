@@ -713,3 +713,68 @@ func TestLongRepoHeadingFits(t *testing.T) {
 		checkSize(t, m, fmt.Sprintf("long %d", width))
 	}
 }
+
+// Only the start-up's repo.list passes the cwd (pekoed remembers the
+// repository there). The reloads after it do not: pekoe repo forget of
+// that repository sends session.removed for its landed sessions, and a
+// reload with the cwd would make pekoe know it again at once. The
+// repository pekoe was started in stays marked from the start-up's list.
+func TestRepoReloadsWithoutCwd(t *testing.T) {
+	f, cl := startFakePekoed(t)
+	t.Setenv("PEKOE_COLOR", "none")
+	m := newModel(cl, "/src/web/sub")
+	m.tapi.splash = false
+	m.width, m.height = 180, 40
+	forgotten := false
+	f.reply = func(method string) any {
+		if method != "repo.list" {
+			return nil
+		}
+		f.mu.Lock()
+		gone := forgotten
+		f.mu.Unlock()
+		if gone {
+			return []daemon.KnownRepo{appA}
+		}
+		calls := f.find("repo.list") // this one is the last
+		web := appB
+		web.Cwd = calls[len(calls)-1]["cwd"] != nil
+		return []daemon.KnownRepo{appA, web}
+	}
+	runCmd(m, m.loadRepos())
+	ls := f.find("repo.list")
+	if len(ls) != 1 || ls[0]["cwd"] != "/src/web/sub" {
+		t.Fatalf("start-up repo.list: %v", ls)
+	}
+	if h := m.homeRepo(); h == nil || h.ID != appB.ID {
+		t.Fatalf("home after start-up: %+v", h)
+	}
+	m.sessions = []*state.Session{sess("api-1", appA, state.Running, time.Now()), sess("web-1", appB, state.Landed, time.Now())}
+	removed := func(slug string) {
+		data, _ := json.Marshal(state.Session{Slug: slug})
+		_, cmd := m.Update(evMsg(client.Event{Event: "session.removed", Data: data}))
+		runCmd(m, cmd)
+	}
+	removed("api-1")
+	ls = f.find("repo.list")
+	if len(ls) < 2 || ls[len(ls)-1]["cwd"] != nil {
+		t.Fatalf("reload passed the cwd: %v", ls)
+	}
+	if h := m.homeRepo(); h == nil || h.ID != appB.ID {
+		t.Fatalf("home after a reload: %+v", h)
+	}
+	// pekoe repo forget web: its landed session goes; the reload does not
+	// remember it again, and the TUI no longer offers it
+	f.mu.Lock()
+	forgotten = true
+	f.mu.Unlock()
+	removed("web-1")
+	for _, c := range f.find("repo.list")[1:] {
+		if c["cwd"] != nil {
+			t.Fatalf("a reload passed the cwd: %v", c)
+		}
+	}
+	if h := m.homeRepo(); h != nil {
+		t.Fatalf("forgotten home still listed: %+v", h)
+	}
+}
