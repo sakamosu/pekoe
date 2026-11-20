@@ -1721,40 +1721,65 @@ function renderComposer() {
 // the software keyboard does not shrink the layout viewport (nor 100dvh); it
 // shrinks the visual viewport and pans it. So the page takes the visual
 // viewport's height and offset while the keyboard is up, and the composer
-// stays right above it; without the keyboard it takes the whole height
-// (fullHeight).
+// stays right above it; without the keyboard it takes the layout viewport's
+// height. The heights the browser reports are what it paints: a home-screen
+// app on iOS can come back from the keyboard with innerHeight,
+// visualViewport.height and 100dvh all short by the status bar (a WebKit
+// bug), and then the band under them is dead (the system draws it, the page
+// never shows there). The page does not reach past them (that put the
+// composer into the dead band, and under the keyboard); it drops the bottom
+// inset instead (shortBelow) and tries to get the full height back
+// (healViewport).
 function fitViewport() {
   if (!document.body.classList.contains("pinned")) return;
   const vv = window.visualViewport;
   if (vv && vv.scale > 1.01) return; // pinch-zoomed: keep the page as it was, let it pan
-  const full = fullHeight();
-  const seen = vv ? vv.height + full.short : full.h;
-  const kb = full.h - seen > 120; // the keyboard covers the bottom
+  const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
+  const seen = vv ? vv.height : h;
+  const kb = h - seen > 120; // the keyboard covers the bottom
   const r = document.documentElement.style;
-  r.setProperty("--vvh", (kb ? seen : full.h) + "px");
+  r.setProperty("--vvh", (kb ? seen : h) + "px");
   r.setProperty("--vvt", (kb && vv ? vv.offsetTop : 0) + "px");
-  // the keyboard covers the home indicator: no bottom inset above it
+  // the keyboard covers the home indicator, or the dead band does: no
+  // bottom inset above it
   document.body.classList.toggle("kb", kb);
+  document.body.classList.toggle("cut", !kb && shortBelow(h) > 0);
 }
 
-// fullHeight: the page's height without the keyboard. A home-screen app on
-// iOS can report innerHeight, visualViewport.height and 100dvh all short by
-// the status bar (a WebKit bug, seen after the keyboard has been up), which
-// left an empty band under the composer. There the screen's
-// height is the truth: it is taken when the app is full width and the
-// heights fall short of it by no more than a status bar. short: by how much
-// (the visual viewport is short by as much, the keyboard aside).
-function fullHeight() {
-  const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
+// shortBelow: by how much the page stops above the screen's bottom in a
+// home-screen app (the WebKit bug above; 0 when it reaches it). Such an app
+// (black-translucent status bar) runs from the screen's top to its bottom,
+// under the status bar (a top inset). It is counted when the app is full
+// width, the top inset is there (the page still starts at the top, so what
+// is missing is at the bottom) and the shortfall is about a status bar.
+function shortBelow(h) {
   const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-  if (standalone && window.screen) {
-    const land = window.innerWidth > h;
-    const sw = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-    const sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
-    const short = sh - h;
-    if (Math.abs(window.innerWidth - sw) <= 1 && short > 0 && short <= 80) return { h: sh, short };
-  }
-  return { h, short: 0 };
+  if (!standalone || !window.screen) return 0;
+  const land = window.innerWidth > h;
+  const sw = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  const short = sh - h;
+  if (Math.abs(window.innerWidth - sw) > 1 || short <= 0 || short > 80) return 0;
+  const top = parseFloat(getComputedStyle(document.body).paddingTop) || 0; // env(safe-area-inset-top), app.css
+  return top > 0 ? short : 0;
+}
+
+// healViewport: after the keyboard goes, a home-screen app on iOS may keep
+// the shrunken height (shortBelow). Taking the full-height page out of the
+// layout and back (with a reflow between) makes WebKit measure the viewport
+// again; the places scrolled to are kept. Only when the height is short.
+function healViewport() {
+  if (!document.body.classList.contains("pinned")) return;
+  const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
+  if (shortBelow(h) <= 0) return;
+  if (document.activeElement === $("d-text")) return; // back in the box: taking the page out would close the keyboard
+  const kept = ["c-log", "detail"].map((id) => [$(id), $(id).scrollTop]);
+  const b = document.body;
+  b.style.display = "none";
+  void b.offsetHeight;
+  b.style.display = "";
+  for (const [e, top] of kept) e.scrollTop = top;
+  fitViewport();
 }
 
 function toBottom() {
@@ -2124,7 +2149,10 @@ $("d-text").addEventListener("input", () => {
 });
 $("d-text").addEventListener("focus", renderComposer);
 // leaving the box: a moment later, so a tap on › or send lands first
-$("d-text").addEventListener("blur", () => setTimeout(renderComposer, 0));
+$("d-text").addEventListener("blur", () => {
+  setTimeout(renderComposer, 0);
+  setTimeout(healViewport, 150); // once the keyboard has gone
+});
 // › : the icons back, the keyboard stays up (no focus leaves the box)
 $("d-unfold").addEventListener("pointerdown", (e) => e.preventDefault());
 $("d-unfold").addEventListener("click", () => {

@@ -14,7 +14,7 @@
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font: 14px/1.45 var(--mono);
-  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); /* top: read by app.js (shortBelow) */
   min-height: 100vh;
   -webkit-text-size-adjust: 100%;
 }
@@ -415,16 +415,15 @@ main { padding: 4px 10px 8px; }
    screen: the bar on top, the composer at the bottom, the panel takes all
    between (no fixed sum to subtract). Its height comes from app.js
    (fitViewport, --vvh / --vvt), not from 100vh / 100dvh: on iOS the
-   software keyboard shrinks only the visual viewport, and a home-screen
-   app can report every height (innerHeight, visualViewport, 100dvh) short
-   by the status bar, which left a band under the composer. The bottom
-   inset (home indicator) is kept unless the keyboard covers it */
+   software keyboard shrinks only the visual viewport. The bottom inset
+   (home indicator) is kept unless the keyboard covers it, or a home-screen
+   app's page stops short of the screen's bottom (kb / cut, app.js) */
 body.pinned {
   position: fixed; left: 0; right: 0; top: var(--vvt, 0px);
   height: 100vh; height: var(--vvh, 100vh); min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
 }
-body.pinned.kb { padding-bottom: 0; }
+body.pinned.kb, body.pinned.cut { padding-bottom: 0; }
 body.pinned > .bar { flex: none; }
 body.pinned > .who { display: none; }
 /* what does not fit (a tall question card, the keypad) scrolls above the
