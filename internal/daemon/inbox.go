@@ -500,8 +500,13 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 			return fmt.Errorf("inbox.answer: inbox %s changed (rev %d, you answered rev %d); %w", ids.Question(it.ID), it.Rev, p.Rev, errInboxChanged)
 		}
 		switch {
-		case len(it.Options) > 0 && p.Choice == nil:
-			return fmt.Errorf("inbox.answer: choose one of the %d options", len(it.Options))
+		case len(it.Options) > 0 && p.Choice == nil && isMergeItem(it):
+			// pekoed's own item is answered by its options only: a note
+			// alone never merges, waits or sends back
+			return fmt.Errorf("inbox.answer: choose one of the %d options (pekoed's item takes no note-only answer)", len(it.Options))
+		case len(it.Options) > 0 && p.Choice == nil && note == "":
+			// none of the options: the note alone is the answer
+			return fmt.Errorf("inbox.answer: choose one of the %d options, or answer with a note alone (none of them)", len(it.Options))
 		case p.Choice != nil && (*p.Choice < 0 || *p.Choice >= len(it.Options)):
 			if len(it.Options) == 0 {
 				return errors.New("inbox.answer: this question has no options; answer with a note")
@@ -672,13 +677,35 @@ func inboxRecipient(it *state.InboxItem) string {
 	return ""
 }
 
-// inboxSummary is the wait Change's one line.
+// inboxSummary is the wait Change's one line: the choice, and the note's
+// beginning (a person's words; the asker reads it as untrusted data, and
+// all of it with pekoe --json inbox <id>).
 func inboxSummary(it *state.InboxItem) string {
 	s := fmt.Sprintf("inbox %s %s", ids.Question(it.ID), it.Status)
-	if a := it.Answer; a != nil && a.Choice != nil && *a.Choice < len(it.Options) {
+	a := it.Answer
+	switch {
+	case a == nil:
+		return s
+	case a.Choice != nil && *a.Choice < len(it.Options):
 		s += fmt.Sprintf(": %d %s", *a.Choice+1, lineCut(it.Options[*a.Choice], 60))
+	case noteOnly(it):
+		s += ": none of the options"
+	}
+	if a.Note != "" {
+		s += " · note: " + lineCut(a.Note, inboxNoteCut)
 	}
 	return s
+}
+
+// inboxNoteCut: how much of a note the wait summary and the deliver line
+// carry (the whole is in pekoe --json inbox <id>).
+const inboxNoteCut = 80
+
+// noteOnly: a person answered a question that has options with a note
+// alone (none of the options); answer.choice is then absent.
+func noteOnly(it *state.InboxItem) bool {
+	a := it.Answer
+	return it.Status == state.InboxAnswered && a != nil && a.Choice == nil && len(it.Options) > 0
 }
 
 // inboxLine is the line typed into the asker's input box. It starts with
@@ -700,6 +727,8 @@ func inboxLine(it *state.InboxItem) string {
 		b.WriteString("人が取り下げました")
 	case a != nil && a.Choice != nil && *a.Choice < len(it.Options):
 		fmt.Fprintf(&b, "答え: %d「%s」", *a.Choice+1, lineCut(it.Options[*a.Choice], 200))
+	case noteOnly(it):
+		b.WriteString("答え: 選択肢のどれでもない")
 	default:
 		b.WriteString("答え:")
 	}

@@ -195,7 +195,7 @@ func TestInboxAnswerToWaiter(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("wait did not return")
 	}
-	if len(w.Changes) != 1 || w.Changes[0].Kind != kindInbox || !strings.Contains(w.Changes[0].Summary, "2 B") {
+	if len(w.Changes) != 1 || w.Changes[0].Kind != kindInbox || !strings.HasSuffix(w.Changes[0].Summary, "answered: 2 B · note: B で") {
 		t.Fatalf("wait: %+v", w)
 	}
 	if g := inboxGet(t, d, it.ID); g.Delivery != state.DeliveryWaited {
@@ -357,6 +357,80 @@ func TestInboxAnswerToTapi(t *testing.T) {
 func TestInboxUpdatedIsHumanOnly(t *testing.T) {
 	if agentEvent("inbox.updated") {
 		t.Fatal("inbox.updated goes to subscribers without the token")
+	}
+}
+
+// A question with options takes a note alone as its answer (none of the
+// options): answer.choice is absent (never 0), the wait summary and the
+// line typed into the asker say so with the note. Neither a choice nor a
+// note is still refused.
+func TestInboxAnswerNoteOnly(t *testing.T) {
+	d, fe, _ := inboxSetup(t)
+	it := ask(t, d, "main", map[string]any{"question": "どれにする?", "kind": "decision", "options": []string{"A", "B", "C"}})
+	for name, p := range map[string]map[string]any{
+		"nothing":    {"id": it.ID, "rev": it.Rev},
+		"blank note": {"id": it.ID, "rev": it.Rev, "note": " \n "},
+		"choice -1":  {"id": it.ID, "rev": it.Rev, "choice": -1, "note": "x"},
+		"choice out": {"id": it.ID, "rev": it.Rev, "choice": 3, "note": "x"},
+	} {
+		err := callAsErr(d, &Caller{human: true}, "inbox.answer", p)
+		if err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+		if name == "nothing" && !strings.Contains(err.Error(), "note alone") {
+			t.Errorf("nothing: %v", err)
+		}
+	}
+	got := make(chan waitRes, 1)
+	go func() {
+		got <- callAs[waitRes](t, d, agentAs("main"), "wait", map[string]any{"on": []string{"inbox"}, "timeout_s": 10})
+	}()
+	waitFor(t, func() bool {
+		d.changes.mu.Lock()
+		defer d.changes.mu.Unlock()
+		return len(d.changes.waiters) == 1
+	})
+	g := call[state.InboxItem](t, d, "inbox.answer", map[string]any{"id": it.ID, "rev": it.Rev, "note": "画像を送りたい"})
+	if g.Status != state.InboxAnswered || g.Answer == nil || g.Answer.Choice != nil || g.Answer.Note != "画像を送りたい" {
+		t.Fatalf("answered: %+v", g.Answer)
+	}
+	b, _ := json.Marshal(inboxGet(t, d, it.ID).Answer)
+	if strings.Contains(string(b), `"choice"`) || !strings.Contains(string(b), `"note":"画像を送りたい"`) {
+		t.Fatalf("answer JSON: %s", b)
+	}
+	var w waitRes
+	select {
+	case w = <-got:
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not return")
+	}
+	want := "inbox " + ids.Question(it.ID) + " answered: none of the options · note: 画像を送りたい"
+	if len(w.Changes) != 1 || w.Changes[0].Summary != want {
+		t.Fatalf("wait: %+v\nwant %s", w.Changes, want)
+	}
+	if l := inboxLine(&g); !strings.Contains(l, "答え: 選択肢のどれでもない(メモ: 画像を送りたい)") {
+		t.Fatalf("line: %s", l)
+	}
+	_ = fe
+}
+
+// The wait summary and the deliver line carry the note cut short, on one
+// line, as untrusted data (control characters dropped).
+func TestInboxSummaryNote(t *testing.T) {
+	long := strings.Repeat("あ", 200)
+	it := &state.InboxItem{ID: 155, Status: state.InboxAnswered, Options: []string{"x", "操作できることが少ない"},
+		Answer: &state.InboxAnswer{Choice: intp(1), Note: "画像を\n送りたい\x1b[31m"}}
+	if s := inboxSummary(it); s != "inbox q155 answered: 2 操作できることが少ない · note: 画像を 送りたい [31m" {
+		t.Fatalf("summary: %q", s)
+	}
+	it.Answer.Note = long
+	s := inboxSummary(it)
+	if !strings.HasSuffix(s, "· note: "+strings.Repeat("あ", inboxNoteCut)+"…") {
+		t.Fatalf("long note: %q", s)
+	}
+	it.Answer.Note = ""
+	if s := inboxSummary(it); s != "inbox q155 answered: 2 操作できることが少ない" {
+		t.Fatalf("no note: %q", s)
 	}
 }
 

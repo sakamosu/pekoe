@@ -174,7 +174,7 @@ var specs = map[string]spec{
 	"ask-human": {use: "pekoe ask-human <question> [--kind decision|approve|login|fyi] [--option TEXT]... [--recommend N|TEXT] [--decided N|TEXT] [--about SLUG] [--context TEXT|-] [--link URL]... [--wait [--timeout 30m]]   ask a person (run by an agent); pekoe ask-human --wait <id> waits for an earlier one",
 		bools: []string{"wait"}, vals: []string{"kind", "option", "recommend", "decided", "about", "context", "link", "timeout"}, multi: []string{"option", "link"}},
 	"inbox":          {use: "pekoe inbox [<id>] [--all] [--mine] [--json]   the questions agents asked a person (open ones; --all: answered too)", bools: []string{"all", "mine"}},
-	"inbox answer":   {use: "pekoe inbox answer <id> [<choice>] [--note TEXT] [--rev N]   answer (a person only; choice from 1; --rev: the rev you looked at)", vals: []string{"note", "rev"}},
+	"inbox answer":   {use: "pekoe inbox answer <id> [<choice>] [--note TEXT] [--rev N]   answer (a person only; choice from 1, or none of the options with --note alone; --rev: the rev you looked at)", vals: []string{"note", "rev"}},
 	"inbox withdraw": {use: "pekoe inbox withdraw <id> [--note TEXT]   take back your own question (the agent that asked)", vals: []string{"note"}},
 	"inbox dismiss":  {use: "pekoe inbox dismiss <id> [--note TEXT]   close a question without an answer (a person only)", vals: []string{"note"}},
 

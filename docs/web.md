@@ -125,8 +125,8 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 docs/orchestration.md の「受信箱で人を誘導する」への対策を、TUI のモーダルと同じ並びで Web にも当てる。
 
 - 1 件のカードは上から、pekoed が読んだ事実(`facts`: セッション・状態・ブランチ・HEAD・差分・PR と CI・レビューの判定・`merge_state`・テスト・衝突予報・最新の報告・マージしてよいかの条件)とリンク → エージェントの文(`from`、名乗りが違えば警告、問い・背景・選択肢)の順に出す
-- 推奨は選択肢の横に `recommended (agent)` と書くだけで、選んだ状態にしない。何も選ばない(選択肢のない問いならメモが空の)うちは `answer…` を押せない
-- `answer…` で確認シートを開き、宛先(問いを出したエージェント)・問い・選んだもの・メモを並べてから送る
+- 推奨は選択肢の横に `recommended (agent)` と書くだけで、選んだ状態にしない。選択肢を選ぶか、メモを書くまで `answer…` を押せない。選択肢があっても、どれも選ばずメモだけで答えられる(選択肢のどれでもない。もう一度タップすると選択が外れる)。pekoed の根拠の項目(merge / wait / send back)だけは選ばないと押せない(pekoed もメモだけの答えを断る)
+- `answer…` で確認シートを開き、宛先(問いを出したエージェント)・問い・選んだもの(メモだけなら `none of the options (the note alone)`)・メモを並べてから送る
 - 送るのは、カードを描いたときの `rev`。pekoed は `inbox.answer` の中で事実を読み直して比べるので、見た後に HEAD が動いた・CI が落ちた・別の端末で答えた項目は 409 になり、ページは選択を外して「changed while you looked」と出す。3 秒ごとの更新で `rev` が上がったときも、選択を外して同じ表示にする
 - 答えは `answer.by: human`・`answer.via: web:<端末名>` で残り、誰がどの端末で何番を選んだかを pekoed のログに出す
 - 答えずに閉じる(`dismiss`)・取り下げは Web には出さない(TUI か CLI で)
@@ -193,7 +193,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
 | `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
 | `GET /api/inbox` | — | `{items: [InboxItem], merges: [InboxItem], at}`。`items` は未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。`merges` は人が `merge` と答えた pekoed の根拠の項目のうち、この 24 時間に変わったものを新しい順に 5 件まで(`answer.merge` でマージ中・済み・失敗と理由が分かる)。InboxItem は docs/api.md のまま |
-| `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まり。400: `rev` がない・`choice` が範囲外・選択肢があるのに選んでいない・選択肢のない問いにメモがない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
+| `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まりで、省くとメモだけの答え(選択肢のどれでもない。`answer` に `choice` は入らない)。400: `rev` がない・`choice` が範囲外・`choice` もメモもない・pekoed の根拠の項目に `choice` がない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
 | `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable, confirm_send}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること、`confirm_send` は `[web] confirm_tapi_send`(既定 true。false ならページは確認シートを挟まずに送る。リクエストごとに今の設定を読むので再起動は要らない)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
 | `GET /api/tapi/transcript?after=<cursor>` | — | `ChatPage`: `{conversation, cursor, items: [{kind: human\|pekoe\|agent\|tool\|turn, text?, name?, input?, question?, ms?, at}], reset?, new_conversation?, earlier?}`。上の「吹き出し(chat)と画面(screen)」。404: transcript が無い / 409: tapi が起動していない |

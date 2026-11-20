@@ -363,6 +363,9 @@ func printInboxItem(it state.InboxItem, full bool) {
 		s := "  " + it.Status + " by " + a.By
 		if a.Choice != nil && *a.Choice < len(it.Options) {
 			s += fmt.Sprintf(": %d %s", *a.Choice+1, untrusted.Line(it.Options[*a.Choice]))
+		} else if a.Choice == nil && it.Status == state.InboxAnswered && len(it.Options) > 0 {
+			// a note alone answered it (--json: answer.choice is absent)
+			s += ": none of the options"
 		}
 		if a.Note != "" {
 			s += " · note: " + untrusted.Line(a.Note)

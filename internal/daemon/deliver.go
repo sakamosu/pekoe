@@ -276,7 +276,9 @@ func (l *changeLog) epochNow() string {
 // like inboxLine, "[pekoe" (the ledger does not take it for a request).
 // Only pekoed's own words go in it: slugs, kinds, a report's status, red
 // or green; never an agent's summary (tapi reads that with wait, as
-// untrusted data).
+// untrusted data). The one exception is an inbox answer's note, cut short:
+// a person's words, which tapi otherwise misses when it reads the line
+// only (it is untrusted data too, as in inboxLine).
 func deliverLine(cs []Change, its []state.InboxItem, epoch string) string {
 	var names []string
 	for _, c := range cs {
@@ -289,11 +291,11 @@ func deliverLine(cs []Change, its []state.InboxItem, epoch string) string {
 	for _, it := range its {
 		switch it.Status {
 		case state.InboxDismissed:
-			names = append(names, "受信箱 "+ids.Question(it.ID)+" は答えずに閉じられた")
+			names = append(names, "受信箱 "+ids.Question(it.ID)+" は答えずに閉じられた"+deliverNote(&it))
 		case state.InboxWithdrawn:
-			names = append(names, "受信箱 "+ids.Question(it.ID)+" は人が取り下げた")
+			names = append(names, "受信箱 "+ids.Question(it.ID)+" は人が取り下げた"+deliverNote(&it))
 		default:
-			names = append(names, "受信箱 "+ids.Question(it.ID)+" に答え")
+			names = append(names, "受信箱 "+ids.Question(it.ID)+" に答え"+deliverNote(&it))
 		}
 	}
 	n := len(names)
@@ -354,4 +356,14 @@ func (d *Daemon) hTapiDeliverPause(p deliverPauseP) (any, error) {
 		go d.deliverTapi()
 	}
 	return nil, nil
+}
+
+// deliverNote is an answer's note for the deliver line, cut short (all of
+// it is in pekoe --json inbox <id>); "" without one.
+func deliverNote(it *state.InboxItem) string {
+	a := it.Answer
+	if a == nil || a.Note == "" {
+		return ""
+	}
+	return "(メモ: " + lineCut(a.Note, inboxNoteCut) + ")"
 }

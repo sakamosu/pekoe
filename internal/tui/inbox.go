@@ -7,7 +7,8 @@ package tui
 // dropped control characters already; they are dropped here again, and an
 // OSC 8 link is made only of an http / https link). The agent's
 // recommendation is labelled as its opinion and is never preselected:
-// Enter does nothing until a choice is picked.
+// Enter does nothing until a choice is picked, or (none of the options;
+// not on pekoed's merge item) a note is written to answer alone.
 
 import (
 	"encoding/json"
@@ -104,7 +105,9 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 			if im.opened {
 				im.opened = false // the read on opening: what the person sees first
 			} else {
-				im.changed, im.sel = true, -1 // choose again, on what is there now
+				// choose again, on what is there now; a note left without
+				// its choice is not sent as a note-only answer by the next ↵
+				im.changed, im.dropped, im.sel = true, im.dropped || im.sel >= 0, -1
 			}
 		case it.Status == state.InboxOpen:
 			im.opened = false
@@ -214,6 +217,9 @@ type inboxModal struct {
 	noting  bool // typing the note
 	dismiss bool // x pressed: y to dismiss
 	changed bool // the item changed while open (facts moved)
+	// dropped: a choice was taken back because the item changed; until
+	// one is chosen again, ↵ asks once more before a note-only answer
+	dropped bool
 	opened  bool // the read on opening has not come back yet
 	sending bool
 	err     string
@@ -227,6 +233,13 @@ type inboxModal struct {
 	// key takes it back
 	confirm   bool
 	confirmAt time.Time
+}
+
+// noteOnlyOK: it takes a note alone as its answer when it has options
+// (none of them): every item but pekoed's own (merge / wait / send back
+// are answered by choosing; the daemon refuses a note alone there too).
+func noteOnlyOK(it state.InboxItem) bool {
+	return !(it.From == "pekoed" && it.Kind == "approve")
 }
 
 // mergeChoice: answering sel to it makes pekoed merge a PR (the daemon's
@@ -360,6 +373,10 @@ func (im *inboxModal) view() []string {
 				mark = th.Bold(theme.Primary, "› ")
 			}
 			lines = append(lines, mark+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, "skip · answer later from the inbox (]a)"))
+		} else if len(it.Options) > 0 && noteOnlyOK(it) {
+			// ]a: with none chosen, the note alone answers (no mark: it is
+			// not a default, as the recommendation is not)
+			lines = append(lines, "  "+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, "none of these · with nothing chosen, the note (n) alone is the answer"))
 		}
 		for i, o := range it.Options {
 			mark := "  "
@@ -451,11 +468,15 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 	case "j", "down":
 		if len(im.it.Options) > 0 {
 			im.sel = min(im.sel+1, len(im.it.Options)-1)
+			im.dropped = false
 			im.selAt = time.Now()
 		}
 	case "k", "up":
-		if im.sel > 0 || im.popup && im.sel == 0 { // up to skip
+		// up to skip (popup), or to none of the options (]a: the note
+		// alone answers; not pekoed's merge item)
+		if im.sel > 0 || im.sel == 0 && (im.popup || noteOnlyOK(im.it)) {
 			im.sel--
+			im.dropped = false
 			im.selAt = time.Now()
 		}
 	case "n":
@@ -502,11 +523,22 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		p := map[string]any{"id": im.it.ID, "rev": im.it.Rev, "note": im.note.String()}
-		if len(im.it.Options) > 0 {
-			if im.sel < 0 {
+		if len(im.it.Options) > 0 && im.sel < 0 {
+			// none of the options: the note alone is the answer (choice
+			// absent), except on pekoed's merge item
+			switch {
+			case !noteOnlyOK(im.it):
 				im.err = fmt.Sprintf("choose first (1-%d); nothing is chosen for you", len(im.it.Options))
 				return nil
+			case strings.TrimSpace(im.note.String()) == "":
+				im.err = fmt.Sprintf("choose first (1-%d), or write a note (n) to answer with none of them", len(im.it.Options))
+				return nil
+			case im.dropped:
+				im.dropped = false
+				im.err = "your choice was dropped (it changed): choose again, or ↵ again to answer with the note alone"
+				return nil
 			}
+		} else if len(im.it.Options) > 0 {
 			p["choice"] = im.sel
 			if mergeChoice(im.it, im.sel) {
 				im.confirm, im.confirmAt, im.err = true, time.Now(), ""
@@ -521,6 +553,7 @@ func (im *inboxModal) key(k tea.KeyMsg) tea.Cmd {
 		if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 			if n := int(key[0] - '1'); n < len(im.it.Options) {
 				im.sel = n
+				im.dropped = false
 				im.selAt = time.Now()
 				im.err = ""
 			}
@@ -588,6 +621,7 @@ func (m *model) onInboxAnswer(msg inboxAnswerMsg) tea.Cmd {
 	if msg.err != nil {
 		im.err = msg.err.Error()
 		if strings.Contains(im.err, "look again") {
+			im.dropped = im.dropped || im.sel >= 0
 			im.sel, im.confirm = -1, false // read it again before choosing
 			return m.openInboxRefresh(im)
 		}

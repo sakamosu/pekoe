@@ -101,6 +101,20 @@ func TestWebInboxAnswer(t *testing.T) {
 	if its := webInboxItems(t, h); len(its) != 1 || its[0].ID != second.ID {
 		t.Fatalf("left open: %+v", its)
 	}
+
+	// none of the options: a note alone answers (choice absent); neither a
+	// choice nor a note is still 400
+	second = webInboxItems(t, h)[0] // its facts moved with HEAD above
+	if w := doWeb(t, h, inboxAnswerReq(ipPhone, second.ID, map[string]any{"rev": second.Rev, "note": "  "})); w.Code != http.StatusBadRequest {
+		t.Fatalf("no choice, blank note: %d %s", w.Code, w.Body)
+	}
+	w = doWeb(t, h, inboxAnswerReq(ipPhone, second.ID, map[string]any{"rev": second.Rev, "note": "画像を送りたい"}))
+	if w.Code != 200 || strings.Contains(w.Body.String(), `"choice"`) {
+		t.Fatalf("note only: %d %s", w.Code, w.Body)
+	}
+	if got := inboxGet(t, d, second.ID); got.Status != state.InboxAnswered || got.Answer.Choice != nil || got.Answer.Note != "画像を送りたい" {
+		t.Fatalf("note only answered: %+v", got.Answer)
+	}
 }
 
 // Completion criterion: a question with <script> in it is never HTML. The

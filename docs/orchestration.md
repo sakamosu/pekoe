@@ -210,7 +210,7 @@ deliver = "off"     # off(既定)| idle
 ```
 
 - 送る条件: tapi が idle、許可ダイアログが出ていない(`session.send` と同じ `promptUp` を受け付け時と打つ直前の 2 回)、人が tapi chat に入力中でない(TUI が `tapi.deliver_pause` で知らせる。開いて入力モードの間と、最後の打鍵から 30 秒)、前回の配送から 30 秒以上
-- 本文は 1 行: `[pekoe] 3 件の変化(feat-csv done、fix-ci ci_failed、受信箱 q12 に答え)。詳しくは pekoe --json wait --since 1532`。先頭を数字にしない
+- 本文は 1 行: `[pekoe] 3 件の変化(feat-csv done、fix-ci ci_failed、受信箱 q12 に答え(メモ: 画像を送りたい))。詳しくは pekoe --json wait --since 1532`。先頭を数字にしない。受信箱の答えにメモがあれば、その先頭(80 文字まで、1 行に均す。人の文なので tapi は信頼できないデータとして読む)を添える(要約だけ読んでメモを読み落とさないように)
 - 配送したものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残す
 - 実装(internal/daemon/deliver.go。仕様の正は docs/api.md「tapi への配送」):
   - **送るもの**: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(ハブの wait の `--on` から、別の仕組みで届く `inbox` を除いたもの)と、tapi の問いへの答え(受信箱で `delivery: pending` のもの)。off の間に起きたことは、後で idle にしても送らない(config.toml の読み直しで off から idle に変わったら、その場で「ここまでは送らない」にする。off の間の印は 5 秒ごとの刻みでしか進まないので)
@@ -233,6 +233,7 @@ pekoe --json ask-human "gh auth login をお願いします" --kind login
 pekoe --json ask-human --wait 12        # 答えが出るまで待つ(wait の inbox: 12 と同じ仕組み。ほかの問いの答えは受け取らない)
 pekoe inbox [--all] [--json]            # 一覧
 pekoe inbox answer 12 1 [--note "…"]    # 人だけ
+pekoe inbox answer 12 --note "…"        # 選択肢のどれでもない(メモが答え)
 ```
 
 | method | params | result |
@@ -241,7 +242,7 @@ pekoe inbox answer 12 1 [--note "…"]    # 人だけ
 | `inbox.list` | `{status?: "open"\|"answered"\|"all", mine?: bool}` | `[InboxItem]` |
 | `inbox.get` | `{id}` | `InboxItem` |
 | `inbox.withdraw` | `{id, note?}` | `InboxItem` |
-| `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。`rev` が今のものと違えば `the item changed; look again`(Web UI の allow / deny の `expect` と同じ考え) |
+| `inbox.answer` | `{id, choice?: int, note?, rev}` | `InboxItem`。`rev` が今のものと違えば `the item changed; look again`(Web UI の allow / deny の `expect` と同じ考え)。`choice` を省いてメモだけでも答えられる(pekoed の根拠の項目を除く) |
 | `inbox.dismiss` | `{id, note?}` | `InboxItem` |
 
 ```jsonc
@@ -279,6 +280,8 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **添字**: API の `recommend`・`decided`・`choice` は 0 始まり、CLI(`--recommend 1`・`inbox answer 12 1`)と画面は 1 始まり。`--recommend` / `--decided` は選択肢の文でも渡せる(`--option` を省いた `approve` は `approve`・`decline` の番号か文。`login` の推奨は断る)
 - **facts と rev**: 未回答の項目の facts は `inbox.list` / `inbox.get` / `inbox.answer` のたびに読み直し、変われば `rev` を上げる。答えは読み直した後の `rev` と比べるので、人が見た後に HEAD が動いた・CI が落ちたものは `look again` で断られる(TUI のモーダルは選択を外して「変わった」と出す)。facts の `report` は id・状態・時刻・HEAD だけにした(要約はエージェントの文で、事実ではない)。`state`・`base`・`git_blocked`・`gone`(セッションが消えた)を足した
 - **kind**: `approve` は選択肢を省くと `approve`・`decline`。`decision` は選択肢なしも受け付け、答えはメモで書く。選択肢 1 つは断る。`about` を省くと呼び出し元のセッション
+- **メモだけの答え**: 選択肢があっても、人はどれも選ばずメモだけで答えられる(選択肢のどれでもない。iPhone の Web UI で当てはまる選択肢が無く、仕方なく近いものを選んでいたのを直した)。`answer` に `choice` のキーは入らず(`0` と取り違えない)、wait の `summary` は `inbox q12 answered: none of the options · note: …`、入力欄の 1 行は `答え: 選択肢のどれでもない(メモ: …)`。TUI(`]a`)・CLI(`pekoe inbox answer 12 --note …`)・Web UI・API で同じ。選択肢もメモも空なら断る。pekoed の根拠の項目(merge / wait / send back)は対象外で、選ぶことでしか答えられない(メモだけでマージ・差し戻しにはならない)
+- **答えのメモを要約に載せる**: wait の `summary` と `[orchestrator] deliver` の 1 行に、答えのメモの先頭(80 文字、1 行に均す)を添える。tapi が要約だけ読んでメモに気づかなかったため。全体は `pekoe --json inbox <id>` の `answer.note`(pekoe-orchestrate・pekoe-work スキルと tapi chat の CLAUDE.md にそう書いた)
 - **取り除く文字**: 制御文字・ANSI に加えて、見えない書式文字(bidi の上書き・ゼロ幅。Unicode の Cf)も落とす(画面で文の順序を入れ替えられる)。TUI は描く前にもう一度落とす
 - **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
 - **人の withdraw も届ける**(受信箱 q120 で決めた): 人が `pekoe inbox withdraw` でエージェントの問いを取り下げたら、`dismiss` と同じ経路(`wait` の `inbox`・pty の 1 行 `人が取り下げました`・`ask-human --wait` が返る)で依頼元に知らせる。前は届けず、待っているエージェントが答えを待ち続けた。エージェントが自分の問いを取り下げたときは自分には知らせない
@@ -288,7 +291,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作った(上の「3. tapi への配送」の「実装」。受信箱の答えも deliver が idle のときはその 1 行で届くので同じ印で止まる)ので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
 - **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない
 - **CLI**: `pekoe ask-human --wait` は真偽のフラグにした(問いと一緒なら出してから待つ、`--wait <id>` なら前に出したものを待つ。`--timeout` は `wait` と同じく 1 時間まで)。`pekoe inbox <id>`(1 件を詳しく)・`pekoe inbox withdraw`・`pekoe inbox dismiss`・`pekoe inbox --mine` を足した。`inbox answer` の `--rev` は省くと今の rev(`pekoe inbox` が rev を出す)
-- **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は `recommended (agent)` と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
+- **TUI**: 未回答の項目が来たらトースト 1 回(`? feat-x asks: …`。起動時にあるものは件数だけ)。`]a` は未回答の項目を古い順に先に回り、その後に今までの待ちの巡回。セッションの巡回が一周する・待ちがなくなると受信箱の巡回もやり直す。`:inbox` でも開く。モーダルは pekoed の事実とリンク → エージェントの文(問い・背景・選択肢)の順で、推奨は `recommended (agent)` と書き選ばない。`1`〜`6` で選び `↵` で答える(何も選ばずに `↵` しても送らない。ただしメモがあればメモだけの答え(選択肢のどれでもない)になる。`k` / `↑` で 1 番目から上がると選択を外せる。開いている間に項目が変わって選択が外れたときは、メモだけで送る前にもう一度 `↵` を求める。pekoed の根拠の項目はメモだけでは送らない)、`n` メモ、`x` 答えずに閉じる、`o` PR かリンクを開く、`g` セッションへ。OSC 8 のリンクは http / https だけ
 
 ### 5. 送信の記録
 
@@ -430,7 +433,7 @@ tapi は `--add-dir` で全リポジトリと `~/worktrees` を読めるよう�
 - quiet は統括役にする前と同じ: tapi はバーの `chat waits · t` だけ(セッションの wait より弱い)、受信箱は新しい問いのメッセージ行 1 回だけ
 - **受信箱のポップアップ**(`[orchestrator] inbox_popup`、既定 `true`。internal/tui/inbox_popup.go): 待たれている問いが新しく来たら、答える画面(`]a` と同じモーダル)をその場で前に出す。毎回 `]a` に飛ばなくても答えられるように(特に pekoed の「マージしてよい」に `merge` と答える流れ)。`merge` と答えると本当にマージされるので、打っている途中のキーで答えてしまわないことを優先した:
   - 出すのは、ほかのモーダル・レビュー画面・ツアーが無く、ターミナルにフォーカスがあり、キーが 2 秒来ていないときだけ(IME の変換中は端末が何も送らないので TUI からは見えない。確定の文字が来た後の間で見る)。フォーカスが戻ったときもそこから 2 秒待つ
-  - 出てから 1 秒はどのキーも捨てる。最初に選ばれているのは「skip」で、`↵` だけ・`↵` の連打・`esc` はスキップ。選ぶ(数字・`j` `k` `↑` `↓`)・答える(`↵`)・スキップ(`esc` `q`)以外のキー(エージェントに打つつもりの文字。`o` `g` `x` も、skip のままの `n` も)が来たら skip に戻して 1 秒待ち直す。リンク・取り下げ・セッションへ移るのはスキップして `]a` から。メモ(`n`)は選択肢を選んだ後だけ受け付ける(`send back` にはメモが要る)。選択肢の無い問い(答えはメモ)はポップアップではスキップだけ。選んですぐ・メモを閉じてすぐ(0.5 秒以内)の `↵` は「もう一度 ↵」と出して答えない(`1⏎` を一息に打ったのはエージェント自身の選択肢向け)
+  - 出てから 1 秒はどのキーも捨てる。最初に選ばれているのは「skip」で、`↵` だけ・`↵` の連打・`esc` はスキップ。選ぶ(数字・`j` `k` `↑` `↓`)・答える(`↵`)・スキップ(`esc` `q`)以外のキー(エージェントに打つつもりの文字。`o` `g` `x` も、skip のままの `n` も)が来たら skip に戻して 1 秒待ち直す。リンク・取り下げ・セッションへ移るのはスキップして `]a` から。メモ(`n`)は選択肢を選んだ後だけ受け付ける(`send back` にはメモが要る)。選択肢の無い問い(答えはメモ)と、メモだけの答え(選択肢のどれでもない)はポップアップではできず、スキップして `]a` から。選んですぐ・メモを閉じてすぐ(0.5 秒以内)の `↵` は「もう一度 ↵」と出して答えない(`1⏎` を一息に打ったのはエージェント自身の選択肢向け)
   - **`merge` は 2 回確定**(ポップアップと `]a` の画面の両方。internal/tui/inbox.go の `mergeChoice`): pekoed の根拠の項目(`from: pekoed`・`kind: approve`・0 番の選択肢が `merge`。daemon がマージを走らせる条件と同じ)で `merge` を選んで `↵` を押すと「`merge PR #42? … ↵ again to merge`」の確認になり、もう一度 `↵` を押したときだけ答えを送る。確認から 0.5 秒の `↵` は捨て、`↵` の連打では通らない(連打の間は待ち直す)。確認中に `↵` 以外のキー(`esc` を含む)が来たら確認を取り消して何も選んでいない状態(ポップアップでは skip、1 秒待ち直す)に戻す。ほかの選択肢(`wait`・`send back`・エージェントの問いの選択肢)は 1 回。同居人に打っている途中の `1` と少し間をあけた改行がポップアップに吸われてもマージに答えないように。Web UI には確認のシートが既にある
   - 一度に 1 件、古い順。それぞれ 1 回だけ出す: スキップした問いは受信箱に残り(バーの `? … asks · ]a`・`]a`)、自分からは二度と出ない。TUI を起動したときにあった問い・`fyi`・人が出した問いは出さない。`notify = "quiet"` か `inbox_popup = false` では出さない
   - TUI だけ。Web UI・iPhone には出さない
@@ -537,7 +540,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(仕様の正は docs/web.md「受信箱(Inbox タブ)の扱い」と API の表):
 
-- **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は `recommended (agent)` と書くだけで選ばない。選ぶ(選択肢のない問いはメモを書く)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
+- **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は `recommended (agent)` と書くだけで選ばない。選ぶかメモを書く(選択肢があってもメモだけで答えられる。pekoed の根拠の項目は選ぶまで)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
 - **rev**: 送るのはカードを描いたときの `rev`。3 秒ごとの更新で `rev` が上がったら選択を外して「changed while you looked」と出す(TUI と同じ)。メモを打っている間と確認シートを開いている間は描き直さない(打った文が消えないように)ので、その間に変わったものは pekoed が 409 で断り、ページは選択を外して出し直す
 - **API**: `GET /api/inbox`・`POST /api/inbox/{id}/answer`(`inbox.answer` の「the item changed; look again」と「答え済み」を 409、無い id を 404、それ以外の誤りを 400 に分けるため、`inbox.go` のエラーを `errors.Is` で見分けられるようにした。文面は変えていない)・`GET /api/tapi`・`GET /api/overview`。答えずに閉じる(`dismiss`)は Web に出さなかった(答えずに閉じると依頼元は「閉じられた」だけを受け取る。外出先で答えられないものは置いておけばよい)
 - **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・依頼)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。依頼の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `impl → review → PR → CI → merge` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない

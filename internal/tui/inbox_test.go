@@ -100,6 +100,105 @@ func TestInboxModal(t *testing.T) {
 	}
 }
 
+// ]a answers a question with options by a note alone (none of them): no
+// choice goes to inbox.answer. Without a note it still asks to choose; a
+// choice dropped because the item changed asks once more first.
+func TestInboxModalNoteOnly(t *testing.T) {
+	it := openItem(1)
+	cs, cl := startCallServer(t, it)
+	m := wrapModel(t, "feat-x")
+	m.cl = cl
+	m.onInboxList(nil)
+	inboxEv(t, m, it)
+	m.openInbox(m.inbox[0])
+	im := m.modal.(*inboxModal)
+	if view := ansi.Strip(strings.Join(im.view(), "\n")); !strings.Contains(view, "none of these") {
+		t.Fatalf("no none-of-these row:\n%s", view)
+	}
+	note := func(s string) {
+		im.key(key("n"))
+		im.key(runes(s))
+		im.key(key("enter"))
+	}
+	if cmd := im.key(key("enter")); cmd != nil || !strings.Contains(im.err, "or write a note") {
+		t.Fatalf("Enter with nothing: %q", im.err)
+	}
+	// chosen, then taken back up to none
+	im.key(key("1"))
+	im.key(key("k"))
+	if im.sel != -1 {
+		t.Fatalf("k from the first: %d", im.sel)
+	}
+	note("画像を送りたい")
+	cmd := im.key(key("enter"))
+	if cmd == nil || !im.sending {
+		t.Fatalf("note-only Enter: %q", im.err)
+	}
+	m.onInboxAnswer(cmd().(inboxAnswerMsg))
+	got := cs.called("inbox.answer")
+	if len(got) != 1 || strings.Contains(got[0], `"choice"`) || !strings.Contains(got[0], `"note":"画像を送りたい"`) || m.modal != nil {
+		t.Fatalf("inbox.answer: %v", got)
+	}
+
+	// a choice dropped by a change: ↵ asks again before the note alone
+	inboxEv(t, m, it)
+	m.openInbox(m.inbox[0])
+	im = m.modal.(*inboxModal)
+	inboxEv(t, m, it) // the read on opening
+	im.key(key("2"))
+	note("2 で、ただし…")
+	moved := openItem(1)
+	moved.Rev = 2
+	inboxEv(t, m, moved)
+	if im.sel != -1 || !im.dropped {
+		t.Fatalf("after the change: %+v", im)
+	}
+	if cmd := im.key(key("enter")); cmd != nil || !strings.Contains(im.err, "dropped") {
+		t.Fatalf("first Enter after the drop: %q", im.err)
+	}
+	cmd = im.key(key("enter"))
+	if cmd == nil || !im.sending {
+		t.Fatalf("second Enter: %q", im.err)
+	}
+	m.onInboxAnswer(cmd().(inboxAnswerMsg))
+	if got := cs.called("inbox.answer"); len(got) != 2 || strings.Contains(got[1], `"choice"`) || !strings.Contains(got[1], `"rev":2`) {
+		t.Fatalf("inbox.answer: %v", got)
+	}
+}
+
+// pekoed's merge item takes no note-only answer in ]a: Enter with a note
+// and nothing chosen asks to choose, and there is no none-of-these row.
+func TestInboxModalMergeNoNoteOnly(t *testing.T) {
+	it := mergeItem(7)
+	cs, cl := startCallServer(t, it)
+	m := wrapModel(t, "feat-x")
+	m.cl = cl
+	m.onInboxList(nil)
+	inboxEv(t, m, it)
+	m.openInbox(m.inbox[0])
+	im := m.modal.(*inboxModal)
+	if view := ansi.Strip(strings.Join(im.view(), "\n")); strings.Contains(view, "none of these") {
+		t.Fatalf("none-of-these on the merge item:\n%s", view)
+	}
+	im.key(key("1"))
+	im.key(key("k"))
+	if im.sel != 0 {
+		t.Fatalf("k went past merge: %d", im.sel)
+	}
+	im.sel = -1
+	im.key(key("n"))
+	im.key(runes("マージして"))
+	im.key(key("enter"))
+	for range 3 {
+		if cmd := im.key(key("enter")); cmd != nil || im.sending || !strings.Contains(im.err, "choose first") || im.confirm {
+			t.Fatalf("note-only Enter on merge: %v %q", im.sending, im.err)
+		}
+	}
+	if got := cs.called("inbox.answer"); len(got) != 0 {
+		t.Fatalf("answered: %v", got)
+	}
+}
+
 // The item changed while the modal was open: choose again; answered
 // elsewhere: the modal closes.
 func TestInboxModalStale(t *testing.T) {
