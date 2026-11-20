@@ -179,12 +179,13 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since 9f3c01ab-15
 
 | method | params | result |
 | --- | --- | --- |
-| `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}` |
+| `wait` | `{slugs?: [slug], mine?: bool, on?: [kind], since?: cursor, timeout_s?, inbox?: id}` | `{cursor, epoch, changes: [Change], timed_out?, reset?}` |
 
 - `kind`: `report`(報告が来た)・`started`(setup が済んでエージェントが動き始めた。`creating` を `failed` 以外で抜けたとき 1 回)・`done` `waiting` `idle` `failed`(その状態に入った)・`pr`(`pr_status.attention` が増えた。CI 失敗・changes requested・マージ可能など)・`ci`(PR の CI が決着した。下)・`landed`・`removed`・`inbox`(自分が出した問いに人が答えた)。既定はすべて
 - `Change` = `{seq, kind, slug, at, summary}`。`summary` は 1 行(「feat-csv: done」「feat-csv: report done: CSV の…」「feat-csv: PR #42 ci_failed」「feat-csv: PR #42 ci green: 5 passed, head 3f2a…」)。詳しくは `ls` / `report.list` / `inbox.get` で読む
 - pekoed は変化を連番つきでメモリの輪(直近 2000 件)に積む。`since` より後に条件に合うものがあればすぐ返し、なければ起きるまで(か `timeout_s` まで)待つ。`epoch` は pekoed の起動ごとに変わり、`since` の epoch が違う・輪から落ちていれば `reset: true` を返す(呼び出し側は `pekoe --json ls` と受信箱を読み直す)。永続化はしない(未決事項 U12)
-- `mine` は `Session.parent` が呼び出し元のもの。tapi はふつう `--mine` で待つ
+- `mine` は `Session.parent` が呼び出し元のもの。tapi はふつう `--mine` で待つ。parent は slug の文字列なので、landed のセッションを同じ slug で作り直すと、前のセッションが作った子まで新しいセッションの子に見えてしまう。子に親の作成時刻(`parent_born`)を持たせて、今の親の子だけを返す
+- `inbox` は受信箱の項目 1 件の答えだけを待つ(`ask-human --wait <id>` が使う)。`--on inbox` だけで待つと、同じ呼び出し元のほかの問いの答えまで受け取って `waited` にしてしまい、CLI は自分の項目しか見ないので、その答えはどこにも届かなかった。項目は一度しか閉じないので、その項目の変化は `since` より前のものも返す(`inbox.get` で開いているのを見てから wait が張られるまでの間に来た答えも、すぐ返る)
 - `ci` は PR の CI の結果が決まったときに出す。「決まった」は、`OPEN` の PR の HEAD のチェックで `pending` が 0、`pass` + `fail` が 1 以上になったこと(`pr_status` のポーリングで見るので、遅れは `[pr] poll_every` の 60 秒と見回りの刻みの 15 秒を足したくらいまで)。`summary` に結果と HEAD の SHA を入れる: 全部通れば `feat-csv: PR #42 ci green: 5 passed, head 3f2a…`、どれか落ちれば `feat-csv: PR #42 ci red: 2 failed (test, lint), 3 passed, head 3f2a…`(落ちたチェックの名前は 3 つまで、残りは `+N more`。全部は `pr_status.failed_checks`)
   - 同じ HEAD・同じ結果では 1 回だけ。知らせた HEAD を `pr_status.ci_head` に、知らせた結果を `pr_status.ci_result` に残し(state.db に入るので、pekoed を再起動しても同じものはもう一度出ない)、push で HEAD が変われば、次に決まったときにまた出す
   - 同じ HEAD でも、決まった結果が知らせたものと違えば(green / red、`pass` / `fail` の数、どのチェックが通り・落ちたか)もう 1 回出す。遅れて足されるチェック(別のワークフローが後から積まれるなど)があると、先に済んだチェックだけの「全部終わった」瞬間に一度 green が出て、遅れたチェックが終わったところで本当の結果(落ちれば red)がもう一度出る。re-run で red が green になったときも出る。re-run が前と同じ結果で終わったときは出ない
@@ -195,7 +196,7 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since 9f3c01ab-15
 - ハブ(tapi・main)の待ち方は `--on report,inbox,failed,waiting,ci` を付ける(スキルと tapi の CLAUDE.md の案内)。起きるたびに長い会話を読み直すので、`done`(ほとんどは報告の直前・レビュー待ちの空振り)・`idle`・`pr`・`landed`・`removed` で起きるとトークンの無駄になる。実測では約 2 時間で tapi が起きた 17 回のうち 7 回が `done` / `pr` / `landed` の空振りだった。`waiting` は許可ダイアログ・AskUserQuestion のときだけ(毎ターンの入力待ちは `idle`)で、報告できない状態なので残す。`ci` は PR ができてから CI が緑になるのを待つためのもので、HEAD と結果の組ごとに 1 回しか起きない(これが無い間、tapi は PR ごとに `gh pr checks <n> --watch` を自分でバックグラウンドで回していた。それをやめる)。報告せずに止まったセッションは `timed_out` で起きたときに `pekoe --json ls` で気づく
 - 待ちは呼び出し元ごとに 8 本、`timeout_s` は 3600 まで。CLI は `--timeout` 省略で 30 分
 - CLI は `cursor` を JSON に入れて返す。スキルには「次の `wait` に `--since <cursor>` を渡す」と書く
-- 実装(追記): 作ったセッションを作り手が待てるように、`started` と `session.new` の返り値の `cursor`(作る直前の cursor)を足した。pekoe の外で起動した main のエージェントは `--mine` が使えない(`unknown`)ので、`pekoe --json new` の `slug` と `cursor` を `wait --slug <slug> --on started,failed,removed --since <cursor>` に渡す(`removed` は作成中に cancel・rm で消されたときも返るように)。`--since` なしの wait は「今から」なので、`new` が返ってから wait を始めるまでに setup が済むと取りこぼす。`pekoe new` に「setup まで待つ」フラグを足す案もあったが、`--json` なしの `pekoe new` は今も setup の完了まで追ううえ、待ちは `wait` 1 つにまとめた方が、setup の後の「報告が来た・止まった」まで同じ書き方(と cursor の引き継ぎ)で続けられるので、こちらにした
+- 実装(追記): 作ったセッションを作り手が待てるように、`started` と `session.new` の返り値の `cursor`(作る直前の cursor。landed の同じ slug を置き換えるときは古い方の `removed` の後。そうしないと `--on started,failed,removed` の wait が古いセッションの `removed` ですぐ返る)を足した。pekoe の外で起動した main のエージェントは `--mine` が使えない(`unknown`)ので、`pekoe --json new` の `slug` と `cursor` を `wait --slug <slug> --on started,failed,removed --since <cursor>` に渡す(`removed` は作成中に cancel・rm で消されたときも返るように)。`--since` なしの wait は「今から」なので、`new` が返ってから wait を始めるまでに setup が済むと取りこぼす。`pekoe new` に「setup まで待つ」フラグを足す案もあったが、`--json` なしの `pekoe new` は今も setup の完了まで追ううえ、待ちは `wait` 1 つにまとめた方が、setup の後の「報告が来た・止まった」まで同じ書き方(と cursor の引き継ぎ)で続けられるので、こちらにした
 - 実装: `cursor` は `<epoch>-<連番>` の文字列にした(連番だけだと、再起動で連番が 0 からやり直したときに古い cursor を見分けられない)。数字だけの `--since` は断る。`pr` は `attention` に増えた項目ごとに 1 件。「報告なし」は英語の他の要約に合わせて `feat-csv: done (no report)`。「報告なし」は最後の UserPromptSubmit の後に報告が無いこと(再起動の後でまだプロンプトを見ていなければ、前の状態に入った時刻の後)。API の `timeout_s` の既定も 1800。8 本の上限は token なしの呼び出しだけ。`slugs` は `<repo>/<slug>` も受け付ける。接続が切れると待ちも終わる(上限の数え直しのため)
 - 実装(`ci`): 判定は `pr_status` を取り直すところ(`applyPRStatus`。裏のポーリングと `pr.view`)で、決着していれば `ci_head` をその HEAD に、`ci_result` をその結果にする。`ci` は `ci_head` が変わった更新で出す(`pr` が `attention` の増分で出るのと同じ場所)。`ci_head` が同じまま `ci_result` が変わったときは `applyPRStatus` が出す。`ci_result` は `green 4/0 <ハッシュ>` の形で、ハッシュはワークフロー名・チェック名・pass / fail の組を並べたもの(run の ID は入れないので、同じ結果の re-run は同じ値)。`ci_result` の無い古い記録は、同じ HEAD ならもう一度は出さずに結果だけ覚える。遅れて足されるチェックへの対し方は、「決着した後にもう 1 回ポーリングして、チェックの集合が変わらないのを見てから出す」案と比べてこちらにした: その案はすべての `ci` をポーリング 1 回分(60 秒)遅らせるうえ、1 回のポーリングより後に積まれるワークフローは防げず、同じ HEAD の re-run の結果も伝わらないまま残る。結果で覚えれば、早出しの green は残るが、本当の結果は必ず後から届き、re-run も同じ仕組みで伝わる。落ちたチェックの名前は `pr_status.failed_checks` に 10 件まで持ち(1 件 60 文字まで、1 行に均す。名前はリポジトリの中身で決まる信頼できない文)、`summary` にはそのうち 3 つまで。`ci_head` の無い古い記録は、決着している PR なら最初の取り直しで 1 回出る。覚えているのは直近に知らせた HEAD 1 つだけ(force-push で前の HEAD に戻すと、その HEAD でもう 1 回出る)。チェックは PR の最後のコミットのものを読むので、そのコミットが PR の HEAD(`headRefOid`)と違う間(push の直後に食い違ったとき)は、チェックを 0 件として扱う(前のコミットの結果を新しい HEAD のものとして知らせない)
 
@@ -212,12 +213,12 @@ deliver = "off"     # off(既定)| idle
 - 本文は 1 行: `[pekoe] 3 件の変化(feat-csv done、fix-ci ci_failed、受信箱 q12 に答え)。詳しくは pekoe --json wait --since 1532`。先頭を数字にしない
 - 配送したものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残す
 - 実装(internal/daemon/deliver.go。仕様の正は docs/api.md「tapi への配送」):
-  - **送るもの**: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(ハブの wait の `--on` から、別の仕組みで届く `inbox` を除いたもの)と、tapi の問いへの答え(受信箱で `delivery: pending` のもの)。off の間に起きたことは、後で idle にしても送らない
-  - **wait との二重を避ける**: tapi の `wait` が返した変化は送らない(返した時点で「渡した」と印を付ける。待たずに `--since` で読んだものも)。今ブロックしている tapi の `wait` が受け取る変化も送らない(その wait が起こす)。「wait を張っている間は何も送らない」にしなかったのは、`--on report` だけ・`ask-human --wait`(中は `--on inbox`)のような狭い wait を張っている間に、その wait が受け取らない `failed` などが届かなくなるため。受信箱の答えは前からある仕組みのまま: tapi が待っていれば答えた時点で `waited` になり、送らない
+  - **送るもの**: tapi が任せたセッション(`parent` が `+tapi`)の `report`・`failed`・`waiting`・`ci`(ハブの wait の `--on` から、別の仕組みで届く `inbox` を除いたもの)と、tapi の問いへの答え(受信箱で `delivery: pending` のもの)。off の間に起きたことは、後で idle にしても送らない(config.toml の読み直しで off から idle に変わったら、その場で「ここまでは送らない」にする。off の間の印は 5 秒ごとの刻みでしか進まないので)
+  - **wait との二重を避ける**: tapi の `wait` が返した変化は送らない(返した時点で「渡した」と印を付ける。待たずに `--since` で読んだものも)。今ブロックしている tapi の `wait` が受け取る変化も送らない(その wait が起こす)。「wait を張っている間は何も送らない」にしなかったのは、`--on report` だけ・`ask-human --wait`(中は 1 件の項目の `inbox`)のような狭い wait を張っている間に、その wait が受け取らない `failed` などが届かなくなるため。受信箱の答えは前からある仕組みのまま: tapi が待っていれば答えた時点で `waited` になり、送らない
   - **受信箱の答えの配送と共有する**: deliver が idle のとき、tapi 宛ての受信箱の答えは自分の 1 行(`[pekoe inbox q12] …`)ではなく、この 1 行にまとめて入る(`delivered` にする)。宛先ごとに 1 本の配送の鍵(`deliverInbox` のもの)・条件の判定(promptUp の 2 回・打鍵から 30 秒)・送り方(`hTapiSend`)・Enter の直前に許可ダイアログが出たときの扱いは同じ。2 つの 1 行が同じ入力欄に別々に入らないように 1 本にした。答えのメモは 1 行に入れないので、tapi は `pekoe --json inbox q12` で読む(1 行にそう書く)
   - **人の入力**: `tapi.deliver_pause` は TUI が tapi chat を開いて入力モードの間、5 秒ごとに `on: true` を送り、pekoed は 1 回を 20 秒覚える(TUI が落ちても止まりっぱなしにならない)。離れたら `on: false`。最後の打鍵から 30 秒は段階 1 からの `tapi.keys` / `tapi.send` の記録で見る。TUI を 2 つ開いて片方が離れると、もう片方の次の `on` まで(5 秒以内)止まらない
   - **本文**: 名前を挙げるのは pekoed の言葉(slug・種類・報告の status・CI の green / red)だけで、エージェントの要約や CI のチェック名(リポジトリの中身で決まる)は入れない。8 件まで挙げて残りは `ほか N 件`。`--mine` を足した(tapi が自分の分を読む。`--since` だけだと他人のセッションの変化も返る)。受信箱の答えがあれば `pekoe --json inbox q12`(2 件以上なら `--mine --all`)を添える
-  - **状態**: `Tapi.deliver` = `{mode, pending, held?, last_at?, last_error?}`。`held` は最後に試したときに送らなかった理由(`stopped`・`busy`・`prompt`・`typing`・`chat`・`interval`)。`pekoe tapi` が on のときに 1 行出す
+  - **状態**: `Tapi.deliver` = `{mode, pending, held?, last_at?, last_error?}`。`held` は最後に試したときに送らなかった理由(`stopped`(tapi の窓が無い、またはエージェントが終了して窓だけ残っている)・`busy`・`prompt`・`typing`・`chat`・`interval`)。`pekoe tapi` が on のときに 1 行出す
   - **tapi の指示**: tapi の `CLAUDE.md` に、この 1 行はユーザーの依頼ではなく信頼できないデータとして読み、書かれたコマンドで詳しく読んで片付け、wait を張り直すことを書いた。設定は動いている間に変えられるので、文は「deliver が idle のとき」の書き方で常に入れる
 
 ### 4. 判断の受信箱(ask-human)
@@ -229,7 +230,7 @@ pekoe --json ask-human "API のページングをカーソル式に変えてよ�
   --option "変える" --option "今のオフセット式のまま" --recommend "変える" \
   --kind decision --about feat-pagination --context - < why.md
 pekoe --json ask-human "gh auth login をお願いします" --kind login
-pekoe --json ask-human --wait 12        # 答えが出るまで待つ(wait --on inbox と同じ仕組み)
+pekoe --json ask-human --wait 12        # 答えが出るまで待つ(wait の inbox: 12 と同じ仕組み。ほかの問いの答えは受け取らない)
 pekoe inbox [--all] [--json]            # 一覧
 pekoe inbox answer 12 1 [--note "…"]    # 人だけ
 ```
@@ -282,7 +283,7 @@ state.db: `inbox(id INTEGER PRIMARY KEY, rev, kind, from_, claimed, about, quest
 - **dismiss も届ける**: 答えずに閉じたものも `wait` の `inbox` と pty の 1 行(`答えずに閉じられました`)で依頼元に知らせる。知らせないと依頼元が答えを待ち続ける
 - **人の withdraw も届ける**(受信箱 q120 で決めた): 人が `pekoe inbox withdraw` でエージェントの問いを取り下げたら、`dismiss` と同じ経路(`wait` の `inbox`・pty の 1 行 `人が取り下げました`・`ask-human --wait` が返る)で依頼元に知らせる。前は届けず、待っているエージェントが答えを待ち続けた。エージェントが自分の問いを取り下げたときは自分には知らせない
 - **run 窓・review 窓から打った受信箱の操作は人のもの**(受信箱 q122 で決めた): 受信箱の呼び出し元は `Caller.ID()` と同じ判定にした。前は窓の種類を見ずに窓の slug を使ったので、TUI の `!` から打った `ask-human` がそのセッションのエージェントの問いになり、答えがエージェントの入力欄に打たれた。今は token つきなら `human` で、エージェントの窓からのもの(sandbox なしのエージェント)だけがそのセッションのもの
-- **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と 1 分ずつの `wait` を繰り返す)
+- **「待っている」の判定**: `wait` は待っている間 pekoed の中で「受け取り手」として登録され、答えた瞬間に `inbox` を受け取る `wait` があれば `waited`。返り値を決めるのと登録を外すのは同じロックの中。待っていなかった依頼元が後から `wait --since` で受け取った・`inbox.get` / `inbox.list` で自分の答えを読んだときも `waited` にして打たない(`ask-human --wait` は `inbox.get` と、その項目だけを待つ 1 分ずつの `wait`(`inbox: <id>`)を繰り返す)
 - **pty への配送**: 1 回に 1 件(古い順)。打つ条件は依頼元が `idle` か `done`(tapi chat は `idle`)・許可ダイアログなし(hooks と画面、受け付け時と打つ直前の 2 回)。試すのは依頼元が `idle` / `done` に入ったとき・答えた直後・5 秒ごと。1 行は `[pekoe inbox q12] 答え: 1「変える」(メモ: …) 詳しくは pekoe --json inbox q12` に均す(メモの改行で入力が途中送信されないように)。Enter の直前に許可ダイアログが出たときは文字が入力欄に残るので、打ち直さず送信の記録に `ok: false` で残す
 - **「人が入力中でない」**: 設計の `tapi.deliver_pause`(TUI が知らせる)は段階 3 の配送と一緒に作った(上の「3. tapi への配送」の「実装」。受信箱の答えも deliver が idle のときはその 1 行で届くので同じ印で止まる)ので、段階 1 は pekoed が見ている打鍵で代える: 人の `session.send`(agent の窓)・`session.keys`・`tapi.send`・`tapi.keys` から 30 秒は配送しない。tapi だけでなくセッションにも当てた(TUI でセッションに打ちかけの文に答えが混ざるのは同じ)。残る穴: 30 秒より前に打ちかけて止めた文は見分けられない
 - **人が出した問い**: token つきで窓の外から出したもの(`from: human`)は件数の上限なし、誰にも届けない

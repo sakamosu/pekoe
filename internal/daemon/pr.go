@@ -411,7 +411,7 @@ func (d *Daemon) addCIChange(s *state.Session) {
 	if s.PRStatus.Fail > 0 {
 		brief = "ci red"
 	}
-	d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent, brief: brief})
+	d.changes.add(Change{Kind: kindCI, Slug: s.Slug, Summary: ciSummary(s), parent: s.Parent, parentBorn: s.ParentBorn, brief: brief})
 }
 
 // ---- gh plumbing ----

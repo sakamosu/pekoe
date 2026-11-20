@@ -552,7 +552,7 @@ func (d *Daemon) emit(ev string, data any) {
 	}
 	if s, ok := data.(*state.Session); ok && ev == "session.removed" && s != nil {
 		d.changes.forget(s.Slug)
-		d.changes.add(Change{Kind: kindRemoved, Slug: s.Slug, Summary: s.Slug + ": removed", parent: s.Parent})
+		d.changes.add(Change{Kind: kindRemoved, Slug: s.Slug, Summary: s.Slug + ": removed", parent: s.Parent, parentBorn: s.ParentBorn})
 	}
 	d.mu.Lock()
 	cs := make([]*conn, 0, len(d.conns))

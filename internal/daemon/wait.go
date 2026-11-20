@@ -64,9 +64,14 @@ type Change struct {
 	At      time.Time `json:"at"`
 	Summary string    `json:"summary"` // one line
 	parent  string    // the session's parent then (mine)
-	to      string    // inbox: the asker, the only caller it goes to
-	inbox   int64     // inbox: the item
-	brief   string    // the delivery's word for it ("" the kind; deliver.go)
+	// parentBorn is which life of the parent session made it (state.Born;
+	// "" a parent that is no session, or a session made before pekoe kept
+	// it): a later session that takes the parent's slug again is not its
+	// parent (mine)
+	parentBorn string
+	to         string // inbox: the asker, the only caller it goes to
+	inbox      int64  // inbox: the item
+	brief      string // the delivery's word for it ("" the kind; deliver.go)
 }
 
 type changeLog struct {
@@ -197,7 +202,7 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 	if prev.State == state.Creating && s.State != state.Creating && s.State != state.Failed {
 		// setup passed and the agent started: what one who just made the
 		// session waits for (failed is its own kind below)
-		d.changes.add(Change{Kind: kindStarted, Slug: s.Slug, Summary: fmt.Sprintf("%s: started (%s)", s.Slug, s.State), parent: s.Parent})
+		d.changes.add(Change{Kind: kindStarted, Slug: s.Slug, Summary: fmt.Sprintf("%s: started (%s)", s.Slug, s.State), parent: s.Parent, parentBorn: s.ParentBorn})
 	}
 	if s.State != prev.State {
 		kind := ""
@@ -225,7 +230,7 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 			case kind == kindFailed && s.Error != "":
 				sum += ": " + lineCut(s.Error, 120)
 			}
-			d.changes.add(Change{Kind: kind, Slug: s.Slug, Summary: sum, parent: s.Parent})
+			d.changes.add(Change{Kind: kind, Slug: s.Slug, Summary: sum, parent: s.Parent, parentBorn: s.ParentBorn})
 		}
 		if s.State == state.Idle || s.State == state.Done {
 			go d.deliverInbox(s.Slug) // its input box is free: an answer waiting for it goes now
@@ -243,7 +248,7 @@ func (d *Daemon) sessionChanges(prev, s *state.Session) {
 		}
 		for _, a := range s.PRStatus.Attention {
 			if !had[a] {
-				d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: fmt.Sprintf("%s: PR #%d %s", s.Slug, s.PR, a), parent: s.Parent})
+				d.changes.add(Change{Kind: kindPR, Slug: s.Slug, Summary: fmt.Sprintf("%s: PR #%d %s", s.Slug, s.PR, a), parent: s.Parent, parentBorn: s.ParentBorn})
 			}
 		}
 		if h := s.PRStatus.CIHead; h != "" && (prev.PRStatus == nil || prev.PRStatus.CIHead != h) {
@@ -276,6 +281,11 @@ type waitP struct {
 	On       []string `json:"on"`
 	Since    string   `json:"since"`
 	TimeoutS int      `json:"timeout_s"`
+	// Inbox: only the inbox change of this item (ask-human --wait <id>):
+	// the answers to the caller's other questions stay for their own
+	// receiver. An item closes once, so its change counts even when it
+	// came before since (between the asker's inbox.get and this wait).
+	Inbox int64 `json:"inbox"`
 }
 
 type waitResult struct {
@@ -309,6 +319,20 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 	if p.Mine && id == callerUnknown {
 		return nil, errUnknownCaller("wait --mine")
 	}
+	if p.Inbox < 0 {
+		return nil, errors.New("inbox must be an item's id")
+	}
+	if p.Inbox > 0 {
+		p.On = []string{kindInbox}
+	}
+	// the caller's own life, when it is a session: the children of an
+	// earlier session of its slug (landed and replaced) are not its own
+	myBorn := ""
+	if p.Mine {
+		if s, err := d.snapshot(id); err == nil {
+			myBorn = state.Born(s)
+		}
+	}
 	if p.TimeoutS < 0 || p.TimeoutS > waitMaxS {
 		return nil, fmt.Errorf("timeout_s must be 0..%d", waitMaxS)
 	}
@@ -325,9 +349,10 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 			return false
 		}
 		if c.Kind == kindInbox {
-			return c.to == id // an answer goes only to the one who asked
+			// an answer goes only to the one who asked
+			return c.to == id && (p.Inbox == 0 || c.inbox == p.Inbox)
 		}
-		return !p.Mine || c.parent == id
+		return !p.Mine || c.parent == id && (c.parentBorn == "" || c.parentBorn == myBorn)
 	}
 
 	l := d.changes
@@ -348,6 +373,9 @@ func (d *Daemon) hWait(who *Caller, p waitP) (any, error) {
 			return res, nil
 		}
 		after = seq
+	}
+	if p.Inbox > 0 {
+		after = 0 // the item's one change, wherever it is in the ring
 	}
 	if !who.Human() {
 		if l.waiting[id] >= waitsPerCaller {

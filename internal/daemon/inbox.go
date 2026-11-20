@@ -513,7 +513,9 @@ func (d *Daemon) hInboxAnswer(who *Caller, p inboxAnswerP) (any, error) {
 			return errors.New("inbox.answer: send back needs a note (it is sent to the session)")
 		}
 		it.Status = state.InboxAnswered
-		it.Answer = &state.InboxAnswer{Choice: p.Choice, Note: note, By: callerHuman, Via: who.Via, At: time.Now()}
+		// by the caller's window, as withdraw: an agent that reads the token
+		// (sandbox off, tapi chat) answers as itself, not as a person
+		it.Answer = &state.InboxAnswer{Choice: p.Choice, Note: note, By: inboxCaller(who), Via: who.Via, At: time.Now()}
 		if mergeAsked(it, p.Choice) {
 			// pekoed merges it now (mergerun.go): saved with the answer, so
 			// the answer and "it is being merged" are one change
@@ -555,7 +557,7 @@ func (d *Daemon) hInboxDismiss(who *Caller, p inboxIDP) (any, error) {
 	}
 	it, err := d.closeInbox(p.ID, "inbox.dismiss", func(it *state.InboxItem) error {
 		it.Status = state.InboxDismissed
-		it.Answer = &state.InboxAnswer{Note: note, By: callerHuman, Via: who.Via, At: time.Now()}
+		it.Answer = &state.InboxAnswer{Note: note, By: inboxCaller(who), Via: who.Via, At: time.Now()}
 		return nil
 	})
 	if err != nil {
@@ -617,7 +619,8 @@ func (d *Daemon) inboxClosed(it *state.InboxItem) {
 // removed session asked must not become the new one's: its open items are
 // withdrawn by pekoed (no answer can reach it any more; nor do they count
 // against the new session's open limit, nor can it withdraw them), and an
-// answer not yet typed into its window is never typed (delivery none).
+// answer not yet typed into its window is never typed (delivery none):
+// its own, and pekoed's merge item sent back to it.
 func (d *Daemon) inboxSessionGone(slug string) {
 	if slug == "" || slug == TapiSlug || slug == callerHuman || slug == callerUnknown || slug == callerPekoed {
 		return
@@ -639,11 +642,14 @@ func (d *Daemon) inboxSessionGone(slug string) {
 			d.emit("inbox.updated", it)
 		}
 	}
-	pending, err := d.DB.InboxList(state.InboxFilter{From: slug, Delivery: state.DeliveryPending})
+	pending, err := d.DB.InboxList(state.InboxFilter{Delivery: state.DeliveryPending})
 	if err != nil {
 		log.Printf("inbox of removed %s: %v", slug, err)
 	}
 	for _, p := range pending {
+		if inboxRecipient(&p) != slug {
+			continue
+		}
 		d.inboxMu.Lock()
 		ok, _ := d.DB.SetInboxDelivery(p.ID, state.DeliveryPending, state.DeliveryNone)
 		d.inboxMu.Unlock()
@@ -726,7 +732,9 @@ func (d *Daemon) inboxReady(to string) (bool, error) {
 		return false, nil
 	}
 	if to == TapiSlug {
-		if !d.tapiStarted() {
+		if !d.tapiStarted() || !d.Eng.Alive(TapiSlug, engine.WinAgent) {
+			// its agent exited and tmux kept the window (remain-on-exit):
+			// a line typed into the dead pane reaches nobody
 			return false, nil
 		}
 		d.mu.Lock()
@@ -791,6 +799,11 @@ func (d *Daemon) deliverInbox(to string) {
 		return
 	}
 	if !ready {
+		return
+	}
+	if cur, err := d.DB.InboxGet(it.ID); err != nil || cur.Delivery != state.DeliveryPending {
+		// the asker read it meanwhile (inbox.get, a wait that took it
+		// after the asker looked and before its wait took hold)
 		return
 	}
 	line := inboxLine(it)

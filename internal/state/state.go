@@ -156,8 +156,12 @@ type Session struct {
 	// Parent is who created the session with session.new: "+tapi", a
 	// session's slug, "human" or "unknown" (daemon/caller.go). wait's mine
 	// and, later, the inbox's answers go to it. Empty: not made by session.new.
-	Parent string         `json:"parent,omitempty"`
-	Report *ReportSummary `json:"report,omitempty"` // the latest report.post
+	Parent string `json:"parent,omitempty"`
+	// ParentBorn is which life of the parent session made it (Born of the
+	// parent then; "" when Parent is no session): a session that later
+	// takes the parent's slug (a landed one replaced) is not its parent.
+	ParentBorn string         `json:"parent_born,omitempty"`
+	Report     *ReportSummary `json:"report,omitempty"` // the latest report.post
 	// Review is the latest independent review (report.post --status
 	// review): started (verdict pending), passed or failed, and the commit.
 	// It stays when later reports (done, progress) come in.

@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"pekoe/internal/state"
 )
@@ -69,5 +71,29 @@ func TestAskHumanWaitWrongLetter(t *testing.T) {
 		if _, ok := err.(*usageError); !ok || !strings.Contains(err.Error(), "not an inbox question number") {
 			t.Errorf("--wait %s: want a usage error, got %v", arg, err)
 		}
+	}
+}
+
+// ask-human --wait <id> waits on that item only (wait's inbox): a wait on
+// every inbox change of the caller would take the answers to its other
+// questions as received, and they would never reach it.
+func TestAskWaitOnItem(t *testing.T) {
+	fd := startFakeDaemon(t)
+	fd.mu.Lock()
+	fd.results = map[string]any{"inbox.get": state.InboxItem{ID: 12, Status: state.InboxOpen}}
+	fd.errs = map[string]string{"wait": "stop here"}
+	fd.mu.Unlock()
+	if err := askWait(12, time.Hour); err == nil || !strings.Contains(err.Error(), "stop here") {
+		t.Fatalf("askWait: %v", err)
+	}
+	fd.mu.Lock()
+	raw := fd.params["wait"]
+	fd.mu.Unlock()
+	var p struct {
+		On    []string `json:"on"`
+		Inbox int64    `json:"inbox"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil || p.Inbox != 12 || strings.Join(p.On, ",") != "inbox" {
+		t.Fatalf("wait params %s: want on [inbox] and inbox 12", raw)
 	}
 }
