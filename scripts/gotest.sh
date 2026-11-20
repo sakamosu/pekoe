@@ -115,7 +115,6 @@ stopped=
 cleanup() {
 	# shellcheck disable=SC2086 # one pid per word
 	stop_all $others_pid
-	# ./cmd/... is one package (cmd/pekoe); were there more, stop_all
 	# shellcheck disable=SC2086
 	stop $webcmd_pid
 	# each daemon_shards subshell stops its own go tests (its TERM trap)
@@ -140,13 +139,11 @@ daemon_shards() {
 	name=$1
 	shift
 	spids=
-	# cleanup's kill stops this subshell; take its go tests along ($! too:
-	# the one just started, when the trap comes before it is in $spids; +u
-	# for when none has started yet).
-	# Every go test runs in the background, waited for: the shell runs the
-	# trap only once a command in the foreground has returned.
+	# cleanup's kill stops this subshell; take its go tests along. Every go
+	# test runs in the background, waited for: the shell runs the trap only
+	# once a command in the foreground has returned.
 	# shellcheck disable=SC2086 # one pid per word
-	trap 'set +u; stop $spids $!; wait; exit 130' TERM
+	trap 'stop $spids; wait; exit 130' TERM
 	"$GO" test "$@" -list '.*' "$DAEMON" >"$tmp/$name.list.log" 2>&1 &
 	spids=$!
 	if ! wait "$spids"; then
