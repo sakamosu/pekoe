@@ -117,15 +117,16 @@ func (d *Daemon) hOpen(p openP) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s is not a git worktree", p.Path)
 	}
+	// from resolving the repository and the checks to d.add: a
+	// session.new or open at the same time cannot take the same slug or
+	// worktree, and a repo.forget comes wholly before or after
+	unlock := d.lockNew()
+	defer func() { unlock() }()
 	repo, err := resolveRepo(top)
 	if err != nil {
 		return nil, err
 	}
 	d.resolved(repo)
-	// from the checks to d.add: a session.new or open at the same time
-	// cannot take the same slug or worktree
-	unlock := d.lockNew()
-	defer func() { unlock() }()
 	// by the resolved path: top is git's (symlinks resolved, /private/tmp
 	// on macOS) while a session made by new keeps PEKOE_WORKTREES as given
 	if slug := d.sessionAt(top); slug != "" {

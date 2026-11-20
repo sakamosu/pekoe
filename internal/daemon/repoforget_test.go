@@ -1,9 +1,11 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -152,4 +154,88 @@ func branchList(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return string(out)
+}
+
+// repo.forget and a session.new of the same repository at the same time:
+// one comes wholly before the other. Either forget refuses (the session
+// is there), or the session is made after it and pekoe knows the
+// repository again. Never does forget succeed and leave a session of the
+// repository behind with repo:<id> and its config file deleted under it.
+func TestRepoForgetRacesNew(t *testing.T) {
+	d, _, app := setup(t)
+	id := call[KnownRepo](t, d, "repo.resolve", map[string]any{"repo": app}).ID
+	cfg := paths.RepoConfig(id)
+	os.MkdirAll(paths.ReposConfigDir(), 0o755)
+	const n = 20
+	hits := 0
+	for i := 0; i < n; i++ {
+		call[[]KnownRepo](t, d, "repo.list", map[string]any{"cwd": app}) // remembered
+		os.WriteFile(cfg, []byte("agent = \"claude\"\n"), 0o644)
+		var wg sync.WaitGroup
+		var ferr, nerr error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			nerr = callErr(d, "session.new", map[string]any{"repo": app, "branch": fmt.Sprintf("f/x%d", i)})
+		}()
+		go func() {
+			defer wg.Done()
+			ferr = callErr(d, "repo.forget", map[string]any{"repo": app, "config": true})
+		}()
+		wg.Wait()
+		live := 0
+		d.mu.Lock()
+		for _, s := range d.sessions {
+			if s.RepoID == id {
+				live++
+			}
+		}
+		d.mu.Unlock()
+		_, cfgErr := os.Stat(cfg)
+		if ferr == nil && nerr == nil && live > 0 && os.IsNotExist(cfgErr) && d.DB.Get(repoKVPrefix+id) == "" {
+			hits++
+		}
+		waitCreations(t, d)
+		d.mu.Lock()
+		var slugs []string
+		for slug := range d.sessions {
+			slugs = append(slugs, slug)
+		}
+		d.mu.Unlock()
+		for _, slug := range slugs {
+			callErr(d, "worktree.rm", map[string]any{"slug": slug, "force": true})
+		}
+	}
+	if hits > 0 {
+		t.Fatalf("%d/%d: forget succeeded while session.new made a session of the repository (repo:%s and its config deleted under it)", hits, n, id)
+	}
+}
+
+// A repo.list while repo.forget --config deletes (the TUI reloads it on
+// the session.removed forget sends for a landed session) must not find
+// the config file left after repo:<id> is gone, locate the repository and
+// remember it again: forget would succeed and pekoe still know it.
+func TestRepoForgetRacesRepoList(t *testing.T) {
+	d, _, app := setup(t)
+	id := call[KnownRepo](t, d, "repo.resolve", map[string]any{"repo": app}).ID
+	cfg := paths.RepoConfig(id)
+	os.MkdirAll(paths.ReposConfigDir(), 0o755)
+	call[[]KnownRepo](t, d, "repo.list", map[string]any{"cwd": app}) // remembered
+	os.WriteFile(cfg, []byte("agent = \"claude\"\n"), 0o644)
+	ran := false
+	defer func(f func()) { forgetBetween = f }(forgetBetween)
+	forgetBetween = func() {
+		ran = true
+		d.mu.Lock()
+		d.locateMiss = nil // searched for at once
+		d.mu.Unlock()
+		callErr(d, "repo.list", map[string]any{})
+	}
+	call[RepoForget](t, d, "repo.forget", map[string]any{"repo": app, "config": true})
+	if !ran {
+		t.Fatal("forgetBetween did not run")
+	}
+	if knows(d, id) || d.DB.Get(repoKVPrefix+id) != "" {
+		t.Fatalf("forget succeeded but the repository is known again (repo:%s written back)", id)
+	}
 }

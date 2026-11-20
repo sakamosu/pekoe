@@ -211,6 +211,12 @@ func (d *Daemon) hNew(p newP) (any, error) {
 	if err := gitx.CheckBranchName(p.Branch); err != nil {
 		return nil, err
 	}
+	// from resolving the repository (its config read, remembered) and the
+	// check that the slug is free to the session's registration (d.add
+	// below): another session.new of the same slug waits, and then finds
+	// this one; a repo.forget of the repository comes wholly before or after
+	unlock := d.lockNew()
+	defer func() { unlock() }()
 	repo, err := resolveRepo(p.Repo)
 	if err != nil {
 		return nil, err
@@ -220,11 +226,6 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		// a worktree needs a commit to start from
 		return nil, fmt.Errorf("%s has no commits yet: make a first commit (git commit) before creating a session", repo.Dir)
 	}
-	// from the check that the slug is free to the session's registration
-	// (d.add below): another session.new of the same slug waits, and then
-	// finds this one
-	unlock := d.lockNew()
-	defer func() { unlock() }()
 	slug := d.uniqueSlug(paths.Slug(p.Branch), repo.ID, repo.Name)
 	old, err := d.snapshot(slug)
 	if err == nil && old.State != state.Landed {
@@ -324,11 +325,13 @@ func (d *Daemon) hNew(p newP) (any, error) {
 }
 
 // lockNew keeps any other session from being registered (session.new,
-// session.open) until unlock is called. Those hold it from their checks
-// (the slug is free, no other session lives in the worktree) until the
-// session is in d.sessions, so that two of them at once cannot both pass
-// the checks and the second overwrite the first. Whatever must not
-// interleave with a new session appearing can hold it too.
+// session.open) until unlock is called. Those hold it from resolving the
+// repository and their checks (the slug is free, no other session lives in
+// the worktree) until the session is in d.sessions, so that two of them at
+// once cannot both pass the checks and the second overwrite the first.
+// Whatever must not interleave with a new session appearing can hold it
+// too: repo.forget, from its check that no session is left to its
+// deletions.
 func (d *Daemon) lockNew() (unlock func()) {
 	d.newMu.Lock()
 	return d.newMu.Unlock
