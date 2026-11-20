@@ -138,13 +138,18 @@ func ghRepoFrom(base string) string {
 
 var ghRepoRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// prBase is the branch s's PR goes into (what land rebased onto).
+// prBase is the branch s's PR goes into (what land opened it against).
 func prBase(s *state.Session) string {
 	if s.Base != "" {
-		return s.Base
+		return originBranch(s.Base)
 	}
 	return gitx.DefaultBase(s.RepoDir)
 }
+
+// originBranch is the branch on origin that base names: session.new takes
+// base "origin/main" for origin's main, and land fetches main, rebases onto
+// origin/main and opens the PR against main.
+func originBranch(base string) string { return strings.TrimPrefix(base, "origin/") }
 
 func (d *Daemon) lastMergeRun(slug string) *state.MergeRun {
 	if v, ok := d.mergeRuns.Load(slug); ok {
@@ -219,7 +224,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 			end(state.MergeFailed, "not merged: could not read PR #%d again: %s", s.PR, cutRunes(err.Error(), mergeDetailMax))
 			return
 		}
-		d.applyPRStatus(s.Slug, v.Summary(), false)
+		d.applyPRStatus(s.Slug, s.PR, v.Summary(), false)
 		if base := prBase(s); v.Base != base {
 			// the base was changed after the person looked: not what they agreed to
 			end(state.MergeFailed, "not merged: PR #%d goes into %s now, not %s", s.PR, v.Base, base)
@@ -288,7 +293,7 @@ func (d *Daemon) runMerge(it state.InboxItem) {
 	// the landing starts right away
 	ctx, cancel = context.WithTimeout(context.Background(), mergeReadTimeout)
 	if v, err := fetchPRView(ctx, repo, s.PR); err == nil {
-		d.applyPRStatus(s.Slug, v.Summary(), false)
+		d.applyPRStatus(s.Slug, s.PR, v.Summary(), false)
 	}
 	cancel()
 }

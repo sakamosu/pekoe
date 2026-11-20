@@ -558,6 +558,15 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	if s.PRReview {
 		return nil, errors.New("this is someone else's PR; nothing to land")
 	}
+	if !s.Managed {
+		// a checkout pekoe did not make (pekoe open of the repository's
+		// main checkout, or of a worktree outside ~/worktrees): land would
+		// rebase and push someone's own checkout, its base branch among them
+		return nil, fmt.Errorf("%s is not a session pekoe made (pekoe open of %s): land only sessions made with pekoe new", p.Slug, s.Path)
+	}
+	if s.Branch == "" || s.Branch == "HEAD" {
+		return nil, fmt.Errorf("%s has no branch to push: nothing to land", p.Slug)
+	}
 	if out, err := gitx.Run(s.Path, "status", "--porcelain"); err != nil {
 		return nil, err
 	} else if out != "" {
@@ -573,6 +582,14 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	if err := gitx.CheckRefArg("branch", s.Branch); err != nil {
 		return nil, err
 	}
+	if s.Branch == originBranch(base) {
+		// pushing it would put the commits on the base itself, with no PR
+		return nil, fmt.Errorf("%s is on %s, its base: land pushes a branch and opens a PR into the base, so there is nothing to land", p.Slug, s.Branch)
+	}
+	if cur := gitx.CurrentBranch(s.Path); cur != s.Branch {
+		// land rebases and pushes HEAD as s.Branch: what is checked out now
+		return nil, fmt.Errorf("the worktree has %s checked out, not the session's branch %s: check out %s first", cur, s.Branch, s.Branch)
+	}
 	hasOrigin := gitx.Origin(s.Path) != ""
 	if !hasOrigin && agent {
 		return nil, fmt.Errorf("land in a repository without origin fast-forwards %s and removes the worktree with nobody merging: %w", base, ErrHumanOnly)
@@ -583,7 +600,7 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 	if hasOrigin {
 		// base "origin/main" (session.new takes it) names origin's main:
 		// fetch, rebase onto and open the PR against main, as fetchBase does
-		base = strings.TrimPrefix(base, "origin/")
+		base = originBranch(base)
 		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
 			fetched = true
@@ -880,6 +897,7 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		return nil
 	}
 	if merged {
+		d.readMergedHead(s)
 		if why := d.landHold(s); why != "" {
 			d.holdLanding(s, why)
 			return nil
@@ -940,6 +958,50 @@ func (d *Daemon) finishLand(slug string, merged bool) error {
 		d.recordSession(landed, &mergedAt, false) // stats.go
 	}
 	return nil
+}
+
+// readMergedHead reads the merged PR's head from GitHub when s's worktree
+// has commits the head pekoed has lacks (landHold would hold for them).
+// That head is what the PR poller read last: a second pekoe land into the
+// same PR, merged before the poller's next read or seen by watchMerges
+// (which reads only the state), pushed commits it does not know, and
+// MERGED is never read again. s and the session take the head read; when
+// gh cannot tell, the head stays as it was (and the landing held).
+func (d *Daemon) readMergedHead(s *state.Session) {
+	if n, err := d.commitsBeyondPR(s); err != nil || n == 0 {
+		return
+	}
+	repo := d.ghRepo(s)
+	if repo == "" || s.PR == 0 || !ghAvailable() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	v, err := fetchPRView(ctx, repo, s.PR)
+	cancel()
+	if err != nil {
+		return
+	}
+	head := v.Summary().HeadSHA
+	if head == "" || (s.PRStatus != nil && head == s.PRStatus.HeadSHA) {
+		return
+	}
+	ps := state.PRStatus{State: "MERGED"}
+	if s.PRStatus != nil {
+		ps = *s.PRStatus
+	}
+	ps.HeadSHA = head
+	s.PRStatus = &ps
+	d.update(s.Slug, func(x *state.Session) {
+		if x.PR != s.PR {
+			return
+		}
+		c := state.PRStatus{State: "MERGED"}
+		if x.PRStatus != nil {
+			c = *x.PRStatus
+		}
+		c.HeadSHA = head
+		x.PRStatus = &c
+	})
 }
 
 // holdLanding records s's PR merged without tearing s down (finishLand):

@@ -203,3 +203,143 @@ func TestMergeSettledLocalTime(t *testing.T) {
 		t.Fatalf("settled detail %q, want %q", got, want)
 	}
 }
+
+// A commit after pekoe land (not pushed, not reviewed) is in no PR: the
+// PR's head lacks it, so the session is not settled and nobody is asked
+// to merge a PR that would leave it out.
+func TestMergeSettledCommitAfterLand(t *testing.T) {
+	d, _ := mergeSetup(t)
+	s, _ := d.snapshot("main")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("main", func(x *state.Session) { x.PRStatus.HeadSHA = head })
+	review(t, d, "pass", head)
+	d.setState("main", state.Done, "")
+	if c := mergeCheckOf(t, d); !c.Ready {
+		t.Fatalf("at the PR's head: %+v", c.Conds)
+	}
+	os.WriteFile(filepath.Join(s.Path, "later.txt"), []byte("x\n"), 0o644)
+	run(t, s.Path, "git", "add", "later.txt")
+	run(t, s.Path, "git", "commit", "-qm", "later work, not pushed")
+	c := mergeCheckOf(t, d)
+	if c.Ready || strings.Join(c.Missing, ",") != "settled" {
+		t.Fatalf("check: %+v", c)
+	}
+	if got := c.Conds[len(c.Conds)-1]; !strings.Contains(got.Detail, "HEAD has 1 commit not in PR #42 (run pekoe land)") {
+		t.Fatalf("settled: %+v", got)
+	}
+	d.checkMerges()
+	if its := mergeItems(t, d, "open"); len(its) != 0 {
+		t.Fatalf("asked to merge without the commit: %+v", its)
+	}
+}
+
+// A PR merged while the agent worked (land held); the agent commits more
+// and stops before pekoe land: the commit is in no PR, so the landing
+// stays held (window and worktree kept) and says so. Once the commit is
+// gone from HEAD (a person dropped it), it lands.
+func TestMergedWhileWorkingCommitAfterMerge(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitCreated(t, d, "feat-x")
+	s, _ := d.snapshot("feat-x")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) {
+		x.Landing, x.PR = true, 7
+		x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: head}
+	})
+	d.setState("feat-x", state.Running, "")
+	d.landMerged("feat-x") // GitHub: merged at head, the agent still at work
+	if x, _ := d.snapshot("feat-x"); x.LandHeld == "" || x.State == state.Landed {
+		t.Fatalf("not held: %+v", x.State)
+	}
+	os.WriteFile(filepath.Join(s.Path, "more.txt"), []byte("more\n"), 0o644)
+	run(t, s.Path, "git", "add", "more.txt")
+	run(t, s.Path, "git", "commit", "-qm", "more work after the merge")
+	d.setState("feat-x", state.Done, "") // it stops to ask something before pekoe land
+	var x *state.Session
+	waitFor(t, func() bool {
+		x, _ = d.snapshot("feat-x")
+		_, busy := d.finishing.Load("feat-x")
+		return !busy && strings.Contains(x.LandHeld, "HEAD has 1 commit not in the merged PR #7")
+	})
+	if x.State == state.Landed || !x.Landing {
+		t.Fatalf("held session: %+v", x)
+	}
+	if _, err := os.Stat(s.Path); err != nil {
+		t.Fatal("worktree removed with a commit in no PR")
+	}
+	d.watchMerges() // still there: held again
+	if x, _ := d.snapshot("feat-x"); x.State == state.Landed {
+		t.Fatal("landed with a commit in no PR")
+	}
+
+	run(t, s.Path, "git", "reset", "-q", "--hard", head)
+	d.watchMerges()
+	waitLanded(t, d, "feat-x")
+}
+
+// Commits already in origin's base are in no danger: a held landing whose
+// agent moved HEAD onto origin/main after the (squash) merge lands, though
+// HEAD's commits are not in the PR's head.
+func TestMergedWhileWorkingHeadOnBase(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	waitCreated(t, d, "feat-x")
+	s, _ := d.snapshot("feat-x")
+	os.WriteFile(filepath.Join(s.Path, "x.txt"), []byte("x\n"), 0o644)
+	run(t, s.Path, "git", "add", "x.txt")
+	run(t, s.Path, "git", "commit", "-qm", "x")
+	head := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) {
+		x.Landing, x.PR = true, 7
+		x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: head}
+	})
+	d.setState("feat-x", state.Running, "")
+	d.landMerged("feat-x")
+	if x, _ := d.snapshot("feat-x"); x.LandHeld == "" {
+		t.Fatal("not held")
+	}
+	// GitHub squash-merged #7 into main; the agent takes origin/main
+	os.WriteFile(filepath.Join(repo, "x.txt"), []byte("x\n"), 0o644)
+	run(t, repo, "git", "add", "x.txt")
+	run(t, repo, "git", "commit", "-qm", "x (#7)")
+	run(t, repo, "git", "push", "-q", "origin", "main")
+	run(t, s.Path, "git", "fetch", "-q", "origin")
+	run(t, s.Path, "git", "reset", "-q", "--hard", "origin/main")
+	d.setState("feat-x", state.Done, "")
+	waitLanded(t, d, "feat-x")
+}
+
+// A second pekoe land into the same open PR, merged before the poller read
+// its new head (or seen by watchMerges, which reads only the state): the
+// commits land pushed are in the PR, though the head pekoed had lacks
+// them. The merge reads the head again and the session lands.
+func TestMergedAfterSecondLandLands(t *testing.T) {
+	d, _, repo := setup(t)
+	withOrigin(t, repo)
+	onGitHub(t, d, repo)
+	ghd := fakeGH(t, "OPEN")
+	call[state.Session](t, d, "session.new", map[string]any{"repo": repo, "branch": "feat/x"})
+	s := waitCreated(t, d, "feat-x")
+	commit := func(name string) string {
+		os.WriteFile(filepath.Join(s.Path, name), []byte(name+"\n"), 0o644)
+		run(t, s.Path, "git", "add", name)
+		run(t, s.Path, "git", "commit", "-qm", name)
+		return strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	}
+	commit("one.txt")
+	callAs[map[string]any](t, d, agentAs("feat-x"), "land", map[string]any{"slug": "feat-x"})
+	first := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	d.update("feat-x", func(x *state.Session) { x.PRStatus = &state.PRStatus{State: "OPEN", HeadSHA: first} }) // the poller's read
+	commit("two.txt")
+	callAs[map[string]any](t, d, agentAs("feat-x"), "land", map[string]any{"slug": "feat-x"})
+	second := strings.TrimSpace(gitOut(t, s.Path, "rev-parse", "HEAD"))
+	if x, _ := d.snapshot("feat-x"); x.PR != 42 || x.PRStatus == nil || x.PRStatus.HeadSHA != first {
+		t.Fatalf("after the second land: PR %d, %+v", x.PR, x.PRStatus)
+	}
+	prFixture{State: "MERGED", Merge: "UNKNOWN", Head: second}.write(t, ghd) // GitHub merged #42 at second
+	d.setState("feat-x", state.Done, "")
+	d.landMerged("feat-x")
+	waitLanded(t, d, "feat-x")
+}

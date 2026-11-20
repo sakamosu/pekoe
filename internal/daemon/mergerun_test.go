@@ -576,7 +576,7 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		d.applyPRStatus("main", v.Summary(), false)
+		d.applyPRStatus("main", 42, v.Summary(), false)
 		d.checkMerges()
 		if its := mergeItems(t, d, "open"); len(its) != 1 || its[0].ID == it.ID {
 			t.Fatalf("asked again: %+v", its)
@@ -623,4 +623,16 @@ func TestMergeRunWaitsForUnknown(t *testing.T) {
 			t.Fatalf("merged: %q", ms)
 		}
 	})
+}
+
+// A session made with --base origin/main: land opened its PR into main,
+// and the merge compares the PR's base with that, not with "origin/main".
+func TestMergeRunOriginBase(t *testing.T) {
+	d, _, ghd, it := mergeRunSetup(t)
+	d.update("main", func(x *state.Session) { x.Base = "origin/main" })
+	answerMerge(t, d, it.ID)
+	run := waitMergeEnd(t, d, it.ID)
+	if run.State != state.MergeMerged {
+		t.Fatalf("run: %+v (gh merges %q)", run, ghMerges(ghd))
+	}
 }
