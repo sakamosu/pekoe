@@ -31,10 +31,10 @@ func TestClaudeSandboxSettings(t *testing.T) {
 	d, _, repo := setup(t)
 	moved := filepath.Join(t.TempDir(), "ts")
 	d.Global.Web.StateDir = moved
-	c := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
+	c := decodeSettings(t, d.claudeSandboxSettings("main", []string{repo}, nil))
 
 	sb := c.Sandbox
-	if !strings.Contains(d.claudeSandboxSettings(nil, nil), `"disabled":false`) {
+	if !strings.Contains(d.claudeSandboxSettings("main", nil, nil), `"disabled":false`) {
 		t.Error("filesystem.disabled is not pinned to false")
 	}
 	if !sb.Enabled || sb.AllowUnsandboxedCommands || !sb.FailIfUnavailable {
@@ -189,7 +189,7 @@ func TestTapiCannotWriteRepos(t *testing.T) {
 		}
 	}
 	// a session's own settings do not shut its worktree
-	s := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
+	s := decodeSettings(t, d.claudeSandboxSettings("main", []string{repo}, nil))
 	for _, p := range append(s.Sandbox.Filesystem.DenyWrite, s.Permissions.Deny...) {
 		if p == realpath(repo) || p == "Edit(/"+realpath(repo)+"/**)" {
 			t.Errorf("a session's repository is shut: %s", p)
@@ -208,7 +208,7 @@ func TestClaudeSandboxSettingsSubmodules(t *testing.T) {
 		os.WriteFile(filepath.Join(gitDir, m, "HEAD"), []byte("x\n"), 0o644)
 		os.WriteFile(filepath.Join(gitDir, m, "config"), []byte("[core]\n"), 0o644)
 	}
-	c := decodeSettings(t, d.claudeSandboxSettings([]string{repo}, nil))
+	c := decodeSettings(t, d.claudeSandboxSettings("main", []string{repo}, nil))
 	for _, m := range []string{"modules/lib", "modules/lib/modules/deep"} {
 		for _, f := range []string{"config", "config.worktree", "hooks"} {
 			p := realpath(filepath.Join(gitDir, m, f))

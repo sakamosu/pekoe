@@ -374,6 +374,7 @@ pekoe は、機能を「こう使うと便利」という形で 1 つずつ紹�
    - `sandbox.enabled: true`・`allowUnsandboxedCommands: false`(`dangerouslyDisableSandbox` での再実行を許しません)・`failIfUnavailable: true`(sandbox が使えなければ、Claude Code は起動しません)・`filesystem.disabled: false`
    - `filesystem.denyRead`: `human-token`・`http-token`・`state.db`(と `-wal`・`-shm`。プロンプト・レビューのコメント・報告・送信の記録が入っています。エージェントは、pekoed の API を通してだけ読めます)・tsnet の state・pekoe の設定ディレクトリ(`~/.config/pekoe`)。Bash のコマンドとその子プロセスに、OS のレベルで効きます
    - `permissions.deny`: 同じパスへの `Read(...)` と `Edit(...)`(sandbox の外で動く Read / Edit ツール向け)、`agent-settings` 自身と書き出したスキルの文(`skills/`)への `Edit(...)`
+   - `permissions.allow`: Web UI から送られた自分宛ての画像のディレクトリ(`<データディレクトリ>/images/<slug>/`、tapi chat は `images/+tapi/`)への `Read(...)`。送られた文の `[image] <パス>` を、確認なしで開けます([docs/web.md](docs/web.md) の「画像の扱い」)
    - `filesystem.denyWrite` と `Edit(...)`: リポジトリの `.git/config`・`.git/config.worktree`・`.git/hooks` と、サブモジュールの git ディレクトリ(`.git/modules/…`。エージェントの起動時に存在するもの)の中の同じファイル(commit はできます。あなたが自分で実行する git が従う設定は、書き換えられません)
    - tapi chat だけ: `filesystem.denyWrite` と `Edit(...)` に、`--add-dir` で読ませている各リポジトリと `~/worktrees`(シンボリックリンクを解決したパスも)を加えます。統括役は自分では作業せず、セッションに任せるので、Bash でも Edit / Write でも書き込めないようにしています。稼働ディレクトリ(`tapi/`)には書き込めます。`[agents.<tapi の agent>] sandbox = false` にすると、この制限も外れます
    - `network.allowUnixSockets`: pekoed のソケット(`pekoe ls`・`new`・`send` のため)。hooks は sandbox の外で動くので、`pekoe event` はもともと影響を受けません
@@ -432,7 +433,7 @@ Web UI と Chrome 拡張は、ソケットを通らない人間用の入口な�
 
 ### iPhone から(Web UI)
 
-`make install WEB=1` のビルドでだけ使えます。pekoed に Tailscale の tsnet を組み込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として、HTTPS で待ち受けます。できることは、次のものに限られます: セッションの一覧、許可待ちへの allow / deny(確認付き。`always` は出しません)、`send`、エージェントの質問(AskUserQuestion のメニュー)に答えるキーパッド、エージェントの画面の表示(色付き)、受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に表示します。推奨の選択肢には `recommended (agent)` と表示し、あらかじめ選んだ状態にはしません。送信前に確認シートを挟み、見た後に内容が変わった項目への回答は拒否されます)、Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。閲覧のみ)、tapi への話しかけ(画面・質問に答えるキーパッド・`send`。tapi に送信できるのは `allow_devices` を設定しているときだけで、送信前に、宛先と全文を示す確認シートを挟みます(既定。`confirm_tapi_send = false` で省けます)。tapi の許可待ちへの allow / deny は Web には出さず、端末で答えます)。localhost にポートは開けず、接続のたびに Tailscale の WhoIs で `allow_users` と照合します。
+`make install WEB=1` のビルドでだけ使えます。pekoed に Tailscale の tsnet を組み込み、pekoed 自身が tailnet の 1 台(`https://pekoe.<tailnet>.ts.net/`)として、HTTPS で待ち受けます。できることは、次のものに限られます: セッションの一覧、許可待ちへの allow / deny(確認付き。`always` は出しません)、`send`(写真・スクショを 4 枚まで添えられます。pekoed が中身を確かめて worktree の外に保存し、エージェントが Read で開けるよう、文の後にパスを添えて送ります。画像つきの送信は、宛先・全文・サムネイルの確認シートを挟みます)、エージェントの質問(AskUserQuestion のメニュー)に答えるキーパッド、エージェントの画面の表示(色付き)、受信箱への回答(pekoed の事実とリンクを先に、エージェントの文を後に表示します。推奨の選択肢には `recommended (agent)` と表示し、あらかじめ選んだ状態にはしません。送信前に確認シートを挟み、見た後に内容が変わった項目への回答は拒否されます)、Overview(件数・tapi の状態・セッションごとの工程 `impl → review → PR → CI → merge` とマージに足りないもの。閲覧のみ)、tapi への話しかけ(画面・質問に答えるキーパッド・`send`(画像も添えられます)。tapi に送信できるのは `allow_devices` を設定しているときだけで、送信前に、宛先と全文を示す確認シートを挟みます(既定。`confirm_tapi_send = false` で省けます)。tapi の許可待ちへの allow / deny は Web には出さず、端末で答えます)。localhost にポートは開けず、接続のたびに Tailscale の WhoIs で `allow_users` と照合します。
 
 1. tailnet で MagicDNS と HTTPS を有効にし、`[web]` を書いて pekoed を再起動します
 2. `pekoe web` が表示するログイン URL を開いて、tailnet に参加します(`TS_AUTHKEY` でも構いません)

@@ -236,6 +236,9 @@ func (d *Daemon) tickLoop() {
 		if n%120 == 0 {
 			go d.watchMerges()
 		}
+		if n%3600 == 20 {
+			go sweepWebImages(time.Now()) // images from the web UI past webImageKeep (webimage.go)
+		}
 		if n%60 == 5 {
 			go d.watchPRs()
 		}

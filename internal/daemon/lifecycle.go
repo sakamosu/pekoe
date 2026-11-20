@@ -407,7 +407,8 @@ func (d *Daemon) holdDevPort(s *state.Session) *state.HeldPort {
 }
 
 // purgeFiles is purge after the session is forgotten: the picks, errors,
-// attachments, preview and agent settings kept outside its row.
+// attachments, images from the web UI, preview and agent settings kept
+// outside its row.
 func (d *Daemon) purgeFiles(s *state.Session) {
 	d.recordSession(s, nil, true) // what stats keeps of it (stats.go)
 	// picks addressed to this session go with it (no leftovers)
@@ -425,6 +426,7 @@ func (d *Daemon) purgeFiles(s *state.Session) {
 	d.catch.Forget(s.Slug)
 	d.inboxSessionGone(s.Slug) // what it asked is not the next same-named session's
 	removeAttachments(s.RepoID, s.Slug)
+	removeWebImages(s.Slug) // the images sent to it from the web UI
 	d.dropPreview(s)
 	d.forgetDevLog(s.Slug)
 	os.Remove(agentSettingsFile(s.Slug))

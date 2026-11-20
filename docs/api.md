@@ -74,7 +74,7 @@
 - `session.new` の `from` は `gh#N`(N は 1〜10 桁の数、先頭は 0 でない)だけ受け付ける(token の有無によらない)。pekoed は人の gh 認証で `gh issue view N` を動かすので、URL を渡して別のリポジトリの issue を読ませない。それ以外は `from "…": give an issue of this repository as gh#N` で断る
 - `subscribe` は token なしでも使えるが、届くのは `session.created` / `session.updated` / `session.removed` / `session.progress` / `session.waiting` / `session.done` / `session.output` / `report.posted` だけ。ほかのイベント(人の答えを含む `inbox.updated`、他のセッションのクリップボードを運ぶ `term.passthrough`、`pick.received`、`error.updated`、`review.*` など)は token を付けて購読した接続にだけ流れる
 - Web UI と Chrome 拡張はソケットを通らない(デーモンの中でハンドラを呼ぶ)ので、それぞれの認証(tailnet の WhoIs、http-token)だけで足りる
-- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・`state.db`(と `-wal` / `-shm`)・tsnet の state・設定ディレクトリを読めなくする。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
+- 同じユーザーのプロセスはファイルを読めてしまうので、これだけでは塞ぎきれない。Claude Code のエージェントには pekoe が sandbox の設定(`--settings <データディレクトリ>/agent-settings/<slug>.json`。組み立ては `internal/daemon/agentsandbox.go`)を渡してトークン・`state.db`(と `-wal` / `-shm`)・tsnet の state・設定ディレクトリを読めなくする(Web UI から送られた自分宛ての画像 `<データディレクトリ>/images/<slug>/` だけは、`permissions.allow` で Read を確認なしにする。docs/web.md の「画像の扱い」)。中身・自分の設定との合わせ方・緩め方は README の「エージェントに pekoe を使わせるときの権限」
 
 ### 呼び出し元の識別
 

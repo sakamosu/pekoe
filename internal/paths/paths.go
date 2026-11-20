@@ -124,6 +124,11 @@ func TutorialFile() string { return filepath.Join(DataDir(), "tutorial.json") }
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 
+// WebImagesDir holds the images sent from the web UI, one directory per
+// session (images/<slug>, tapi chat's images/+tapi): outside every
+// worktree, readable by the agents (docs/web.md 「画像の扱い」).
+func WebImagesDir() string { return filepath.Join(DataDir(), "images") }
+
 // TapiDir is ~/.local/share/pekoe/tapi: the working directory of the tapi
 // chat agent (docs/tapi-chat.md). Not $HOME: hooks are matched to it by cwd.
 func TapiDir() string { return filepath.Join(DataDir(), "tapi") }

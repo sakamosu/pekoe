@@ -31,7 +31,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"pekoe/internal/config"
 	"pekoe/internal/engine"
@@ -213,7 +212,11 @@ func webGuard(o webOpts, next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, webMaxBody)
+		limit := int64(webMaxBody)
+		if webSendBody(r) {
+			limit = webMaxSendBody // the images ride in it (webimage.go)
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, p)))
 	})
 }
@@ -483,37 +486,9 @@ func toolLabel(t *state.Tool) string {
 	return strings.TrimSpace(t.Name + " " + truncate(t.Input, 80))
 }
 
-// webReadText reads a send's {text}: trimmed, 1 to webMaxText characters,
-// no control characters. On false it has written the 400.
-func webReadText(w http.ResponseWriter, r *http.Request) (string, bool) {
-	var in struct {
-		Text string `json:"text"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
-		return "", false
-	}
-	text := strings.TrimSpace(in.Text)
-	if text == "" {
-		http.Error(w, "empty text", http.StatusBadRequest)
-		return "", false
-	}
-	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > webMaxText {
-		http.Error(w, fmt.Sprintf("text must be at most %d characters", webMaxText), http.StatusBadRequest)
-		return "", false
-	}
-	// text, not keys: an ESC or ^C in it would press keys the keypad never
-	// offers (Shift-Tab, interrupt). SendText drops them too; say so here.
-	if engine.HasControl(text) {
-		http.Error(w, "text must not contain control characters", http.StatusBadRequest)
-		return "", false
-	}
-	return text, true
-}
-
 func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	text, ok := webReadText(w, r)
+	text, imgs, ok := webReadSend(w, r)
 	if !ok {
 		return
 	}
@@ -528,13 +503,23 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, slug+" is waiting for allow/deny: answer it first", http.StatusConflict)
 		return
 	}
+	// the images go in only now: a refused send above leaves nothing behind
+	typed, files, err := webStoreImages(w, s.Slug, text, imgs)
+	if err != nil {
+		// as a send refused before typing: in the send log, the images counted
+		d.recordSend(humanCaller(webVia(peerFrom(r))), s.Slug, "send", withImageCount(text, len(imgs)), err)
+		return
+	}
 	p := peerFrom(r)
-	log.Printf("web: %s sends %d chars to %s (from %s)", p.Login, len(text), slug, p.Device)
-	if _, err := d.CallAs(humanCaller(webVia(p)), "session.send", mustJSON(sendP{Slug: slug, Text: text, Submit: true})); err != nil {
+	log.Printf("web: %s sends %d chars to %s (from %s)%s", p.Login, len(text), slug, p.Device, imagesNote(files))
+	// session.send records what is typed (the image lines too) in the send log
+	_, err = d.CallAs(humanCaller(webVia(p)), "session.send", mustJSON(sendP{Slug: slug, Text: typed, Submit: true}))
+	keepImagesAfter(err, files)
+	if err != nil {
 		webErr(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "images": len(files)})
 }
 
 // webQuestion: a question (AskUserQuestion, elicitation) is up, the menu

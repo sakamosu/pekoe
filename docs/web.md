@@ -4,12 +4,12 @@ Mac で pekoed を動かしたまま、外出先の iPhone(Tailscale アプリ�
 
 - セッション一覧(状態つき。許可待ちは一番上に、カードで)
 - 許可待ちへの allow / deny(ツールの要約と、エージェントが画面に出している許可ダイアログを見せ、押す前に確認を挟む。`always` は出さない)
-- `send`(短い指示を送る。allow / deny で答える許可待ちの間は送れない)
+- `send`(短い指示を送る。写真・スクショを 4 枚まで添えられる。allow / deny で答える許可待ちの間は送れない)
 - 質問(AskUserQuestion などの択一・複数選択メニュー)へのキーパッド(← ↑ ↓ → / Tab ⇧Tab Space / 1〜9 / Esc Enter。質問待ちのときだけ出る)
 - エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
 - 判断の受信箱への回答(Inbox タブ。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
 - 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `impl → review → PR → CI → merge` と、マージしてよいかの根拠の足りない条件)
-- tapi chat(統括役)の画面・質問へのキーパッド・`send`(送る前に宛先と全文の確認シート。既定は必ず挟み、`confirm_tapi_send = false` で切れる。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
+- tapi chat(統括役)の画面・質問へのキーパッド・`send`(画像も添えられる。送る前に宛先と全文の確認シート。既定は必ず挟み、`confirm_tapi_send = false` で切れる。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
 
 賢さは pekoed にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。
 
@@ -120,6 +120,20 @@ allow / deny で答える許可待ち(`answerable`)の間は 409。許可メニ�
 
 send はテキストを送るもので、キーは送らない。改行とタブ以外の制御文字(ESC、`^C`、DEL など)を含む本文は 400。ESC を通すと Shift-Tab(`\e[Z`)などのキーやペーストの終端を打てて、キーパッドの許可リストを迂回できてしまうため。デーモン側でも、テキストとして pty に送る経路(`session.send` / `tapi.send`、エラーやピックの送信、opencode への初期プロンプト)はすべて同じ文字を落としてから送る。
 
+### 画像の扱い
+
+外出先で見つけた画面の不具合やデザインの参考を、写真やスクショのままエージェントに渡す。セッションと tapi chat の送信欄の左の `＋` で選ぶ(iOS の写真・カメラ・ファイル)。
+
+- **ページ**: 選んだ画像を読み込み、canvas に描き直して送る。長い辺は 2048px まで縮め、PNG は PNG のまま(スクショの文字をつぶさない)、それ以外(HEIC・WebP など)は JPEG にする。HEIC はエージェントが読めないので、ここで JPEG になる。描き直すので、位置情報などの写真のメタデータは端末から出ない。1 回の send に 4 枚まで、1 枚 5 MB まで(それを超える PNG は JPEG に、それでも超えれば画質を下げる)。選んだ画像はサムネイルで送信欄の上に並び、`×` で外せる。下書きと同じく宛先ごとに持つので、別のセッションに紛れない
+- **確認シート**: 画像つきの send は、セッション宛てでも送る前にシートを挟む(宛先・文の全体・サムネイル)。tapi 宛ては今までのシートにサムネイルが加わる(`confirm_tapi_send = false` ならシートは出ない)。画像のないセッションへの send は今までどおりシートなし
+- **送るもの**: `POST …/send` の本文 `{text, images: [{data}]}`(`data` は base64)。文は画像があれば空でよい。この 2 つの send だけ本文の上限が 28 MB 程度(画像 4 枚分)で、ほかの書き込みは 64 KB のまま
+- **pekoed の確認**: 中身の先頭のバイト(マジックナンバー)で PNG・JPEG・GIF だけを受け付け(Claude Code が読めるもの)、Go の `image.DecodeConfig` でヘッダが読めることと、縦横 8000px 以下・5 MB 以下・4 枚以下を確かめる。送られたファイル名や種類は受け取らない(本文に無い)。画像でないもの(HEIC・PDF・テキストなど)は 415、大きすぎる・多すぎるものは 400(本文全体が上限を超えれば 413)。どれも send の確認(制御文字・許可待ち・tapi の `allow_devices`)と同じく、保存も打鍵もしない
+- **保存**: 許可待ちなどの確認を通った後で、`<データディレクトリ>/images/<slug>/`(tapi chat は `images/+tapi/`。セッションの slug に `+` は無い)に pekoed が名前を付けて書く(`20261120-101530-<乱数>-1.png`。拡張子は中身から。0600、ディレクトリは 0700)。worktree の中には置かない(コミットに紛れない)
+- **打つ文**: 文の後に空行を 1 つ、画像ごとに `[image] <保存先の絶対パス>` の行を足して送る。エージェントはそのパスを Read で開いて画像として見る。Claude Code のエージェントには、自分の `images/<slug>/` を確認なしで Read できる許可(`permissions.allow` の `Read(//…/images/<slug>/**)`)を sandbox の設定(`--settings`)に入れる。Bash の sandbox でも読める(`denyRead` に入らない)。token・`state.db`・tsnet の state・設定ディレクトリは今までどおり読めない。設定は起動時に書くので、この版より前に起動したエージェントは、再起動するまで Read の許可を聞いてくることがある
+- **記録**: 送信の記録(`send.log`)には打った文をそのまま(画像の行とパスつきで)残す。tapi への send を許可待ちなどで断ったとき(画像は保存しない)と、画像を保存できなかったとき(500。セッションへの send も)は、記録の文に `[image] ×N (not saved)` で枚数だけを残す。pekoed のログには `web: … sends … with 2 image(s) <パス> <パス>` のように件数とパスを出す
+- **片付け**: セッションを `rm` すると `images/<slug>/` ごと消す。それ以外(tapi chat のものを含む)は 7 日たったら消す(pekoed が起動して 20 秒後と、その後 1 時間ごとに見る。空になったディレクトリも消す。保存と重なってディレクトリが消えたら、保存の側が作り直す)。打ったが Enter を送れなかった(許可ダイアログが間に出た)send の画像は入力欄にパスが残っているので消さず、それ以外の失敗では消す
+- **やらないこと**: 画像以外のファイル(PDF・動画など)、TUI からの画像の送信、保存した画像を Web UI に返すこと(サムネイルはページが端末の中で作る)
+
 ### 受信箱(Inbox タブ)の扱い
 
 docs/orchestration.md の「受信箱で人を誘導する」への対策を、TUI のモーダルと同じ並びで Web にも当てる。
@@ -178,7 +192,8 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | **許可ダイアログに send の文字や Enter が入る** | 許可メニューは最初の 1 文字を選択肢として受け取り(「2…」は「Yes, and don't ask again」= always)、Enter は選ばれている「Yes」を確定する。そこで send は、許可ダイアログが出ている間は打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が question 以外)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。判定は 1 つ(`promptUp`)で、どこから来たかで確かめる時点が変わる: token なしのソケット(ハブのエージェント)は `submit` の有無にかかわらず、受け付けた時と打つ直前(セッションごとの送信ロックの中)の 2 回確かめて断り、先頭が数字の文字列は断る(エージェントは自分の許可ダイアログが出る時刻を決められるので、確認と打鍵の間を狙って「2」を入れられないように)。token あり(TUI・CLI・Neovim)・Web UI・Chrome 拡張(ピックやエラーの送信)は `submit` つきの送信を、打つ前と Enter の直前の 2 回確かめ、打つ前なら何も送らず、打った後なら Enter だけ送らない(文字は入力欄に残る。Web は 409)。エラー文はどれも `<slug> is waiting for a permission answer: …` で、そのあとに何が起きたか(何も送っていない / 打ったが Enter は送っていない)を続ける。Web は send の前に `answerable` でも 409 を返す | 2 回目の確認から Enter が届くまでの数ミリ秒の間にダイアログが出ると、Enter はそれを確定しうる(許可は 1 回分で、always にはならない)。token なしの送信で、打つ直前の確認から文字が届くまでの数ミリ秒にダイアログが出ると、途中の文字がメニューに入りうる(先頭の数字は断るので、先頭の 1 文字で always が選ばれることはない)。token ありの `submit` なしの送信(TUI がユーザーの打鍵として送るペースト)は止めない。画面の判定は Claude Code と `[y/n]` 形式の文言に合わせたもので、ほかのエージェントの見た目の違うダイアログは hook の状態でしか止められない |
 | **受信箱の文で Web UI を乗っ取る・誘導する**(エージェントが問い・背景・選択肢・リンクに HTML やスクリプト、`javascript:` の URL を書く) | API は JSON だけを返し(`encoding/json` は `<` `>` `&` を `\u003c` などにする、`nosniff`)、ページは文字列を `textContent` で入れて HTML を組み立てない(`app.js` に `innerHTML` などの HTML を作る入口がないことをテストで確かめる)。リンクは `http` / `https` で始まり空白や `<>"\` を含まないものだけを `<a rel="noopener noreferrer">` にし、ほかは文字のまま出す。CSP(インライン script なし)はそのまま。誘導には上の「受信箱(Inbox タブ)の扱い」(事実が先、推奨を既定にしない、確認シート、`rev`) | 人が事実とリンク先を見ずに答えれば誘導は通る(TUI と同じ) |
 | **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる。tapi は全リポジトリを読み、`gh` などを動かし、セッションを作って任せる) | セッション 1 つへの send と重みが違うので、`allow_devices` を設定していないときは tapi への送信を断る(403)。送る前に確認シート(宛先が tapi であること、文の全体)を挟む(宛先を見せるのはこのシート。送信欄の上の宛先の行は tapi が動いていないときだけ出す)。既定は必ず挟む。`confirm_tapi_send = false` で切れる。切ると誤送信・端末を拾われたときの守りが `allow_devices` と端末のロックだけになる。許可待ちの間・制御文字はセッションの send と同じに断る。tapi の許可待ちへの allow / deny は Web に出さない(許可は端末の前で)。送った内容と端末を pekoed のログ(本文は 200 文字まで)と送信の記録(全文)に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(ファイルを書けない sandbox・許可は端末で)を超えることはできないが、tapi がセッションを作れば、そのセッションは worktree に書ける(セッションの許可待ちも Web から allow できる)。気づいたら admin console でその端末を外す |
-| **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send / 質問へのキー操作・受信箱への回答ができる(`allow_devices` で絞っていれば tapi への send も。上の行)。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
+| **Web UI から画像を送る**(画像の中身・形式・置き場所が新しい入口になる) | 受け付けるのは PNG・JPEG・GIF だけで、拡張子や MIME ではなく中身の先頭のバイトとヘッダの読み込みで確かめる。ファイル名と拡張子は pekoed が中身から付け、送られた名前は使わない(パスの細工・上書きができない。`O_EXCL` で作る)。5 MB・8000px・4 枚の上限と、send だけ大きい本文の上限(ほかの書き込みは 64 KB のまま)。保存先はデータディレクトリの `images/<slug>/`(0600)で、worktree の外(コミットに紛れない)。保存した画像は Web からは読めない(返す API が無い)。ページは画像を描き直して送るので、写真の位置情報は端末から出ない。CSRF・許可待ち・tapi の `allow_devices` と確認シートは文の send と同じ(シートには画像も出す)。`rm` と 7 日で消す | 画像に写った文字はエージェントにとって指示と区別できない(人が送るものなので、Web ページのスクショなど他人の文が写ったものを送るときは、その文にエージェントが従いうる)。保存した画像は同じユーザーのどのエージェントからも読める(Read の確認なしで開けるのは自分の分だけだが、Bash では読める。ピックやエラーの添付と同じ)ので、秘密の写ったスクショは送らない。ページを通さずに API を叩けば(許可された端末から)、JPEG のメタデータは pekoed がそのまま保存する。画像のデコーダ(Claude Code 側)の不具合を突くファイルは、ヘッダの確認だけでは防げない(送れるのは許可された端末の人だけ) |
+| **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send(画像つきを含む)/ 質問へのキー操作・受信箱への回答ができる(`allow_devices` で絞っていれば tapi への send も。上の行)。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
 | **Certificate Transparency ログ** | — | HTTPS 証明書を取ると、`pekoe.<tailnet>.ts.net` という名前が CT ログ(誰でも検索できる公開ログ)に載る。tailnet 名(`tail1234` のようなランダム名か、自分で付けた名前)とホスト名が世に出る。tailnet の外からは到達できないので中身は見えないが、名前に秘密を含めない。気になるなら `hostname` を目立たないものにし、tailnet 名はランダムのものを使う |
 | **Funnel での公開** | `ListenFunnel` を呼ばない。tsnet は起動時に serve 設定を空にする | — |
 | **Tailscale へのログ送信** | — | tsnet は通常の tailscaled と同じく、診断ログを Tailscale のログサーバーに送る(`state_dir/tailscaled.log.conf`)。中身は接続のメタデータで、pekoe の画面やプロンプトは含まない |
@@ -191,13 +206,13 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `GET /api/sessions` | — | `{sessions: [WebSession], at}`。待ち(古い順)→ 実行中(creating・queued を含む)→ done・failed → そのほか(idle など)→ landed。待ち以外はそれぞれの中で新しい順 |
 | `GET /api/sessions/{slug}/screen` | — | `{slug, rows: [[Run]], lines: [string], dead}`。agent 窓の最後 80 行。`rows` は色つき、`lines` は同じ行のテキストだけ |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool: {name, input}\|null}` | `WebSession`。400: answer が違う / 409: 待っていない・質問・プロンプトが変わった |
-| `POST /api/sessions/{slug}/send` | `{text}` | `{ok: true}`。text は前後の空白を落として 1〜4000 文字、Enter つきで送る。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
+| `POST /api/sessions/{slug}/send` | `{text, images?: [{data}]}` | `{ok: true, images: <枚数>}`。text は前後の空白を落として 1〜4000 文字(画像があれば空でよい)、Enter つきで送る。`images` は base64 の PNG・JPEG・GIF を 4 枚まで、1 枚 5 MB・8000px まで。pekoed が保存し、文の後に `[image] <パス>` の行を足して打つ(上の「画像の扱い」)。画像でないものは 415、上限を超えると 400(本文全体が上限を超えれば 413)。改行・タブ以外の制御文字を含むと 400。送る直前・Enter の直前に許可ダイアログが出ていれば 409。409: allow / deny で答える許可待ちの間 |
 | `GET /api/inbox` | — | `{items: [InboxItem], merges: [InboxItem], at}`。`items` は未回答の項目を古い順に(`inbox.list`。事実は読み直したもの)。`merges` は人が `merge` と答えた pekoed の根拠の項目のうち、この 24 時間に変わったものを新しい順に 5 件まで(`answer.merge` でマージ中・済み・失敗と理由が分かる)。InboxItem は docs/api.md のまま |
 | `POST /api/inbox/{id}/answer` | `{choice?: int, note?, rev}` | `InboxItem`(`inbox.answer`、`answer.via` は `web:<端末名>`)。`choice` は 0 始まりで、省くとメモだけの答え(選択肢のどれでもない。`answer` に `choice` は入らない)。400: `rev` がない・`choice` が範囲外・`choice` もメモもない・pekoed の根拠の項目に `choice` がない・`send back` にメモがない / 404: 無い id / 409: `rev` が今のものと違う(事実が変わった)・答え済み・閉じられた |
 | `GET /api/tapi` | — | `{started, alive, state, wait_kind, state_since, last_message, inbox_open, ledger_open, look, answerable, sendable, confirm_send}`。`answerable` は tapi が許可待ち(Web からは答えない)、`sendable` は `allow_devices` があって送れること、`confirm_send` は `[web] confirm_tapi_send`(既定 true。false ならページは確認シートを挟まずに送る。リクエストごとに今の設定を読むので再起動は要らない)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない |
 | `GET /api/tapi/screen` | — | `{slug: "+tapi", rows, lines, dead}`。tapi chat の最後 80 行(セッションの `/screen` と同じ形)。409: tapi が起動していない |
 | `GET /api/tapi/transcript?after=<cursor>` | — | `ChatPage`: `{conversation, cursor, items: [{kind: human\|pekoe\|agent\|tool\|turn, text?, name?, input?, question?, ms?, at}], reset?, new_conversation?, earlier?}`。上の「吹き出し(chat)と画面(screen)」。404: transcript が無い / 409: tapi が起動していない |
-| `POST /api/tapi/send` | `{text}` | `{ok: true, send: <送信の記録の id>}`。`tapi.send`(`submit: true`)。text はセッションの send と同じ(1〜4000 文字、制御文字は 400)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
+| `POST /api/tapi/send` | `{text, images?: [{data}]}` | `{ok: true, send: <送信の記録の id>, images: <枚数>, text: <打った文>}`。`tapi.send`(`submit: true`)。text と images はセッションの send と同じ(1〜4000 文字・画像があれば空でよい、制御文字は 400、画像は 415 / 400)。`text` は画像の行を足した打った文(ページが transcript に現れたかを見るのに使う)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
 | `POST /api/tapi/keys` | `{keys: ["Down", …]}` | `{ok: true}`。セッションの keys と同じキー・個数。409: tapi が質問待ちでない・許可待ち・画面に許可メニュー・起動していない |
 | `GET /api/overview` | — | `{counts, groups, at}`。下の「Overview」 |
 | `POST /api/sessions/{slug}/keys` | `{keys: ["Down", …]}` | `{ok: true}`。1〜8 個のキーを順に送る。キーは `Up Down Left Right Tab BTab Space Enter Escape 0`〜`9` だけ。400: 許可外のキー・個数 / 409: 質問待ち(`wait_kind == question`、`stopped` でない)以外 |

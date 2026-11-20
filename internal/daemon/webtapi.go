@@ -161,13 +161,13 @@ func (d *Daemon) webTapiSend(sendable bool) http.HandlerFunc {
 			http.Error(w, "sending to tapi from the web needs [web] allow_devices in config.toml (tapi can act on every repository)", http.StatusForbidden)
 			return
 		}
-		text, ok := webReadText(w, r)
+		text, imgs, ok := webReadSend(w, r)
 		if !ok {
 			return
 		}
 		who := humanCaller(webVia(p))
 		refuse := func(code int, err error) {
-			id := d.recordSend(who, TapiSlug, "send", text, err)
+			id := d.recordSend(who, TapiSlug, "send", withImageCount(text, len(imgs)), err)
 			log.Printf("web: %s's send to tapi refused (send #%d, from %s): %v", p.Login, id, p.Device, err)
 			http.Error(w, err.Error(), code)
 		}
@@ -180,17 +180,27 @@ func (d *Daemon) webTapiSend(sendable bool) http.HandlerFunc {
 			refuse(http.StatusConflict, errors.New("tapi is waiting for a permission answer: answer it at the terminal first"))
 			return
 		}
+		// the images go in only now: a refused send above leaves nothing behind
+		typed, files, err := webStoreImages(w, TapiSlug, text, imgs)
+		if err != nil {
+			id := d.recordSend(who, TapiSlug, "send", withImageCount(text, len(imgs)), err)
+			log.Printf("web: %s's send to tapi failed (send #%d, from %s): %v", p.Login, id, p.Device, err)
+			return
+		}
 		// tapi.send checks for a prompt again (hook state and the screen),
 		// before typing and right before Enter
-		_, err := d.CallAs(who, "tapi.send", mustJSON(tapiSendP{Text: text, Submit: true}))
-		id := d.recordSend(who, TapiSlug, "send", text, err)
+		_, err = d.CallAs(who, "tapi.send", mustJSON(tapiSendP{Text: typed, Submit: true}))
+		keepImagesAfter(err, files)
+		id := d.recordSend(who, TapiSlug, "send", typed, err)
 		if err != nil {
 			log.Printf("web: %s's send to tapi failed (send #%d, from %s): %v", p.Login, id, p.Device, err)
 			webErr(w, err)
 			return
 		}
-		log.Printf("web: %s sends to tapi (send #%d, %d chars, from %s): %q", p.Login, id, len([]rune(text)), p.Device, cutRunes(text, webTapiLogText))
-		writeJSON(w, map[string]any{"ok": true, "send": id})
+		log.Printf("web: %s sends to tapi (send #%d, %d chars, from %s): %q%s", p.Login, id, len([]rune(text)), p.Device, cutRunes(text, webTapiLogText), imagesNote(files))
+		// text: what was typed (with the image lines), which the page
+		// looks for in the transcript to mark its bubble sent
+		writeJSON(w, map[string]any{"ok": true, "send": id, "images": len(files), "text": typed})
 	}
 }
 
