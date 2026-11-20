@@ -1772,6 +1772,7 @@ function healViewport() {
   if (!document.body.classList.contains("pinned")) return;
   const h = Math.max(window.innerHeight, document.documentElement.clientHeight);
   if (shortBelow(h) <= 0) return;
+  if (document.activeElement === $("d-text")) return; // back in the box: taking the page out would close the keyboard
   const kept = ["c-log", "detail"].map((id) => [$(id), $(id).scrollTop]);
   const b = document.body;
   b.style.display = "none";
