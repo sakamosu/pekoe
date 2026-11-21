@@ -209,7 +209,7 @@ pekoe --json wait --mine --on report,inbox,failed,waiting,ci --since 9f3c01ab-15
 deliver = "off"     # off(既定)| idle
 ```
 
-- 送る条件: tapi が idle、許可ダイアログが出ていない(`session.send` と同じ `promptUp` を受け付け時と打つ直前の 2 回)、人が tapi chat に入力中でない(TUI が `tapi.deliver_pause` で知らせる。開いて入力モードの間と、最後の打鍵から 30 秒)、前回の配送から 30 秒以上
+- 送る条件: tapi が idle、許可ダイアログが出ていない(`session.send` と同じ `promptUp` を受け付け時と打つ直前の 2 回)、人が tapi chat に入力中でない(TUI が `tapi.deliver_pause` で知らせる。開いて入力モードの間と、最後の打鍵(GUI の Interrupt も)から 30 秒)、前回の配送から 30 秒以上
 - 本文は 1 行: `[pekoe] 3 件の変化(feat-csv done、fix-ci ci_failed、受信箱 q12 に答え(メモ: 画像を送りたい))。詳しくは pekoe --json wait --since 1532`。先頭を数字にしない。受信箱の答えにメモがあれば、その先頭(80 文字まで、1 行に均す。人の文なので tapi は信頼できないデータとして読む)を添える(要約だけ読んでメモを読み落とさないように)
 - 配送したものは送信の記録に `from: pekoed, to: +tapi, kind: deliver` で残す
 - 実装(internal/daemon/deliver.go。仕様の正は docs/api.md「tapi への配送」):

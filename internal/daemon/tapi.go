@@ -14,12 +14,14 @@ package daemon
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"pekoe/internal/engine"
@@ -836,9 +838,29 @@ type tapiSendP struct {
 	Submit bool   `json:"submit"`
 }
 
-func (d *Daemon) hTapiSend(p tapiSendP) (any, error) {
+func (d *Daemon) hTapiSend(p tapiSendP) (any, error) { return d.tapiSend(p, nil) }
+
+// errSendHeld: tapiSend's held said not now; nothing was typed.
+var errSendHeld = errors.New("held back: nothing was sent")
+
+// tapiSend types into tapi's window as session.send does a session's: one
+// at a time (sendLocks[TapiSlug], the lock tapi.interrupt takes too), so a
+// person's text never lands in the input box between pekoed's delivery
+// line and its Enter (one prompt that starts with "[pekoe]"), nor an
+// Escape between a paste and its Enter. held, if not nil, is asked again
+// under the lock (a delivery checked typedRecently and the state before a
+// person's send took the lock): an error from it sends nothing.
+func (d *Daemon) tapiSend(p tapiSendP, held func() error) (any, error) {
 	if err := d.tapiNeedsWindow(); err != nil {
 		return nil, err
+	}
+	mu, _ := d.sendLocks.LoadOrStore(TapiSlug, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+	if held != nil {
+		if err := held(); err != nil {
+			return nil, err
+		}
 	}
 	// as hSend: an instruction never goes into a permission prompt
 	promptUp := func() bool {

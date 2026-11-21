@@ -126,13 +126,17 @@ func TestGUIInterrupt(t *testing.T) {
 			t.Fatalf("%s: typed %v", why, got)
 		}
 	}
-	// Claude Code sends no Stop for a turn interrupted with esc: the hooks
-	// still say running, the screen says the turn is over. A second Escape
-	// after the cooldown would clear the input box (two: the rewind menu)
+	// Claude Code sends no Stop for a turn interrupted with esc: pekoed
+	// reads the screen after its Escape (settleInterrupt, interrupt_test.go)
 	showBusy(fe, false)
-	if st := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}).State; st != state.Running {
-		t.Fatalf("state %s, want still running", st)
-	}
+	eventually(t, "idle after the interrupt", func() bool {
+		return call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}).State == state.Idle
+	})
+	refused("interrupted, idle")
+	// a turn stopped with esc in the TUI (no Interrupt to read the screen
+	// after): the hooks still say running, the screen says the turn is
+	// over. A second Escape would clear the input box (two: the rewind menu)
+	event(t, d, "UserPromptSubmit", "main", map[string]any{"prompt": "go"})
 	refused("interrupted, no Stop, the spinner gone")
 	// a menu with "esc to cancel" is not a turn
 	fe.mu.Lock()
