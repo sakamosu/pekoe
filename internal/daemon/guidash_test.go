@@ -298,7 +298,7 @@ const groups = [
     { slug: "d", branch: "fix/d", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 961, later: [{ id: 965 }, { id: 970, now: true }], steps: steps("now") },
   ] },
   { parent: "", rows: [
-    { slug: "e", branch: "hand/e", repo: "pekoe", state: "waiting", state_since: at, look: { icon: "◉", role: "warn", word: "wait" }, later: [{ id: 971, now: true }], steps: steps("now") },
+    { slug: "e", branch: "hand/e", repo: "dotfiles", state: "waiting", state_since: at, look: { icon: "◉", role: "warn", word: "wait" }, later: [{ id: 971, now: true }], steps: steps("now") },
   ] },
   { parent: "+tapi", request: { id: 962 }, rows: [
     { slug: "f", branch: "fix/f", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 962, later: [{ id: 963 }, { id: 964 }, { id: 966, now: true }], steps: steps("done", "fail"), },
@@ -311,11 +311,20 @@ const cls = (n) => n.className;
 const rowsOf = (n) => find(n, (x) => /\bpl-row\b/.test(x.className) && !/pl-head/.test(x.className));
 res.order = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-bname")[0].textContent);
 res.groups = box.children.filter((c) => c.className === "pl-group").map((g) => [g.children.filter((c) => c.className === "pl-trunk").length, rowsOf(g).length]);
+// the Branch box: "<repo> · <branch>" (repo dim), then the badges; the title keeps the whole
+const label = (n) => find(n, (x) => x.className === "pl-label")[0].children.map((c) => c.className + ":" + c.textContent).join(" ");
+// two badges or more: the full ones (pl-full) and one folded badge (pl-compact) gui.css shows when the box is narrow
+res.compact = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className)).map((b) => b.className.replace("pl-badge", "").trim() + ":" + b.textContent).join(","));
+res.label = rowsOf(box).map((r) => label(find(r, (x) => x.className === "pl-branch")[0]));
+res.title = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-branch")[0].title);
+const nr = el0("div");
+renderPipeline(nr, [{ rows: [{ slug: "n", branch: "n", state: "running", look, steps: steps("now") }] }], () => {});
+res.label.push(label(find(nr, (x) => x.className === "pl-branch")[0]));
 res.req = rowsOf(box).map((r) => r.children[0].textContent);
 res.tree = rowsOf(box).map((r) => r.children[1].children.map(cls).join(""));
 res.boxes = rowsOf(box).map((r) => find(r, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "));
 res.links = rowsOf(box).map((r) => find(r, (x) => /\bpl-link\b/.test(x.className)).map((l) => (/todo/.test(l.className) ? "-" : "=")).join(""));
-res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
+res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className) && !/pl-compact/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
 res.status = rowsOf(box).map((r) => r.children[r.children.length - 1].children.map((c) => c.textContent).join(" | "));
 res.cross = find(box, (x) => x.tag === "#text" && x.text.includes("✗")).length;
 find(box, (x) => x.tag === "button" && x.className === "pl-branch")[0].click();
@@ -361,6 +370,7 @@ console.log(JSON.stringify(res));
 		ReqCut, ReqOne, ReqAll, NoCI, Wait                            []string
 		Cols                                                          []int
 		Order, Req, Tree, Boxes, Links, Badges, Status, Opened, Model []string
+		Label, Title, Compact                                         []string
 		Groups                                                        [][2]int
 		More, All                                                     [2]any
 	}
@@ -377,6 +387,15 @@ console.log(JSON.stringify(res));
 	want("BEHIND is shown while CI runs (only UNSTABLE/BLOCKED say the same)", res.Behind, "merge waits on CI · merge state behind")
 	want("model", res.Model, []string{"962:tapi:1", "961:tapi:4"})
 	want("order", res.Order, []string{"fix/f", "fix/a", "fix/b", "fix/d", "fix/c", "hand/e"})
+	want("branch box: repo · branch, no repo no separator", res.Label, []string{
+		"pl-repo:pekoe pl-sep:· pl-bname:fix/f", "pl-repo:pekoe pl-sep:· pl-bname:fix/a", "pl-repo:pekoe pl-sep:· pl-bname:fix/b",
+		"pl-repo:pekoe pl-sep:· pl-bname:fix/d", "pl-repo:pekoe pl-sep:· pl-bname:fix/c", "pl-repo:dotfiles pl-sep:· pl-bname:hand/e",
+		"pl-bname:n",
+	})
+	want("badges: full and folded when two or more", res.Compact, []string{
+		"now pl-full:◉ r966,pl-full:+2,now pl-compact:◉ r966 +2", "", "", "now pl-full:◉ r970,pl-full:+r965,now pl-compact:◉ r970 +1", "", "now:◉ r971",
+	})
+	want("branch box title", res.Title, []string{"fix/f · pekoe · f", "fix/a · pekoe · a", "fix/b · pekoe · b", "fix/d · pekoe · d", "fix/c · pekoe · c", "hand/e · dotfiles · e"})
 	want("groups", res.Groups, [][2]int{{0, 1}, {1, 4}})
 	want("request column", res.Req, []string{"r962tapi · 1 branch", "r961tapi · 4 branches", "", "", "", "no request"})
 	want("tree", res.Tree, []string{"pl-flat", "pl-flat", "pl-corner", "pl-corner", "pl-corner", ""})
