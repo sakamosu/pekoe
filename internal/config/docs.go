@@ -52,7 +52,7 @@ var KeyDocs = map[string]string{
 
 	"gui.enable":      "false refuses pekoe gui; nothing listens before the first pekoe gui either way",
 	"gui.port":        "0: a free port each time it starts listening; read when it starts",
-	"gui.session_ttl": "a browser's sign-in lapses after this long unused",
+	"gui.session_ttl": "a browser's sign-in lapses after this long with no action (the screen refreshing doesn't count)",
 	"gui.browser":     "macOS app to open it with (open -a); empty: the default browser",
 
 	"keys.prefix": "key to leave input: ctrl+ a letter (not i / m), ctrl+@ \\ ] ^ _, F1-F20 or alt+ a key",

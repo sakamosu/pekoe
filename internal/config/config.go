@@ -206,8 +206,9 @@ type GUI struct {
 	// GUI starts listening. Read when it starts listening (the first
 	// `pekoe gui`, or the first after `pekoe gui --stop`).
 	Port int `toml:"port"`
-	// SessionTTL: a browser's session token lapses after this long unused
-	// (a Go duration, default 12h).
+	// SessionTTL: a browser's session token lapses after this long with no
+	// action of a person (a Go duration, default 12h). An open tab's polling
+	// is no action.
 	SessionTTL string `toml:"session_ttl"`
 	// Browser is the application `pekoe gui` opens the page with (macOS
 	// `open -a`); empty is the default browser.

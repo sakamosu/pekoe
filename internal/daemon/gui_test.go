@@ -250,22 +250,107 @@ func TestGUITokenExpires(t *testing.T) {
 	}
 }
 
-// session_ttl after the last use; using it keeps it alive.
+// guiAct is a person's action in the tab (a POST: allow, send, keys…) with
+// session token s; it reports whether the token was taken (not 401).
+func guiAct(t *testing.T, h http.Handler, s string) bool {
+	t.Helper()
+	w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/nope/interrupt", bearer: s, body: map[string]any{}})
+	return w.Code != http.StatusUnauthorized
+}
+
+// session_ttl after a person's last action; an action keeps it alive.
 func TestGUISessionTTL(t *testing.T) {
 	d, _, _, h, now := guiSetup(t)
 	d.Global.GUI.SessionTTL = "1h"
 	s := guiSignIn(t, d, h)
 	*now = now.Add(50 * time.Minute)
-	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: s}); w.Code != 200 {
-		t.Fatalf("within the ttl: %d", w.Code)
+	if !guiAct(t, h, s) {
+		t.Fatal("within the ttl: 401")
 	}
-	*now = now.Add(50 * time.Minute) // 50 min after the last use
+	*now = now.Add(50 * time.Minute) // 50 min after the last action
 	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: s}); w.Code != 200 {
-		t.Fatalf("used 50 min ago: %d", w.Code)
+		t.Fatalf("acted 50 min ago: %d", w.Code)
 	}
-	*now = now.Add(61 * time.Minute)
+	*now = now.Add(11 * time.Minute)
 	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: s}); w.Code != http.StatusUnauthorized {
 		t.Fatalf("after the ttl: %d", w.Code)
+	}
+}
+
+// An open tab polls (GETs every 3 s): that is no person's action, so a tab
+// left open still lapses after session_ttl (docs/gui.md: an unlocked Mac
+// left alone, a token taken out of a tab), and gui.status's last_used
+// stays at the last action.
+func TestGUITTLNotRenewedByPolling(t *testing.T) {
+	d, _, _, h, now := guiSetup(t)
+	d.Global.GUI.SessionTTL = "5m"
+	s := guiSignIn(t, d, h)
+	signedIn := *now
+	for now.Sub(signedIn) < 5*time.Minute {
+		*now = now.Add(3 * time.Second)
+		if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: s}); w.Code != 200 {
+			t.Fatalf("lapsed %v after the sign-in, within the ttl: %d", now.Sub(signedIn), w.Code)
+		}
+	}
+	if st := call[guiStatus](t, d, "gui.status", nil); st.LastUsed == nil || !st.LastUsed.Equal(signedIn) {
+		t.Fatalf("last_used moved with the polling: %+v (signed in %v)", st, signedIn)
+	}
+	*now = now.Add(3 * time.Second)
+	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: s}); w.Code != http.StatusUnauthorized {
+		t.Fatalf("polled for %v with session_ttl = 5m: %d", now.Sub(signedIn), w.Code)
+	}
+}
+
+// However much a token is used, it lapses guiSessionMaxAge after it was
+// made, or after session_ttl when that is longer.
+func TestGUISessionMaxAge(t *testing.T) {
+	for _, c := range []struct {
+		ttl  string
+		life time.Duration
+	}{
+		{"1h", guiSessionMaxAge},
+		{"48h", 48 * time.Hour},
+	} {
+		d, _, _, h, now := guiSetup(t)
+		d.Global.GUI.SessionTTL = c.ttl
+		s := guiSignIn(t, d, h)
+		made := *now
+		for now.Sub(made)+30*time.Minute <= c.life {
+			*now = now.Add(30 * time.Minute)
+			if !guiAct(t, h, s) {
+				t.Fatalf("ttl %s: lapsed %v after it was made, in use all along", c.ttl, now.Sub(made))
+			}
+		}
+		*now = made.Add(c.life + time.Minute)
+		if guiAct(t, h, s) {
+			t.Fatalf("ttl %s: still taken %v after it was made", c.ttl, now.Sub(made))
+		}
+		d.stopGUI()
+	}
+}
+
+// Past guiMaxSessions session tokens, the one seen least recently goes:
+// the first tab, open and polling all along, stays signed in while tabs
+// signed into later and closed again go.
+func TestGUIEvictsLeastRecentlySeen(t *testing.T) {
+	d, _, _, h, now := guiSetup(t)
+	first := guiSignIn(t, d, h) // the tab the person keeps open
+	var others []string
+	for i := 0; i < guiMaxSessions; i++ {
+		*now = now.Add(time.Minute)
+		if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: first}); w.Code != 200 {
+			t.Fatalf("the tab in use was signed out after %d other sign-in(s): %d", i, w.Code)
+		}
+		others = append(others, guiSignIn(t, d, h)) // a tab opened and closed again
+	}
+	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: first}); w.Code != 200 {
+		t.Fatalf("the tab in use was signed out by sign-in %d: %d", guiMaxSessions+1, w.Code)
+	}
+	if w := doGUI(t, h, guiReq{path: "/api/sessions", bearer: others[0]}); w.Code != http.StatusUnauthorized {
+		t.Fatalf("the tab seen least recently is still signed in: %d", w.Code)
+	}
+	if st := call[guiStatus](t, d, "gui.status", nil); st.Sessions != guiMaxSessions {
+		t.Fatalf("sessions %d", st.Sessions)
 	}
 }
 

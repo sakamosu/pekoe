@@ -244,9 +244,9 @@ config.toml を GUI から書くと、**pekoed が設定を書く初めての経
    - 推測: Jupyter も同じ理由で、トークン入りの URL ではなくリダイレクト用の HTML ファイルを開く作りにしている(記憶による。要確認)
    - HTML は pekoed が消す(トークンを使った時点、または 60 秒後。`pekoe gui --revoke` / `--stop` でも)。pekoed の起動時に、前の pekoed が残したものも消す
 4. `<データディレクトリ>/gui/` を、エージェントの sandbox の `denyRead` と `Read` / `Edit` の deny(`internal/daemon/agentsandbox.go` の `agentSecrets`)と、hooks の sandbox の `DenyRead`(`internal/sandbox/policy.go` の `DefaultPolicy`)に足す。今の `human-token`・`http-token` と同じ扱い。ディレクトリは pekoed の起動時(`daemon.New`、sandbox を組む前)に 0700 で作る。Linux の bwrap は無いパスを塞げない(`internal/sandbox` は無いパスを飛ばす)ので、初めての `pekoe gui` で作るのでは遅い
-5. ページ(`webui/app.js` の `guiSignIn`)は、まず `history.replaceState` でフラグメントを消してから、そのトークンで `POST /api/gui/session` を呼ぶ。pekoed は一度きりのトークンを失効させ、**セッションのトークン**(32 バイト)を返す。ページはそれを `sessionStorage` に置く。iPhone の Web UI ではフラグメントも `sessionStorage` のトークンも無いので、この処理は何もしない
+5. ページ(`webui/lib/api.js` の `guiSignIn`)は、まず `history.replaceState` でフラグメントを消してから、そのトークンで `POST /api/gui/session` を呼ぶ。pekoed は一度きりのトークンを失効させ、**セッションのトークン**(32 バイト)を返す。ページはそれを `sessionStorage` に置く。iPhone の Web UI ではフラグメントも `sessionStorage` のトークンも無いので、この処理は何もしない
 6. 以後の `/api/*` はすべて `Authorization: Bearer <セッションのトークン>` を要る。無い・違う・失効したものは 401 で、ページは「`pekoe gui` をもう一度」と出し、それ以上 API を呼ばない(401 を返すのはローカル GUI だけで、tailnet の入口は 403)
-7. セッションのトークンは pekoed のメモリにだけ持つ(ディスクに書かない)。pekoed の再起動・`pekoe gui --revoke` / `--stop`・設定の有効期限(下の `session_ttl`、最後に使ってから)で失効する。同時に持つのは 32 個まで(それを超えると古いものから消す)
+7. セッションのトークンは pekoed のメモリにだけ持つ(ディスクに書かない)。pekoed の再起動・`pekoe gui --revoke` / `--stop`・設定の有効期限(下の `session_ttl`、人が最後に操作してから)・作ってからの上限(24 時間。`session_ttl` のほうが長ければそれ)で失効する。「操作」はサインインとそのトークンでの POST(allow・send・keys など)で、開いているタブが数秒ごとに出す GET(画面の更新)では延びない。延ばすと、開いたまま離れたタブも持ち出したトークンも失効しない(脅威モデルの「ロックを解いたまま離れた Mac」と XSS の行)。上限は、使われ続けるトークン(持ち出して POST し続けるもの)も止めるため。同時に持つのは 32 個まで(それを超えると、いちばん長く使われていないもの(GET も含めて最後に来たのがいちばん前のもの)から消す。作った順に消すと、開いたまま使っているタブがサインアウトされる)
 
 一度きりのトークンを人より先に使われたとき(何かが HTML を読めた場合)、人のブラウザの交換は失敗する。そのとき pekoed は**全部のセッションのトークンを失効**させ、ページと `pekoed.log` に「別の誰かが先に使った」と出す。気づかずに乗っ取られたままにしない。使用済みのトークンは見分けるために 10 分覚えておく(それより後に来たものは「無効」として 401 にするだけ)。
 
@@ -324,13 +324,13 @@ config.toml を GUI から書くと、**pekoed が設定を書く初めての経
 [gui]
 enable      = true        # false で `pekoe gui` を断り、待ち受けない
 port        = 0           # 127.0.0.1 のポート。0(既定)で待ち受けを始めるたびに空いているものを選ぶ
-session_ttl = "12h"       # セッションのトークンの有効期限(最後に使ってから)
+session_ttl = "12h"       # セッションのトークンの有効期限(人が最後に操作してから。画面の更新では延びない)
 # browser   = "Safari"    # 開くブラウザ(macOS の `open -a`)。空なら既定のブラウザ
 ```
 
 - **既定では待ち受けない。** `enable = true`(既定。「決まったこと」10)は「`pekoe gui` で開いてよい」という意味で、pekoed は `gui.open` が初めて呼ばれたときに待ち受けを始める。人が一度も `pekoe gui` を打たなければ、ポートは開かない
 - `port` の既定は `0`(「決まったこと」9)。`pekoe gui` は `gui.open` の答えでポートを知る。決まった番号にもできるが、そのときは待ち受けていない間に横取りされうる(脅威モデル)。bind できなければ `pekoe gui` はブラウザを開かず、エラーと理由を出す
-- `port` は待ち受けを始めるときに読む(最初の `pekoe gui`、または `pekoe gui --stop` の後の `pekoe gui`)。`[http] port` と違い pekoed の再起動は要らない(待ち受けを `gui.open` が始めるので、`config.RestartNeeded` には足さない)。`session_ttl`・`browser` は次の要求から効く。`enable = false` は次の `gui.open` から断る(待ち受け中のタブはそのまま使えるので、止めるなら `pekoe gui --stop`)
+- `port` は待ち受けを始めるときに読む(最初の `pekoe gui`、または `pekoe gui --stop` の後の `pekoe gui`)。`[http] port` と違い pekoed の再起動は要らない(待ち受けを `gui.open` が始めるので、`config.RestartNeeded` には足さない)。`session_ttl`・`browser` は次の要求から効く。`enable = false` は次の `gui.open` から断る(待ち受け中のタブはそのまま使えるので、止めるなら `pekoe gui --stop`。`pekoe gui --status` は待ち受けていればそう出し、ポート・サインイン中の数・`--stop` の案内を添える)
 - `[gui]` は `config.Sections` に載るので、`internal/tips/tips.toml` に tip(`local-gui`)を足した(CLAUDE.md の TIPS の節。網羅テスト `TestTipsCoverSections` が見る)
 - `pekoe config check` は `port` の範囲と `session_ttl` の書き方を確かめる。`pekoe config show` は `enable` と `session_ttl` を使っている値で出す
 
@@ -340,7 +340,7 @@ session_ttl = "12h"       # セッションのトークンの有効期限(最後
 | --- | --- |
 | `pekoe gui` | 待ち受けていなければ始め、一度きりのトークンでブラウザを開く(上の「認証」)。`human-token` が要るので、エージェントからは呼べない |
 | `pekoe gui --no-open` | ブラウザを開かず、リダイレクト用の HTML ファイルのパスを出す(別のブラウザで開くとき)。URL そのものは出さない(端末の出力に残さない) |
-| `pekoe gui --status` | 待ち受けているか、ポート、有効なセッションのトークンの数と最後に使われた時刻 |
+| `pekoe gui --status` | 待ち受けているか、ポート、有効なセッションのトークンの数と人が最後に操作した時刻(`enable = false` でも待ち受けていればそう出す) |
 | `pekoe gui --revoke` | すべてのセッションのトークンを失効させる(開いているタブは入り直しになる) |
 | `pekoe gui --stop` | 待ち受けを止める(トークンも失効) |
 
