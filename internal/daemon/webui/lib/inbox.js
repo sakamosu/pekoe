@@ -160,7 +160,7 @@ export function inboxCard(it, d, on) {
   return card;
 }
 
-const MERGE_LOOK = { running: ["●", "warn", "merging"], merged: ["✓", "ok", "merged"], failed: ["✗", "err", "not merged"] };
+const MERGE_LOOK = { running: ["●", "warn", "merging"], merged: ["↣", "secondary", "merged"], failed: ["✗", "err", "not merged"] };
 
 // mergeRow: pekoed's merge after a "merge" answer (pekoed's words only).
 export function mergeRow(it) {

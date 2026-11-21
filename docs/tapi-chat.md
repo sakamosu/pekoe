@@ -10,7 +10,7 @@ tapi chat は TUI からいつでも呼べる特別なエージェントで、pe
 - 特定のセッションとは関係ない単発の調査・質問、リポジトリ横断の調査(例: 抱えているリポジトリ群の dependabot アラートの様子)は、読むだけなので自分で答える
 - 自分で作業しすぎないように、リポジトリと worktree には書けない(下の「起動するコマンド」)
 
-グローバルに 1 つだけ。tapi 自身(状態・会話)は pekoe 側に永続化しないが、人が tapi に頼んだことは依頼(`ledger`、state.db)として残り、`tapi.reset` でも消えない。受信箱・報告・送信の記録も state.db にある。だから会話をリセットした tapi も、依頼と受信箱を読んで続きから始められる。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には状態・待ち時間・最後の返事・件数を出し(Overview タブ。iPhone から受信箱に答えられる)、`talk to tapi ›` から tapi の画面・質問へのキーパッド・送信を出す。送信は `[web] allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む(既定。`[web] confirm_tapi_send = false` で切れる)。tapi の許可待ちへの allow / deny は Web に出さない([web.md](web.md)「tapi chat の扱い」)。
+グローバルに 1 つだけ。tapi 自身(状態・会話)は pekoe 側に永続化しないが、人が tapi に頼んだことは依頼(`ledger`、state.db)として残り、`tapi.reset` でも消えない。受信箱・報告・送信の記録も state.db にある。だから会話をリセットした tapi も、依頼と受信箱を読んで続きから始められる。マスコットの tapi(docs/mascot.md。pekoe は家、tapi はそこに住む相棒)と話す、という体裁にする。tapi の性格・口調は docs/mascot.md「tapi の人物像」。tapi の顔は tapi chat のタイトルにだけ出し、返事の中には顔・絵文字・顔文字を入れない(chat の中だけの話し方で、ステータスバーの台詞の規則は変えない)。Web UI には状態・最後の返事を出し(Now の TAPI の行。iPhone から受信箱に答えられる)、下端のタブバーの tapi から tapi の画面・質問へのキーパッド・送信を出す。送信は `[web] allow_devices` を設定しているときだけで、送る前に宛先と全文の確認シートを挟む(既定。`[web] confirm_tapi_send = false` で切れる)。tapi の許可待ちへの allow / deny は Web に出さない([web.md](web.md)「tapi chat の扱い」)。
 
 ## 持ち方: セッションとは別の、メモリ上の 1 つ
 

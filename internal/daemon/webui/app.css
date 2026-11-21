@@ -1,24 +1,37 @@
-/* pekoe web — the TUI's look on a phone (docs/ui-guidelines.md).
+/* pekoe web — the phone's page (docs/web.md, docs/ui-guidelines.md; the
+   GUI's choices in docs/gui-design.md: one proportional face, tabular
+   figures, nothing loaded from outside). Dark only.
    Colors come from /theme.css (pekoed writes the TUI's palette, with the
    user's [theme.colors], as variables): here only role names.
    - color means something, always paired with a symbol; neon stays small
-   - one focus: the gradient border (primary → primary-end), title in primary
-   - selection is the select background, no cursor glyph */
+   - one focus at a time: the tab bar's choice and the composer's box
+     (primary → primary-end). No frame around panels, no ◆ titles
+   - bars are chrome, a chosen chip is raised */
 :root {
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace; /* the agent's screen and code only */
   --term-bg: color-mix(in oklch, var(--bg) 70%, black);
+  --bar-h: 52px;
+  --tab-h: 56px;
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
-  font: 14px/1.45 var(--mono);
+  font: 15px/1.45 var(--sans);
+  font-variant-numeric: tabular-nums;
   padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); /* top: read by app.js (shortBelow) */
   min-height: 100vh;
   -webkit-text-size-adjust: 100%;
 }
-button, textarea { font: inherit; color: inherit; }
+/* the status bar's strip (black-translucent: the page runs under it) */
+body::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+  height: env(safe-area-inset-top); background: var(--chrome);
+}
+button, textarea, input { font: inherit; color: inherit; }
+a { color: inherit; }
 [hidden] { display: none !important; }
 .dim { color: var(--dim); }
 
@@ -30,85 +43,170 @@ button, textarea { font: inherit; color: inherit; }
 .r-secondary { color: var(--secondary); }
 .r-dim { color: var(--dim); }
 .r-text { color: var(--text); }
+.sep { padding: 0 .4em; color: var(--dim); }
 
-/* ---- status line: the one primary-filled segment ---- */
+/* ---- the top bar (52px): the screen's name, how fresh ---- */
 .bar {
-  position: sticky; top: 0; z-index: 2;
+  position: sticky; top: env(safe-area-inset-top); z-index: 4;
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg);
+  height: var(--bar-h); padding: 0 16px;
+  background: var(--chrome);
 }
-.pill {
-  margin: 0; padding: 1px 10px; border-radius: 999px;
-  background: var(--primary); color: var(--bg);
-  font: 700 14px/1.5 var(--mono);
+.bar .title {
+  margin: 0; min-width: 0; font: 700 17px/1.2 var(--sans); color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.bar .sum { margin-left: auto; font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; }
+.fresh { margin-left: auto; flex: none; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .back {
-  background: none; border: 0; padding: 4px 0; color: var(--secondary);
-  font: 600 14px var(--mono);
-}
-
-/* ---- panels: a border with the title on it, as in the TUI ---- */
-main { padding: 4px 10px 8px; }
-.panel {
-  position: relative;
-  margin: 14px 0 0; padding: 12px 0 0;
-  border: 1px solid var(--border); border-radius: 8px;
-}
-.panel > .ttl {
-  position: absolute; top: -0.75em; left: 10px; max-width: calc(100% - 20px);
-  padding: 0 6px; background: var(--bg);
-  font-size: 13px; color: var(--dim);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.panel.focus {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--bg), var(--bg)) padding-box,
-    linear-gradient(to bottom right, var(--primary), var(--primary-end)) border-box;
-  background:
-    linear-gradient(var(--bg), var(--bg)) padding-box,
-    linear-gradient(to bottom right in oklch, var(--primary), var(--primary-end)) border-box;
-}
-.panel.focus > .ttl .name { color: var(--primary); font-weight: 700; }
-.panel .foot {
-  padding: 6px 12px 8px; border-top: 1px solid var(--border);
-  font-size: 12px; color: var(--dim);
-}
-.panel .foot .gap { display: inline-block; width: 2em; }
-.empty { padding: 20px 12px; color: var(--dim); }
-
-/* ---- Sessions rows: icon  name  state  age / repo · diff · #pr ---- */
-.row-s {
-  display: block; width: 100%; text-align: left;
-  padding: 7px 12px; background: none; border: 0;
+  flex: none; margin-left: -8px; width: 36px; height: 44px; padding: 0;
+  background: none; border: 0; color: var(--secondary);
+  font: 400 28px/1 var(--sans);
   -webkit-tap-highlight-color: transparent;
 }
-.row-s:active, .row-s.sel { background: var(--select); }
-.line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.ic { width: 1.1em; flex: none; text-align: center; }
-.name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.word { margin-left: auto; flex: none; min-width: 4.5em; }
-.age { flex: none; min-width: 2.5em; text-align: right; color: var(--dim); }
-.line2 { margin: 1px 0 0 calc(1.1em + 8px); font-size: 12px; color: var(--dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.line2 .sep { padding: 0 .4em; }
 
-/* a session waiting on the user: an in-pane card (border, not primary) */
-.card {
-  margin: 4px 8px 8px; padding: 0 0 10px;
-  border: 1px solid var(--border); border-radius: 8px;
-  background: var(--surface);
+/* ---- the tab bar (56px, the home indicator's room below) ---- */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 4;
+  display: flex; height: calc(var(--tab-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--chrome); border-top: 1px solid var(--border);
 }
-.card .row-s { border-radius: 8px 8px 0 0; }
-.card .body { padding: 0 10px; }
+.tabb {
+  position: relative; flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: var(--dim); text-decoration: none; font-size: 11px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+}
+.tabb svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tabb[aria-current="page"] { color: var(--primary); }
+.tabb[aria-current="page"]::before {
+  content: ""; position: absolute; top: -1px; left: 28%; right: 28%; height: 2px;
+  background: var(--primary); border-radius: 0 0 2px 2px;
+}
+.tabb .tn { color: var(--secondary); }
+/* the tapi tab: tapi's face (its colors are the mascot's, chosen or not;
+   the label and the top line say the tab is chosen) */
+.tabb .tab-face { font-size: 12px; line-height: 22px; padding: 0 .5ch; }
+
+/* the scrolling screens: room for the tab bar under them (the home
+   indicator's room is body's bottom padding) */
+main { padding: 0 16px calc(var(--tab-h) + 20px); }
+
+/* ---- sections: a small dim upper-case label, the count on the right ---- */
+.sect { margin: 0; }
+.label {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 20px 2px 8px; font: 600 11px/1.3 var(--sans);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--dim);
+}
+.label .lr { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
+.empty { padding: 20px 4px; color: var(--dim); }
+.cap { padding: 12px 2px 4px; font-size: 12px; color: var(--dim); }
+
+/* ---- cards: surface, no frame ---- */
+.card {
+  display: block; margin: 0 0 8px; padding: 12px;
+  border-radius: 12px; background: var(--surface);
+  text-decoration: none; color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+a.card:active, .more-row:active { background: var(--select); }
+.card .body { padding: 0; }
+.nhead { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.nhead .nt, .count .nt, .merged .nt {
+  flex: 1; min-width: 0; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.si { flex: none; width: 1.2em; text-align: center; }
+.age { flex: none; color: var(--dim); font-size: 12px; }
+/* what a card is about, sunk into bg */
+.target {
+  margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--bg);
+  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.why {
+  margin-top: 6px; font-size: 13px; color: var(--dim); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.count, .merged { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; }
+.chev { flex: none; color: var(--dim); font-size: 18px; }
+.zeros { margin: 4px 2px 0; font-size: 13px; color: var(--dim); }
+.more-row {
+  display: block; width: 100%; margin: 0 0 8px; padding: 12px; border: 0; border-radius: 12px;
+  background: none; text-align: left; text-decoration: none;
+  font-size: 14px; color: var(--secondary);
+  -webkit-tap-highlight-color: transparent;
+}
+.me-line { margin: 28px 2px 0; font-size: 12px; color: var(--dim); }
+
+/* ---- Now · tapi: a messenger's conversation row ---- */
+.convo {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px; border-radius: 12px; background: var(--surface);
+  text-decoration: none; color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+.convo:active { background: var(--select); }
+.convo .face { flex: none; margin-top: 2px; font-size: 17px; }
+.cm { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ct { display: flex; align-items: baseline; gap: 8px; }
+.ct .cn { font-weight: 700; }
+.ct .cs { font-size: 12px; }
+.ct .age { margin-left: auto; }
+.cl {
+  font-size: 14px; color: var(--dim); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* ---- Now · requests: five steps as a bar, and in words ---- */
+.req .rs { flex: none; font-size: 12px; color: var(--dim); }
+.req .rq { margin-top: 2px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.steps-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 10px; }
+.steps-bar .sg { height: 4px; border-radius: 2px; background: var(--border); }
+.steps-bar .st-done { background: var(--ok); }
+.steps-bar .st-now { background: var(--warn); }
+.steps-bar .st-fail { background: var(--err); }
+.steps-words { margin-top: 6px; font-size: 12px; color: var(--dim); }
+.steps-words .sep { padding: 0 .35em; }
+
+/* ---- Sessions: chips, then a heading per state ---- */
+.chips {
+  display: flex; gap: 8px; margin: 12px -16px 0; padding: 0 16px 2px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; padding: 6px 12px; border-radius: 999px;
+  background: var(--surface); color: var(--dim); text-decoration: none;
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.chip .cn { font-weight: 400; }
+.chip[aria-current="true"] { background: var(--raised); color: var(--text); }
+
+/* one row: the state's mark · two lines · the state's word and age */
+.srow {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px;
+  padding: 8px 4px; text-align: left; background: none; border: 0;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  -webkit-tap-highlight-color: transparent;
+}
+.srow:active { background: var(--select); }
+.srow .mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.srow .n1 { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .n2 { font-size: 12.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .rt { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 12px; }
+.grp-landed .srow, .grp-landed .srow * { color: var(--dim); }
+.card .srow { padding: 0 0 8px; min-height: 0; border-bottom: 0; }
+.card .srow:active { background: none; }
+
+/* a session waiting on the person: the tool, what will run, allow / deny */
 .tool { margin-top: 2px; font-weight: 700; }
 .tool .ic { color: var(--secondary); margin-right: 6px; }
 /* what will run: full width, sunk into bg, no colored text */
 .input {
   margin: 6px 0 0; padding: 8px 10px;
-  background: var(--bg); border-radius: 4px;
+  background: var(--bg); border-radius: 6px;
   font: 13px/1.4 var(--mono); color: var(--text);
   white-space: pre-wrap; word-break: break-all;
   max-height: 9.5em; overflow: auto;
@@ -120,26 +218,45 @@ main { padding: 4px 10px 8px; }
 .row { display: flex; gap: 10px; margin-top: 10px; }
 .row .btn { flex: 1; }
 .btn {
+  display: inline-flex; align-items: center; justify-content: center;
   min-height: 44px; padding: 0 16px;
-  border-radius: 6px; border: 1px solid var(--border);
-  background: var(--bg); font: 700 15px var(--mono);
+  border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg); font: 600 15px var(--sans); text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .btn:disabled { opacity: .45; }
 .btn.allow { color: var(--ok); border-color: var(--ok); }
 .btn.deny { color: var(--err); border-color: var(--err); }
 .btn.key { color: var(--secondary); border-color: var(--secondary); }
+.btn.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
 
-/* ---- detail ---- */
-.head { padding: 0 12px 10px; }
+/* ---- a session's screen (and tapi's Screen) ---- */
+.panel { margin: 12px 0 0; }
+.panel > .ttl {
+  margin: 0 2px 6px; font: 600 11px/1.3 var(--sans); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.panel > .ttl #d-name { text-transform: none; letter-spacing: 0; color: var(--text); }
+.head { padding: 12px; border-radius: 12px; background: var(--surface); }
 .head .line2 { margin-left: 0; white-space: normal; }
+.line1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.line1 .ic { width: 1.2em; flex: none; text-align: center; }
+.line1 .name { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line1 .word { margin-left: auto; flex: none; }
+.line1 .age { min-width: 2.5em; text-align: right; }
+.line2 { margin: 2px 0 0 calc(1.2em + 8px); font-size: 12.5px; color: var(--dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #d-ask { margin: 10px 0 0; }
-#d-ask .body { padding-top: 10px; }
-.screen-panel { padding-top: 14px; }
-.screen-tools { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; font-size: 12px; color: var(--dim); }
+.screen-tools { display: flex; align-items: center; gap: 8px; padding: 0 2px 6px; font-size: 12px; color: var(--dim); }
 .screen-tools .at { margin-left: auto; }
+.screen-tools > .btn, #d-live { flex: none; white-space: nowrap; }
+.screen-tools .c-why { flex: 1; }
+.c-why { color: var(--warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.at { color: var(--dim); font-size: 12px; }
 #d-screen {
-  margin: 0 6px 6px; padding: 8px;
-  background: var(--term-bg); border-radius: 4px;
+  margin: 0; padding: 8px;
+  background: var(--term-bg); border-radius: 8px;
   font: 11px/1.35 var(--mono); color: var(--text);
   white-space: pre-wrap; word-break: break-all;
   max-height: 58vh; overflow: auto;
@@ -147,7 +264,7 @@ main { padding: 4px 10px 8px; }
 }
 
 /* the keypad for a question's menu: keys only, sent on tap */
-.keypad { margin: 12px 0 0; padding: 8px 10px 10px; }
+.keypad { margin: 12px 0 0; }
 .keys-cap { margin-bottom: 8px; font-size: 12px; color: var(--dim); }
 .keys-cap .ic { margin-right: 6px; }
 .keys-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
@@ -157,17 +274,18 @@ main { padding: 4px 10px 8px; }
 .keys-grid .btn { padding: 0 4px; min-width: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .keys-grid .btn:active:not(:disabled) { background: var(--select); }
 
+/* ---- the composer ---- */
 .send { margin-top: 12px; }
 .send .to, .send .send-note, .send .thumbs { margin-left: 2px; margin-right: 2px; }
 /* where send goes: the slug the button will hit, right above the box */
 .to {
   display: flex; align-items: baseline; gap: 8px; min-width: 0;
   margin-bottom: 6px; padding: 8px 10px;
-  border: 1px solid var(--border); border-left: 3px solid var(--secondary); border-radius: 6px;
+  border-left: 3px solid var(--secondary); border-radius: 6px;
   background: var(--surface);
 }
 .to-k { flex: none; font-size: 12px; color: var(--dim); }
-.to-slug { flex: none; max-width: 60%; font: 700 16px var(--mono); color: var(--secondary);
+.to-slug { flex: none; max-width: 60%; font: 700 16px var(--sans); color: var(--secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .to-repo { min-width: 0; font-size: 12px; color: var(--dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -177,17 +295,26 @@ main { padding: 4px 10px 8px; }
 .to.tapi { border-left-color: var(--warn); }
 .to.tapi .to-slug { color: var(--warn); }
 .send-note { margin-bottom: 6px; font-size: 12px; color: var(--warn); }
-/* the composer row, as in a messenger: borderless icons on the left, a
-   rounded box (one line, growing with its lines), send on the right. The
-   icons keep a 44px hit area; the row stays low */
-.send-row { display: flex; gap: 2px; align-items: flex-end; }
+/* one row, as in a messenger: attach (+, secondary) on the left, a round
+   box (one line, growing with its lines), send (select's ground) on the
+   right. The icons keep a 44px hit area */
+.send-row { display: flex; gap: 4px; align-items: flex-end; }
 .send textarea {
   flex: 1; min-width: 0; height: 40px; min-height: 40px; max-height: 9em; resize: none;
   margin: 0 0 2px; padding: 8px 14px; border-radius: 20px;
-  border: 1px solid var(--border); background: var(--surface);
-  font: 16px/1.35 var(--mono); /* 16px: no zoom on focus (iOS) */
+  border: 1.5px solid var(--border); background: var(--surface);
+  font: 16px/1.35 var(--sans); /* 16px: no zoom on focus (iOS) */
 }
-.send textarea:focus { outline: none; border-color: var(--primary); }
+/* the one focus: the box's frame takes the gradient */
+.send textarea:focus {
+  outline: none; border-color: transparent;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(to right, var(--primary), var(--primary-end)) border-box;
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(to right in oklch, var(--primary), var(--primary-end)) border-box;
+}
 /* the hint stays on the one line (it would grow the box) */
 .send textarea::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
 .ibtn {
@@ -208,17 +335,15 @@ main { padding: 4px 10px 8px; }
 .unfold { display: none; }
 .send.folded .attach { display: none; }
 .send.folded .unfold { display: inline-flex; }
-/* send: quiet (dim) while there is nothing to send, a secondary ring when
-   there is */
-.go { color: var(--dim); }
-.go svg { width: 22px; height: 22px; stroke-width: 1.8; }
+/* send: a round button on select's ground; the arrow dim while there is
+   nothing to send */
+.go { position: relative; color: var(--dim); }
+.go svg { position: relative; width: 20px; height: 20px; stroke-width: 1.8; }
 .go::before {
-  content: ""; position: absolute; width: 36px; height: 36px; border-radius: 50%;
-  border: 1.5px solid transparent;
+  content: ""; position: absolute; width: 38px; height: 38px; border-radius: 50%;
+  background: var(--select);
 }
-.go { position: relative; }
-.send.ready .go { color: var(--secondary); }
-.send.ready .go::before { border-color: var(--secondary); }
+.send.ready .go { color: var(--text); }
 .go:disabled { opacity: .45; }
 /* the images going with the next send, and in the send sheet */
 .thumbs { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 6px; }
@@ -232,21 +357,19 @@ main { padding: 4px 10px 8px; }
 .thumb .x {
   position: absolute; top: -8px; right: -8px; width: 26px; height: 26px; padding: 0;
   border-radius: 50%; border: 1px solid var(--err); background: var(--bg);
-  color: var(--err); font: 700 14px/1 var(--mono);
+  color: var(--err); font: 700 14px/1 var(--sans);
 }
 .thumb-note { font-size: 12px; color: var(--dim); }
 
-.who { padding: 8px 12px 16px; font-size: 12px; color: var(--dim); }
-
-/* ---- confirm: a modal, gradient frame; a deny is err, solid ---- */
+/* ---- confirm: a modal, gradient frame (the one focus while open) ---- */
 .sheet-back {
   position: fixed; inset: 0; z-index: 10;
   display: flex; align-items: flex-end;
   background: transparent; /* no dimming (guidelines): the frame is enough */
 }
 .sheet {
-  width: 100%; padding: 16px 14px calc(14px + env(safe-area-inset-bottom));
-  border: 1px solid transparent; border-bottom: 0; border-radius: 12px 12px 0 0;
+  width: 100%; padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid transparent; border-bottom: 0; border-radius: 14px 14px 0 0;
   background:
     linear-gradient(var(--surface), var(--surface)) padding-box,
     linear-gradient(to bottom right, var(--primary), var(--primary-end)) border-box;
@@ -255,10 +378,10 @@ main { padding: 4px 10px 8px; }
     linear-gradient(to bottom right in oklch, var(--primary), var(--primary-end)) border-box;
   box-shadow: 0 -8px 24px rgba(0, 0, 0, .35);
 }
-.sheet h2 { margin: 0 0 10px; font: 700 15px var(--mono); color: var(--primary); }
+.sheet h2 { margin: 0 0 10px; font: 700 16px var(--sans); color: var(--primary); }
 .sheet.danger { background: var(--surface); border-color: var(--err); }
 .sheet.danger h2 { color: var(--err); }
-.sheet .target { font: 700 14px var(--mono); }
+.sheet .target { margin: 0; padding: 0; background: none; font: 700 14px var(--sans); white-space: normal; }
 .sheet .input { max-height: 22vh; }
 .sheet .input.whole { max-height: 40vh; } /* the whole text to tapi, scrollable */
 .sheet-cap { margin-top: 10px; font-size: 12px; color: var(--dim); }
@@ -267,8 +390,9 @@ main { padding: 4px 10px 8px; }
 .sheet.long .sheet-screen { max-height: 45vh; }
 
 .toast {
-  position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 20;
-  padding: 10px 12px; border-radius: 6px;
+  position: fixed; left: 16px; right: 16px; z-index: 20;
+  bottom: calc(var(--tab-h) + 12px + env(safe-area-inset-bottom));
+  padding: 10px 12px; border-radius: 10px;
   background: var(--surface); border: 1px solid var(--err);
   font-size: 13px;
 }
@@ -301,33 +425,11 @@ main { padding: 4px 10px 8px; }
 .t-s { text-decoration: line-through; }
 .t-u.t-s { text-decoration: underline line-through; }
 
-/* pause: a small key-colored button (the screen stays still to copy) */
-.btn.small { min-height: 32px; padding: 0 10px; font-size: 12px; }
-
-/* ---- tabs: Sessions · Inbox · Overview (the view now is primary) ---- */
-.tabs {
-  display: flex; gap: 4px; padding: 0 10px 6px;
-  background: var(--bg);
-}
-.tab {
-  flex: 1; padding: 8px 0; text-align: center;
-  border: 1px solid var(--border); border-radius: 6px;
-  color: var(--dim); text-decoration: none; font-weight: 600;
-  -webkit-tap-highlight-color: transparent;
-}
-.tab[aria-current="page"] { color: var(--primary); border-color: var(--primary); }
-.badge {
-  display: inline-block; min-width: 1.4em; padding: 0 5px; margin-left: 2px;
-  border-radius: 999px; background: var(--warn); color: var(--bg);
-  font-size: 12px; line-height: 1.5;
-}
-.cap { padding: 0 12px 6px; font-size: 12px; color: var(--dim); }
 .lnk { color: var(--secondary); word-break: break-all; }
 
-/* ---- inbox: facts first (pekoe), then the agent's words ---- */
-.ibox { margin: 8px; }
-.ihead { padding: 8px 10px 4px; }
-.sub { margin: 8px 0 4px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--border); }
+/* ---- inbox (reached from Now): facts first (pekoe), then the agent's words ---- */
+.ibox .ihead { padding: 0 0 4px; }
+.sub { margin: 10px 0 4px; font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--border); }
 .facts .fact { font-size: 13px; overflow-wrap: anywhere; }
 .fact .fk { display: inline-block; min-width: 6.5em; color: var(--dim); }
 .says { margin-top: 6px; }
@@ -338,106 +440,98 @@ main { padding: 4px 10px 8px; }
 .opt {
   display: flex; align-items: baseline; gap: 8px; width: 100%;
   min-height: 44px; padding: 8px 10px; text-align: left;
-  border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
   -webkit-tap-highlight-color: transparent;
 }
 .opt .num { flex: none; color: var(--secondary); font-weight: 700; }
 .opt .otext { min-width: 0; overflow-wrap: anywhere; }
 .opt .rec { margin-left: auto; flex: none; font-size: 11px; color: var(--dim); }
-.opt.sel { border-color: var(--primary); background: var(--select); }
-.opt.sel .num { color: var(--primary); }
+.opt.sel { border-color: var(--text); background: var(--select); }
+.opt.sel .num { color: var(--text); }
 .ibox textarea.note {
   width: 100%; margin-top: 10px; min-height: 44px; resize: vertical;
-  padding: 8px 10px; border-radius: 6px;
+  padding: 8px 10px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--bg);
-  font: 16px/1.4 var(--mono);
+  font: 16px/1.4 var(--sans);
 }
-.ibox textarea.note:focus { outline: none; border-color: var(--primary); }
+.ibox textarea.note:focus { outline: none; border-color: var(--text); }
 
-/* ---- overview: counts, tapi, the flow of every session ---- */
-.counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: 6px; padding: 4px 10px 10px; }
+/* ---- every session's flow (reached from Now's requests) ---- */
+.counts { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: 6px; padding: 12px 0 4px; }
 .tile {
   display: flex; align-items: baseline; gap: 6px; padding: 6px 8px;
-  border: 1px solid var(--border); border-radius: 6px;
+  border-radius: 8px; background: var(--surface);
   color: var(--text); text-decoration: none;
 }
 .tile .n { font-weight: 700; }
 .tile .w { min-width: 0; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tapi { padding: 0 12px 10px; }
-.open-tapi { display: inline-flex; align-items: center; margin: 0 12px 10px; text-decoration: none; }
-.tapi .last { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9em; overflow: auto; }
-.group { padding: 2px 0 8px; }
-.group + .group { border-top: 1px solid var(--border); }
+.group { margin-top: 12px; padding: 4px 0 8px; border-radius: 12px; background: var(--surface); }
 .gtitle { padding: 6px 12px 0; font-size: 12px; }
-.gtitle .sep { padding: 0 .4em; color: var(--dim); }
-.req { padding: 2px 12px 0; font-size: 12px; color: var(--dim); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
-.flow .steps { margin: 0 12px 0 calc(12px + 1.1em + 8px); font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 4px; }
+.group .req { padding: 2px 12px 0; font-size: 12px; color: var(--dim); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.row-s {
+  display: block; width: 100%; text-align: left;
+  padding: 7px 12px; background: none; border: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.row-s:active { background: var(--select); }
+.flow .steps { margin: 0 12px 0 calc(12px + 1.2em + 8px); font-size: 12px; display: flex; flex-wrap: wrap; gap: 2px 4px; }
 .flow .arrow { color: var(--dim); }
 .step.st-todo { color: var(--dim); }
-.flow .miss { margin: 2px 12px 4px calc(12px + 1.1em + 8px); font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
-.at { color: var(--dim); font-size: 12px; }
+.flow .miss { margin: 2px 12px 4px calc(12px + 1.2em + 8px); font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
 
-/* ---- tapi chat: bubbles (docs/web.md 「tapi chat の扱い」) ----
-   - the person on the right (bubble_me: secondary at select's depth), the
-     agent on the left (surface). No border, no avatar: the face is only in
-     the title. The square corner is the side the bubble leans to.
-   - only the words are proportional (Japanese reads better); code, times,
-     labels, buttons and the title stay monospace */
-:root { --sans: -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", system-ui, sans-serif; }
-
-.panel > .ttl.chat-ttl {
-  right: 10px; max-width: none; padding: 0;
-  display: flex; align-items: center; gap: 8px;
-  background: none; overflow: visible;
-}
-.chat-ttl .name {
-  min-width: 0; padding: 0 6px; background: var(--bg);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.chat-ttl .t { color: var(--primary); font-weight: 700; }
-.chat-ttl .state { color: var(--dim); font-weight: 400; }
-/* the face as the TUI's pearl1: ▐ (bd) · three eye cells on bd · ▌ (sh) */
+/* ---- tapi: the bar carries the face, the name, the state, Chat | Screen ---- */
+.chat-ttl { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.c-name { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.c-name .t { font-weight: 700; font-size: 16px; }
+.c-name .state { font-size: 11.5px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the face as the TUI's pearl1: ▐ (bd) · three eye cells on bd · ▌ (sh),
+   in the mascot's colors (docs/mascot.md, theme.css --tapi-*) */
 .face {
-  display: inline-block; padding: 0 .55ch; margin-right: 2px;
+  display: inline-block; padding: 0 .55ch;
   background: linear-gradient(to right, var(--tapi-bd) calc(100% - .5ch), var(--tapi-sh) 0);
-  border-radius: 3px; color: var(--tapi-eye); font-weight: 700; line-height: 1.35;
+  border-radius: 4px; color: var(--tapi-eye); font: 700 15px/1.35 var(--mono);
 }
-/* a web font draws ● at full em: scale each eye to what a terminal cell shows */
+.bar .face { flex: none; font-size: 16px; }
+/* a monospace cell draws ● at full em: scale each eye to what a terminal cell shows */
 .face i { display: inline-block; width: 1ch; text-align: center; font-style: normal; }
 .face i.e-dot { font-size: .58em; width: calc(1ch / .58); vertical-align: .14em; }
 .face i.e-puppy { font-size: .78em; width: calc(1ch / .78); vertical-align: .05em; }
-/* chat | screen: the view now is primary */
-.seg { margin-left: auto; flex: none; display: flex; padding: 0 4px; background: var(--bg); font-size: 12px; }
+/* Chat | Screen: a segment in a frame; the chosen one a little lighter
+   (raised), never primary */
+.seg { margin-left: auto; flex: none; display: flex; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
 .seg button {
-  min-height: 22px; padding: 0 6px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--dim); font: 600 12px var(--mono);
+  min-height: 28px; padding: 0 10px; border: 0; border-radius: 7px;
+  background: none; color: var(--dim); font: 600 13px var(--sans);
+  -webkit-tap-highlight-color: transparent;
 }
-.seg button:first-child { border-radius: 4px 0 0 4px; }
-.seg button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
-.seg button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
-.seg button:last-child[aria-pressed="true"] { border-left: 1px solid var(--primary); }
-.c-why { color: var(--warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); }
+body.tapi-on .fresh { display: none; }
 
 /* the detail view (a session, tapi chat or tapi's screen) is an app
-   screen: the bar on top, the composer at the bottom, the panel takes all
-   between (no fixed sum to subtract). Its height comes from app.js
-   (fitViewport, --vvh / --vvt), not from 100vh / 100dvh: on iOS the
-   software keyboard shrinks only the visual viewport. The bottom inset
-   (home indicator) is kept unless the keyboard covers it, or a home-screen
-   app's page stops short of the screen's bottom (kb / cut, app.js) */
+   screen: the bar on top, the composer and the tab bar at the bottom, the
+   panel takes all between (no fixed sum to subtract). Its height comes
+   from app.js (fitViewport, --vvh / --vvt), not from 100vh / 100dvh: on
+   iOS the software keyboard shrinks only the visual viewport. The bottom
+   inset (home indicator) is kept under the tab bar unless the keyboard
+   covers it (the tab bar goes, the composer sits on the keyboard), or a
+   home-screen app's page stops short of the screen's bottom (kb / cut,
+   app.js) */
 body.pinned {
   position: fixed; left: 0; right: 0; top: var(--vvt, 0px);
   height: 100vh; height: var(--vvh, 100vh); min-height: 0;
   display: flex; flex-direction: column; overflow: hidden;
+  padding-bottom: 0;
 }
-body.pinned.kb, body.pinned.cut { padding-bottom: 0; }
-body.pinned > .bar { flex: none; }
-body.pinned > .who { display: none; }
+body.pinned > .bar { flex: none; position: relative; top: 0; }
+body.pinned > .tabbar { position: relative; flex: none; height: auto; padding-bottom: env(safe-area-inset-bottom); }
+body.pinned > .tabbar .tabb { height: var(--tab-h); }
+body.pinned.cut > .tabbar { padding-bottom: 0; }
+body.pinned.kb > .tabbar { display: none; }
 /* what does not fit (a tall question card, the keypad) scrolls above the
    composer; the composer stays at the bottom */
 body.pinned #detail {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
-  overflow-y: auto; overscroll-behavior: contain; padding-bottom: 6px;
+  overflow-y: auto; overscroll-behavior: contain; padding: 0 12px 6px;
 }
 body.pinned #d-panel { flex: 1 1 0; min-height: 14em; display: flex; flex-direction: column; }
 body.pinned #d-screen-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -446,15 +540,25 @@ body.pinned #d-send {
   flex: none; position: sticky; bottom: 0; z-index: 1;
   margin-top: auto; padding-top: 8px; background: var(--bg);
 }
-body.chat-on #detail { overflow: hidden; }
-body.chat-on #d-panel { min-height: 0; }
+body.chat-on #detail { overflow: hidden; padding: 0 0 6px; }
+body.chat-on #d-panel { min-height: 0; margin: 0; }
+body.chat-on #d-send { padding: 8px 8px 0; }
+.toast { z-index: 20; }
+body.pinned .toast { bottom: calc(var(--tab-h) + 72px + env(safe-area-inset-bottom)); }
 
+/* ---- tapi chat: bubbles (docs/web.md 「tapi chat の扱い」) ----
+   - tapi on the left (surface, the bottom-left corner small), the person
+     on the right (bubble_me, the bottom-right corner small). No frame, no
+     avatar: the face is in the bar. At most 78% of the width
+   - the time under the bubble, small; ✓ for the person's that arrived
+   - a short conversation sits at the bottom, as in a messenger */
 .chat { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat .log {
-  flex: 1; min-height: 0;
-  overflow-y: auto; padding: 6px 10px 12px;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  overflow-y: auto; padding: 12px 12px 8px;
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
+.chat .log > #c-items { margin-top: auto; }
 .chat .log:focus { outline: none; }
 .divider { display: flex; align-items: center; gap: 8px; margin: 4px 0 12px; font-size: 11px; color: var(--dim); }
 .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
@@ -463,80 +567,77 @@ body.chat-on #d-panel { min-height: 0; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.turn { display: flex; flex-direction: column; margin: 0 0 14px; }
+.turn { display: flex; flex-direction: column; margin: 0 0 12px; }
 .turn.me { align-items: flex-end; }
 .turn.agent { align-items: flex-start; }
-.who { margin: 0 0 4px 2px; font-size: 11px; color: var(--dim); }
-.who .ic { width: auto; margin-right: 4px; }
-.turn .line { display: flex; align-items: flex-end; gap: 6px; max-width: 100%; }
-.turn.me .line { flex-direction: row-reverse; }
+.turn .who { display: none; } /* one conversation, with tapi: the bar says who */
+.turn .line { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; max-width: 78%; min-width: 0; }
+.turn.me .line { align-items: flex-end; }
 .turn .line + .line { margin-top: 4px; }
 .bubble {
-  max-width: 80%; min-width: 0; padding: 8px 12px;
-  font: 15px/1.55 var(--sans); letter-spacing: .01em;
+  max-width: 100%; min-width: 0; padding: 8px 12px;
+  font: 15px/1.5 var(--sans);
   overflow-wrap: anywhere;
   -webkit-user-select: text; user-select: text;
 }
-.me .bubble { background: var(--bubble-me); border-radius: 14px 4px 14px 14px; }
-.agent .bubble { background: var(--surface); border-radius: 4px 14px 14px 14px; }
+.me .bubble { background: var(--bubble-me); border-radius: 18px 18px 4px 18px; }
+.agent .bubble { background: var(--surface); border-radius: 18px 18px 18px 4px; }
 .bubble .plain { white-space: pre-wrap; }
-.bubble .l { min-height: 1.55em; white-space: pre-wrap; }
+.bubble .l { min-height: 1.5em; white-space: pre-wrap; }
 .bubble .h { margin: 8px 0 2px; font-weight: 700; white-space: pre-wrap; }
 .bubble .h:first-child { margin-top: 0; }
 .bubble .cb { color: var(--dim); font: 13px var(--mono); }
+/* code in the words: a small box sunk into bg */
 .bubble code {
-  padding: 1px 4px; border-radius: 3px; background: var(--term-bg);
+  padding: 1px 5px; border-radius: 4px; background: var(--bg);
   font: 13px var(--mono); color: var(--text);
 }
 .bubble .fence {
-  margin: 4px 0; padding: 6px 8px; border-radius: 4px; background: var(--term-bg);
+  margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--bg);
   font: 12.5px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .bubble .more {
   display: block; width: 100%; margin-top: 6px; padding: 6px 0 0;
   border: 0; border-top: 1px solid var(--border); background: none;
-  text-align: left; font: 12px var(--mono); color: var(--dim);
+  text-align: left; font: 12px var(--sans); color: var(--dim);
 }
-.meta { flex: none; padding-bottom: 1px; font: 10.5px/1.25 var(--mono); color: var(--dim); text-align: right; }
-.agent .meta { text-align: left; }
+.bubble strong { font-weight: 700; }
+.meta { flex: none; padding: 0 4px; font-size: 11px; line-height: 1.2; color: var(--dim); }
 
 /* tool calls between the bubbles: one dim line, opened on tap (names and
    main arguments only, never what came back) */
 .tools {
   max-width: 92%; margin: 0 0 6px 2px; padding: 2px 0;
   border: 0; background: none; text-align: left;
-  font: 11.5px var(--mono); color: var(--dim);
+  font: 12px var(--sans); color: var(--dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tools .ic { width: auto; margin-right: 4px; }
 .tool-list {
   max-width: 92%; margin: 0 0 6px 6px; padding-left: 8px; border-left: 1px solid var(--border);
-  font-size: 11.5px; color: var(--dim);
+  font: 11.5px var(--mono); color: var(--dim);
 }
 .tool-list div { overflow-wrap: anywhere; }
 .tool-list .n { color: var(--text); }
 
 /* working: a bubble-shaped row with the run spinner (ok), the only motion */
-.typing { display: inline-flex; gap: 8px; align-items: center; font: 13px var(--mono); white-space: nowrap; }
-.typing .spin { width: 1em; text-align: center; }
+.typing { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; white-space: nowrap; }
+.typing .spin { width: 1em; text-align: center; font-family: var(--mono); }
 
-/* a permission prompt in the pane: border card, icon secondary */
-.wait-card { margin: 2px 0 14px; padding: 8px 10px 10px; font-size: 13px; }
+/* a permission prompt in the pane: a card, icon secondary */
+.wait-card { margin: 2px 0 12px; font-size: 13px; }
 .wait-card .chead { display: flex; gap: 8px; align-items: baseline; }
 .wait-card .chead .ic { width: auto; }
 .wait-card .chead .st { margin-left: auto; font-size: 12px; }
 .wait-card .foot { margin-top: 6px; font-size: 12px; color: var(--dim); }
-.chat .keypad { margin: 2px 0 14px; }
+.chat .keypad { margin: 2px 0 12px; }
 
 /* back to the newest: only while scrolled up */
 .jump {
   position: absolute; right: 14px; bottom: 10px;
-  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--dim); font: 12px var(--mono);
+  padding: 4px 10px; border-radius: 999px; border: 0;
+  background: var(--raised); color: var(--text); font-size: 12px;
 }
 
-/* the composer under tapi chat: outside the focus frame, the words' font */
+/* the composer under tapi chat */
 .send.chat textarea { font: 16px/1.35 var(--sans); }
-.screen-tools > .btn, #d-live { flex: none; white-space: nowrap; }
-.screen-tools .c-why { flex: 1; }
-.bubble strong { font-weight: 700; }

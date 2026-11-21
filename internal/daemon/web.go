@@ -163,6 +163,7 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	mux.HandleFunc("POST /api/tapi/send", d.webTapiSend(sf.tapiSend))
 	mux.HandleFunc("POST /api/tapi/keys", d.webTapiKeys)
 	mux.HandleFunc("GET /api/overview", d.webOverview)
+	mux.HandleFunc("GET /api/now", d.webNow) // the phone's Now screen (webnow.go)
 	return mux
 }
 
@@ -331,6 +332,12 @@ type webSession struct {
 	// word (theme.Look / theme.PRLook, unicode icons): one table for both.
 	Look   webLook  `json:"look"`
 	PRLook *webLook `json:"pr_look,omitempty"`
+	// Group is the phone's Sessions heading the session goes under
+	// (webGroup): active | review | idle | landed.
+	Group string `json:"group"`
+	// Main: the session runs in the repository's own checkout (no
+	// worktree of its own), so the repository names it, not the branch.
+	Main bool `json:"main,omitempty"`
 }
 
 type webLook struct {
@@ -357,6 +364,7 @@ func toWebSession(s *state.Session) webSession {
 		LastTool: s.LastTool, LastMessage: s.LastMessage, Diffstat: s.Diffstat,
 		PR: s.PR, Stopped: s.Stopped, Error: s.Error, GitBlocked: s.GitBlocked != "", Queue: s.Queue,
 		Test: s.Test.Status, Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
+		Group: webGroup(s.State), Main: s.Path != "" && s.Path == s.RepoDir,
 	}
 	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {
 		wl := toWebLook(l)

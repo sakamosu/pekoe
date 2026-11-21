@@ -56,7 +56,7 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 - **send**: 選んだセッションへの短い指示(画像の添付を含む。今の `POST …/send` と同じ確認)
 - **許可待ちへの回答**: allow / deny / always。確認シートで pekoe の要約と画面を並べ、判断は画面で行う(`docs/web.md` の「allow / deny の扱い」と同じ)。`always` は TUI の `A` に合わせて GUI では出す(「決まったこと」5)。API の側で GUI の入口だけ `always` を受け付けるのも段階 1 で入れる
 - **質問へのキーパッド**: AskUserQuestion のメニューに答える(今の `POST …/keys`)。これが無いと質問に答えられず「毎日の操作」にならないので、MVP に入れる
-- **受信箱への回答**: 事実が先・推奨を既定にしない・確認シート・`rev` の突き合わせ(`docs/web.md` の「受信箱(Inbox タブ)の扱い」と同じ)
+- **受信箱への回答**: 事実が先・推奨を既定にしない・確認シート・`rev` の突き合わせ(`docs/web.md` の「受信箱(Inbox)の扱い」と同じ)
 
 段階 4 の一部として、Dashboard に集計と台帳を足した(**実装済み**。GUI の mux にだけ登録し、tailnet の Web UI には無い。どちらも既存のソケットのメソッドを GUI の Caller(人)で呼ぶ薄いハンドラで、新しいデーモンのメソッドは無い。`internal/daemon/guidash.go`、docs/web.md の API の表):
 

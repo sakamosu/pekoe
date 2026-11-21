@@ -183,7 +183,13 @@ func (d *Daemon) webOverview(w http.ResponseWriter, r *http.Request) {
 		webErr(w, err)
 		return
 	}
-	list := res.([]*state.Session)
+	c, groups := d.overviewOf(res.([]*state.Session))
+	writeJSON(w, map[string]any{"counts": c, "groups": groups, "at": time.Now()})
+}
+
+// overviewOf counts list and groups its flows by requester and request
+// (GET /api/overview; GET /api/now reads the same). list is sorted in place.
+func (d *Daemon) overviewOf(list []*state.Session) (webCounts, []webFlowGroup) {
 	checks := map[string]*state.MergeCheck{}
 	if res, err := d.Call("merge.check", nil); err == nil {
 		for _, c := range res.([]*state.MergeCheck) {
@@ -276,7 +282,7 @@ func (d *Daemon) webOverview(w http.ResponseWriter, r *http.Request) {
 	for _, g := range order {
 		out = append(out, *g)
 	}
-	writeJSON(w, map[string]any{"counts": c, "groups": out, "at": time.Now()})
+	return c, out
 }
 
 func cutRunes(s string, n int) string {

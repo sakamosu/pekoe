@@ -18,66 +18,73 @@
 <script type="module" src="/app.js"></script>
 </head>
 <body>
-<header class="bar">
-  <h1 class="pill" id="title">pekoe</h1>
-  <button class="back" id="back" hidden aria-label="back">‹ sessions</button>
-  <span class="sum" id="sum"></span>
+<!-- the screen's top bar (52px): the screen's name on the left, how fresh
+     on the right; tapi's bar carries its face, state and Chat | Screen -->
+<header class="bar" id="bar">
+  <button type="button" class="back" id="back" hidden aria-label="back">‹</button>
+  <h1 class="title" id="title">pekoe</h1>
+  <!-- tapi: the face, the title, its state and the chat | screen switch -->
+  <div class="chat-ttl" id="c-ttl" hidden>
+    <span class="face" id="c-face" aria-hidden="true"></span>
+    <span class="c-name"><span class="t">tapi</span><span class="state" id="c-state"></span></span>
+    <span class="seg" role="group" aria-label="view">
+      <button type="button" id="c-v-chat" aria-pressed="true">Chat</button>
+      <button type="button" id="c-v-screen" aria-pressed="false">Screen</button>
+    </span>
+  </div>
+  <span class="fresh" id="fresh"></span>
 </header>
 
-<nav class="tabs" id="tabs" aria-label="views">
-  <a class="tab" id="t-list" href="#">Sessions</a>
-  <a class="tab" id="t-inbox" href="#/inbox">Inbox <span class="badge" id="t-inbox-n" hidden></span></a>
-  <a class="tab" id="t-overview" href="#/overview">Overview</a>
-</nav>
-
-<main id="list">
-  <section class="panel focus">
-    <div class="ttl"><span class="name">◆ Sessions</span> <span id="l-count"></span></div>
-    <div id="l-rows" aria-live="polite"></div>
-    <div class="foot" id="l-foot" hidden></div>
+<!-- Now: what needs the person, tapi, the requests, pekoed's merges -->
+<main id="now">
+  <section class="sect" id="n-needs">
+    <h2 class="label">Needs you</h2>
+    <div id="n-cards" aria-live="polite"></div>
+    <div class="zeros" id="n-zeros" hidden></div>
   </section>
+  <section class="sect">
+    <h2 class="label">tapi</h2>
+    <a class="convo" id="n-tapi" href="#/tapi"></a>
+  </section>
+  <section class="sect" id="n-reqs" hidden>
+    <h2 class="label">Requests <span class="lr" id="n-reqs-open"></span></h2>
+    <div id="n-reqs-list"></div>
+  </section>
+  <section class="sect" id="n-merged" hidden>
+    <h2 class="label">Merged by pekoed</h2>
+    <a class="merged" id="n-merged-row" href="#/inbox"></a>
+  </section>
+  <footer class="me-line" id="who"></footer>
 </main>
 
+<!-- Sessions: by state, with filter chips -->
+<main id="list" hidden>
+  <div class="chips" id="l-chips" role="group" aria-label="filter"></div>
+  <div id="l-rows" aria-live="polite"></div>
+</main>
+
+<!-- the inbox (reached from Now): open items with their answer cards,
+     and pekoed's merges -->
 <main id="inbox" hidden>
-  <section class="panel focus">
-    <div class="ttl"><span class="name">◆ Inbox</span> <span id="i-count"></span></div>
-    <div class="cap">pekoe's facts and links come first, the agent's words after. A recommendation is the agent's opinion and is not preselected.</div>
-    <div id="i-rows" aria-live="polite"></div>
-  </section>
+  <div class="cap">pekoe's facts and links come first, the agent's words after. A recommendation is the agent's opinion and is not preselected.</div>
+  <div id="i-rows" aria-live="polite"></div>
 </main>
 
+<!-- every session's flow (reached from Now's requests) -->
 <main id="overview" hidden>
-  <section class="panel">
-    <div class="ttl"><span class="name">◆ Overview</span> <span class="at" id="o-at"></span></div>
-    <div class="counts" id="o-counts"></div>
-  </section>
-  <section class="panel">
-    <div class="ttl"><span class="name">◆ tapi</span></div>
-    <div class="tapi" id="o-tapi"></div>
-    <a class="btn key small open-tapi" id="o-tapi-open" href="#/tapi">talk to tapi ›</a>
-  </section>
-  <section class="panel focus">
-    <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">impl → review → PR → CI → merge</span></div>
-    <div id="o-flow"></div>
-  </section>
+  <div class="counts" id="o-counts"></div>
+  <div class="tapi" id="o-tapi" hidden></div>
+  <div id="o-flow"></div>
 </main>
 
 <main id="detail" hidden>
   <section class="panel" id="d-head-panel">
-    <div class="ttl"><span class="name" id="d-kind">◆ Session</span></div>
+    <div class="ttl"><span class="name" id="d-kind">Session</span></div>
     <div class="head" id="d-head"></div>
   </section>
   <section class="card" id="d-ask" hidden></section>
-  <section class="panel focus screen-panel" id="d-panel">
-    <div class="ttl" id="d-ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
-    <!-- tapi chat: the face, the title, its state and the chat | screen switch -->
-    <div class="ttl chat-ttl" id="c-ttl" hidden>
-      <span class="name"><span class="face" id="c-face" aria-hidden="true"></span> <span class="t">tapi chat</span> <span class="state" id="c-state"></span></span>
-      <span class="seg" role="group" aria-label="view">
-        <button type="button" id="c-v-chat" aria-pressed="true">chat</button>
-        <button type="button" id="c-v-screen" aria-pressed="false">screen</button>
-      </span>
-    </div>
+  <section class="panel screen-panel" id="d-panel">
+    <div class="ttl" id="d-ttl"><span class="name">Agent</span> <span id="d-name"></span></div>
     <div class="chat" id="c-chat" hidden>
       <div class="log" id="c-log" role="log" tabindex="0">
         <div id="c-items"></div>
@@ -142,13 +149,28 @@
         <label class="ibtn" for="d-file" aria-label="attach images" title="attach images"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg><input type="file" id="d-file" accept="image/*" multiple></label>
       </span>
       <button type="button" class="ibtn unfold" id="d-unfold" aria-label="show attach" title="show attach"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-      <textarea id="d-text" rows="1" maxlength="4000" placeholder="send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
+      <textarea id="d-text" rows="1" maxlength="4000" placeholder="Send a short instruction" enterkeyhint="send" aria-describedby="d-to"></textarea>
       <button type="submit" class="ibtn go" id="d-send-btn" aria-label="send" title="send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l16 7.5-16 7.5 2.5-7.5z"/><path d="M7 12h6"/></svg></button>
     </div>
   </form>
 </main>
 
-<footer class="who" id="who"></footer>
+<!-- the tab bar (56px, the home indicator's room under it) -->
+<nav class="tabbar" id="tabbar" aria-label="views">
+  <a class="tabb" id="t-now" href="#/">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>
+    <span class="tl">Now</span>
+  </a>
+  <a class="tabb" id="t-list" href="#/sessions">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+    <span class="tl">Sessions <span class="tn" id="t-list-n"></span></span>
+  </a>
+  <a class="tabb" id="t-tapi" href="#/tapi">
+    <!-- tapi's face (the bar's and Now's: ▐ eyes ▌ in the mascot's colors) -->
+    <span class="face tab-face" id="t-face" aria-hidden="true"></span>
+    <span class="tl">tapi</span>
+  </a>
+</nav>
 
 <div class="sheet-back" id="sheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
