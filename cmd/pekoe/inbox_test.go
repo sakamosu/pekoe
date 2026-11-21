@@ -106,7 +106,9 @@ func TestInboxAnswerNoteOnly(t *testing.T) {
 	fd.mu.Lock()
 	fd.results = map[string]any{"inbox.answer": state.InboxItem{ID: 12, Status: state.InboxAnswered}}
 	fd.mu.Unlock()
-	if _, err := capture(t, func() error { return cmdInbox([]string{"answer", "q12", "--note", "画像を送りたい", "--rev", "3"}) }); err != nil {
+	if _, err := capture(t, func() error {
+		return cmdInbox([]string{"answer", "q12", "--note", "画像を送りたい", "--rev", "3"})
+	}); err != nil {
 		t.Fatal(err)
 	}
 	fd.mu.Lock()
