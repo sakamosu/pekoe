@@ -29,6 +29,7 @@ import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, render
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
 import { picker } from "./picker.js";
+import { agentRows, updateNotice, nodes, panelFacts } from "./panel.js";
 
 let sessions = [];
 let tapi = null; // /api/tapi
@@ -347,9 +348,15 @@ function renderHead(s) {
   h.append(st);
 }
 
-// renderInfo: what pekoed knows of it, as data (the right panel). Only
-// what /api/sessions carries: usage, cost and the background shells are
-// not in the API (docs/gui-design.md: 段階 2).
+// the AGENT section's facts (gui/panel.js): read while the session is open
+const facts = panelFacts((slug) => {
+  if (view === "detail" && current === slug) renderInfo(detailTarget());
+});
+
+// renderInfo: what pekoed knows of it, as data (the right panel): what
+// /api/sessions carries, and the agent's model, mode, context and update
+// (gui/panel.js). The 5h / 7d limits, the context's %, cost and the
+// background shells are not in the API (docs/gui-design.md).
 function renderInfo(s) {
   const box = $("d-info");
   box.replaceChildren();
@@ -379,6 +386,15 @@ function renderInfo(s) {
     return;
   }
   sec("SESSION", row("slug", txt(s.slug)), row("repo", txt(s.repo)), s.branch !== s.slug ? row("branch", txt(s.branch)) : null, row("agent", txt(s.agent)));
+  facts.want(s.slug);
+  const fx = facts.get(s.slug);
+  const factRow = (r) => {
+    const e = row(r.k, ...nodes(r.parts));
+    if (r.title) e.title = r.title;
+    return e;
+  };
+  if (fx && fx.error) sec("AGENT", row("", colored("err", "✗", "sym"), txt(" unavailable · " + fx.error)));
+  else sec("AGENT", ...agentRows(fx).map(factRow));
   const d = diffBits(s.diffstat);
   const test = {
     pass: [colored("ok", "✓", "sym"), txt(" pass")], fail: [colored("err", "✗", "sym"), txt(" fail")],
@@ -401,7 +417,8 @@ function renderInfo(s) {
     s.error ? row("", colored("err", "✗", "sym"), txt(" " + s.error.split("\n")[0])) : null,
     s.git_blocked ? row("", colored("warn", "!", "sym"), txt(" .git changed: git stopped")) : null,
     s.state === "queued" && s.queue ? row("", colored("dim", "◌", "sym"), txt(" " + s.queue)) : null,
-    s.stopped ? row("", colored("dim", "◦", "sym"), txt(" stopped")) : null);
+    s.stopped ? row("", colored("dim", "◦", "sym"), txt(" stopped")) : null,
+    updateNotice(fx) ? factRow(updateNotice(fx)) : null);
 }
 
 // renderAsk: the card that replaces the composer while the agent waits
