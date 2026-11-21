@@ -446,6 +446,9 @@ func (d *Daemon) guiHandler(port int) http.Handler {
 	// the Session panel's model, mode, context and update (sessionpanel.go):
 	// the GUI's mux only, as the chat
 	mux.HandleFunc("GET /api/sessions/{slug}/panel", d.guiSessionPanel)
+	// the sidebar's Worktrees view (guiworktree.go): the GUI's mux only,
+	// as the TUI's [2] Worktrees. It reads; the phone has no such view
+	mux.HandleFunc("GET /api/worktrees", d.guiWorktrees)
 	return d.guiGuard(port, mux)
 }
 

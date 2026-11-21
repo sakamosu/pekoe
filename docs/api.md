@@ -906,7 +906,7 @@ POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF
 | --- | --- | --- |
 | `POST /api/gui/session` | `{token}` | 一度きりのトークンを、セッションのトークン(32 バイト、pekoed のメモリにだけ持つ)に替える。`{token}` を返す。無い・失効した(60 秒)トークンは 401。**使用済みのトークン**がもう一度来たら、誰かが人より先に使ったとみなしてセッションのトークンを全部失効させ、401 とログに残す |
 | 上の「3. HTTPS」の `/api/*` | | 同じもの。ただし `GET /api/tapi` の `sendable` は常に `true`、`confirm_send` は常に `false`(TUI と同じく確認なしで送れる。`allow_devices` は見ない)。`GET /api/me` は `{login: "local", device: "gui"}`。送信の記録と受信箱の答えの `via` は `gui`。`POST /api/sessions/{slug}/answer` は `always` も受け付ける(TUI の `A` と同じ。「always」という語だけで、`a`・`A`・`y` などのキーの別名は 400)。`/` はデスクトップ向けのページ(`webui/gui/`) |
-| ローカル GUI だけの `/api/*` | | Dashboard の集計と台帳(`/api/stats`・`/api/ledger`)、New session(issue から作るものを含む)・Interrupt・tapi の Reset と Start(`/api/repos`・`/api/repos/{repo_id}/issues`・`…/issues/{n}`・`POST /api/sessions`・`…/interrupt`・`/api/tapi/reset`・`/api/tapi/start`)、セッションの吹き出しと送信欄の補助(`GET /api/sessions/{slug}/transcript`・`…/commands`・`…/files`)。どれも人として(GUI の Caller)上の人間だけのメソッドを呼ぶ。形は docs/web.md の API の表 |
+| ローカル GUI だけの `/api/*` | | Dashboard の集計と台帳(`/api/stats`・`/api/ledger`)、New session(issue から作るものを含む)・Interrupt・tapi の Reset と Start(`/api/repos`・`/api/repos/{repo_id}/issues`・`…/issues/{n}`・`POST /api/sessions`・`…/interrupt`・`/api/tapi/reset`・`/api/tapi/start`)、セッションの吹き出しと送信欄の補助(`GET /api/sessions/{slug}/transcript`・`…/commands`・`…/files`)。サイドバーの Worktrees(`GET /api/worktrees`。`repo.list` と `worktree.list`)。どれも人として(GUI の Caller)上の人間だけのメソッドを呼ぶ。形は docs/web.md の API の表 |
 
 すべてのリクエストで確かめること(違えば理由を `pekoed.log` に `gui: <code> <method> <path>: <理由>`):
 

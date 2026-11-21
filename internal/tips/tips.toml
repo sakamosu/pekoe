@@ -195,6 +195,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#段階-2-の一部-session-の右パネルのモデルモードcontext更新"]
 
 [[tip]]
+id = "local-gui-worktrees"
+short = "pekoe gui の Worktrees で全リポジトリの worktree を見る"
+detail = "左端のレールの Worktrees で、リポジトリごとの worktree とブランチ・ポート・セッションの状態が出る(TUI の [2] Worktrees)。セッションのある行を押すと開く。消す操作は無く、削除は TUI の D か pekoe rm。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#worktrees"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"
