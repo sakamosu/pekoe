@@ -1,6 +1,10 @@
 package daemon
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -359,6 +364,85 @@ func TestSessionFiles(t *testing.T) {
 	}
 }
 
+// More untracked (not ignored) files than pekoed keeps do not push the
+// tracked ones out: the tracked are read first, the untracked fill what
+// is left, and the list says it was cut.
+func TestSessionFilesTrackedFirst(t *testing.T) {
+	d, repo, _ := chatSetup(t)
+	defer func(n int) { filesMaxRead = n }(filesMaxRead)
+	filesMaxRead = 20
+	dir := filepath.Join(repo, "build")
+	os.MkdirAll(dir, 0o755)
+	for i := 0; i <= filesMaxRead; i++ {
+		if err := os.WriteFile(filepath.Join(dir, "o"+strconv.Itoa(i)), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := call[FileList](t, d, "session.files", map[string]any{"slug": "main", "q": "a.txt"})
+	if !slices.Contains(f.Files, "a.txt") || !f.Truncated || f.Total != filesMaxRead {
+		t.Errorf("the tracked a.txt among %d untracked: %+v", filesMaxRead+1, f)
+	}
+	d.fileLists.Delete("main")
+	if f := call[FileList](t, d, "session.files", map[string]any{"slug": "main", "q": "build/o"}); f.Matches != filesMaxRead-1 {
+		t.Errorf("the untracked fill the rest: %+v", f)
+	}
+}
+
+// A path git prints from the index with "..", "." or an empty part (an
+// agent can write its worktree's index) is never offered: it could point
+// outside the worktree. A nested repository's "sub/" stays.
+func TestSessionFilesDotDotInIndex(t *testing.T) {
+	d, repo, _ := chatSetup(t)
+	names := []string{"a/../../outside.txt", "a/./dot.txt", "a//twice.txt", "/etc/passwd", "ok.txt"}
+	sort.Strings(names)
+	blob, _ := hex.DecodeString("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+	var b bytes.Buffer
+	b.WriteString("DIRC")
+	binary.Write(&b, binary.BigEndian, []uint32{2, uint32(len(names))})
+	for _, n := range names {
+		var e bytes.Buffer
+		binary.Write(&e, binary.BigEndian, []uint32{0, 0, 0, 0, 0, 0, 0o100644, 0, 0, 0})
+		e.Write(blob)
+		binary.Write(&e, binary.BigEndian, uint16(len(n)))
+		e.WriteString(n)
+		e.Write(make([]byte, 8-e.Len()%8))
+		b.Write(e.Bytes())
+	}
+	sum := sha1.Sum(b.Bytes())
+	b.Write(sum[:])
+	if err := os.WriteFile(filepath.Join(repo, ".git", "index"), b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(repo, "sub")
+	os.MkdirAll(sub, 0o755)
+	os.WriteFile(filepath.Join(sub, "x"), nil, 0o644)
+	run(t, sub, "git", "init", "-q")
+	run(t, sub, "git", "add", "x")
+	run(t, sub, "git", "commit", "-qm", "x")
+	f := call[FileList](t, d, "session.files", map[string]any{"slug": "main"})
+	for _, n := range f.Files {
+		if n != "ok.txt" && n != "a.txt" && n != "sub/" {
+			t.Errorf("offered %q: %v", n, f.Files)
+		}
+	}
+	if !slices.Contains(f.Files, "ok.txt") || !slices.Contains(f.Files, "sub/") || f.Skipped != 4 {
+		t.Errorf("files %v, skipped %d", f.Files, f.Skipped)
+	}
+}
+
+// Removing a session drops its last file list (up to filesMaxRead paths).
+func TestSessionFilesForgotten(t *testing.T) {
+	d, _, _ := chatSetup(t)
+	call[FileList](t, d, "session.files", map[string]any{"slug": "main"})
+	if _, ok := d.fileLists.Load("main"); !ok {
+		t.Fatal("no list kept")
+	}
+	d.forget("main")
+	if _, ok := d.fileLists.Load("main"); ok {
+		t.Error("the list of a forgotten session is kept")
+	}
+}
+
 // The three are a person's: without the human token (or with a wrong one)
 // they are refused over the socket.
 func TestSessionChatNeedsToken(t *testing.T) {
@@ -436,6 +520,83 @@ func TestGUISessionChat(t *testing.T) {
 	get("/api/sessions/main/files?q="+strings.Repeat("a", 257), http.StatusBadRequest)
 }
 
+// The send box's pick list (gui/picker.js) with a fake DOM and fetch:
+// "@ Files" before a word puts a blank after the "@" and a pick keeps the
+// word; while the list of a new word is read (a key more), ↵ and Tab put
+// none of the older word's list in, and take the new one's once it came.
+func TestGUIPickerFiles(t *testing.T) {
+	out := runWebModule(t, `import { picker } from "gui/picker.js";
+class N {
+  constructor(tag) { this.tag = tag; this.children = []; this.attrs = {}; this.hidden = false; this.ls = {}; this.textContent = ""; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  setAttribute(k, v) { this.attrs[k] = v; }
+  removeAttribute(k) { delete this.attrs[k]; }
+  addEventListener(t, f) { (this.ls[t] ||= []).push(f); }
+  dispatchEvent(e) { for (const f of this.ls[e.type] || []) f(e); }
+  querySelector() { return null; }
+  focus() { globalThis.document.activeElement = this; }
+  setSelectionRange(a) { this.selectionStart = a; }
+}
+globalThis.document = { createElement: (t) => new N(t), getElementById: () => new N("x"), activeElement: null };
+const ALL = ["src/gui.js", "src/guide.md", "docs/gui-design.md", "src/a.js"];
+globalThis.fetch = async (url) => {
+  const q = decodeURIComponent(url.split("q=")[1] || "");
+  await new Promise((r) => setTimeout(r, 50));
+  const files = ALL.filter((f) => f.includes(q));
+  return { ok: true, status: 200, json: async () => ({ files, matches: files.length, total: ALL.length }) };
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ta = new N("textarea"), box = new N("div");
+box.id = "pk";
+box.hidden = true;
+const pk = picker({ ta, box, slug: () => "s1" });
+const type = (v) => { ta.value = v; ta.selectionStart = v.length; ta.dispatchEvent({ type: "input" }); };
+const tab = () => pk.key({ key: "Tab", shiftKey: false, preventDefault() {}, stopPropagation() {} });
+const r = {};
+type("see @gui");
+await sleep(300);
+type("see @guide");
+r.staleTook = tab();
+r.staleText = ta.value;
+r.loading = box.children.some((c) => c.textContent === "Loading…");
+await sleep(300);
+r.freshTook = tab();
+r.freshText = ta.value;
+pk.close();
+ta.value = "look at this bug";
+ta.selectionStart = 8;
+pk.start("file");
+r.button = ta.value;
+await sleep(300);
+const v = ta.value, c = ta.selectionStart;
+ta.value = v.slice(0, c) + "a.js" + v.slice(c);
+ta.selectionStart = c + 4;
+ta.dispatchEvent({ type: "input" });
+await sleep(300);
+tab();
+r.buttonPick = ta.value;
+console.log(JSON.stringify(r));`)
+	var r map[string]any
+	if err := json.Unmarshal(out, &r); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	want := map[string]any{
+		"staleTook":  true,
+		"staleText":  "see @guide",
+		"loading":    true,
+		"freshTook":  true,
+		"freshText":  "see @src/guide.md ",
+		"button":     "look at @ this bug",
+		"buttonPick": "look at @src/a.js this bug",
+	}
+	for k, w := range want {
+		if r[k] != w {
+			t.Errorf("%s: %v, want %v", k, r[k], w)
+		}
+	}
+}
+
 // The send box's / and @ (gui/compose.js): what is typed at the caret,
 // what a pick writes, and what never goes into the box (control
 // characters). Long names stay whole in the text (the list cuts them on
@@ -450,11 +611,13 @@ r.file = tokenAt("look at @src/gu", 15);
 r.fileStart = tokenAt("@do", 3);
 r.fileMidWord = tokenAt("mail@x", 6);
 r.fileCaretIn = tokenAt("see @src/gui.js now", 8);
+r.fileBeforeWord = tokenAt("compare @this with that", 9);
 r.none = tokenAt("plain words", 5);
 r.insCmd = insertPick("/com", r.cmd, commandText("compact"));
 r.insCmdRest = insertPick("/ hello", tokenAt("/ hello", 1), commandText("clear"));
 r.insFile = insertPick("look at @src/gu", r.file, mention("src/gui.js"));
 r.insFileIn = insertPick("see @src/gui.js now", r.fileCaretIn, mention("src/x.js"));
+r.insBeforeWord = insertPick("compare @this with that", r.fileBeforeWord, mention("src/a.js")).text;
 r.insSpace = mention("docs/a b.md");
 r.insCtl = insertPick("@x", tokenAt("@x", 2), mention("bad\u001bname"));
 r.insLS = insertable("a b");
@@ -475,28 +638,30 @@ console.log(JSON.stringify(r));`)
 	}
 	j := func(k string) string { b, _ := json.Marshal(r[k]); return string(b) }
 	want := map[string]string{
-		"cmd":         `{"end":4,"kind":"cmd","q":"com","start":0}`,
-		"cmdLead":     `{"end":5,"kind":"cmd","q":"re","start":2}`,
-		"cmdMid":      `null`,
-		"file":        `{"end":15,"kind":"file","q":"src/gu","start":8}`,
-		"fileStart":   `{"end":3,"kind":"file","q":"do","start":0}`,
-		"fileMidWord": `null`,
-		"fileCaretIn": `{"end":15,"kind":"file","q":"src","start":4}`,
-		"none":        `null`,
-		"insCmd":      `{"caret":9,"text":"/compact "}`,
-		"insCmdRest":  `{"caret":6,"text":"/clear hello"}`,
-		"insFile":     `{"caret":20,"text":"look at @src/gui.js "}`,
-		"insFileIn":   `{"caret":13,"text":"see @src/x.js now"}`,
-		"insSpace":    `"@\"docs/a b.md\""`,
-		"insCtl":      `null`,
-		"insLS":       `false`,
-		"insLong":     `907`,
-		"fCo":         `["compact","recompile"]`,
-		"fShip":       `["deploy"]`,
-		"fAll":        `4`,
-		"files":       `2`,
-		"cap":         `true`,
-		"page":        `[3,["m2","t5"]]`,
+		"cmd":            `{"end":4,"kind":"cmd","q":"com","start":0}`,
+		"cmdLead":        `{"end":5,"kind":"cmd","q":"re","start":2}`,
+		"cmdMid":         `null`,
+		"file":           `{"end":15,"kind":"file","q":"src/gu","start":8}`,
+		"fileStart":      `{"end":3,"kind":"file","q":"do","start":0}`,
+		"fileMidWord":    `null`,
+		"fileCaretIn":    `{"end":15,"kind":"file","q":"src","start":4}`,
+		"fileBeforeWord": `{"end":9,"kind":"file","q":"","start":8}`,
+		"none":           `null`,
+		"insCmd":         `{"caret":9,"text":"/compact "}`,
+		"insCmdRest":     `{"caret":6,"text":"/clear hello"}`,
+		"insFile":        `{"caret":20,"text":"look at @src/gui.js "}`,
+		"insFileIn":      `{"caret":13,"text":"see @src/x.js now"}`,
+		"insBeforeWord":  `"compare @src/a.js this with that"`,
+		"insSpace":       `"@\"docs/a b.md\""`,
+		"insCtl":         `null`,
+		"insLS":          `false`,
+		"insLong":        `907`,
+		"fCo":            `["compact","recompile"]`,
+		"fShip":          `["deploy"]`,
+		"fAll":           `4`,
+		"files":          `2`,
+		"cap":            `true`,
+		"page":           `[3,["m2","t5"]]`,
 	}
 	for k, w := range want {
 		if g := j(k); g != w {

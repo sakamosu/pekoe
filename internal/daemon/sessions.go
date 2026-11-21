@@ -92,6 +92,7 @@ func (d *Daemon) forgetIf(slug string, ok func(*state.Session) bool) bool {
 	delete(d.progress, slug)
 	delete(d.prFetched, slug)
 	d.mu.Unlock()
+	d.fileLists.Delete(slug) // session.files's last list (up to filesMaxRead paths)
 	if err := d.DB.DeleteSession(slug); err != nil {
 		log.Printf("delete %s: %v", slug, err)
 	}

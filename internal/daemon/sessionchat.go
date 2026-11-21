@@ -395,10 +395,12 @@ func claudeConfigDir() string { return filepath.Dir(claudeProjectsDir()) }
 
 // ---- files ----
 
+// filesMaxRead: paths kept from git ls-files (a var: the tests lower it)
+var filesMaxRead = 50000
+
 const (
-	filesMaxRead  = 50000 // paths kept from git ls-files
-	filesMaxShown = 50    // matches one call returns
-	filesMaxPath  = 1024  // bytes of a path shown
+	filesMaxShown = 50   // matches one call returns
+	filesMaxPath  = 1024 // bytes of a path shown
 	filesEvery    = 5 * time.Second
 	filesTimeout  = 10 * time.Second
 )
@@ -470,36 +472,54 @@ func (d *Daemon) listFiles(s *state.Session) (*fileListing, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), filesTimeout)
 	defer cancel()
-	raw, err := gitx.RunRaw(ctx, s.Path, nil, nil, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate")
-	if err != nil {
-		return nil, err
-	}
+	// the tracked first, then the untracked fill what is left: a big
+	// untracked tree (a build, node_modules not ignored) never pushes the
+	// tracked files out of the list
 	l := &fileListing{at: time.Now(), path: s.Path}
-	for _, name := range strings.Split(string(raw), "\x00") {
-		if name == "" {
-			continue
-		}
-		if len(l.files) >= filesMaxRead {
-			l.truncated = true
+	for _, which := range [][]string{{"--cached", "--deduplicate"}, {"--others", "--exclude-standard"}} {
+		if l.truncated {
 			break
 		}
-		if !shownPath(name) {
-			l.skipped++
-			continue
+		raw, err := gitx.RunRaw(ctx, s.Path, nil, nil, append([]string{"ls-files", "-z"}, which...)...)
+		if err != nil {
+			return nil, err
 		}
-		l.files = append(l.files, name)
+		for _, name := range strings.Split(string(raw), "\x00") {
+			if name == "" {
+				continue
+			}
+			if len(l.files) >= filesMaxRead {
+				l.truncated = true
+				break
+			}
+			if !shownPath(name) {
+				l.skipped++
+				continue
+			}
+			l.files = append(l.files, name)
+		}
 	}
 	sort.Strings(l.files)
-	d.fileLists.Store(s.Slug, l)
+	// a session removed while git ran: keep nothing (forget dropped its list)
+	if _, err := d.snapshot(s.Slug); err == nil {
+		d.fileLists.Store(s.Slug, l)
+	}
 	return l, nil
 }
 
 // shownPath: a path the page may show and put into the input box: UTF-8,
 // no control characters (the send refuses them), not absurdly long, and
-// relative inside the worktree (git never lists one that is not).
+// relative inside the worktree. git prints the index's paths as they are,
+// and an agent can write its worktree's index: no part may be "..", "."
+// or empty (but the "/" that ends a nested repository's "sub/").
 func shownPath(p string) bool {
-	if len(p) > filesMaxPath || !utf8.ValidString(p) || filepath.IsAbs(p) || strings.HasPrefix(p, "../") || p == ".." {
+	if len(p) > filesMaxPath || !utf8.ValidString(p) || filepath.IsAbs(p) {
 		return false
+	}
+	for _, part := range strings.Split(strings.TrimSuffix(p, "/"), "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
 	}
 	for _, r := range p {
 		if unicode.IsControl(r) || r == ' ' || r == ' ' {
