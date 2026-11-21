@@ -312,7 +312,9 @@ const rowsOf = (n) => find(n, (x) => /\bpl-row\b/.test(x.className) && !/pl-head
 res.order = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-bname")[0].textContent);
 res.groups = box.children.filter((c) => c.className === "pl-group").map((g) => [g.children.filter((c) => c.className === "pl-trunk").length, rowsOf(g).length]);
 // the Branch box: "<repo> · <branch>" (repo dim), then the badges; the title keeps the whole
-const label = (n) => n.children.filter((c) => !/pl-badge/.test(c.className)).map((c) => c.className + ":" + c.textContent).join(" ");
+const label = (n) => find(n, (x) => x.className === "pl-label")[0].children.map((c) => c.className + ":" + c.textContent).join(" ");
+// two badges or more: the full ones (pl-full) and one folded badge (pl-compact) gui.css shows when the box is narrow
+res.compact = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className)).map((b) => b.className.replace("pl-badge", "").trim() + ":" + b.textContent).join(","));
 res.label = rowsOf(box).map((r) => label(find(r, (x) => x.className === "pl-branch")[0]));
 res.title = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-branch")[0].title);
 const nr = el0("div");
@@ -322,7 +324,7 @@ res.req = rowsOf(box).map((r) => r.children[0].textContent);
 res.tree = rowsOf(box).map((r) => r.children[1].children.map(cls).join(""));
 res.boxes = rowsOf(box).map((r) => find(r, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "));
 res.links = rowsOf(box).map((r) => find(r, (x) => /\bpl-link\b/.test(x.className)).map((l) => (/todo/.test(l.className) ? "-" : "=")).join(""));
-res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
+res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className) && !/pl-compact/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
 res.status = rowsOf(box).map((r) => r.children[r.children.length - 1].children.map((c) => c.textContent).join(" | "));
 res.cross = find(box, (x) => x.tag === "#text" && x.text.includes("✗")).length;
 find(box, (x) => x.tag === "button" && x.className === "pl-branch")[0].click();
@@ -368,7 +370,7 @@ console.log(JSON.stringify(res));
 		ReqCut, ReqOne, ReqAll, NoCI, Wait                            []string
 		Cols                                                          []int
 		Order, Req, Tree, Boxes, Links, Badges, Status, Opened, Model []string
-		Label, Title                                                  []string
+		Label, Title, Compact                                         []string
 		Groups                                                        [][2]int
 		More, All                                                     [2]any
 	}
@@ -389,6 +391,9 @@ console.log(JSON.stringify(res));
 		"pl-repo:pekoe pl-sep:· pl-bname:fix/f", "pl-repo:pekoe pl-sep:· pl-bname:fix/a", "pl-repo:pekoe pl-sep:· pl-bname:fix/b",
 		"pl-repo:pekoe pl-sep:· pl-bname:fix/d", "pl-repo:pekoe pl-sep:· pl-bname:fix/c", "pl-repo:dotfiles pl-sep:· pl-bname:hand/e",
 		"pl-bname:n",
+	})
+	want("badges: full and folded when two or more", res.Compact, []string{
+		"now pl-full:◉ r966,pl-full:+2,now pl-compact:◉ r966 +2", "", "", "now pl-full:◉ r970,pl-full:+r965,now pl-compact:◉ r970 +1", "", "now:◉ r971",
 	})
 	want("branch box title", res.Title, []string{"fix/f · pekoe · f", "fix/a · pekoe · a", "fix/b · pekoe · b", "fix/d · pekoe · d", "fix/c · pekoe · c", "hand/e · dotfiles · e"})
 	want("groups", res.Groups, [][2]int{{0, 1}, {1, 4}})

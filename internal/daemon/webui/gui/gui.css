@@ -424,13 +424,24 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 12px; color: var(--text); font: inherit; text-align: left;
 }
 .pl-branch:hover { border-color: var(--secondary); }
-/* "<repo> · <branch>": the badges never shrink; the branch (basis 0) only
-   takes what the repo and the badges leave, so it is the one cut; the repo
-   (dim) is capped at 12em and always leaves 4em for the branch, and shrinks
-   further only when the badges need it, so nothing spills out of the box */
-.pl-repo { flex: 0 1 auto; min-width: 0; max-width: min(12em, calc(100% - 4em)); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* "<repo> · <branch>" (.pl-label): the badges never shrink, the label takes
+   what they leave; in it the branch (basis 0) takes what the repo leaves, so
+   it is the one cut; the repo (dim) is capped at 12em and leaves the branch
+   4em, or when the label is too narrow for that, keeps 45% of it */
+.pl-label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.pl-repo { flex: 0 1 auto; min-width: 0; max-width: min(12em, max(45%, calc(100% - 4em))); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-sep { flex: none; }
 .pl-bname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a narrow box (under 220px; it shrinks to 160px): two badges or more fold
+   into the first one with the count of the rest (◉ r970 +1), so the label
+   keeps the repo's and the branch's heads */
+.pl-bcell { container-type: inline-size; }
+.pl-badge.pl-compact { display: none; }
+@container (max-width: 219.98px) {
+  .pl-badge.pl-full { display: none; }
+  .pl-badge.pl-compact { display: block; padding: 0 5px; }
+  .pl-branch:has(.pl-badge) .pl-label { gap: 3px; }
+}
 .pl-badge {
   flex: none; box-sizing: border-box; height: 20px; padding: 0 7px; border: 1px solid var(--border); border-radius: 10px;
   font-size: 11px; line-height: 18px; color: var(--dim); white-space: nowrap;

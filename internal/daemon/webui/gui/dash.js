@@ -576,14 +576,22 @@ function branchRow(f, tree, first, open, shown) {
   b.title = (f.branch || f.slug) + (f.repo ? " · " + f.repo : "") + (f.slug !== f.branch ? " · " + f.slug : "");
   // "<repo> · <branch>": the repo dim and never cut (up to a cap), the
   // branch cut at its end; one line, the badges after them
-  if (f.repo) b.append(el("span", "pl-repo", f.repo), el("span", "pl-sep", "·"));
-  b.append(el("span", "pl-bname", f.branch || f.slug));
-  for (const [text, now] of badges(f.later)) {
-    const bd = el("span", "pl-badge" + (now ? " now" : ""));
+  const lab = el("span", "pl-label");
+  if (f.repo) lab.append(el("span", "pl-repo", f.repo), el("span", "pl-sep", "·"));
+  lab.append(el("span", "pl-bname", f.branch || f.slug));
+  b.append(lab);
+  const badge = (text, now, cls) => {
+    const bd = el("span", "pl-badge" + (now ? " now" : "") + cls);
     if (now) bd.append(el("span", "pl-bsym", text.slice(0, 1)), txt(text.slice(1)));
     else bd.append(txt(text));
-    b.append(bd);
-  }
+    return bd;
+  };
+  const bs = badges(f.later);
+  // two badges or more: also the first one with the count of the rest in
+  // one badge (◉ r970 +1), which gui.css shows instead when the box is narrow
+  const two = bs.length > 1;
+  for (const [text, now] of bs) b.append(badge(text, now, two ? " pl-full" : ""));
+  if (two) b.append(badge(bs[0][0] + " +" + (f.later.length - 1), bs[0][1], " pl-compact"));
   b.addEventListener("click", () => open(f.slug));
   bc.append(b);
   row.append(rq, tr, bc, ...STEPS.map((n) => stepCell(f, n)), statusCell(f));
