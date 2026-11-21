@@ -154,6 +154,27 @@ type webFlow struct {
 	// Merge is merge.check for a session with its own PR that has not
 	// landed: which conditions are missing, with pekoed's detail.
 	Merge *state.MergeCheck `json:"merge,omitempty"`
+	// Parent and Origin place the row in the GUI's Pipeline tree: who
+	// made the session and the request that made it (0: none). Later are
+	// the requests tied to it after that, the one it works on now marked.
+	Parent string     `json:"parent"`
+	Origin int64      `json:"origin,omitempty"`
+	Later  []webLater `json:"later,omitempty"`
+	// CI is the PR's checks as counted (none before the PR status is read).
+	CI *webCI `json:"ci,omitempty"`
+}
+
+// webLater is a request tied to a session after it was made. Now: it is
+// the request the session works on and it is still open.
+type webLater struct {
+	ID  int64 `json:"id"`
+	Now bool  `json:"now,omitempty"`
+}
+
+type webCI struct {
+	Pass    int `json:"pass"`
+	Fail    int `json:"fail"`
+	Pending int `json:"pending"`
 }
 
 // webFlowGroup: the sessions one requester (parent) started for one
@@ -313,6 +334,22 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	}
 	if s.Report != nil {
 		f.Report = s.Report.Status
+	}
+	f.Parent, f.Origin = s.Parent, originOf(s)
+	for _, id := range s.Later {
+		if id == f.Origin {
+			continue
+		}
+		l := webLater{ID: id}
+		if id == s.Request {
+			if e, err := d.DB.LedgerGet(id); err == nil && e.Status == state.LedgerOpen {
+				l.Now = true
+			}
+		}
+		f.Later = append(f.Later, l)
+	}
+	if ps := s.PRStatus; ps != nil && s.PR > 0 {
+		f.CI = &webCI{Pass: ps.Pass, Fail: ps.Fail, Pending: ps.Pending}
 	}
 	if s.PR > 0 && s.State != state.Landed {
 		f.Merge = mc

@@ -277,7 +277,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 
 Overview: `counts` は `{running, queued, waiting, review (done の数), open_prs, ready (根拠が揃った PR), inbox_open, ledger_open}`。`groups` は依頼元(`parent`)と依頼(`request`)ごとのまとまりで、tapi の依頼(新しい依頼が上)→ ほかのセッションが作ったもの → 人・unknown → 直接開いたもの、の順。各まとまりは `{parent, request?: {id, text (200 文字で切る), status}, rows: [Flow]}`。他人の PR のレビュー(`pr_review`)は工程表に入れない。
 
-Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, report (最新の報告の status), steps, merge?}`。`steps` は `impl` `review` `pr` `ci` `merge` の 5 つ(この順。独立レビューは PR の前にするので)で、それぞれ `{name, status: done|now|fail|todo, detail}`:
+Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, report (最新の報告の status), steps, merge?, parent, origin?, later?, ci?}`。`parent` はセッションの依頼元(まとまりの `parent` と同じ値)、`origin` はセッションを作った依頼(`pekoe new --request`。後の `ledger.link` では動かない。無ければ省略)、`later` は作った後に結んだ依頼 `[{id, now?}]`(結んだ順。`now` は今そのセッションが取り組んでいる依頼(`request`)で、まだ open のもの)、`ci` は PR のチェックの数 `{pass, fail, pending}`(PR の状態を読んでから)。ローカル GUI の Pipeline はまとまり(今の `request` で分けたもの)を使わず、`origin` で組み直す(docs/gui-design.md の「Pipeline」)。`steps` は `impl` `review` `pr` `ci` `merge` の 5 つ(この順。独立レビューは PR の前にするので)で、それぞれ `{name, status: done|now|fail|todo, detail}`:
 
 | step | done | now | fail |
 | --- | --- | --- | --- |

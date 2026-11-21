@@ -267,6 +267,120 @@ console.log(JSON.stringify(res));
 	}
 }
 
+// The Pipeline as a tree (docs/gui-design.md「Pipeline」): a request's
+// branches under its box with one trunk (a straight line for the first
+// branch, a corner for the others), the newest request on top, a branch no
+// request made on its own row after them; a later request as a badge (◉
+// while it is at work, + once done) and "reopened by" when it sent the
+// branch back to impl; the step boxes in their looks (CI as passed/all,
+// the person's merge as you); waits written dim in one line, never as ✗;
+// inside a request, the rows in the overview's order of states.
+func TestGUIPipelineRender(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+import { renderPipeline, pipelineModel, statusNote, PIPE_ROWS } from "gui/dash.js";
+const at = new Date(Date.now() - 120000).toISOString();
+const steps = (...st) => ["impl", "review", "pr", "ci", "merge"].map((name, i) => ({ name, status: st[i] || "todo" }));
+const look = { icon: "◉", role: "ok", word: "run" };
+const groups = [
+  { parent: "+tapi", request: { id: 961 }, rows: [
+    { slug: "a", branch: "fix/a", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 961, steps: steps("done", "now") },
+    { slug: "b", branch: "fix/b", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 961, pr: 279,
+      steps: steps("done", "done", "done", "now"), ci: { pass: 2, fail: 0, pending: 2 },
+      merge: { ready: false, conds: [
+        { name: "land", ok: true, detail: "pekoe land done (PR #279)" },
+        { name: "ci", ok: false, detail: "2 pending" },
+        { name: "merge_state", ok: false, detail: "merge_state is UNSTABLE" },
+        { name: "settled", ok: false, detail: "agent is running" } ] } },
+    { slug: "c", branch: "fix/c", repo: "pekoe", state: "done", state_since: at, look: { icon: "✓", role: "secondary", word: "done" }, parent: "+tapi", origin: 961, pr: 280,
+      steps: steps("done", "done", "done", "done", "now"), merge: { ready: true, conds: [] } },
+  ] },
+  { parent: "+tapi", request: { id: 970 }, rows: [
+    { slug: "d", branch: "fix/d", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 961, later: [{ id: 965 }, { id: 970, now: true }], steps: steps("now") },
+  ] },
+  { parent: "", rows: [
+    { slug: "e", branch: "hand/e", repo: "pekoe", state: "waiting", state_since: at, look: { icon: "◉", role: "warn", word: "wait" }, later: [{ id: 971, now: true }], steps: steps("now") },
+  ] },
+  { parent: "+tapi", request: { id: 962 }, rows: [
+    { slug: "f", branch: "fix/f", repo: "pekoe", state: "running", state_since: at, look, parent: "+tapi", origin: 962, later: [{ id: 963 }, { id: 964 }, { id: 966, now: true }], steps: steps("done", "fail"), },
+  ] },
+];
+const box = el0("div");
+const opened = [];
+const res = { moving: renderPipeline(box, groups, (s) => opened.push(s), {}) };
+const cls = (n) => n.className;
+const rowsOf = (n) => find(n, (x) => /\bpl-row\b/.test(x.className) && !/pl-head/.test(x.className));
+res.order = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-bname")[0].textContent);
+res.groups = box.children.filter((c) => c.className === "pl-group").map((g) => [g.children.filter((c) => c.className === "pl-trunk").length, rowsOf(g).length]);
+res.req = rowsOf(box).map((r) => r.children[0].textContent);
+res.tree = rowsOf(box).map((r) => r.children[1].children.map(cls).join(""));
+res.boxes = rowsOf(box).map((r) => find(r, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "));
+res.links = rowsOf(box).map((r) => find(r, (x) => /\bpl-link\b/.test(x.className)).map((l) => (/todo/.test(l.className) ? "-" : "=")).join(""));
+res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
+res.status = rowsOf(box).map((r) => r.children[r.children.length - 1].children.map((c) => c.textContent).join(" | "));
+res.cross = find(box, (x) => x.tag === "#text" && x.text.includes("✗")).length;
+find(box, (x) => x.tag === "button" && x.className === "pl-branch")[0].click();
+res.opened = opened;
+const many = [{ parent: "+tapi", rows: Array.from({ length: PIPE_ROWS + 3 }, (_, i) => ({ slug: "s" + i, branch: "b" + i, state: "running", state_since: at, look, origin: 1, steps: steps("now") })) }];
+const mb = el0("div");
+let toggled = 0;
+renderPipeline(mb, many, () => {}, { expanded: false, toggle: () => toggled++ });
+res.more = [rowsOf(mb).length, find(mb, (x) => x.className === "pl-more")[0].textContent];
+find(mb, (x) => x.className === "pl-more")[0].click();
+res.toggled = toggled;
+renderPipeline(mb, many, () => {}, { expanded: true });
+res.all = [rowsOf(mb).length, find(mb, (x) => x.className === "pl-more")[0].textContent];
+res.behind = statusNote({ state: "running", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "2 pending" }, { name: "merge_state", ok: false, detail: "merge_state is BEHIND" }] } });
+res.model = pipelineModel(groups).trees.map((t) => t.id + ":" + t.from + ":" + t.rows.length);
+console.log(JSON.stringify(res));
+`)
+	var res struct {
+		Moving, Cross, Toggled                                        int
+		Behind                                                        string
+		Order, Req, Tree, Boxes, Links, Badges, Status, Opened, Model []string
+		Groups                                                        [][2]int
+		More, All                                                     [2]any
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	want := func(what string, got, want any) {
+		t.Helper()
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s:\n got %v\nwant %v", what, got, want)
+		}
+	}
+	want("moving", res.Moving, 6)
+	want("BEHIND is shown while CI runs (only UNSTABLE/BLOCKED say the same)", res.Behind, "merge waits on CI · merge state behind")
+	want("model", res.Model, []string{"962:tapi:1", "961:tapi:4"})
+	want("order", res.Order, []string{"fix/f", "fix/a", "fix/b", "fix/d", "fix/c", "hand/e"})
+	want("groups", res.Groups, [][2]int{{0, 1}, {1, 4}})
+	want("request column", res.Req, []string{"r962tapi · 1 branch", "r961tapi · 4 branches", "", "", "", "no request"})
+	want("tree", res.Tree, []string{"pl-flat", "pl-flat", "pl-corner", "pl-corner", "pl-corner", ""})
+	want("boxes", res.Boxes, []string{
+		"done:✓done fail:✗fail todo:○ todo:○ todo:○",
+		"done:✓done now:◉now todo:○ todo:○ todo:○",
+		"done:✓done done:✓done done:✓#279 now:◉2/4 todo:○",
+		"now:◉now todo:○ todo:○ todo:○ todo:○",
+		"done:✓done done:✓done done:✓#280 done:✓done you:◉you",
+		"you:◉you todo:○ todo:○ todo:○ todo:○",
+	})
+	want("links", res.Links, []string{"==---", "==---", "====-", "=----", "=====", "=----"})
+	want("badges", res.Badges, []string{"◉ r966*,+2", "", "", "◉ r970*,+r965", "", "◉ r971*"})
+	want("status", res.Status, []string{
+		"◉ run · 2m | review failed",
+		"◉ run · 2m",
+		"◉ run · 2m | merge waits on CI · agent running",
+		"◉ run · 2m | reopened by r970",
+		"✓ done · 2m | ready · your merge",
+		"◉ wait · 2m | working on r971",
+	})
+	want("✗ only in f's failed review box, never for a wait", res.Cross, 1)
+	want("opened", res.Opened, []string{"f"})
+	want("more", res.More, [2]any{8, "Show 3 more"})
+	want("toggled", res.Toggled, 1)
+	want("all", res.All, [2]any{11, "Show less"})
+}
+
 // fakeDOM: the little of the DOM dash.js's Overview and Requests use, for
 // node. textContent replaces the children with one text node (never
 // parses), so markup in the data stays text.

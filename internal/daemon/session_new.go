@@ -291,7 +291,7 @@ func (d *Daemon) hNew(p newP) (any, error) {
 		Path: wt, Agent: agent, Model: p.Model, Effort: p.Effort, State: st,
 		StateSince: time.Now(), CreatedAt: time.Now(), Port: port, Managed: true, Base: base,
 		Test: state.Test{Status: "none"}, Issue: issueNumber(p.From),
-		Parent: p.parent, Request: p.Request, After: after,
+		Parent: p.parent, Request: p.Request, Origin: p.Request, After: after,
 	}
 	if ps, err := d.snapshot(p.parent); p.parent != "" && err == nil {
 		s.ParentBorn = state.Born(ps) // which life of the parent made it (wait --mine)

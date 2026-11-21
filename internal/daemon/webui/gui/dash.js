@@ -1,5 +1,5 @@
 // The local GUI's Dashboard (docs/gui-design.md の「Dashboard」): the
-// inbox cards, the Overview tiles, the Pipeline table and the Requests, from
+// inbox cards, the Overview tiles, the Pipeline tree and the Requests, from
 // GET /api/inbox, GET /api/overview, GET /api/stats (the merges per day and
 // today's tokens, `pekoe --json stats`) and GET /api/ledger. Only what
 // pekoed sends is drawn: no number is made up. Every string goes in with
@@ -9,7 +9,7 @@
 import { el, txt, colored, link } from "../lib/dom.js";
 import { ago, short, questionId, reportId, requestId } from "../lib/fmt.js";
 import { canAnswer } from "../lib/inbox.js";
-import { parentLabel, STEP_LOOK, STEP_NAMES } from "../lib/overview.js";
+import { STEP_NAMES } from "../lib/overview.js";
 
 export const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : "");
 
@@ -388,75 +388,237 @@ export function renderTiles(box, c, stats = {}) {
   box.append(tt);
 }
 
-// ---- Pipeline: one row per session, the steps as "symbol word" ----
+// ---- Pipeline: a tree of requests and branches, each branch on a rail
+// of five step boxes (docs/gui-design.md の「Pipeline」) ----
 
 export const STEPS = ["impl", "review", "pr", "ci", "merge"];
-const STEP_WORD = { done: "done", now: "now", fail: "fail", todo: "" };
+// the rows shown before "Show N more"
+export const PIPE_ROWS = 8;
+
+// stepLook: one step box as [kind, symbol, word]. kind is the box's look
+// (done · now · todo · fail · you, docs/ui-guidelines.md「状態の表現」):
+// done ✓ secondary, now ◉ ok (the agent works), you ◉ warn (a person's
+// turn: the agent waits, or the merge is theirs), fail ✗ err, todo ○ dim.
+export function stepLook(f, name) {
+  const step = (f.steps || []).find((x) => x.name === name);
+  if (!step) return ["todo", "○", ""];
+  const live = f.state !== "landed";
+  if (name === "merge" && live && f.merge && f.merge.ready && step.status !== "done") return ["you", "◉", "you"];
+  switch (step.status) {
+    case "done":
+      return ["done", "✓", name === "pr" && f.pr ? "#" + f.pr : "done"];
+    case "fail":
+      return ["fail", "✗", "fail"];
+    case "now":
+      if (name === "impl" && f.state === "waiting") return ["you", "◉", "you"];
+      if (name === "ci" && f.ci && f.ci.pass + f.ci.fail + f.ci.pending > 0) return ["now", "◉", f.ci.pass + "/" + (f.ci.pass + f.ci.fail + f.ci.pending)];
+      return ["now", "◉", "now"];
+  }
+  return ["todo", "○", ""];
+}
+
+// rank: the overview's order of states (web.go's webRank)
+const RANK = { waiting: 0, running: 1, creating: 1, queued: 1, done: 2, failed: 2, landed: 4 };
+const rank = (f) => RANK[f.state] ?? 3;
+
+const FROM = { "+tapi": "tapi", human: "you", unknown: "unknown", "": "direct" };
+
+// pipelineModel: the overview's groups as the Pipeline's tree. A branch
+// hangs under the request that made it (origin) and stays there when a
+// later request comes in (that one is a badge); a branch no request made
+// is a row of its own, after the requests. Requests with rows still
+// moving first, newest on top; inside one, the overview's order of states.
+export function pipelineModel(groups) {
+  const byOrigin = new Map();
+  const solo = [];
+  for (const g of groups || []) {
+    for (const f of g.rows || []) {
+      const parent = f.parent ?? g.parent ?? "";
+      const row = { ...f, parent };
+      if (!f.origin) {
+        solo.push(row);
+        continue;
+      }
+      let t = byOrigin.get(f.origin);
+      if (!t) byOrigin.set(f.origin, (t = { id: f.origin, from: FROM[parent] ?? parent, rows: [] }));
+      t.rows.push(row);
+    }
+  }
+  const moving = (t) => t.rows.some((f) => f.state !== "landed");
+  const trees = [...byOrigin.values()].sort((a, b) => moving(b) - moving(a) || b.id - a.id);
+  // rows of one request come from different overview groups when a later
+  // request moved some of them: order them again as the overview does
+  for (const t of trees) t.rows.sort((a, b) => rank(a) - rank(b));
+  return { trees, solo };
+}
+
+// badges: the requests that came in after the branch was made, as
+// [text, now]. The one at work now first (◉ rN), then the newest done
+// (+rN); with more than two, the rest as one count (+K).
+export function badges(later) {
+  const ls = later || [];
+  const now = ls.filter((l) => l.now);
+  const past = ls.filter((l) => !l.now).reverse();
+  const out = [...now.map((l) => ["◉ " + requestId(l.id), true]), ...past.map((l) => ["+" + requestId(l.id), false])];
+  if (out.length <= 2) return out;
+  return [out[0], ["+" + (out.length - 1), false]];
+}
+
+// waitPhrase: one unmet merge condition in a few words. merge_state
+// UNSTABLE or BLOCKED is left out while CI is not through (it says the
+// same); BEHIND, DIRTY and the rest are shown.
+function waitPhrase(c, conds) {
+  switch (c.name) {
+    case "land":
+      return /not run/.test(c.detail) ? "pekoe land" : "";
+    case "review":
+      return /needs a new review|differs/.test(c.detail) ? "re-review" : "review";
+    case "ci":
+      return /not read/.test(c.detail) ? "PR status" : /failed/.test(c.detail) ? "CI " + c.detail : "CI";
+    case "merge_state": {
+      const ci = conds.find((x) => x.name === "ci");
+      if (/not read/.test(c.detail) || (ci && !ci.ok && /UNSTABLE|BLOCKED/.test(c.detail))) return "";
+      return "merge state " + c.detail.replace(/^merge_state is /, "").toLowerCase();
+    }
+    case "conflicts":
+      return "conflicts";
+    case "after":
+      return "earlier sessions";
+    case "settled":
+      return c.detail.replace(/^agent is /, "agent ");
+  }
+  return c.name;
+}
+
+// statusNote: the Status column's second line, dim: why the row went back
+// to impl (a later request), what failed, what the merge waits on.
+export function statusNote(f) {
+  if (f.state === "landed") return "";
+  const now = (f.later || []).find((l) => l.now);
+  const impl = (f.steps || []).find((s) => s.name === "impl");
+  // a branch a request made and a later one is at work on: sent back to
+  // impl by it. A branch no request made only works on it.
+  if (now && impl && impl.status !== "done") return (f.origin ? "reopened by " : "working on ") + requestId(now.id);
+  const failed = (f.steps || []).find((s) => s.status === "fail");
+  if (failed) return (STEP_NAMES[failed.name] || failed.name) + (failed.detail ? ": " + failed.detail : " failed");
+  if (f.merge && f.merge.ready) return "ready · your merge";
+  if (f.merge) {
+    const conds = f.merge.conds || [];
+    const ws = [...new Set(conds.filter((c) => !c.ok).map((c) => waitPhrase(c, conds)).filter(Boolean))];
+    if (ws.length) return "merge waits on " + ws.join(" · ");
+  }
+  if (f.after && f.after.length) return "after " + f.after.join(", ");
+  return "";
+}
 
 function stepCell(f, name) {
-  const td = el("td", "col-step");
+  const [kind, icon, word] = stepLook(f, name);
+  const cell = el("div", "pl-step");
+  cell.setAttribute("role", "cell");
+  cell.append(el("span", "pl-link " + (kind === "todo" ? "todo" : "reached")));
+  const box = el("span", "pl-box b-" + kind);
   const step = (f.steps || []).find((x) => x.name === name);
-  if (!step) {
-    td.append(el("span", "r-dim", "·"));
-    return td;
-  }
-  if (step.detail) td.title = (STEP_NAMES[name] || name) + ": " + step.detail;
-  if (name === "merge" && f.merge && f.merge.ready && f.state !== "landed") {
-    td.append(colored("secondary", "◉ you"));
-    return td;
-  }
-  const [icon, role] = STEP_LOOK[step.status] || ["○", "dim"];
-  const word = name === "pr" && f.pr ? "#" + f.pr : STEP_WORD[step.status] ?? "";
-  td.append(colored(role, icon, "sym"));
-  if (word) td.append(txt(" "), el("span", "s-word", word));
-  return td;
+  box.title = (STEP_NAMES[name] || name) + ": " + (step && step.detail ? step.detail : kind);
+  box.append(el("span", "pl-sym", icon));
+  if (word) box.append(el("span", "pl-word", word));
+  cell.append(box);
+  return cell;
 }
 
 function statusCell(f) {
-  const td = el("td", "col-status");
+  const cell = el("div", "pl-status");
+  cell.setAttribute("role", "cell");
   const top = el("div", "st-top");
-  if (f.merge && f.merge.ready && f.state !== "landed") top.append(colored("secondary", "◉ Ready to merge"));
-  else {
-    const lk = f.look || { icon: "○", role: "dim", word: f.state };
-    top.append(colored(lk.role, lk.icon, "sym"), txt(" " + cap(lk.word)), el("span", "s-age", f.state === "idle" ? "" : " · " + ago(f.state_since)));
+  const lk = f.look || { icon: "○", role: "dim", word: f.state };
+  top.append(colored(lk.role, lk.icon, "sym"), txt(" " + String(lk.word || "").toLowerCase()));
+  if (f.state !== "idle" && f.state_since) top.append(el("span", "s-age", " · " + ago(f.state_since)));
+  cell.append(top);
+  const note = statusNote(f);
+  if (note) {
+    const n = el("div", "st-note", note);
+    n.title = note;
+    cell.append(n);
   }
-  td.append(top);
-  const miss = [];
-  if (f.merge) {
-    for (const c of f.merge.conds || []) if (!c.ok) miss.push(["✗", c.name + ": " + c.detail]);
-  } else {
-    for (const s of f.steps || []) if (s.status === "fail" && s.detail) miss.push(["✗", (STEP_NAMES[s.name] || s.name) + ": " + s.detail]);
-    if (f.after && f.after.length) miss.push(["◌", "after " + f.after.join(", ")]);
-  }
-  for (const [icon, text] of miss) {
-    const m = el("div", "st-miss");
-    m.append(colored(icon === "✗" ? "err" : "dim", icon, "sym"), txt(" " + text));
-    td.append(m);
-  }
-  return td;
+  return cell;
 }
 
-// renderPipeline fills the table body; open(slug) opens a session's tab.
-// Returns how many rows are still moving (not landed).
-export function renderPipeline(body, groups, open) {
-  body.replaceChildren();
-  let moving = 0;
-  for (const g of groups) {
-    for (const f of g.rows || []) {
-      const past = f.state === "landed";
-      if (!past) moving++;
-      const tr = el("tr", past ? "past" : null);
-      const td = el("td", "col-branch");
-      const b = el("button", "flow-name", f.branch || f.slug);
-      b.type = "button";
-      b.addEventListener("click", () => open(f.slug));
-      const sub = [parentLabel(g)];
-      if (g.request) sub.push("request " + requestId(g.request.id));
-      sub.push(f.repo + (f.slug !== f.branch ? " · " + f.slug : ""));
-      td.append(b, el("div", "flow-sub", sub.join(" · ")));
-      tr.append(td, ...STEPS.map((n) => stepCell(f, n)), statusCell(f));
-      body.append(tr);
-    }
+// branchRow: one branch: the tree's piece (the corner into the box, or
+// the straight line for a request's first branch), the branch box with
+// its badges, the rail, the status. first: the request's first row.
+function branchRow(f, tree, first, open) {
+  const past = f.state === "landed";
+  const row = el("div", "pl-row" + (past ? " past" : ""));
+  row.setAttribute("role", "row");
+  const rq = el("div", "pl-req");
+  rq.setAttribute("role", "cell");
+  if (tree && first) {
+    const box = el("div", "pl-rbox");
+    box.append(el("span", "pl-rid", requestId(tree.id)), el("span", "pl-rsub", tree.from + " · " + tree.rows.length + (tree.rows.length === 1 ? " branch" : " branches")));
+    box.title = requestId(tree.id) + " · from " + tree.from;
+    rq.append(box);
+  } else if (!tree) rq.append(el("span", "pl-none", "no request"));
+  const tr = el("div", "pl-tree");
+  tr.setAttribute("aria-hidden", "true");
+  if (tree) tr.append(el("span", first ? "pl-flat" : "pl-corner"));
+  const bc = el("div", "pl-bcell");
+  bc.setAttribute("role", "cell");
+  const b = el("button", "pl-branch");
+  b.type = "button";
+  b.title = (f.branch || f.slug) + (f.repo ? " · " + f.repo : "") + (f.slug !== f.branch ? " · " + f.slug : "");
+  b.append(el("span", "pl-bname", f.branch || f.slug));
+  for (const [text, now] of badges(f.later)) {
+    const bd = el("span", "pl-badge" + (now ? " now" : ""));
+    if (now) bd.append(el("span", "pl-bsym", text.slice(0, 1)), txt(text.slice(1)));
+    else bd.append(txt(text));
+    b.append(bd);
+  }
+  b.addEventListener("click", () => open(f.slug));
+  bc.append(b);
+  row.append(rq, tr, bc, ...STEPS.map((n) => stepCell(f, n)), statusCell(f));
+  return row;
+}
+
+// renderPipeline fills box with the tree; open(slug) opens a session's
+// tab. more: {expanded, toggle()}: past PIPE_ROWS rows, a "Show N more"
+// button (toggle) unless expanded. Returns how many rows are still moving
+// (not landed).
+export function renderPipeline(box, groups, open, more = {}) {
+  box.replaceChildren();
+  const { trees, solo } = pipelineModel(groups);
+  const all = [...trees.flatMap((t) => t.rows), ...solo];
+  const moving = all.filter((f) => f.state !== "landed").length;
+  if (!all.length) return 0;
+  const head = el("div", "pl-row pl-head");
+  head.setAttribute("role", "row");
+  for (const [cls, word] of [["pl-req", "Request"], ["pl-tree", ""], ["pl-bcell", "Branch"], ...STEPS.map((n) => ["pl-step", STEP_NAMES[n] || n]), ["pl-status", "Status"]]) {
+    const h = el("div", cls, word);
+    h.setAttribute("role", "columnheader");
+    head.append(h);
+  }
+  box.append(head);
+  let left = more.expanded ? Infinity : PIPE_ROWS;
+  for (const t of trees) {
+    if (left <= 0) break;
+    const rows = t.rows.slice(0, left);
+    left -= rows.length;
+    const g = el("div", "pl-group");
+    g.setAttribute("role", "rowgroup");
+    // the trunk: one line for the whole request, from the middle of the
+    // first row down to where the last branch turns off it
+    if (rows.length > 1) g.append(el("span", "pl-trunk"));
+    rows.forEach((f, i) => g.append(branchRow(f, t, i === 0, open)));
+    box.append(g);
+  }
+  for (const f of solo) {
+    if (left-- <= 0) break;
+    box.append(branchRow(f, null, false, open));
+  }
+  const hidden = all.length - Math.min(all.length, more.expanded ? Infinity : PIPE_ROWS);
+  if (hidden > 0 || (more.expanded && all.length > PIPE_ROWS)) {
+    const b = el("button", "pl-more", more.expanded ? "Show less" : "Show " + hidden + " more");
+    b.type = "button";
+    b.addEventListener("click", () => more.toggle && more.toggle());
+    box.append(b);
   }
   return moving;
 }

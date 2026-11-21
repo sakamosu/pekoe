@@ -169,6 +169,14 @@ type Session struct {
 	// Request is the ledger entry the session works on (pekoe new
 	// --request; daemon/ledger.go). 0: none.
 	Request int64 `json:"request,omitempty"`
+	// Origin is the ledger entry that made the session (pekoe new
+	// --request): the request its worktree belongs to, which a later
+	// ledger.link does not move. 0: made without one (by hand, or before
+	// pekoe recorded it: then Request stands in until a link comes).
+	Origin int64 `json:"origin,omitempty"`
+	// Later are the other entries tied to the session after it was made
+	// (ledger.link), in the order they came. Request is the latest.
+	Later []int64 `json:"later,omitempty"`
 	// After are the slugs of the sessions this one comes after (pekoe new
 	// --after, daemon/after.go). Recorded and shown; with Hold the session
 	// does not start before they land.

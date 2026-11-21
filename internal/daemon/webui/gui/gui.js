@@ -213,6 +213,8 @@ const stats = { st: null, err: "", at: 0 };
 // Requests: the last five closed, or the whole ledger (Open ledger: up to
 // the 500 closed last, the rest is `pekoe ledger --all`)
 let ledgerAll = false, ledger = null, ledgerErr = "";
+// Pipeline: the first rows, or every row (Show N more)
+let pipeAll = false;
 
 async function refreshStats() {
   if (Date.now() - stats.at < STATS_EVERY) return;
@@ -240,12 +242,19 @@ async function refreshDashboard() {
     overview = o;
     if (view !== "dashboard") return;
     const has = (slug) => sessions.some((x) => x.slug === slug);
-    const sig = JSON.stringify([o.counts, o.groups, stats.st, stats.err, ledger, ledgerErr, ledgerAll, (ledger && [...ledger.open, ...ledger.closed].flatMap((e) => e.sessions || []).map(has)) || []]);
+    const sig = JSON.stringify([o.counts, o.groups, pipeAll, stats.st, stats.err, ledger, ledgerErr, ledgerAll, (ledger && [...ledger.open, ...ledger.closed].flatMap((e) => e.sessions || []).map(has)) || []]);
     if (sig !== dashSig) {
       dashSig = sig;
       renderTiles($("o-tiles"), o.counts || {}, stats);
       const groups = o.groups || [];
-      const moving = renderPipeline($("o-rows"), groups, go);
+      const moving = renderPipeline($("o-flow"), groups, go, {
+        expanded: pipeAll,
+        toggle: () => {
+          pipeAll = !pipeAll;
+          dashSig = "";
+          refreshDashboard();
+        },
+      });
       $("o-empty").hidden = !!groups.length;
       $("o-flow").hidden = !groups.length;
       $("p-count").textContent = moving + " moving";
