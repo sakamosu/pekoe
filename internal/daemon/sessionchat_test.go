@@ -276,6 +276,29 @@ func TestSessionCommands(t *testing.T) {
 	if l := by["long"].Description; len(l) > cmdMaxDesc+len("…") {
 		t.Errorf("long description: %d bytes", len(l))
 	}
+	// the user's own command may be a symlink (dotfiles): its description is read
+	mineReal := filepath.Join(t.TempDir(), "linked-mine.md")
+	write(mineReal, "Linked from dotfiles\n")
+	os.Symlink(mineReal, filepath.Join(user, "commands", "dot.md"))
+	// the worktree's .claude itself a symlink: nothing of it is read
+	os.Rename(cl, filepath.Join(repo, "claude-real"))
+	outside := filepath.Join(t.TempDir(), "out")
+	write(filepath.Join(outside, "commands", "evil.md"), "---\ndescription: OUTSIDE_SECRET\n---\n")
+	os.Symlink(outside, cl)
+	c = call[CommandList](t, d, "session.commands", map[string]any{"slug": "main"})
+	b, _ = json.Marshal(c)
+	if strings.Contains(string(b), "OUTSIDE_SECRET") || strings.Contains(string(b), `"evil"`) {
+		t.Errorf("read through a symlinked .claude: %s", b)
+	}
+	got := ""
+	for _, x := range c.Commands {
+		if x.Name == "dot" {
+			got = x.Description
+		}
+	}
+	if got != "Linked from dotfiles" {
+		t.Errorf("the user's symlinked command: %q", got)
+	}
 }
 
 // The file list: tracked and untracked files of the worktree, .gitignore

@@ -108,6 +108,9 @@ func sessionProjectDirs(s *state.Session) []string {
 // path elsewhere, reads nothing outside it. "" when there is none.
 func sessionTranscript(s *state.Session) string {
 	dirs := sessionProjectDirs(s)
+	if len(dirs) == 0 {
+		return ""
+	}
 	named := ""
 	if id := s.ClaudeSessionID; validSessionID(id) {
 		for _, dir := range dirs {
@@ -227,7 +230,9 @@ func (d *Daemon) hSessionCommands(p slugP) (any, error) {
 		add(c)
 	}
 	var own []SlashCommand
-	if s.Path != "" {
+	// the worktree's .claude itself may not be a symlink either: it would
+	// lead the descriptions out of the worktree
+	if s.Path != "" && dirOK(filepath.Join(s.Path, ".claude"), true) {
 		own = append(own, readCommands(filepath.Join(s.Path, ".claude", "commands"), "project", true)...)
 		own = append(own, readSkills(filepath.Join(s.Path, ".claude", "skills"), "project skill", true)...)
 	}
@@ -271,7 +276,7 @@ func readCommands(dir, source string, strict bool) []SlashCommand {
 			if sub != "" {
 				src += ":" + sub
 			}
-			out = append(out, SlashCommand{Name: name, Source: src, Description: mdDescription(p)})
+			out = append(out, SlashCommand{Name: name, Source: src, Description: mdDescription(p, strict)})
 		}
 	}
 	walk(dir, "", 0)
@@ -302,7 +307,7 @@ func readSkills(dir, source string, strict bool) []SlashCommand {
 		if err != nil || (strict && !fi.Mode().IsRegular()) {
 			continue
 		}
-		out = append(out, SlashCommand{Name: e.Name(), Source: source, Description: mdDescription(p)})
+		out = append(out, SlashCommand{Name: e.Name(), Source: source, Description: mdDescription(p, strict)})
 	}
 	return out
 }
@@ -327,9 +332,14 @@ func fileOK(p string, e os.DirEntry, strict bool) bool {
 // mdDescription is a command file's description: the frontmatter's
 // description:, else its first line of text; one line, cut at cmdMaxDesc
 // bytes, no control characters. Only the head of the file is read, not
-// blocking on a FIFO, never through a symlink at the end.
-func mdDescription(p string) string {
-	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+// blocking on a FIFO; strict (the worktree's): never through a symlink at
+// the end (the user's own may be symlinks: dotfiles).
+func mdDescription(p string, strict bool) string {
+	flags := os.O_RDONLY | syscall.O_NONBLOCK
+	if strict {
+		flags |= syscall.O_NOFOLLOW
+	}
+	f, err := os.OpenFile(p, flags, 0)
 	if err != nil {
 		return ""
 	}

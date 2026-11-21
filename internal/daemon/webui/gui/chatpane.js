@@ -7,7 +7,7 @@
 // draws more of what it keeps, then reads the page before (Load earlier),
 // as far as the start of the transcript (決まったこと 7).
 
-import { el } from "../lib/dom.js";
+import { el, toast } from "../lib/dom.js";
 import { api } from "../lib/api.js";
 import { markRewound, chatView } from "../lib/chat.js";
 import { prependPage } from "./compose.js";
@@ -190,7 +190,7 @@ export function chatPane({ log, head, body, jump, url, name, shown }) {
         refresh();
         return;
       }
-      c.why = e.message;
+      toast("Load earlier: " + e.message);
     } finally {
       if (g === gen) c.back = false;
     }
