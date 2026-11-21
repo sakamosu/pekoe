@@ -136,8 +136,15 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 			http.ServeFileFS(w, r, static, sf.index)
 		})
 	}
-	mux.HandleFunc("GET /icon.png", serveIcon(180))
-	mux.HandleFunc("GET /icon-512.png", serveIcon(512))
+	// The home screen icon (webui/icon.png 180×180, icon-512.png): PNGs
+	// with no alpha, full bleed (iOS rounds the corners itself and paints
+	// transparency black). Cached for a day, unlike the pages.
+	for _, name := range []string{"icon.png", "icon-512.png"} {
+		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "max-age=86400")
+			http.ServeFileFS(w, r, static, name)
+		})
+	}
 	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := webFiles.ReadFile("webui/manifest.webmanifest")
 		w.Header().Set("Content-Type", "application/manifest+json")
