@@ -1,6 +1,10 @@
 package gitx
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -580,5 +584,86 @@ func TestKeepBoth(t *testing.T) {
 		if _, _, ok := keepBoth(s, l); ok {
 			t.Errorf("%q: ok", s)
 		}
+	}
+}
+
+// diff.suppressBlankEmpty: git prints a blank context line as "" (no
+// leading space). Inside a hunk it is a context line; after the hunk's
+// lines (the end of the output) nothing is added.
+func TestParseDiffSuppressBlankEmpty(t *testing.T) {
+	in := "diff --git a/b.txt b/b.txt\n--- a/b.txt\n+++ b/b.txt\n@@ -1,3 +1,3 @@\n a\n\n-b\n+B\n"
+	fs := ParseDiff(in)
+	if len(fs) != 1 || len(fs[0].Hunks) != 1 {
+		t.Fatalf("%+v", fs)
+	}
+	var got []string
+	for _, l := range fs[0].Hunks[0].Lines {
+		got = append(got, fmt.Sprintf("%s%s %d/%d", l.Kind, l.Text, l.Old, l.New))
+	}
+	if want := []string{" a 1/1", "  2/2", "-b 3/0", "+B 0/3"}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("lines %q, want %q", got, want)
+	}
+}
+
+// RunStream: read takes git's stdout as it comes; when it stops early, git
+// is stopped and that is not an error; git's own failure still is.
+func TestRunStream(t *testing.T) {
+	dir := t.TempDir()
+	git(t, dir, "init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte(strings.Repeat("line\n", 200_000)), 0o644)
+	git(t, dir, "add", ".")
+	git(t, dir, "commit", "-qm", "init")
+	var head [16]byte
+	err := RunStream(context.Background(), dir, nil, func(r io.Reader) error {
+		_, err := io.ReadFull(r, head[:])
+		return err
+	}, "show", "HEAD:a.txt")
+	if err != nil || string(head[:]) != "line\nline\nline\nl" {
+		t.Errorf("stopped early: %v %q", err, head)
+	}
+	var all int64
+	err = RunStream(context.Background(), dir, nil, func(r io.Reader) error {
+		var err error
+		all, err = io.Copy(io.Discard, r)
+		return err
+	}, "show", "HEAD:a.txt")
+	if err != nil || all != 1_000_000 {
+		t.Errorf("read to the end: %d %v", all, err)
+	}
+	err = RunStream(context.Background(), dir, nil, func(r io.Reader) error {
+		_, err := io.Copy(io.Discard, r)
+		return err
+	}, "show", "HEAD:nope")
+	var ge *Error
+	if !errors.As(err, &ge) || !strings.Contains(ge.Stderr, "nope") {
+		t.Errorf("git's failure: %v", err)
+	}
+}
+
+// ReadDiff: a line longer than the reader's buffer is cut at lineMax (and
+// marked); keep's refusals are counted, and a hunk with none kept is gone.
+func TestReadDiff(t *testing.T) {
+	in := "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1,2 @@\n-" + strings.Repeat("é", 100_000) + "\n+a\n+b\n@@ -9 +10 @@\n-c\n+d\n"
+	n := 0
+	fs, skipped, err := ReadDiff(strings.NewReader(in), 10, func(Line) bool { n++; return n <= 2 })
+	if err != nil || len(fs) != 1 || len(fs[0].Hunks) != 1 || skipped != 3 || fs[0].Added != 3 || fs[0].Deleted != 2 {
+		t.Fatalf("%+v %d %v", fs, skipped, err)
+	}
+	ls := fs[0].Hunks[0].Lines
+	if len(ls) != 2 || !ls[0].Cut || ls[0].Text != strings.Repeat("é", 5) || ls[1].Cut || ls[1].Text != "a" || ls[1].New != 1 {
+		t.Errorf("lines %+v", ls)
+	}
+}
+
+// ReadDiff: a last line without its "\n" (the reader was stopped in the
+// middle of it) is marked cut.
+func TestReadDiffStoppedMidLine(t *testing.T) {
+	fs, _, err := ReadDiff(strings.NewReader("diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -0,0 +1,2 @@\n+whole\n+par"), 0, nil)
+	if err != nil || len(fs) != 1 {
+		t.Fatalf("%+v %v", fs, err)
+	}
+	ls := fs[0].Hunks[0].Lines
+	if len(ls) != 2 || ls[0].Cut || !ls[1].Cut || ls[1].Text != "par" {
+		t.Errorf("lines %+v", ls)
 	}
 }

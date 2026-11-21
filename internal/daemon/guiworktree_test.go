@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"pekoe/internal/state"
 )
 
 // GET /api/worktrees: every repository pekoe knows (with a directory) and
@@ -241,5 +244,42 @@ console.log(JSON.stringify(r));`)
 	}
 	if !strings.Contains(got.Empty, "No repositories") {
 		t.Errorf("no repositories: %q", got.Empty)
+	}
+}
+
+// One directory known under two repository ids (the origin changed, as
+// boba → pekoe, and an old landed session keeps the old id): the
+// directory is listed once, under the id it has now, both in
+// /api/worktrees and in /api/repos (New session's choice).
+func TestGUIWorktreesSameDirTwice(t *testing.T) {
+	d, _, repo, h, _ := guiSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	now := call[[]KnownRepo](t, d, "repo.list", nil)
+	if len(now) != 1 {
+		t.Fatalf("repos: %+v", now)
+	}
+	// the old id sorts first ("app" < "zold" would not test the choice)
+	d.add(&state.Session{Slug: "old-x", Repo: "aold", RepoID: "github.com_me_aold", RepoDir: repo,
+		Path: filepath.Join(t.TempDir(), "gone"), State: state.Landed, CreatedAt: time.Now().Add(-time.Hour)})
+	s := guiSignIn(t, d, h)
+	w := doGUI(t, h, guiReq{path: "/api/worktrees", bearer: s})
+	var got struct {
+		Repos []guiWorktreeRepo `json:"repos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Repos) != 1 || got.Repos[0].ID != now[0].ID || len(got.Repos[0].Worktrees) != 1 {
+		t.Errorf("worktrees: %s", w.Body)
+	}
+	w = doGUI(t, h, guiReq{path: "/api/repos", bearer: s})
+	var rs struct {
+		Repos []guiRepo `json:"repos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &rs); err != nil {
+		t.Fatal(err)
+	}
+	if len(rs.Repos) != 1 || rs.Repos[0].ID != now[0].ID {
+		t.Errorf("repos: %s", w.Body)
 	}
 }

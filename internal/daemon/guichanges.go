@@ -8,9 +8,10 @@ package daemon
 //
 //   - changes (review.go): the list, as the TUI reads it
 //   - changes.diff: one changed file's diff, cut at diffMaxLines lines or
-//     diffMaxBytes bytes of text, each line at diffLineMax bytes. Only a
-//     path the list has: a pathspec is never built from what the page
-//     sent beyond that one literal name
+//     diffMaxBytes bytes of text, each line at diffLineMax bytes; read as
+//     git prints it, keeping only that (git is stopped after diffReadMax
+//     bytes). Only a path the list has: a pathspec is never built from
+//     what the page sent beyond that one literal name
 //
 // Both are a person's (human.go). The text is the agent's and the
 // repository's: the page draws it as text only.
@@ -18,8 +19,10 @@ package daemon
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -33,6 +36,7 @@ const (
 	diffLineMax  = 2000      // bytes of one line (a minified file); the rest is cut
 	diffPathMax  = 4096      // bytes of the path the page asks for
 	diffTimeout  = 15 * time.Second
+	diffReadMax  = 32 << 20 // bytes of git's output read for one file; then git is stopped
 )
 
 var errNotChanged = errors.New("not a changed file of this session")
@@ -81,13 +85,7 @@ func (d *Daemon) hChangesDiff(p diffP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ce *changeEntry
-	for i := range list {
-		if list[i].Path == p.Path {
-			ce = &list[i]
-			break
-		}
-	}
+	ce := changedFile(list, p.Path)
 	if ce == nil {
 		return nil, errNotChanged
 	}
@@ -97,53 +95,94 @@ func (d *Daemon) hChangesDiff(p diffP) (any, error) {
 	}
 	gctx, cancel := context.WithTimeout(context.Background(), diffTimeout)
 	defer cancel()
-	raw, err := gitx.RunRaw(gctx, s.Path, nil, nil, "diff", "--no-color", "-U3", "--no-renames", "--end-of-options", base, tree, "--", ":(literal)"+ce.Path)
+	// read as git prints it, keeping only what is sent: the lines past the
+	// budget are counted, and after diffReadMax bytes git is stopped
+	size, total := 0, 0
+	var files []gitx.FileDiff
+	var full bool
+	keep := func(l gitx.Line) bool {
+		total++
+		if out.Truncated || out.Lines >= diffMaxLines || size+len(l.Text) > diffMaxBytes {
+			out.Truncated = true
+			return false
+		}
+		size += len(l.Text)
+		out.Lines++
+		return true
+	}
+	err = gitx.RunStream(gctx, s.Path, nil, func(r io.Reader) error {
+		lr := &io.LimitedReader{R: r, N: diffReadMax}
+		var rerr error
+		files, _, rerr = gitx.ReadDiff(lr, diffLineMax, keep)
+		full = lr.N <= 0
+		return rerr
+	}, "diff", "--no-color", "-U3", "--no-renames", "--end-of-options", base, tree, "--", ":(literal)"+ce.Path)
 	if err != nil {
 		return nil, err
 	}
-	files := gitx.ParseDiff(string(raw))
-	if len(files) == 0 {
-		return out, nil
+	out.Total = total
+	if full {
+		// stopped before the end (the last line read may be a part of
+		// one: ReadDiff marks it cut): at least the lines added and
+		// deleted, and more than were read
+		out.Total = max(total, ce.Added+ce.Deleted)
+		out.Truncated = true
 	}
-	f := files[0]
-	out.Binary = f.Binary
-	size := 0
-	for _, h := range f.Hunks {
-		out.Total += len(h.Lines)
-		if out.Truncated {
-			continue
-		}
-		dh := diffHunk{Header: h.Header, Lines: []diffLine{}}
-		for _, l := range h.Lines {
-			dl := diffLine{Kind: l.Kind, Old: l.Old, New: l.New, Text: l.Text}
-			if len(dl.Text) > diffLineMax {
-				dl.Text, dl.Cut = cutUTF8(dl.Text, diffLineMax), true
+	// a type change (a file and a symlink) is a deletion and an addition
+	// of the one path: both, in git's order
+	for _, f := range files {
+		out.Binary = out.Binary || f.Binary
+		for _, h := range f.Hunks {
+			if len(h.Lines) == 0 {
+				continue
 			}
-			// the budget counts what is sent: a line already cut
-			if out.Lines >= diffMaxLines || size+len(dl.Text) > diffMaxBytes {
-				out.Truncated = true
-				break
+			dh := diffHunk{Header: h.Header, Lines: make([]diffLine, 0, len(h.Lines))}
+			for _, l := range h.Lines {
+				dh.Lines = append(dh.Lines, diffLine{Kind: l.Kind, Old: l.Old, New: l.New, Text: l.Text, Cut: l.Cut})
 			}
-			size += len(dl.Text)
-			out.Lines++
-			dh.Lines = append(dh.Lines, dl)
-		}
-		if len(dh.Lines) > 0 {
 			out.Hunks = append(out.Hunks, dh)
 		}
 	}
 	return out, nil
 }
 
-// cutUTF8 keeps at most n bytes of s, never half a character.
-func cutUTF8(s string, n int) string {
-	if len(s) <= n {
-		return s
+// changedFile finds the page's path in the list: the same name first,
+// else the one name that reads so once its bytes that are not UTF-8 are
+// replaced as encoding/json replaces them (the list the page has is JSON,
+// so a Latin-1 name from another system comes back with U+FFFD; two such
+// names that read the same are neither).
+func changedFile(list []changeEntry, path string) *changeEntry {
+	var seen *changeEntry
+	n := 0
+	for i := range list {
+		if list[i].Path == path {
+			return &list[i]
+		}
+		if !utf8.ValidString(list[i].Path) && jsonText(list[i].Path) == path {
+			seen = &list[i]
+			n++
+		}
 	}
-	for n > 0 && !utf8.RuneStart(s[n]) {
-		n--
+	if n == 1 {
+		return seen
 	}
-	return s[:n]
+	return nil
+}
+
+// jsonText is s as encoding/json writes it: each byte that is not UTF-8
+// becomes U+FFFD.
+func jsonText(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && n == 1 {
+			b.WriteRune(utf8.RuneError)
+		} else {
+			b.WriteString(s[i : i+n])
+		}
+		i += n
+	}
+	return b.String()
 }
 
 // ---- the GUI's handlers (gui.go registers them on the GUI's mux only) ----

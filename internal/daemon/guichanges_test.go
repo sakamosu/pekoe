@@ -3,13 +3,18 @@ package daemon
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"pekoe/internal/state"
 )
@@ -321,5 +326,266 @@ console.log(JSON.stringify(r));`)
 	}
 	if got.After != 0 {
 		t.Errorf("read %d times after unmount", got.After)
+	}
+}
+
+// A file replaced by a symlink (T): git prints a deletion and an addition
+// for the one path, and the diff shows both sides.
+func TestChangesDiffTypeChange(t *testing.T) {
+	d, _, repo := setup(t)
+	os.WriteFile(filepath.Join(repo, "t.txt"), []byte("one\ntwo\n"), 0o644)
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-qm", "t")
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	os.Remove(filepath.Join(repo, "t.txt"))
+	if err := os.Symlink("a.txt", filepath.Join(repo, "t.txt")); err != nil {
+		t.Fatal(err)
+	}
+	res, err := d.Call("changes.diff", mustJSON(map[string]any{"slug": "main", "path": "t.txt"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := res.(FileDiffView)
+	var lines []string
+	for _, h := range fd.Hunks {
+		for _, l := range h.Lines {
+			lines = append(lines, l.Kind+l.Text)
+		}
+	}
+	if fd.Status != "T" || !slices.Equal(lines, []string{"-one", "-two", "+a.txt"}) || fd.Lines != 3 || fd.Total != 3 {
+		t.Errorf("type change: status %s, %d of %d lines %q", fd.Status, fd.Lines, fd.Total, lines)
+	}
+}
+
+// A big text file (a dump an agent wrote): pekoed reads only what it can
+// show and counts the rest, never the whole diff into memory, and stops
+// git after diffReadMax bytes.
+func TestChangesDiffBigFile(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	line := strings.Repeat("y", 60) + "\n"
+	os.WriteFile(filepath.Join(repo, "dump.sql"), []byte(strings.Repeat(line, 1_000_000)), 0o644) // ~61 MB
+	runtime.GC()
+	var m0 runtime.MemStats
+	runtime.ReadMemStats(&m0)
+	var peak atomic.Uint64
+	stop, done := make(chan bool), make(chan bool)
+	go func() {
+		defer close(done)
+		for {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			if m.HeapAlloc > peak.Load() {
+				peak.Store(m.HeapAlloc)
+			}
+			select {
+			case <-stop:
+				return
+			case <-time.After(2 * time.Millisecond):
+			}
+		}
+	}()
+	res, err := d.Call("changes.diff", mustJSON(map[string]any{"slug": "main", "path": "dump.sql"}))
+	close(stop)
+	<-done
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := res.(FileDiffView)
+	if grew := int64(peak.Load()) - int64(m0.HeapAlloc); grew > 48<<20 {
+		t.Errorf("the heap grew %d MB reading the diff", grew>>20)
+	}
+	if !fd.Truncated || fd.Lines != diffMaxLines || fd.Total != 1_000_000 || fd.Added != 1_000_000 {
+		t.Errorf("dump.sql: %d of %d lines, +%d, truncated %v", fd.Lines, fd.Total, fd.Added, fd.Truncated)
+	}
+}
+
+// A name that is not UTF-8 (a Latin-1 name from another system): the list
+// sends it with U+FFFD for the byte (encoding/json), and that name opens
+// the file's diff.
+func TestGUIChangesDiffNonUTF8Path(t *testing.T) {
+	d, _, repo, h, _ := guiSetup(t)
+	blob := strings.TrimSpace(runOut(t, repo, "sh", "-c", "printf 'x\\n' | git hash-object -w --stdin"))
+	for _, name := range []string{"caf\xe9.txt", "b\xff\xfe.txt"} {
+		run(t, repo, "git", "update-index", "--add", "--cacheinfo", "100644,"+blob+","+name)
+	}
+	run(t, repo, "git", "commit", "-qm", "latin1")
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	s := guiSignIn(t, d, h)
+	w := doGUI(t, h, guiReq{path: "/api/sessions/main/changes", bearer: s})
+	var cv guiChangesView
+	if err := json.Unmarshal(w.Body.Bytes(), &cv); err != nil || len(cv.Files) != 2 {
+		t.Fatalf("changes: %d %s", w.Code, w.Body)
+	}
+	for _, f := range cv.Files {
+		w := doGUI(t, h, guiReq{path: "/api/sessions/main/diff?path=" + url.QueryEscape(f.Path), bearer: s})
+		var fd FileDiffView
+		json.Unmarshal(w.Body.Bytes(), &fd)
+		if w.Code != 200 || fd.Status != "D" || len(fd.Hunks) != 1 || fd.Hunks[0].Lines[0].Text != "x" {
+			t.Errorf("the listed file %q: %d %s", f.Path, w.Code, w.Body)
+		}
+	}
+}
+
+// Two names that are the same once their bytes that are not UTF-8 are
+// replaced: the replaced name (all JSON can carry) opens neither, since
+// which one it means is not known.
+func TestChangesDiffNonUTF8Ambiguous(t *testing.T) {
+	d, _, repo := setup(t)
+	blob := strings.TrimSpace(runOut(t, repo, "sh", "-c", "printf 'x\\n' | git hash-object -w --stdin"))
+	for _, name := range []string{"caf\xe9.txt", "caf\xe8.txt"} {
+		run(t, repo, "git", "update-index", "--add", "--cacheinfo", "100644,"+blob+","+name)
+	}
+	run(t, repo, "git", "commit", "-qm", "latin1")
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	if _, err := d.Call("changes.diff", mustJSON(map[string]any{"slug": "main", "path": "caf�.txt"})); !errors.Is(err, errNotChanged) {
+		t.Errorf("an ambiguous name: %v", err)
+	}
+}
+
+func runOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	c := exec.Command(args[0], args[1:]...)
+	c.Dir = dir
+	out, err := c.Output()
+	if err != nil {
+		t.Fatalf("%v: %v", args, err)
+	}
+	return string(out)
+}
+
+// diff.suppressBlankEmpty (the user's or the repository's config): a blank
+// context line comes out as "" and is still a context line.
+func TestChangesDiffSuppressBlankEmpty(t *testing.T) {
+	d, _, repo := setup(t)
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("a\n\nb\n"), 0o644)
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-qm", "b")
+	run(t, repo, "git", "config", "diff.suppressBlankEmpty", "true")
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	os.WriteFile(filepath.Join(repo, "b.txt"), []byte("a\n\nB\n"), 0o644)
+	res, err := d.Call("changes.diff", mustJSON(map[string]any{"slug": "main", "path": "b.txt"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := res.(FileDiffView)
+	var ls []string
+	for _, l := range fd.Hunks[0].Lines {
+		ls = append(ls, fmt.Sprintf("%s%s %d/%d", l.Kind, l.Text, l.Old, l.New))
+	}
+	if !slices.Equal(ls, []string{" a 1/1", "  2/2", "-b 3/0", "+B 0/3"}) || fd.Total != 4 {
+		t.Errorf("the blank context line: %q (total %d)", ls, fd.Total)
+	}
+}
+
+// The page refreshes every 3 s and calls update with nothing changed: the
+// list's rows and the open diff's lines stay the same elements (a
+// selection or the focus in them is kept). A diff read again with new
+// text while text in it is selected waits until the selection is gone.
+func TestGUIChangesViewKeepsElements(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+N.prototype.contains = function (x) { return x === this || this.children.some((c) => c.contains(x)); };
+let sel = null;
+document.getSelection = () => (sel ? { isCollapsed: false, rangeCount: 1, anchorNode: sel, focusNode: sel } : { isCollapsed: true, rangeCount: 0 });
+let text = "new";
+const list = { slug: "feat-a", files: [{ status: "M", path: "a.go", added: 1, deleted: 1 }, { status: "T", path: "l", added: 1, deleted: 1 }], overlaps: [] };
+globalThis.fetch = async (path) => ({ ok: true, status: 200, text: async () => "", json: async () => (path.includes("/diff?")
+  ? { slug: "feat-a", path: "a.go", status: "M", added: 1, deleted: 1, lines: 2, total: 2, hunks: [{ header: "@@ -1 +1 @@", lines: [{ kind: "-", text: "old" }, { kind: "+", text }] }] }
+  : list) });
+import v from "gui/views/changes.js";
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const box = el0("div");
+const S = (n) => ({ slug: "feat-a", branch: "feat-a", repo: "p", state: "running", diffstat: { files: 2, added: n, deleted: 1 } });
+const r = {};
+v.mount(box, { go() {} });
+v.update({ sessions: [S(1)], tapi: null, overview: null, current: "feat-a" });
+await tick(); await tick();
+const rows = () => find(box, (n) => /view-changes-row\b/.test(n.className));
+const lines = () => find(box, (n) => /view-changes-line/.test(n.className));
+r.typeMark = find(box, (n) => /view-changes-st/.test(n.className)).map((n) => n.attrs["aria-label"])[1];
+const row0 = rows()[0];
+v.update({ sessions: [S(1)], tapi: null, overview: null, current: "feat-a" });
+r.rowSame = rows()[0] === row0;
+rows()[0].click();
+await tick(); await tick();
+const line0 = lines()[1];
+v.update({ sessions: [S(1)], tapi: null, overview: null, current: "feat-a" });
+r.lineSame = lines()[1] === line0;
+// the same text read again (the diffstat moved, the diff did not)
+v.update({ sessions: [S(2)], tapi: null, overview: null, current: "feat-a" });
+await tick(); await tick(); await tick();
+r.sameReadSame = lines()[1] === line0;
+// new text while the old is selected: held, then drawn once let go
+sel = line0.children[1].children[0];
+text = "newer";
+v.update({ sessions: [S(3)], tapi: null, overview: null, current: "feat-a" });
+await tick(); await tick(); await tick();
+r.held = lines()[1] === line0 && lines()[1].textContent;
+sel = null;
+v.update({ sessions: [S(3)], tapi: null, overview: null, current: "feat-a" });
+r.drawn = lines()[1].textContent;
+console.log(JSON.stringify(r));`)
+	var got struct {
+		TypeMark                        string
+		RowSame, LineSame, SameReadSame bool
+		Held                            any
+		Drawn                           string
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	if got.TypeMark != "type changed" {
+		t.Errorf("T's word: %q", got.TypeMark)
+	}
+	if !got.RowSame || !got.LineSame || !got.SameReadSame {
+		t.Errorf("rebuilt with nothing changed: %s", out)
+	}
+	if got.Held != "+new" || got.Drawn != "+newer" {
+		t.Errorf("held %v, then %q", got.Held, got.Drawn)
+	}
+}
+
+// Shown again after another session was opened meanwhile: the view reads
+// only the session open now, never the one open the last time it was
+// shown.
+func TestGUIChangesViewRemount(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+const calls = [];
+globalThis.fetch = async (path) => { calls.push(path); return { ok: true, status: 200, json: async () => ({ files: [], overlaps: [] }), text: async () => "" }; };
+import v from "gui/views/changes.js";
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const S = (slug) => ({ slug, branch: slug, repo: "p", state: "running", diffstat: { files: 1, added: 1, deleted: 0 } });
+const sessions = [S("feat-a"), S("feat-b")];
+let box = el0("div");
+v.mount(box, { go() {} });
+v.update({ sessions, tapi: null, overview: null, current: "feat-a" });
+await tick();
+v.unmount();
+const before = calls.length;
+box = el0("div");
+v.mount(box, { go() {} });
+v.query("");
+v.update({ sessions, tapi: null, overview: null, current: "feat-b" });
+await tick();
+console.log(JSON.stringify(calls.slice(before)));`)
+	if strings.TrimSpace(string(out)) != `["/api/sessions/feat-b/changes"]` {
+		t.Errorf("shown again: %s", out)
+	}
+}
+
+// Lines so long that git is stopped (diffReadMax) before the line budget
+// is reached: the diff still says it is cut, and how many lines there are.
+func TestChangesDiffStoppedByReadMax(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	long := strings.Repeat("z", 20<<20) + "\n"
+	os.WriteFile(filepath.Join(repo, "min.json"), []byte(long+long+long), 0o644)
+	res, err := d.Call("changes.diff", mustJSON(map[string]any{"slug": "main", "path": "min.json"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fd := res.(FileDiffView)
+	if !fd.Truncated || fd.Lines != 2 || fd.Total != 3 || len(fd.Hunks) != 1 || !fd.Hunks[0].Lines[1].Cut {
+		t.Errorf("min.json: %d of %d lines, truncated %v", fd.Lines, fd.Total, fd.Truncated)
 	}
 }
