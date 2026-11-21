@@ -25,6 +25,9 @@ import (
 
 // webVia is how a web caller is recorded (send log, inbox answer).
 func webVia(p *webPeer) string {
+	if p != nil && p.Via != "" {
+		return p.Via
+	}
 	if p != nil && p.Device != "" {
 		return viaWeb + ":" + p.Device
 	}

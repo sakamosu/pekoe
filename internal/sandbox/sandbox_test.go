@@ -414,7 +414,7 @@ func TestDefaultPolicy(t *testing.T) {
 	ccd := filepath.Join(home, "ccd")
 	t.Setenv("CLAUDE_CONFIG_DIR", ccd)
 	p := DefaultPolicy(filepath.Join(home, "elsewhere", "tsnet"))
-	for _, want := range []string{"share/human-token", "share/http-token", "share/tsnet", "config/config.toml", "elsewhere/tsnet",
+	for _, want := range []string{"share/human-token", "share/http-token", "share/tsnet", "share/gui", "config/config.toml", "elsewhere/tsnet",
 		"share/state.db", "share/state.db-wal", "share/state.db-shm"} {
 		if !slices.Contains(p.DenyRead, filepath.Join(home, want)) {
 			t.Fatalf("DenyRead lacks %s: %v", want, p.DenyRead)

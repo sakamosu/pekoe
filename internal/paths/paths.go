@@ -124,6 +124,11 @@ func TutorialFile() string { return filepath.Join(DataDir(), "tutorial.json") }
 // WebStateDir holds the tsnet node state of the web UI ([web], docs/web.md).
 func WebStateDir() string { return filepath.Join(DataDir(), "tsnet") }
 
+// GUIDir holds the local GUI's one-time redirect pages (open-<random>.html,
+// docs/gui.md): each carries a token that opens the GUI as the person, so
+// the agents' and the hooks' sandboxes deny reading it, as the human token.
+func GUIDir() string { return filepath.Join(DataDir(), "gui") }
+
 // WebImagesDir holds the images sent from the web UI, one directory per
 // session (images/<slug>, tapi chat's images/+tapi): outside every
 // worktree, readable by the agents (docs/web.md 「画像の扱い」).

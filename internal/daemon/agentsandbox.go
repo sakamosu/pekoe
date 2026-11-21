@@ -56,12 +56,13 @@ type claudeSettings struct {
 // tool): the human token, the Chrome extension's token, state.db (with its
 // -wal and -shm: prompts, review comments, reports and the send log, which
 // agents read only through pekoed's API, which filters by caller), the Web
-// UI's tsnet state (also where [web] state_dir moved it) and pekoe's
-// config directory. dir reports a directory.
+// UI's tsnet state (also where [web] state_dir moved it), the local GUI's
+// one-time sign-in pages (gui.go) and pekoe's config directory. dir
+// reports a directory.
 func (d *Daemon) agentSecrets() (files, dirs []string) {
 	db := paths.StateDB()
 	files = []string{paths.HumanTokenFile(), paths.TokenFile(), db, db + "-wal", db + "-shm"}
-	dirs = []string{paths.WebStateDir(), paths.ConfigDir()}
+	dirs = []string{paths.WebStateDir(), paths.GUIDir(), paths.ConfigDir()}
 	if sd := d.cfg().Web.StateDir; sd != "" {
 		dirs = append(dirs, sd)
 	}

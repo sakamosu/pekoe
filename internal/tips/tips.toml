@@ -132,6 +132,13 @@ keys = ["pekoe web"]
 docs = ["docs/web.md#画像の扱い", "README.ja.md#iphone-からweb-ui"]
 
 [[tip]]
+id = "local-gui"
+short = "pekoe gui で Mac のブラウザから操作できる"
+detail = "pekoe gui で 127.0.0.1 の GUI が一度きりのリンクで開く。中身は iPhone の Web UI と同じで、tapi への send は確認なしで送れる。エージェントに操作させないブラウザ(プロファイル)で開く。"
+keys = ["pekoe gui", "[gui]"]
+docs = ["docs/gui.md"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"

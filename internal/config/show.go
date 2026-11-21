@@ -25,6 +25,8 @@ func Effective(g *Global) *Global {
 	c.Sandbox.Enable = on(g.Sandbox.Enable)
 	c.Mascot.Splash = on(g.Mascot.Splash)
 	c.Web.ConfirmTapiSend = on(g.Web.ConfirmTapiSend)
+	c.GUI.Enable = on(g.GUI.Enable)
+	c.GUI.SessionTTL = fmtDur(g.GUI.TTL())
 	c.Orchestrator.InboxPopup = on(g.Orchestrator.InboxPopup)
 	c.Cleanup.StaleAfter = fmtDur(g.Cleanup.Stale())
 	c.Notify = Notify{BlinkAfter: fmtDur(g.Notify.Blink()), OSAfter: fmtDur(g.Notify.OS()), ToastFor: fmtDur(g.Notify.Toast())}

@@ -73,6 +73,7 @@ func Check(b []byte) []Problem {
 
 	port("http.port", g.HTTP.Port)
 	port("ports.base", g.Ports.Base)
+	port("gui.port", g.GUI.Port)
 
 	if p := g.Keys.Prefix; strings.TrimSpace(p) != "" {
 		if _, ok := PrefixKey(p); !ok {
@@ -113,6 +114,12 @@ func Check(b []byte) []Problem {
 	if s := strings.TrimSpace(g.Cleanup.StaleAfter); s != "" {
 		if d, err := time.ParseDuration(s); err != nil || d <= 0 {
 			add("cleanup.stale_after", "%q is not a positive Go duration like 72h or 36h30m (%s is used)", g.Cleanup.StaleAfter, fmtDur(DefaultStaleAfter))
+		}
+	}
+
+	if s := strings.TrimSpace(g.GUI.SessionTTL); s != "" {
+		if d, err := time.ParseDuration(s); err != nil || d <= 0 {
+			add("gui.session_ttl", "%q is not a positive Go duration like 12h or 30m (%s is used)", g.GUI.SessionTTL, fmtDur(DefaultGUISessionTTL))
 		}
 	}
 

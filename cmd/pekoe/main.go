@@ -123,6 +123,8 @@ func main() {
 		err = cmdStats(args)
 	case "repo":
 		err = cmdRepo(args)
+	case "gui":
+		err = cmdGUI(args)
 	case "web":
 		if _, _, err = parseCmd("web", args); err == nil {
 			err = cmdWeb()
@@ -223,6 +225,9 @@ func usage() {
                                link pekoe's Claude Code skills from ~/.claude/skills
   pekoe ext                     port + token for the Chrome extension
   pekoe web                     phone web UI on the tailnet: state, URL, login link ([web])
+  pekoe gui [--no-open|--status|--revoke|--stop]
+                               the web UI in this Mac's browser on 127.0.0.1 ([gui]);
+                               signs the browser in with a one-time link
   pekoe mcp                     MCP server for agents (claude mcp add pekoe -- pekoe mcp)
   pekoe tapi [reset [--yes]]    tapi chat (t in the TUI): state, or end it and forget
                                the conversation

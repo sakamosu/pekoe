@@ -160,6 +160,10 @@ var humanMethods = map[string]string{
 	// secrets, or what other sessions show or read
 	"ext.info":        "returns the HTTP token of the Chrome extension",
 	"web.status":      "returns the Web UI's login URL and backend errors",
+	"gui.open":        "the local GUI: writes a one-time token that signs a browser in as the person (docs/gui.md)",
+	"gui.status":      "the local GUI: whether it listens, its port and how many browsers are signed in",
+	"gui.revoke":      "the local GUI: signs every browser out",
+	"gui.stop":        "the local GUI: stops listening and signs every browser out",
 	"session.screen":  "another session's screen",
 	"tapi.screen":     "tapi chat's screen",
 	"tapi.transcript": "tapi chat's conversation (the words of the person and of tapi, the tools it called)",

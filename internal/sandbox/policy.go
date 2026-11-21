@@ -14,7 +14,8 @@ import (
 // worktree. webStateDir is [web] state_dir (the tsnet node's keys).
 //
 // Read: the secrets — the human token, the Chrome extension's HTTP token,
-// the tsnet state, and config.toml ([web] auth_key) — and state.db (with
+// the tsnet state, the local GUI's one-time sign-in pages (paths.GUIDir),
+// and config.toml ([web] auth_key) — and state.db (with
 // its -wal and -shm: other sessions' prompts, review comments, reports and
 // the inbox, which agents read only through pekoed's API, filtered by
 // caller; the agents' own sandbox denies it too).
@@ -42,6 +43,7 @@ func DefaultPolicy(webStateDir string) Policy {
 			paths.HumanTokenFile(),
 			paths.TokenFile(),
 			paths.WebStateDir(),
+			paths.GUIDir(),
 			paths.GlobalConfig(),
 			paths.StateDB(), paths.StateDB() + "-wal", paths.StateDB() + "-shm",
 		},

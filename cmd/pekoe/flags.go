@@ -168,6 +168,7 @@ var specs = map[string]spec{
 	"ext":       {use: "pekoe ext   port + token for the Chrome extension"},
 	"mcp":       {use: "pekoe mcp   MCP server for agents (stdio)"},
 	"web":       {use: "pekoe web [--json]   phone web UI on the tailnet: state, URL, login link"},
+	"gui":       {use: "pekoe gui [--no-open|--status|--revoke|--stop] [--json]   the local GUI in this Mac's browser (127.0.0.1)", bools: []string{"no-open", "status", "revoke", "stop"}},
 	"report":    {use: "pekoe report <summary> --status done|blocked|progress|review [--evidence URL|PATH]... [--verdict pending|pass|fail --reviewed-sha SHA]   (summary '-' reads stdin; run by the session's agent)", vals: []string{"status", "evidence", "verdict", "reviewed-sha"}, multi: []string{"evidence"}},
 	"reports":   {use: "pekoe reports [<slug>] [--limit N] [--json]   the sessions' reports, newest first", vals: []string{"limit"}},
 	"wait":      {use: "pekoe wait [--mine] [--slug S,…] [--on report,inbox,ci,…] [--since CURSOR] [--timeout 30m] [--json]   until something happens to sessions", bools: []string{"mine"}, vals: []string{"slug", "on", "since", "timeout"}},

@@ -197,6 +197,38 @@ type Web struct {
 // ConfirmTapiSendOn: confirm_tapi_send, unset is true.
 func (w Web) ConfirmTapiSendOn() bool { return w.ConfirmTapiSend == nil || *w.ConfirmTapiSend }
 
+// GUI is [gui]: the local GUI, the web UI served to this Mac's own browser
+// on 127.0.0.1 (docs/gui.md). Nothing listens until `pekoe gui` asks for
+// it; Enable (default true) only says that it may.
+type GUI struct {
+	Enable *bool `toml:"enable"`
+	// Port on 127.0.0.1; 0 (the default) takes a free one each time the
+	// GUI starts listening. Read when it starts listening (the first
+	// `pekoe gui`, or the first after `pekoe gui --stop`).
+	Port int `toml:"port"`
+	// SessionTTL: a browser's session token lapses after this long unused
+	// (a Go duration, default 12h).
+	SessionTTL string `toml:"session_ttl"`
+	// Browser is the application `pekoe gui` opens the page with (macOS
+	// `open -a`); empty is the default browser.
+	Browser string `toml:"browser"`
+}
+
+// On: enable, unset is true.
+func (g GUI) On() bool { return g.Enable == nil || *g.Enable }
+
+// DefaultGUISessionTTL is how long a GUI session token lasts unused.
+const DefaultGUISessionTTL = 12 * time.Hour
+
+// TTL is session_ttl as a duration (DefaultGUISessionTTL when unset or not
+// a positive duration).
+func (g GUI) TTL() time.Duration {
+	if d, err := time.ParseDuration(strings.TrimSpace(g.SessionTTL)); err == nil && d > 0 {
+		return d
+	}
+	return DefaultGUISessionTTL
+}
+
 // Tapi is [tapi]: the tapi chat agent (docs/tapi-chat.md).
 type Tapi struct {
 	Agent string `toml:"agent"` // a name in [agents.*], default "claude"
@@ -346,6 +378,7 @@ type Global struct {
 		Port int `toml:"port"`
 	} `toml:"http"`
 	Web  Web `toml:"web"`
+	GUI  GUI `toml:"gui"`
 	Keys struct {
 		Prefix string            `toml:"prefix"`
 		Map    map[string]string `toml:"map"`

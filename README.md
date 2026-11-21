@@ -83,7 +83,7 @@ Design docs are in Japanese.
 | [docs/design.md](docs/design.md) | Design (state model, worktree flow, terminal layer, review, CLI and keys) |
 | [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
-| [docs/gui.md](docs/gui.md) | Design proposal (not built): a local GUI in the Mac's own browser, its authentication and threat model |
+| [docs/gui.md](docs/gui.md) | The local GUI in the Mac's own browser (`pekoe gui`): authentication, threat model, stages (stage 0 built) |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
@@ -224,6 +224,7 @@ pekoe                                                 # TUI
 | `pekoe skills install\|uninstall\|status [--yes]` | Link / unlink / check pekoe's Claude Code skills in `~/.claude/skills` ([Claude Code skills](#claude-code-skills)) |
 | `pekoe ext` | The port and token for the Chrome extension (the port pekoed actually listens on; if it could not listen, say because another pekoed holds the port, it refuses and says why, and `pekoe daemon status` shows `http off (…)`) |
 | `pekoe web` | Web UI status, URL and first-time login URL |
+| `pekoe gui [--no-open\|--status\|--revoke\|--stop]` | Open the local GUI (the Web UI in this Mac's own browser on `127.0.0.1`) with a one-time sign-in link; `--status` whether it listens and how many browsers are signed in, `--revoke` signs them all out, `--stop` stops listening |
 | `pekoe mcp` | MCP server (stdio) for agents |
 | `pekoe daemon start\|stop\|restart\|status` | Daemon control. `stop` waits until the process exits. `restart` waits for it to stop, starts it again and prints the versions before and after (use it after `make install`; if it isn't running, it just starts). Agents keep running inside tmux. An open TUI that loses pekoed (a restart or a stop) says so on the terminal and waits up to 20 s for pekoed to answer again, then opens anew; if it does not come back, the TUI ends with an error (exit code 1) that says so. It never starts pekoed itself at that point |
 | `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server (`$PEKOE_TMUX_SOCKET`). **On the default socket `pekoe` this stops every agent.** For cleaning up sandboxes |
@@ -375,7 +376,7 @@ But an agent running as the same user can read files. Two things keep the token 
 
 1. **Claude Code agents run in a Claude Code sandbox that pekoe configures (on by default).** Every time pekoe starts Claude Code (new sessions, `open`, restarts, resuming after a daemon restart, and tapi chat; any `[agents.*]` whose `command` starts with `claude`), it adds `--settings <data dir>/agent-settings/<slug>.json`. The paths in it are the real ones, following `$PEKOE_HOME`, `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME` and `[web] state_dir`:
    - `sandbox.enabled: true`, `allowUnsandboxedCommands: false` (no retry with `dangerouslyDisableSandbox`), `failIfUnavailable: true` (Claude Code doesn't start without a working sandbox), `filesystem.disabled: false`
-   - `filesystem.denyRead`: `human-token`, `http-token`, `state.db` (with `-wal` and `-shm`: it holds prompts, review comments, reports and the send log, which agents read only through pekoed's API), the tsnet state and pekoe's config directory (`~/.config/pekoe`). Enforced at the OS level for Bash commands and their children
+   - `filesystem.denyRead`: `human-token`, `http-token`, `state.db` (with `-wal` and `-shm`: it holds prompts, review comments, reports and the send log, which agents read only through pekoed's API), the tsnet state, the local GUI's sign-in pages (`~/.local/share/pekoe/gui/`) and pekoe's config directory (`~/.config/pekoe`). Enforced at the OS level for Bash commands and their children
    - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself and the written skills' text (`skills/`)
    - `permissions.allow`: `Read(...)` for the directory of images sent to this session from the Web UI (`<data dir>/images/<slug>/`, tapi chat's `images/+tapi/`), so the agent opens the `[image] <path>` lines of a send without asking ([docs/web.md](docs/web.md), 「画像の扱い」)
    - `filesystem.denyWrite` and `Edit(...)`: the repository's `.git/config`, `.git/config.worktree` and `.git/hooks`, and the same in the git directories of its submodules (`.git/modules/…`, those there when the agent starts) (agents can still commit, but can't change settings the git you run yourself follows)
@@ -444,6 +445,14 @@ Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens
 
 The certificate's hostname appears in Certificate Transparency logs. Design and threat model: [docs/web.md](docs/web.md).
 
+### From this Mac's browser (local GUI)
+
+`pekoe gui` serves the same pages and API as the Web UI to this Mac's own browser, on `127.0.0.1` only (any build; nothing listens until you run it, `[gui] enable = false` turns it off). The screens are still the phone's for now; a desktop layout comes later (design: [docs/gui.md](docs/gui.md)). Differences from the Web UI: a send to tapi needs no `allow_devices` and no confirmation sheet (as in the TUI); `always` is still not offered.
+
+Signing in: pekoed writes a one-time token (valid once, for 60 s) into a page under `~/.local/share/pekoe/gui/` (0600, unreadable from the agents' and hooks' sandboxes) and the CLI opens that file, so the token is never on a command line. The page trades it for a session token kept in the tab's `sessionStorage` and sent as `Authorization: Bearer` (no cookie: a cookie for `127.0.0.1` would also reach an agent's dev server on another port). A new tab, or pekoed restarting, means `pekoe gui` again. The port is a free one each time by default (`[gui] port`); if a fixed port can't be bound, `pekoe gui` refuses to open the browser.
+
+**Open it in a browser or profile no agent drives.** Whatever can drive that tab (Claude in Chrome, Playwright, Chrome DevTools) can answer permission prompts as you.
+
 ## Configuration
 
 `~/.config/pekoe/repos/<repo-id>.toml` (the repo-id is the normalized origin URL, so the same settings apply after a fresh clone; `pekoe init` can draft it):
@@ -500,6 +509,11 @@ allow_users   = ["you@github"]      # Tailscale login names
 allow_devices = ["iphone-15"]       # optional: only these devices
 hostname      = "pekoe"             # machine name on the tailnet
 confirm_tapi_send = true            # confirmation sheet before a send to tapi; false sends at once (no restart needed)
+[gui]                       # local GUI on 127.0.0.1 (pekoe gui, docs/gui.md)
+enable      = true          # false refuses pekoe gui; nothing listens before the first pekoe gui either way
+port        = 0             # 0: a free port each time it starts listening; read when it starts (pekoe gui --stop, then pekoe gui)
+session_ttl = "12h"         # a browser's sign-in lapses after this long unused
+browser     = ""            # macOS app to open it with (open -a), e.g. "Safari"; empty: the default browser
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
@@ -542,7 +556,7 @@ enable = true               # false hides both
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
 ```
 
-The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
+The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`, `[gui] session_ttl`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
 
 Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
 
