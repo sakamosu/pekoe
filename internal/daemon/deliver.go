@@ -225,7 +225,19 @@ func (d *Daemon) deliverTapiLocked() {
 		return
 	}
 	line := deliverLine(cs, its, d.changes.epochNow())
-	_, err := d.hTapiSend(tapiSendP{Text: line, Submit: true})
+	// asked again under tapi's send lock: a person's tapi.send that took
+	// it first went in, and tapi is no longer idle or was just typed into
+	why := ""
+	_, err := d.tapiSend(tapiSendP{Text: line, Submit: true}, func() error {
+		if why = d.deliverHeld(); why != "" {
+			return errSendHeld
+		}
+		return nil
+	})
+	if errors.Is(err, errSendHeld) {
+		d.setDeliverHeld(why)
+		return
+	}
 	if errors.Is(err, errPromptUp) {
 		d.setDeliverHeld(heldPrompt) // a prompt came up before the text went: next time
 		return

@@ -837,9 +837,18 @@ func (d *Daemon) deliverInbox(to string) {
 	}
 	line := inboxLine(it)
 	if to == TapiSlug {
-		_, err = d.hTapiSend(tapiSendP{Text: line, Submit: true})
+		// asked again under tapi's send lock, as deliverTapiLocked does
+		_, err = d.tapiSend(tapiSendP{Text: line, Submit: true}, func() error {
+			if ready, _ := d.inboxReady(TapiSlug); !ready {
+				return errSendHeld
+			}
+			return nil
+		})
 	} else {
 		_, err = d.send(sendP{Slug: to, Text: line, Submit: true}, true)
+	}
+	if errors.Is(err, errSendHeld) {
+		return // a person typed or tapi went to work meanwhile: next time
 	}
 	if errors.Is(err, errPromptUp) || errors.Is(err, errPromptUpTUI) {
 		return // a prompt came up before the text went: next time

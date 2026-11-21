@@ -22,6 +22,15 @@ package daemon
 //     open Claude Code's rewind menu
 // and at most once every interruptEvery per agent, so a double press does
 // not become that second Escape after the first one stopped the turn.
+//
+// With no Stop, the state would stay running until the next prompt: pekoed
+// would hold its deliveries to tapi (deliverHeld: busy), and a session would
+// keep its place under max_running and its Interrupt button. So after the
+// Escape pekoed reads the screen for a while (settleInterrupt) and, once the
+// turn is gone from it, moves running to idle (Claude Code's input box,
+// "What should Claude do instead?"), as the idle_prompt Notification would.
+// The Escape counts as a person's typing (noteTyped): pekoed's deliveries
+// wait as long after it as after a key, not to start the agent again at once.
 
 import (
 	"errors"
@@ -101,7 +110,8 @@ func (d *Daemon) interruptCheck(slug string, st state.State, waitKind string, st
 }
 
 // sendInterrupt checks and sends the one Escape, under slug's send lock so
-// it never lands between a send's paste and its Enter.
+// it never lands between a send's paste and its Enter (session.send's and
+// tapi.send's: tapiSend takes TapiSlug's).
 func (d *Daemon) sendInterrupt(slug string, now func() (state.State, string, bool)) error {
 	mu, _ := d.sendLocks.LoadOrStore(slug, &sync.Mutex{})
 	mu.(*sync.Mutex).Lock()
@@ -113,7 +123,104 @@ func (d *Daemon) sendInterrupt(slug string, now func() (state.State, string, boo
 	if err := d.interrupted.take(slug, time.Now()); err != nil {
 		return err
 	}
-	return d.Eng.SendKeys(slug, engine.WinAgent, "Escape")
+	turn := d.interruptTurn(slug)
+	if err := d.Eng.SendKeys(slug, engine.WinAgent, "Escape"); err != nil {
+		return err
+	}
+	// a person's key, as the TUI's esc through tapi.keys / session.keys:
+	// no delivery right into the input box they just stopped (inboxTypedQuiet)
+	d.noteTyped(slug)
+	go d.settleInterrupt(slug, turn)
+	return nil
+}
+
+// How settleInterrupt reads the screen after an Escape: every
+// interruptPoll, for interruptSettle at most (Claude Code redraws in a
+// moment; an Escape it did not take leaves the spinner, and the state as it
+// is).
+const (
+	interruptPoll   = 250 * time.Millisecond
+	interruptSettle = 10 * time.Second
+)
+
+// interruptTurn: the count of slug's hooks that show it at work
+// (outState.turn, tapiState.gen), to tell a hook that came after the
+// Escape.
+func (d *Daemon) interruptTurn(slug string) uint64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if slug == TapiSlug {
+		return d.tapi.gen
+	}
+	if st := d.out[slug]; st != nil {
+		return st.turn
+	}
+	return 0
+}
+
+// settleInterrupt moves slug from running to idle once its screen shows
+// the interrupted turn is over: no spinner line, no menu, no permission
+// prompt (those are the hooks' to report). Only while the state is still
+// the running the Escape left and no hook said the agent works again
+// (turn: interruptTurn before the Escape); a Stop, a permission prompt or
+// the next prompt win.
+func (d *Daemon) settleInterrupt(slug string, turn uint64) {
+	still := func(st state.State) bool { return st == state.Running && d.interruptTurn(slug) == turn }
+	deadline := time.Now().Add(interruptSettle)
+	for time.Now().Before(deadline) {
+		select {
+		case <-d.stop:
+			return
+		case <-time.After(interruptPoll):
+		}
+		var st state.State
+		if slug == TapiSlug {
+			st, _ = d.tapiNow()
+		} else {
+			s, err := d.snapshot(slug)
+			if err != nil {
+				return
+			}
+			st = s.State
+		}
+		if !still(st) || !d.Eng.Alive(slug, engine.WinAgent) {
+			return
+		}
+		sc, err := d.Eng.Capture(slug, engine.WinAgent)
+		if err != nil {
+			return
+		}
+		if turnGoesOn(sc.Lines) {
+			continue
+		}
+		if slug == TapiSlug {
+			d.tapiUpdate(func(t *tapiState) {
+				if t.state == state.Running && t.gen == turn {
+					t.state, t.waitKind, t.pending = state.Idle, "", nil
+				}
+			})
+			return
+		}
+		d.update(slug, func(x *state.Session) {
+			o := d.out[slug] // update holds d.mu
+			if x.State == state.Running && (o == nil || o.turn == turn) {
+				x.State, x.WaitKind, x.PendingTool = state.Idle, "", nil
+			}
+		})
+		return
+	}
+}
+
+// turnGoesOn: the bottom of the screen still shows the turn, a menu or a
+// permission prompt (anything but Claude Code's input box after a turn).
+func turnGoesOn(lines []string) bool {
+	for len(lines) > 0 && strings.TrimSpace(stripANSI(lines[len(lines)-1])) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) > 15 {
+		lines = lines[len(lines)-15:]
+	}
+	return busyRe.MatchString(stripANSI(strings.Join(lines, "\n"))) || permissionOnScreen(lines)
 }
 
 // hInterrupt is session.interrupt: {slug}.

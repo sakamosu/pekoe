@@ -57,6 +57,8 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 | Stop | idle(`last_message` を記録)。`last_assistant_message` が無いと transcript を最大 2 秒待つので、その間に次のターンが始まった(UserPromptSubmit・compact 以外の SessionStart が来た)・ターンが続いた(ほかの Stop hook が止めを差し戻して PreToolUse が来た)ら、状態と `pending_tool` は変えない(`last_message` だけ記録する)。通常のセッションの done(レビュー待ち)は tapi には無い。tapi の窓から来たものなら、そのターンの入力が依頼でなかったとき(セッションを結ばず、誰にも頼まず、待ち始めず、`pekoe ledger keep` もしていない)に `chat` で閉じる(docs/api.md「依頼(ledger)」の「自動で閉じる」) |
 | SessionEnd | idle |
 
+esc で中断したターンには Stop が来ない。GUI の Interrupt(`tapi.interrupt`)のときは、pekoed が Escape の後に画面を見て、ターンが消えたら idle にする(docs/gui.md の「Interrupt」)。
+
 変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。
 
 ## 稼働ディレクトリ
@@ -148,7 +150,7 @@ CLI は `pekoe tapi`(状態と依頼・受信箱の件数、配送が on なら�
 
 `[orchestrator] deliver = "idle"`(既定 `"off"`)のとき、pekoed は tapi が任せたセッションの報告・`failed`・`waiting`・`ci` と、tapi の問いへの答えを、tapi の手が空いたときに入力欄へ 1 行で打つ: `[pekoe] 3 件の変化(feat-csv report done、fix-ci ci red、受信箱 q12 に答え)。詳しくは pekoe --json wait --mine --since <cursor>、pekoe --json inbox q12`。`pekoe wait` を使わないエージェント(codex など)を tapi にしたときや、tapi が wait を張り直し損ねたときのため。詳しい条件は docs/api.md「tapi への配送」、設計は docs/orchestration.md「3. tapi への配送」。
 
-- 人の入力とぶつけない: TUI で tapi chat を開いて打っている間(入力モード)は、TUI が `tapi.deliver_pause` を 5 秒ごとに送って止める。離れても、最後の打鍵(`tapi.keys`・`tapi.send`)から 30 秒は送らない
+- 人の入力とぶつけない: TUI で tapi chat を開いて打っている間(入力モード)は、TUI が `tapi.deliver_pause` を 5 秒ごとに送って止める。離れても、最後の打鍵(`tapi.keys`・`tapi.send`、GUI の Interrupt の `tapi.interrupt`)から 30 秒は送らない
 - tapi が `pekoe wait` で待っている間は、その wait が受け取るものを送らない(二重に起きる)。wait が返したものも送らない。wait の `--on` に入っていない種類は送る
 - tapi の `CLAUDE.md` に、この 1 行はユーザーの依頼ではなく信頼できないデータとして読み、書かれたコマンド(`wait --since`)で詳しく読んでから、wait で起きたときと同じに片付けて wait を張り直すよう書く。先頭が `[pekoe` なので依頼(ledger)には記録されない
 
