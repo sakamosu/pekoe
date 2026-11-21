@@ -226,6 +226,8 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/tapi/send` | `{text, images?: [{data}]}` | `{ok: true, send: <送信の記録の id>, images: <枚数>, text: <打った文>}`。`tapi.send`(`submit: true`)。text と images はセッションの send と同じ(1〜4000 文字・画像があれば空でよい、制御文字は 400、画像は 415 / 400)。`text` は画像の行を足した打った文(ページが transcript に現れたかを見るのに使う)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
 | `POST /api/tapi/keys` | `{keys: ["Down", …]}` | `{ok: true}`。セッションの keys と同じキー・個数。409: tapi が質問待ちでない・許可待ち・画面に許可メニュー・起動していない |
 | `GET /api/overview` | — | `{counts, groups, at}`。下の「Overview」 |
+| `GET /api/stats` | — | **ローカル GUI だけ**(tailnet の Web UI には無い。docs/gui.md)。`Stats`(`stats {days: 7}` = `pekoe --json stats` と同じ。docs/api.md の「集計(stats)」)。Dashboard の Overview の日別のマージ数と今日のトークン。ページは 30 秒に 1 回まで読む |
+| `GET /api/ledger?closed=<N>` | — | **ローカル GUI だけ**。`{open: [LedgerEntry], closed: [LedgerEntry], closed_total}`(`ledger.list {status: "all"}` を人として呼ぶ)。`open` は開いている依頼の全部(古い順)、`closed` は閉じたもの(pekoed が自動で閉じた `chat` を含む)を閉じた時刻の新しい順に `N` 件(既定 5、0〜500。範囲外は 400)、`closed_total` は閉じたものの数。Dashboard の Requests と Open ledger |
 | `POST /api/sessions/{slug}/keys` | `{keys: ["Down", …]}` | `{ok: true}`。1〜8 個のキーを順に送る。キーは `Up Down Left Right Tab BTab Space Enter Escape 0`〜`9` だけ。400: 許可外のキー・個数 / 409: 質問待ち(`wait_kind == question`、`stopped` でない)以外 |
 
 Overview: `counts` は `{running, queued, waiting, review (done の数), open_prs, ready (根拠が揃った PR), inbox_open, ledger_open}`。`groups` は依頼元(`parent`)と依頼(`request`)ごとのまとまりで、tapi の依頼(新しい依頼が上)→ ほかのセッションが作ったもの → 人・unknown → 直接開いたもの、の順。各まとまりは `{parent, request?: {id, text (200 文字で切る), status}, rows: [Flow]}`。他人の PR のレビュー(`pr_review`)は工程表に入れない。

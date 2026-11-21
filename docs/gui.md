@@ -45,7 +45,7 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 | **1. MVP**(実装済み。見た目は docs/gui-design.md) | デスクトップ向けの画面(下の「MVP」) | 「TUI が苦手な人が毎日の操作をできる」最小 |
 | **2. TUI と同等(操作)** | セッションの作成(`session.new`、リポジトリの選択、issue から)、land(衝突予報つきの確認)、dev server の起動・停止、セッションの終了・worktree の削除(確認つき)、undo・再起動、片付け(`cleanup`)、tapi chat、PR の表示(チェック・レビュー・スレッドを読み、エージェントに送る)、issue の一覧、受信箱の dismiss | TUI のキー一覧(README の「TUI」、`docs/design.md`)の操作を一通り GUI で |
 | ~~3. TUI と同等(重いもの)~~ **作らない** | レビュー面(差分を読み、行にコメントし、承認する。TUI では nvim の `r`)、run 窓(`!`、1 回のコマンドを人が打って対話する)、エージェントの画面への生の入力(TUI で `↵` で入る入力) | どれも端末の再現か、任意のキー・コマンドを送る経路で、XSS が通ったときの被害が大きい。GUI では作らず「それは TUI で」とする(下の「決まったこと」7) |
-| **4. HTML の検証** | 集計(`stats`)のグラフ、セッションの時系列(いつ動き・待ち・終わったか)、触るファイルの重なりの図(`conflicts.list`)、証拠(スクショ・ログ)の表示、デスクトップ通知(Notification API) | 目的 2。どれが TUI に戻す価値があるかも見る |
+| **4. HTML の検証**(一部実装: Dashboard の集計と台帳) | 集計(`stats`)のグラフ(**実装済み**: Overview の日別のマージ数の棒と今日のトークン、`GET /api/stats`)、セッションの時系列(いつ動き・待ち・終わったか)、触るファイルの重なりの図(`conflicts.list`)、証拠(スクショ・ログ)の表示、デスクトップ通知(Notification API) | 目的 2。どれが TUI に戻す価値があるかも見る |
 
 段階 2 と 4 は順番を入れ替えてよい(検証を早く見たいなら 4 の一部を 2 より先に)。
 
@@ -58,13 +58,18 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 - **質問へのキーパッド**: AskUserQuestion のメニューに答える(今の `POST …/keys`)。これが無いと質問に答えられず「毎日の操作」にならないので、MVP に入れる
 - **受信箱への回答**: 事実が先・推奨を既定にしない・確認シート・`rev` の突き合わせ(`docs/web.md` の「受信箱(Inbox タブ)の扱い」と同じ)
 
+段階 4 の一部として、Dashboard に集計と台帳を足した(**実装済み**。GUI の mux にだけ登録し、tailnet の Web UI には無い。どちらも既存のソケットのメソッドを GUI の Caller(人)で呼ぶ薄いハンドラで、新しいデーモンのメソッドは無い。`internal/daemon/guidash.go`、docs/web.md の API の表):
+
+- `GET /api/stats`: `stats {days: 7}`。Overview の `Merged`(今日と 7 日のマージ数、日別の棒。過去の日は dim、今日は secondary、0 の日は border の 2px。数は各棒の `<title>` と図の `aria-label` で読める)と `Tokens today`(out / in / cache write / cache read。値は `pekoe stats` と同じ短縮で、正確な数は `title`)。pekoed は呼ばれるたびに transcript の新しい行を読むので、ページは TUI のダッシュボードと同じく 30 秒に 1 回までしか読まない
+- `GET /api/ledger?closed=N`: `ledger.list {status: "all"}` を開いているものと、閉じた時刻の新しい順の `N` 件に分ける。Requests は開いている依頼を先頭に、閉じたもの(`done`・`dropped`・`chat`、pekoed が自動で閉じたものは `closed by pekoe`)を直近 5 件。`Open ledger` はその場で展開して閉じたものを 500 件まで出す(残りは `pekoe ledger --all`)。依頼の id は TUI と同じ `r123`。依頼の文は人の入力なので、ほかと同じく `textContent` で描く
+
 MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りた(段階 0 でそのまま使えることを確かめ、段階 1 の画面もこれだけで作った)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で変えたのは、GUI の入口だけ `always` を受け付けること(`webSurface.always`)と、GUI の `/` でデスクトップ向けのページを返すこと(`webSurface.index`)。
 
 段階 1 で作ったもの(`internal/daemon/webui/gui/`。見た目は docs/gui-design.md の「画面の構成」):
 
 - 左にセッション一覧(tapi のカード、セッションが 2 つ以上のリポジトリは展開、1 つだけのものは `OTHER REPOSITORIES` に 1 行ずつ。`/api/sessions` が待ちを上に並べるので、待ちのあるリポジトリが上に来る)。フィルタのチップ(All / Needs you / Running)と、タイトルバーの絞り込み欄(`:`)
 - タブ: Dashboard・tapi・開いたセッション(そのタブの間だけ覚え、× で閉じる)
-- Dashboard(`#/`。`#/inbox` は受信箱の区画へ): 受信箱(Web UI と同じ規則: 事実が先・推奨を既定にしない・`rev` の突き合わせ・確認シート。先頭のカードが注意のフォーカス)、Overview(件数)、Pipeline(`impl → review → PR → CI → merge` と Status・マージの前に足りないもの)、Requests(セッションが持つ依頼。開いているものと閉じた直近 5 件)。右に tapi の吹き出し(transcript)と送信欄(確認シートなし。`!` で始まる文だけシート)
+- Dashboard(`#/`。`#/inbox` は受信箱の区画へ): 受信箱(Web UI と同じ規則: 事実が先・推奨を既定にしない・`rev` の突き合わせ・確認シート。先頭のカードが注意のフォーカス)、Overview(件数・マージ数と日別の棒・今日のトークン)、Pipeline(`impl → review → PR → CI → merge` と Status・マージの前に足りないもの)、Requests(依頼。開いているものと閉じた直近 5 件、台帳の展開。上の段階 4 の一部)。右に tapi の吹き出し(transcript)と送信欄(確認シートなし。`!` で始まる文だけシート)
 - セッション(`#/s/<slug>`): ヘッダ(状態・鮮度)、色つきの画面(最後 80 行、選択中は止まる、一時停止)、右に pekoed が持つ事実(SESSION・CHANGES・LINKED・NOTICES)、下端に送達の表示と送信欄(`⌘↵` で送る。画像は選ぶ・貼り付け・ドロップで付け、画像つきは確認シート。送信欄の外に落としたファイルはページが受けず、ブラウザがそのファイルを開いてページを離れることもない(`gui/drop.js`)。`! Shell` と、`!` で始まる文の確認シート)。許可待ちの間は送信欄の代わりに許可のカード(Allow once / Always allow / Deny、`y` / `A` / `n`。どれも確認シートで pekoe の要約と画面を並べる)、質問待ちの間は質問のカード(キーパッド、`1`〜`9`)
 - tapi(`#/tapi`): セッションと同じ画面で tapi の画面と質問のキーパッド。tapi の許可待ちには答えない(今の Web UI と同じく端末で)
 - ダークとライト(OS の外観に従い、タイトルバーのボタンで切り替え。選択はそのタブの間だけ)
@@ -72,7 +77,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 
 ### 後回しにするもの
 
-- 段階 2・4 のすべて(段階 3 は作らない)
+- 段階 2 のすべてと、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
 - Touch ID(WebAuthn)を allow の前に挟むこと(脅威モデルの「エージェントがブラウザを操作する」と「決まったこと」2)
 - 別の端末(LAN の他の PC)からの接続。待ち受けは `127.0.0.1` だけで、`0.0.0.0` には開かない(外から使うのは Web UI の役目)
 - Service Worker・オフライン・PWA としてのインストール

@@ -1,8 +1,10 @@
 // The local GUI's Dashboard (docs/gui-design.md の「Dashboard」): the
-// inbox cards, the Overview tile, the Pipeline table and the Requests, from
-// GET /api/inbox and GET /api/overview. Only what pekoed sends is drawn:
-// no number is made up for what the API does not carry (merges per day,
-// tokens). Every string goes in with textContent (lib/dom.js).
+// inbox cards, the Overview tiles, the Pipeline table and the Requests, from
+// GET /api/inbox, GET /api/overview, GET /api/stats (the merges per day and
+// today's tokens, `pekoe --json stats`) and GET /api/ledger. Only what
+// pekoed sends is drawn: no number is made up. Every string goes in with
+// textContent (lib/dom.js); the bars are SVG built with createElementNS and
+// numeric attributes (no style).
 
 import { el, txt, colored, link } from "../lib/dom.js";
 import { ago, short, questionId, reportId, requestId } from "../lib/fmt.js";
@@ -204,9 +206,139 @@ export function mergeRow(it) {
   return row;
 }
 
-// ---- Overview: the counts pekoed has (no merges per day, no tokens) ----
+// ---- Overview: the counts right now, the merges per day, today's tokens ----
 
-export function renderTiles(box, c) {
+// shortTokens shortens a count as pekoed's state.ShortTokens does (pekoe
+// stats, the TUI): 950, 12.3k, 4.56M, 1.23G. Go rounds the quotient's exact
+// value half to even; toFixed rounds an exact half up, so a tie is settled
+// here (TestGUIShortTokensMatchesPekoed).
+export function shortTokens(n) {
+  n = Math.trunc(Number(n) || 0);
+  if (n < 1000) return String(n);
+  for (const [div, prec, unit] of [[1e3, 1, "k"], [1e6, 2, "M"]]) {
+    const s = fixed(n / div, prec);
+    if (parseFloat(s) < 1000) return s + unit;
+  }
+  return fixed(n / 1e9, 2) + "G";
+}
+
+function fixed(x, prec) {
+  const exact = x.toFixed(60); // a double's whole expansion, for x < 1e21
+  const dot = exact.indexOf(".");
+  const rest = exact.slice(dot + 1 + prec);
+  if (!/^50*$/.test(rest)) return x.toFixed(prec);
+  // an exact half: down to the even digit (toFixed went up)
+  const kept = exact.slice(0, dot + 1 + prec).replace(/\.$/, "");
+  const last = Number(kept.replace(".", "").slice(-1));
+  return last % 2 === 0 ? kept : x.toFixed(prec);
+}
+
+// mergeDays: the stats' days, oldest first (from … to, pekoed's local
+// dates), each with its merges (every repository, tapi's row too).
+export function mergeDays(st) {
+  const by = new Map();
+  for (const r of (st && st.rows) || []) by.set(r.day, (by.get(r.day) || 0) + (r.merged || 0));
+  const parse = (s) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  };
+  const from = parse(st && st.from), to = parse(st && st.to);
+  const days = [];
+  if (!from || !to) return days;
+  const pad = (n) => String(n).padStart(2, "0");
+  for (const t = from; t <= to && days.length < 31; t.setDate(t.getDate() + 1)) {
+    const day = t.getFullYear() + "-" + pad(t.getMonth() + 1) + "-" + pad(t.getDate());
+    days.push({ day, merged: by.get(day) || 0, today: day === st.to });
+  }
+  return days;
+}
+
+// todayTokens: today's tokens by kind, every repository and tapi.
+export function todayTokens(st) {
+  const u = { input: 0, output: 0, cache_creation: 0, cache_read: 0 };
+  for (const r of (st && st.rows) || []) {
+    if (r.day !== st.to || !r.tokens) continue;
+    for (const k of Object.keys(u)) u[k] += r.tokens[k] || 0;
+  }
+  return u;
+}
+
+const BAR_W = 8, BAR_GAP = 3, BAR_H = 28;
+
+// barHeights: a bar's height in px for each day, the busiest day full; a
+// day with a merge is never shorter than 4 px, a day without one is a
+// 2 px stub (the day is there, nothing was merged).
+export function barHeights(days) {
+  const most = Math.max(0, ...days.map((d) => d.merged));
+  return days.map((d) => (d.merged > 0 ? Math.max(4, Math.round((BAR_H * d.merged) / most)) : 2));
+}
+
+const SVG = "http://www.w3.org/2000/svg";
+const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function dayWord(d) {
+  const [y, m, dd] = d.day.split("-").map(Number);
+  return (d.today ? "today" : WEEKDAY[new Date(y, m - 1, dd).getDay()]) + " " + d.day;
+}
+
+// mergeBars: one bar a day, past days dim, today secondary (docs/
+// gui-design.md「棒グラフ」). Each bar's number is in its <title> and the
+// whole row in the label, so it reads without the picture.
+function mergeBars(days) {
+  const svg = document.createElementNS(SVG, "svg");
+  const w = days.length * BAR_W + Math.max(0, days.length - 1) * BAR_GAP;
+  svg.setAttribute("class", "bars");
+  svg.setAttribute("width", String(w));
+  svg.setAttribute("height", String(BAR_H));
+  svg.setAttribute("viewBox", "0 0 " + w + " " + BAR_H);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Merges per day: " + days.map((d) => dayWord(d) + " " + d.merged).join(", "));
+  const hs = barHeights(days);
+  days.forEach((d, i) => {
+    const r = document.createElementNS(SVG, "rect");
+    r.setAttribute("class", "bar" + (d.today ? " today" : "") + (d.merged ? "" : " zero"));
+    r.setAttribute("x", String(i * (BAR_W + BAR_GAP)));
+    r.setAttribute("y", String(BAR_H - hs[i]));
+    r.setAttribute("width", String(BAR_W));
+    r.setAttribute("height", String(hs[i]));
+    r.setAttribute("rx", "2");
+    const t = document.createElementNS(SVG, "title");
+    t.textContent = dayWord(d) + " · " + d.merged + " merged";
+    r.append(t);
+    svg.append(r);
+  });
+  return svg;
+}
+
+// big: a large number and its word ("4 today")
+function big(n, word) {
+  const s = el("span", "big");
+  s.append(el("span", "big-n" + (n ? "" : " zero"), String(n)), txt(" "), el("span", "big-w", word));
+  return s;
+}
+
+// statsTile: a tile for what stats says; until it came back, or when it
+// failed, the tile says so instead of numbers.
+function statsTile(name, stats) {
+  const t = el("div", "tile");
+  t.append(el("span", "tile-name", name));
+  if (stats.err) {
+    const l = el("div", "tile-note");
+    l.append(colored("err", "✗", "sym"), txt(" stats unavailable · " + stats.err));
+    t.append(l);
+    return [t, null];
+  }
+  if (!stats.st) {
+    t.append(el("div", "tile-note", "loading…"));
+    return [t, null];
+  }
+  return [t, stats.st];
+}
+
+// renderTiles: Right now (the counts of /api/overview), Merged (today, the
+// days and their bars) and Tokens today (by kind). stats: {st, err}, the
+// last good /api/stats and why the last read failed.
+export function renderTiles(box, c, stats = {}) {
   box.replaceChildren();
   const t = el("div", "tile");
   t.append(el("span", "tile-name", "Right now"));
@@ -226,6 +358,32 @@ export function renderTiles(box, c) {
   num(c.ledger_open, "requests open");
   t.append(nums);
   box.append(t);
+
+  const [mt, st] = statsTile("Merged", stats);
+  if (st) {
+    const days = mergeDays(st);
+    const today = days.length ? days[days.length - 1].merged : 0;
+    const row = el("div", "tile-merged");
+    row.append(big(today, "today"), big(st.merged || 0, days.length + (days.length === 1 ? " day" : " days")));
+    if (days.length) row.append(mergeBars(days));
+    mt.append(row);
+  }
+  box.append(mt);
+
+  const [tt, ts] = statsTile("Tokens today", stats);
+  if (ts) {
+    const u = todayTokens(ts);
+    const grid = el("div", "tile-tokens");
+    for (const [word, k] of [["out", "output"], ["in", "input"], ["cache write", "cache_creation"], ["cache read", "cache_read"]]) {
+      const kv = el("span", "kv");
+      const v = el("span", "kv-v" + (u[k] ? "" : " zero"), shortTokens(u[k]));
+      v.title = u[k].toLocaleString("en-US") + " tokens";
+      kv.append(el("span", "kv-k", word), v);
+      grid.append(kv);
+    }
+    tt.append(grid);
+  }
+  box.append(tt);
 }
 
 // ---- Pipeline: one row per session, the steps as "symbol word" ----
@@ -301,35 +459,51 @@ export function renderPipeline(body, groups, open) {
   return moving;
 }
 
-// ---- Requests: the ledger entries the sessions carry, open first, then
-// the last five closed (the API has no ledger list of its own) ----
+// ---- Requests: the ledger (GET /api/ledger), open first (oldest first,
+// as `pekoe ledger`), then the closed ones closed last ----
 
-export function renderRequests(box, groups, open) {
+// closedWord: how a closed request ended, in pekoe ledger's words; what
+// pekoed closed itself as no request is "closed by pekoe"
+const closedWord = (e) => (e.status === "chat" && e.auto ? "closed by pekoe" : e.status);
+
+// renderRequests fills the list from lv ({open, closed, closed_total}).
+// on: {open(slug), has(slug)}: a session tied to the request opens its tab
+// when it is still here, and is a plain name when it is gone. Returns
+// [open, closed in all].
+export function renderRequests(box, lv, on) {
   box.replaceChildren();
-  const seen = new Map();
-  for (const g of groups) {
-    if (!g.request) continue;
-    const r = seen.get(g.request.id) || { req: g.request, slugs: [] };
-    for (const f of g.rows || []) r.slugs.push(f.slug);
-    seen.set(g.request.id, r);
-  }
-  const all = [...seen.values()].sort((a, b) => b.req.id - a.req.id);
-  const openOnes = all.filter((r) => r.req.status === "open");
-  const closed = all.filter((r) => r.req.status !== "open").slice(0, 5);
-  for (const r of [...openOnes, ...closed]) {
-    const isOpen = r.req.status === "open";
-    const row = el("div", "lrow" + (isOpen ? "" : " past"));
-    row.append(isOpen ? colored("ok", "◉", "sym") : el("span", "sym", "✓"), el("span", "l-id", requestId(r.req.id)), el("span", "l-text", r.req.text || ""));
+  const opens = (lv && lv.open) || [];
+  const closed = (lv && lv.closed) || [];
+  for (const e of opens) {
+    const row = el("div", "lrow");
+    row.append(colored("ok", "◉", "sym"), el("span", "l-id", requestId(e.id)), el("span", "l-text", e.text || ""));
+    row.lastChild.title = e.text || "";
     const to = el("span", "l-to");
-    to.append(txt(r.req.status + " → "));
-    const b = el("button", "l-link", r.slugs[0] || "");
-    b.type = "button";
-    b.addEventListener("click", () => open(r.slugs[0]));
-    to.append(b);
-    if (r.slugs.length > 1) to.append(txt(" +" + (r.slugs.length - 1)));
-    row.append(to);
+    to.append(txt("open"));
+    const slugs = e.sessions || [];
+    if (slugs.length) {
+      to.append(txt(" → "));
+      const s = slugs[slugs.length - 1];
+      if (on.has(s)) {
+        const b = el("button", "l-link", s);
+        b.type = "button";
+        b.addEventListener("click", () => on.open(s));
+        to.append(b);
+      } else to.append(txt(s));
+      if (slugs.length > 1) to.append(txt(" +" + (slugs.length - 1)));
+    }
+    row.append(to, el("span", "l-age", ago(e.at)));
     box.append(row);
   }
-  if (!box.childNodes.length) box.append(el("div", "empty", "No requests on the sessions here"));
-  return [openOnes.length, closed.length];
+  for (const e of closed) {
+    const row = el("div", "lrow past");
+    row.append(el("span", "sym", "✓"), el("span", "l-id", requestId(e.id)), el("span", "l-text", e.text || ""));
+    row.lastChild.title = e.text || "";
+    row.append(el("span", "l-to", closedWord(e) + " · " + ago(e.closed_at || e.at)));
+    box.append(row);
+  }
+  const total = (lv && lv.closed_total) || 0;
+  if (!opens.length && !closed.length) box.append(el("div", "empty", "No requests yet"));
+  else if (total > closed.length && on.expanded) box.append(el("div", "lrow more", "+" + (total - closed.length) + " older · pekoe ledger --all"));
+  return [opens.length, total];
 }

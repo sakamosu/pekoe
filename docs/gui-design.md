@@ -267,7 +267,7 @@ tapi パネル: ヘッダ(`tapi`・状態・`T Reset`)、送受信の一覧(古�
 実装の PR でそのまま確定扱いにしないもの。
 
 - **キーの割り当て**: Inbox カードの `↵ Merge` と `o Open evidence`、Session の `/` `@` `!` は TUI の表示から取った。`View diff` と `Reply to tapi` にはキーが無く、それ以外の割り当て(ステータスラインの `z zoom`・`o dashboard` を含む)は仮。許可カードの `y Allow once`・`n Deny` は TUI と同じだが、`a Always allow` は TUI では `A`(`internal/tui/modals.go`。取り返しのつかない強い方を大文字にする TUI の決め方)。推奨: GUI も `A` にそろえる。`T Reset` は TUI と同じ
-- **マージ数の棒**: 7 日分の高さは TUI の見た目から近似したもので、日別の数値は持っていない
+- **マージ数の棒**: モックの 7 日分の高さは TUI の見た目から近似したもので、日別の数値は持っていない(実装は `stats` の実データで描く。上の「実装で決めたこと」)
 - **`rsv-tomamu-wedding-com` の `✗ failed`**: 赤い印の意味は確かめていない
 - **Session states の中身**: 許可のコマンドと質問文は見本
 - **ポーリングの秒数**(`checking every 5s` など): 仮
@@ -321,8 +321,8 @@ ui-guidelines.md のチェックリストのうち、GUI に効くものと GUI 
 - **タイトルバーの検索欄**はサイドバーの絞り込み(名前・ブランチ・リポジトリ)。コマンドの実行・PR や依頼の検索は段階 2 の候補。`n New session` は GUI から作る API が無いので出していない
 - **アイコンレール**は Sessions だけ。Worktrees・Changes・Settings はビューが無いので出していない(段階 2 の候補)
 - **Inbox のカード**: 見出しは pekoed の項目なら問いの文、エージェントの項目なら pekoe の言葉(`A decision asked by <slug>`)にし、エージェントの文は事実の後に「The agent says」として出す(事実が先)。主ボタンは `Answer…`(選んだら `<選択肢>…`)で、確認シートを通す。選択肢は既定で選ばない。PR の URL があれば `Open PR #n`。レポートの要約(エージェントの言葉)と `View diff` は今の API に無いので出していない
-- **Overview** は `Right now` の件数のタイルだけ。日別のマージ数の棒・今日のトークンは API に無いので出していない(値を作らない。段階 2 の候補)
-- **Requests** はセッションが持つ依頼(`/api/overview` の `groups[].request`)から作る。台帳そのものの一覧と「Open ledger」は API に無いので出していない
+- **Overview** はタイル 3 枚: `Right now`(件数)、`Merged`(今日・7 日の数と日別の棒)、`Tokens today`(out / in / cache write / cache read)。後の 2 枚は `GET /api/stats`(GUI だけの API、docs/gui.md)の実データ。棒は SVG を `createElementNS` と数値の属性(`height` など)で組み、`style` は使わない。高さは 7 日のうち一番多い日を 28px にした比例(マージのある日は 4px 以上)、0 の日は border の 2px の台にして日があることを見せる。色は「棒グラフ」の規則どおり過去の日が dim・今日が secondary。数は各棒の `<title>`(`Wed 2026-11-18 · 4 merged`)と図の `aria-label` で読めるようにした。トークンの値は `pekoe stats` と同じ短縮(`state.ShortTokens`。丸めまでテストで突き合わせる)で、正確な数は `title`。stats が読めないときは数を出さず `✗ stats unavailable · <理由>`
+- **Requests** は台帳(`GET /api/ledger`)から作る。開いている依頼(◉ ok、`open → <セッション>`、経過)を先頭に、閉じたものを閉じた順に直近 5 件(行ごと dim、記号は ✓ だけ、語は `done`・`dropped`・`chat`、pekoed が自動で閉じたものは TUI と同じ `closed by pekoe`)。依頼の id は TUI と同じ `r123`。**`Open ledger` は別の画面ではなく、その場の展開にした。** 理由: レールの別ビュー(台帳の画面)は今の範囲の外で(上の「アイコンレール」)、展開なら同じ行の形のまま、Dashboard の文脈(開いている依頼とその工程)から離れずに閉じたものを遡れる。見出しの右端の button(`aria-expanded`)で、開くと閉じたものを 500 件まで出し、それより古いものは `+N older · pekoe ledger --all`。長い文は 1 行で切り、`title` で全文
 - **tapi パネル**は tapi の transcript の吹き出し。モックの「送受信の一覧(差出人 → 宛先・種別)」と `T Reset` は API に無い。前を読むのは、ページが持っている分(最大 1500 件)を `Show earlier` で 120 件ずつ出し、transcript の `earlier` が立っていれば「ここには無い、TUI で」と出す(決まったこと 7)
 - **Session の右パネル**は `/api/sessions` にあるもの(SESSION・CHANGES・LINKED・NOTICES)。USAGE・Cost・BACKGROUND・モデル・auto mode は API に無いので出していない
 - **送達**: `delivered` は send の応答が返った(pekoed がエージェントの入力欄に打った)こと。エージェントが取り込んだかを pekoed は知らないので `queued · agent is busy` は出していない。送れなければ `✗ not sent · <理由>` と `Retry`
