@@ -89,6 +89,7 @@ Design docs are in Japanese.
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
+| [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | Ambiguous-width characters: why the state icons and tapi's eyes avoid them |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
 

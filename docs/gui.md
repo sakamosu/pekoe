@@ -4,7 +4,7 @@ pekoed が動いている Mac 自身のブラウザから、localhost で待ち�
 
 **状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 以降は設計で、まだコードは無い。
 
-**段階 1 の見た目は仮。** 配置(左に一覧・右に画面・工程表の表)とデータのつなぎ込みまでで、色・フォント・余白は `/theme.css` のトークンと今の Web UI の `app.css` をそのまま使い、新しい色・装飾・動きは足していない。最終的なデザインは docs/ui-guidelines.md の更新の後に別の PR で行う。差し替えが CSS と DOM の構造だけで済むように、GUI のスタイルは `webui/gui/gui.css` にだけ書き(HTML の `style` 属性・`gui.js` からの `style` の書き込みは無い。`TestGUIStylesOnlyInCSS`。例外は画面の色というデータで、エージェントの画面の `#rrggbb` の色は前から `lib/term.js` が CSSOM で入れている)、クラス名は役割で付けた(`.session-list`・`.screen-pane`・`.dashboard-table` など)。レビューで決まったことは下の「決まったこと」にまとめた。
+**段階 1 の見た目は仮。** 配置(左に一覧・右に画面・工程表の表)とデータのつなぎ込みまでで、色・フォント・余白は `/theme.css` のトークンと今の Web UI の `app.css` をそのまま使い、新しい色・装飾・動きは足していない。最終的なデザインは、その原則の文書 [docs/gui-design.md](gui-design.md) に沿って別の PR で行う。差し替えが CSS と DOM の構造だけで済むように、GUI のスタイルは `webui/gui/gui.css` にだけ書き(HTML の `style` 属性・`gui.js` からの `style` の書き込みは無い。`TestGUIStylesOnlyInCSS`。例外は画面の色というデータで、エージェントの画面の `#rrggbb` の色は前から `lib/term.js` が CSSOM で入れている)、クラス名は役割で付けた(`.session-list`・`.screen-pane`・`.dashboard-table` など)。レビューで決まったことは下の「決まったこと」にまとめた。
 
 根拠はファイル名で添える。コードを読んで確かめたことと、推測(「推測」「要確認」と書く)を分ける。
 
