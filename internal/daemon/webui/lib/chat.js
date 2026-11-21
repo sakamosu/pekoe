@@ -71,6 +71,17 @@ export function markRewound(items) {
   }
 }
 
+// comesBack: whether what was sent comes back from the transcript as the
+// person's words, the bubble a "not sent yet" one (●) waits for. A ! shell
+// command and a slash command (/compact, /<skill> args) do not: Claude Code
+// writes them as its own records (<bash-input>, <command-name>), which the
+// chat leaves out, and the ● would stay its five minutes and go without a
+// word. The send's own "delivered" says they went. A path (/Users/…) is
+// words as any other.
+export function comesBack(text) {
+  return !/^\s*(?:!|\/[A-Za-z][\w:.-]*(?:\s|$))/.test(String(text || ""));
+}
+
 // chatBlocks groups items into what is drawn: day lines, the person's
 // turns, the agent's turns (tool lines and bubbles), pekoe's lines.
 export function chatBlocks(items, pending) {

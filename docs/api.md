@@ -889,7 +889,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行。`{slug, rows, lines, dead}` で、`rows` は色つき、`lines` は同じ行のテキストだけ([web.md](web.md)) |
 | `POST /api/sessions/{slug}/keys` | `{keys}` | `session.keys`。質問待ちのときだけ、決まったキーを 1〜8 個 |
 | `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400(ローカル GUI だけは受け付ける。下の「4. HTTP(ローカル GUI、127.0.0.1)」)、待っていない・質問・プロンプトが変わったら 409 |
-| `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409。改行・タブ以外の制御文字を含むと 400 |
+| `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。答えは `{ok: true, images, text}`(`text` は画像の行を足した打った文。docs/web.md の表)。allow / deny で答える許可待ちの間は 409。改行・タブ以外の制御文字を含むと 400 |
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], merges: [InboxItem], at}`。`merges` は人が `merge` と答えた根拠の項目のうち、24 時間以内に変わったもの([web.md](web.md)) |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤り(選択肢もメモも無い、など)は 400。`choice` を省いてメモだけで答えられる(pekoed の根拠の項目は除く) |
 | `GET /api/tapi` | — | `tapi.get` の表示用(状態・待ち時間・最後の返事・受信箱と依頼の件数。許可待ちのツール・Claude のセッション ID・稼働ディレクトリは出さない) |

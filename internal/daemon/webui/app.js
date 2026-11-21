@@ -10,7 +10,7 @@ import { termLines, screenRows } from "./lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "./lib/images.js";
 import { draftOf, inboxCard, mergeRow } from "./lib/inbox.js";
 import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing, STEP_LOOK, STEP_NAMES } from "./lib/overview.js";
-import { SPIN, bubbleLine, markRewound, chatView } from "./lib/chat.js";
+import { SPIN, bubbleLine, markRewound, chatView, comesBack } from "./lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "./lib/sheets.js";
 
 let sessions = [];
@@ -906,8 +906,10 @@ async function doSheetSend() {
     }
     toast("sent → tapi" + imagesNote(images.length), true);
     // ● until it shows up in the transcript (✓): what was typed, with
-    // the image lines pekoed added
-    chat.pending.push({ text: (r && typeof r.text === "string" && r.text) || text, at: Date.now() });
+    // the image lines pekoed added (none for a ! or slash command, which
+    // never shows up as words: comesBack)
+    const typed = (r && typeof r.text === "string" && r.text) || text;
+    if (comesBack(typed)) chat.pending.push({ text: typed, at: Date.now() });
     if (current === TAPI && tapiMode() === "chat") {
       renderChat(true);
       toBottom();
