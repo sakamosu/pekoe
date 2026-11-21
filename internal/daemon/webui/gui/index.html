@@ -119,8 +119,14 @@
         <form class="composer tapi-composer" id="c-send" autocomplete="off">
           <label class="comp-label" for="c-text">Ask tapi</label>
           <div class="comp-box">
+            <!-- images for the next send to tapi (choose, paste or drop), the
+                 panel's own: never the ones of tapi's tab or a session -->
+            <div class="thumbs" id="c-thumbs" hidden></div>
             <textarea id="c-text" rows="3" maxlength="4000" placeholder="ask tapi"></textarea>
             <div class="comp-row">
+              <span class="attach" id="c-attach">
+                <label class="btn sm icon" for="c-file" aria-label="attach images" title="attach images (or paste / drop them)">+<input type="file" id="c-file" accept="image/*" multiple></label>
+              </span>
               <button type="button" class="btn sm shell" id="c-shell"><span class="k">!</span> Shell</button>
               <button type="submit" class="btn sm primary push" id="c-send-btn"><span class="k">⌘↵</span> Send</button>
             </div>

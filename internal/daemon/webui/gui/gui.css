@@ -492,6 +492,8 @@ body.side-resizing { cursor: col-resize; user-select: none; }
    card has it) */
 .tapi-composer { flex: none; gap: 6px; padding: 12px 16px 16px; background: transparent; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
 .comp-box { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+/* the panel has no frame: a drop of images marks its box instead */
+.tapi-composer.is-drop-target .comp-box { border-color: var(--secondary); }
 .delivery { display: flex; align-items: center; gap: 4px 8px; min-width: 0; font-size: 12px; color: var(--dim); }
 .dl-word { flex: none; }
 .dl-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
