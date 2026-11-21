@@ -99,7 +99,7 @@ docs/gui-design.md の決まったこと 6・7 で段階 2 以降に回した 2 
 
 ### 段階 2 の一部: サイドバーのビュー(レール)
 
-左端のアイコンレール(docs/gui-design.md の「GUI で変えるもの」7・「アイコン」)で、サイドバーに出すビューを Sessions / Worktrees / Changes / Settings(下端)から 1 つ選ぶ。Sessions は前のサイドバーをそのまま移したもので、Worktrees は下の「Worktrees」の節、Changes は下の「Changes のビュー」の節。まだ中身の無いビューは「Not built yet」とそのビューが出す予定のものだけを出す空のビュー(何も読まず、何もできない)。中身は 1 ビューずつ別に作る。
+左端のアイコンレール(docs/gui-design.md の「GUI で変えるもの」7・「アイコン」)で、サイドバーに出すビューを Sessions / Worktrees / Changes / Settings(下端)から 1 つ選ぶ。Sessions は前のサイドバーをそのまま移したもので、Worktrees は下の「Worktrees」の節、Changes は下の「Changes のビュー」の節、Settings は下の「Settings(読むだけ)」の節。4 つとも中身がある(空のビューの `notyet.js` は最後の Settings で消した)。
 
 - **選んだビューはそのタブの間だけ覚える**(`sessionStorage` の `pekoe-gui-side`。テーマ・Chat と Screen と同じ理由で `localStorage` は使わない)。既定の Sessions を選べば消す。URL のフラグメントは `#/`・`#/s/<slug>` のメインの行き先に使っているので、サイドバーのビューは入れない(リンクで開くのはメインの行き先だけ)。数字キーでの切り替えは無い(docs/gui-design.md の決まったこと 4)。クリック(と Tab で移ってのボタン)だけ
 - **タイトルバーの欄は、出しているビューのもの。** ビューが `search`(欄の placeholder)を持てば、欄の文字はそのビューの `query` に渡る(Sessions は名前・ブランチ・リポジトリの絞り込みで、今と同じ)。持たないビューを出している間、欄は無効で `Nothing to filter in <ビュー>`。ビューを切り替えると欄は空に戻る。`:` は今のとおり欄にフォーカスする(無効なら何もしない)
@@ -120,7 +120,7 @@ TUI の [2] Worktrees と同じ意味の一覧を、pekoe が知っているリ�
 
 #### ビューの差し込みの形(後でビューを作るとき)
 
-1 ビュー 1 ファイル: `internal/daemon/webui/gui/views/<id>.js`。**ビューを作るセッションが触るのは自分のファイル(と、そのビューの見た目の gui.css の節・テスト・API)だけ**で、`rail.js`・`index.html`・`gui.js`・ほかのビューのファイルは触らない(4 つのボタンと `VIEWS` の並びはもうある)。今の空のビューは `notyet.js` の `notYet(…)` を 1 行で export しているので、ファイルごと本物に置き換える(`notyet.js` は消さない。最後の 1 つが置き換わったら消す)。
+1 ビュー 1 ファイル: `internal/daemon/webui/gui/views/<id>.js`。**ビューを作るセッションが触るのは自分のファイル(と、そのビューの見た目の gui.css の節・テスト・API)だけ**で、`rail.js`・`index.html`・`gui.js`・ほかのビューのファイルは触らない(4 つのボタンと `VIEWS` の並びはもうある)。空のビューの `notyet.js` は、最後の Settings が置き換わったので消した。ビューを足すときは、そのボタンと `VIEWS` の並びも足す(rail.js・index.html を触るセッションは 1 つに決める)。
 
 ファイルの default export は次の形のオブジェクト(`gui/rail.js` の頭のコメントと同じ。`TestGUIRailViews` が確かめる):
 
@@ -180,9 +180,34 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 - **Picks(TUI の [3] の ⇄ Picks)は入れない。** Picks は Chrome の拡張で人が拾った要素とエラーを、TUI が選んでいるセッションのエージェントへ送る・捨てる受け皿で、主な操作はエージェントへの送信(書き込み)。読むだけの Changes とは別の画面と確認の規則が要るので、今の範囲の外にした。入れるなら Picks の置き場(ビューか、Session の右パネルか)と送る前の確認を別に決める
 - tailnet の Web UI には出さない(GUI の mux だけ。iPhone のセッションの画面に変更の一覧の用途は今は無い)
 
+### 段階 2 の一部: Settings(読むだけ)
+
+レールの下端の Settings(`gui/views/settings.js`)。pekoed が今使っている設定を、`pekoe config show` と同じ中身(既定を埋めたもの。秘密の `[web] auth_key` は `(hidden)`)で節ごとに出す。**読むだけ**で、ビューから設定は変えられない(変えるのは今までどおり端末の `pekoe config edit`。理由と、書き込みを作るならの案は下の「書き込みの案」)。
+
+- **出すもの**: config.toml のパスと `Change them with pekoe config edit in a terminal`、再起動待ちの設定(`! http.port changed · applies after pekoe daemon restart`)、`config check` の警告(`! theme.colorz: unknown key (ignored)`。5 件まで、残りは `pekoe config check`)、ファイルが読めないとき(`✗ config.toml does not read · pekoed keeps the settings below`)。その下に節ごと(`[http]`・`[web]`…`[agents.claude]`…`animate`。並びは Global の宣言順で、エージェントは名前順)に、節の説明と、キーごとの名前・値(config.toml の書き方: 文字列は `"…"`、表は `{ k = v }`)・説明。名前と値は等幅(コマンド・パスを含むので、実行対象の行と同じ扱い)
+- **印**: `set` は config.toml にあるキー(値は text。無いキーは既定で、値は dim)。`restart` は変えても `pekoe daemon restart` まで効かないキー(`config.NeedsRestart`。`config.RestartNeeded` と同じ範囲かをテストでキーごとに確かめる: `[http] port`・`[web]` の `confirm_tapi_send` 以外・`[sandbox] enable`)。config.toml がそのキーを変えて再起動を待っている間は `! waits for restart`(warn は記号だけ)で、出ている値は動いている値(変えた後の値ではない)
+- **説明の出どころ**: `internal/config/docs.go` の `SectionDocs` / `KeyDocs`(README の Configuration の注記を 1 行にしたもの)。Global にキーを足して説明を書き忘れると `TestDocsCoverKeys` が落ちる(消したキーの説明が残っても落ちる)
+- **API**: `GET /api/config` = `config.show`(人間だけ。docs/api.md の表)。GUI の mux だけで、iPhone の Web UI には無い。`~/.config/pekoe` はエージェントの sandbox で隠している(README の「エージェントに pekoe を使わせるときの権限」)ので、pekoed が代わりに読み返す口を token なしに開けない(`TestHumanOnlyMethodsNeedToken`)。秘密は `config.Effective` のとおり auth_key だけを隠す(`pekoe config show` と同じ。`[agents.*] command` などは CLI と同じく出す)
+- **読む間隔**: 出している間だけ、一覧の読み直し(3 秒ごと)に合わせて 5 秒に 1 回まで。出すたびに読み直し、隠したら読みかけを捨てる。読めなければ `✗ settings unavailable · <理由>`(前に読めていればその値を残して `✗ not read again`)。読み直しても並びの位置(スクロール)は保つ
+- **タイトルバーの欄**は Settings の絞り込み(`Filter settings by key, value or description`)。キーの名前・節・値・説明に語を含むキーだけ出す。`restart` と打てば再起動の要るキーも出る
+- **TUI との対応**: TUI に設定のパネルは無く、同じデータは `pekoe config show`(と `pekoe config check`)。違いは 1 つ: CLI はファイルを読み、GUI は pekoed が使っている値を出す(再起動待ちのキーは動いている値。どちらの値かを `! waits for restart` で示す)。リポジトリごとの `repos/<repo-id>.toml` は出さない(セッションの worktree の設定で、Worktrees のビューの側の話)
+- **ページの中の設定(テーマ・Chat と Screen・サイドバーのビュー)はここに置かない。** 末尾の `THIS TAB` に「このタブの間だけ覚え、config.toml には入らない」と書くだけ。理由: (a) Settings は TUI・pekoed と共有する config.toml の値で、タブの `sessionStorage`(ポートが毎回変わるので次に開くと消える)と寿命が違う。同じ一覧に並べると、ここで変えたものが TUI にも残ると読める。(b) テーマはタイトルバーのボタン、Chat と Screen は画面の枠の切り替えで、どれも使う場所で 1 回押せば変わる。ここに 2 つ目の入口を足しても速くならない。(c) 書き込みを作るとき(下)に、「すぐ効くタブの設定」と「確認シートを通す config.toml の書き込み」が同じ画面で混ざらない。`[gui] theme` を足すなら(決まったこと 11 で「要望が出てから」)、そのときここに出る
+
+#### 書き込みの案(今は作らない)
+
+config.toml を GUI から書くと、**pekoed が設定を書く初めての経路**になる(今は `pekoe config edit` だけが pekoed の外で書く。docs/api.md「config.toml の再読み込み」)。脅威モデルの「エージェントがブラウザを操作する」「XSS」の行が、そのまま「設定を書き換えられる」になる。作るなら次の形にする(判断はユーザー):
+
+- **書けるキーを許可リストにする**(既定は書けない。キーを足すたびに決める)。書いてよい候補: 見た目と通知と間隔だけ(`[theme] mode / icons`・`[mascot]`・`animate`・`[tips]`・`[notify]`・`[pr] poll_every`・`[cleanup] stale_after`・`[orchestrator] notify / inbox_popup`・`[review] surface`)。**書かせない**: `[agents.*]`(`command` / `resume` は人の権限で動くコマンドそのもの、`sandbox` は sandbox を外す、`model` は費用)・`[sandbox]`・`[web]`(外への公開と許す人)・`[gui]`(入口そのもの)・`[http]`・`[keys]`(TUI から抜けられなくなる)・`[tapi] agent`・`[orchestrator] deliver / max_running`(エージェントへの自動の入力と同時実行数)・`[picks] auto_send`。これらは今までどおり端末で
+- **値の検証**: `config.Check` と同じ規則(`oneOf`・期間・範囲)を、書く前に pekoed がその 1 キーに当てる。ページの検証は便利のためだけで、守りは pekoed 側
+- **確認シート**: 今の人だけの操作と同じく必ず通す。キー・今の値 → 新しい値・いつ効くか(すぐ / 再起動後)・ファイルのパスを見せる。主ボタンは `Save`
+- **visudo と同じ書き方**(`pekoe config edit` の `editConfig` を pekoed の中で使う): 読んだときの中身のハッシュ(`rev`)を一緒に送り、違えば断る(端末で編集中・dotfiles の同期)。一時ファイルに書いて `config.Check` を通し、問題が無いときだけ 1 回の rename で置き換える(シンボリックリンクは先のファイルを置き換え、パーミッションを保つ)。キーの行だけを書き換えて(無ければ節の末尾に足して)、コメントと並びを残す(`BurntSushi/toml` で encode し直すとコメントが消えるので、行単位の書き換えを別に作る。ここが一番の手間)
+- **壊れた設定**: ファイルが読めない(`fatal`)間は GUI から書かない(上書きすると人の編集中のものを消す)。ビューは今の表示のまま「`pekoe config edit` で直す」とだけ言う。`Check` の警告(知らないキー)は書き込みを止めない(人のファイルの問題で、書くキーとは別)
+- **メソッド**: `config.set {key, value, rev}`(人間だけ・GUI の mux だけ。token なしで断るテストと docs/api.md の表)。書いたことは pekoed のログに残す
+- **判断材料**: 得るもの: 見た目や通知の間隔を、端末に移らずに変えられる(数クリック分)。失うもの・手間: pekoed が設定を書く口が初めてでき、XSS やブラウザの乗っ取りの被害に「設定の書き換え」が加わる(許可リストで見た目系に絞れば、最悪でも通知が鈍る・色が変わる程度)、コメントを残す行単位の書き換えの実装とテスト。**推奨は、要望が出るまで作らない。** 作るなら許可リストの見た目系だけから
+
 ### 後回しにするもの
 
-- 段階 2 のうち上の節以外(レールの Settings の中身と Worktrees の Issues(枠は上の「サイドバーのビュー」)、検索欄のコマンド実行、右パネルの USAGE など)と、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
+- 段階 2 のうち上の節以外(Settings の書き込み(上の「書き込みの案」)と Worktrees の Issues、検索欄のコマンド実行、右パネルの USAGE など)と、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
 - Touch ID(WebAuthn)を allow の前に挟むこと(脅威モデルの「エージェントがブラウザを操作する」と「決まったこと」2)
 - 別の端末(LAN の他の PC)からの接続。待ち受けは `127.0.0.1` だけで、`0.0.0.0` には開かない(外から使うのは Web UI の役目)
 - Service Worker・オフライン・PWA としてのインストール

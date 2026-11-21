@@ -453,6 +453,8 @@ func (d *Daemon) guiHandler(port int) http.Handler {
 	// Web UI shows a session's diffstat, not its files or their diffs
 	mux.HandleFunc("GET /api/sessions/{slug}/changes", d.guiChanges)
 	mux.HandleFunc("GET /api/sessions/{slug}/diff", d.guiChangesDiff)
+	// the Settings view (guiconfig.go): the GUI's mux only, reading only
+	mux.HandleFunc("GET /api/config", d.guiConfig)
 	return d.guiGuard(port, mux)
 }
 

@@ -115,6 +115,8 @@ func TestHumanOnlyMethodsNeedToken(t *testing.T) {
 		{"session.screen", map[string]any{"slug": "main"}},
 		{"session.open", map[string]any{"path": repo, "resume": "new"}},
 		{"daemon.status", nil},
+		// config.toml is out of an agent's sandbox: pekoed does not read it back
+		{"config.show", nil},
 		// still human-only now that land is open to agents
 		{"worktree.rm", map[string]any{"slug": "main", "force": true}},
 		{"session.kill", map[string]any{"slug": "main"}},

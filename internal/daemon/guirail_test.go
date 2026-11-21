@@ -157,10 +157,9 @@ console.log(JSON.stringify({ contract, ...r }));`)
 	if !strings.Contains(got.VChanges, "CHANGES") || strings.Contains(got.VChanges, "Not built yet") {
 		t.Errorf("changes: %q", got.VChanges)
 	}
-	for id, text := range map[string]string{"settings": got.VSettings} {
-		if !strings.Contains(text, strings.ToUpper(id)) || !strings.Contains(text, "Not built yet") {
-			t.Errorf("%s: %q", id, text)
-		}
+	// Settings is built (guiconfig_test.go): its head, and it reads
+	if !strings.Contains(got.VSettings, "SETTINGS") || strings.Contains(got.VSettings, "Not built yet") {
+		t.Errorf("settings: %q", got.VSettings)
 	}
 	if got.Blocked != "sessions" || got.Odd != "sessions" {
 		t.Errorf("blocked %q odd %q", got.Blocked, got.Odd)
@@ -188,7 +187,7 @@ console.log(JSON.stringify({ contract, ...r }));`)
 	ents, _ := fs.ReadDir(webFiles, "webui/gui/views")
 	for _, e := range ents {
 		id := strings.TrimSuffix(e.Name(), path.Ext(e.Name()))
-		if id != "notyet" && !slices.Contains(ids, id) {
+		if !slices.Contains(ids, id) {
 			t.Errorf("gui/views/%s is not a view of the rail", e.Name())
 		}
 	}
