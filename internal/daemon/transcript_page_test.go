@@ -138,3 +138,45 @@ func TestReadChatContinuedIn(t *testing.T) {
 		t.Fatalf("an empty new conversation: %+v %v", gone, err)
 	}
 }
+
+// A ! shell command or a slash command sent from the chat comes back in
+// the transcript as Claude Code's own record (<bash-input>,
+// <command-name>), which the chat leaves out: its "not sent yet" bubble
+// (●) used to wait the five minutes for words that never came, and then
+// went without a word. It gets no ● (the send's "delivered" says it went);
+// words, a path among them, still wait for their bubble.
+func TestChatPendingShellAndSlash(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "eeeeeeee-5555.jsonl")
+	writeChat(t, path, []string{
+		`{"type":"user","message":{"role":"user","content":"<bash-input>ls</bash-input>"},"uuid":"b1","timestamp":"2026-11-21T10:00:00Z","origin":{"kind":"human"}}`,
+		`{"type":"user","message":{"role":"user","content":"<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>"},"uuid":"c1","timestamp":"2026-11-21T10:00:01Z","origin":{"kind":"human"}}`,
+		`{"type":"user","message":{"role":"user","content":"plain words"},"uuid":"w1","timestamp":"2026-11-21T10:00:02Z","origin":{"kind":"human"}}`,
+	})
+	page, err := readChat(path, "")
+	if err != nil || len(page.Items) != 1 || page.Items[0].Text != "plain words" {
+		t.Fatalf("read: %+v %v", page, err)
+	}
+	body, _ := json.Marshal(page)
+	prog := `import { chatPane } from "gui/chatpane.js";
+import { comesBack } from "lib/chat.js";
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => (` + string(body) + `) });
+const node = () => ({ addEventListener() {}, replaceChildren() {}, append() {} });
+const pane = chatPane({ log: node(), head: node(), body: node(), jump: node(), url: () => "/x", name: () => "a", shown: () => false });
+pane.reset("main");
+for (const t of ["!ls", "/compact", "/my-skill do it", "plain words", "/Users/me/a.png を見て"]) pane.addPending(t);
+await pane.refresh(true);
+console.log(JSON.stringify([pane.c.pending.map((p) => p.text), ["!ls", " !x", "/compact", "/a:b c", "/", "/Users/x", "words", "a /b"].map(comesBack)]));
+process.exit(0);
+`
+	out := runWebModule(t, prog)
+	var got []json.RawMessage
+	if err := json.Unmarshal(out, &got); err != nil || len(got) != 2 {
+		t.Fatalf("node output: %v\n%s", err, out)
+	}
+	if string(got[0]) != `["/Users/me/a.png を見て"]` {
+		t.Errorf("still not sent after the read: %s", got[0])
+	}
+	if string(got[1]) != `[false,false,false,false,true,true,true,true]` {
+		t.Errorf("comesBack: %s", got[1])
+	}
+}

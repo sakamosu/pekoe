@@ -9,7 +9,7 @@
 
 import { el, toast } from "../lib/dom.js";
 import { api } from "../lib/api.js";
-import { markRewound, chatView } from "../lib/chat.js";
+import { markRewound, chatView, comesBack } from "../lib/chat.js";
 import { prependPage } from "./compose.js";
 
 export const CHAT_KEEP = 3000, CHAT_PAGE = 120;
@@ -197,9 +197,10 @@ export function chatPane({ log, head, body, jump, url, name, shown }) {
     render(true);
   }
 
-  // addPending: the person's words sent, ● until they show up (✓)
+  // addPending: the person's words sent, ● until they show up (✓); a !
+  // or slash command never shows up as words (comesBack), and gets none
   function addPending(text) {
-    c.pending.push({ text, at: Date.now() });
+    if (comesBack(text)) c.pending.push({ text, at: Date.now() });
     render(true);
     toBottom();
     setTimeout(refresh, 600);
