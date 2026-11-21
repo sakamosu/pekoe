@@ -50,25 +50,31 @@ func (d *Daemon) webInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 const (
-	webMergesMax = 5
+	webMergesMax = 5 // the merges under way or through kept in sight
 	webMergesFor = 24 * time.Hour
 )
 
 // recentMerges are pekoed's merge items a person answered "merge" in the
 // last day, newest first: the merge under way, merged, or failed and why
-// (the answered item leaves the open list, this keeps it in sight).
+// (the answered item leaves the open list, this keeps it in sight). Every
+// failure of the day is kept (Now puts it under NEEDS YOU: it waits on
+// the person, so later merges never push it out); the rest, webMergesMax.
 func (d *Daemon) recentMerges(now time.Time) []state.InboxItem {
-	its, err := d.DB.InboxList(state.InboxFilter{Status: []string{state.InboxAnswered}, From: callerPekoed, Limit: 50})
+	its, err := d.DB.InboxList(state.InboxFilter{Status: []string{state.InboxAnswered}, From: callerPekoed, Limit: 500})
 	out := []state.InboxItem{}
 	if err != nil {
 		return out
 	}
+	rest := 0
 	for _, it := range its {
 		if a := it.Answer; isMergeItem(&it) && a != nil && a.Merge != nil && now.Sub(it.UpdatedAt) < webMergesFor {
-			out = append(out, it)
-			if len(out) == webMergesMax {
-				break
+			if a.Merge.State != state.MergeFailed {
+				if rest == webMergesMax {
+					continue
+				}
+				rest++
 			}
+			out = append(out, it)
 		}
 	}
 	return out

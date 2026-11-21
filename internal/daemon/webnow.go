@@ -153,6 +153,9 @@ func (d *Daemon) nowOf(list []*state.Session, open []state.InboxItem, merges []s
 
 	sort.SliceStable(n.Needs, func(i, j int) bool { return n.Needs[i].Since.After(n.Needs[j].Since) })
 	sort.SliceStable(n.Merged, func(i, j int) bool { return n.Merged[i].At.After(n.Merged[j].At) })
+	if len(n.Merged) > webMergesMax {
+		n.Merged = n.Merged[:webMergesMax] // a failure merged after all comes on top of recentMerges' rest
+	}
 
 	// 2. sessions waiting on the person, the oldest wait first
 	var waiting []*state.Session
