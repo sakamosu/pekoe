@@ -21,8 +21,17 @@
 <!-- the screen's top bar (52px): the screen's name on the left, how fresh
      on the right; tapi's bar carries its face, state and Chat | Screen -->
 <header class="bar" id="bar">
-  <button type="button" class="back" id="back" hidden aria-label="back">‹</button>
-  <h1 class="title" id="title">pekoe</h1>
+  <!-- on a wide screen (body.wide) Sessions splits in two: the bar's left
+       half (bar-l) is the list's, the right half (bar-r) the chat's. On a
+       phone both are display: contents (one row, as before) -->
+  <div class="bar-l">
+    <button type="button" class="back" id="back" hidden aria-label="back">‹</button>
+    <h1 class="title" id="title">pekoe</h1>
+    <span class="fresh" id="fresh"></span>
+  </div>
+  <div class="bar-r">
+  <!-- a session's slug in the right half (wide only) -->
+  <span class="title d-title" id="d-title" hidden></span>
   <!-- tapi: the face, the title, its state and the chat | screen switch -->
   <div class="chat-ttl" id="c-ttl" hidden>
     <span class="face" id="c-face" aria-hidden="true"></span>
@@ -32,7 +41,7 @@
       <button type="button" id="c-v-screen" aria-pressed="false">Screen</button>
     </span>
   </div>
-  <span class="fresh" id="fresh"></span>
+  </div>
 </header>
 
 <!-- Now: what needs the person, tapi, the requests, pekoed's merges -->
@@ -42,7 +51,7 @@
     <div id="n-cards" aria-live="polite"></div>
     <div class="zeros" id="n-zeros" hidden></div>
   </section>
-  <section class="sect">
+  <section class="sect" id="n-tapi-sect">
     <h2 class="label">tapi</h2>
     <a class="convo" id="n-tapi" href="#/tapi"></a>
   </section>
@@ -53,6 +62,8 @@
   <section class="sect" id="n-merged" hidden>
     <h2 class="label">Merged by pekoed</h2>
     <a class="merged" id="n-merged-row" href="#/inbox"></a>
+    <!-- wide: one merge a row (the PR, the branch, how long ago) -->
+    <div class="merged-list" id="n-merged-list"></div>
   </section>
   <footer class="me-line" id="who"></footer>
 </main>
@@ -155,7 +166,9 @@
   </form>
 </main>
 
-<!-- the tab bar (56px, the home indicator's room under it) -->
+<!-- the tab bar (56px, the home indicator's room under it); on a wide
+     screen the rail on the left (76px, Now and Sessions: tapi's chat is
+     always in Sessions there) -->
 <nav class="tabbar" id="tabbar" aria-label="views">
   <a class="tabb" id="t-now" href="#/">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>

@@ -732,3 +732,10 @@ short = "nvim の :PekoeFixDiagnostics で LSP の診断を送る"
 detail = "バッファの診断を path:line: severity: message の一覧にしてエージェントに送る。! を付けるとワークスペース全体。送り先は :PekoeSessions で選べる。"
 keys = [":PekoeFixDiagnostics"]
 docs = ["nvim/README.md#コマンド"]
+
+[[tip]]
+id = "web-ipad"
+short = "iPad の横向きでは Web UI が 2 画面になる"
+detail = "幅が 700px 以上だと、左端のレール(Now / Sessions)と、Now の 3 列のダッシュボード、Sessions の一覧の横の tapi chat に並び替わる。同じ URL のまま、縦にすれば iPhone の配置に戻る。"
+keys = ["pekoe web"]
+docs = ["docs/web.md"]

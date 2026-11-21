@@ -31,6 +31,20 @@ const drafts = new Map(); // slug → unsent text, so one session's words never 
 const attachments = new Map(); // slug → images for the next send (same rule): [{data (base64), thumb (data URL), w, h, bytes, type}]
 let preparing = false; // images being read and re-encoded
 
+// ---- the wide layout (an iPad on its side; app.css 「the wide layout」) ----
+// From --wide-min (app.css :root) on, the page puts a rail on the left and
+// shows Sessions as two columns: the list, and beside it the chat (tapi to
+// start, or the session chosen). The same page and parts; only the width
+// decides, never the user agent (an iPad's Safari says it is a Mac).
+function wideMin() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--wide-min"));
+  return v > 0 ? v : 700;
+}
+const wideQuery = window.matchMedia ? matchMedia("(min-width: " + wideMin() + "px)") : null;
+let wide = !!wideQuery && wideQuery.matches;
+let split = false; // wide and Sessions: the list and the detail view side by side
+document.body.classList.toggle("wide", wide);
+
 // ---- list ----
 
 // waitBody: what the agent is asking, and the buttons (allow/deny only for
@@ -153,11 +167,47 @@ function renderChips(c) {
     a.href = k === "all" ? "#/sessions" : "#/sessions/" + k;
     a.append(el("span", "cn", String(c[k])));
     if (filter === k) a.setAttribute("aria-current", "true");
+    // wide: a chip narrows the list only; the chat beside it stays on what
+    // was chosen (a session the filter hides included)
+    a.addEventListener("click", (e) => {
+      if (!split) return;
+      e.preventDefault();
+      filter = k;
+      if (/^#\/sessions(\/|$)/.test(location.hash)) history.replaceState(null, "", a.getAttribute("href"));
+      backTo = a.getAttribute("href");
+      renderList();
+    });
     box.append(a);
   }
 }
 
+// tapiRow: tapi at the head of the wide list (a messenger's conversation:
+// the face, the name, the last words on one line, its state and time)
+function renderTapiRow() {
+  let row = $("l-tapi");
+  if (!split) {
+    if (row) row.remove();
+    return;
+  }
+  if (!row) {
+    row = el("a", "tapi-row");
+    row.id = "l-tapi";
+    row.href = "#/tapi";
+    $("list").prepend(row);
+  }
+  row.classList.toggle("sel", current === TAPI);
+  const [role, icon, word] = tapiWord();
+  const top = el("span", "ct");
+  top.append(el("span", "cn", "tapi"), colored(role, icon + " " + word, "cs"), el("span", "age", tapi && tapi.started ? hm(tapi.state_since) : ""));
+  const mid = el("span", "cm");
+  let last = (tapi && tapi.last_message) || "";
+  if (tapi && tapi.answerable) last = "⚠ waits for a permission: answer it at the terminal";
+  mid.append(top, el("span", "cl", last || "no messages yet"));
+  row.replaceChildren(faceEl(tapiEyes()), mid);
+}
+
 function renderList() {
+  renderTapiRow();
   if (touching) return; // redrawn on release
   const rows = $("l-rows");
   rows.replaceChildren();
@@ -182,9 +232,12 @@ function renderList() {
         const body = el("div", "body");
         waitBody(s, body);
         card.append(sessionRow(s), body);
+        if (split && s.slug === current) card.classList.add("sel");
         sec.append(card);
       } else {
-        sec.append(sessionRow(s));
+        const r = sessionRow(s);
+        if (split && s.slug === current) r.classList.add("sel");
+        sec.append(r);
       }
     }
     if (shown.length < list.length) {
@@ -215,7 +268,7 @@ function renderSummary() {
 function renderFresh() {
   const f = $("fresh");
   f.replaceChildren();
-  if (view === "detail" && current === TAPI) return; // tapi's state line says it
+  if (view === "detail" && current === TAPI && !split) return; // tapi's state line says it
   if (!lastRead) {
     f.append(colored("dim", "○"), txt(" connecting"));
     return;
@@ -306,8 +359,14 @@ function renderNeeds(n) {
     [c.waiting, "waiting"],
     [c.review, "to review"],
   ].filter(([k]) => !k).map(([, w]) => "0 " + w);
-  $("n-zeros").textContent = zeros.join(" · ");
-  $("n-zeros").hidden = !zeros.length;
+  // one line on a phone (" · " between); tiles on a wide screen (app.css)
+  const zb = $("n-zeros");
+  zb.replaceChildren();
+  zeros.forEach((w, i) => {
+    if (i) zb.append(el("span", "zs", " · "));
+    zb.append(el("span", "z", w));
+  });
+  zb.hidden = !zeros.length;
 }
 
 // faceEl: tapi's face (▐ eyes ▌ in the mascot's colors, theme.css)
@@ -404,6 +463,16 @@ function renderMerged(n) {
   $("n-merged").hidden = !ms.length;
   const row = $("n-merged-row");
   row.replaceChildren(colored("secondary", "↣", "si"), el("span", "nt", ms.map((m) => "#" + m.pr).join(" · ")), el("span", "chev", "›"));
+  // wide: one a row (app.css shows this one or the line above)
+  const list = $("n-merged-list");
+  list.replaceChildren();
+  for (const m of ms) {
+    const a = el("a", "mrow");
+    a.href = "#/inbox";
+    a.addEventListener("click", () => (inboxScrollTo = m.item));
+    a.append(colored("secondary", "↣", "si"), el("span", "pr", "#" + m.pr), el("span", "br", m.about || ""), el("span", "age", ago(m.at)));
+    list.append(a);
+  }
 }
 
 let nowSig = "";
@@ -440,8 +509,10 @@ async function refresh() {
     renderSummary();
     renderTabFace();
     renderFresh();
-    if (view === "detail") renderDetailHead();
-    else if (view === "now") await refreshNow();
+    if (view === "detail") {
+      renderDetailHead();
+      if (split && !busy) renderList();
+    } else if (view === "now") await refreshNow();
     else if (view === "list" && !busy) renderList();
     else if (view === "inbox") await refreshInbox();
     else if (view === "overview") await refreshOverview();
@@ -1453,30 +1524,38 @@ function route() {
   const isTapi = location.hash === "#/tapi";
   const sm = location.hash.match(/^#\/sessions(?:\/(review|active|landed))?$/);
   current = isTapi ? TAPI : m ? decodeURIComponent(m[1]) : null;
+  // wide: Sessions, a session and tapi are one screen, the list beside the
+  // detail view; the list alone shows tapi beside it
+  split = wide && (!!current || !!sm);
+  if (split && !current) current = TAPI;
   view = current ? "detail" : SUBS[location.hash] ? SUBS[location.hash][0] : sm ? "list" : "now";
   if (sm) filter = sm[1] || "all";
   inboxTyping = false; // a hidden note box may never get its blur
   if (!current) backTo = location.hash || "#/";
+  else if (split) backTo = filter === "all" ? "#/sessions" : "#/sessions/" + filter; // if it narrows
   ta.value = (current && drafts.get(current)) || "";
   renderThumbs(); // the images attached for this target (kept per target, like the drafts)
-  for (const v of ["now", "list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
+  for (const v of ["now", "list", "inbox", "overview", "detail"]) $(v).hidden = view !== v && !(split && v === "list");
   if (view !== "detail") document.body.classList.remove("chat-on");
   document.body.classList.toggle("pinned", view === "detail");
-  document.body.classList.toggle("tapi-on", isTapi);
+  document.body.classList.toggle("split", split);
+  document.body.classList.toggle("tapi-on", current === TAPI);
   fitViewport();
   fitComposer();
   // the tab: Now (and what is reached from it), Sessions (and a session), tapi
-  const tab = isTapi ? "tapi" : view === "list" || (view === "detail" && backTo.startsWith("#/sessions")) ? "list" : "now";
+  const tab = split ? "list" : isTapi ? "tapi" : view === "list" || (view === "detail" && backTo.startsWith("#/sessions")) ? "list" : "now";
   for (const t of ["now", "list", "tapi"]) {
     const a = $("t-" + t);
     if (tab === t) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
-  const sub = view === "inbox" || view === "overview" || (view === "detail" && !isTapi);
+  const sub = view === "inbox" || view === "overview" || (view === "detail" && !isTapi && !split);
   $("back").hidden = !sub;
-  $("title").hidden = isTapi;
-  $("c-ttl").hidden = !isTapi;
-  $("title").textContent = view === "now" ? "pekoe" : view === "list" ? "Sessions" : SUBS[location.hash] ? SUBS[location.hash][1] : current || "";
+  $("title").hidden = isTapi && !split;
+  $("c-ttl").hidden = current !== TAPI;
+  $("d-title").hidden = !split || current === TAPI;
+  $("d-title").textContent = split && current !== TAPI ? current : "";
+  $("title").textContent = view === "now" ? "pekoe" : view === "list" || split ? "Sessions" : SUBS[location.hash] ? SUBS[location.hash][1] : current || "";
   renderFresh();
   if (view === "detail") {
     $("d-screen").textContent = "";
@@ -1492,6 +1571,8 @@ function route() {
       refreshChat().then(() => current === TAPI && toBottom());
     }
     refreshScreen();
+    if (split) renderList();
+    else renderTapiRow(); // out of the list
   } else if (view === "now") {
     nowSig = "";
     renderNow();
@@ -1534,6 +1615,16 @@ document.addEventListener("visibilitychange", () => {
   schedule();
 });
 window.addEventListener("hashchange", route);
+// across --wide-min (turned on its side, Split View): lay the page out again
+if (wideQuery) {
+  const onWide = () => {
+    wide = wideQuery.matches;
+    document.body.classList.toggle("wide", wide);
+    route();
+  };
+  if (wideQuery.addEventListener) wideQuery.addEventListener("change", onWide);
+  else if (wideQuery.addListener) wideQuery.addListener(onWide);
+}
 $("back").addEventListener("click", () => {
   // a sub screen goes back to its tab; a session to where it was opened from
   if (view === "detail") go(null);
@@ -1611,7 +1702,7 @@ const list = $("list");
 const release = () => {
   if (!touching) return;
   touching = false;
-  if (view === "list" && !busy) renderList();
+  if ((view === "list" || split) && !busy) renderList();
 };
 list.addEventListener("pointerdown", () => (touching = true));
 // released a bit later: the click that follows pointerup must still land on
