@@ -52,11 +52,16 @@ import (
 const (
 	guiOpenTTL     = 60 * time.Second // a one-time token's life
 	guiUsedKeep    = 10 * time.Minute // a used one-time token is remembered this long (to see a second use)
-	guiMaxSessions = 32               // session tokens kept at once; the oldest made goes
+	guiMaxSessions = 32               // session tokens kept at once; the one seen least recently goes
 	guiMaxOpens    = 16               // one-time tokens not yet used
 	guiTokenBytes  = 32
 	viaGUI         = "gui"
 )
+
+// guiSessionMaxAge: a session token lapses this long after it was made (or
+// after session_ttl, if longer), however much it is used: a token taken
+// out of a tab cannot be kept alive for ever.
+const guiSessionMaxAge = 24 * time.Hour
 
 // guiPeer is who the handlers see behind the local GUI: the person at this
 // Mac, recorded as "gui".
@@ -71,9 +76,15 @@ type guiOpen struct {
 }
 
 type guiSession struct {
-	token    string
-	created  time.Time
+	token   string
+	created time.Time
+	// lastUsed: a person's last action (the sign-in, a POST: allow, send,
+	// keys…). session_ttl counts from it. An open tab's polling (GETs every
+	// few seconds) does not move it, or a tab left open would never lapse
 	lastUsed time.Time
+	// lastSeen: the last request of any kind. Which token to drop at
+	// guiMaxSessions: the tab in use stays
+	lastSeen time.Time
 }
 
 // guiState is the local GUI's listener and tokens, in memory only: a
@@ -225,8 +236,7 @@ func writeGUIRedirect(file string, port int, token string) error {
 	return f.Close()
 }
 
-// pruneLocked drops lapsed one-time tokens (and their pages) and session
-// tokens unused for longer than [gui] session_ttl.
+// pruneLocked drops lapsed one-time tokens (and their pages).
 func (g *guiState) pruneLocked() {
 	now := g.clock()
 	keep := g.opens[:0]
@@ -309,17 +319,29 @@ func (d *Daemon) guiExchange(token string) (string, int, error) {
 	}
 	g.pruneSessionsLocked(now, d.cfg().GUI.TTL())
 	if len(g.sessions) >= guiMaxSessions {
-		g.sessions = g.sessions[1:] // the least recently made
+		// the one seen least recently: not the oldest made, which may be
+		// the tab in use
+		old := 0
+		for i, s := range g.sessions {
+			if s.lastSeen.Before(g.sessions[old].lastSeen) {
+				old = i
+			}
+		}
+		g.sessions = append(g.sessions[:old], g.sessions[old+1:]...)
 	}
-	g.sessions = append(g.sessions, &guiSession{token: tok, created: now, lastUsed: now})
+	g.sessions = append(g.sessions, &guiSession{token: tok, created: now, lastUsed: now, lastSeen: now})
 	log.Printf("gui: a browser signed in (%d session token(s))", len(g.sessions))
 	return tok, http.StatusOK, nil
 }
 
+// pruneSessionsLocked drops session tokens with no action of a person for
+// longer than [gui] session_ttl, and those made longer ago than
+// guiSessionMaxAge (or session_ttl, if longer).
 func (g *guiState) pruneSessionsLocked(now time.Time, ttl time.Duration) {
+	maxAge := max(ttl, guiSessionMaxAge)
 	keep := g.sessions[:0]
 	for _, s := range g.sessions {
-		if now.Sub(s.lastUsed) <= ttl {
+		if now.Sub(s.lastUsed) <= ttl && now.Sub(s.created) <= maxAge {
 			keep = append(keep, s)
 		}
 	}
@@ -327,9 +349,10 @@ func (g *guiState) pruneSessionsLocked(now time.Time, ttl time.Duration) {
 	g.sessions = keep
 }
 
-// guiCheckBearer reports whether token is a live session token (and marks
-// it used). Every token is compared, in constant time.
-func (d *Daemon) guiCheckBearer(token string) bool {
+// guiCheckBearer reports whether token is a live session token and marks
+// it seen; act (a POST: a person did something) also marks it used, which
+// is what keeps it from lapsing. Every token is compared, in constant time.
+func (d *Daemon) guiCheckBearer(token string, act bool) bool {
 	if token == "" {
 		return false
 	}
@@ -347,7 +370,10 @@ func (d *Daemon) guiCheckBearer(token string) bool {
 	if hit == nil {
 		return false
 	}
-	hit.lastUsed = now
+	hit.lastSeen = now
+	if act {
+		hit.lastUsed = now
+	}
 	return true
 }
 
@@ -526,7 +552,9 @@ func (d *Daemon) guiGuard(port int, next http.Handler) http.Handler {
 		// API request a session token
 		if api && !(r.Method == http.MethodPost && r.URL.Path == "/api/gui/session") {
 			auth, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok || !d.guiCheckBearer(auth) {
+			// only a write counts as the person's: the page's polling is
+			// all GETs
+			if !ok || !d.guiCheckBearer(auth, r.Method == http.MethodPost) {
 				deny(w, r, http.StatusUnauthorized, "no valid session token")
 				return
 			}

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stubOpen replaces openGUIPage and records what it was asked to open.
@@ -85,5 +86,24 @@ func TestGUIFlags(t *testing.T) {
 		if c := fd.calls(); len(c) > 0 {
 			t.Fatalf("%v: called %v", bad, c)
 		}
+	}
+}
+
+// [gui] enable = false while the GUI listens: the open tabs still work
+// (only the next gui.open is refused), so --status says it listens, how
+// many are signed in, and how to stop it; off and not listening is "off".
+func TestGUIStatusDisabledButListening(t *testing.T) {
+	now := time.Now()
+	var b strings.Builder
+	printGUIStatus(&b, guiStatus{Enabled: false, Listening: true, Port: 51234, Sessions: 1, LastUsed: &now})
+	for _, want := range []string{"enable = false", "127.0.0.1:51234", "sessions   1", "last used", "pekoe gui --stop"} {
+		if !strings.Contains(b.String(), want) {
+			t.Fatalf("no %q in:\n%s", want, b.String())
+		}
+	}
+	b.Reset()
+	printGUIStatus(&b, guiStatus{Enabled: false})
+	if b.String() != "the local GUI is off ([gui] enable = false)\n" {
+		t.Fatalf("off: %q", b.String())
 	}
 }

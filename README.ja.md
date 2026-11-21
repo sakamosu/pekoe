@@ -81,7 +81,7 @@ flowchart LR
 | [docs/design.md](docs/design.md) | 設計書(状態モデル・worktree フロー・ターミナル層・レビュー・CLI とキー) |
 | [docs/api.md](docs/api.md) | pekoed の API(unix socket・HTTP・HTTPS・MCP) |
 | [docs/web.md](docs/web.md) | iPhone 用 Web UI の構成・設定・脅威モデル |
-| [docs/gui.md](docs/gui.md) | Mac 自身のブラウザで使うローカル GUI(`pekoe gui`)の認証・脅威モデル・段階(段階 0 は実装済み) |
+| [docs/gui.md](docs/gui.md) | Mac 自身のブラウザで使うローカル GUI(`pekoe gui`)の認証・脅威モデル・段階(段階 0・1 は実装済み、段階 2 は一部) |
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
@@ -445,9 +445,9 @@ Web UI と Chrome 拡張は、ソケットを通らない人間用の入口な�
 
 ### この Mac のブラウザから(ローカル GUI)
 
-`pekoe gui` は、Web UI と同じ画面と API を、この Mac 自身のブラウザに `127.0.0.1` でだけ配ります(どのビルドでも使えます。打つまでは何も待ち受けず、`[gui] enable = false` で使えなくなります)。画面は今はスマホ向けのままで、デスクトップ向けの画面は後の段階です(設計: [docs/gui.md](docs/gui.md))。Web UI との違いは、tapi への send に `allow_devices` も確認シートも要らないこと(TUI と同じ)です。`always` はまだ出しません。
+`pekoe gui` は、Web UI と同じ API とデスクトップ向けの画面を、この Mac 自身のブラウザに `127.0.0.1` でだけ配ります(どのビルドでも使えます。打つまでは何も待ち受けません)。`[gui] enable = false` は次の `pekoe gui` を断ります。開いているタブは `pekoe gui --stop` まで使えます(`pekoe gui --status` に出ます)(設計: [docs/gui.md](docs/gui.md))。Web UI との違いは、tapi への send に `allow_devices` も確認シートも要らないこと(TUI と同じ)と、許可待ちに `always` で答えられること(TUI の `A` と同じ)です。
 
-サインイン: pekoed が一度きりのトークン(1 回・60 秒)を `~/.local/share/pekoe/gui/` のページ(0600。エージェントと hooks の sandbox からは読めません)に書き、CLI はそのファイルを開きます。トークンはコマンドラインに載りません。ページはそれをセッションのトークンに替え、タブの `sessionStorage` に置いて `Authorization: Bearer` で送ります(Cookie は使いません。`127.0.0.1` の Cookie は別のポートのエージェントの dev server にも届くため)。新しいタブや pekoed の再起動のあとは、もう一度 `pekoe gui` を打ちます。ポートは既定で毎回空いているものです(`[gui] port`)。決まったポートを bind できないときは、`pekoe gui` はブラウザを開きません。
+サインイン: pekoed が一度きりのトークン(1 回・60 秒)を `~/.local/share/pekoe/gui/` のページ(0600。エージェントと hooks の sandbox からは読めません)に書き、CLI はそのファイルを開きます。トークンはコマンドラインに載りません。ページはそれをセッションのトークンに替え、タブの `sessionStorage` に置いて `Authorization: Bearer` で送ります(Cookie は使いません。`127.0.0.1` の Cookie は別のポートのエージェントの dev server にも届くため)。新しいタブや pekoed の再起動のあと、`session_ttl` の間あなたが操作しなかったとき(allow・send など。画面の更新は数えません)、サインインから 24 時間(`session_ttl` のほうが長ければその時間)たったときは、もう一度 `pekoe gui` を打ちます。ポートは既定で毎回空いているものです(`[gui] port`)。決まったポートを bind できないときは、`pekoe gui` はブラウザを開きません。
 
 **エージェントに操作させないブラウザ(プロファイル)で開いてください。** そのタブを操作できるもの(Claude in Chrome・Playwright・Chrome DevTools)は、あなたとして許可待ちに答えられます。
 
@@ -510,7 +510,7 @@ confirm_tapi_send = true            # tapi への send の前に確認シート�
 [gui]                       # 127.0.0.1 のローカル GUI(pekoe gui、docs/gui.md)
 enable      = true          # false で pekoe gui を断る。true でも最初の pekoe gui までは待ち受けない
 port        = 0             # 0 で待ち受けを始めるたびに空いているもの。始めるときに読む(pekoe gui --stop の後の pekoe gui)
-session_ttl = "12h"         # ブラウザのサインインは、使わないままこの時間で切れる
+session_ttl = "12h"         # ブラウザのサインインは、操作しないままこの時間で切れる(画面の更新は数えない)
 browser     = ""            # 開く macOS のアプリ(open -a)。例 "Safari"。空なら既定のブラウザ
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto

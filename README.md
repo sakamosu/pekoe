@@ -83,7 +83,7 @@ Design docs are in Japanese.
 | [docs/design.md](docs/design.md) | Design (state model, worktree flow, terminal layer, review, CLI and keys) |
 | [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
-| [docs/gui.md](docs/gui.md) | The local GUI in the Mac's own browser (`pekoe gui`): authentication, threat model, stages (stage 0 built) |
+| [docs/gui.md](docs/gui.md) | The local GUI in the Mac's own browser (`pekoe gui`): authentication, threat model, stages (stages 0 and 1 built, stage 2 in part) |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
@@ -448,9 +448,9 @@ The certificate's hostname appears in Certificate Transparency logs. Design and 
 
 ### From this Mac's browser (local GUI)
 
-`pekoe gui` serves the same pages and API as the Web UI to this Mac's own browser, on `127.0.0.1` only (any build; nothing listens until you run it, `[gui] enable = false` turns it off). The screens are still the phone's for now; a desktop layout comes later (design: [docs/gui.md](docs/gui.md)). Differences from the Web UI: a send to tapi needs no `allow_devices` and no confirmation sheet (as in the TUI); `always` is still not offered.
+`pekoe gui` serves the Web UI's API, with a desktop page of its own, to this Mac's own browser, on `127.0.0.1` only (any build; nothing listens until you run it). `[gui] enable = false` refuses the next `pekoe gui`; tabs already open keep working until `pekoe gui --stop` (`pekoe gui --status` shows them) (design: [docs/gui.md](docs/gui.md)). Differences from the Web UI: a send to tapi needs no `allow_devices` and no confirmation sheet (as in the TUI), and permission prompts can be answered `always` (as `A` in the TUI).
 
-Signing in: pekoed writes a one-time token (valid once, for 60 s) into a page under `~/.local/share/pekoe/gui/` (0600, unreadable from the agents' and hooks' sandboxes) and the CLI opens that file, so the token is never on a command line. The page trades it for a session token kept in the tab's `sessionStorage` and sent as `Authorization: Bearer` (no cookie: a cookie for `127.0.0.1` would also reach an agent's dev server on another port). A new tab, or pekoed restarting, means `pekoe gui` again. The port is a free one each time by default (`[gui] port`); if a fixed port can't be bound, `pekoe gui` refuses to open the browser.
+Signing in: pekoed writes a one-time token (valid once, for 60 s) into a page under `~/.local/share/pekoe/gui/` (0600, unreadable from the agents' and hooks' sandboxes) and the CLI opens that file, so the token is never on a command line. The page trades it for a session token kept in the tab's `sessionStorage` and sent as `Authorization: Bearer` (no cookie: a cookie for `127.0.0.1` would also reach an agent's dev server on another port). A new tab, or pekoed restarting, means `pekoe gui` again, as does `session_ttl` with no action of yours (allow, send…; the screen refreshing doesn't count) or 24 hours after signing in (`session_ttl` if longer). The port is a free one each time by default (`[gui] port`); if a fixed port can't be bound, `pekoe gui` refuses to open the browser.
 
 **Open it in a browser or profile no agent drives.** Whatever can drive that tab (Claude in Chrome, Playwright, Chrome DevTools) can answer permission prompts as you.
 
@@ -513,7 +513,7 @@ confirm_tapi_send = true            # confirmation sheet before a send to tapi; 
 [gui]                       # local GUI on 127.0.0.1 (pekoe gui, docs/gui.md)
 enable      = true          # false refuses pekoe gui; nothing listens before the first pekoe gui either way
 port        = 0             # 0: a free port each time it starts listening; read when it starts (pekoe gui --stop, then pekoe gui)
-session_ttl = "12h"         # a browser's sign-in lapses after this long unused
+session_ttl = "12h"         # a browser's sign-in lapses after this long with no action (the screen refreshing doesn't count)
 browser     = ""            # macOS app to open it with (open -a), e.g. "Safari"; empty: the default browser
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto

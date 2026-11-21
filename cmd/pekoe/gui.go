@@ -136,13 +136,17 @@ func cmdGUI(args []string) error {
 }
 
 func printGUIStatus(w io.Writer, st guiStatus) {
-	if !st.Enabled {
+	switch {
+	case !st.Enabled && !st.Listening:
 		fmt.Fprintln(w, "the local GUI is off ([gui] enable = false)")
 		return
-	}
-	if !st.Listening {
+	case !st.Listening:
 		fmt.Fprintln(w, "not listening (pekoe gui starts it)")
 		return
+	case !st.Enabled:
+		// enable = false refuses the next gui.open only: the tabs open
+		// now keep working until --stop (docs/gui.md)
+		fmt.Fprintln(w, "[gui] enable = false: no new sign-in links, but the open tabs still work (pekoe gui --stop stops it)")
 	}
 	fmt.Fprintf(w, "listening  127.0.0.1:%d\nsessions   %d\n", st.Port, st.Sessions)
 	if st.LastUsed != nil {

@@ -353,7 +353,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`pekoe ext`)。`port` は実際に待ち受けている番号。待ち受けていない(bind に失敗した)ときは理由を添えて断る |
 | `gui.open` | — | `{port, file, expires, browser?}`(`pekoe gui`)。ローカル GUI を `127.0.0.1` で待ち受けていなければ始め(`[gui] port`、`0` は空いているもの)、一度きりのトークン(32 バイト・60 秒・1 回)を作って、`http://127.0.0.1:<port>/#t=<トークン>` へ移るだけの HTML を `<データディレクトリ>/gui/open-<乱数>.html`(0600、ディレクトリは 0700)に書く。答えにトークンは入れない(CLI はファイルのパスだけを `open` / `xdg-open` に渡す)。bind に失敗したらファイルを書かずに断る(そのポートにいるものが偽の GUI かもしれないので、CLI はブラウザを開かない)。`[gui] enable = false` でも断る。下の「HTTP(ローカル GUI)」・[gui.md](gui.md) |
-| `gui.status` | — | `{enabled, listening, port?, sessions, last_used?}`(`pekoe gui --status`)。`sessions` は有効なセッションのトークンの数 |
+| `gui.status` | — | `{enabled, listening, port?, sessions, last_used?}`(`pekoe gui --status`)。`sessions` は有効なセッションのトークンの数、`last_used` は人が最後に操作(サインインか POST)した時刻 |
 | `gui.revoke` | — | `{revoked}`(`pekoe gui --revoke`)。セッションのトークンと、まだ使われていない一度きりのトークン(とその HTML)を全部失効させる |
 | `gui.stop` | — | `{stopped, revoked}`(`pekoe gui --stop`)。待ち受けを止め、トークンも全部失効させる |
 | `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?, backend?, backend_error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL。`backend` は Tailscale の backend の状態(`NoState` `Starting` `Running` など)、`backend_error` は backend が control から受け取った最後のエラー(Running になると消える)。`starting` のまま進まない理由を見るため |
@@ -916,7 +916,7 @@ POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF
 - `Host` が `127.0.0.1:<port>` と完全一致でなければ 421(`localhost:<port>` も断る。DNS rebinding)
 - `Origin` があれば `http://127.0.0.1:<port>` と完全一致でなければ 403。`/api/*` は `Sec-Fetch-Site` があれば `same-origin` でなければ 403
 - GET・HEAD・POST 以外(`OPTIONS` を含む)は 403。`Access-Control-Allow-*` は返さない
-- `/api/*` は(`POST /api/gui/session` を除き)`Authorization: Bearer <セッションのトークン>` が要る(定数時間で比べる)。無い・違う・失効した(`[gui] session_ttl`、最後に使ってから。既定 12h)ものは 401。静的ファイル(`/`(デスクトップ向けの `gui/index.html`)・`gui/`・`lib/`・`app.css`・`theme.css`・アイコン)はトークンなしで返す
+- `/api/*` は(`POST /api/gui/session` を除き)`Authorization: Bearer <セッションのトークン>` が要る(定数時間で比べる)。無い・違う・失効した(`[gui] session_ttl`、人が最後に操作(サインインかそのトークンでの POST)してから。既定 12h。GET(画面の更新)では延びない。使われ続けても作ってから 24 時間(`session_ttl` のほうが長ければそれ)で失効する)ものは 401。静的ファイル(`/`(デスクトップ向けの `gui/index.html`)・`gui/`・`lib/`・`app.css`・`theme.css`・アイコン)はトークンなしで返す
 - POST は `Content-Type: application/json` が要る(415)。`/api/` の外への POST は 403
 - 応答には Web UI と同じ CSP・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy: no-referrer`、`/api/*` には `Cache-Control: no-store`
 
