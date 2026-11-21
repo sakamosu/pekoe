@@ -14,7 +14,9 @@ const CMDS_EVERY = 30000, FILES_WAIT = 120;
 // picker: ta the send box, box the list's element; slug() the session
 // the box sends to ("" when it is no session: no list).
 export function picker({ ta, box, slug }) {
-  const p = { tok: null, list: [], sel: 0, note: "", dismissed: "", seq: 0 };
+  // stale: p.list is an older word's (the new one's is being read): ↵ and
+  // Tab pick nothing until it comes
+  const p = { tok: null, list: [], sel: 0, note: "", dismissed: "", seq: 0, stale: false };
   const cmds = new Map(); // slug -> {at, supported, list}
   let wait = 0;
 
@@ -25,6 +27,7 @@ export function picker({ ta, box, slug }) {
     p.seq++;
     p.tok = null;
     p.list = [];
+    p.stale = false;
     box.hidden = true;
     box.replaceChildren();
     ta.removeAttribute("aria-activedescendant");
@@ -57,7 +60,8 @@ export function picker({ ta, box, slug }) {
       row.addEventListener("click", () => choose(i));
       box.append(row);
     });
-    if (!p.list.length) box.append(el("div", "pk-empty", p.note || (kind === "cmd" ? "No command matches" : "No file matches")));
+    if (p.stale) box.append(el("div", "pk-note", "Loading…"));
+    else if (!p.list.length) box.append(el("div", "pk-empty", p.note || (kind === "cmd" ? "No command matches" : "No file matches")));
     else if (p.note) box.append(el("div", "pk-note", p.note));
     box.hidden = false;
     ta.setAttribute("aria-expanded", "true");
@@ -92,6 +96,10 @@ export function picker({ ta, box, slug }) {
     p.tok = tok;
     if (same && isOpen()) return;
     const seq = ++p.seq;
+    if (isOpen()) {
+      p.stale = true;
+      draw();
+    }
     if (tok.kind === "cmd") {
       try {
         const c = await commandsOf(s);
@@ -103,6 +111,7 @@ export function picker({ ta, box, slug }) {
         p.list = [];
         p.note = "Commands unavailable: " + e.message;
       }
+      p.stale = false;
       p.sel = 0;
       draw();
       return;
@@ -122,6 +131,7 @@ export function picker({ ta, box, slug }) {
         p.list = [];
         p.note = "Files unavailable: " + e.message;
       }
+      p.stale = false;
       p.sel = 0;
       draw();
     }, FILES_WAIT);
@@ -129,7 +139,7 @@ export function picker({ ta, box, slug }) {
 
   function choose(i) {
     const it = p.list[i];
-    if (!it || !p.tok) return;
+    if (!it || !p.tok || p.stale) return;
     const value = p.tok.kind === "cmd" ? commandText(it.name) : mention(it);
     const out = insertPick(ta.value, p.tok, value);
     close();
@@ -152,6 +162,8 @@ export function picker({ ta, box, slug }) {
     }
     if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.shiftKey) || (e.key === "Tab" && !e.shiftKey)) {
       if (!p.list.length) return false;
+      // while the new word's list is read: taken, nothing put in (the
+      // older list's first row is not what was typed)
       e.preventDefault();
       choose(p.sel);
       return true;
@@ -167,7 +179,8 @@ export function picker({ ta, box, slug }) {
   }
 
   // start: the buttons. "/" goes at the start of the text (Claude Code
-  // reads a command only there), "@" at the caret, after a blank.
+  // reads a command only there), "@" at the caret, after a blank and
+  // before one (a word right after it stays the person's: tokenAt).
   function start(kind) {
     if (!slug()) return;
     const v = ta.value;
@@ -183,7 +196,8 @@ export function picker({ ta, box, slug }) {
     } else {
       const at = ta.selectionStart == null ? v.length : ta.selectionStart;
       const pre = at > 0 && !/\s/.test(v[at - 1]) ? " " : "";
-      ta.value = v.slice(0, at) + pre + "@" + v.slice(at);
+      const post = at < v.length && !/\s/.test(v[at]) ? " " : "";
+      ta.value = v.slice(0, at) + pre + "@" + post + v.slice(at);
       ta.focus();
       const c = at + pre.length + 1;
       ta.setSelectionRange(c, c);

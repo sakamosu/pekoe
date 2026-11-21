@@ -22,8 +22,11 @@ export const insertable = (s) => typeof s === "string" && s !== "" && !CONTROLS.
 //   - cmd: a "/" at the start of the text (after blanks): Claude Code
 //     reads a slash command only there
 //   - file: an "@" at the start or after a blank, up to the caret
-// start..end is what a pick replaces (the rest of the word after the
-// caret too); q is what was typed after the sign, up to the caret.
+// start..end is what a pick replaces; q is what was typed after the sign,
+// up to the caret. The rest of the word after the caret is replaced too
+// when the caret is inside a "@path" already (q not empty), never when it
+// is right after the "@": a word that follows ("@|this bug") is the
+// person's text, not the path, and stays.
 export function tokenAt(text, caret) {
   text = String(text || "");
   caret = Math.max(0, Math.min(caret == null ? text.length : caret, text.length));
@@ -32,7 +35,7 @@ export function tokenAt(text, caret) {
   let m = before.match(/^(\s*)\/(\S*)$/);
   if (m) return { kind: "cmd", q: m[2], start: m[1].length, end: caret + tail };
   m = before.match(/(^|\s)@("?)([^\s"]*)$/);
-  if (m) return { kind: "file", q: m[3], start: before.length - m[2].length - m[3].length - 1, end: caret + tail };
+  if (m) return { kind: "file", q: m[3], start: before.length - m[2].length - m[3].length - 1, end: caret + (m[3] ? tail : 0) };
   return null;
 }
 
