@@ -574,6 +574,9 @@ function branchRow(f, tree, first, open, shown) {
   const b = el("button", "pl-branch");
   b.type = "button";
   b.title = (f.branch || f.slug) + (f.repo ? " · " + f.repo : "") + (f.slug !== f.branch ? " · " + f.slug : "");
+  // "<repo> · <branch>": the repo dim and never cut (up to a cap), the
+  // branch cut at its end; one line, the badges after them
+  if (f.repo) b.append(el("span", "pl-repo", f.repo), el("span", "pl-sep", "·"));
   b.append(el("span", "pl-bname", f.branch || f.slug));
   for (const [text, now] of badges(f.later)) {
     const bd = el("span", "pl-badge" + (now ? " now" : ""));
