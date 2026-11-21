@@ -238,16 +238,18 @@ function fixed(x, prec) {
 export function mergeDays(st) {
   const by = new Map();
   for (const r of (st && st.rows) || []) by.set(r.day, (by.get(r.day) || 0) + (r.merged || 0));
+  // counted as UTC dates: the page's time zone never moves them (a day
+  // that starts with a DST jump at 0:00 has no local 0:00)
   const parse = (s) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
-    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+    return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) : null;
   };
   const from = parse(st && st.from), to = parse(st && st.to);
   const days = [];
   if (!from || !to) return days;
   const pad = (n) => String(n).padStart(2, "0");
-  for (const t = from; t <= to && days.length < 31; t.setDate(t.getDate() + 1)) {
-    const day = t.getFullYear() + "-" + pad(t.getMonth() + 1) + "-" + pad(t.getDate());
+  for (const t = from; t <= to && days.length < 31; t.setUTCDate(t.getUTCDate() + 1)) {
+    const day = t.getUTCFullYear() + "-" + pad(t.getUTCMonth() + 1) + "-" + pad(t.getUTCDate());
     days.push({ day, merged: by.get(day) || 0, today: day === st.to });
   }
   return days;

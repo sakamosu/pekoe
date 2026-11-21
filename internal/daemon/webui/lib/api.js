@@ -31,8 +31,21 @@ function guiSignedOut(text) {
   b.hidden = false;
 }
 
+// signing: the exchange guiSignIn runs, until it ends. api() waits for it:
+// a request sent meanwhile (a refresh when the tab comes to the front)
+// would go without the session token, get a 401 and sign the tab out,
+// though the exchange then succeeds (the one-time token is spent by then).
+let signing = null;
+
 // guiSignIn: the fragment's one-time token, if any, for a session token.
-export async function guiSignIn() {
+export function guiSignIn() {
+  signing = exchange();
+  const done = () => (signing = null);
+  signing.then(done, done);
+  return signing;
+}
+
+async function exchange() {
   const m = location.hash.match(/^#t=([0-9a-f]{64})$/);
   if (!m) return;
   // off the address bar and this history entry before anything else
@@ -56,6 +69,7 @@ export async function guiSignIn() {
 // api GETs path, or POSTs body as JSON when given. An error carries the
 // HTTP status (e.status) and pekoed's words.
 export async function api(path, body) {
+  if (signing) await signing.catch(() => {});
   if (guiOut) throw new Error("signed out: run pekoe gui again");
   const opt = { headers: {} };
   if (guiToken) opt.headers["Authorization"] = "Bearer " + guiToken;

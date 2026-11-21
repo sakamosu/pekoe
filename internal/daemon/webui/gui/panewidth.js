@@ -74,8 +74,12 @@ export function paneWidth({ pane, grip, o, store, room, changed = () => {} }) {
     grip.setAttribute("aria-valuemax", String(maxWidth(room(), o)));
     grip.setAttribute("aria-valuenow", String(shown));
   }
-  function set(w, keep) {
-    want = clampWidth(w, room(), o);
+  // set: the width w, clamped to the room now (a drag, the keys: what is
+  // shown is what the person chose); exact: w as it is, shown clamped
+  // (the double click: the default, kept as the default, so a narrow
+  // window does not keep the narrowed width in its place)
+  function set(w, keep, exact) {
+    want = exact ? w : clampWidth(w, room(), o);
     apply();
     changed();
     if (keep) saveWidth(store, o, want);
@@ -102,7 +106,7 @@ export function paneWidth({ pane, grip, o, store, room, changed = () => {} }) {
   };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
-  grip.addEventListener("dblclick", () => set(o.def, true));
+  grip.addEventListener("dblclick", () => set(o.def, true, true));
   grip.addEventListener("keydown", (e) => {
     // the arrows move the edge: → widens the sidebar, ← the tapi panel
     const step = (e.shiftKey ? STEP * 4 : STEP) * sign;
