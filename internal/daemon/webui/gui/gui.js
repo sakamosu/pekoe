@@ -1,7 +1,7 @@
 // pekoe's local GUI, the desktop page (docs/gui.md 段階 1; the look:
-// docs/gui-design.md). The title bar; the sessions on the left (tapi's
-// card, repositories with two or more sessions open, the rest folded under
-// OTHER REPOSITORIES); the tabs (Dashboard, tapi, the sessions opened);
+// docs/gui-design.md). The title bar; the sidebar on the left (the icon
+// rail and the view it chose, rail.js: Sessions, views/sessions.js, is
+// tapi's card and the sessions by repository); the tabs (Dashboard, tapi, the sessions opened);
 // the Dashboard (dash.js) with tapi's chat on the right; a session's view
 // (header, the read-only screen, the input pinned to the bottom, its facts
 // on the right); the status line.
@@ -13,7 +13,7 @@
 
 import { $, el, colored, txt, toast } from "../lib/dom.js";
 import { api, guiSignIn, TAPI, apiBase } from "../lib/api.js";
-import { ago, hm, look, cutNote, questionUp, requestId } from "../lib/fmt.js";
+import { ago, hm, cutNote, questionUp, requestId } from "../lib/fmt.js";
 import { termLines, screenRows } from "../lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "../lib/images.js";
 import { draftOf } from "../lib/inbox.js";
@@ -23,6 +23,8 @@ import { answerSheet, inboxSheet, showSendSheet } from "../lib/sheets.js";
 import { shellBang } from "./shell.js";
 import { guardPageDrops } from "./drop.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
+import { flows, readySet, stateBits, tapiState } from "./states.js";
+import { sideRail } from "./rail.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
@@ -37,7 +39,6 @@ let busy = false; // a sheet is open: the cards it was opened from stay as they 
 let sending = false, pressing = false, preparing = false;
 let listTimer = 0, screenTimer = 0, chatTimer = 0, tickTimer = 0;
 let listOk = 0, listFail = ""; // when the list last came, and why it did not
-let filter = "all", query = "";
 const openTabs = []; // the sessions opened in this tab, oldest first
 const drafts = new Map(); // slug → unsent text: one session's words never ride along to another
 const attachments = new Map(); // slug → images for its next send (same rule)
@@ -69,172 +70,28 @@ $("theme-btn").addEventListener("click", () => {
 });
 if (window.matchMedia) window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", paintThemeButton);
 
-// ---- the sessions on the left ----
+// ---- the sidebar: the rail's views (rail.js; Sessions is views/sessions.js) ----
+// The title bar's box goes to the view shown (its filter); ":" focuses it.
 
-const flows = () => (overview ? (overview.groups || []).flatMap((g) => (g.rows || []).map((f) => ({ f, g }))) : []);
-const readySet = () => new Set(flows().filter(({ f }) => f.merge && f.merge.ready && f.state !== "landed").map(({ f }) => f.slug));
-const needsYou = (s, ready) => s.state === "waiting" || ready.has(s.slug);
-
-function shown(s, ready) {
-  if (filter === "needs" && !needsYou(s, ready)) return false;
-  if (filter === "running" && s.state !== "running") return false;
-  if (!query) return true;
-  const q = query.toLowerCase();
-  return [s.slug, s.branch, s.repo].some((x) => String(x || "").toLowerCase().includes(q));
-}
-
-// stateBits: symbol (its color), word (text; secondary only for the
-// person's turn, "Ready to merge"). On the open row (raised) gui.css
-// turns every word to text (決まったこと 12).
-function stateBits(s, ready, withAge) {
-  const out = [];
-  if (ready.has(s.slug)) {
-    out.push(colored("secondary", "◉", "sym"), el("span", "word r-secondary", "Ready to merge"));
-  } else {
-    const lk = look(s);
-    let word = cap(lk.word);
-    if (s.state === "waiting") word += s.answerable && s.pending_tool ? " · " + s.pending_tool.name : s.wait_kind === "question" ? " · question" : "";
-    out.push(colored(lk.role, lk.icon, "sym"), el("span", "word" + (s.state === "waiting" ? " r-text" : ""), word));
-  }
-  if (withAge && s.state !== "idle") out.push(el("span", "word", " · " + ago(s.state_since)));
-  return out;
-}
-
-function sideRow(s, ready) {
-  const sel = s.slug === current;
-  const b = el("button", "srow" + (sel ? " sel" : "") + (s.state === "landed" ? " past" : ""));
-  b.type = "button";
-  const l1 = el("span", "sr-1");
-  l1.append(el("span", "sr-name", s.branch || s.slug), el("span", "sr-age", s.state === "idle" ? "" : ago(s.state_since)));
-  const l2 = el("span", "sr-2");
-  l2.append(...stateBits(s, ready, false));
-  if (s.pr) {
-    const pr = el("span", "sr-pr");
-    if (s.pr_look) pr.append(colored(s.pr_look.role, s.pr_look.icon, "sym"), txt(" "));
-    pr.append(txt("#" + s.pr));
-    l2.append(pr);
-  }
-  const d = diffBits(s.diffstat);
-  if (d) l2.append(d);
-  b.append(l1, l2);
-  b.addEventListener("click", () => go(s.slug));
-  if (sel) b.setAttribute("aria-current", "true");
-  return b;
-}
-
-// oneRow: a repository with one session, folded to one line
-function oneRow(s, ready) {
-  const sel = s.slug === current;
-  const b = el("button", "srow one" + (sel ? " sel" : "") + (s.state === "landed" ? " past" : ""));
-  b.type = "button";
-  b.append(el("span", "sr-repo", s.repo));
-  if (s.branch && s.branch !== s.repo) b.append(el("span", "sr-branch", s.branch));
-  const d = diffBits(s.diffstat);
-  if (d) b.append(d);
-  const st = el("span", "sr-st");
-  st.append(...stateBits(s, ready, true));
-  b.append(st);
-  b.addEventListener("click", () => go(s.slug));
-  if (sel) b.setAttribute("aria-current", "true");
-  return b;
-}
-
-function renderTapiCard() {
-  const c = $("s-tapi");
-  c.replaceChildren();
-  c.classList.toggle("sel", current === TAPI);
-  const l1 = el("span", "sr-1");
-  l1.append(el("span", "sr-name", "tapi"), el("span", "sr-role", "orchestrator"));
-  const st = el("span", "sr-st");
-  st.append(...tapiState());
-  l1.append(st);
-  c.append(l1);
-  if (tapi && tapi.last_message) c.append(el("span", "sr-last", tapi.last_message.split("\n")[0]));
-  if (current === TAPI) c.setAttribute("aria-current", "true");
-  else c.removeAttribute("aria-current");
-}
-
-// tapiState: tapi's symbol, word and age
-function tapiState() {
-  if (!tapi) return [colored("dim", "○", "sym"), el("span", "word", " Not readable")];
-  if (!tapi.started) return [colored("dim", "○", "sym"), el("span", "word", " Not started")];
-  if (!tapi.alive) return [colored("dim", "○", "sym"), el("span", "word", " Exited")];
-  const lk = tapi.look || { icon: "○", role: "dim", word: tapi.state };
-  return [colored(lk.role, lk.icon, "sym"), el("span", "word", " " + cap(lk.word) + (tapi.state === "idle" ? "" : " · " + ago(tapi.state_since)))];
-}
-
-function byRepo(list) {
-  const groups = new Map();
-  for (const s of list) {
-    if (!groups.has(s.repo)) groups.set(s.repo, []);
-    groups.get(s.repo).push(s);
-  }
-  return [...groups];
-}
+const side = sideRail({
+  buttons: [...document.querySelectorAll(".rail-btn")], side: $("side"), box: $("side-view"), input: $("q"),
+  store: tabStore, ctx: { go },
+});
 
 function renderSide() {
-  const ready = readySet();
-  const box = $("s-groups");
-  box.replaceChildren();
-  $("s-count").textContent = String(sessions.length);
-  $("f-all").textContent = String(sessions.length);
-  $("f-needs").textContent = String(sessions.filter((s) => needsYou(s, ready)).length);
-  $("f-running").textContent = String(sessions.filter((s) => s.state === "running").length);
-  for (const b of document.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.filter === filter));
-  renderTapiCard();
-  // /api/sessions comes waiting first; a repository is placed where its
-  // first session is, so one with a session waiting comes on top
-  const groups = byRepo(sessions.filter((s) => shown(s, ready)));
-  const singles = [];
-  for (const [repo, list] of groups) {
-    if (list.length < 2 && sessions.filter((s) => s.repo === repo).length < 2) {
-      singles.push(list[0]);
-      continue;
-    }
-    const g = el("div", "sgroup");
-    const h = el("div", "sgroup-head");
-    h.append(el("span", "sg-name", repo), el("span", "sg-n", String(list.length)));
-    g.append(h, ...list.map((s) => sideRow(s, ready)));
-    box.append(g);
-  }
-  if (singles.length) {
-    const g = el("div", "sgroup");
-    g.append(el("div", "label sgroup-label", groups.length > singles.length ? "OTHER REPOSITORIES" : "REPOSITORIES"), ...singles.map((s) => oneRow(s, ready)));
-    box.append(g);
-  }
-  if (!box.childNodes.length) box.append(el("div", "empty", sessions.length ? "Nothing matches" : "No sessions"));
+  side.update({ sessions, tapi, overview, current });
   const waiting = sessions.filter((s) => s.state === "waiting").length;
-  const done = sessions.filter((s) => s.state === "done").length;
-  const foot = $("s-foot");
-  foot.replaceChildren();
-  if (waiting) foot.append(colored("warn", "◉", "sym"), txt(" " + waiting + " waiting"));
-  if (done) {
-    if (waiting) foot.append(el("span", "gap"));
-    foot.append(colored("secondary", "✓", "sym"), txt(" " + done + " to review"));
-  }
-  foot.hidden = !foot.childNodes.length;
   document.title = waiting ? `(${waiting}) pekoe` : "pekoe";
 }
 
-for (const b of document.querySelectorAll(".chip")) {
-  b.addEventListener("click", () => {
-    filter = b.dataset.filter;
-    renderSide();
-  });
-}
-$("q").addEventListener("input", () => {
-  query = $("q").value.trim();
-  renderSide();
-});
+$("q").addEventListener("input", () => side.query($("q").value.trim()));
 $("q").addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     $("q").value = "";
-    query = "";
-    renderSide();
+    side.query("");
     $("q").blur();
   }
 });
-$("s-tapi").addEventListener("click", () => go(TAPI));
 
 // ---- the tabs: Dashboard, tapi, the sessions opened ----
 
@@ -473,7 +330,7 @@ function renderHead(s) {
   if (current === TAPI) {
     h.append(el("span", "s-name", "tapi"), el("span", "s-role", "the orchestrator · claude"));
     const st = el("span", "s-state");
-    st.append(...tapiState());
+    st.append(...tapiState(tapi));
     h.append(st);
     return;
   }
@@ -486,7 +343,7 @@ function renderHead(s) {
   }
   h.append(el("span", "s-name", s.branch || s.slug), el("span", "s-role", s.repo + " · " + s.agent));
   const st = el("span", "s-state");
-  st.append(...stateBits(s, readySet(), true));
+  st.append(...stateBits(s, readySet(overview), true));
   h.append(st);
 }
 
@@ -531,7 +388,7 @@ function renderInfo(s) {
   sec("CHANGES", row("diff", d || txt("none")), test ? row("test", ...test) : null,
     s.pr ? row("PR", ...(s.pr_look ? [colored(s.pr_look.role, s.pr_look.icon, "sym"), txt(" ")] : []), txt("#" + s.pr + (s.pr_look ? " " + s.pr_look.word : ""))) : null,
     s.state === "running" && s.last_tool ? row("now", colored("ok", "◉", "sym"), txt(" " + s.last_tool)) : null);
-  const fg = flows().find(({ f }) => f.slug === s.slug);
+  const fg = flows(overview).find(({ f }) => f.slug === s.slug);
   if (fg) {
     const linked = [row("from", txt(parentLabel(fg.g)))];
     if (fg.g.request) {
@@ -1028,7 +885,7 @@ let chatTailSig = "", spinTimer = 0;
 
 function renderChatHead() {
   const st = $("c-state");
-  st.replaceChildren(...tapiState());
+  st.replaceChildren(...tapiState(tapi));
   const ok = tapiUp() && tapi.sendable && !tapi.answerable;
   $("c-send-btn").disabled = !ok || sending;
   $("c-shell").disabled = !ok;
@@ -1371,7 +1228,7 @@ function schedule() {
 }
 
 // ---- keys: only while no text box has the focus (docs/gui-design.md) ----
-// ":" the filter; on a permission card y / A / n open the confirm sheet
+// ":" the title bar's box (the sidebar view's filter); on a permission card y / A / n open the confirm sheet
 // (never answer by themselves); on a question card 1–9 go to its menu.
 // n New session (unless n is a permission card's deny), T tapi's Reset, esc
 // Interrupt on a session that works: each opens its confirm sheet.

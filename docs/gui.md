@@ -86,6 +86,39 @@ docs/gui-design.md の決まったこと 6・7 で段階 2 以降に回した 2 
   - **ファイルの一覧**: `GET /api/sessions/{slug}/files?q=` = `session.files`。worktree の `git ls-files --cached --others --exclude-standard`(.gitignore を尊重。git は pekoed のいつもの守り(gitx)で動かす)。git はシンボリックリンクの先に降りないので worktree の外は出ず、pekoed はファイルの中身を読まない。50000 件まで読み、`q` で絞って 50 件まで返す(多ければ「N of M」)。同じ worktree の `git ls-files` は 5 秒に 1 回まで
   - **信頼しないもの**: 会話・コマンドの名前と説明・ファイル名はエージェントやリポジトリが書いたもの。どれも `textContent` で描き、長い名前は 1 行で `…` に切る(全体は `title`)。制御文字を含むファイル名は pekoed が一覧から外し(数だけ返す)、ページも制御文字(と U+2028 / U+2029)を含む名前は送信欄に入れない(送っても pekoed の send が断る)。コマンドの説明の制御文字は pekoed が空白にする。worktree の `.claude` の下はシンボリックリンクをたどらない(エージェントが worktree の外のファイルを説明として読ませないため)
 
+### 段階 2 の一部: サイドバーのビュー(レール)
+
+左端のアイコンレール(docs/gui-design.md の「GUI で変えるもの」7・「アイコン」)で、サイドバーに出すビューを Sessions / Worktrees / Changes / Settings(下端)から 1 つ選ぶ。**今は枠だけ**: Sessions は前のサイドバーをそのまま移したもので、ほかの 3 つは「Not built yet」とそのビューが出す予定のものだけを出す空のビュー(何も読まず、何もできない)。中身は後で 1 ビューずつ別に作る。
+
+- **選んだビューはそのタブの間だけ覚える**(`sessionStorage` の `pekoe-gui-side`。テーマ・Chat と Screen と同じ理由で `localStorage` は使わない)。既定の Sessions を選べば消す。URL のフラグメントは `#/`・`#/s/<slug>` のメインの行き先に使っているので、サイドバーのビューは入れない(リンクで開くのはメインの行き先だけ)。数字キーでの切り替えは無い(docs/gui-design.md の決まったこと 4)。クリック(と Tab で移ってのボタン)だけ
+- **タイトルバーの欄は、出しているビューのもの。** ビューが `search`(欄の placeholder)を持てば、欄の文字はそのビューの `query` に渡る(Sessions は名前・ブランチ・リポジトリの絞り込みで、今と同じ)。持たないビューを出している間、欄は無効で `Nothing to filter in <ビュー>`。ビューを切り替えると欄は空に戻る。`:` は今のとおり欄にフォーカスする(無効なら何もしない)
+- **コマンド欄(モックの `Search sessions, PRs, requests, or run a command`)は作らない。入口は上の「欄はビューのもの」まで。** 理由: (a) コマンドを実行する欄は、何を実行できて、どれが確認シートを通るか(New session・Interrupt・Reset のように、人だけの操作は今どれも確認シートを通す)を決めないと作れない。枠だけの空のコマンド欄は、押しても何も起きない入力欄になる。(b) PR や依頼の検索は、それを出すビュー(Changes・Requests)が無いと結果の行き先が無い。(c) 欄をビューに渡す形にしておけば、Changes などが自分の `query` で PR を絞れ、コマンドを足すときも「`:` で開いて、`↵` で何かする」の行き先を rail.js の `query` の隣に足せばよい。コマンドの実行は段階 2 の残りで、コマンドの一覧と確認の規則を決めてから
+- 狭い幅(760px 以下)ではサイドバーを上に積み、レールはその上端の横 1 列にする(前は狭いとレールを隠していた。ビューが 1 つだけだったため)
+
+#### ビューの差し込みの形(後でビューを作るとき)
+
+1 ビュー 1 ファイル: `internal/daemon/webui/gui/views/<id>.js`。**ビューを作るセッションが触るのは自分のファイル(と、そのビューの見た目の gui.css の節・テスト・API)だけ**で、`rail.js`・`index.html`・`gui.js`・ほかのビューのファイルは触らない(4 つのボタンと `VIEWS` の並びはもうある)。今の空のビューは `notyet.js` の `notYet(…)` を 1 行で export しているので、ファイルごと本物に置き換える(`notyet.js` は消さない。最後の 1 つが置き換わったら消す)。
+
+ファイルの default export は次の形のオブジェクト(`gui/rail.js` の頭のコメントと同じ。`TestGUIRailViews` が確かめる):
+
+```js
+export default {
+  id: "worktrees",          // index.html のボタンの data-view と同じ
+  title: "Worktrees",       // ボタンの aria-label・title と同じ。サイドバーの aria-label にも使う
+  search: "Filter worktrees by …", // 省略可。あればタイトルバーの欄の placeholder で、query が呼ばれる
+  mount(box, ctx) {},       // 見せるとき。box は rail.js が持つ空の要素で、ここに組む
+  update(state) {},         // mount の直後(ページがもう読んでいれば)と、一覧を読み直すたび(3 秒ごと・画面の移動)
+  query(text) {},           // search があるときだけ。欄の文字(trim 済み)。切り替えた直後は ""
+  unmount() {},             // 隠すとき。始めたタイマーや fetch を止める。要素は rail.js が消す
+};
+```
+
+- `state` はページが持っているもの: `{ sessions, tapi, overview, current }`(`/api/sessions` の一覧、`/api/tapi`、最後に読んだ `/api/overview`(まだ無ければ `null`)、メインで開いているもの(slug・`+tapi`・`null`))。ビューが自分で別の API を読むなら(`lib/api.js` の `api`)、mount で始めて unmount で止め、出していない間は読まない
+- `ctx`: `{ go }`。`go(slug)` でメインにセッション(`TAPI` なら tapi)を開く。足すときは `gui.js` の `sideRail({ ctx })` に足す(ビューのファイルの外なので、足すセッションは 1 つに決める)
+- 見た目は既存の部品を使う: 区画の頭は `side-head` と `label`(大文字の小さなラベル)、行は `srow`(開いている行は `sel` と `aria-current`)、空は `empty`。新しい class は gui.css のそのビューの節に、`TestGUIStylesOnlyInCSS` のとおり。描画は `lib/dom.js` の `el`・`txt`・`colored` で textContent だけ(`TestWebInboxScriptIsText` が `gui/views/` も見る)
+- 状態の記号・色・語は `gui/states.js`(`stateBits`・`tapiState`・`readySet`)を使い、Sessions・Session のヘッダとそろえる(docs/gui-design.md の決まったこと 3)
+- 人だけの操作(書き込み・削除・設定の書き込み)をビューに置くなら、今の操作と同じく確認シートを通し、GUI の mux にだけ登録する(Settings の書き込みは今の範囲の外)
+
 MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りた(段階 0 でそのまま使えることを確かめ、段階 1 の画面もこれだけで作った)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で変えたのは、GUI の入口だけ `always` を受け付けること(`webSurface.always`)と、GUI の `/` でデスクトップ向けのページを返すこと(`webSurface.index`)。
 
 段階 1 で作ったもの(`internal/daemon/webui/gui/`。見た目は docs/gui-design.md の「画面の構成」):
@@ -100,7 +133,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 
 ### 後回しにするもの
 
-- 段階 2 のうち上の 2 つの節以外(レールの Worktrees / Changes / Settings、検索欄のコマンド実行、右パネルの USAGE など)と、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
+- 段階 2 のうち上の節以外(レールの Worktrees / Changes / Settings の中身(枠は上の「サイドバーのビュー」)、検索欄のコマンド実行、右パネルの USAGE など)と、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
 - Touch ID(WebAuthn)を allow の前に挟むこと(脅威モデルの「エージェントがブラウザを操作する」と「決まったこと」2)
 - 別の端末(LAN の他の PC)からの接続。待ち受けは `127.0.0.1` だけで、`0.0.0.0` には開かない(外から使うのは Web UI の役目)
 - Service Worker・オフライン・PWA としてのインストール
