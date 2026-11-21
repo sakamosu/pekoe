@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -622,23 +623,27 @@ func TestGUIStylesOnlyInCSS(t *testing.T) {
 	if m := regexp.MustCompile(`(?i)(href|src)\s*=\s*"(https?:)?//`).FindAllString(string(html), -1); len(m) > 0 {
 		t.Errorf("gui/index.html loads from outside: %v", m)
 	}
-	ents, err := webFiles.ReadDir("webui/gui")
+	// gui/ and its views (gui/views/, docs/gui.md 「サイドバーのビュー」)
+	n, views := 0, 0
+	err := fs.WalkDir(webFiles, "webui/gui", func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() || !strings.HasSuffix(p, ".js") {
+			return err
+		}
+		n++
+		if strings.HasPrefix(p, "webui/gui/views/") {
+			views++
+		}
+		js, _ := webFiles.ReadFile(p)
+		if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
+			t.Errorf("%s sets styles: %v", strings.TrimPrefix(p, "webui/"), m)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
-	for _, e := range ents {
-		if !strings.HasSuffix(e.Name(), ".js") {
-			continue
-		}
-		n++
-		js, _ := webFiles.ReadFile("webui/gui/" + e.Name())
-		if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
-			t.Errorf("gui/%s sets styles: %v", e.Name(), m)
-		}
-	}
-	if n < 2 {
-		t.Fatalf("gui/ scripts checked: %d", n)
+	if n < 2 || views < 1 {
+		t.Fatalf("gui/ scripts checked: %d (views %d)", n, views)
 	}
 	css, _ := webFiles.ReadFile("webui/gui/gui.css")
 	if m := regexp.MustCompile(`(?i)@import|@font-face|url\(`).FindAllString(string(css), -1); len(m) > 0 {

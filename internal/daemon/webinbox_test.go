@@ -156,7 +156,7 @@ func TestWebInboxScriptIsText(t *testing.T) {
 		}
 		return err
 	})
-	for _, want := range []string{"webui/app.js", "webui/gui/gui.js", "webui/lib/dom.js", "webui/lib/md.js"} {
+	for _, want := range []string{"webui/app.js", "webui/gui/gui.js", "webui/gui/views/sessions.js", "webui/lib/dom.js", "webui/lib/md.js"} {
 		if !slices.Contains(scripts, want) {
 			t.Fatalf("%s is not among the scripts checked: %v", want, scripts)
 		}
