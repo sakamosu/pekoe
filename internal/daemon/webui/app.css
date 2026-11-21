@@ -13,6 +13,12 @@
   --term-bg: color-mix(in oklch, var(--bg) 70%, black);
   --bar-h: 52px;
   --tab-h: 56px;
+  /* the wide layout (an iPad on its side): from this width on, the rail on
+     the left and Sessions in two columns. app.js reads --wide-min (a media
+     query cannot take a variable): change the three here, nowhere else */
+  --wide-min: 700px;
+  --rail-w: 76px;
+  --list-w: 390px;
   color-scheme: dark;
 }
 
@@ -131,6 +137,9 @@ a.card:active, .more-row:active { background: var(--select); }
 .count, .merged { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; }
 .chev { flex: none; color: var(--dim); font-size: 18px; }
 .zeros { margin: 4px 2px 0; font-size: 13px; color: var(--dim); }
+/* the phone's bar and the wide list share the bar's halves */
+.bar-l, .bar-r { display: contents; }
+.merged-list { display: none; }
 .more-row {
   display: block; width: 100%; margin: 0 0 8px; padding: 12px; border: 0; border-radius: 12px;
   background: none; text-align: left; text-decoration: none;
@@ -641,3 +650,119 @@ body.pinned .toast { bottom: calc(var(--tab-h) + 72px + env(safe-area-inset-bott
 
 /* the composer under tapi chat */
 .send.chat textarea { font: 16px/1.35 var(--sans); }
+
+/* ==== the wide layout (body.wide: --wide-min and over, app.js) ====
+   The phone's parts, laid out again: the tab bar becomes a rail on the left
+   (Now, Sessions; no tapi), Now a grid of three columns under one scroll,
+   Sessions the list (--list-w) beside the chat (tapi to start, or the
+   session chosen). Nothing here applies under --wide-min. */
+
+/* ---- the rail (--rail-w, chrome): the tab bar on its side ---- */
+body.wide { padding-left: var(--rail-w); }
+body.wide > .tabbar {
+  position: fixed; top: 0; bottom: 0; left: 0; right: auto;
+  width: var(--rail-w); height: auto;
+  flex-direction: column; justify-content: flex-start;
+  padding: calc(env(safe-area-inset-top) + 8px) 0 env(safe-area-inset-bottom);
+  border-top: 0; border-right: 1px solid var(--border);
+}
+body.wide > .tabbar .tabb { flex: none; height: 60px; }
+body.wide > .tabbar #t-tapi { display: none; }
+body.wide > .tabbar .tabb[aria-current="page"]::before {
+  top: 10px; bottom: 10px; left: 0; right: auto; width: 2px; height: auto;
+  border-radius: 0 2px 2px 0;
+}
+body.wide main { padding-bottom: 20px; }
+body.wide .toast { left: calc(var(--rail-w) + 16px); right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); }
+body.wide.pinned .toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+/* a sheet: not across the whole width */
+body.wide .sheet-back { justify-content: center; }
+body.wide .sheet { max-width: 640px; }
+
+/* ---- Now: three columns, 20px between and around, one scroll ----
+   left: NEEDS YOU (and the zeros as tiles) · middle: REQUESTS · right:
+   TAPI, MERGED BY PEKOED under it */
+body.wide #now {
+  display: grid; column-gap: 20px; padding: 0 20px 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: "needs reqs tapi" "needs reqs merged" "who who who";
+  align-items: start;
+}
+body.wide #n-needs { grid-area: needs; }
+body.wide #n-reqs { grid-area: reqs; }
+body.wide #n-tapi-sect { grid-area: tapi; }
+body.wide #n-merged { grid-area: merged; }
+body.wide #who { grid-area: who; }
+/* the zeros: small tiles, two by two, framed only (no ground), dim */
+body.wide .zeros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+body.wide .zeros .z {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.wide .zeros .zs { display: none; }
+/* tapi's last words: up to three lines */
+body.wide #n-tapi .cl { -webkit-line-clamp: 3; }
+/* merged: one a row: ↣ · #PR · the branch (dim, cut) · how long ago */
+body.wide #n-merged-row { display: none; }
+body.wide .merged-list { display: block; }
+.mrow {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  text-decoration: none; color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+.mrow:active { background: var(--select); }
+.mrow .pr { flex: none; font-weight: 600; }
+.mrow .br { flex: 1; min-width: 0; color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Sessions + chat (body.split): the list (--list-w) | the chat ----
+   The page is the pinned app screen (fitViewport, kb / cut as on the
+   phone), laid out as a grid: the rail, the bar's two halves, the list
+   scrolling on its own, the detail view (its composer at the bottom) */
+body.split.pinned {
+  /* the list keeps --list-w, but near --wide-min it gives way so the chat
+     keeps more than half of what is right of the rail */
+  --list-col: min(var(--list-w), calc((100vw - var(--rail-w)) * .45));
+  display: grid; padding-left: 0;
+  grid-template-columns: var(--rail-w) var(--list-col) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+body.split.pinned.kb, body.split.pinned.cut { padding-bottom: 0; }
+body.split.pinned > .tabbar {
+  position: relative; grid-column: 1; grid-row: 1 / span 2;
+  width: auto; height: auto; padding: 8px 0 0;
+}
+body.split.pinned > .tabbar .tabb { height: 60px; }
+body.split.pinned.kb > .tabbar { display: flex; } /* the rail stays with the keyboard up */
+body.split > .bar {
+  grid-column: 2 / span 2; grid-row: 1;
+  display: grid; grid-template-columns: var(--list-col) minmax(0, 1fr); padding: 0;
+}
+body.split .bar-l { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 16px; border-right: 1px solid var(--border); }
+body.split .bar-r { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 16px; }
+body.split.tapi-on .fresh { display: inline; }
+body.split #list {
+  grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  border-right: 1px solid var(--border);
+}
+body.split #detail { grid-column: 3; grid-row: 2; }
+/* the chosen row: raised ground, a 2px primary line on its left */
+.srow.sel, .card.sel { background: var(--raised); box-shadow: inset 2px 0 0 var(--primary); }
+.card.sel .srow { background: none; }
+/* tapi at the head of the list, as in a messenger's list of conversations */
+body.split #l-rows .srow { width: calc(100% + 32px); margin: 0 -16px; padding: 8px 20px; }
+body.split #l-rows .card .srow { width: 100%; margin: 0; padding: 0 0 8px; }
+.tapi-row {
+  position: sticky; top: 0; z-index: 1; background: var(--bg);
+  display: flex; gap: 12px; align-items: center; min-height: 64px; margin: 0 -16px; padding: 8px 20px;
+  text-decoration: none; color: var(--text);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  -webkit-tap-highlight-color: transparent;
+}
+.tapi-row:active { background: var(--select); }
+.tapi-row .face { flex: none; font-size: 16px; }
+.tapi-row .cl { -webkit-line-clamp: 1; font-size: 13px; }
+.tapi-row.sel { background: var(--raised); box-shadow: inset 2px 0 0 var(--primary); }
