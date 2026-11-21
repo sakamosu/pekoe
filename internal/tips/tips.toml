@@ -141,7 +141,7 @@ docs = ["docs/gui.md"]
 [[tip]]
 id = "local-gui-theme"
 short = "pekoe gui の画面はライトにもなる"
-detail = "既定は OS の外観(ライト・ダーク)に合わせる。タイトルバーのボタンで切り替えられ、選んだものはそのタブの間だけ覚える。[theme.colors] の上書きはダークにだけ効く。"
+detail = "既定は OS の外観(ライト・ダーク)に合わせる。タイトルバーのボタンで System → Dark → Light と巡り、選んだものはそのタブの間だけ覚える(System で OS に戻る)。[theme.colors] の上書きはダークにだけ効く。"
 keys = ["pekoe gui"]
 docs = ["docs/gui-design.md#カラートークン"]
 

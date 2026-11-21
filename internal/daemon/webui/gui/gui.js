@@ -20,6 +20,8 @@ import { parentLabel } from "../lib/overview.js";
 import { SPIN, bubbleLine, markRewound, chatView } from "../lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "../lib/sheets.js";
 import { shellBang } from "./shell.js";
+import { guardPageDrops } from "./drop.js";
+import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 
 let sessions = [];
@@ -38,37 +40,28 @@ const attachments = new Map(); // slug → images for its next send (same rule)
 const deliveries = new Map(); // slug → {st: sending | delivered | failed, text, at, why}
 
 // ---- theme: the OS's appearance, or this tab's choice (決まったこと 11) ----
-// The choice is the <html> data-theme attribute; /theme.css switches the
-// variables. sessionStorage: the origin's port changes with every listen,
-// so localStorage would not find it next time anyway.
+// theme.js: system → dark → light → system on the title bar's button. The
+// word is the choice in effect; with System it also says what the OS
+// shows now.
 
-const THEME_KEY = "pekoe.gui.theme";
-const sysLight = () => window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
-const themeNow = () => document.documentElement.dataset.theme || (sysLight() ? "light" : "dark");
+const tabStore = () => window.sessionStorage;
+let theme = "system";
 
 function paintThemeButton() {
-  const next = themeNow() === "dark" ? "Light" : "Dark";
-  $("theme-word").textContent = next;
-  $("theme-btn").setAttribute("aria-label", "switch to the " + next.toLowerCase() + " theme");
+  const sys = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  const word = theme === "system" ? "System (" + sys + ")" : THEME_WORDS[theme];
+  $("theme-word").textContent = THEME_WORDS[theme];
+  const label = "theme: " + word + "; switch to " + THEME_WORDS[nextTheme(theme)];
+  $("theme-btn").setAttribute("aria-label", label);
+  $("theme-btn").title = label;
 }
 
-function setTheme(t) {
-  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-  else delete document.documentElement.dataset.theme;
-  paintThemeButton();
-}
-
-try {
-  setTheme(sessionStorage.getItem(THEME_KEY));
-} catch (e) {
-  setTheme(null);
-}
+theme = applyTheme(document.documentElement, readTheme(tabStore));
+paintThemeButton();
 $("theme-btn").addEventListener("click", () => {
-  const t = themeNow() === "dark" ? "light" : "dark";
-  setTheme(t);
-  try {
-    sessionStorage.setItem(THEME_KEY, t);
-  } catch (e) { /* this page only */ }
+  theme = applyTheme(document.documentElement, nextTheme(theme));
+  saveTheme(tabStore, theme);
+  paintThemeButton();
 });
 if (window.matchMedia) window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", paintThemeButton);
 
@@ -1239,6 +1232,8 @@ $("d-send").addEventListener("drop", (e) => {
   $("d-send").classList.remove("is-drop-target");
   addImages([...((e.dataTransfer && e.dataTransfer.files) || [])]);
 });
+// a file dropped anywhere else: not opened by the browser (drop.js)
+guardPageDrops(window);
 $("tsheet-cancel").addEventListener("click", closeSheets);
 $("tsheet-ok").addEventListener("click", () => sheetSend("tsheet-ok"));
 $("tsheet").addEventListener("click", (e) => { if (e.target === $("tsheet")) closeSheets(); });

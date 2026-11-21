@@ -259,7 +259,7 @@ tapi パネル: ヘッダ(`tapi`・状態・`T Reset`)、送受信の一覧(古�
 - **フォント**: 同梱するなら `webui/` の下に置けば `default-src 'self'` で読める(`font-src` を足す必要はない)。まず同梱せず system-ui で組むので、フォントのファイルは無い。外からは読まない(決まったこと 2)
 - **外部ライブラリなし**: CSS フレームワーク・アイコンのフォント・グラフのライブラリを入れない。グラフ(マージ数の棒・ゲージ)は CSS の箱か、SVG を `createElementNS` と数値の属性で組む(docs/gui.md の脅威モデル)
 - **`textContent` だけで描く**: エージェント由来の文字(画面・報告の要約・吹き出し・質問文)は `textContent` で入れ、HTML を作る入口(`innerHTML` など)を使わない(`TestWebInboxScriptIsText` が `webui/` の下のすべての JS を縛る)。モックの `<a href>` の「Read report」は、今の受信箱と同じく `http` / `https` だけをリンクにする
-- **テーマの切り替え**: `<html>` の属性(`data-theme`)を JS で変え、色は CSS の変数の切り替えで変える。`style` を書かない。選択は `sessionStorage` に置く(トークンではないが、`localStorage` はオリジンが毎回変わるので効かない。決まったこと 11)
+- **テーマの切り替え**: `<html>` の属性(`data-theme`)を JS で変え、色は CSS の変数の切り替えで変える。`style` を書かない。選択は `sessionStorage` に置く(トークンではないが、`localStorage` はオリジンが毎回変わるので効かない。決まったこと 11)。タイトルバーのボタンは `System`(OS の外観に従う。`data-theme` なし)→ `Dark` → `Light` → `System` の 3 つを巡り、ボタンの語は今の選択。`System` に戻すと `sessionStorage` の選択も消し、OS の外観にまた追従する(`gui/theme.js`)
 - **ポーリングは同じオリジンの `/api/*` だけ**(`connect-src 'self'`)。WebSocket やサーバーからの push は今は無い
 
 ## 仮のもの(ハンドオフの「未確認・仮のもの」)

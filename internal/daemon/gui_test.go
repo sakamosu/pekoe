@@ -576,6 +576,18 @@ func TestGUIDesktopPage(t *testing.T) {
 			t.Errorf("phone %s: %d %s", p, w.Code, w.Header().Get("Content-Type"))
 		}
 	}
+	// the tailnet does not serve the desktop page's files (they would only
+	// be refused there anyway: always is 400 on the phone's door)
+	for _, p := range []string{"/gui/", "/gui/index.html", "/gui/gui.js", "/gui/dash.js", "/gui/gui.css", "/gui/shell.js", "/gui/theme.js", "/gui/nope.js"} {
+		for _, m := range []string{"GET", "HEAD"} {
+			if w := doWeb(t, ph, webReq{method: m, path: p, from: ipPhone}); w.Code != 404 || strings.Contains(w.Body.String(), "import") {
+				t.Errorf("phone %s %s: %d, want 404", m, p, w.Code)
+			}
+		}
+	}
+	if w := doWeb(t, ph, webReq{path: "/gui", from: ipPhone}); w.Code == 200 {
+		t.Errorf("phone /gui: %d", w.Code)
+	}
 }
 
 // A page a previous pekoed left is gone when pekoed starts.
@@ -667,5 +679,78 @@ console.log(JSON.stringify(`+string(raw)+`.map(shellBang)));`)
 	}
 	if i, j := strings.Index(string(js), "if (shellBang(text))"), strings.Index(string(js), "sendTo(slug, text, [], ta);"); i < 0 || j < 0 || i > j {
 		t.Fatal("gui.js: the shell sheet does not come before a plain send")
+	}
+}
+
+// The theme button (gui/theme.js, docs/gui-design.md 決まったこと 11) goes
+// system → dark → light → system: a hand pick can be given back to the
+// OS. A pick is kept in the tab's storage and "system" removes it, so the
+// next load follows the OS again; blocked storage reads as system.
+func TestGUIThemeBackToSystem(t *testing.T) {
+	out := runWebModule(t, `import { THEME_KEY, nextTheme, readTheme, saveTheme, applyTheme } from "gui/theme.js";
+const m = new Map();
+const store = () => ({ getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) });
+const root = { dataset: {} };
+const seen = [];
+let c = applyTheme(root, readTheme(store));
+seen.push([c, root.dataset.theme === undefined ? null : root.dataset.theme, m.has(THEME_KEY) ? m.get(THEME_KEY) : null]);
+for (let i = 0; i < 3; i++) {
+  c = applyTheme(root, nextTheme(c));
+  saveTheme(store, c);
+  const again = readTheme(store); // the tab reloaded
+  seen.push([c, "theme" in root.dataset ? root.dataset.theme : null, m.has(THEME_KEY) ? m.get(THEME_KEY) : null, again]);
+}
+const blocked = () => { throw new Error("SecurityError"); };
+saveTheme(blocked, "dark");
+m.set(THEME_KEY, "sepia");
+console.log(JSON.stringify({ seen, blocked: readTheme(blocked), odd: readTheme(store), oddNext: nextTheme("sepia") }));`)
+	want := `{"seen":[["system",null,null],["dark","dark","dark","dark"],["light","light","light","light"],["system",null,null,"system"]],"blocked":"system","odd":"system","oddNext":"dark"}`
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Fatalf("theme cycle:\n got %s\nwant %s", got, want)
+	}
+	js, _ := webFiles.ReadFile("webui/gui/gui.js")
+	for _, s := range []string{"applyTheme(document.documentElement, nextTheme(theme))", "saveTheme(tabStore, theme)", "readTheme(tabStore)"} {
+		if !strings.Contains(string(js), s) {
+			t.Errorf("gui.js: the theme button does not use theme.js (%s)", s)
+		}
+	}
+	if strings.Contains(string(js), "sessionStorage.") {
+		t.Error("gui.js: reads sessionStorage itself, outside theme.js's try")
+	}
+}
+
+// A file dropped outside the send box does not open in the tab
+// (gui/drop.js): the window stops the default of a drag carrying files,
+// unless the send box already took it; a drag of text keeps its default.
+func TestGUIDropOutsideSendBox(t *testing.T) {
+	out := runWebModule(t, `import { guardPageDrops } from "gui/drop.js";
+const files = { types: ["Files"], dropEffect: "copy" };
+const text = { types: ["text/plain"], dropEffect: "copy" };
+const fire = (target, type, dt) => { const e = new Event(type, { cancelable: true }); e.dataTransfer = dt; target.dispatchEvent(e); return e; };
+const page = new EventTarget();
+guardPageDrops(page);
+const box = new EventTarget(); // the send box, in front of the window (it handles first)
+let took = 0;
+box.addEventListener("drop", (e) => { e.preventDefault(); took++; });
+box.addEventListener("dragover", (e) => e.preventDefault());
+guardPageDrops(box); // the window's listener seeing the bubbled event
+const r = {
+  overFiles: fire(page, "dragover", files).defaultPrevented, effect: files.dropEffect,
+  dropFiles: fire(page, "drop", files).defaultPrevented,
+  dropText: fire(page, "drop", text).defaultPrevented, overText: fire(page, "dragover", text).defaultPrevented,
+  none: fire(page, "drop", null).defaultPrevented,
+};
+files.dropEffect = "copy";
+r.boxDrop = fire(box, "drop", files).defaultPrevented; r.boxEffect = (fire(box, "dragover", files), files.dropEffect); r.took = took;
+console.log(JSON.stringify(r));`)
+	want := `{"overFiles":true,"effect":"none","dropFiles":true,"dropText":false,"overText":false,"none":false,"boxDrop":true,"boxEffect":"copy","took":1}`
+	if got := strings.TrimSpace(string(out)); got != want {
+		t.Fatalf("drops:\n got %s\nwant %s", got, want)
+	}
+	js, _ := webFiles.ReadFile("webui/gui/gui.js")
+	s := string(js)
+	i, j := strings.Index(s, `$("d-send").addEventListener("drop"`), strings.Index(s, "guardPageDrops(window);")
+	if i < 0 || j < 0 {
+		t.Fatal("gui.js: the send box's drop or the page's guard is missing")
 	}
 }

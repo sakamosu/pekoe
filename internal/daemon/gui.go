@@ -416,7 +416,7 @@ func clearGUIPages() {
 // without the confirm sheet, "always" on a permission prompt), the desktop
 // page at / (webui/gui/), and the token exchange.
 func (d *Daemon) guiHandler(port int) http.Handler {
-	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html"})
+	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html", gui: true})
 	mux.HandleFunc("POST /api/gui/session", d.guiSessionHandler)
 	return d.guiGuard(port, mux)
 }
