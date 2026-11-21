@@ -1,6 +1,8 @@
 package daemon
 
-// Cache busting for the home screen icons (webui/icon.png, icon-512.png).
+// Cache busting for the home screen icons (webui/icon.png, icon-512.png)
+// and the favicons (favicon-32.png, favicon-16.png: the same picture
+// cropped close to tapi, so it reads in a browser tab).
 // iOS keeps the icon it saw for a URL (the "Add to Home Screen" sheet
 // showed the old picture even after the PNG changed), so the pages and the
 // manifest refer to /icon.png?v=<first 8 hex of its sha256>: a new picture
@@ -19,7 +21,7 @@ import (
 )
 
 // webIconNames are the icons served at /<name> (web.go).
-var webIconNames = []string{"icon.png", "icon-512.png"}
+var webIconNames = []string{"icon.png", "icon-512.png", "favicon-32.png", "favicon-16.png"}
 
 // webIconFiles are the files (paths in webui) that refer to the icons.
 var webIconFiles = map[string]bool{

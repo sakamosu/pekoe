@@ -38,7 +38,7 @@ func TestWebIconVersioned(t *testing.T) {
 		}
 	}
 
-	bare := regexp.MustCompile(`"/icon(-512)?\.png"`)
+	bare := regexp.MustCompile(`"/(icon(-512)?|favicon-(16|32))\.png"`)
 	check := func(what, body string, urls ...string) {
 		t.Helper()
 		if bare.MatchString(body) {
@@ -51,6 +51,20 @@ func TestWebIconVersioned(t *testing.T) {
 		}
 	}
 	icon, icon512 := webIconURL("icon.png"), webIconURL("icon-512.png")
+	// the tab's icon is the favicons (with their sizes), not the home
+	// screen icon; the home screen icon stays apple-touch-icon's
+	favicons := func(what, body string) {
+		t.Helper()
+		for _, s := range []string{"32", "16"} {
+			link := `<link rel="icon" type="image/png" sizes="` + s + `x` + s + `" href="` + webIconURL("favicon-"+s+".png") + `">`
+			if !strings.Contains(body, link) {
+				t.Errorf("%s: no %s", what, link)
+			}
+		}
+		if strings.Contains(body, `rel="icon" href="`+icon+`"`) {
+			t.Errorf("%s: the tab's icon is still the home screen icon", what)
+		}
+	}
 	for _, path := range []string{"/", "/index.html"} {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
 		if path == "/index.html" && w.Code == 301 {
@@ -61,6 +75,7 @@ func TestWebIconVersioned(t *testing.T) {
 			t.Fatalf("%s: %d len %q body %d", path, w.Code, w.Header().Get("Content-Length"), w.Body.Len())
 		}
 		check(path, w.Body.String(), icon)
+		favicons(path, w.Body.String())
 		if !strings.Contains(w.Body.String(), `rel="apple-touch-icon" href="`+icon+`"`) {
 			t.Errorf("%s: apple-touch-icon not versioned", path)
 		}
@@ -76,7 +91,8 @@ func TestWebIconVersioned(t *testing.T) {
 		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "data-gui>") {
 			t.Fatalf("gui %s: %d", path, rec.Code)
 		}
-		check("gui "+path, rec.Body.String(), icon)
+		check("gui "+path, rec.Body.String())
+		favicons("gui "+path, rec.Body.String())
 	}
 }
 

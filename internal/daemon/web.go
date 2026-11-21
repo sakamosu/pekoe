@@ -141,7 +141,8 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	// with no alpha, full bleed (iOS rounds the corners itself and paints
 	// transparency black). The pages refer to /icon.png?v=<version>
 	// (webicon.go): that URL never changes its picture, so it is cached for
-	// good; the bare one (old pages) for a day.
+	// good; the bare one (old pages) for a day. The favicons
+	// (favicon-32.png, favicon-16.png) are served the same way.
 	for _, name := range webIconNames {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
 			if v := r.URL.Query().Get("v"); v != "" && v == webIconVersions[name] {
