@@ -184,6 +184,7 @@ var humanMethods = map[string]string{
 	"review.files":       "the diff under review, with the person's comments",
 	"review.risks":       "review notes",
 	"changes":            "the diff of a session",
+	"changes.diff":       "one changed file's diff of a session: the local GUI's Changes",
 	"init.detect":        "reads any repository's files",
 	"repo.list":          "every repository pekoe knows",
 	"worktree.list":      "every worktree",

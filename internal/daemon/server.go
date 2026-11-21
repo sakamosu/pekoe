@@ -689,6 +689,7 @@ func (d *Daemon) registerHandlers() {
 		"run.start":             bind(d.hRunStart),
 		"run.close":             bind(d.hRunClose),
 		"changes":               bind(d.hChanges),
+		"changes.diff":          bind(d.hChangesDiff),
 		"conflicts.list":        bind(d.hConflicts),
 		"cleanup.list":          bind(d.hCleanup),
 		"review.start":          bind(d.hReviewStart),

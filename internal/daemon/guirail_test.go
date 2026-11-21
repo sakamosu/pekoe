@@ -154,7 +154,10 @@ console.log(JSON.stringify({ contract, ...r }));`)
 	if b := got.Back; b.ID != "sessions" || b.Kept != nil || b.Off || strings.Contains(b.Text, "WORKTREES") || got.BackRows != 3 {
 		t.Errorf("back: %+v rows %d", b, got.BackRows)
 	}
-	for id, text := range map[string]string{"changes": got.VChanges, "settings": got.VSettings} {
+	if !strings.Contains(got.VChanges, "CHANGES") || strings.Contains(got.VChanges, "Not built yet") {
+		t.Errorf("changes: %q", got.VChanges)
+	}
+	for id, text := range map[string]string{"settings": got.VSettings} {
 		if !strings.Contains(text, strings.ToUpper(id)) || !strings.Contains(text, "Not built yet") {
 			t.Errorf("%s: %q", id, text)
 		}
