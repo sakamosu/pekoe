@@ -65,7 +65,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 - 左にセッション一覧(tapi のカード、セッションが 2 つ以上のリポジトリは展開、1 つだけのものは `OTHER REPOSITORIES` に 1 行ずつ。`/api/sessions` が待ちを上に並べるので、待ちのあるリポジトリが上に来る)。フィルタのチップ(All / Needs you / Running)と、タイトルバーの絞り込み欄(`:`)
 - タブ: Dashboard・tapi・開いたセッション(そのタブの間だけ覚え、× で閉じる)
 - Dashboard(`#/`。`#/inbox` は受信箱の区画へ): 受信箱(Web UI と同じ規則: 事実が先・推奨を既定にしない・`rev` の突き合わせ・確認シート。先頭のカードが注意のフォーカス)、Overview(件数)、Pipeline(`impl → review → PR → CI → merge` と Status・マージの前に足りないもの)、Requests(セッションが持つ依頼。開いているものと閉じた直近 5 件)。右に tapi の吹き出し(transcript)と送信欄(確認シートなし。`!` で始まる文だけシート)
-- セッション(`#/s/<slug>`): ヘッダ(状態・鮮度)、色つきの画面(最後 80 行、選択中は止まる、一時停止)、右に pekoed が持つ事実(SESSION・CHANGES・LINKED・NOTICES)、下端に送達の表示と送信欄(`⌘↵` で送る。画像は選ぶ・貼り付け・ドロップで付け、画像つきは確認シート。`! Shell` と、`!` で始まる文の確認シート)。許可待ちの間は送信欄の代わりに許可のカード(Allow once / Always allow / Deny、`y` / `A` / `n`。どれも確認シートで pekoe の要約と画面を並べる)、質問待ちの間は質問のカード(キーパッド、`1`〜`9`)
+- セッション(`#/s/<slug>`): ヘッダ(状態・鮮度)、色つきの画面(最後 80 行、選択中は止まる、一時停止)、右に pekoed が持つ事実(SESSION・CHANGES・LINKED・NOTICES)、下端に送達の表示と送信欄(`⌘↵` で送る。画像は選ぶ・貼り付け・ドロップで付け、画像つきは確認シート。送信欄の外に落としたファイルはページが受けず、ブラウザがそのファイルを開いてページを離れることもない(`gui/drop.js`)。`! Shell` と、`!` で始まる文の確認シート)。許可待ちの間は送信欄の代わりに許可のカード(Allow once / Always allow / Deny、`y` / `A` / `n`。どれも確認シートで pekoe の要約と画面を並べる)、質問待ちの間は質問のカード(キーパッド、`1`〜`9`)
 - tapi(`#/tapi`): セッションと同じ画面で tapi の画面と質問のキーパッド。tapi の許可待ちには答えない(今の Web UI と同じく端末で)
 - ダークとライト(OS の外観に従い、タイトルバーのボタンで切り替え。選択はそのタブの間だけ)
 - 狭い幅では右の列を下に、さらに狭ければ一覧を上に積む(使えるが、スマホ向けの作りではない。スマホは Web UI)
@@ -159,7 +159,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 - **面ごとの方針はハンドラに引数で渡す。** 今のハンドラには iPhone 向けの方針が入っている: `always` は 400、tapi への send は `allow_devices` が要る、`confirm_tapi_send`。面ごとの値は `webSurface`(`web.go`)に持たせ、`webMux` に渡す。段階 0 の GUI は tapi への send を `allow_devices` なし・確認シートなしで通す(TUI と同じ。「決まったこと」6)。`always` は段階 1 で `webSurface` に足す(「決まったこと」5)
 - **静的ファイルは段階で変える。**
   - 段階 0: 今の `webui/` をそのまま配る
-  - 段階 1(実装済み): デスクトップ向けの入口を別に作った(`webui/gui/index.html`・`gui.js`・`gui.css`。GUI の `/` だけがこれを返し、tailnet の `/` は今の `index.html`)。画面の描画(Run の色、`lib/term.js`)・自前のマークダウン(`lib/md.js`)・API の呼び出しとサインイン(`lib/api.js`)・確認シート(`lib/sheets.js`)・受信箱のカード(`lib/inbox.js`)・工程表の部品(`lib/overview.js`)・tapi chat の吹き出し(`lib/chat.js`)・画像の添付(`lib/images.js`)・行の組み立て(`lib/fmt.js`・`lib/dom.js`)を、今の `app.js` から ES モジュールに切り出して両方から読む。ビルドの道具(bundler)は入れない(CSP の `script-src 'self'` のまま `<script type="module">` で読む)。`app.js` は電話の画面の組み立て(ルーティング・iOS のビューポート・一覧・詳細)だけを持つ
+  - 段階 1(実装済み): デスクトップ向けの入口を別に作った(`webui/gui/index.html`・`gui.js`・`gui.css`。GUI の `/` だけがこれを返し、tailnet の `/` は今の `index.html`。tailnet の mux は `/gui/*` を 404 にして配らない: `webSurface.gui`)。画面の描画(Run の色、`lib/term.js`)・自前のマークダウン(`lib/md.js`)・API の呼び出しとサインイン(`lib/api.js`)・確認シート(`lib/sheets.js`)・受信箱のカード(`lib/inbox.js`)・工程表の部品(`lib/overview.js`)・tapi chat の吹き出し(`lib/chat.js`)・画像の添付(`lib/images.js`)・行の組み立て(`lib/fmt.js`・`lib/dom.js`)を、今の `app.js` から ES モジュールに切り出して両方から読む。ビルドの道具(bundler)は入れない(CSP の `script-src 'self'` のまま `<script type="module">` で読む)。`app.js` は電話の画面の組み立て(ルーティング・iOS のビューポート・一覧・詳細)だけを持つ
   - 切り出しは段階 1 で行った(「決まったこと」8)。今の Web UI の挙動と見た目は変えていない(`app.css` は触っていない。切り出しの前後で、同じ偽のデータの電話の幅の画面を撮り比べ、一覧は画素まで同じだった)。JS のテスト(`TestWebMarkdownBold`・`TestWebMarkRewound`)はモジュールを node で import して動かす
   - 段階 0 で今の `app.js` に足したのは、フラグメントのトークンの交換・`Authorization` ヘッダ・401 のときのサインアウトの表示だけ(上の「認証」5・6)。tailnet ではどれも働かない
 - **新しい API は段階 2 から。** 段階 0・1 は今の `/api/*` で足りる。段階 2 で足すもの(session.new・land・dev など)は、今の Web UI に出すかどうかと別に決め、GUI の mux にだけ登録できるようにする

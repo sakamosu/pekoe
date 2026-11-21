@@ -113,6 +113,9 @@ type webSurface struct {
 	// index is the page served at / (a path in webui): the phone's
 	// index.html, or the local GUI's desktop page.
 	index string
+	// gui: the local GUI's files (/gui/*) are served. The phone's front
+	// door answers them 404: the tailnet has no use for the desktop page.
+	gui bool
 }
 
 // webMux registers the static files and the API both front doors serve.
@@ -124,6 +127,9 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	}))
+	if !sf.gui {
+		mux.Handle("GET /gui/", http.NotFoundHandler())
+	}
 	if sf.index != "" {
 		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-cache")
