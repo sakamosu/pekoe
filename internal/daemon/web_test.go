@@ -401,6 +401,8 @@ func TestWebStatic(t *testing.T) {
 		"/theme.css":            "text/css",
 		"/icon.png":             "image/png",
 		"/icon-512.png":         "image/png",
+		"/favicon-32.png":       "image/png",
+		"/favicon-16.png":       "image/png",
 	} {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
 		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), ctype) {
@@ -412,9 +414,10 @@ func TestWebStatic(t *testing.T) {
 // The home screen icons are the embedded PNGs at their size, with no
 // alpha channel and no dark corners: iOS rounds the corners itself and
 // paints anything transparent black, so the picture has to fill the square.
+// The favicons (the browser tab's) are held to the same: opaque, full bleed.
 func TestWebIcon(t *testing.T) {
 	_, _, _, h := webSetup(t)
-	for path, size := range map[string]int{"/icon.png": 180, "/icon-512.png": 512} {
+	for path, size := range map[string]int{"/icon.png": 180, "/icon-512.png": 512, "/favicon-32.png": 32, "/favicon-16.png": 16} {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
 		if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
 			t.Fatalf("%s: %d %q", path, w.Code, w.Header().Get("Content-Type"))
