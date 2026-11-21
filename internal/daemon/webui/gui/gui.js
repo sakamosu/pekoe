@@ -18,13 +18,15 @@ import { termLines, screenRows } from "../lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "../lib/images.js";
 import { draftOf } from "../lib/inbox.js";
 import { parentLabel } from "../lib/overview.js";
-import { SPIN, bubbleLine, markRewound, chatView } from "../lib/chat.js";
+import { SPIN, bubbleLine } from "../lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "../lib/sheets.js";
 import { shellBang } from "./shell.js";
 import { guardPageDrops } from "./drop.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet } from "./actions.js";
+import { chatPane, selectingIn } from "./chatpane.js";
+import { picker } from "./picker.js";
 
 let sessions = [];
 let tapi = null; // /api/tapi
@@ -459,6 +461,7 @@ function renderDetail() {
   renderTarget(s);
   renderKeypad(s);
   renderInterrupt(s);
+  renderPane();
   renderStatus();
   if (busy) return; // the sheet is open: keep what it was opened from
   renderAsk(s, isTapi);
@@ -615,6 +618,12 @@ function renderTarget(s) {
   note.hidden = !why;
   $("d-send-btn").disabled = !s || !!why || sending || preparing;
   $("d-shell").disabled = !s || !!why;
+  // / and @ list the session's commands and files: not tapi's (its
+  // directory is pekoe's, not a repository)
+  for (const id of ["d-cmds", "d-files"]) {
+    $(id).hidden = isTapi;
+    $(id).disabled = !s || !!why;
+  }
   $("d-attach").classList.toggle("off", preparing || attached(current).length >= IMG_MAX || !!why);
   renderDelivery($("d-delivery"), current);
 }
@@ -623,12 +632,6 @@ function renderTarget(s) {
 
 let screenSig = "", screenPaused = false, screenHeld = false;
 const scr = { ok: 0, fail: "" }; // freshness: when the screen last came, why not
-
-function selectingIn(node) {
-  const sel = document.getSelection();
-  if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
-  return node.contains(sel.anchorNode) || node.contains(sel.focusNode);
-}
 
 // renderFresh: how fresh the screen is (決まったこと 8). The polling
 // stays fixed (2.5 s), so there is no "idle · checking every …".
@@ -693,7 +696,8 @@ document.addEventListener("selectionchange", () => {
     renderFresh();
     refreshScreen();
   }
-  if (chat.held && !selectingIn($("c-log"))) renderChat(true);
+  if (tchat.c.held && !selectingIn($("c-log"))) tchat.render(true);
+  if (dchat.c.held && !selectingIn($("d-log"))) dchat.render(true);
 });
 screenBox().addEventListener("scroll", () => ($("d-follow").hidden = atScreenBottom()), { passive: true });
 $("d-follow").addEventListener("click", () => {
@@ -711,6 +715,91 @@ $("d-refresh").addEventListener("click", () => {
   refresh();
   refreshScreen();
 });
+
+// ---- Chat or Screen: the transcript as bubbles, or the agent's screen ----
+// Screen is the default (docs/gui-design.md 「実装で決めたこと」): the
+// permission and the question are judged on the screen, and the
+// transcript has no tool results. Chat is a choice this tab remembers
+// (sessionStorage, as the theme). While the agent waits for a permission
+// or a question, the screen shows whatever was chosen; a chat that cannot
+// be read (not Claude Code, no transcript yet) falls back to the screen
+// with why, and comes back once it can be read.
+
+const PANE_KEY = "pekoe-gui-pane";
+let paneWant = "screen";
+try {
+  if (tabStore().getItem(PANE_KEY) === "chat") paneWant = "chat";
+} catch {}
+
+const dchat = chatPane({
+  log: $("d-log"), head: $("d-earlier"), body: $("d-items"), jump: $("d-jump"),
+  url: (k) => (k === TAPI ? "/api/tapi/transcript" : apiBase(k) + "/transcript"),
+  name: () => (current === TAPI ? "tapi" : (detailTarget() || {}).agent || "agent"),
+  shown: () => view === "detail" && paneMode().mode === "chat",
+});
+
+// paneMode: what the pane shows now, and why when it is not what was chosen
+function paneMode() {
+  if (paneWant !== "chat") return { mode: "screen", why: "" };
+  const s = detailTarget();
+  if (s && (s.answerable || questionUp(s))) return { mode: "screen", why: "the screen while the agent waits for you" };
+  if (dchat.c.ok === false) return { mode: "screen", why: "chat unavailable · " + dchat.c.why };
+  return { mode: "chat", why: "" };
+}
+
+function renderPane() {
+  if (view !== "detail") return;
+  const { mode, why } = paneMode();
+  const chat = mode === "chat";
+  $("d-mode-chat").setAttribute("aria-pressed", String(paneWant === "chat"));
+  $("d-mode-screen").setAttribute("aria-pressed", String(paneWant !== "chat"));
+  $("d-screen-scroll").hidden = chat;
+  $("d-chat").hidden = !chat;
+  $("d-pause").hidden = chat;
+  if (chat) $("d-follow").hidden = true;
+  const note = $("d-pane-note");
+  note.textContent = chat ? "from the transcript · no tool output" : why || "last 80 lines";
+  note.className = why ? "pane-why" : "dim";
+  note.title = why;
+  if (chat) dchat.render(false);
+}
+
+// refreshPaneChat: read even while the screen stands in for the chat
+// (a wait, a chat that could not be read): back to it once it can be
+async function refreshPaneChat() {
+  if (view !== "detail" || paneWant !== "chat") return;
+  await dchat.refresh(true);
+  renderPane();
+}
+
+function setPane(want) {
+  if (want === paneWant) return;
+  paneWant = want;
+  try {
+    tabStore().setItem(PANE_KEY, want);
+  } catch {}
+  if (want === "chat") {
+    dchat.reset(current);
+    renderPane();
+    dchat.refresh().then(() => {
+      renderPane();
+      dchat.toBottom();
+    });
+  } else {
+    renderPane();
+    screenSig = "";
+    refreshScreen();
+  }
+  schedule();
+}
+$("d-mode-chat").addEventListener("click", () => setPane("chat"));
+$("d-mode-screen").addEventListener("click", () => setPane("screen"));
+
+// ---- the send box's / Commands and @ Files (picker.js): only write into it ----
+
+const pick = picker({ ta: $("d-text"), box: $("d-pick"), slug: () => (current && current !== TAPI ? current : "") });
+$("d-cmds").addEventListener("click", () => pick.start("cmd"));
+$("d-files").addEventListener("click", () => pick.start("file"));
 
 // ---- the question card (the keypad): only while a question's menu is up ----
 
@@ -828,6 +917,7 @@ let tsend = null; // {slug, text, images, ta} in the send or shell sheet
 // panel ("tapi"). The target is fixed here, from what the label shows.
 function doSend(from) {
   const isPanel = from === "tapi";
+  if (!isPanel) pick.close();
   const ta = isPanel ? $("c-text") : $("d-text");
   const text = ta.value.trim();
   const slug = isPanel ? TAPI : current;
@@ -907,15 +997,10 @@ async function sendTo(slug, text, images, ta) {
     dropAttached(slug, images);
     if (ta.value.trim() === text) ta.value = "";
     deliveries.set(slug, { st: "delivered", text: text || imagesNote(images.length).trim(), at: Date.now() });
-    if (slug === TAPI) {
-      // ● until it shows up in the transcript (✓)
-      chat.pending.push({ text: (r && typeof r.text === "string" && r.text) || text, at: Date.now() });
-      if (view === "dashboard") {
-        renderChat(true);
-        toBottom();
-      }
-      setTimeout(refreshChat, 600);
-    }
+    // ● until it shows up in the transcript (✓)
+    const typed = (r && typeof r.text === "string" && r.text) || text;
+    if (slug === TAPI && view === "dashboard") tchat.addPending(typed);
+    if (view === "detail" && slug === current && paneWant === "chat") dchat.addPending(typed);
     setTimeout(refreshScreen, 600);
   } catch (e) {
     deliveries.set(slug, { st: "failed", text, at: Date.now(), why: e.message });
@@ -932,26 +1017,14 @@ function renderDeliveries() {
   renderDelivery($("c-delivery"), TAPI);
 }
 
-// ---- tapi's chat on the Dashboard: the transcript as bubbles ----
-// The page keeps up to CHAT_KEEP items and draws the last chatShow of
-// them; "Show earlier" draws more of what is kept. Before what pekoed
-// read first (earlier: true) the API has nothing more (決まったこと 7).
+// ---- tapi's chat on the Dashboard: the transcript as bubbles (chatpane.js) ----
 
-const CHAT_KEEP = 1500, CHAT_PAGE = 120;
-let chatShow = CHAT_PAGE;
-const chat = {
-  cursor: "", items: [], earlier: false, ok: null, why: "", loading: false,
-  sig: "", tailSig: "", held: false, open: new Set(), pending: [],
-};
-let spinTimer = 0;
-
-const atBottom = (log) => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-
-function toBottom() {
-  const log = $("c-log");
-  log.scrollTop = log.scrollHeight;
-  $("c-jump").hidden = true;
-}
+const tchat = chatPane({
+  log: $("c-log"), head: $("c-earlier"), body: $("c-items"), jump: $("c-jump"),
+  url: () => "/api/tapi/transcript", name: () => "tapi", shown: () => view === "dashboard",
+});
+tchat.reset(TAPI);
+let chatTailSig = "", spinTimer = 0;
 
 function renderChatHead() {
   const st = $("c-state");
@@ -963,42 +1036,6 @@ function renderChatHead() {
   renderChatTail();
 }
 
-function renderChat(force) {
-  if (view !== "dashboard") return;
-  const log = $("c-log");
-  const sig = chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier + "|" + chat.ok + "|" + chatShow;
-  if (!force && sig === chat.sig) return;
-  if (selectingIn(log)) {
-    chat.held = true;
-    return;
-  }
-  chat.held = false;
-  const stick = atBottom(log);
-  const fromBottom = log.scrollHeight - log.scrollTop;
-  chat.sig = sig;
-  const head = $("c-earlier");
-  head.replaceChildren();
-  const hidden = Math.max(0, chat.items.length - chatShow);
-  if (hidden) {
-    const b = el("button", "btn xs earlier", "Show earlier (" + Math.min(hidden, CHAT_PAGE) + " more of " + hidden + ")");
-    b.type = "button";
-    b.addEventListener("click", () => {
-      chatShow += CHAT_PAGE;
-      renderChat(true);
-    });
-    head.append(b);
-  } else if (chat.earlier) {
-    head.append(el("div", "divider", "Earlier messages are not loaded here: the TUI's tapi chat has them"));
-  }
-  const items = $("c-items");
-  items.replaceChildren();
-  if (chat.ok === false) items.append(el("div", "empty", "Chat unavailable: " + chat.why));
-  else if (!chat.items.length && !chat.pending.length) items.append(el("div", "empty", chat.ok === true ? "No messages yet" : "Loading…"));
-  items.append(chatView(chat.items.slice(-chatShow), chat.pending, "tapi", chat.open, () => renderChat(true)));
-  if (stick) toBottom();
-  else log.scrollTop = log.scrollHeight - fromBottom; // keep the place when earlier ones come in above
-}
-
 // renderChatTail: what tapi does now, under the last bubble: working (a
 // spinner), a permission prompt (answered at the terminal) or a question
 // (answered in the tapi tab, with the keypad).
@@ -1006,9 +1043,9 @@ function renderChatTail() {
   const tail = $("c-tail");
   const t = tapiUp() ? tapi : null;
   const sig = t ? [t.state, t.wait_kind, t.answerable, t.state_since].join("|") : "-";
-  const stick = atBottom($("c-log"));
-  if (sig === chat.tailSig) return;
-  chat.tailSig = sig;
+  const stick = tchat.atBottom();
+  if (sig === chatTailSig) return;
+  chatTailSig = sig;
   tail.replaceChildren();
   clearInterval(spinTimer);
   if (t && t.state === "waiting") {
@@ -1036,51 +1073,8 @@ function renderChatTail() {
       if (i % 12 === 0) typing.querySelector(".think").textContent = "thinking · " + ago(t.state_since);
     }, 80);
   }
-  if (stick) toBottom();
+  if (stick) tchat.toBottom();
 }
-
-const sameWords = (s) => String(s || "").replace(/\s+/g, " ").trim();
-
-async function refreshChat() {
-  if (view !== "dashboard" || chat.loading) return;
-  chat.loading = true;
-  try {
-    const r = await api("/api/tapi/transcript?after=" + encodeURIComponent(chat.cursor));
-    if (r.reset) {
-      if (r.new_conversation && chat.items.length) chat.items.push({ kind: "conv" });
-      else {
-        chat.items = [];
-        chat.open.clear();
-        chat.earlier = !!r.earlier;
-        chatShow = CHAT_PAGE;
-      }
-    }
-    for (const it of r.items || []) {
-      if (it && typeof it === "object" && typeof it.kind === "string") chat.items.push(it);
-    }
-    if (chat.items.length > CHAT_KEEP) {
-      chat.items = chat.items.slice(-CHAT_KEEP);
-      chat.open.clear();
-      chat.earlier = true;
-    }
-    markRewound(chat.items);
-    chat.cursor = String(r.cursor || "");
-    const seen = new Set(chat.items.filter((it) => it.kind === "human").slice(-20).map((it) => sameWords(it.text)));
-    const old = Date.now() - 5 * 60 * 1000;
-    chat.pending = chat.pending.filter((p) => !seen.has(sameWords(p.text)) && p.at > old);
-    chat.ok = true;
-    chat.why = "";
-  } catch (e) {
-    chat.ok = false;
-    chat.why = e.message;
-  } finally {
-    chat.loading = false;
-  }
-  renderChat(false);
-}
-
-$("c-log").addEventListener("scroll", () => ($("c-jump").hidden = atBottom($("c-log"))), { passive: true });
-$("c-jump").addEventListener("click", () => toBottom());
 
 // ---- the status line: the mode, the target, the counts, the keys ----
 
@@ -1254,15 +1248,14 @@ function openReset() {
   if (sheetOpen()) return;
   openConfirm(resetSheet(tapi), async () => {
     tapi = await api("/api/tapi/reset", {});
-    chat.cursor = "";
-    chat.items = [];
-    chat.pending = [];
-    chat.open.clear();
-    chat.sig = chat.tailSig = "";
+    tchat.reset(TAPI);
+    if (current === TAPI) dchat.reset(TAPI);
+    chatTailSig = "";
     toast("tapi chat reset", true);
     return () => {
-      renderChat(true);
+      tchat.render(true);
       renderChatHead();
+      renderPane();
     };
   });
 }
@@ -1326,7 +1319,13 @@ function route() {
   $("detail").hidden = view !== "detail";
   renderSide();
   renderTabs();
+  pick.close();
   if (view === "detail") {
+    dchat.reset(current);
+    if (paneWant === "chat") dchat.refresh().then(() => {
+      renderPane();
+      dchat.toBottom();
+    });
     $("d-screen").textContent = "";
     screenSig = "";
     scr.ok = 0;
@@ -1343,9 +1342,9 @@ function route() {
     }).catch(() => {});
   } else {
     dashSig = inboxSig = "";
-    chat.sig = chat.tailSig = "";
+    tchat.c.sig = chatTailSig = "";
     refreshDashboard().then(renderSide);
-    refreshChat().then(() => view === "dashboard" && toBottom());
+    tchat.refresh().then(() => view === "dashboard" && tchat.toBottom());
     renderChatHead();
     if (location.hash === "#/inbox") $("inbox").scrollIntoView();
   }
@@ -1361,7 +1360,8 @@ function schedule() {
   if (document.hidden) return;
   listTimer = setInterval(refresh, 3000);
   if (view === "detail") screenTimer = setInterval(refreshScreen, 2500);
-  if (view === "dashboard") chatTimer = setInterval(refreshChat, 2000);
+  if (view === "dashboard") chatTimer = setInterval(tchat.refresh, 2000);
+  if (view === "detail" && paneWant === "chat") chatTimer = setInterval(refreshPaneChat, 2000);
   // the "… ago" words move with the clock, not with the polls
   tickTimer = setInterval(() => {
     renderFresh();
@@ -1432,8 +1432,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
     refresh();
-    if (view === "detail") refreshScreen();
-    else refreshChat();
+    if (view === "detail") {
+      refreshScreen();
+      if (paneWant === "chat") refreshPaneChat();
+    } else tchat.refresh();
   }
   schedule();
 });
@@ -1448,6 +1450,7 @@ $("c-send").addEventListener("submit", (e) => {
 });
 for (const id of ["d-text", "c-text"]) {
   $(id).addEventListener("keydown", (e) => {
+    if (id === "d-text" && pick.key(e)) return; // the / and @ list takes ↑ ↓ ↵ Tab esc while open
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.isComposing) {
       e.preventDefault();
       doSend(id === "c-text" ? "tapi" : "detail");

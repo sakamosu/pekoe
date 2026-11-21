@@ -135,21 +135,44 @@ func (d *Daemon) webTapiTranscript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, errTapiNotStarted.Error(), http.StatusConflict)
 		return
 	}
-	after := r.URL.Query().Get("after")
-	if len(after) > 200 {
-		http.Error(w, "bad cursor", http.StatusBadRequest)
+	after, before, ok := chatQuery(w, r)
+	if !ok {
 		return
 	}
-	res, err := d.Call("tapi.transcript", mustJSON(tapiTranscriptP{After: after}))
-	if errors.Is(err, errNoTranscript) {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
+	res, err := d.Call("tapi.transcript", mustJSON(tapiTranscriptP{After: after, Before: before}))
 	if err != nil {
-		webErr(w, err)
+		chatErr(w, err)
 		return
 	}
 	writeJSON(w, res)
+}
+
+// chatQuery is ?after=<cursor> (the new items) or ?before=<cursor> (a
+// page back) of a chat read; a cursor longer than any pekoed hands out is
+// 400.
+func chatQuery(w http.ResponseWriter, r *http.Request) (after, before string, ok bool) {
+	after, before = r.URL.Query().Get("after"), r.URL.Query().Get("before")
+	if len(after) > 200 || len(before) > 200 {
+		http.Error(w, "bad cursor", http.StatusBadRequest)
+		return "", "", false
+	}
+	return after, before, true
+}
+
+// chatErr: 404 when there is no transcript to read (the page shows the
+// screen), 409 when the conversation moved under a page back, 400 for a
+// cursor that does not parse.
+func chatErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errNoTranscript):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, errChatMoved):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, errBadChatCursor):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		webErr(w, err)
+	}
 }
 
 // webTapiSend is tapi.send with submit, after the same checks as a

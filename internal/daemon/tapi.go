@@ -786,7 +786,8 @@ func (d *Daemon) tapiTranscript() string {
 }
 
 type tapiTranscriptP struct {
-	After string `json:"after"`
+	After  string `json:"after"`
+	Before string `json:"before,omitempty"` // a page back instead (readChatBefore)
 }
 
 // hTapiTranscript is tapi.transcript: tapi chat's conversation as chat
@@ -799,7 +800,17 @@ func (d *Daemon) hTapiTranscript(p tapiTranscriptP) (any, error) {
 	if path == "" {
 		return nil, errNoTranscript
 	}
-	page, err := readChat(path, p.After)
+	return chatPage(path, p.After, p.Before)
+}
+
+// chatPage reads after a cursor, or a page back before one (tapi's chat
+// and a session's).
+func chatPage(path, after, before string) (any, error) {
+	read := func() (ChatPage, error) { return readChat(path, after) }
+	if before != "" {
+		read = func() (ChatPage, error) { return readChatBefore(path, before) }
+	}
+	page, err := read()
 	if err != nil {
 		return nil, err
 	}

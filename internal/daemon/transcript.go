@@ -8,11 +8,13 @@ package daemon
 // output, task notifications). Lines pekoed itself typed into the input box
 // ("[pekoe inbox q3] …") are kept apart from the person's words.
 //
-// It takes a path, not a session: tapi chat uses it now (tapi.transcript),
-// a session's transcript can use it later. The path comes from a hook
-// payload, which any process of the user can send, so the caller checks it
-// (tapiTranscriptOK) and only a regular file is read (O_NONBLOCK, as
-// tailFile), in bounded chunks.
+// It takes a path, not a session: tapi chat (tapi.transcript) and a
+// session's chat (session.transcript, sessionchat.go) both read through it.
+// Hooks name the path (tapi) or the conversation (a session), and any
+// process of the user can send a hook, so each caller picks the path only
+// inside its own Claude Code project directory (tapiTranscriptOK,
+// sessionTranscript), and only a regular file is read (openChat: no
+// symlink, O_NONBLOCK as tailFile), in bounded chunks.
 
 import (
 	"bufio"
@@ -82,7 +84,8 @@ type ChatItem struct {
 // next read. Reset: Items start over (the first read, another
 // conversation, or a transcript that got shorter); the page drops what it
 // had. NewConversation: after named another conversation (/clear, a reset).
-// Earlier: older items were left out.
+// Earlier: older items were left out; Before, when set, reads them
+// (readChatBefore: a page back, as far as the start of the transcript).
 type ChatPage struct {
 	Conversation    string     `json:"conversation"`
 	Cursor          string     `json:"cursor"`
@@ -90,6 +93,7 @@ type ChatPage struct {
 	Reset           bool       `json:"reset,omitempty"`
 	NewConversation bool       `json:"new_conversation,omitempty"`
 	Earlier         bool       `json:"earlier,omitempty"`
+	Before          string     `json:"before,omitempty"`
 }
 
 var errNoTranscript = errors.New("no transcript to read")
@@ -114,13 +118,13 @@ func parseChatCursor(s string) (conv string, off int64, ok bool) {
 // the first read). A path that does not exist yet (a conversation just
 // cleared, nothing said in it) is an empty conversation.
 func readChat(path, after string) (ChatPage, error) {
-	conv := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	if path == "" || !strings.HasSuffix(path, ".jsonl") || !validSessionID(conv) {
-		return ChatPage{}, errNoTranscript
+	conv, err := chatConv(path)
+	if err != nil {
+		return ChatPage{}, err
 	}
 	pc, off, ok := parseChatCursor(after)
 	page := ChatPage{Conversation: conv, Items: []ChatItem{}}
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, size, err := openChat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		page.Cursor = chatCursor(conv, 0)
 		page.Reset = !ok || pc != conv || off > 0
@@ -128,52 +132,181 @@ func readChat(path, after string) (ChatPage, error) {
 		return page, nil
 	}
 	if err != nil {
-		return ChatPage{}, fmt.Errorf("%w: %v", errNoTranscript, err)
+		return ChatPage{}, err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
-		return ChatPage{}, errNoTranscript
-	}
-	size := fi.Size()
 	start := off
 	if !ok || pc != conv || off > size {
 		page.Reset = true
 		page.NewConversation = ok && pc != conv
 		start = max(size-chatTail, 0)
 	}
-	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return ChatPage{}, errNoTranscript
-	}
-	r := bufio.NewReaderSize(io.LimitReader(f, size-start), 64<<10)
-	pos := start
-	if page.Reset && start > 0 {
-		// started mid-line: skip to the next whole one
-		n, _, err := readLine(r)
-		pos += n
-		if err != nil {
-			page.Cursor = chatCursor(conv, start)
-			page.Earlier = true
-			return page, nil
-		}
-		page.Earlier = true
-	}
-	for pos-start < chatChunk {
-		n, line, err := readLine(r)
-		if err != nil {
-			break // EOF, or a line still being written: read it next time
-		}
-		pos += n
-		if line != nil {
-			page.Items = append(page.Items, chatItems(line)...)
-		}
-	}
-	if page.Reset && len(page.Items) > chatMaxItems {
-		page.Items = page.Items[len(page.Items)-chatMaxItems:]
-		page.Earlier = true
+	lines, first, pos, err := chatLinesIn(f, start, size-start, chatChunk, page.Reset && start > 0)
+	if err != nil {
+		return ChatPage{}, err
 	}
 	page.Cursor = chatCursor(conv, pos)
+	if !page.Reset {
+		page.Items = flatChat(lines)
+		return page, nil
+	}
+	page.Items, page.Before = keepNewest(conv, lines, first)
+	page.Earlier = page.Before != ""
 	return page, nil
+}
+
+// readChatBefore reads the page before the cursor before (a ChatPage's
+// Before): at most chatTail bytes and chatMaxItems items ending there, the
+// newest of them. Before in the answer goes on further back; "" when the
+// start of the transcript is in. Cursor is left empty: reading back moves
+// nothing forward. A cursor of another conversation, or past the end of a
+// transcript that got shorter, is errChatMoved.
+func readChatBefore(path, before string) (ChatPage, error) {
+	conv, err := chatConv(path)
+	if err != nil {
+		return ChatPage{}, err
+	}
+	pc, end, ok := parseChatCursor(before)
+	if !ok {
+		return ChatPage{}, errBadChatCursor
+	}
+	if pc != conv {
+		return ChatPage{}, errChatMoved
+	}
+	f, size, err := openChat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ChatPage{}, errChatMoved
+	}
+	if err != nil {
+		return ChatPage{}, err
+	}
+	defer f.Close()
+	if end > size {
+		return ChatPage{}, errChatMoved
+	}
+	start := max(end-chatTail, 0)
+	lines, first, _, err := chatLinesIn(f, start, end-start, end-start, start > 0)
+	if err != nil {
+		return ChatPage{}, err
+	}
+	page := ChatPage{Conversation: conv}
+	page.Items, page.Before = keepNewest(conv, lines, first)
+	page.Earlier = page.Before != ""
+	return page, nil
+}
+
+var (
+	errBadChatCursor = errors.New("bad cursor")
+	// errChatMoved: a page before a point of a conversation that is not the
+	// one shown any more (or got shorter): the page reads it again
+	errChatMoved = errors.New("the conversation changed: read it again from the end")
+)
+
+// chatConv is the conversation id of a transcript path (its file name).
+func chatConv(path string) (string, error) {
+	conv := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+	if path == "" || !strings.HasSuffix(path, ".jsonl") || !validSessionID(conv) {
+		return "", errNoTranscript
+	}
+	return conv, nil
+}
+
+// openChat opens a transcript for reading: a regular file, not through a
+// symlink (O_NOFOLLOW: the name is in Claude Code's project directory,
+// what it points to need not be), in a directory that is no symlink
+// either. O_NONBLOCK as tailFile: a FIFO put in its place does not hang
+// the read. A missing file is os.ErrNotExist; anything else that is not a
+// transcript is errNoTranscript.
+func openChat(path string) (*os.File, int64, error) {
+	if fi, err := os.Lstat(filepath.Dir(path)); err == nil && !fi.IsDir() {
+		return nil, 0, errNoTranscript
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, err
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: %v", errNoTranscript, err)
+	}
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() {
+		f.Close()
+		return nil, 0, errNoTranscript
+	}
+	return f, fi.Size(), nil
+}
+
+// chatLineAt is what one transcript line gave, and where the line starts.
+type chatLineAt struct {
+	off   int64
+	items []ChatItem
+}
+
+// chatLinesIn reads the whole lines in the n bytes from start, stopping
+// after the line that passes upto bytes (skip: start may be mid-line, so
+// the first, partial line is dropped). first is where
+// the first whole line starts, pos the byte after the last whole line read
+// (a line still being written is left for the next read).
+func chatLinesIn(f *os.File, start, n, upto int64, skip bool) (lines []chatLineAt, first, pos int64, err error) {
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil, 0, 0, errNoTranscript
+	}
+	r := bufio.NewReaderSize(io.LimitReader(f, n), 64<<10)
+	pos = start
+	if skip {
+		k, _, err := readLine(r)
+		if err != nil {
+			// no line starts here: the next page back ends at start
+			return nil, start, start, nil
+		}
+		pos += k
+	}
+	first = pos
+	for pos-start < upto {
+		k, line, err := readLine(r)
+		if err != nil {
+			break // the end, or a line still being written: read it next time
+		}
+		if line != nil {
+			if its := chatItems(line); len(its) > 0 {
+				lines = append(lines, chatLineAt{off: pos, items: its})
+			}
+		}
+		pos += k
+	}
+	return lines, first, pos, nil
+}
+
+func flatChat(lines []chatLineAt) []ChatItem {
+	out := []ChatItem{}
+	for _, l := range lines {
+		out = append(out, l.items...)
+	}
+	return out
+}
+
+// keepNewest keeps the lines of the newest chatMaxItems items (whole
+// lines: a line of many items counts whole), and the cursor of the page
+// before them: where the first kept line starts ("" when that is the start
+// of the transcript). first: where the first whole line read starts.
+func keepNewest(conv string, lines []chatLineAt, first int64) ([]ChatItem, string) {
+	n, k := 0, len(lines)
+	for k > 0 && n+len(lines[k-1].items) <= chatMaxItems {
+		k--
+		n += len(lines[k].items)
+	}
+	if k == len(lines) && k > 0 { // one line of more than chatMaxItems
+		k--
+	}
+	from := first
+	if k > 0 {
+		from = lines[k].off
+	}
+	before := ""
+	if from > 0 {
+		before = chatCursor(conv, from)
+	}
+	return flatChat(lines[k:]), before
 }
 
 // readLine reads one whole line: its length with the newline, and the line

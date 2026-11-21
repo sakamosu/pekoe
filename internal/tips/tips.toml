@@ -167,6 +167,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui-design.md#決まったこと"]
 
 [[tip]]
+id = "local-gui-session-chat"
+short = "pekoe gui でセッションの会話を吹き出しで読む"
+detail = "セッションの Chat で Claude Code の会話を吹き出しで読める(Load earlier で先頭まで)。既定は Screen。送信欄の / Commands と @ Files は、コマンドやファイルの名前を入れるだけで、送るのは自分。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-セッションの吹き出しと送信欄の--"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"

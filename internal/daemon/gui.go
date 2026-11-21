@@ -431,6 +431,12 @@ func (d *Daemon) guiHandler(port int) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{slug}/interrupt", d.guiInterrupt)
 	mux.HandleFunc("POST /api/tapi/interrupt", d.guiTapiInterrupt(sf))
 	mux.HandleFunc("POST /api/tapi/reset", d.guiTapiReset(sf))
+	// a session's chat and its input box's / and @ (sessionchat.go): the
+	// GUI's mux only. The phone's Web UI has no session chat (its session
+	// view is the screen), and they return the repository's file names
+	mux.HandleFunc("GET /api/sessions/{slug}/transcript", d.guiSessionTranscript)
+	mux.HandleFunc("GET /api/sessions/{slug}/commands", d.guiSessionCommands)
+	mux.HandleFunc("GET /api/sessions/{slug}/files", d.guiSessionFiles)
 	return d.guiGuard(port, mux)
 }
 
