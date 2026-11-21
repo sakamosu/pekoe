@@ -192,6 +192,41 @@ a:hover { color: var(--text); }
 .view-worktrees-bare:hover { background: transparent; }
 .view-worktrees-note { padding: 0 8px; font-size: 12px; color: var(--dim); }
 
+/* the Changes view (views/changes.js): the open session's changed files,
+   one file's diff to read in the same place. Color only on the status
+   letter, ⚠ and the + / − tokens; the diff's text is monospace (code, as
+   the screen) and wraps (the sidebar is narrow) */
+.view-changes { gap: 8px; min-height: 0; }
+.view-changes-list, .view-changes-file { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.view-changes-list[hidden], .view-changes-file[hidden] { display: none; }
+.view-changes-who { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0 8px; font-size: 12px; }
+.view-changes-who .diff { margin-left: auto; flex: none; font-size: 11px; }
+.view-changes-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.view-changes-row { padding: 6px 8px; }
+.view-changes-st { flex: none; width: 12px; font-size: 11px; font-weight: 700; font-family: var(--mono); }
+.view-changes-name { flex: 1; }
+.view-changes-n { flex: none; margin-left: auto; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.view-changes-dir { padding-left: 18px; }
+.view-changes-peers { flex: none; margin-left: auto; white-space: nowrap; }
+.view-changes-err { color: var(--text); }
+.view-changes-bar { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+.view-changes-ro { margin-left: auto; font-size: 11px; color: var(--dim); }
+.view-changes-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding: 0 8px; font-size: 12px; }
+.view-changes-path { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.view-changes-diff {
+  flex: 1; min-height: 0; overflow-y: auto; margin: 0 0 8px; padding: 4px 0;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  font: 11.5px/1.45 var(--mono); color: var(--text);
+}
+.view-changes-diff > .empty { font-family: var(--sans); font-size: 12px; padding: 12px; }
+.view-changes-hunk + .view-changes-hunk { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 4px; }
+.view-changes-hh { padding: 0 8px; color: var(--dim); overflow-wrap: anywhere; }
+.view-changes-line { display: flex; padding: 0 8px 0 0; }
+.view-changes-mark { flex: none; width: 20px; text-align: center; }
+.view-changes-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.view-changes-cut { flex: none; color: var(--dim); }
+.view-changes-more { padding: 8px; font-family: var(--sans); font-size: 12px; color: var(--dim); }
+
 /* ---- the main column: tabs and the view ---- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tabs { flex: none; display: flex; align-items: stretch; background: var(--chrome); border-bottom: 1px solid var(--border); overflow-x: auto; }

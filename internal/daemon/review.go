@@ -18,8 +18,11 @@ import (
 )
 
 type changeEntry struct {
-	Status string `json:"status"`
-	Path   string `json:"path"`
+	Status  string `json:"status"`
+	Path    string `json:"path"`
+	Added   int    `json:"added"`
+	Deleted int    `json:"deleted"`
+	Binary  bool   `json:"binary,omitempty"`
 }
 
 func (d *Daemon) hChanges(p slugP) (any, error) {
@@ -27,23 +30,60 @@ func (d *Daemon) hChanges(p slugP) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	base, _ := d.baseCommit(s, 0)
-	tree, err := gitx.SnapshotTree(s.Path)
-	if err != nil {
-		return nil, err
+	_, _, res, err := d.changeList(s)
+	return res, err
+}
+
+// changeList is what changed in s since its base (committed and not, as a
+// snapshot tree), one entry per path with its lines added and deleted.
+// Names are read with -z: unquoted, as the conflict forecast has them.
+func (d *Daemon) changeList(s *state.Session) (base, tree string, res []changeEntry, err error) {
+	if s.GitBlocked != "" {
+		return "", "", nil, fmt.Errorf("pekoed runs no git in %s: %s", s.Slug, s.GitBlocked)
 	}
-	out, err := gitx.Run(s.Path, "diff", "--name-status", "--no-renames", "--end-of-options", base, tree)
+	base, _ = d.baseCommit(s, 0)
+	tree, err = gitx.SnapshotTree(s.Path)
 	if err != nil {
-		return nil, err
+		return "", "", nil, err
 	}
-	res := []changeEntry{}
-	for _, ln := range strings.Split(out, "\n") {
-		st, path, ok := strings.Cut(ln, "\t")
-		if ok {
-			res = append(res, changeEntry{Status: st[:1], Path: path})
+	ns, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--name-status", "--no-renames", "-z", "--end-of-options", base, tree)
+	if err != nil {
+		return "", "", nil, err
+	}
+	num, err := gitx.RunRaw(context.Background(), s.Path, nil, nil, "diff", "--numstat", "--no-renames", "-z", "--end-of-options", base, tree)
+	if err != nil {
+		return "", "", nil, err
+	}
+	res = []changeEntry{}
+	f := strings.Split(string(ns), "\x00")
+	for i := 0; i+1 < len(f); i += 2 {
+		if f[i] != "" {
+			res = append(res, changeEntry{Status: f[i][:1], Path: f[i+1]})
 		}
 	}
-	return res, nil
+	// --numstat -z: "added\tdeleted\tpath" per path, "-\t-" for a binary
+	at := map[string]int{}
+	for i, c := range res {
+		at[c.Path] = i
+	}
+	for _, rec := range strings.Split(string(num), "\x00") {
+		a, rest, ok := strings.Cut(rec, "\t")
+		if !ok {
+			continue
+		}
+		dl, path, ok := strings.Cut(rest, "\t")
+		i, found := at[path]
+		if !ok || !found {
+			continue
+		}
+		if a == "-" && dl == "-" {
+			res[i].Binary = true
+			continue
+		}
+		res[i].Added, _ = strconv.Atoi(a)
+		res[i].Deleted, _ = strconv.Atoi(dl)
+	}
+	return base, tree, res, nil
 }
 
 func (d *Daemon) hReviewStart(p slugP) (any, error) {

@@ -449,6 +449,10 @@ func (d *Daemon) guiHandler(port int) http.Handler {
 	// the sidebar's Worktrees view (guiworktree.go): the GUI's mux only,
 	// as the TUI's [2] Worktrees. It reads; the phone has no such view
 	mux.HandleFunc("GET /api/worktrees", d.guiWorktrees)
+	// the rail's Changes (guichanges.go): the GUI's mux only. The phone's
+	// Web UI shows a session's diffstat, not its files or their diffs
+	mux.HandleFunc("GET /api/sessions/{slug}/changes", d.guiChanges)
+	mux.HandleFunc("GET /api/sessions/{slug}/diff", d.guiChangesDiff)
 	return d.guiGuard(port, mux)
 }
 

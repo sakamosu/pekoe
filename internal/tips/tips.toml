@@ -202,6 +202,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#worktrees"]
 
 [[tip]]
+id = "local-gui-changes"
+short = "pekoe gui の Changes で変更したファイルと差分を読む"
+detail = "レールの Changes に、開いているセッションの変更したファイル(A/M/D・+/−・同じファイルを触るセッションの ⚠)が出る。押すとその差分を読める(読むだけ。コメントと承認は TUI のレビューで)。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-changes-のビュー"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"
