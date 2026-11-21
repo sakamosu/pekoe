@@ -5,8 +5,9 @@
 // the Dashboard (dash.js) with tapi's chat on the right; a session's view
 // (header, the read-only screen, the input pinned to the bottom, its facts
 // on the right); the status line.
-// It draws with the phone's modules (lib/) and calls the same /api/; no
-// API of its own. Everything goes into the DOM with textContent (agent
+// It draws with the phone's modules (lib/) and calls the same /api/, plus
+// the GUI's own few (the Dashboard's stats and ledger; New session, tapi's
+// Reset and Interrupt, actions.js). Everything goes into the DOM with textContent (agent
 // output is untrusted text), and no style is set from here: every look is
 // a class in gui.css (TestGUIStylesOnlyInCSS).
 
@@ -23,6 +24,7 @@ import { shellBang } from "./shell.js";
 import { guardPageDrops } from "./drop.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
+import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet } from "./actions.js";
 
 let sessions = [];
 let tapi = null; // /api/tapi
@@ -456,6 +458,7 @@ function renderDetail() {
   renderInfo(s);
   renderTarget(s);
   renderKeypad(s);
+  renderInterrupt(s);
   renderStatus();
   if (busy) return; // the sheet is open: keep what it was opened from
   renderAsk(s, isTapi);
@@ -1118,7 +1121,185 @@ function renderStatus() {
   else if (s && s.answerable && !isTapi) hints.append(hint("y", "allow"), hint("A", "always"), hint("n", "deny", "err"));
   else if (questionUp(s)) hints.append(hint("1–9", "choose"), hint("⌘↵", "send words"));
   else hints.append(hint("⌘↵", "send"));
+  if (view === "detail" && !interruptWhy(s, isTapi)) hints.append(hint("esc", "interrupt"));
 }
+
+// ---- New session, tapi's Reset, Interrupt (actions.js): each through #csheet ----
+
+let csheet = null; // {run, back}: what OK does, what Cancel goes back to
+
+// openConfirm shows w (actions.js's words) in #csheet. run() does it; it
+// may return a function to call once the sheet is closed. back: Cancel
+// goes back there (the New session form) instead of closing.
+function openConfirm(w, run, back) {
+  csheet = { run, back };
+  busy = true;
+  $("csheet").querySelector(".sheet").classList.toggle("danger", !!w.danger);
+  $("csheet-title").textContent = w.title;
+  $("csheet-to-cap").textContent = w.toCap;
+  $("csheet-to").textContent = w.to;
+  const box = $("csheet-facts");
+  box.replaceChildren();
+  for (const f of w.facts) box.append(el("div", "sheet-cap", f.cap), el(f.pre ? "pre" : "div", f.pre ? "input whole" : "sheet-fact", f.text));
+  $("csheet-warn").textContent = w.warn;
+  $("csheet-warn").hidden = !w.warn;
+  $("csheet-cancel").textContent = back ? "Back" : "Cancel";
+  const ok = $("csheet-ok");
+  ok.textContent = w.ok;
+  ok.className = "btn" + (w.danger ? "" : " primary"); // a destructive one is never the main button
+  ok.disabled = false;
+  $("csheet").hidden = false;
+  (w.focusOk ? ok : $("csheet-cancel")).focus();
+}
+
+function closeConfirm() {
+  const c = csheet;
+  $("csheet").hidden = true;
+  csheet = null;
+  busy = false;
+  if (c && c.back) c.back();
+}
+
+async function confirmRun() {
+  const c = csheet;
+  if (!c || $("csheet-ok").disabled) return;
+  $("csheet-ok").disabled = true;
+  let after = null;
+  try {
+    after = await c.run();
+  } catch (e) {
+    toast(e.message);
+  }
+  $("csheet").hidden = true;
+  csheet = null;
+  busy = false;
+  if (typeof after === "function") after();
+  refresh();
+}
+
+// New session: the form (#nsheet), then the confirm sheet. The fields keep
+// what was typed until a session is made.
+let repos = [];
+
+function newErr(text) {
+  $("n-err").textContent = text ? "⚠ " + text : "";
+  $("n-err").hidden = !text;
+}
+
+function showNewForm(err) {
+  busy = true;
+  newErr(err || "");
+  $("nsheet").hidden = false;
+  $(err ? "n-branch" : $("n-branch").value ? "n-prompt" : "n-branch").focus();
+}
+
+async function openNew() {
+  if (sheetOpen()) return;
+  showNewForm("");
+  $("n-branch").focus();
+  const sel = $("n-repo");
+  const was = sel.value;
+  sel.disabled = true;
+  sel.replaceChildren(el("option", null, "loading…"));
+  try {
+    repos = (await api("/api/repos")).repos || [];
+  } catch (e) {
+    repos = [];
+    newErr("cannot list the repositories: " + e.message);
+  }
+  sel.replaceChildren(...repos.map((r) => {
+    const o = el("option", null, r.name + " · " + r.dir);
+    o.value = r.repo_id;
+    return o;
+  }));
+  sel.disabled = !repos.length;
+  if (!repos.length && $("n-err").hidden) newErr("pekoe knows no repository yet: make its first session from the TUI or with pekoe new");
+  // what was picked before, else the repository of the session in view
+  const cur = current && current !== TAPI ? sessions.find((x) => x.slug === current) : null;
+  const pick = repos.find((r) => r.repo_id === was) || (cur && repos.find((r) => r.name === cur.repo)) || repos[0];
+  if (pick) sel.value = pick.repo_id;
+}
+
+function closeNew() {
+  $("nsheet").hidden = true;
+  busy = false;
+}
+
+$("nform").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const repo = repos.find((r) => r.repo_id === $("n-repo").value);
+  const branch = $("n-branch").value.trim();
+  const prompt = $("n-prompt").value.trim() ? $("n-prompt").value : "";
+  const why = newWhy(repo, branch);
+  if (why) return newErr(why);
+  $("nsheet").hidden = true;
+  openConfirm(newSheet(repo, branch, prompt), async () => {
+    try {
+      const s = await api("/api/sessions", { repo_id: repo.repo_id, branch, prompt });
+      $("n-branch").value = "";
+      $("n-prompt").value = "";
+      toast("created " + s.slug, true);
+      return () => refresh().then(() => go(s.slug));
+    } catch (e) {
+      return () => showNewForm(e.message);
+    }
+  }, () => showNewForm(""));
+});
+$("n-cancel").addEventListener("click", closeNew);
+$("nsheet").addEventListener("click", (e) => { if (e.target === $("nsheet")) closeNew(); });
+$("new-btn").addEventListener("click", openNew);
+
+// tapi's Reset (the TUI's T, pekoe tapi reset)
+function openReset() {
+  if (sheetOpen()) return;
+  openConfirm(resetSheet(tapi), async () => {
+    tapi = await api("/api/tapi/reset", {});
+    chat.cursor = "";
+    chat.items = [];
+    chat.pending = [];
+    chat.open.clear();
+    chat.sig = chat.tailSig = "";
+    toast("tapi chat reset", true);
+    return () => {
+      renderChat(true);
+      renderChatHead();
+    };
+  });
+}
+$("c-reset").addEventListener("click", openReset);
+
+// Interrupt: Escape once into the agent in view (the TUI's esc while typing)
+function interruptTarget() {
+  const isTapi = current === TAPI;
+  return { isTapi, t: isTapi ? tapi : detailTarget() };
+}
+
+function renderInterrupt(s) {
+  const b = $("d-interrupt");
+  const why = interruptWhy(s, current === TAPI);
+  b.disabled = !!why;
+  b.title = why ? "Interrupt: " + why : "stop the agent's turn: Escape once, after a confirmation";
+}
+
+function openInterrupt() {
+  if (view !== "detail" || sheetOpen()) return;
+  const { isTapi, t } = interruptTarget();
+  const slug = current;
+  const why = interruptWhy(t, isTapi);
+  if (why) return toast((isTapi ? "tapi" : slug) + ": " + why);
+  const w = interruptSheet(isTapi ? "tapi" : t.branch || slug, isTapi);
+  if (!isTapi) w.to = targetLabel(slug);
+  w.focusOk = true; // esc, then ↵: the sheet is the confirmation
+  openConfirm(w, async () => {
+    await api(apiBase(slug) + "/interrupt", {});
+    toast("interrupted " + (isTapi ? "tapi" : slug), true);
+    setTimeout(refreshScreen, 300);
+  });
+}
+$("d-interrupt").addEventListener("click", openInterrupt);
+$("csheet-cancel").addEventListener("click", closeConfirm);
+$("csheet-ok").addEventListener("click", confirmRun);
+$("csheet").addEventListener("click", (e) => { if (e.target === $("csheet")) closeConfirm(); });
 
 // ---- routing & polling ----
 
@@ -1192,12 +1373,14 @@ function schedule() {
 // ---- keys: only while no text box has the focus (docs/gui-design.md) ----
 // ":" the filter; on a permission card y / A / n open the confirm sheet
 // (never answer by themselves); on a question card 1–9 go to its menu.
+// n New session (unless n is a permission card's deny), T tapi's Reset, esc
+// Interrupt on a session that works: each opens its confirm sheet.
 
 const typing = (e) => {
   const t = e.target;
   return t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
 };
-const sheetOpen = () => ["sheet", "isheet", "tsheet", "xsheet"].some((id) => !$(id).hidden);
+const sheetOpen = () => ["sheet", "isheet", "tsheet", "xsheet", "nsheet", "csheet"].some((id) => !$(id).hidden);
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -1205,6 +1388,15 @@ document.addEventListener("keydown", (e) => {
     if (!$("sheet").hidden) answers.close();
     else if (!$("isheet").hidden) isheet.close();
     else if (!$("tsheet").hidden || !$("xsheet").hidden) closeSheets();
+    else if (!$("csheet").hidden) closeConfirm();
+    else if (!$("nsheet").hidden) closeNew();
+    else if (!typing(e) && !e.isComposing && view === "detail") {
+      const { isTapi, t } = interruptTarget();
+      if (!interruptWhy(t, isTapi)) {
+        e.preventDefault();
+        openInterrupt();
+      }
+    }
     return;
   }
   if (typing(e) || sheetOpen() || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
@@ -1213,17 +1405,27 @@ document.addEventListener("keydown", (e) => {
     $("q").focus();
     return;
   }
-  if (view !== "detail") return;
-  const s = detailTarget();
+  if (e.key === "T") {
+    e.preventDefault();
+    openReset();
+    return;
+  }
+  const s = view === "detail" ? detailTarget() : null;
   if (s && current !== TAPI && s.answerable && !busy) {
     const answer = { y: "allow", A: "always", n: "deny" }[e.key];
     if (answer) {
       e.preventDefault();
       confirmAnswer(s, answer);
+      return;
     }
   } else if (questionUp(s) && /^[1-9]$/.test(e.key)) {
     e.preventDefault();
     pressKey(e.key);
+    return;
+  }
+  if (e.key === "n") {
+    e.preventDefault();
+    openNew();
   }
 });
 

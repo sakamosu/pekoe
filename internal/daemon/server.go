@@ -223,6 +223,7 @@ type Daemon struct {
 	prPolling   atomic.Bool          // watchPRStatus is running
 	finishing   sync.Map             // slug -> chan closed when finishLand or rm of it ends (holdFinishing)
 	sendLocks   sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
+	interrupted interrupts           // when each agent was last interrupted (interrupt.go)
 	promptLocks sync.Map             // slug -> *sync.Mutex: one snapshotPrompt at a time (hooks.go)
 	tests       testRuns             // [hooks] test runs (hooks.go)
 
@@ -660,13 +661,14 @@ func (d *Daemon) registerHandlers() {
 			}
 			return d.hKeys(p)
 		}),
-		"session.answer":  bind(d.hAnswer),
-		"session.screen":  bind(d.hScreen),
-		"session.resize":  bind(d.hResize),
-		"session.seen":    bind(d.hSeen),
-		"session.kill":    bind(d.hKill),
-		"session.restart": bind(d.hRestart),
-		"session.undo":    bind(d.hUndo),
+		"session.answer":    bind(d.hAnswer),
+		"session.interrupt": bind(d.hInterrupt),
+		"session.screen":    bind(d.hScreen),
+		"session.resize":    bind(d.hResize),
+		"session.seen":      bind(d.hSeen),
+		"session.kill":      bind(d.hKill),
+		"session.restart":   bind(d.hRestart),
+		"session.undo":      bind(d.hUndo),
 		"session.progress": bind(func(p slugP) (any, error) {
 			d.mu.Lock()
 			defer d.mu.Unlock()
@@ -728,6 +730,7 @@ func (d *Daemon) registerHandlers() {
 		"tapi.keys":             bind(func(p keysP) (any, error) { d.noteTyped(TapiSlug); return d.hTapiKeys(p) }),
 		"tapi.resize":           bind(d.hTapiResize),
 		"tapi.answer":           bind(d.hTapiAnswer),
+		"tapi.interrupt":        bind(d.hTapiInterrupt),
 		"tapi.deliver_pause":    bind(d.hTapiDeliverPause),
 		"ledger.reopen":         bind(d.hLedgerReopen),
 		"ledger.delete":         bind(d.hLedgerDelete),

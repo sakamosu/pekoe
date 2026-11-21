@@ -28,7 +28,7 @@ body.gui {
   font: 13px/1.5 var(--sans); font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
-button, input, textarea { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
 h1, h2, h3 { margin: 0; font: inherit; }
@@ -494,6 +494,17 @@ a:hover { color: var(--text); }
 .sheet .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .sheet .row .btn { min-width: 9em; height: 40px; border-radius: 8px; }
 /* the sheet's main button is .primary; a deny stays a plain button (a destructive answer is never the main one) */
+/* the New session form's fields and the confirm sheet's lines (#nsheet, #csheet) */
+.sheet .field {
+  width: 100%; padding: 8px 12px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; line-height: 1.5;
+}
+.sheet select.field { height: 36px; padding: 0 8px; }
+.sheet input.field { height: 36px; }
+.sheet textarea.field { min-height: 8em; max-height: 40vh; resize: vertical; }
+.sheet .field::placeholder { color: var(--dim); }
+.sheet .field:disabled { color: var(--dim); }
+.sheet-fact { font-size: 13px; overflow-wrap: anywhere; }
 
 .toast {
   position: fixed; right: 16px; bottom: 40px; z-index: 20; max-width: 520px;
