@@ -5,16 +5,20 @@
 
 import { $, el, colored, txt, sep, toast } from "./lib/dom.js";
 import { api, guiSignIn, TAPI, apiBase } from "./lib/api.js";
-import { requestId, questionId, ago, details, line1, cutNote, questionUp } from "./lib/fmt.js";
+import { requestId, questionId, ago, hm, short, look, details, line1, cutNote, questionUp } from "./lib/fmt.js";
 import { termLines, screenRows } from "./lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "./lib/images.js";
 import { draftOf, inboxCard, mergeRow } from "./lib/inbox.js";
-import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing } from "./lib/overview.js";
+import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing, STEP_LOOK, STEP_NAMES } from "./lib/overview.js";
 import { SPIN, bubbleLine, markRewound, chatView } from "./lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "./lib/sheets.js";
 
 let sessions = [];
-let view = "list"; // list | inbox | overview | detail
+let view = "now"; // now | list (Sessions) | inbox | overview | detail
+let filter = "all"; // the Sessions chip: all | review | active | landed
+let nowData = null; // GET /api/now
+let lastRead = 0; // when the sessions were read last (the bar's freshness)
+const openMore = new Set(); // "landed" / "requests": the folded rest shown
 let current = null; // slug shown in the detail view
 let backTo = ""; // the hash the detail view's back button returns to
 let tapi = null; // /api/tapi: tapi's state and the inbox / ledger counts
@@ -28,16 +32,6 @@ const attachments = new Map(); // slug → images for the next send (same rule):
 let preparing = false; // images being read and re-encoded
 
 // ---- list ----
-
-function sessionRow(s) {
-  const b = el("button", "row-s");
-  b.type = "button";
-  const l2 = el("div", "line2");
-  l2.append(...details(s, true));
-  b.append(line1(s), l2);
-  b.addEventListener("click", () => go(s.slug));
-  return b;
-}
 
 // waitBody: what the agent is asking, and the buttons (allow/deny only for
 // a permission prompt; a question is answered with the keypad or by
@@ -76,56 +70,365 @@ function waitBody(s, box) {
   }
 }
 
+// ---- Sessions: by state (docs/web.md 「Sessions」) ----
+// pekoed puts each session under a heading (webSession.group): active
+// (running, waiting…), review (done), idle, landed. Waiting sessions keep
+// their card with allow / deny; the landed show the newest two.
+
+const GROUPS = [
+  ["active", "Active"],
+  ["review", "To review"],
+  ["idle", "Idle"],
+  ["landed", "Landed"],
+];
+const LANDED_SHOWN = 2;
+
+function groupOf(s) {
+  if (s.group) return s.group;
+  // an older pekoed without group: the same rule (webGroup)
+  if (s.state === "done" || s.state === "failed" || s.state === "approved") return "review";
+  if (s.state === "idle" || s.state === "landed") return s.state;
+  return "active";
+}
+
+// phoneDetails: the second line after the name: diff, test, PR, an error,
+// the tool a running session is in
+function phoneDetails(s) {
+  const out = [];
+  const add = (...nodes) => {
+    if (out.length) out.push(sep());
+    out.push(...nodes);
+  };
+  const d = s.diffstat;
+  if (d && d.added + d.deleted > 0) add(colored("ok", "+" + d.added), txt(" "), colored("err", "−" + d.deleted));
+  if (s.test === "pass") add(colored("ok", "✓"), txt(" test"));
+  else if (s.test === "fail") add(colored("err", "✗"), txt(" test"));
+  else if (s.test === "running") add(txt("…test"));
+  else if (s.test === "blocked" || s.test === "error") add(colored("warn", "!"), txt(" test"));
+  if (s.git_blocked) add(colored("warn", "!"), txt(" .git changed"));
+  if (s.state === "queued" && s.queue) add(txt(s.queue));
+  if (s.pr) {
+    const n = [txt("#" + s.pr)];
+    if (s.pr_look) n.push(txt(" "), colored(s.pr_look.role, s.pr_look.icon + " " + s.pr_look.word));
+    add(...n);
+  }
+  if (s.error) add(colored("err", "err"), txt(" " + s.error.split("\n")[0]));
+  else if (s.state === "running" && s.last_tool) add(txt(s.last_tool));
+  return out;
+}
+
+// sessionRow: icon · two lines · state and age. A session in the
+// repository's own checkout is named by the repository (main under it).
+function sessionRow(s) {
+  const b = el("button", "srow");
+  b.type = "button";
+  const lk = look(s);
+  const g = groupOf(s);
+  const icon = g === "idle" ? "◦" : lk.icon;
+  const mid = el("span", "mid");
+  const n1 = el("span", "n1", s.main ? s.repo : s.branch || s.slug);
+  const n2 = el("span", "n2");
+  n2.append(txt(s.main ? s.branch || "main" : s.repo));
+  const more = phoneDetails(s);
+  if (more.length) n2.append(sep(), ...more);
+  mid.append(n1, n2);
+  const right = el("span", "rt");
+  right.append(colored(lk.role, lk.word, "w"), el("span", "age", s.state === "idle" ? "" : ago(s.state_since)));
+  b.append(colored(g === "idle" ? "dim" : lk.role, icon, "si"), mid, right);
+  b.addEventListener("click", () => go(s.slug));
+  return b;
+}
+
+function groupCounts() {
+  const c = { all: sessions.length, active: 0, review: 0, idle: 0, landed: 0 };
+  for (const s of sessions) c[groupOf(s)]++;
+  return c;
+}
+
+function renderChips(c) {
+  const box = $("l-chips");
+  box.replaceChildren();
+  for (const [k, word] of [["all", "All"], ["review", "To review"], ["active", "Active"], ["landed", "Landed"]]) {
+    const a = el("a", "chip", word + " ");
+    a.href = k === "all" ? "#/sessions" : "#/sessions/" + k;
+    a.append(el("span", "cn", String(c[k])));
+    if (filter === k) a.setAttribute("aria-current", "true");
+    box.append(a);
+  }
+}
+
 function renderList() {
   if (touching) return; // redrawn on release
   const rows = $("l-rows");
   rows.replaceChildren();
-  $("l-count").textContent = sessions.length ? String(sessions.length) : "";
+  const c = groupCounts();
+  renderChips(c);
   if (!sessions.length) {
     rows.append(el("div", "empty", "no sessions"));
     return;
   }
-  for (const s of sessions) {
-    if (s.state === "waiting") {
-      const card = el("div", "card");
-      const body = el("div", "body");
-      waitBody(s, body);
-      card.append(sessionRow(s), body);
-      rows.append(card);
-    } else {
-      rows.append(sessionRow(s));
+  for (const [k, word] of GROUPS) {
+    if (filter !== "all" && filter !== k) continue;
+    const list = sessions.filter((s) => groupOf(s) === k);
+    if (!list.length) continue;
+    const sec = el("section", "sect grp grp-" + k);
+    const h = el("h2", "label", word + " ");
+    h.append(el("span", "lr", String(list.length)));
+    sec.append(h);
+    const shown = k === "landed" && !openMore.has("landed") ? list.slice(0, LANDED_SHOWN) : list;
+    for (const s of shown) {
+      if (s.state === "waiting") {
+        const card = el("div", "card");
+        const body = el("div", "body");
+        waitBody(s, body);
+        card.append(sessionRow(s), body);
+        sec.append(card);
+      } else {
+        sec.append(sessionRow(s));
+      }
     }
+    if (shown.length < list.length) {
+      const more = el("button", "more-row", "Show " + (list.length - shown.length) + " more landed");
+      more.type = "button";
+      more.addEventListener("click", () => {
+        openMore.add("landed");
+        renderList();
+      });
+      sec.append(more);
+    }
+    rows.append(sec);
   }
+  if (!rows.childNodes.length) rows.append(el("div", "empty", "nothing here"));
 }
 
-// renderSummary: the Sessions footer (TUI: icon in its state color, words
-// dim) and the count in the status line.
+// renderSummary: the Sessions tab's count (to review) and the title
 function renderSummary() {
   const waiting = sessions.filter((s) => s.state === "waiting");
-  const done = sessions.filter((s) => s.state === "done").length;
-  const running = sessions.filter((s) => s.state === "running").length;
-  const foot = $("l-foot");
-  foot.replaceChildren();
-  if (waiting.length) {
-    const oldest = waiting.reduce((a, s) => (s.state_since < a ? s.state_since : a), waiting[0].state_since);
-    foot.append(colored("warn", "●"), document.createTextNode(` ${waiting.length} waiting · oldest ${ago(oldest)}`));
-  }
-  if (done) {
-    if (foot.childNodes.length) foot.append(el("span", "gap"));
-    foot.append(colored("secondary", "✓"), document.createTextNode(` ${done} to review`));
-  }
-  foot.hidden = !foot.childNodes.length;
-  const sum = $("sum");
-  sum.replaceChildren();
-  const bit = (role, icon, n, word) => {
-    if (!n) return;
-    if (sum.childNodes.length) sum.append(document.createTextNode("  "));
-    sum.append(colored(role, icon), document.createTextNode(` ${n} ${word}`));
-  };
-  bit("warn", "●", waiting.length, "wait");
-  bit("ok", "●", running, "run");
-  bit("secondary", "✓", done, "done");
+  const review = sessions.filter((s) => groupOf(s) === "review").length;
+  const n = $("t-list-n");
+  n.textContent = review ? String(review) : "";
   document.title = waiting.length ? `(${waiting.length}) pekoe` : "pekoe";
+}
+
+// ---- the bar: the screen's name and how fresh it is ----
+
+function renderFresh() {
+  const f = $("fresh");
+  f.replaceChildren();
+  if (view === "detail" && current === TAPI) return; // tapi's state line says it
+  if (!lastRead) {
+    f.append(colored("dim", "○"), txt(" connecting"));
+    return;
+  }
+  const stale = Date.now() - lastRead > 10000;
+  f.append(colored(stale ? "warn" : "ok", "◉"), txt(stale ? " stale · " : " live · "), txt(hm(new Date(lastRead).toISOString())));
+}
+
+// ---- Now (docs/web.md 「Now」): GET /api/now and tapi ----
+
+const NEED_KINDS = {
+  decision: ["?", "secondary", "decision"],
+  approve: ["!", "warn", "approve"],
+  login: ["@", "primary", "login"],
+  fyi: ["i", "dim", "fyi"],
+};
+
+// needCard: one thing that waits on the person
+function needCard(nd) {
+  const card = el("div", "card need");
+  if (nd.kind === "waiting" && nd.session) {
+    const s = nd.session;
+    const body = el("div", "body");
+    waitBody(s, body);
+    card.append(sessionRow(s), body);
+    return card;
+  }
+  const it = nd.item;
+  if (!it) return null;
+  const head = el("div", "nhead");
+  const body = el("div", "body");
+  if (nd.kind === "merge_failed") {
+    const m = (it.answer && it.answer.merge) || {};
+    head.append(colored("err", "✗", "si"), el("span", "nt", "PR #" + m.pr + " was not merged"), el("span", "age", ago(nd.since)));
+    const s = nd.session;
+    const target = el("div", "target");
+    target.append(txt((s && s.branch) || it.about || "-"), sep(), txt("HEAD " + short(m.head)));
+    body.append(target);
+    if (m.detail) body.append(el("div", "why", m.detail));
+  } else {
+    const [icon, role, word] = NEED_KINDS[it.kind] || ["?", "dim", it.kind];
+    const isMerge = it.from === "pekoed" && it.kind === "approve";
+    head.append(colored(role, icon, "si"), el("span", "nt", isMerge ? "ready to merge" : word), el("span", "age", ago(nd.since)));
+    const f = it.facts;
+    if (f && f.slug) {
+      const target = el("div", "target");
+      target.append(txt(f.branch || f.slug));
+      if (f.head) target.append(sep(), txt("HEAD " + short(f.head)));
+      if (f.pr) target.append(sep(), txt("#" + f.pr));
+      body.append(target);
+    }
+    body.append(el("div", "why", it.question));
+  }
+  const row = el("div", "row");
+  const open = el("a", "btn key", "Open " + questionId(it.id));
+  open.href = "#/inbox";
+  open.addEventListener("click", () => (inboxScrollTo = it.id));
+  row.append(open);
+  body.append(row);
+  card.append(head, body);
+  return card;
+}
+
+// countCard: a number that is not 0, one line, to where it is
+function countCard(role, icon, words, hash) {
+  const a = el("a", "card count");
+  a.href = hash;
+  a.append(colored(role, icon, "si"), el("span", "nt", words), el("span", "chev", "›"));
+  return a;
+}
+
+function renderNeeds(n) {
+  const box = $("n-cards");
+  box.replaceChildren();
+  for (const nd of n.needs || []) {
+    const c = needCard(nd);
+    if (c) box.append(c);
+  }
+  const c = n.counts || {};
+  const plural = (k, one, many) => k + " " + (k === 1 ? one : many);
+  if (c.review) box.append(countCard("secondary", "✓", plural(c.review, "session to review", "sessions to review"), "#/sessions/review"));
+  if (c.running) box.append(countCard("ok", "●", c.running + " running", "#/sessions/active"));
+  if (c.queued) box.append(countCard("dim", "◌", c.queued + " queued", "#/sessions/active"));
+  const zeros = [
+    [c.questions, "questions"],
+    [c.ready, "ready to merge"],
+    [c.running, "running"],
+    [c.waiting, "waiting"],
+    [c.review, "to review"],
+  ].filter(([k]) => !k).map(([, w]) => "0 " + w);
+  $("n-zeros").textContent = zeros.join(" · ");
+  $("n-zeros").hidden = !zeros.length;
+}
+
+// faceEl: tapi's face (▐ eyes ▌ in the mascot's colors, theme.css)
+function faceEl(eyes) {
+  const f = el("span", "face");
+  const [a, , b] = [...eyes];
+  const cell = (g) => el("i", EYE_CLASS[g] || null, g);
+  f.append(cell(a), el("i", null, " "), cell(b));
+  return f;
+}
+
+// renderTabFace: the tapi tab's icon is tapi's face, its eyes its state
+function renderTabFace() {
+  $("t-face").replaceChildren(...faceEl(tapiEyes()).childNodes);
+}
+
+function tapiWord() {
+  if (!tapi) return ["dim", "○", "not readable"];
+  if (!tapi.started) return ["dim", "○", "not started"];
+  if (!tapi.alive) return ["dim", "○", "exited"];
+  const lk = tapi.look || { icon: "◦", role: "dim", word: tapi.state };
+  return [lk.role, tapi.state === "idle" ? "◦" : lk.icon, lk.word];
+}
+
+// renderNowTapi: a messenger's conversation row
+function renderNowTapi() {
+  const row = $("n-tapi");
+  row.replaceChildren();
+  const [role, icon, word] = tapiWord();
+  const top = el("span", "ct");
+  top.append(el("span", "cn", "tapi"), colored(role, icon + " " + word, "cs"), el("span", "age", tapi && tapi.started ? hm(tapi.state_since) : ""));
+  const mid = el("span", "cm");
+  let last = (tapi && tapi.last_message) || "";
+  if (tapi && tapi.answerable) last = "⚠ waits for a permission: answer it at the terminal";
+  mid.append(top, el("span", "cl", last || "no messages yet"));
+  row.append(faceEl(tapiEyes()), mid);
+}
+
+const REQS_SHOWN = 2;
+
+// requestCard: a request and the session working on it, its five steps
+// as a bar and in words
+function requestCard(rq) {
+  const a = el("a", "card req");
+  a.href = "#/s/" + encodeURIComponent(rq.slug);
+  const l1 = el("div", "nhead");
+  const lk = rq.look || { role: "dim", word: rq.state };
+  const st = el("span", "rs");
+  st.append(colored(lk.role, lk.word), txt(" · " + ago(rq.state_since)));
+  l1.append(el("span", "nt", rq.branch || rq.slug), st);
+  const l2 = el("div", "rq");
+  l2.append(txt(requestId(rq.id) + " "), txt(rq.text || ""));
+  const bar = el("div", "steps-bar");
+  bar.setAttribute("aria-hidden", "true");
+  const words = el("div", "steps-words");
+  (rq.steps || []).forEach((p, i) => {
+    const known = STEP_LOOK[p.status] ? p.status : "todo";
+    bar.append(el("span", "sg st-" + known));
+    if (i) words.append(el("span", "sep", "·"));
+    const [icon, role] = STEP_LOOK[known];
+    const w = colored(known === "todo" ? "dim" : role, (known === "todo" ? "" : icon + " ") + (STEP_NAMES[p.name] || p.name));
+    if (p.detail) w.title = p.detail;
+    words.append(w);
+  });
+  a.append(l1, l2, bar, words);
+  return a;
+}
+
+function renderRequests(n) {
+  const reqs = n.requests || [];
+  $("n-reqs").hidden = !reqs.length && !n.requests_open;
+  $("n-reqs-open").textContent = (n.requests_open || 0) + " open";
+  const box = $("n-reqs-list");
+  box.replaceChildren();
+  const shown = openMore.has("requests") ? reqs : reqs.slice(0, REQS_SHOWN);
+  for (const rq of shown) box.append(requestCard(rq));
+  if (shown.length < reqs.length) {
+    const left = reqs.length - shown.length;
+    const more = el("button", "more-row", left + (left === 1 ? " more request" : " more requests"));
+    more.type = "button";
+    more.addEventListener("click", () => {
+      openMore.add("requests");
+      renderRequests(n);
+    });
+    box.append(more);
+  }
+  const all = el("a", "more-row", "Every session's flow ›");
+  all.href = "#/overview";
+  box.append(all);
+}
+
+function renderMerged(n) {
+  const ms = n.merged || [];
+  $("n-merged").hidden = !ms.length;
+  const row = $("n-merged-row");
+  row.replaceChildren(colored("secondary", "↣", "si"), el("span", "nt", ms.map((m) => "#" + m.pr).join(" · ")), el("span", "chev", "›"));
+}
+
+let nowSig = "";
+
+function renderNow() {
+  renderNowTapi();
+  if (!nowData) return;
+  const sig = JSON.stringify([nowData.needs, nowData.counts, nowData.requests, nowData.requests_open, nowData.merged, [...openMore]]);
+  if (sig === nowSig && !busy) return;
+  if (touching || busy) return; // a finger or a sheet: redrawn after
+  nowSig = sig;
+  renderNeeds(nowData);
+  renderRequests(nowData);
+  renderMerged(nowData);
+}
+
+async function refreshNow() {
+  try {
+    const n = await api("/api/now");
+    if (view !== "now") return;
+    nowData = n;
+    renderNow();
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 async function refresh() {
@@ -133,23 +436,18 @@ async function refresh() {
     const [r, t] = await Promise.all([api("/api/sessions"), api("/api/tapi").catch(() => null)]);
     sessions = r.sessions || [];
     tapi = t;
+    lastRead = Date.now();
     renderSummary();
-    renderBadge();
+    renderTabFace();
+    renderFresh();
     if (view === "detail") renderDetailHead();
+    else if (view === "now") await refreshNow();
     else if (view === "list" && !busy) renderList();
     else if (view === "inbox") await refreshInbox();
     else if (view === "overview") await refreshOverview();
   } catch (e) {
     toast(e.message);
   }
-}
-
-// renderBadge: the open inbox items (everyone's) on the Inbox tab
-function renderBadge() {
-  const b = $("t-inbox-n");
-  const n = tapi ? tapi.inbox_open : 0;
-  b.textContent = n ? String(n) : "";
-  b.hidden = !n;
 }
 
 // ---- detail ----
@@ -166,7 +464,7 @@ function detailTarget() {
 }
 
 function renderDetailHead() {
-  $("d-kind").textContent = current === TAPI ? "◆ tapi" : "◆ Session";
+  $("d-kind").textContent = current === TAPI ? "tapi" : "Session";
   applyTapiMode();
   if (current === TAPI) return renderTapiHead();
   const s = sessions.find((x) => x.slug === current);
@@ -201,7 +499,7 @@ function renderTarget(s) {
   const isTapi = current === TAPI;
   to.classList.toggle("tapi", isTapi);
   $("d-send").classList.toggle("chat", isTapi);
-  $("d-text").placeholder = !isTapi ? "send a short instruction" : tapiConfirm() ? "ask tapi (you check the whole text before it is sent)" : "ask tapi";
+  $("d-text").placeholder = !isTapi ? "Send a short instruction" : "Ask tapi";
   if (isTapi) {
     $("d-to-slug").textContent = "tapi";
     $("d-to-repo").textContent = s ? "orchestrator · all repositories" : tapi && tapi.started ? "has exited" : "is not started";
@@ -612,8 +910,10 @@ function openInboxSheet(it) {
   isheet.open(it);
 }
 
+let inboxScrollTo = 0; // the item Now's Open q<id> went to
+
 function card(it) {
-  return inboxCard(it, draftOf(inboxDraft, it), {
+  const c = inboxCard(it, draftOf(inboxDraft, it), {
     busy: () => isheet.isOpen(),
     focus: () => (inboxTyping = true),
     blur: () => {
@@ -622,22 +922,37 @@ function card(it) {
     },
     answer: openInboxSheet,
   });
+  c.dataset.q = String(it.id);
+  return c;
 }
 
 function renderInbox() {
   const rows = $("i-rows");
   rows.replaceChildren();
-  $("i-count").textContent = inbox.length ? String(inbox.length) : "";
   for (const id of [...inboxDraft.keys()]) if (!inbox.some((it) => it.id === id)) inboxDraft.delete(id);
   if (merges.length) {
     rows.append(el("div", "sub", "merges by pekoed (on your \"merge\")"));
-    for (const it of merges) rows.append(mergeRow(it));
+    for (const it of merges) {
+      const r = mergeRow(it);
+      r.dataset.q = String(it.id);
+      rows.append(r);
+    }
   }
   if (!inbox.length) {
     rows.append(el("div", "empty", "nothing waits for you"));
+    scrollToItem();
     return;
   }
   for (const it of inbox) rows.append(card(it));
+  scrollToItem();
+}
+
+// scrollToItem: the card (or the merge) Now's Open q<id> went to
+function scrollToItem() {
+  if (!inboxScrollTo) return;
+  const t = $("i-rows").querySelector('[data-q="' + Number(inboxScrollTo) + '"]');
+  inboxScrollTo = 0;
+  if (t) t.scrollIntoView({ block: "start" });
 }
 
 function holdInbox() {
@@ -706,9 +1021,9 @@ function renderOverview(o) {
   for (const g of groups) {
     const sec = el("div", "group");
     const t = el("div", "gtitle");
-    t.append(el("span", "r-secondary", parentLabel(g)));
+    t.append(el("span", "r-text", parentLabel(g)));
     if (g.request) {
-      t.append(sep(), txt("request " + requestId(g.request.id) + " "), colored(g.request.status === "open" ? "warn" : "dim", g.request.status));
+      t.append(sep(), txt("request " + requestId(g.request.id) + " "), colored("dim", g.request.status));
       if (g.request.text) sec.append(t, el("div", "req", g.request.text));
       else sec.append(t);
     } else {
@@ -724,7 +1039,6 @@ async function refreshOverview() {
     const o = await api("/api/overview");
     if (view !== "overview") return;
     const sig = JSON.stringify([o.counts, o.groups, tapi]);
-    $("o-at").textContent = new Date().toLocaleTimeString();
     if (sig === overviewSig) return;
     overviewSig = sig;
     renderOverview(o);
@@ -898,6 +1212,9 @@ function renderChat(force) {
     items.append(el("div", "empty", chat.ok === true ? "no messages yet" : "loading…"));
   }
   items.append(chatView(chat.items, chat.pending, "tapi", chat.open, () => renderChat(true)));
+  // the time goes under the bubble on one line: ✓ 18:45 (lib/chat.js puts
+  // the mark over the time, for the desktop page)
+  for (const br of items.querySelectorAll(".meta br")) br.replaceWith(txt(" "));
   if (stick) toBottom();
   else log.scrollTop = top;
   updateJump();
@@ -1003,7 +1320,9 @@ function renderChatTitle() {
   else if (!tapi.started) word = "not started";
   else if (!tapi.alive) word = "exited";
   else word = (tapi.look && tapi.look.word) || tapi.state;
-  $("c-state").textContent = "· " + word;
+  const st = $("c-state");
+  const [role, icon] = tapiWord();
+  st.replaceChildren(colored(role, icon + " " + word), txt(lastRead ? " · updated " + ago(new Date(lastRead).toISOString()) + " ago" : ""));
   const mode = tapiMode();
   $("c-v-chat").setAttribute("aria-pressed", String(mode === "chat"));
   $("c-v-screen").setAttribute("aria-pressed", String(mode === "screen"));
@@ -1118,10 +1437,11 @@ async function refreshChat() {
 // ---- routing & polling ----
 
 function go(slug) {
-  location.hash = slug === TAPI ? "#/tapi" : slug ? "#/s/" + encodeURIComponent(slug) : backTo;
+  location.hash = slug === TAPI ? "#/tapi" : slug ? "#/s/" + encodeURIComponent(slug) : backTo || "#/";
 }
 
-const VIEWS = { "#/inbox": "inbox", "#/overview": "overview" };
+// the screens under a tab that are not the tab itself: back goes to the tab
+const SUBS = { "#/inbox": ["inbox", "Inbox"], "#/overview": ["overview", "Flow"] };
 
 function route() {
   const m = location.hash.match(/^#\/s\/(.+)$/);
@@ -1131,25 +1451,33 @@ function route() {
     else drafts.delete(current);
   }
   const isTapi = location.hash === "#/tapi";
+  const sm = location.hash.match(/^#\/sessions(?:\/(review|active|landed))?$/);
   current = isTapi ? TAPI : m ? decodeURIComponent(m[1]) : null;
-  view = current ? "detail" : VIEWS[location.hash] || "list";
+  view = current ? "detail" : SUBS[location.hash] ? SUBS[location.hash][0] : sm ? "list" : "now";
+  if (sm) filter = sm[1] || "all";
   inboxTyping = false; // a hidden note box may never get its blur
-  if (!current) backTo = location.hash === "#/inbox" || location.hash === "#/overview" ? location.hash : "";
+  if (!current) backTo = location.hash || "#/";
   ta.value = (current && drafts.get(current)) || "";
   renderThumbs(); // the images attached for this target (kept per target, like the drafts)
-  for (const v of ["list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
+  for (const v of ["now", "list", "inbox", "overview", "detail"]) $(v).hidden = view !== v;
   if (view !== "detail") document.body.classList.remove("chat-on");
   document.body.classList.toggle("pinned", view === "detail");
+  document.body.classList.toggle("tapi-on", isTapi);
   fitViewport();
   fitComposer();
-  $("tabs").hidden = view === "detail";
-  for (const v of ["list", "inbox", "overview"]) {
-    const t = $("t-" + v);
-    if (view === v) t.setAttribute("aria-current", "page");
-    else t.removeAttribute("aria-current");
+  // the tab: Now (and what is reached from it), Sessions (and a session), tapi
+  const tab = isTapi ? "tapi" : view === "list" || (view === "detail" && backTo.startsWith("#/sessions")) ? "list" : "now";
+  for (const t of ["now", "list", "tapi"]) {
+    const a = $("t-" + t);
+    if (tab === t) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
   }
-  $("back").hidden = view !== "detail";
-  $("back").textContent = "‹ " + ({ "#/inbox": "inbox", "#/overview": "overview" }[backTo] || "sessions");
+  const sub = view === "inbox" || view === "overview" || (view === "detail" && !isTapi);
+  $("back").hidden = !sub;
+  $("title").hidden = isTapi;
+  $("c-ttl").hidden = !isTapi;
+  $("title").textContent = view === "now" ? "pekoe" : view === "list" ? "Sessions" : SUBS[location.hash] ? SUBS[location.hash][1] : current || "";
+  renderFresh();
   if (view === "detail") {
     $("d-screen").textContent = "";
     screenSig = "";
@@ -1164,18 +1492,30 @@ function route() {
       refreshChat().then(() => current === TAPI && toBottom());
     }
     refreshScreen();
+  } else if (view === "now") {
+    nowSig = "";
+    renderNow();
+    refreshNow();
   } else if (view === "list") {
     renderList();
   } else if (view === "inbox") {
     inboxSig = "";
     refreshInbox();
   } else {
+    overviewSig = "";
     refreshOverview();
   }
   schedule();
 }
 
+let freshTimer = 0;
+
 function schedule() {
+  clearInterval(freshTimer);
+  freshTimer = setInterval(() => {
+    renderFresh();
+    if (current === TAPI) renderChatTitle();
+  }, 1000);
   clearInterval(listTimer);
   clearInterval(screenTimer);
   clearInterval(chatTimer);
@@ -1194,7 +1534,11 @@ document.addEventListener("visibilitychange", () => {
   schedule();
 });
 window.addEventListener("hashchange", route);
-$("back").addEventListener("click", () => go(null));
+$("back").addEventListener("click", () => {
+  // a sub screen goes back to its tab; a session to where it was opened from
+  if (view === "detail") go(null);
+  else location.hash = "#/";
+});
 $("d-send").addEventListener("submit", doSend);
 $("tsheet-cancel").addEventListener("click", closeTapiSheet);
 $("tsheet-ok").addEventListener("click", doSheetSend);

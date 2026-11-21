@@ -456,7 +456,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 実装(U9 は (a)。仕様の正は docs/web.md「tapi chat の扱い」と API の表):
 
-- **画面**: Overview の tapi の区画に `talk to tapi ›` を足し、`#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi orchestrator · all repositories」と warn の色で出し、send を押すと確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む(既定は必ず。`[web] confirm_tapi_send = false` で人が切れる。`GET /api/tapi` の `confirm_send` で知らせ、再起動は要らない)。全文はシートの中でスクロールして読める
+- **画面**: 下端のタブバーの tapi(と Now の TAPI の行)から `#/tapi` でセッションの詳細と同じ画面(状態・画面・キーパッド・送信欄)を tapi で開く。送信欄の宛先は「tapi orchestrator · all repositories」と warn の色で出し、send を押すと確認シート(宛先が tapi であること、セッション 1 つへの send より重いこと、全文と文字数・行数)を挟む(既定は必ず。`[web] confirm_tapi_send = false` で人が切れる。`GET /api/tapi` の `confirm_send` で知らせ、再起動は要らない)。全文はシートの中でスクロールして読める
 - **`allow_devices`**: 設定が無ければ `POST /api/tapi/send` は 403 で、送信欄は理由を出して押せない。画面とキーパッドは指示にならないので `allow_devices` が無くても出す。`GET /api/tapi` に `sendable`(送れるか)と `answerable`(許可待ちか)を足した
 - **確認**: 送信はセッションの send と同じ関数(`webReadText`: 空・4000 文字超・制御文字は 400)を通し、tapi が許可待ち(hook の状態)なら 409。`tapi.send` 自身が打つ前と Enter の直前に hook の状態と画面(`promptUp`)を見直すので、画面に許可メニューが出ていても 409。tapi が起動していない・終了しているときも 409
 - **記録**: 送ったもの・断ったもの(許可待ち・画面の許可メニューの 409。400・`allow_devices` の 403・tapi が起動していない・終了しているときの 409 は除く)を送信の記録に `from: human`・`to: +tapi`・`kind: send`・`via: web:<端末名>` で残す。pekoed のログには誰が・どの端末から・送信の記録の何番かと、本文の最初の 200 文字を出す(全文は送信の記録。ログはエージェントの sandbox から読めるので切る)。TUI からの `tapi.send` は今までどおり記録しない
@@ -538,7 +538,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 
 段階 3 で「受信箱」と「概要・工程表(読むだけ)」の 2 画面を足す。受信箱に答えるときは確認シートを挟み、facts・リンク・エージェントの文を TUI と同じ順に並べる。
 
-実装(仕様の正は docs/web.md「受信箱(Inbox タブ)の扱い」と API の表):
+実装(仕様の正は docs/web.md「受信箱(Inbox)の扱い」と API の表):
 
 - **画面**: セッション一覧の上に `Sessions` `Inbox` `Overview` のタブを足した(Inbox には未回答の件数)。受信箱は 1 件をカードにし、TUI のモーダルと同じ並び(pekoe read → the agent says)。推奨は `recommended (agent)` と書くだけで選ばない。選ぶかメモを書く(選択肢があってもメモだけで答えられる。pekoed の根拠の項目は選ぶまで)まで `answer…` は押せず、押すと確認シート(宛先・問い・選んだもの・メモ)を挟む
 - **rev**: 送るのはカードを描いたときの `rev`。3 秒ごとの更新で `rev` が上がったら選択を外して「changed while you looked」と出す(TUI と同じ)。メモを打っている間と確認シートを開いている間は描き直さない(打った文が消えないように)ので、その間に変わったものは pekoed が 409 で断り、ページは選択を外して出し直す

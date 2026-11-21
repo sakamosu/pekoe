@@ -2,16 +2,17 @@
 
 Mac で pekoed を動かしたまま、外出先の iPhone(Tailscale アプリが ON)の Safari から開き、ホーム画面に追加して使う軽い Web UI。できるのは次の 8 つだけ。
 
-- セッション一覧(状態つき。許可待ちは一番上に、カードで)
+- 画面は下端のタブバーで切り替える 3 つ: **Now**(人が見るべきもの・tapi の直近の発言・依頼の進み・マージの結果)、**Sessions**(状態で分けた一覧)、**tapi**(tapi chat)。下の「画面の構成」
+- セッション一覧(状態で分けて。許可待ちは Now と一覧の両方にカードで)
 - 許可待ちへの allow / deny(ツールの要約と、エージェントが画面に出している許可ダイアログを見せ、押す前に確認を挟む。`always` は出さない)
 - `send`(短い指示を送る。写真・スクショを 4 枚まで添えられる。allow / deny で答える許可待ちの間は送れない)
 - 質問(AskUserQuestion などの択一・複数選択メニュー)へのキーパッド(← ↑ ↓ → / Tab ⇧Tab Space / 1〜9 / Esc Enter。質問待ちのときだけ出る)
 - エージェント画面の最新テキストを読むだけの表示(色・太字などは残す。カーソル位置や画面の再現まではしない)
-- 判断の受信箱への回答(Inbox タブ。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
-- 概要と工程表を読むだけの表示(Overview タブ。件数・tapi の状態・セッションごとの `impl → review → PR → CI → merge` と、マージしてよいかの根拠の足りない条件)
+- 判断の受信箱への回答(Now の `Open q<id>` から開く Inbox。pekoed の事実とリンクを先に、エージェントの文を後に出し、送る前に確認シートを挟む)
+- 概要と工程表を読むだけの表示(Now の依頼の 5 工程と、そこから開く Flow。件数・tapi の状態・セッションごとの `impl → review → PR → CI → merge` と、マージしてよいかの根拠の足りない条件)
 - tapi chat(統括役)の画面・質問へのキーパッド・`send`(画像も添えられる。送る前に宛先と全文の確認シート。既定は必ず挟み、`confirm_tapi_send = false` で切れる。`allow_devices` を設定しているときだけ送れる。tapi の許可待ちへの allow / deny は出さない)
 
-賢さは pekoed にあり、Web は表示層。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。
+賢さは pekoed にあり、Web は表示層(Now の区画分け・Sessions のグループ分けも pekoed が `GET /api/now`・`group` で決め、ページは描くだけ)。ハンドラは CLI と同じ API メソッド(`session.list` / `session.screen` / `session.answer` / `session.send` / `session.keys` / `inbox.list` / `inbox.answer` / `tapi.get` / `tapi.screen` / `tapi.send` / `tapi.keys` / `merge.check`)を同じ `Daemon.Call` 経由で呼ぶ。
 
 ## 構成
 
@@ -143,7 +144,25 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 - **片付け**: セッションを `rm` すると `images/<slug>/` ごと消す。それ以外(tapi chat のものを含む)は 7 日たったら消す(pekoed が起動して 20 秒後と、その後 1 時間ごとに見る。空になったディレクトリも消す。保存と重なってディレクトリが消えたら、保存の側が作り直す)。打ったが Enter を送れなかった(許可ダイアログが間に出た)send の画像は入力欄にパスが残っているので消さず、それ以外の失敗では消す
 - **やらないこと**: 画像以外のファイル(PDF・動画など)、TUI からの画像の送信、保存した画像を Web UI に返すこと(サムネイルはページが端末の中で作る)
 
-### 受信箱(Inbox タブ)の扱い
+### 画面の構成
+
+ダークだけ(ライトモードは無い)。色はトークン(docs/ui-guidelines.md)の役割名だけで、バーの地は `chrome`、選んだチップと Chat / Screen の選択中は `raised`。フォーカスの表現は 2 つだけ: タブバーの選択(primary の文字と上辺 2px の線)と、入力欄の枠(primary → primary_end のグラデーション)。パネルの枠・`◆` の見出し・`pekoe` のピルは無い。
+
+書体は system-ui(Mac・iPhone ではラテン文字が SF Pro、日本語がヒラギノ)の 1 系統で、数字は tabular figures。モックの Inter / Noto Sans JP は使わない: CSP(`webCSP`)は外のフォントもスタイルシートも断り、「外部 CDN・フォントは読まない」方針で、同梱すると Web UI 入りのビルドが日本語フォントの分だけ大きくなるため(docs/gui-design.md の決まったこと 2 と同じ判断)。等幅はエージェントの画面・実行するコマンド・吹き出しの中のコード・tapi の顔だけ。
+
+- **上端のバー**(高さ 52px): 左に画面名(Now は `pekoe`)、右に鮮度(`◉ live · 18:47`。最後に読めたのが 10 秒より前なら warn の `stale`)。Inbox・Flow・セッションを開いた画面は左に `‹`。tapi では顔・`tapi`・状態と鮮度(`◦ idle · updated 2s ago`)・`Chat` / `Screen` の切り替え(枠の中のセグメント)
+- **タブバー**(高さ 56px、下にホームインジケーターの分): Now / Sessions / tapi。Sessions のラベルには確認待ち(done)の件数を secondary で添える。セッションを開いた画面・tapi でも出し、キーボードが出ている間だけ隠す
+- **Now**(`#/`): 上から 4 区画
+  - NEEDS YOU: 対応が要るものをカードで(pekoed のマージが通らなかったもの・許可や質問で待っているセッション・受信箱の未回答)。`Open q<id>` は Inbox の該当カードへ。0 でない件数は 1 行のカード(`✓ 7 sessions to review ›` は Sessions の To review へ)、0 の件数は dim の 1 行(`0 questions · 0 ready to merge · 0 running · 0 waiting`)
+  - TAPI: 会話一覧の 1 行(顔・状態・時刻・直近の発言を dim で 2 行まで)。タップで tapi タブ
+  - REQUESTS: 右に台帳の open の件数。依頼ごとのカード(ブランチと状態・経過、依頼の ID と本文、5 工程の細いバーと語)。直近 2 件、残りは `N more requests`。下の `Every session's flow ›` で今までの工程表(Flow)
+  - MERGED BY PEKOED: 通ったマージを 1 行に(`↣ #259 · #258`)。タップで Inbox のマージの履歴へ
+- **Sessions**(`#/sessions`、`#/sessions/review|active|landed`): 上にフィルタのチップ(`All` / `To review` / `Active` / `Landed`、横スクロール)、一覧は ACTIVE(稼働中・許可待ちなど)→ TO REVIEW → IDLE → LANDED。LANDED は直近 2 件、残りは `Show N more landed`、行全体を dim。行は高さ 52px 以上で、左に状態の記号、中央に 2 行(ブランチ名 / リポジトリ名。リポジトリ本体のチェックアウトで動くセッションはリポジトリ名 / `main`)、右に状態語と経過。2 行目に diff の増減・テスト・PR を続ける
+- **tapi**(`#/tapi`): 下の「tapi chat の扱い」。吹き出しは tapi が左(surface、左下だけ角が小さい)、自分が右(`bubble_me`、右下だけ角が小さい)、幅は 78% まで、時刻は吹き出しの外の下(自分の発言は `✓ 18:45`)。会話が短いときは下に寄せる。入力欄はタブバーの上に固定(左に添付の `+`、丸い入力欄 `Ask tapi`、select の地の送信ボタン)
+- **Dismiss は無い**: NEEDS YOU の「PR #n was not merged」を閉じる API は今は無いので、ボタンは出さない(マージの履歴は 24 時間で Now から消える)
+- まだ作り直していない画面(tapi の Screen、セッションを開いた画面、Inbox、Flow)は前のまま残し、新しいナビから辿れるようにしてある
+
+### 受信箱(Inbox)の扱い
 
 docs/orchestration.md の「受信箱で人を誘導する」への対策を、TUI のモーダルと同じ並びで Web にも当てる。
 
@@ -153,7 +172,7 @@ docs/orchestration.md の「受信箱で人を誘導する」への対策を、T
 - 送るのは、カードを描いたときの `rev`。pekoed は `inbox.answer` の中で事実を読み直して比べるので、見た後に HEAD が動いた・CI が落ちた・別の端末で答えた項目は 409 になり、ページは選択を外して「changed while you looked」と出す。3 秒ごとの更新で `rev` が上がったときも、選択を外して同じ表示にする
 - 答えは `answer.by: human`・`answer.via: web:<端末名>` で残り、誰がどの端末で何番を選んだかを pekoed のログに出す
 - 答えずに閉じる(`dismiss`)・取り下げは Web には出さない(TUI か CLI で)
-- tapi の許可待ちへの allow / deny は出さない。Overview は tapi の状態・待ち時間・最後の返事・件数を読み、`talk to tapi ›` で tapi chat の画面を開く(次の「tapi chat の扱い」)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない
+- tapi の許可待ちへの allow / deny は出さない。Now の TAPI の行が tapi の状態・最後の返事を読み、タップ(またはタブバーの tapi)で tapi chat の画面を開く(次の「tapi chat の扱い」)。`pending_tool`・Claude のセッション ID・稼働ディレクトリは返さない
 
 ### tapi chat の扱い
 
@@ -201,7 +220,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | **iPhone のブラウザで開いた悪意あるページ(CSRF・DNS rebinding)** | 書き込みにはカスタムヘッダと JSON が必須(クロスオリジンではプリフライトになり通らない)。`Origin` / `Sec-Fetch-Site` を確認。`Host` が自分の名前でなければ拒否 | — |
 | **キーパッドで許可メニューを操作する** | keys は `wait_kind == question` のときだけ受け付け、許可待ち(`answerable`)では 409。状態は hook が知らせるもので、エージェントは token なしの `session.event` で AskUserQuestion の PreToolUse を偽り、本物の許可ダイアログを question に見せかけられるので、agent 窓の画面の下に許可メニュー(send と同じ判定: 「Do you want to …」と「1. Yes」)が出ていれば question でも 409。許可メニューに数字や ↓ + Enter を送れると「Yes, and don't ask again」(= always)を選べてしまうので、許可は allow / deny だけのまま。送れるキーも矢印・Tab・Space・数字・Enter・Esc に絞り、`C-c` などの修飾キーや任意の文字列は送れない(エージェントを止める・シェルに文字を流し込むといった、メニュー操作以上のことをさせない) | Claude Code は AskUserQuestion の PreToolUse の直後に permission_prompt の Notification も送る。これを question のまま扱うのは、待ちの対象(`pending_tool`)がまだ AskUserQuestion のときだけで、別のツールの PreToolUse が来ていれば permission になる。pekoe が質問と判断した直後(AskUserQuestion の PreToolUse)から、エージェントが答えを受け取るまでの間に別の許可ダイアログに切り替わると、その間に送ったキーはそちらに当たりうる。hook が状態を変えるまでの短い窓で、1 回に送るのも 1 キー。質問の文が「Do you want to …」で選択肢の 1 が「Yes…」の AskUserQuestion は許可メニューと見分けられないので、キーパッドでは答えられない(TUI で答える) |
 | **許可ダイアログに send の文字や Enter が入る** | 許可メニューは最初の 1 文字を選択肢として受け取り(「2…」は「Yes, and don't ask again」= always)、Enter は選ばれている「Yes」を確定する。そこで send は、許可ダイアログが出ている間は打たない。「出ている」は、hook が知らせた許可待ち(`wait_kind` が question 以外)か、agent 窓の画面の下に Claude Code の「Do you want to …」と「1. Yes」の選択肢(または最後の行の `[y/n]`)があること。判定は 1 つ(`promptUp`)で、どこから来たかで確かめる時点が変わる: token なしのソケット(ハブのエージェント)は `submit` の有無にかかわらず、受け付けた時と打つ直前(セッションごとの送信ロックの中)の 2 回確かめて断り、先頭が数字の文字列は断る(エージェントは自分の許可ダイアログが出る時刻を決められるので、確認と打鍵の間を狙って「2」を入れられないように)。token あり(TUI・CLI・Neovim)・Web UI・Chrome 拡張(ピックやエラーの送信)は `submit` つきの送信を、打つ前と Enter の直前の 2 回確かめ、打つ前なら何も送らず、打った後なら Enter だけ送らない(文字は入力欄に残る。Web は 409)。エラー文はどれも `<slug> is waiting for a permission answer: …` で、そのあとに何が起きたか(何も送っていない / 打ったが Enter は送っていない)を続ける。Web は send の前に `answerable` でも 409 を返す | 2 回目の確認から Enter が届くまでの数ミリ秒の間にダイアログが出ると、Enter はそれを確定しうる(許可は 1 回分で、always にはならない)。token なしの送信で、打つ直前の確認から文字が届くまでの数ミリ秒にダイアログが出ると、途中の文字がメニューに入りうる(先頭の数字は断るので、先頭の 1 文字で always が選ばれることはない)。token ありの `submit` なしの送信(TUI がユーザーの打鍵として送るペースト)は止めない。画面の判定は Claude Code と `[y/n]` 形式の文言に合わせたもので、ほかのエージェントの見た目の違うダイアログは hook の状態でしか止められない |
-| **受信箱の文で Web UI を乗っ取る・誘導する**(エージェントが問い・背景・選択肢・リンクに HTML やスクリプト、`javascript:` の URL を書く) | API は JSON だけを返し(`encoding/json` は `<` `>` `&` を `\u003c` などにする、`nosniff`)、ページは文字列を `textContent` で入れて HTML を組み立てない(`webui/` の下のすべての JS(`app.js`・`lib/`・ローカル GUI の `gui/`)に `innerHTML` などの HTML を作る入口がないことをテストで確かめる)。リンクは `http` / `https` で始まり空白や `<>"\` を含まないものだけを `<a rel="noopener noreferrer">` にし、ほかは文字のまま出す。CSP(インライン script なし)はそのまま。誘導には上の「受信箱(Inbox タブ)の扱い」(事実が先、推奨を既定にしない、確認シート、`rev`) | 人が事実とリンク先を見ずに答えれば誘導は通る(TUI と同じ) |
+| **受信箱の文で Web UI を乗っ取る・誘導する**(エージェントが問い・背景・選択肢・リンクに HTML やスクリプト、`javascript:` の URL を書く) | API は JSON だけを返し(`encoding/json` は `<` `>` `&` を `\u003c` などにする、`nosniff`)、ページは文字列を `textContent` で入れて HTML を組み立てない(`webui/` の下のすべての JS(`app.js`・`lib/`・ローカル GUI の `gui/`)に `innerHTML` などの HTML を作る入口がないことをテストで確かめる)。リンクは `http` / `https` で始まり空白や `<>"\` を含まないものだけを `<a rel="noopener noreferrer">` にし、ほかは文字のまま出す。CSP(インライン script なし)はそのまま。誘導には上の「受信箱(Inbox)の扱い」(事実が先、推奨を既定にしない、確認シート、`rev`) | 人が事実とリンク先を見ずに答えれば誘導は通る(TUI と同じ) |
 | **Web UI から tapi に送る**(iPhone が全リポジトリへの指示の入口になる。tapi は全リポジトリを読み、`gh` などを動かし、セッションを作って任せる) | セッション 1 つへの send と重みが違うので、`allow_devices` を設定していないときは tapi への送信を断る(403)。送る前に確認シート(宛先が tapi であること、文の全体)を挟む(宛先を見せるのはこのシート。送信欄の上の宛先の行は tapi が動いていないときだけ出す)。既定は必ず挟む。`confirm_tapi_send = false` で切れる。切ると誤送信・端末を拾われたときの守りが `allow_devices` と端末のロックだけになる。許可待ちの間・制御文字はセッションの send と同じに断る。tapi の許可待ちへの allow / deny は Web に出さない(許可は端末の前で)。送った内容と端末を pekoed のログ(本文は 200 文字まで)と送信の記録(全文)に残す | ロックの解けた iPhone を拾った人は tapi に指示できる。tapi の権限(ファイルを書けない sandbox・許可は端末で)を超えることはできないが、tapi がセッションを作れば、そのセッションは worktree に書ける(セッションの許可待ちも Web から allow できる)。気づいたら admin console でその端末を外す |
 | **Web UI から画像を送る**(画像の中身・形式・置き場所が新しい入口になる) | 受け付けるのは PNG・JPEG・GIF だけで、拡張子や MIME ではなく中身の先頭のバイトとヘッダの読み込みで確かめる。ファイル名と拡張子は pekoed が中身から付け、送られた名前は使わない(パスの細工・上書きができない。`O_EXCL` で作る)。5 MB・8000px・4 枚の上限と、send だけ大きい本文の上限(ほかの書き込みは 64 KB のまま)。保存先はデータディレクトリの `images/<slug>/`(0600)で、worktree の外(コミットに紛れない)。保存した画像は Web からは読めない(返す API が無い)。ページは画像を描き直して送るので、写真の位置情報は端末から出ない。CSRF・許可待ち・tapi の `allow_devices` と確認シートは文の send と同じ(シートには画像も出す)。`rm` と 7 日で消す | 画像に写った文字はエージェントにとって指示と区別できない(人が送るものなので、Web ページのスクショなど他人の文が写ったものを送るときは、その文にエージェントが従いうる)。保存した画像は同じユーザーのどのエージェントからも読める(Read の確認なしで開けるのは自分の分だけだが、Bash では読める。ピックやエラーの添付と同じ)ので、秘密の写ったスクショは送らない。ページを通さずに API を叩けば(許可された端末から)、JPEG のメタデータは pekoed がそのまま保存する。画像のデコーダ(Claude Code 側)の不具合を突くファイルは、ヘッダの確認だけでは防げない(送れるのは許可された端末の人だけ) |
 | **端末の紛失・盗難** | 認証は端末の Tailscale の鍵なので、admin console でその端末を削除(または key を失効)すれば即座に入れなくなる。iPhone の画面ロックが実質のパスワード | ロックが解かれた iPhone を拾った人は allow / deny / send(画像つきを含む)/ 質問へのキー操作・受信箱への回答ができる(`allow_devices` で絞っていれば tapi への send も。上の行)。`always` は出さず、許可待ちの間は send も止めるので、恒久的な許可までは与えられない |
@@ -226,6 +245,7 @@ AskUserQuestion の択一・複数選択メニューは矢印・Tab・Space・�
 | `POST /api/tapi/send` | `{text, images?: [{data}]}` | `{ok: true, send: <送信の記録の id>, images: <枚数>, text: <打った文>}`。`tapi.send`(`submit: true`)。text と images はセッションの send と同じ(1〜4000 文字・画像があれば空でよい、制御文字は 400、画像は 415 / 400)。`text` は画像の行を足した打った文(ページが transcript に現れたかを見るのに使う)。403: `allow_devices` が無い / 409: tapi が許可待ち・画面に許可メニュー・起動していない・終了している |
 | `POST /api/tapi/keys` | `{keys: ["Down", …]}` | `{ok: true}`。セッションの keys と同じキー・個数。409: tapi が質問待ちでない・許可待ち・画面に許可メニュー・起動していない |
 | `GET /api/overview` | — | `{counts, groups, at}`。下の「Overview」 |
+| `GET /api/now` | — | `{needs, counts, requests, requests_open, merged, at}`。Now の画面。下の「Now」 |
 | `GET /api/stats` | — | **ローカル GUI だけ**(tailnet の Web UI には無い。docs/gui.md)。`Stats`(`stats {days: 7}` = `pekoe --json stats` と同じ。docs/api.md の「集計(stats)」)。Dashboard の Overview の日別のマージ数と今日のトークン。ページは 30 秒に 1 回まで読む |
 | `GET /api/ledger?closed=<N>` | — | **ローカル GUI だけ**。`{open: [LedgerEntry], closed: [LedgerEntry], closed_total}`(`ledger.list {status: "all"}` を人として呼ぶ)。`open` は開いている依頼の全部(古い順)、`closed` は閉じたもの(pekoed が自動で閉じた `chat` を含む)を閉じた時刻の新しい順に `N` 件(既定 5、0〜500。範囲外は 400)、`closed_total` は閉じたものの数。Dashboard の Requests と Open ledger |
 | `GET /api/repos` | — | **ローカル GUI だけ**。`{repos: [{repo_id, name, dir, sessions}]}`(`repo.list` のうちディレクトリの分かるもの)。New session のリポジトリの選択 |
@@ -260,7 +280,9 @@ Flow は `{slug, repo, branch, state, state_since, look, pr, pr_look, after, rep
 
 `merge` は自分の PR があり landed でないセッションの `merge.check`(docs/api.md の「マージしてよいかの根拠」)で、ページは揃っていない条件を `detail` つきで出す。
 
-WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test git_blocked queue look pr_look`(`git_blocked` は本体の .git が変わって git を止めている、`queue` は queued のときに起動していない理由)。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
+Now: `needs` は人を待っているもののカードで、`{kind, since, item?, session?}`。`kind` は `merge_failed`(人の `merge` で pekoed がマージできなかった。`item` は答えた根拠の項目で `answer.merge.detail` が理由、`session` は PR のセッション)・`waiting`(許可か質問で待っているセッション。`session`)・`inbox`(受信箱の未回答。`item` は `GET /api/inbox` と同じ)。並びは pekoed のマージの失敗(新しい順)→ 待っているセッション(長く待っている順)→ 受信箱(古い順)。マージが失敗と記録されていても PR が実際にはマージされているもの(理由に pekoed が読み直した `PR #n is MERGED` がある、またはセッションが landed・同じ PR を MERGED と読んでいる。人が GitHub で先にマージしたときなど)は人を待っていないので、`needs` に入れず `merged` に入れる(`mergedAfterAll`)。`counts` は `{questions (受信箱のうち pekoed のマージの項目でないもの), ready (pekoed のマージの項目), running, queued, waiting, review (Sessions の To review の数)}`。`requests` は台帳の依頼で、それに取り組むセッションがあるもの(新しい順、20 件まで): `{id, text, status, slug, branch, repo, state, state_since, look, sessions (取り組むセッションの数), steps}`(先頭のセッションの Flow の `steps`)。`requests_open` は台帳の open の件数。`merged` は pekoed のマージで通ったもの(最近 1 日・5 件まで、新しい順): `{pr, item, about, at}`。
+
+WebSession は Session(docs/api.md)から表示に要るものだけを抜いたもの: `slug repo branch agent state wait_kind state_since answerable pending_tool last_tool last_message diffstat pr stopped error test git_blocked queue look pr_look group main`(`group` は Sessions の見出し: `active`(稼働中・許可待ち・作成中・queued・reviewing)・`review`(done・failed・approved)・`idle`・`landed`。`main` はリポジトリ本体のチェックアウトで動くセッション。`git_blocked` は本体の .git が変わって git を止めている、`queue` は queued のときに起動していない理由)。worktree とリポジトリのパス・環境変数・Claude のセッション ID は出さない。ツールの引数・エラー・最後のメッセージに含まれるパスはそのまま出る(許可の判断材料なので)。`answerable` は「allow / deny で答えられる待ち」(`state == waiting` かつ `wait_kind != question`)。`look` / `pr_look` は TUI の Sessions パネルと同じ記号・色の役割・言葉(`theme.Look` / `theme.PRLook`、アイコンは unicode。`{icon, role, word}`)。
 
 Run は 1 行の中の同じ見た目の区間: `{t, fg?, bg?, b?, d?, i?, u?, s?}`(テキスト、文字色、背景色、太字・薄字・斜体・下線・取り消し線)。pekoed が `capture-pane -e` の SGR を解析して作る(`internal/termstyle`)。色は 16 色なら TUI の役割名(`err ok warn primary secondary text dim border primary-end`、反転の既定色は `bg` / `text`)で、ユーザーのテーマがそのまま効く。256 色と truecolor は `#rrggbb`。OSC 8 のリンクやカーソル移動など、色以外のエスケープと制御文字は捨てる。行ごとに既定の見た目から始め(TUI と同じ)、行末の空白は背景色があっても落とす。
 
