@@ -83,6 +83,7 @@ Design docs are in Japanese.
 | [docs/design.md](docs/design.md) | Design (state model, worktree flow, terminal layer, review, CLI and keys) |
 | [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
+| [docs/gui.md](docs/gui.md) | Design proposal (not built): a local GUI in the Mac's own browser, its authentication and threat model |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
