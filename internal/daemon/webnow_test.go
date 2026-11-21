@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -185,5 +186,49 @@ func TestMergedAfterAll(t *testing.T) {
 		if got := mergedAfterAll(c.m, c.s); got != c.want {
 			t.Errorf("%s: %v", name, got)
 		}
+	}
+}
+
+// A merge that did not go through stays under NEEDS YOU for its day
+// (docs/web.md: the merge history leaves Now after 24 hours), however
+// many merges went through after it: only what went through is cut to
+// webMergesMax (Now's MERGED BY PEKOED and the Inbox's history alike).
+func TestWebNowFailedMergeOutlastsLaterMerges(t *testing.T) {
+	d, _, _, h := webInboxSetup(t)
+	now := time.Now()
+	failed := pekoedMerge(t, d, "gone-a", 300, state.MergeFailed, "checks failed", now.Add(-3*time.Hour))
+	pekoedMerge(t, d, "gone-b", 299, state.MergeFailed, "checks failed", now.Add(-25*time.Hour))
+	for i := 0; i < webMergesMax+1; i++ {
+		pekoedMerge(t, d, "other", 301+i, state.MergeMerged, "", now.Add(-2*time.Hour+time.Duration(i)*time.Minute))
+	}
+	n := webNowGet(t, d)
+	var needs []int
+	for _, x := range n.Needs {
+		if x.Kind == needMergeFailed {
+			needs = append(needs, x.Item.Answer.Merge.PR)
+		}
+	}
+	if len(needs) != 1 || needs[0] != 300 {
+		t.Fatalf("needs: the failed merges %v, want [300] (3h ago; #299 was 25h ago)", needs)
+	}
+	var merged []int
+	for _, m := range n.Merged {
+		merged = append(merged, m.PR)
+	}
+	if want := []int{306, 305, 304, 303, 302}; fmt.Sprint(merged) != fmt.Sprint(want) {
+		t.Fatalf("merged: %v, want %v (the newest %d)", merged, want, webMergesMax)
+	}
+
+	w := doWeb(t, h, webReq{path: "/api/inbox", from: ipPhone})
+	var res struct{ Merges []state.InboxItem }
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	var got []int
+	for _, it := range res.Merges {
+		got = append(got, it.Answer.Merge.PR)
+	}
+	if want := []int{306, 305, 304, 303, 302, 300}; fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("inbox merges: %v, want %v (the failure #%d kept)", got, want, failed.Answer.Merge.PR)
 	}
 }
