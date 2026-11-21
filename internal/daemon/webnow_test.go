@@ -104,7 +104,8 @@ func TestWebNow(t *testing.T) {
 	if r0.ID != nw.ID || r0.Branch != "feat/b" || r0.Text != nw.Text || r0.Look.Word != "run" || len(r0.Steps) != 5 {
 		t.Fatalf("newest request first: %+v", r0)
 	}
-	if r1.ID != old.ID || r1.Slug != "feat-a" || r1.Steps[0].Status != stepNow {
+	// feat-a stopped (done) with no changes in its worktree: impl not begun
+	if r1.ID != old.ID || r1.Slug != "feat-a" || r1.Steps[0].Status != stepTodo {
 		t.Fatalf("older request: %+v", r1)
 	}
 

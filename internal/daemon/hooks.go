@@ -332,6 +332,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 	case "UserPromptSubmit":
 		d.changes.notePrompt(slug)
 		d.snapshotPrompt(slug, hp.Prompt)
+		reviewed := d.latestReview(slug) != nil
 		d.update(slug, func(s *state.Session) {
 			if hp.SessionID != "" {
 				s.ClaudeSessionID = hp.SessionID
@@ -340,6 +341,11 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 				s.State = state.Running
 			}
 			s.WaitKind, s.PendingTool = "", nil
+			s.PromptAt, s.PromptPRHead = time.Now(), ""
+			s.PromptPast = s.PR > 0 || s.Landing || reviewed
+			if ps := s.PRStatus; ps != nil && s.PR > 0 {
+				s.PromptPRHead = ps.HeadSHA
+			}
 		})
 	case "PreToolUse":
 		tool := summarizeTool(hp.ToolName, hp.ToolInput)

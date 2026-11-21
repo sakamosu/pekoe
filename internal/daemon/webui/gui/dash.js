@@ -415,6 +415,8 @@ export function stepLook(f, name) {
       if (name === "ci" && f.ci && f.ci.pass + f.ci.fail + f.ci.pending > 0) return ["now", "◉", f.ci.pass + "/" + (f.ci.pass + f.ci.fail + f.ci.pending)];
       return ["now", "◉", "now"];
   }
+  // a PR to push again (the branch went back to work): its number stays
+  if (name === "pr" && f.pr) return ["todo", "○", "#" + f.pr];
   return ["todo", "○", ""];
 }
 
@@ -499,8 +501,12 @@ export function statusNote(f) {
   const now = (f.later || []).find((l) => l.now);
   const impl = (f.steps || []).find((s) => s.name === "impl");
   // a branch a request made and a later one is at work on: sent back to
-  // impl by it. A branch no request made only works on it.
-  if (now && impl && impl.status !== "done") return (f.origin ? "reopened by " : "working on ") + requestId(now.id);
+  // impl by it. A branch no request made only works on it, unless it was
+  // past impl already (reopened).
+  if (now && impl && impl.status !== "done") return (f.origin || f.reopened ? "reopened by " : "working on ") + requestId(now.id);
+  // an instruction with no request to it sent it back to impl
+  // (webinbox.go's reopenOf): what the merge waits on can wait
+  if (f.reopened) return "reopened";
   const failed = (f.steps || []).find((s) => s.status === "fail");
   if (failed) return (STEP_NAMES[failed.name] || failed.name) + (failed.detail ? ": " + failed.detail : " failed");
   if (f.merge && f.merge.ready) return "ready · your merge";

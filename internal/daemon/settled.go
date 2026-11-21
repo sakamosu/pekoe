@@ -117,6 +117,43 @@ func (d *Daemon) commitsBeyondPR(s *state.Session) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(out))
 }
 
+// commitsBeyondBase is how many commits s's worktree HEAD has that its
+// base lacks: origin/<base>, else the local <base> (a checkout of main
+// counts what it has not pushed). With neither, or no commit yet, 0. A
+// worktree that is not there has none; err: git could not tell.
+func (d *Daemon) commitsBeyondBase(s *state.Session) (int, error) {
+	if s.Path == "" {
+		return 0, nil
+	}
+	if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if !d.checkGitDir(s) {
+		return 0, errGitBlocked
+	}
+	if _, err := gitx.RevParse(s.Path, "HEAD"); err != nil {
+		return 0, nil // no commit yet
+	}
+	base := s.Base
+	if base == "" {
+		base = gitx.DefaultBase(s.Path)
+	}
+	if base == "" || gitx.CheckRefArg("base", base) != nil {
+		return 0, nil
+	}
+	for _, b := range []string{"refs/remotes/origin/" + originBranch(base), "refs/heads/" + originBranch(base)} {
+		if _, err := gitx.Run(s.Path, "rev-parse", "--verify", "--quiet", b+"^{commit}"); err != nil {
+			continue
+		}
+		out, err := gitx.Run(s.Path, "rev-list", "--count", "HEAD", "--not", b)
+		if err != nil {
+			return 0, err
+		}
+		return strconv.Atoi(strings.TrimSpace(out))
+	}
+	return 0, nil
+}
+
 // sendKinds are the send log's kinds that hand a session's agent more to
 // do: session.send, and an inbox answer typed into its window (a "send
 // back" among them). session.new's prompt is where the work began.
@@ -158,10 +195,21 @@ func (d *Daemon) sentSince(slug string) (*state.SendRecord, *state.Report, error
 	return nil, rp, nil
 }
 
+// tookUp: s's agent took r up (an instruction came in at or after it,
+// Session.PromptAt) and has stopped since (done or idle after that). It
+// may have only answered a question: whether anything changed is the
+// worktree's to say.
+func tookUp(s *state.Session, r *state.SendRecord) bool {
+	if s.PromptAt.IsZero() || s.PromptAt.Before(r.At) || !s.StateSince.After(s.PromptAt) {
+		return false
+	}
+	return s.State == state.Done || s.State == state.Idle
+}
+
 // settledCheck is merge.go's settled condition: s's work is over (its
 // agent is not running or waiting, its worktree has nothing uncommitted
 // and no commit the PR lacks, nothing was sent to it since its last
-// report). ok false says why.
+// report that it has not taken up and stopped after). ok false says why.
 func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 	var why []string
 	if b := agentBusy(s); b != "" {
@@ -178,7 +226,12 @@ func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 		why = append(why, fmt.Sprintf("HEAD has %d commit%s not in PR #%d (run pekoe land)", n, plural(n), s.PR))
 	}
 	r, rp, err := d.sentSince(s.Slug)
+	since := "nothing sent since its last report"
 	switch {
+	case err == nil && r != nil && tookUp(s, r):
+		// it took the text up and ended that turn; what it left behind
+		// is the worktree's to say (above)
+		since = fmt.Sprintf("it stopped after what %s sent (%s, %s)", r.From, r.Kind, r.At.Local().Format("15:04:05"))
 	case err != nil:
 		why = append(why, "could not read the send log: "+err.Error())
 	case r != nil && rp != nil:
@@ -189,7 +242,7 @@ func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 	if len(why) > 0 {
 		return false, strings.Join(why, "; ")
 	}
-	return true, "agent " + string(s.State) + ", worktree clean, nothing sent since its last report"
+	return true, "agent " + string(s.State) + ", worktree clean, " + since
 }
 
 // landHold says why a merged PR's session is not torn down yet ("" when
