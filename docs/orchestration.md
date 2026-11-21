@@ -93,7 +93,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 
 ### 番号の表記
 
-依頼・受信箱の問い・報告の番号は、画面・CLI の出力・エラー・エージェントの入力欄に打つ行で、種類の頭文字を付けて出す: 依頼は `r651`、受信箱の問いは `q12`、報告は `p468`。`#651` と書くと GitHub の PR・issue の番号(`PR #185`)と見分けがつかないため。`#N` は PR・issue(と、それぞれの中の通し番号のスナップショット・レビュー・ピック・エラー)にだけ使う。組み立てと読み取りは `internal/ids`(Web UI は `app.js` の `requestId` / `questionId` / `reportId`)に 1 つずつ。
+依頼・受信箱の問い・報告の番号は、画面・CLI の出力・エラー・エージェントの入力欄に打つ行で、種類の頭文字を付けて出す: 依頼は `r651`、受信箱の問いは `q12`、報告は `p468`。`#651` と書くと GitHub の PR・issue の番号(`PR #185`)と見分けがつかないため。`#N` は PR・issue(と、それぞれの中の通し番号のスナップショット・レビュー・ピック・エラー)にだけ使う。組み立てと読み取りは `internal/ids`(Web UI とローカル GUI は `webui/lib/fmt.js` の `requestId` / `questionId` / `reportId`)に 1 つずつ。
 
 - 変えるのは見せ方だけ。番号の振り方・保存するもの・`--json` の `id`(数値のまま)は変わらない
 - コマンドの引数は数字だけ(`pekoe inbox 12`)でも頭文字付き(`pekoe inbox q12`)でも受け付ける。大文字(`Q12`)と、前の表記の `#12` も読む。種類の違う頭文字(`pekoe ledger q12`)は「q12 は問いの番号」と断る
@@ -545,7 +545,7 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **API**: `GET /api/inbox`・`POST /api/inbox/{id}/answer`(`inbox.answer` の「the item changed; look again」と「答え済み」を 409、無い id を 404、それ以外の誤りを 400 に分けるため、`inbox.go` のエラーを `errors.Is` で見分けられるようにした。文面は変えていない)・`GET /api/tapi`・`GET /api/overview`。答えずに閉じる(`dismiss`)は Web に出さなかった(答えずに閉じると依頼元は「閉じられた」だけを受け取る。外出先で答えられないものは置いておけばよい)
 - **概要**: 件数(動いている・待っている・done・開いている PR・根拠の揃った PR・受信箱・依頼)と tapi(状態・待ち時間・最後の返事)、工程表。工程表は依頼元(`parent`)と依頼(`request`。依頼の文を 200 文字まで)でまとめ、tapi の依頼を先に出す。各セッションは `impl → review → PR → CI → merge` を `done` / `now` / `fail` / `todo` で出し、自分の PR があるものは `merge.check` の揃っていない条件を `detail` つきで並べる。段階 3 の「main の CI」はまだ無いので出していない。他人の PR のレビューは工程表に入れない
 - **tapi**: `pending_tool` は返さない(tapi の許可への allow / deny は Web に出さない: U9)。Claude のセッション ID と稼働ディレクトリも返さない。tapi への送信・画面・キーパッドは上の「Web UI」(統括役の節)の「実装:」
-- **HTML として解釈されない**: ページは今までどおり `textContent` だけで入れ、リンクは `http(s)` だけを `<a>` にする。`<script>` などを含む問い・背景・選択肢・`javascript:` のリンクが JSON に生のタグとして出ないこと、`app.js` に HTML を作る入口(`innerHTML` など)がないことをテストで確かめる
+- **HTML として解釈されない**: ページは今までどおり `textContent` だけで入れ、リンクは `http(s)` だけを `<a>` にする。`<script>` などを含む問い・背景・選択肢・`javascript:` のリンクが JSON に生のタグとして出ないこと、`webui/` の JS に HTML を作る入口(`innerHTML` など)がないことをテストで確かめる
 
 ## 脅威モデルの追加
 

@@ -134,7 +134,7 @@ docs = ["docs/web.md#画像の扱い", "README.ja.md#iphone-からweb-ui"]
 [[tip]]
 id = "local-gui"
 short = "pekoe gui で Mac のブラウザから操作できる"
-detail = "pekoe gui で 127.0.0.1 の GUI が一度きりのリンクで開く。中身は iPhone の Web UI と同じで、tapi への send は確認なしで送れる。エージェントに操作させないブラウザ(プロファイル)で開く。"
+detail = "pekoe gui で 127.0.0.1 のデスクトップ向けの画面が一度きりのリンクで開く。許可待ちには always も出る(TUI の A)。エージェントに操作させないブラウザ(プロファイル)で開く。"
 keys = ["pekoe gui", "[gui]"]
 docs = ["docs/gui.md"]
 

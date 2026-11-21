@@ -1,0 +1,141 @@
+/* pekoe's local GUI, the desktop page: the phone's look (app.css, the same
+   roles, panels, cards, sheets and screen colors) laid out for a wide
+   window: the sessions on the left, the view on the right, filling the
+   window's height.
+   The look is provisional (docs/gui.md 段階 1): layout only, colors only
+   from /theme.css's tokens, no new colors, decoration or motion. Every
+   style of the page is here (no style in the HTML or the JS), and the
+   class names say what a part is (.session-list, .screen-pane,
+   .dashboard-table), so the final design can replace this file and keep
+   the DOM. */
+
+body.gui {
+  height: 100vh; min-height: 0; padding: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-size: 13.5px;
+}
+body.gui > .bar { flex: none; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.view-nav { display: flex; gap: 6px; }
+.view-tab {
+  padding: 3px 12px; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--dim); text-decoration: none; font-weight: 600; white-space: nowrap;
+}
+.view-tab:hover { color: var(--text); }
+.view-tab[aria-current="page"] { color: var(--primary); border-color: var(--primary); }
+.view-tab .ic { width: auto; }
+body.gui .bar .sum { margin-left: auto; font-size: 12.5px; }
+.bar .signed-in-as { flex: none; font-size: 12px; color: var(--dim); }
+
+.gui-layout {
+  flex: 1; min-height: 0;
+  display: grid; grid-template-columns: minmax(280px, 340px) 1fr; gap: 0 14px;
+  padding: 0 14px 12px;
+}
+
+/* ---- the sessions on the left ---- */
+.session-list { display: flex; flex-direction: column; min-height: 0; margin-top: 18px; }
+.session-rows { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 6px; }
+.session-group + .session-group { margin-top: 6px; border-top: 1px solid var(--border); }
+.session-group-head { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px 2px; font-size: 12px; }
+.session-group-head .n { color: var(--dim); }
+.session-group-head .session-group-waiting { margin-left: auto; font-size: 11.5px; }
+.session-list .row-s { cursor: pointer; border-left: 3px solid transparent; padding: 6px 10px 6px 9px; }
+.session-list .row-s:hover { background: var(--select); }
+.session-list .row-s.sel { background: var(--select); border-left-color: var(--primary); }
+.session-list .row-s.is-waiting { border-left-color: var(--warn); }
+.session-list .row-s.sel.is-waiting { border-left-color: var(--primary); }
+.session-list .line2.wait { color: var(--text); }
+
+/* ---- the view on the right ---- */
+.gui-view { min-height: 0; overflow-y: auto; padding: 4px 2px 8px; }
+.gui-view > .panel:first-child { margin-top: 18px; }
+.btn { cursor: pointer; }
+.btn:hover:not(:disabled) { background: var(--select); }
+.btn.always { color: var(--primary); border-color: var(--primary); }
+
+/* overview: the flow as one table */
+.counts { grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); }
+.dashboard-scroll { overflow-x: auto; padding: 0 4px 6px; }
+.dashboard-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.dashboard-table th {
+  position: sticky; top: 0; z-index: 1; background: var(--bg);
+  padding: 4px 8px; text-align: left; font-weight: 600; color: var(--dim);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.dashboard-table td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.dashboard-table .col-step { text-align: center; white-space: nowrap; width: 4.5em; }
+.dashboard-table th.col-step { text-align: center; }
+.dashboard-table .col-state { white-space: nowrap; }
+.dashboard-table .col-state .age { color: var(--dim); }
+.dashboard-table .col-session { min-width: 14em; max-width: 26em; }
+.dashboard-table .col-missing { min-width: 18em; color: var(--dim); overflow-wrap: anywhere; }
+.dashboard-table .col-missing > div + div { margin-top: 2px; }
+.dashboard-group-head td { padding-top: 12px; border-bottom: 0; font-size: 12px; }
+.dashboard-group-head .sep { padding: 0 .4em; color: var(--dim); }
+.dashboard-group-head .req { margin-top: 2px; color: var(--dim); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 3em; overflow: hidden; }
+.dashboard-session {
+  display: flex; align-items: baseline; gap: 6px; max-width: 100%;
+  padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
+}
+.dashboard-session:hover .name { color: var(--primary); text-decoration: underline; }
+.dashboard-session-sub { margin-left: calc(1.1em + 6px); font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* inbox: cards side by side when there is room */
+.inbox-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 4px 6px; padding: 0 4px 6px; align-items: start; }
+.inbox-list > .empty, .inbox-merges { grid-column: 1 / -1; }
+.ibox textarea.note { font-size: 14px; }
+
+/* the detail view fills the height: head, the wait card, the screen (and
+   the keypad beside it), the composer at the bottom */
+.gui-view.detail { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.detail .session-head { flex: none; }
+.detail .session-ask { flex: none; margin: 10px 0 0; max-height: 40vh; overflow-y: auto; }
+.detail .session-ask .body { padding-top: 10px; }
+.detail .session-ask .row.answer { max-width: 560px; }
+.detail .session-ask .input { max-height: 14em; }
+.session-work { flex: 1; min-height: 0; display: flex; gap: 12px; align-items: stretch; }
+.session-work > .screen-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#d-screen-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+body.gui #d-screen { flex: 1; min-height: 0; max-height: none; font-size: 12.5px; line-height: 1.35; }
+.session-work > .keypad { flex: none; width: 250px; margin: 14px 0 0; align-self: flex-start; }
+.keys-grid.arrows { grid-template-columns: repeat(3, 1fr); }
+.keys-grid .btn { min-height: 38px; }
+.chat .keypad { width: auto; max-width: 420px; }
+.chat-panel .chat { flex: 1; min-height: 0; }
+.chat .bubble { max-width: min(80%, 760px); }
+
+.detail .send { flex: none; margin: 10px 0 0; padding-bottom: 4px; }
+.send textarea { height: auto; min-height: 56px; max-height: 14em; resize: vertical; font-size: 14px; border-radius: 10px; }
+.send.is-drop-target textarea { border-color: var(--secondary); border-style: dashed; }
+.ibtn:hover:not(:disabled) { background: var(--select); }
+
+/* sheets: a dialog in the middle of the window, not a bottom sheet */
+body.gui .sheet-back { align-items: center; justify-content: center; padding: 24px; }
+body.gui .sheet {
+  width: min(760px, 100%); max-height: calc(100vh - 48px); overflow-y: auto;
+  padding: 18px 18px 16px; border: 1px solid transparent; border-radius: 12px;
+}
+body.gui .sheet.danger { border: 1px solid var(--err); }
+body.gui .sheet.always h2 { color: var(--primary); }
+body.gui .sheet .input { max-height: 30vh; }
+body.gui .sheet .sheet-screen { max-height: 40vh; font-size: 12px; }
+body.gui .sheet .row { justify-content: flex-end; }
+body.gui .sheet .row .btn { flex: 0 0 auto; min-width: 9em; }
+body.gui .sheet-warn { white-space: pre-line; }
+
+body.gui .toast { left: auto; right: 16px; bottom: 16px; max-width: 520px; }
+body.gui .gui-auth { left: 50%; right: auto; top: 56px; transform: translateX(-50%); max-width: 720px; }
+
+/* a narrow window: the list above the view, the page scrolls */
+@media (max-width: 820px) {
+  body.gui { height: auto; min-height: 100vh; overflow: visible; }
+  body.gui > .bar { flex-wrap: wrap; position: sticky; }
+  .gui-layout { display: block; padding: 0 10px 10px; }
+  .session-list { max-height: 38vh; }
+  .gui-view { overflow: visible; }
+  .gui-view.detail { overflow: visible; }
+  .session-work { flex-direction: column; }
+  body.gui #d-screen { max-height: 60vh; min-height: 16em; }
+  .session-work > .keypad { width: auto; align-self: stretch; }
+  .inbox-list { grid-template-columns: 1fr; }
+}

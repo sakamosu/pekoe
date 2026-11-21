@@ -874,7 +874,7 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 | `GET /api/sessions` | — | `session.list` を待ち優先に並べ、表示用に絞ったもの |
 | `GET /api/sessions/{slug}/screen` | — | `session.screen` の最後 80 行。`{slug, rows, lines, dead}` で、`rows` は色つき、`lines` は同じ行のテキストだけ([web.md](web.md)) |
 | `POST /api/sessions/{slug}/keys` | `{keys}` | `session.keys`。質問待ちのときだけ、決まったキーを 1〜8 個 |
-| `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400、待っていない・質問・プロンプトが変わったら 409 |
+| `POST /api/sessions/{slug}/answer` | `{answer: "allow"\|"deny", tool}` | `session.answer`。`always` は 400(ローカル GUI だけは受け付ける。下の「4. HTTP(ローカル GUI、127.0.0.1)」)、待っていない・質問・プロンプトが変わったら 409 |
 | `POST /api/sessions/{slug}/send` | `{text}` | `session.send`(`submit: true`)。allow / deny で答える許可待ちの間は 409。改行・タブ以外の制御文字を含むと 400 |
 | `GET /api/inbox` | — | `inbox.list`(未回答、古い順)。`{items: [InboxItem], merges: [InboxItem], at}`。`merges` は人が `merge` と答えた根拠の項目のうち、24 時間以内に変わったもの([web.md](web.md)) |
 | `POST /api/inbox/{id}/answer` | `{choice?, note?, rev}` | `inbox.answer`(`answer.via` は `web:<端末名>`)。`rev` が今のものと違う・答え済みなら 409、無い id は 404、選び方・メモの誤り(選択肢もメモも無い、など)は 400。`choice` を省いてメモだけで答えられる(pekoed の根拠の項目は除く) |
@@ -894,7 +894,7 @@ POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF
 | method / path | body | 処理 |
 | --- | --- | --- |
 | `POST /api/gui/session` | `{token}` | 一度きりのトークンを、セッションのトークン(32 バイト、pekoed のメモリにだけ持つ)に替える。`{token}` を返す。無い・失効した(60 秒)トークンは 401。**使用済みのトークン**がもう一度来たら、誰かが人より先に使ったとみなしてセッションのトークンを全部失効させ、401 とログに残す |
-| 上の「3. HTTPS」の `/api/*` | | 同じもの。ただし `GET /api/tapi` の `sendable` は常に `true`、`confirm_send` は常に `false`(TUI と同じく確認なしで送れる。`allow_devices` は見ない)。`GET /api/me` は `{login: "local", device: "gui"}`。送信の記録と受信箱の答えの `via` は `gui`。`always` は段階 0 では Web UI と同じく 400 |
+| 上の「3. HTTPS」の `/api/*` | | 同じもの。ただし `GET /api/tapi` の `sendable` は常に `true`、`confirm_send` は常に `false`(TUI と同じく確認なしで送れる。`allow_devices` は見ない)。`GET /api/me` は `{login: "local", device: "gui"}`。送信の記録と受信箱の答えの `via` は `gui`。`POST /api/sessions/{slug}/answer` は `always` も受け付ける(TUI の `A` と同じ。「always」という語だけで、`a`・`A`・`y` などのキーの別名は 400)。`/` はデスクトップ向けのページ(`webui/gui/`) |
 
 すべてのリクエストで確かめること(違えば理由を `pekoed.log` に `gui: <code> <method> <path>: <理由>`):
 
@@ -902,7 +902,7 @@ POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF
 - `Host` が `127.0.0.1:<port>` と完全一致でなければ 421(`localhost:<port>` も断る。DNS rebinding)
 - `Origin` があれば `http://127.0.0.1:<port>` と完全一致でなければ 403。`/api/*` は `Sec-Fetch-Site` があれば `same-origin` でなければ 403
 - GET・HEAD・POST 以外(`OPTIONS` を含む)は 403。`Access-Control-Allow-*` は返さない
-- `/api/*` は(`POST /api/gui/session` を除き)`Authorization: Bearer <セッションのトークン>` が要る(定数時間で比べる)。無い・違う・失効した(`[gui] session_ttl`、最後に使ってから。既定 12h)ものは 401。静的ファイル(`/`・`app.js`・`app.css`・`theme.css`・アイコン)はトークンなしで返す
+- `/api/*` は(`POST /api/gui/session` を除き)`Authorization: Bearer <セッションのトークン>` が要る(定数時間で比べる)。無い・違う・失効した(`[gui] session_ttl`、最後に使ってから。既定 12h)ものは 401。静的ファイル(`/`(デスクトップ向けの `gui/index.html`)・`gui/`・`lib/`・`app.css`・`theme.css`・アイコン)はトークンなしで返す
 - POST は `Content-Type: application/json` が要る(415)。`/api/` の外への POST は 403
 - 応答には Web UI と同じ CSP・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy: no-referrer`、`/api/*` には `Cache-Control: no-store`
 

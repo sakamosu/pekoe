@@ -2,9 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -69,35 +67,13 @@ func TestReadChatRewoundAndQueued(t *testing.T) {
 	}
 }
 
-// markRewound and chatBlocks (app.js, run in node; skipped without node):
+// markRewound and chatBlocks (lib/chat.js, run in node; skipped without node):
 // of the person's words with the same parent only the last reached the
 // agent; the others are taken back and marked, also when the later one
 // comes in a later read (the page runs it over all it has); words with no
 // parent (taken mid-turn) and different parents are never marked. The
 // bubbles leave out what was taken back and keep what was taken mid-turn.
 func TestWebMarkRewound(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not found: markRewound is not run")
-	}
-	js, err := webFiles.ReadFile("webui/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var src []byte
-	for _, re := range []string{
-		`(?s)\nfunction markRewound\(items\) \{\n.*?\n\}\n`,
-		`(?s)\nfunction chatBlocks\(items, pending\) \{\n.*?\n\}\n`,
-		`\nconst DAYS = .*\n`, `\nconst pad2 = .*\n`,
-		`(?s)\nfunction dayKey\(iso\) \{\n.*?\n\}\n`,
-		`(?s)\nfunction dayLabel\(iso\) \{\n.*?\n\}\n`,
-	} {
-		f := regexp.MustCompile(re).Find(js)
-		if f == nil {
-			t.Fatalf("%s not found in app.js", re)
-		}
-		src = append(src, f...)
-	}
 	path := filepath.Join(t.TempDir(), "44444444-dddd.jsonl")
 	writeChat(t, path, rewoundFixture)
 	page, err := readChat(path, "")
@@ -111,7 +87,7 @@ func TestWebMarkRewound(t *testing.T) {
 	extra := `[{"kind":"human","id":"x1","parent":"r9","text":"a"},{"kind":"human","id":"x2","parent":"r8","text":"b"},` +
 		`{"kind":"human","id":"y1","parent":"s1","text":"打ちなおす前"},{"kind":"pekoe","id":"y2","parent":"s1","text":"[pekoe inbox q1] 答え: yes"},` +
 		`{"kind":"human","id":"z1","parent":"u1","text":"1"},{"kind":"human","id":"z2","parent":"u1","text":"2"},{"kind":"human","id":"z3","parent":"u1","text":"3"}]`
-	prog := string(src) + `
+	prog := `import { markRewound, chatBlocks } from "lib/chat.js";
 const marked = (items) => items.filter((it) => it.rewound).map((it) => it.text);
 const all = ` + string(all) + `;
 markRewound(all);
@@ -125,10 +101,7 @@ markRewound(extra);
 const shown = chatBlocks(all, []).filter((b) => b.type === "me").flatMap((b) => b.msgs.map((m) => m.text));
 console.log(JSON.stringify([marked(all), before, marked(two), marked(extra), shown]));
 `
-	out, err := exec.Command(node, "-e", prog).CombinedOutput()
-	if err != nil {
-		t.Fatalf("node: %v\n%s", err, out)
-	}
+	out := runWebModule(t, prog)
 	var got [][]string
 	if err := json.Unmarshal(out, &got); err != nil || len(got) != 5 {
 		t.Fatalf("node output: %v\n%s", err, out)
