@@ -174,6 +174,7 @@ var humanMethods = map[string]string{
 	"session.transcript": "a session's conversation (the words of the person and of the agent, the tools it called): the local GUI's chat",
 	"session.commands":   "the slash commands of a session's agent, with descriptions from the worktree's and the user's .claude: the local GUI's / Commands",
 	"session.panel":      "a session's model, effort, permission mode, context and whether an update is installed; runs the agent's program with --version: the local GUI's Session panel",
+	"config.show":        "config.toml's settings in use (secrets hidden), out of an agent's sandbox on purpose: the local GUI's Settings",
 	"session.files":      "the file names of a session's worktree (git ls-files, run by pekoed): the local GUI's @ Files",
 	"tapi.get":           "tapi chat's state and screen",
 	"error.get":          "a source excerpt of the worktree",

@@ -709,6 +709,7 @@ func (d *Daemon) registerHandlers() {
 		"pr.failed_log":         bind(d.hFailedLog),
 		"merge.check":           bind(d.hMergeCheck),
 		"stats":                 bind(d.hStats),
+		"config.show":           d.hConfigShow,
 		"pick.list":             bind(d.hPickList),
 		"pick.send":             bind(d.hPickSend),
 		"pick.discard":          bind(d.hPickDiscard),

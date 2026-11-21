@@ -177,7 +177,7 @@ a:hover { color: var(--text); }
 .side-foot { flex: none; padding: 8px; font-size: 12px; color: var(--dim); border-top: 1px solid var(--border); }
 .side-foot .gap { display: inline-block; width: 16px; }
 
-/* a view not built yet (views/notyet.js): its name, and that it is not here */
+/* a view's list and its empty state (a name and a line saying what is missing) */
 .side-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px 8px 0; }
 .side-empty { padding: 16px 8px; }
 .se-title { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
@@ -226,6 +226,30 @@ a:hover { color: var(--text); }
 .view-changes-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .view-changes-cut { flex: none; color: var(--dim); }
 .view-changes-more { padding: 8px; font-family: var(--sans); font-size: 12px; color: var(--dim); }
+
+/* the Settings view (views/settings.js): config.toml's settings in use,
+   read only. A key's name and value are monospace (as config.toml spells
+   them); a value config.toml has is text, a default is dim */
+.view-settings { min-height: 0; }
+.view-settings-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 0 8px 12px; }
+.view-settings-where { display: flex; flex-direction: column; gap: 4px; }
+.view-settings-path { margin: 0; font: 11px/1.4 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+.view-settings-msg { margin: 0; font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+.view-settings-cmd { font: 11px var(--mono); color: var(--text); }
+.view-settings-note { margin: 0; font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+.view-settings-problems { display: flex; flex-direction: column; gap: 4px; }
+.view-settings-sec { display: flex; flex-direction: column; gap: 8px; }
+.view-settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.view-settings-sname { font: 600 12px var(--mono); color: var(--text); overflow-wrap: anywhere; }
+.view-settings-sdoc { margin: -4px 0 0; font-size: 11px; color: var(--dim); }
+.view-settings-key { display: flex; flex-direction: column; gap: 2px; padding-left: 8px; border-left: 1px solid var(--border); }
+.view-settings-k1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.view-settings-name { flex: 1; min-width: 0; font: 12px var(--mono); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-settings-tag { flex: none; font-size: 11px; color: var(--dim); white-space: nowrap; }
+.view-settings-in { padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--text); }
+.view-settings-value { font: 12px/1.4 var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view-settings-key.set .view-settings-value { color: var(--text); }
+.view-settings-doc { font-size: 11px; color: var(--dim); }
 
 /* ---- the main column: tabs and the view ---- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }

@@ -209,6 +209,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#段階-2-の一部-changes-のビュー"]
 
 [[tip]]
+id = "local-gui-settings"
+short = "pekoe gui の Settings で使っている設定を読む"
+detail = "レールの下端の Settings に、pekoe config show と同じ設定が節ごとに説明つきで出る。restart は pekoe daemon restart まで効かないもの、set は config.toml にあるもの。変えるのは pekoe config edit。"
+keys = ["pekoe gui", "pekoe config show"]
+docs = ["docs/gui.md#段階-2-の一部-settings読むだけ"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"
