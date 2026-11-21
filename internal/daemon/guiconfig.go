@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"slices"
 
 	"pekoe/internal/config"
 	"pekoe/internal/paths"
@@ -29,6 +30,11 @@ type configShow struct {
 	// until pekoe daemon restart (config.RestartNeeded: "http.port",
 	// "web", "sandbox")
 	Restart []string `json:"restart"`
+	// Waiting: the same key by key, dotted ("http.port",
+	// "web.allow_devices", "sandbox.enable": config.RestartKeys), for the
+	// marks on the keys themselves ("web" names the section, not which of
+	// its keys changed)
+	Waiting []string `json:"waiting"`
 	// Problems: config check on the file as pekoed last read it. A fatal
 	// one means the file does not read and pekoed keeps what it had
 	Problems []configProblem `json:"problems"`
@@ -43,12 +49,16 @@ type configProblem struct {
 func (d *Daemon) hConfigShow(json.RawMessage) (any, error) {
 	d.cfgMu.RLock()
 	g, raw := d.Global, d.cfgRaw
+	restart, waiting := slices.Clone(d.cfgRestart), slices.Clone(d.cfgWaiting)
 	d.cfgMu.RUnlock()
 	path := paths.GlobalConfig()
 	_, err := os.Stat(path)
-	out := configShow{Path: path, Exists: err == nil || !errors.Is(err, fs.ErrNotExist), Sections: config.Shown(g), Restart: d.configRestart(), Problems: []configProblem{}}
+	out := configShow{Path: path, Exists: err == nil || !errors.Is(err, fs.ErrNotExist), Sections: config.Shown(g), Restart: restart, Waiting: waiting, Problems: []configProblem{}}
 	if out.Restart == nil {
 		out.Restart = []string{}
+	}
+	if out.Waiting == nil {
+		out.Waiting = []string{}
 	}
 	config.MarkSet(out.Sections, raw)
 	if raw != nil {

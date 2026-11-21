@@ -26,6 +26,28 @@ func RestartNeeded(running, next *Global) []string {
 	return out
 }
 
+// RestartKeys is RestartNeeded key by key: the dotted names ("http.port",
+// "web.allow_devices", "sandbox.enable") of the settings next changes from
+// running that wait for a restart, in Global's order, for config.show to
+// mark the keys themselves and not their whole section. Empty exactly
+// when RestartNeeded is; nil when none.
+func RestartKeys(running, next *Global) []string {
+	var out []string
+	if running.HTTP.Port != next.HTTP.Port {
+		out = append(out, "http.port")
+	}
+	a, b := reflect.ValueOf(webAtStart(running.Web)), reflect.ValueOf(webAtStart(next.Web))
+	for i := range a.NumField() {
+		if !reflect.DeepEqual(a.Field(i).Interface(), b.Field(i).Interface()) {
+			out = append(out, "web."+tomlName(a.Type().Field(i)))
+		}
+	}
+	if running.Sandbox.On() != next.Sandbox.On() {
+		out = append(out, "sandbox.enable")
+	}
+	return out
+}
+
 // KeepRunning is next with the settings RestartNeeded watches put back to
 // running's: what pekoed reads must stay what it runs with.
 func KeepRunning(running, next *Global) *Global {

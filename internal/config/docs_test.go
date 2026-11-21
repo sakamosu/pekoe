@@ -168,7 +168,8 @@ command = "ab"
 }
 
 // NeedsRestart says what RestartNeeded does: each key changed alone waits
-// for a restart exactly when NeedsRestart names it.
+// for a restart exactly when NeedsRestart names it, and RestartKeys names
+// that key alone.
 func TestNeedsRestartMatchesRestartNeeded(t *testing.T) {
 	_, keys := declared()
 	for _, key := range keys {
@@ -179,8 +180,17 @@ func TestNeedsRestartMatchesRestartNeeded(t *testing.T) {
 			continue
 		}
 		got := len(RestartNeeded(base, next)) > 0
-		if want := NeedsRestart(strings.Replace(key, "*", "claude", 1)); got != want {
+		name := strings.Replace(key, "*", "claude", 1)
+		if want := NeedsRestart(name); got != want {
 			t.Errorf("%s: RestartNeeded %v, NeedsRestart %v", key, got, want)
+		}
+		// key by key: the one changed, not the rest of its section
+		var want []string
+		if got {
+			want = []string{name}
+		}
+		if ks := RestartKeys(base, next); !slices.Equal(ks, want) {
+			t.Errorf("%s: RestartKeys %v", key, ks)
 		}
 	}
 }

@@ -202,6 +202,9 @@ func TestRestartNeeded(t *testing.T) {
 	if got := strings.Join(RestartNeeded(run, next), ","); got != "http.port,web,sandbox" {
 		t.Errorf("RestartNeeded = %s", got)
 	}
+	if got := strings.Join(RestartKeys(run, next), ","); got != "http.port,web.allow_users,sandbox.enable" {
+		t.Errorf("RestartKeys = %s", got)
+	}
 	k := KeepRunning(run, next)
 	if k.HTTP.Port != 5000 || !k.Sandbox.On() || len(k.Web.AllowUsers) != 0 || k.Theme.Mode != "ansi" {
 		t.Errorf("KeepRunning: %+v", k)
@@ -209,6 +212,9 @@ func TestRestartNeeded(t *testing.T) {
 	same, _ := ParseGlobal([]byte("[http]\nport = 5000\n[cleanup]\nstale_after = \"1h\"\n"))
 	if r := RestartNeeded(run, same); r != nil {
 		t.Errorf("live settings need a restart: %v", r)
+	}
+	if r := RestartKeys(run, same); r != nil {
+		t.Errorf("live settings wait for a restart: %v", r)
 	}
 }
 
@@ -285,6 +291,9 @@ func TestConfirmTapiSend(t *testing.T) {
 	both, _ := ParseGlobal([]byte("[web]\nconfirm_tapi_send = false\nhostname = \"x\"\n"))
 	if r := strings.Join(RestartNeeded(def, both), ","); r != "web" {
 		t.Errorf("RestartNeeded = %s", r)
+	}
+	if r := strings.Join(RestartKeys(def, both), ","); r != "web.hostname" {
+		t.Errorf("RestartKeys = %s", r)
 	}
 	if k := KeepRunning(def, both); k.Web.Hostname == "x" || k.Web.ConfirmTapiSendOn() {
 		t.Errorf("KeepRunning: %+v", k.Web)
