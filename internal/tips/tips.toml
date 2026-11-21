@@ -160,6 +160,20 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#段階-2-の一部-new-sessiontapi-の-resetinterrupt"]
 
 [[tip]]
+id = "local-gui-issue-new"
+short = "pekoe gui の New session で issue から作る"
+detail = "New session の Pick issue… で issue を選ぶと、ブランチ名を埋め、題と本文を囲んだプロンプトの全文を確認シートで見せてから作る(pekoe new --from gh#N と同じ)。後で書き換わったら作らない。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-issue-から-new-sessiontapi-の-start"]
+
+[[tip]]
+id = "local-gui-tapi-start"
+short = "pekoe gui の tapi パネルから tapi を起動する"
+detail = "T Reset の後など tapi が動いていないとき、Dashboard の tapi パネルの t Start で起動する(TUI の t。終了していれば t Restart)。確認は無く、依頼や受信箱はそのまま。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-issue-から-new-sessiontapi-の-start"]
+
+[[tip]]
 id = "local-gui-shell"
 short = "pekoe gui の送信欄で ! のコマンドを送る前に確かめる"
 detail = "! で始まる文は Claude Code が許可なしにシェルのコマンドとして動かすので、送る前に確認シートで宛先と全文を見せる。入力欄の外では、許可待ちに y / A / n、質問に 1-9 が効く。"

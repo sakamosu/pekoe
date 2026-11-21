@@ -1,6 +1,7 @@
 // What the local GUI's three operations say and when they are offered
-// (docs/gui.md 段階 2): New session (the TUI's n), tapi's Reset (T) and
-// Interrupt (the TUI's esc while typing into an agent). Each goes through
+// (docs/gui.md 段階 2): New session (the TUI's n; from an issue, the TUI's
+// [2] Issues n), tapi's Reset (T) and Start (t), and Interrupt (the TUI's
+// esc while typing into an agent). Each goes through
 // the confirm sheet (gui.js); pekoed checks again (guiact.go,
 // interrupt.go). Plain data in, plain data out, so node can test it
 // (TestGUIActions); the page draws the words with textContent.
@@ -48,7 +49,7 @@ export function resetSheet(t) {
       text: "the requests (ledger" + (t ? ", " + t.ledger_open + " open" : "") + "), the inbox (" + (t ? t.inbox_open + " open, " : "") +
         "answered or not), the reports, the send log and every session. tapi reads the open requests again when it starts.",
     },
-    { cap: "after", text: "tapi is not started: start it again from the TUI (t), with a new conversation." },
+    { cap: "after", text: "tapi is not started: start it again with Start on the tapi panel (t, as in the TUI), with a new conversation." },
   ];
   return {
     title: "Reset tapi chat",
@@ -71,24 +72,66 @@ export function newWhy(repo, branch) {
   return "";
 }
 
-// newSheet: the sheet's words for a new session. repo: {name, dir}.
-export function newSheet(repo, branch, prompt) {
-  const p = String(prompt || "");
+// newSheet: the sheet's words for a new session. repo: {name, dir}. issue
+// (optional): GET /api/repos/{repo}/issues/{n} — its text (the issue's
+// title and body in a fence, as pekoe new --from gh#N puts them) goes at
+// the head of the prompt, and the sheet shows all of it: anyone who can
+// open an issue wrote the title and the body.
+export function newSheet(repo, branch, prompt, issue) {
+  const own = String(prompt || "");
+  const p = issue ? issue.text + (own.trim() ? "\n\n" + own : "") : own;
   const facts = [
     { cap: "branch — new, in a worktree of its own", text: String(branch).trim() },
     { cap: "agent", text: "the repository's agent (its config's agent, else claude), as the TUI's n makes it" },
-    p.trim()
-      ? { cap: "prompt — all of it, as the agent gets it (" + [...p].length + " chars, " + p.split("\n").length + " lines)", text: p, pre: true }
-      : { cap: "prompt", text: "none: the agent starts with an empty input box" },
   ];
+  if (issue) facts.push({ cap: "issue — GitHub, read just now", text: issueLine(issue) + (issue.author ? " · opened by " + issue.author : "") + (issue.url ? " · " + issue.url : "") });
+  facts.push(p.trim()
+    ? { cap: "prompt — all of it, as the agent gets it (" + [...p].length + " chars, " + p.split("\n").length + " lines)", text: p, pre: true }
+    : { cap: "prompt", text: "none: the agent starts with an empty input box" });
+  const warns = [];
+  if (issue) warns.push("⚠ The issue's title and body are written by whoever can open an issue, not by you. pekoe fences them and tells the agent not to follow orders in them; read them above before you create the session.");
+  if (shellBang(p)) warns.push("⚠ The prompt starts with !: an agent that takes its prompt by typing it into its input box (opencode) runs the rest as a shell command, right away and without a permission prompt. Claude Code gets it as its first message.");
   return {
-    title: "New session in " + repo.name,
+    title: "New session in " + repo.name + (issue ? " from #" + issue.number : ""),
     toCap: "where — the repository",
     to: repo.name + " · " + repo.dir,
     facts,
-    warn: shellBang(p)
-      ? "⚠ The prompt starts with !: an agent that takes its prompt by typing it into its input box (opencode) runs the rest as a shell command, right away and without a permission prompt. Claude Code gets it as its first message."
-      : "",
+    warn: warns.join("\n"),
     ok: "Create session",
   };
+}
+
+// issueLine: one issue as the list and the form show it (#12 title).
+export function issueLine(is) {
+  return "#" + is.number + " " + String(is.title || "");
+}
+
+// issueMeta: what follows an issue's title in the list: its labels and the
+// session already working on it (the TUI's [2] Issues shows the same).
+export function issueMeta(is) {
+  const bits = [];
+  if (is.labels && is.labels.length) bits.push(is.labels.join(", "));
+  if (is.session) bits.push("session " + is.session.branch + " · " + is.session.state);
+  return bits.join(" · ");
+}
+
+// pickIssueBranch: the branch field after an issue is picked: the issue's
+// suggestion (SuggestBranch, as the TUI's n fills it in) unless the person
+// typed one of their own (the field is neither empty nor the last
+// suggestion).
+export function pickIssueBranch(field, lastSuggested, is) {
+  const f = String(field || "").trim();
+  return !f || f === lastSuggested ? is.branch : f;
+}
+
+// tapiStart: what tapi panel's Start button does for /api/tapi t: "start"
+// (tapi.open, the TUI's t: not started, as after a Reset), "restart" (its
+// window is there, the agent exited: tapi.restart, the TUI's ↵ on that
+// screen) or "" (running, or unreadable: no button). Neither has a confirm
+// sheet, as in the TUI: starting tapi changes nothing that was there.
+export function tapiStart(t) {
+  if (!t) return "";
+  if (!t.started) return "start";
+  if (!t.alive) return "restart";
+  return "";
 }

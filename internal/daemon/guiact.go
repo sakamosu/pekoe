@@ -53,6 +53,10 @@ type guiNewIn struct {
 	RepoID string `json:"repo_id"`
 	Branch string `json:"branch"`
 	Prompt string `json:"prompt"`
+	// Issue: start from GitHub issue N of the repository (guiissue.go);
+	// IssueSig is the digest of its text the confirm sheet showed
+	Issue    int    `json:"issue"`
+	IssueSig string `json:"issue_sig"`
 }
 
 // guiNew is POST /api/sessions: session.new as the TUI's n makes it (a
@@ -80,20 +84,27 @@ func (d *Daemon) guiNew(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "text must not contain control characters", http.StatusBadRequest)
 		return
 	}
-	dir := ""
-	for _, k := range d.knownRepos() {
-		if k.ID == in.RepoID && k.Dir != "" {
-			dir = k.Dir
-			break
-		}
-	}
-	if in.RepoID == "" || dir == "" {
+	dir := d.guiRepoDir(in.RepoID)
+	if dir == "" {
 		http.Error(w, "repository not known to pekoe: pick one from the list", http.StatusBadRequest)
 		return
 	}
+	if in.Issue < 0 || in.Issue > 0 && !fromIssueRe.MatchString(fmt.Sprintf("gh#%d", in.Issue)) {
+		http.Error(w, "issue: an issue number", http.StatusBadRequest)
+		return
+	}
+	prompt := in.Prompt
+	if in.Issue > 0 {
+		pr, code, err := d.guiNewIssue(r, dir, in.Issue, in.IssueSig, in.Prompt)
+		if err != nil {
+			http.Error(w, err.Error(), code)
+			return
+		}
+		prompt = pr
+	}
 	p := peerFrom(r)
-	log.Printf("gui: %s creates %s in %s (%d chars of prompt)", p.Login, in.Branch, in.RepoID, utf8.RuneCountInString(in.Prompt))
-	res, err := d.CallAs(humanCaller(webVia(p)), "session.new", mustJSON(newP{Repo: dir, Branch: in.Branch, Prompt: in.Prompt}))
+	log.Printf("gui: %s creates %s in %s (issue %d, %d chars of prompt)", p.Login, in.Branch, in.RepoID, in.Issue, utf8.RuneCountInString(prompt))
+	res, err := d.CallAs(humanCaller(webVia(p)), "session.new", mustJSON(newP{Repo: dir, Branch: in.Branch, Prompt: prompt}))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -108,6 +119,11 @@ func (d *Daemon) guiNew(w http.ResponseWriter, r *http.Request) {
 	if s == nil {
 		writeJSON(w, map[string]any{"ok": true})
 		return
+	}
+	if in.Issue > 0 {
+		if u := d.noteIssue(s.Slug, in.Issue); u != nil {
+			s = u
+		}
 	}
 	writeJSON(w, toWebSession(s))
 }

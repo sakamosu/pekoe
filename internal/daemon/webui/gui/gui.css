@@ -602,3 +602,19 @@ a:hover { color: var(--text); }
   .s-center { padding: 16px; }
   .hints { margin-left: 0; }
 }
+
+/* the New session form's issue (#nsheet): the one picked, and the list it
+   comes from. Titles are the issue author's: textContent, one line, cut */
+.n-issue { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 4px 0 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.n-issue-pick { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.n-issue-pick.none { color: var(--dim); }
+.n-issues { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.n-issues-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.n-issues-note { font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
+.n-issues-list { display: flex; flex-direction: column; max-height: 28vh; overflow-y: auto; }
+.n-issue-row { display: flex; flex-direction: column; align-items: stretch; gap: 0; width: 100%; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); text-align: left; }
+.n-issue-row:hover, .n-issue-row[aria-selected="true"] { background: var(--raised); }
+.n-issue-row .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.n-issue-row .m { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.n-issue-row:hover .m, .n-issue-row[aria-selected="true"] .m { color: var(--text); }
+#c-start:not([hidden]) + #c-reset { margin-left: 0; }

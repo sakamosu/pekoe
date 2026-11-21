@@ -101,6 +101,7 @@
         <div class="tp-head">
           <a class="tp-name" href="#/tapi">tapi</a>
           <span class="tp-state" id="c-state"></span>
+          <button type="button" class="btn xs push" id="c-start" hidden><span class="k">t</span> Start</button>
           <button type="button" class="btn xs push" id="c-reset" title="forget tapi's conversation (pekoe tapi reset)"><span class="k r-err">T</span> Reset</button>
         </div>
         <div class="chat" id="c-chat">
@@ -309,6 +310,23 @@
     <h2 id="nsheet-title">New session</h2>
     <label class="sheet-cap" for="n-repo">repository — one pekoe knows (the TUI's w lists the same)</label>
     <select class="field" id="n-repo"></select>
+    <div class="sheet-cap" id="n-issue-cap">issue — optional: start from a GitHub issue (the TUI's [2] Issues n)</div>
+    <div class="n-issue">
+      <span class="n-issue-pick" id="n-issue-pick" aria-labelledby="n-issue-cap">none</span>
+      <button type="button" class="btn xs" id="n-issue-clear" hidden>Clear</button>
+      <button type="button" class="btn xs" id="n-issue-btn" aria-expanded="false" aria-controls="n-issues">Pick issue…</button>
+    </div>
+    <div class="n-issues" id="n-issues" hidden>
+      <div class="n-issues-head">
+        <div class="seg-toggle" role="group" aria-label="which issues">
+          <button type="button" class="seg-btn" id="n-issues-mine" aria-pressed="true">assigned to me</button>
+          <button type="button" class="seg-btn" id="n-issues-open" aria-pressed="false">all open</button>
+        </div>
+        <span class="n-issues-note" id="n-issues-note" aria-live="polite"></span>
+        <button type="button" class="btn xs push" id="n-issues-refresh">Refresh</button>
+      </div>
+      <div class="n-issues-list" id="n-issues-list"></div>
+    </div>
     <label class="sheet-cap" for="n-branch">branch — new, in a worktree of its own</label>
     <input class="field" id="n-branch" placeholder="feat/x" spellcheck="false" autocapitalize="off">
     <label class="sheet-cap" for="n-prompt">prompt — the agent's first instruction (optional)</label>

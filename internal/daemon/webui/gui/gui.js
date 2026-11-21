@@ -26,7 +26,7 @@ import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./them
 import { flows, readySet, stateBits, tapiState } from "./states.js";
 import { sideRail } from "./rail.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
-import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet } from "./actions.js";
+import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
 import { picker } from "./picker.js";
 
@@ -889,6 +889,7 @@ function renderChatHead() {
   const ok = tapiUp() && tapi.sendable && !tapi.answerable;
   $("c-send-btn").disabled = !ok || sending;
   $("c-shell").disabled = !ok;
+  renderTapiStart();
   $("c-text").placeholder = !tapiUp() ? "tapi is not running" : !tapi.sendable ? "pekoed does not take a send to tapi here" : tapi.answerable ? "tapi waits for a permission: answer it in the terminal first" : "ask tapi";
   renderChatTail();
 }
@@ -1069,6 +1070,9 @@ async function openNew() {
   const cur = current && current !== TAPI ? sessions.find((x) => x.slug === current) : null;
   const pick = repos.find((r) => r.repo_id === was) || (cur && repos.find((r) => r.name === cur.repo)) || repos[0];
   if (pick) sel.value = pick.repo_id;
+  // an issue picked for another repository does not come along
+  if (issue && sel.value !== was) setIssue(null);
+  if (!$("n-issues").hidden) loadIssues(false);
 }
 
 function closeNew() {
@@ -1076,29 +1080,130 @@ function closeNew() {
   busy = false;
 }
 
-$("nform").addEventListener("submit", (e) => {
+$("nform").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if ($("n-next").disabled) return;
   const repo = repos.find((r) => r.repo_id === $("n-repo").value);
   const branch = $("n-branch").value.trim();
   const prompt = $("n-prompt").value.trim() ? $("n-prompt").value : "";
   const why = newWhy(repo, branch);
   if (why) return newErr(why);
-  $("nsheet").hidden = true;
-  openConfirm(newSheet(repo, branch, prompt), async () => {
+  // an issue is read again now: the sheet shows the text that goes in,
+  // and pekoed refuses the session if the issue changes after this
+  let det = null;
+  if (issue) {
+    $("n-next").disabled = true;
     try {
-      const s = await api("/api/sessions", { repo_id: repo.repo_id, branch, prompt });
+      det = await api(issuesPath(repo.repo_id) + "/" + issue.number);
+    } catch (e2) {
+      return newErr("cannot read " + issueLine(issue) + ": " + e2.message);
+    } finally {
+      $("n-next").disabled = false;
+    }
+    if ($("nsheet").hidden || !issue || det.number !== issue.number) return;
+  }
+  $("nsheet").hidden = true;
+  openConfirm(newSheet(repo, branch, prompt, det), async () => {
+    try {
+      const s = await api("/api/sessions", { repo_id: repo.repo_id, branch, prompt, ...(det ? { issue: det.number, issue_sig: det.sig } : {}) });
       $("n-branch").value = "";
       $("n-prompt").value = "";
+      setIssue(null);
       toast("created " + s.slug, true);
       return () => refresh().then(() => go(s.slug));
-    } catch (e) {
-      return () => showNewForm(e.message);
+    } catch (e2) {
+      return () => showNewForm(e2.message);
     }
   }, () => showNewForm(""));
 });
 $("n-cancel").addEventListener("click", closeNew);
 $("nsheet").addEventListener("click", (e) => { if (e.target === $("nsheet")) closeNew(); });
 $("new-btn").addEventListener("click", openNew);
+
+// New session from an issue (the TUI's [2] Issues n): the list of
+// /api/repos/{repo}/issues in the form; picking one fills in the branch it
+// suggests and puts the issue's text at the head of the prompt (the
+// confirm sheet shows all of it). Titles and labels are the issue
+// authors': textContent only.
+let issue = null; // the picked row
+let issueSuggested = ""; // the branch it filled in
+let issueFilter = "mine"; // mine | open, as the TUI's f
+let issueSeq = 0;
+
+const issuesPath = (repoId) => "/api/repos/" + encodeURIComponent(repoId) + "/issues";
+
+function setIssue(is) {
+  if (is) {
+    $("n-branch").value = pickIssueBranch($("n-branch").value, issueSuggested, is);
+    issueSuggested = is.branch;
+  } else if (issue && $("n-branch").value.trim() === issueSuggested) {
+    $("n-branch").value = "";
+  }
+  if (!is) issueSuggested = "";
+  issue = is;
+  const pick = $("n-issue-pick");
+  pick.textContent = is ? issueLine(is) : "none";
+  pick.title = is ? issueLine(is) + (issueMeta(is) ? " · " + issueMeta(is) : "") : "";
+  pick.classList.toggle("none", !is);
+  $("n-issue-clear").hidden = !is;
+  if (is) showIssues(false);
+}
+
+function showIssues(on) {
+  $("n-issues").hidden = !on;
+  $("n-issue-btn").setAttribute("aria-expanded", String(on));
+  $("n-issue-btn").textContent = on ? "Hide issues" : "Pick issue…";
+  if (on) loadIssues(false);
+}
+
+async function loadIssues(refresh) {
+  const repoId = $("n-repo").value;
+  const seq = ++issueSeq;
+  const note = $("n-issues-note");
+  const list = $("n-issues-list");
+  $("n-issues-mine").setAttribute("aria-pressed", String(issueFilter === "mine"));
+  $("n-issues-open").setAttribute("aria-pressed", String(issueFilter === "open"));
+  list.replaceChildren();
+  if (!repos.some((r) => r.repo_id === repoId)) {
+    note.textContent = "pick a repository first";
+    return;
+  }
+  note.textContent = "reading GitHub…";
+  let res;
+  try {
+    res = await api(issuesPath(repoId) + "?filter=" + issueFilter + (refresh ? "&refresh=1" : ""));
+  } catch (e) {
+    if (seq === issueSeq) note.textContent = "✗ " + e.message;
+    return;
+  }
+  if (seq !== issueSeq || $("n-repo").value !== repoId) return;
+  const rows = res.issues || [];
+  note.textContent = res.unavailable ? "✗ " + res.unavailable : rows.length + (issueFilter === "mine" ? " open, assigned to you" : " open") + (res.cached ? " · read " + ago(res.fetched_at) + " ago" : "");
+  list.replaceChildren(...rows.map((is) => {
+    const b = el("button", "n-issue-row");
+    b.type = "button";
+    b.setAttribute("aria-selected", String(!!issue && issue.number === is.number));
+    b.title = issueLine(is);
+    b.append(el("span", "t", issueLine(is)));
+    const m = issueMeta(is);
+    if (m) b.append(el("span", "m", m));
+    b.addEventListener("click", () => {
+      setIssue(is);
+      $("n-branch").focus();
+    });
+    return b;
+  }));
+}
+
+$("n-issue-btn").addEventListener("click", () => showIssues($("n-issues").hidden));
+$("n-issue-clear").addEventListener("click", () => setIssue(null));
+$("n-issues-mine").addEventListener("click", () => { issueFilter = "mine"; loadIssues(false); });
+$("n-issues-open").addEventListener("click", () => { issueFilter = "open"; loadIssues(false); });
+$("n-issues-refresh").addEventListener("click", () => loadIssues(true));
+$("n-repo").addEventListener("change", () => {
+  setIssue(null);
+  if (!$("n-issues").hidden) loadIssues(false);
+});
 
 // tapi's Reset (the TUI's T, pekoe tapi reset)
 function openReset() {
@@ -1117,6 +1222,43 @@ function openReset() {
   });
 }
 $("c-reset").addEventListener("click", openReset);
+
+// tapi's Start (the TUI's t; Restart when its agent exited, the TUI's ↵ on
+// that screen): no confirm sheet, as in the TUI. It starts tapi and
+// changes nothing that was there (a Reset's new conversation, or the one
+// Claude Code kept).
+function renderTapiStart() {
+  const what = tapiStart(tapi);
+  const b = $("c-start");
+  b.hidden = !what;
+  b.lastChild.textContent = what === "restart" ? " Restart" : " Start";
+  b.title = what === "restart" ? "tapi's agent exited: start it again (pekoed's tapi.restart, the TUI's ↵ on that screen)" : "start tapi chat (the TUI's t)";
+}
+
+let starting = false;
+async function startTapi() {
+  if (starting || !tapiStart(tapi)) return;
+  starting = true;
+  $("c-start").disabled = true;
+  try {
+    tapi = await api("/api/tapi/start", {});
+    // what the chat said while tapi was not running goes: read it afresh
+    tchat.reset(TAPI);
+    if (current === TAPI) dchat.reset(TAPI);
+    chatTailSig = "";
+    toast("tapi started", true);
+  } catch (e) {
+    toast("tapi: " + e.message);
+  } finally {
+    starting = false;
+    $("c-start").disabled = false;
+  }
+  tchat.render(true);
+  renderChatHead();
+  renderPane();
+  refresh();
+}
+$("c-start").addEventListener("click", startTapi);
 
 // Interrupt: Escape once into the agent in view (the TUI's esc while typing)
 function interruptTarget() {
@@ -1230,7 +1372,8 @@ function schedule() {
 // ---- keys: only while no text box has the focus (docs/gui-design.md) ----
 // ":" the title bar's box (the sidebar view's filter); on a permission card y / A / n open the confirm sheet
 // (never answer by themselves); on a question card 1–9 go to its menu.
-// n New session (unless n is a permission card's deny), T tapi's Reset, esc
+// n New session (unless n is a permission card's deny), T tapi's Reset, t
+// tapi's Start (only while tapi is not running; no sheet, as the TUI's), esc
 // Interrupt on a session that works: each opens its confirm sheet.
 
 const typing = (e) => {
@@ -1265,6 +1408,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "T") {
     e.preventDefault();
     openReset();
+    return;
+  }
+  if (e.key === "t" && tapiStart(tapi)) {
+    e.preventDefault();
+    startTapi();
     return;
   }
   const s = view === "detail" ? detailTarget() : null;
