@@ -117,6 +117,43 @@ func (d *Daemon) commitsBeyondPR(s *state.Session) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(out))
 }
 
+// commitsBeyondBase is how many commits s's worktree HEAD has that its
+// base lacks: origin/<base>, else the local <base> (a checkout of main
+// counts what it has not pushed). With neither, or no commit yet, 0. A
+// worktree that is not there has none; err: git could not tell.
+func (d *Daemon) commitsBeyondBase(s *state.Session) (int, error) {
+	if s.Path == "" {
+		return 0, nil
+	}
+	if _, err := os.Stat(s.Path); errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if !d.checkGitDir(s) {
+		return 0, errGitBlocked
+	}
+	if _, err := gitx.RevParse(s.Path, "HEAD"); err != nil {
+		return 0, nil // no commit yet
+	}
+	base := s.Base
+	if base == "" {
+		base = gitx.DefaultBase(s.Path)
+	}
+	if base == "" || gitx.CheckRefArg("base", base) != nil {
+		return 0, nil
+	}
+	for _, b := range []string{"refs/remotes/origin/" + originBranch(base), "refs/heads/" + originBranch(base)} {
+		if _, err := gitx.Run(s.Path, "rev-parse", "--verify", "--quiet", b+"^{commit}"); err != nil {
+			continue
+		}
+		out, err := gitx.Run(s.Path, "rev-list", "--count", "HEAD", "--not", b)
+		if err != nil {
+			return 0, err
+		}
+		return strconv.Atoi(strings.TrimSpace(out))
+	}
+	return 0, nil
+}
+
 // sendKinds are the send log's kinds that hand a session's agent more to
 // do: session.send, and an inbox answer typed into its window (a "send
 // back" among them). session.new's prompt is where the work began.

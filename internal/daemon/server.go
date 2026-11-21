@@ -227,6 +227,7 @@ type Daemon struct {
 	interrupted interrupts           // when each agent was last interrupted (interrupt.go)
 	fileLists   sync.Map             // slug -> *fileListing: the last session.files listing (sessionchat.go)
 	promptLocks sync.Map             // slug -> *sync.Mutex: one snapshotPrompt at a time (hooks.go)
+	stopped     sync.Map             // slug -> stoppedEntry: impl of a stopped branch, kept a little (webinbox.go's implStopped)
 	tests       testRuns             // [hooks] test runs (hooks.go)
 
 	catch      *errcatch.Store              // errors offered as cards (errcatch.go)

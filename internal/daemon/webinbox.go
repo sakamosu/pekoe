@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/gitx"
 	"pekoe/internal/ids"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
@@ -378,10 +379,10 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	// handed over), there is a PR (land pushed it) or it landed. An
 	// instruction after that sends it back (reopenOf).
 	rv := d.latestReview(s.Slug)
-	ro := d.reopenOf(s, rv, merged)
+	ro, head := d.reopenOf(s, merged)
 	f.Reopened = ro == reopenWorking
 	if ro != reopenNone {
-		d.reopenedSteps(&f, s, rv, ro)
+		d.reopenedSteps(&f, s, rv, ro, head)
 		return f
 	}
 	switch {
@@ -393,6 +394,13 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("impl", stepTodo, "queued: "+s.Queue)
 	case s.Report != nil && s.Report.Status == "blocked":
 		step("impl", stepFail, "blocked (report "+ids.Report(s.Report.ID)+")")
+	case s.State == state.Idle || s.State == state.Done:
+		// stopped: impl is what the worktree holds (implStopped)
+		if st, detail, ok := d.implStopped(s); ok {
+			step("impl", st, detail)
+		} else {
+			step("impl", stepNow, string(s.State))
+		}
 	default:
 		step("impl", stepNow, string(s.State))
 	}
@@ -480,53 +488,57 @@ const (
 	reopenChanged        // it stopped with work the PR lacks: impl done, the rest to do again
 )
 
-// reopenOf says whether an instruction (Session.PromptAt) sent s back to
-// work. While the agent runs, waits or starts on it with no report since,
-// that is reopenWorking. After that it is the worktree against the PR's
-// head — while the head is still the one the instruction found
-// (PromptPRHead; a push since puts the PR and its checks in charge again):
-// commits the PR lacks or changes not committed are reopenChanged, the
-// same is reopenNone (a question answered, nothing changed). git runs only
-// for such sessions (status and rev-list, as merge.check's settled does);
-// when it cannot tell, the steps stay as they are.
-func (d *Daemon) reopenOf(s *state.Session, rv *state.Report, merged bool) int {
-	if merged || s.PromptAt.IsZero() || s.PRReview {
-		return reopenNone
-	}
-	if s.PR == 0 && !s.Landing && rv == nil {
-		return reopenNone // still at impl: the steps say so already
+// reopenOf says whether an instruction (Session.PromptAt) that came when
+// the branch was past impl (PromptPast) sent s back to work. While the
+// agent runs, waits or starts on it with no report since, that is
+// reopenWorking. After that it is the worktree against the PR's head —
+// while the head is still the one the instruction found (PromptPRHead; a
+// push since puts the PR and its checks in charge again): commits the PR
+// lacks or changes not committed are reopenChanged (head: the worktree's
+// HEAD), the same is reopenNone (a question answered, nothing changed).
+// git runs only for such sessions (status, rev-list and rev-parse, as
+// merge.check's settled does); when it cannot tell, the steps stay as
+// they are.
+func (d *Daemon) reopenOf(s *state.Session, merged bool) (ro int, head string) {
+	if merged || !s.PromptPast || s.PRReview {
+		return reopenNone, ""
 	}
 	prompted := s.Report == nil || s.PromptAt.After(s.Report.At)
-	switch s.State {
-	case state.Running, state.Waiting, state.Creating:
-		if prompted {
-			return reopenWorking
-		}
+	if prompted && agentAtWork(s) {
+		return reopenWorking, ""
 	}
 	ps := s.PRStatus
 	if s.PR == 0 || ps == nil || s.PromptPRHead == "" || ps.HeadSHA != s.PromptPRHead {
-		return reopenNone
+		return reopenNone, ""
 	}
 	n, err := d.worktreeChanges(s)
 	if err != nil {
-		return reopenNone
+		return reopenNone, ""
 	}
 	c, err := d.commitsBeyondPR(s)
-	if err != nil {
-		return reopenNone
+	if err != nil || n == 0 && c == 0 {
+		return reopenNone, ""
 	}
-	if n > 0 || c > 0 {
-		return reopenChanged
+	head, _ = gitx.RevParse(s.Path, "HEAD")
+	return reopenChanged, head
+}
+
+// agentAtWork: the agent runs, waits (a permission, a question) or is
+// starting.
+func agentAtWork(s *state.Session) bool {
+	switch s.State {
+	case state.Running, state.Waiting, state.Creating:
+		return true
 	}
-	return reopenNone
+	return false
 }
 
 // reopenedSteps fills f's steps for a reopened branch: impl now
 // (reopenWorking) or done (reopenChanged), the PR and its checks to do
 // again (the PR's number stays on its box; the old checks are of the
 // head before), the merge to come. The review counts only when it was
-// asked for after the instruction.
-func (d *Daemon) reopenedSteps(f *webFlow, s *state.Session, rv *state.Report, ro int) {
+// asked for after the instruction, and its pass only for head.
+func (d *Daemon) reopenedSteps(f *webFlow, s *state.Session, rv *state.Report, ro int, head string) {
 	step := func(name, status, detail string) {
 		f.Steps = append(f.Steps, webStep{Name: name, Status: status, Detail: detail})
 	}
@@ -542,21 +554,71 @@ func (d *Daemon) reopenedSteps(f *webFlow, s *state.Session, rv *state.Report, r
 			step("review", stepNow, "independent review in progress (report "+ids.Report(rv.ID)+")")
 		case rv.Verdict != "pass":
 			step("review", stepFail, fmt.Sprintf("report %s is %s", ids.Report(rv.ID), rv.Verdict))
+		case rv.ReviewedSHA == "" || head == "" || !strings.HasPrefix(head, rv.ReviewedSHA):
+			step("review", stepNow, fmt.Sprintf("pass in report %s is of %s, not HEAD %s", ids.Report(rv.ID), shortSHA(rv.ReviewedSHA), shortSHA(head)))
 		default:
 			step("review", stepDone, "pass in report "+ids.Report(rv.ID))
 		}
 	}
-	pr := ""
-	if s.PR > 0 {
-		pr = fmt.Sprintf("#%d: to be pushed again (pekoe land)", s.PR)
+	switch ps := s.PRStatus; {
+	case s.PR == 0:
+		step("pr", stepTodo, "")
+	case ps != nil && ps.State == "CLOSED":
+		step("pr", stepFail, fmt.Sprintf("#%d was closed", s.PR))
+	default:
+		step("pr", stepTodo, fmt.Sprintf("#%d: to be pushed again (pekoe land)", s.PR))
 	}
-	step("pr", stepTodo, pr)
 	ci := ""
 	if s.PR > 0 {
 		ci = "the checks so far are of the PR's head before"
 	}
 	step("ci", stepTodo, ci)
 	step("merge", stepTodo, "")
+}
+
+// implStopped is impl for a branch not past it whose agent has stopped
+// (idle or done): done when the worktree has work (changes not committed,
+// or commits beyond its base: origin/<base>), todo when it has none (a
+// checkout of main left as it was). ok false: git could not tell. The
+// answer is kept for a little while (stoppedTTL) and for as long as the
+// session's state and diffstat stay the same, so the dashboards' reads do
+// not run git each time.
+func (d *Daemon) implStopped(s *state.Session) (status, detail string, ok bool) {
+	key := stoppedKey{since: s.StateSince, stat: s.Diffstat, head: s.Branch}
+	if v, hit := d.stopped.Load(s.Slug); hit {
+		e := v.(stoppedEntry)
+		if e.key == key && time.Since(e.at) < stoppedTTL {
+			return e.status, e.detail, true
+		}
+	}
+	n, err := d.worktreeChanges(s)
+	if err != nil {
+		return "", "", false
+	}
+	c, err := d.commitsBeyondBase(s)
+	if err != nil {
+		return "", "", false
+	}
+	status, detail = stepTodo, "no changes: nothing beyond the base, nothing uncommitted"
+	if n > 0 || c > 0 {
+		status, detail = stepDone, fmt.Sprintf("agent %s with work: %d commit%s beyond the base, %d uncommitted or untracked", s.State, c, plural(c), n)
+	}
+	d.stopped.Store(s.Slug, stoppedEntry{key: key, at: time.Now(), status: status, detail: detail})
+	return status, detail, true
+}
+
+const stoppedTTL = 15 * time.Second
+
+type stoppedKey struct {
+	since time.Time
+	stat  state.Stat
+	head  string
+}
+
+type stoppedEntry struct {
+	key            stoppedKey
+	at             time.Time
+	status, detail string
 }
 
 func firstLine(s string) string {
