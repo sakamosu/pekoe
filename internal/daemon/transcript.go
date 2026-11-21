@@ -18,6 +18,7 @@ package daemon
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -255,9 +256,20 @@ func chatLinesIn(f *os.File, start, n, upto int64, skip bool) (lines []chatLineA
 	pos = start
 	if skip {
 		k, _, err := readLine(r)
-		if err != nil {
-			// no line starts here: the next page back ends at start
-			return nil, start, start, nil
+		if err != nil || k >= n {
+			// No line starts in the n bytes: one line longer than them
+			// (skipped as longer than chatMaxLine, or still being
+			// written). The page before is the one that ends where that
+			// line starts; ending it at start (or at the end) would read
+			// the same line again, and the page back would never move.
+			ls, lerr := lineStart(f, start)
+			if lerr != nil {
+				return nil, 0, 0, errNoTranscript
+			}
+			if err != nil {
+				return nil, ls, start, nil
+			}
+			return nil, ls, start + k, nil
 		}
 		pos += k
 	}
@@ -275,6 +287,24 @@ func chatLinesIn(f *os.File, start, n, upto int64, skip bool) (lines []chatLineA
 		pos += k
 	}
 	return lines, first, pos, nil
+}
+
+// lineStart is where the line holding the byte at starts (0: the first
+// line), looking back from at for the newline before it.
+func lineStart(f *os.File, at int64) (int64, error) {
+	buf := make([]byte, 1<<20)
+	for end := at; end > 0; {
+		from := max(end-int64(len(buf)), 0)
+		b := buf[:end-from]
+		if _, err := f.ReadAt(b, from); err != nil {
+			return 0, err
+		}
+		if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
+			return from + int64(i) + 1, nil
+		}
+		end = from
+	}
+	return 0, nil
 }
 
 func flatChat(lines []chatLineAt) []ChatItem {
