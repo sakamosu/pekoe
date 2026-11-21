@@ -398,7 +398,8 @@ export const PIPE_ROWS = 8;
 // stepLook: one step box as [kind, symbol, word]. kind is the box's look
 // (done · now · todo · fail · you, docs/ui-guidelines.md「状態の表現」):
 // done ✓ secondary, now ◉ ok (the agent works), you ◉ warn (a person's
-// turn: the agent waits, or the merge is theirs), fail ✗ err, todo ○ dim.
+// turn: the agent waits at the step it is on, or the merge is theirs;
+// never CI, which runs on GitHub), fail ✗ err, todo ○ dim.
 export function stepLook(f, name) {
   const step = (f.steps || []).find((x) => x.name === name);
   if (!step) return ["todo", "○", ""];
@@ -410,7 +411,7 @@ export function stepLook(f, name) {
     case "fail":
       return ["fail", "✗", "fail"];
     case "now":
-      if (name === "impl" && f.state === "waiting") return ["you", "◉", "you"];
+      if (name !== "ci" && f.state === "waiting") return ["you", "◉", "you"];
       if (name === "ci" && f.ci && f.ci.pass + f.ci.fail + f.ci.pending > 0) return ["now", "◉", f.ci.pass + "/" + (f.ci.pass + f.ci.fail + f.ci.pending)];
       return ["now", "◉", "now"];
   }
@@ -466,7 +467,8 @@ export function badges(later) {
 
 // waitPhrase: one unmet merge condition in a few words. merge_state
 // UNSTABLE or BLOCKED is left out while CI is not through (it says the
-// same); BEHIND, DIRTY and the rest are shown.
+// same); BEHIND, DIRTY and the rest are shown. ci with no checks at all
+// is not a wait (none will come): statusNote says it on its own.
 function waitPhrase(c, conds) {
   switch (c.name) {
     case "land":
@@ -504,8 +506,11 @@ export function statusNote(f) {
   if (f.merge && f.merge.ready) return "ready · your merge";
   if (f.merge) {
     const conds = f.merge.conds || [];
-    const ws = [...new Set(conds.filter((c) => !c.ok).map((c) => waitPhrase(c, conds)).filter(Boolean))];
-    if (ws.length) return "merge waits on " + ws.join(" · ");
+    const noCI = conds.some((c) => c.name === "ci" && !c.ok && c.detail === "no CI checks");
+    const unmet = conds.filter((c) => !c.ok && !(noCI && c.name === "ci"));
+    const ws = [...new Set(unmet.map((c) => waitPhrase(c, conds)).filter(Boolean))];
+    const parts = [...(noCI ? ["no CI checks"] : []), ...(ws.length ? ["merge waits on " + ws.join(" · ")] : [])];
+    if (parts.length) return parts.join(" · ");
   }
   if (f.after && f.after.length) return "after " + f.after.join(", ");
   return "";
@@ -545,7 +550,9 @@ function statusCell(f) {
 // branchRow: one branch: the tree's piece (the corner into the box, or
 // the straight line for a request's first branch), the branch box with
 // its badges, the rail, the status. first: the request's first row.
-function branchRow(f, tree, first, open) {
+// shown: how many of the request's rows are on screen (fewer than all
+// when "Show N more" cuts it).
+function branchRow(f, tree, first, open, shown) {
   const past = f.state === "landed";
   const row = el("div", "pl-row" + (past ? " past" : ""));
   row.setAttribute("role", "row");
@@ -553,7 +560,9 @@ function branchRow(f, tree, first, open) {
   rq.setAttribute("role", "cell");
   if (tree && first) {
     const box = el("div", "pl-rbox");
-    box.append(el("span", "pl-rid", requestId(tree.id)), el("span", "pl-rsub", tree.from + " · " + tree.rows.length + (tree.rows.length === 1 ? " branch" : " branches")));
+    const n = tree.rows.length;
+    const count = shown < n ? shown + " of " + n : String(n);
+    box.append(el("span", "pl-rid", requestId(tree.id)), el("span", "pl-rsub", tree.from + " · " + count + (n === 1 ? " branch" : " branches")));
     box.title = requestId(tree.id) + " · from " + tree.from;
     rq.append(box);
   } else if (!tree) rq.append(el("span", "pl-none", "no request"));
@@ -592,7 +601,10 @@ export function renderPipeline(box, groups, open, more = {}) {
   head.setAttribute("role", "row");
   for (const [cls, word] of [["pl-req", "Request"], ["pl-tree", ""], ["pl-bcell", "Branch"], ...STEPS.map((n) => ["pl-step", STEP_NAMES[n] || n]), ["pl-status", "Status"]]) {
     const h = el("div", cls, word);
-    h.setAttribute("role", "columnheader");
+    // the tree's column is drawing only, hidden in the body rows too: the
+    // header has as many columns as they do
+    if (cls === "pl-tree") h.setAttribute("aria-hidden", "true");
+    else h.setAttribute("role", "columnheader");
     head.append(h);
   }
   box.append(head);
@@ -606,7 +618,7 @@ export function renderPipeline(box, groups, open, more = {}) {
     // the trunk: one line for the whole request, from the middle of the
     // first row down to where the last branch turns off it
     if (rows.length > 1) g.append(el("span", "pl-trunk"));
-    rows.forEach((f, i) => g.append(branchRow(f, t, i === 0, open)));
+    rows.forEach((f, i) => g.append(branchRow(f, t, i === 0, open, rows.length)));
     box.append(g);
   }
   for (const f of solo) {

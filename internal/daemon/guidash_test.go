@@ -329,13 +329,37 @@ find(mb, (x) => x.className === "pl-more")[0].click();
 res.toggled = toggled;
 renderPipeline(mb, many, () => {}, { expanded: true });
 res.all = [rowsOf(mb).length, find(mb, (x) => x.className === "pl-more")[0].textContent];
+renderPipeline(mb, many, () => {}, {});
+res.reqCut = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
+const two = [
+  { parent: "+tapi", rows: Array.from({ length: PIPE_ROWS - 1 }, (_, i) => ({ slug: "p" + i, branch: "p" + i, state: "running", look, origin: 2, steps: steps("now") })) },
+  { parent: "+tapi", rows: Array.from({ length: 4 }, (_, i) => ({ slug: "q" + i, branch: "q" + i, state: "running", look, origin: 1, steps: steps("now") })) },
+];
+renderPipeline(mb, two, () => {}, {});
+res.reqOne = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
+renderPipeline(mb, many, () => {}, { expanded: true });
+res.reqAll = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
+// the header has as many columns (columnheader) as a body row has cells;
+// the tree's column is hidden in both
+const head = find(box, (x) => /pl-head/.test(x.className))[0];
+res.head = head.children.map((c) => (c.attrs.role || "-") + (c.attrs["aria-hidden"] ? ":hidden" : "")).join(" ");
+res.cols = [head.children.filter((c) => c.attrs.role === "columnheader").length, ...rowsOf(box).map((r) => r.children.filter((c) => c.attrs.role === "cell").length)];
+res.noCI = [
+  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "no CI checks" }, { name: "merge_state", ok: false, detail: "merge_state is BLOCKED" }] } }),
+  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "no CI checks" }, { name: "review", ok: false, detail: "no review" }] } }),
+];
+// waiting: the step it is on is the person's turn, except CI (GitHub's)
+const wait = (st, ci) => { const wb = el0("div"); renderPipeline(wb, [{ rows: [{ slug: "w", branch: "w", state: "waiting", look, steps: st, ci }] }], () => {}); return find(wb, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "); };
+res.wait = [wait(steps("done", "now")), wait(steps("done", "done", "now")), wait(steps("done", "done", "done", "now"), { pass: 1, fail: 0, pending: 1 }), wait(steps("done", "done", "done", "now"))];
 res.behind = statusNote({ state: "running", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "2 pending" }, { name: "merge_state", ok: false, detail: "merge_state is BEHIND" }] } });
 res.model = pipelineModel(groups).trees.map((t) => t.id + ":" + t.from + ":" + t.rows.length);
 console.log(JSON.stringify(res));
 `)
 	var res struct {
 		Moving, Cross, Toggled                                        int
-		Behind                                                        string
+		Behind, Head                                                  string
+		ReqCut, ReqOne, ReqAll, NoCI, Wait                            []string
+		Cols                                                          []int
 		Order, Req, Tree, Boxes, Links, Badges, Status, Opened, Model []string
 		Groups                                                        [][2]int
 		More, All                                                     [2]any
@@ -379,6 +403,18 @@ console.log(JSON.stringify(res));
 	want("more", res.More, [2]any{8, "Show 3 more"})
 	want("toggled", res.Toggled, 1)
 	want("all", res.All, [2]any{11, "Show less"})
+	want("a request cut by Show more: shown of all", res.ReqCut, []string{"r1tapi · 8 of 11 branches"})
+	want("one row of a request shown", res.ReqOne, []string{"r2tapi · 7 branches", "r1tapi · 1 of 4 branches"})
+	want("expanded: all of them", res.ReqAll, []string{"r1tapi · 11 branches"})
+	want("header: the tree column hidden, not a columnheader", res.Head, "columnheader -:hidden columnheader columnheader columnheader columnheader columnheader columnheader columnheader")
+	want("header and body rows have as many columns", res.Cols, []int{8, 8, 8, 8, 8, 8, 8})
+	want("no CI checks is not a wait", res.NoCI, []string{"no CI checks", "no CI checks · merge waits on review"})
+	want("waiting: the step it is on is you, never CI", res.Wait, []string{
+		"done:✓done you:◉you todo:○ todo:○ todo:○",
+		"done:✓done done:✓done you:◉you todo:○ todo:○",
+		"done:✓done done:✓done done:✓done now:◉1/2 todo:○",
+		"done:✓done done:✓done done:✓done now:◉now todo:○",
+	})
 }
 
 // fakeDOM: the little of the DOM dash.js's Overview and Requests use, for
