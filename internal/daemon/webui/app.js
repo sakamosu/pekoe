@@ -1128,6 +1128,7 @@ const chat = {
   ok: null, // the transcript reads (null: not asked yet)
   why: "", // why it does not
   loading: false,
+  read: 0, // items read so far: only grows, so a new item is drawn even when the cut keeps the count
   sig: "", // what is in #c-items
   tailSig: "", // what is in #c-tail
   held: false, // a redraw waits for a selection to go
@@ -1265,7 +1266,7 @@ function toBottom() {
 function renderChat(force) {
   if (current !== TAPI) return;
   const log = $("c-log");
-  const sig = chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier + "|" + chat.ok;
+  const sig = chat.read + "|" + chat.items.length + "|" + chat.pending.length + "|" + [...chat.open].join(",") + "|" + chat.earlier + "|" + chat.ok;
   if (!force && sig === chat.sig) return;
   if (selectingIn(log)) {
     chat.held = true; // copying: redraw when the selection goes
@@ -1458,6 +1459,7 @@ async function refreshChat() {
     if (r.reset) {
       if (r.new_conversation && chat.items.length) {
         chat.items.push({ kind: "conv" });
+        chat.read++;
       } else {
         chat.items = [];
         chat.open.clear();
@@ -1465,7 +1467,10 @@ async function refreshChat() {
       }
     }
     for (const it of r.items || []) {
-      if (it && typeof it === "object" && typeof it.kind === "string") chat.items.push(it);
+      if (it && typeof it === "object" && typeof it.kind === "string") {
+        chat.items.push(it);
+        chat.read++;
+      }
     }
     if (chat.items.length > CHAT_KEEP) {
       chat.items = chat.items.slice(-CHAT_KEEP);
