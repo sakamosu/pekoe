@@ -1,6 +1,6 @@
 package daemon
 
-// The local GUI (docs/gui.md, stage 0): the web UI's pages and /api/
+// The local GUI (docs/gui.md, stages 0 and 1): a desktop page and the web UI's /api/
 // served to this Mac's own browser on 127.0.0.1. The phone's front door
 // (webGuard) refuses this machine on purpose: an agent here must not
 // answer its own permission prompt. This one is for this machine, so who
@@ -412,10 +412,11 @@ func clearGUIPages() {
 // ---- the front door ----
 
 // guiHandler is the local GUI on 127.0.0.1:port: the web UI's handlers
-// (tapi send without allow_devices and without the confirm sheet, as in
-// the TUI) behind guiGuard, and the token exchange.
+// behind guiGuard, as the TUI has them (tapi send without allow_devices and
+// without the confirm sheet, "always" on a permission prompt), the desktop
+// page at / (webui/gui/), and the token exchange.
 func (d *Daemon) guiHandler(port int) http.Handler {
-	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }})
+	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html"})
 	mux.HandleFunc("POST /api/gui/session", d.guiSessionHandler)
 	return d.guiGuard(port, mux)
 }

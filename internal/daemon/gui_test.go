@@ -469,26 +469,112 @@ func TestGUITapiSend(t *testing.T) {
 	}
 }
 
-// allow / deny through the GUI; always stays refused in stage 0 (no
-// button for it yet, docs/gui.md).
+// allow / deny through the GUI, and always (docs/gui.md 「決まったこと」5:
+// the TUI's A). Only the word "always": the key aliases session.answer
+// also takes (a, A, y, n…) never come over HTTP. The phone's front door
+// still refuses always (TestWebNoAlways, TestGUIAlwaysOnlyOnGUI).
 func TestGUIAnswer(t *testing.T) {
 	d, fe, repo, h, _ := guiSetup(t)
 	tool := waitingSession(t, d, repo)
 	s := guiSignIn(t, d, h)
-	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": "always", "tool": tool}}); w.Code != http.StatusBadRequest {
-		t.Fatalf("always: %d", w.Code)
+	before := sentCount(fe)
+	for _, a := range []string{"a", "A", "y", "yes", "n", "", "2", "Always", "always "} {
+		if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": a, "tool": tool}}); w.Code != http.StatusBadRequest {
+			t.Errorf("answer %q: %d, want 400", a, w.Code)
+		}
 	}
-	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", body: map[string]any{"answer": "allow", "tool": tool}}); w.Code != http.StatusUnauthorized {
+	if n := sentCount(fe); n != before {
+		t.Fatalf("typed into the agent: %s", fe.last())
+	}
+	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", body: map[string]any{"answer": "always", "tool": tool}}); w.Code != http.StatusUnauthorized {
 		t.Fatalf("without a bearer: %d", w.Code)
 	}
 	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); got.State != state.Waiting {
 		t.Fatalf("answered without a bearer: %+v", got.State)
 	}
+	// always on another prompt than the one shown: refused (409), nothing typed
+	other := state.Tool{Name: "Bash", Input: "rm -rf /"}
+	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": "always", "tool": other}}); w.Code != http.StatusConflict {
+		t.Fatalf("always on a prompt not shown: %d %s", w.Code, w.Body)
+	}
+	if n := sentCount(fe); n != before {
+		t.Fatalf("typed into the agent: %s", fe.last())
+	}
+	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": "always", "tool": tool}}); w.Code != 200 {
+		t.Fatalf("always: %d %s", w.Code, w.Body)
+	}
+	// [agents.claude] always = "2" ("Yes, and don't ask again")
+	if !strings.HasSuffix(fe.last(), "lit:2") {
+		t.Fatalf("typed: %s", fe.last())
+	}
+	if got := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}); got.State != state.Running {
+		t.Fatalf("after always: %s", got.State)
+	}
+
+	event(t, d, "PreToolUse", "main", map[string]any{"tool_name": "Bash", "tool_input": map[string]any{"command": "pnpm build"}})
+	event(t, d, "Notification", "main", map[string]any{"notification_type": "permission_prompt", "message": "needs permission"})
+	tool = *call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}).PendingTool
 	if w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": "allow", "tool": tool}}); w.Code != 200 {
 		t.Fatalf("allow: %d %s", w.Code, w.Body)
 	}
 	if !strings.HasSuffix(fe.last(), "lit:1") {
 		t.Fatalf("typed: %s", fe.last())
+	}
+}
+
+// The same handlers on the two front doors: always goes through the local
+// GUI's and is a 400 on the phone's, for the same waiting session.
+func TestGUIAlwaysOnlyOnGUI(t *testing.T) {
+	d, fe, repo, gh, _ := guiSetup(t)
+	tool := waitingSession(t, d, repo)
+	wh := testWebHandler(d)
+	before := sentCount(fe)
+	if w := doWeb(t, wh, answerReq(ipPhone, "always", &tool)); w.Code != http.StatusBadRequest {
+		t.Fatalf("always on the phone: %d", w.Code)
+	}
+	if n := sentCount(fe); n != before {
+		t.Fatalf("the phone's always typed: %s", fe.last())
+	}
+	s := guiSignIn(t, d, gh)
+	if w := doGUI(t, gh, guiReq{method: "POST", path: "/api/sessions/main/answer", bearer: s, body: map[string]any{"answer": "always", "tool": tool}}); w.Code != 200 {
+		t.Fatalf("always on the GUI: %d %s", w.Code, w.Body)
+	}
+	if !strings.HasSuffix(fe.last(), "lit:2") {
+		t.Fatalf("typed: %s", fe.last())
+	}
+}
+
+// / is the desktop page on the local GUI and the phone's page on the
+// tailnet; the modules both load are served to both (as JavaScript, for
+// <script type="module">).
+func TestGUIDesktopPage(t *testing.T) {
+	d, _, _, h, _ := guiSetup(t)
+	w := doGUI(t, h, guiReq{path: "/"})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `src="/gui/gui.js"`) || !strings.Contains(w.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("GUI /: %d %s", w.Code, w.Body)
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); csp != webCSP {
+		t.Fatalf("csp %q", csp)
+	}
+	for _, p := range []string{"/gui/gui.js", "/gui/gui.css", "/lib/dom.js", "/lib/api.js", "/lib/sheets.js", "/app.css"} {
+		w := doGUI(t, h, guiReq{path: p})
+		want := "javascript"
+		if strings.HasSuffix(p, ".css") {
+			want = "text/css"
+		}
+		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), want) {
+			t.Errorf("%s: %d %s", p, w.Code, w.Header().Get("Content-Type"))
+		}
+	}
+	ph := testWebHandler(d)
+	w = doWeb(t, ph, webReq{path: "/", from: ipPhone})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `src="/app.js"`) || strings.Contains(w.Body.String(), "gui.js") {
+		t.Fatalf("phone /: %d %s", w.Code, w.Body)
+	}
+	for _, p := range []string{"/lib/dom.js", "/lib/sheets.js"} {
+		if w := doWeb(t, ph, webReq{path: p, from: ipPhone}); w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), "javascript") {
+			t.Errorf("phone %s: %d %s", p, w.Code, w.Header().Get("Content-Type"))
+		}
 	}
 }
 
@@ -508,5 +594,19 @@ func TestGUIPagesClearedAtStart(t *testing.T) {
 	defer func() { d2.DB.Close(); d2.releaseLock() }()
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Fatalf("left-over page: %v", err)
+	}
+}
+
+// The desktop page's look is provisional (docs/gui.md 段階 1): every style
+// is in gui/gui.css, so the final design can replace it and keep the DOM.
+// No style attribute in the HTML, no style set from gui.js, no <style>.
+func TestGUIStylesOnlyInCSS(t *testing.T) {
+	html, _ := webFiles.ReadFile("webui/gui/index.html")
+	if m := regexp.MustCompile(`(?i)\sstyle\s*=|<style`).FindAllString(string(html), -1); len(m) > 0 {
+		t.Errorf("gui/index.html: %v", m)
+	}
+	js, _ := webFiles.ReadFile("webui/gui/gui.js")
+	if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
+		t.Errorf("gui/gui.js sets styles: %v", m)
 	}
 }

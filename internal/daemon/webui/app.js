@@ -1,18 +1,23 @@
-// pekoe web: a display layer over pekoed's /api/. Everything the page shows is
-// put into the DOM with textContent (agent output is untrusted text).
-"use strict";
+// pekoe web: a display layer over pekoed's /api/, the phone's page (the
+// local GUI's desktop page is gui/gui.js). What both pages draw with is in
+// lib/ (ES modules, no bundler). Everything the page shows is put into the
+// DOM with textContent (agent output is untrusted text).
 
-const $ = (id) => document.getElementById(id);
-const ROLES = new Set(["ok", "warn", "err", "primary", "secondary", "dim", "text"]);
+import { $, el, colored, txt, sep, toast } from "./lib/dom.js";
+import { api, guiSignIn, TAPI, apiBase } from "./lib/api.js";
+import { requestId, questionId, ago, details, line1, cutNote, questionUp } from "./lib/fmt.js";
+import { termLines, screenRows } from "./lib/term.js";
+import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "./lib/images.js";
+import { draftOf, inboxCard, mergeRow } from "./lib/inbox.js";
+import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing } from "./lib/overview.js";
+import { SPIN, bubbleLine, markRewound, chatView } from "./lib/chat.js";
+import { answerSheet, inboxSheet, showSendSheet } from "./lib/sheets.js";
 
 let sessions = [];
 let view = "list"; // list | inbox | overview | detail
 let current = null; // slug shown in the detail view
 let backTo = ""; // the hash the detail view's back button returns to
 let tapi = null; // /api/tapi: tapi's state and the inbox / ledger counts
-// TAPI is tapi chat in the detail view (#/tapi). No session slug starts
-// with "+", so it never names a session.
-const TAPI = "+tapi";
 let listTimer = 0, screenTimer = 0, chatTimer = 0;
 let busy = false;
 let sending = false; // a send is in flight
@@ -21,166 +26,6 @@ let touching = false; // a finger is on the list: do not move rows under it
 const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
 const attachments = new Map(); // slug → images for the next send (same rule): [{data (base64), thumb (data URL), w, h, bytes, type}]
 let preparing = false; // images being read and re-encoded
-
-// pekoe's own numbers carry a letter for their kind (internal/ids), so they
-// are not taken for a GitHub PR or issue (#185): r651 a request, q12 an
-// inbox question, p468 a report.
-const requestId = (id) => "r" + id;
-const questionId = (id) => "q" + id;
-const reportId = (id) => "p" + id;
-
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
-
-// colored: text in a theme role (a class, never a style from the wire)
-function colored(role, text, cls) {
-  return el("span", (cls ? cls + " " : "") + "r-" + (ROLES.has(role) ? role : "dim"), text);
-}
-
-// ---- the local GUI (docs/gui.md) ----
-// `pekoe gui` opens this page on http://127.0.0.1:<port>/#t=<one-time
-// token>. The page trades the token for a session token (POST
-// /api/gui/session) and sends it as Authorization: Bearer on every API
-// request. It lives in sessionStorage (per origin, this tab only): never a
-// cookie (it would ride along to an agent's dev server on another port of
-// the same host) and never localStorage. On the phone (tailnet) there is
-// no token and nothing here runs.
-const GUI_KEY = "pekoe.gui.token";
-let guiToken = null;
-let guiOut = false; // 401: signed out; no more requests until `pekoe gui`
-try {
-  guiToken = sessionStorage.getItem(GUI_KEY);
-} catch (e) {
-  guiToken = null;
-}
-
-function guiSignedOut(text) {
-  guiOut = true;
-  guiToken = null;
-  try {
-    sessionStorage.removeItem(GUI_KEY);
-  } catch (e) { /* storage off: nothing kept */ }
-  const b = $("gui-auth");
-  b.textContent = text;
-  b.hidden = false;
-}
-
-// guiSignIn: the fragment's one-time token, if any, for a session token.
-async function guiSignIn() {
-  const m = location.hash.match(/^#t=([0-9a-f]{64})$/);
-  if (!m) return;
-  // off the address bar and this history entry before anything else
-  history.replaceState(null, "", location.pathname + location.search);
-  const r = await fetch("/api/gui/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: m[1] }),
-  });
-  if (!r.ok) {
-    guiSignedOut(((await r.text()).trim() || r.status + " " + r.statusText));
-    throw new Error("gui sign-in failed");
-  }
-  const j = await r.json();
-  guiToken = j.token;
-  try {
-    sessionStorage.setItem(GUI_KEY, guiToken);
-  } catch (e) { /* this tab keeps it in memory only */ }
-}
-
-async function api(path, body) {
-  if (guiOut) throw new Error("signed out: run pekoe gui again");
-  const opt = { headers: {} };
-  if (guiToken) opt.headers["Authorization"] = "Bearer " + guiToken;
-  if (body !== undefined) {
-    opt.method = "POST";
-    opt.headers["Content-Type"] = "application/json";
-    opt.headers["X-Pekoe-Web"] = "1";
-    opt.body = JSON.stringify(body);
-  }
-  const r = await fetch(path, opt);
-  if (r.status === 401) {
-    // only the local GUI answers 401 (the tailnet's front door says 403)
-    guiSignedOut("Signed out of the local GUI (pekoed restarted, the session token expired or was revoked, or this is a new tab). Run `pekoe gui` in a terminal to open it again.");
-  }
-  if (!r.ok) {
-    const t = (await r.text()).trim();
-    const e = new Error(t || r.status + " " + r.statusText);
-    e.status = r.status;
-    throw e;
-  }
-  return r.json();
-}
-
-function toast(text, ok) {
-  const t = $("toast");
-  t.replaceChildren(el("span", "ic", ok ? "✓" : "✗"), document.createTextNode(text));
-  t.className = "toast" + (ok ? " ok" : "");
-  t.hidden = false;
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => (t.hidden = true), ok ? 1800 : 4000);
-}
-
-// ago is theme.Ago: hours up to two days
-function ago(iso) {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return Math.floor(s) + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m";
-  if (s < 48 * 3600) return Math.floor(s / 3600) + "h";
-  return Math.floor(s / 86400) + "d";
-}
-
-// look is the TUI's (theme.Look, sent by pekoed): symbol, role, word
-function look(s) {
-  return s.look || { icon: "○", role: "dim", word: s.state };
-}
-
-const sep = () => el("span", "sep", "·");
-
-// details: the dim second line, with the colored bits the TUI colors
-function details(s, withRepo) {
-  const out = [];
-  const add = (...nodes) => {
-    if (out.length) out.push(sep());
-    out.push(...nodes);
-  };
-  if (withRepo) add(document.createTextNode(s.repo));
-  if (s.slug !== s.branch) add(document.createTextNode(s.slug));
-  const d = s.diffstat;
-  if (d && d.added + d.deleted > 0) add(colored("ok", "+" + d.added), document.createTextNode(" "), colored("err", "-" + d.deleted));
-  if (s.test === "pass") add(colored("ok", "✓"), document.createTextNode("test"));
-  else if (s.test === "fail") add(colored("err", "✗"), document.createTextNode("test"));
-  else if (s.test === "running") add(document.createTextNode("…test"));
-  else if (s.test === "blocked") add(colored("warn", "!"), document.createTextNode("test not run: no sandbox"));
-  else if (s.test === "error") add(colored("warn", "!"), document.createTextNode("test could not run"));
-  if (s.git_blocked) add(colored("warn", "!"), document.createTextNode(".git changed: git stopped"));
-  if (s.state === "queued" && s.queue) add(document.createTextNode(s.queue));
-  if (s.pr) {
-    const n = [document.createTextNode("#" + s.pr)];
-    if (s.pr_look) n.push(document.createTextNode(" "), colored(s.pr_look.role, s.pr_look.icon));
-    add(...n);
-  }
-  if (s.error) add(colored("err", "err"), document.createTextNode(" " + s.error.split("\n")[0]));
-  else if (s.state === "running" && s.last_tool) add(colored("ok", "●"), document.createTextNode(" " + s.last_tool));
-  return out;
-}
-
-// line1 is the TUI's sessionLine: icon  name  state  age (no age when idle)
-function line1(s) {
-  const lk = look(s);
-  const dimName = s.state === "idle" || s.state === "creating" || s.state === "queued" || s.state === "landed";
-  const l1 = el("div", "line1");
-  l1.append(
-    colored(lk.role, lk.icon, "ic"),
-    el("span", "name " + (dimName ? "r-dim" : "r-text"), s.branch || s.slug),
-    colored(lk.role, lk.word, "word"),
-    el("span", "age", s.state === "idle" ? "" : ago(s.state_since)),
-  );
-  return l1;
-}
 
 // ---- list ----
 
@@ -309,11 +154,6 @@ function renderBadge() {
 
 // ---- detail ----
 
-// apiBase: where the detail view's screen, send and keys go
-function apiBase(slug) {
-  return slug === TAPI ? "/api/tapi" : "/api/sessions/" + encodeURIComponent(slug);
-}
-
 // tapiUp: tapi chat runs (its screen, keys and send make sense)
 function tapiUp() {
   return !!tapi && tapi.started && tapi.alive;
@@ -400,7 +240,7 @@ function renderTapiHead() {
   $("d-name").textContent = "tapi";
   renderTarget(t);
   renderKeypad(t);
-  head.append(tapiLine());
+  head.append(tapiLine(tapi));
   const l2 = el("div", "line2");
   l2.append(document.createTextNode("orchestrator · reads every repository, starts sessions and hands work to them"));
   head.append(l2);
@@ -419,52 +259,6 @@ function renderTapiHead() {
   }
   if (t.last_message) body.append(el("div", "msg", t.last_message));
   ask.append(body);
-}
-
-// ---- the agent screen, with its colors ----
-// pekoed sends each line as runs {t, fg, bg, b, d, i, u, s} (internal/termstyle).
-// The text goes in with textContent; a color is a theme role (a class from
-// this fixed list) or #rrggbb, checked here and set through CSSOM.
-
-const TERM_ROLES = new Set(["border", "err", "ok", "warn", "primary-end", "primary", "secondary", "text", "dim", "bg"]);
-const HEX = /^#[0-9a-f]{6}$/;
-
-function termRun(run) {
-  const sp = el("span", null, String(run.t ?? ""));
-  const cls = [];
-  for (const [key, prop, pre] of [["fg", "color", "f-"], ["bg", "backgroundColor", "k-"]]) {
-    const c = run[key];
-    if (typeof c !== "string" || !c) continue;
-    if (TERM_ROLES.has(c)) cls.push(pre + c);
-    else if (HEX.test(c)) sp.style[prop] = c;
-  }
-  if (run.b) cls.push("t-b");
-  if (run.d) cls.push("t-d");
-  if (run.i) cls.push("t-i");
-  if (run.u) cls.push("t-u");
-  if (run.s) cls.push("t-s");
-  if (cls.length) sp.className = cls.join(" ");
-  return sp;
-}
-
-// termLines builds the screen: one text node per plain run, a span per
-// styled one, a newline between lines.
-function termLines(rows) {
-  const frag = document.createDocumentFragment();
-  rows.forEach((runs, i) => {
-    if (i) frag.append("\n");
-    for (const run of Array.isArray(runs) ? runs : []) {
-      const plain = !run.fg && !run.bg && !run.b && !run.d && !run.i && !run.u && !run.s;
-      frag.append(plain ? document.createTextNode(String(run.t ?? "")) : termRun(run));
-    }
-  });
-  return frag;
-}
-
-// screenRows: rows from the API, or the plain lines from an older pekoed
-function screenRows(r) {
-  if (Array.isArray(r.rows)) return r.rows;
-  return (r.lines || []).map((l) => [{ t: l }]);
 }
 
 // ---- keeping the screen still while it is being copied ----
@@ -550,71 +344,16 @@ function togglePause() {
   if (!screenPaused) refreshScreen();
 }
 
-// ---- answer: always through a confirmation that shows what is allowed ----
-// pending_tool is pekoe's one-line summary of the last tool the agent asked
-// for (cut at 200 bytes); the sheet also shows the screen (the last 80
-// lines, scrolled to the bottom, scrollable up), where the agent's own
-// permission dialog says exactly what it will run.
+// ---- answer: always through the confirm sheet (lib/sheets.js) ----
 
-let pending = null;
-
-// cutNote: when the summary leaves part of the command out (cut short, or
-// several lines folded into one), say how much, so a long or padded
-// command is not judged by its first line.
-function cutNote(t) {
-  if (!t || (!t.cut && !(t.lines > 1))) return "";
-  const parts = [];
-  if (t.lines > 1) parts.push(t.lines + " lines");
-  if (t.size) parts.push(t.size >= 1024 ? (t.size / 1024).toFixed(1) + " KB" : t.size + " bytes");
-  return (t.cut ? "summary cut" : "multi-line") + " (" + parts.join(", ") + "): read the whole command on the screen";
-}
+const answers = answerSheet({
+  close: () => (busy = false),
+  done: () => refresh(),
+});
 
 function confirmAnswer(s, answer) {
   busy = true;
-  pending = { slug: s.slug, answer, tool: s.pending_tool || null };
-  const sheet = $("sheet").querySelector(".sheet");
-  sheet.classList.toggle("danger", answer === "deny");
-  $("sheet-title").textContent = `${answer} · ${s.slug}`;
-  $("sheet-tool").textContent = s.pending_tool ? s.pending_tool.name : "(no tool detail)";
-  $("sheet-input").textContent = s.pending_tool ? s.pending_tool.input || "" : s.last_message || "";
-  const cut = cutNote(s.pending_tool);
-  $("sheet-warn").hidden = !cut;
-  $("sheet-warn").textContent = cut ? "⚠ " + cut : "";
-  sheet.classList.toggle("long", !!cut);
-  const ok = $("sheet-ok");
-  ok.textContent = answer;
-  ok.className = "btn " + answer;
-  ok.disabled = false;
-  const scr = $("sheet-screen");
-  scr.textContent = "…";
-  $("sheet").hidden = false;
-  api("/api/sessions/" + encodeURIComponent(s.slug) + "/screen").then((r) => {
-    if (!pending || pending.slug !== s.slug) return;
-    // every line the screen call returns, not just the bottom: a command
-    // padded with blank lines still has its start in reach by scrolling
-    scr.replaceChildren(termLines(screenRows(r)));
-    scr.scrollTop = scr.scrollHeight;
-  }).catch((e) => { scr.textContent = "(" + e.message + ")"; });
-}
-
-function closeSheet() {
-  $("sheet").hidden = true;
-  pending = null;
-  busy = false;
-}
-
-async function doAnswer() {
-  if (!pending) return;
-  const p = pending;
-  $("sheet-ok").disabled = true;
-  try {
-    await api("/api/sessions/" + encodeURIComponent(p.slug) + "/answer", { answer: p.answer, tool: p.tool });
-    toast(`${p.answer}: ${p.slug}`, true);
-  } catch (e) {
-    toast(e.message);
-  }
-  closeSheet();
-  refresh();
+  answers.open(s, answer);
 }
 
 // ---- send ----
@@ -651,16 +390,14 @@ async function sendTo(slug, text, images) {
   $("d-send-btn").disabled = true;
   const ta = $("d-text");
   try {
-    const body = { text };
-    if (images.length) body.images = images.map((im) => ({ data: im.data }));
-    await api("/api/sessions/" + encodeURIComponent(slug) + "/send", body);
+    await api("/api/sessions/" + encodeURIComponent(slug) + "/send", sendBody(text, images));
     drafts.delete(slug);
     dropAttached(slug, images);
     if (current === slug && ta.value.trim() === text) {
       ta.value = "";
       fitComposer();
     }
-    toast("sent → " + slug + (images.length ? " (" + images.length + " image" + (images.length > 1 ? "s" : "") + ")" : ""), true);
+    toast("sent → " + slug + imagesNote(images.length), true);
     setTimeout(refreshScreen, 600);
   } catch (e) {
     toast(slug + ": " + e.message);
@@ -669,18 +406,9 @@ async function sendTo(slug, text, images) {
   if (current) renderTarget(detailTarget());
 }
 
-// ---- images: attached to the next send ----
-// Each is read here and drawn again on a canvas, as JPEG (PNG stays PNG,
-// for a screenshot's text), at most IMG_SIDE pixels on a side: a HEIC
-// photo becomes a JPEG the agent can read, the location and the rest of
-// the photo's metadata stay on the phone, and the upload stays small.
-// pekoed checks each again (PNG / JPEG / GIF by its bytes, the limits) and
-// names the file itself. Kept per target, like the drafts: one session's
-// images never ride along to another.
-
-const IMG_MAX = 4; // images in one send (pekoed: webMaxImages)
-const IMG_SIDE = 2048; // pixels on the long side
-const IMG_BYTES = 5 * 1024 * 1024; // one image (pekoed: webMaxImageBytes)
+// ---- images: attached to the next send (lib/images.js) ----
+// Kept per target, like the drafts: one session's images never ride along
+// to another.
 
 function attached(slug) {
   return (slug && attachments.get(slug)) || [];
@@ -691,66 +419,6 @@ function dropAttached(slug, images) {
   if (left.length) attachments.set(slug, left);
   else attachments.delete(slug);
   if (current === slug) renderThumbs();
-}
-
-function readDataURL(file) {
-  return new Promise((ok, fail) => {
-    const r = new FileReader();
-    r.onload = () => ok(String(r.result));
-    r.onerror = () => fail(new Error("could not read " + (file.name || "the file")));
-    r.readAsDataURL(file);
-  });
-}
-
-function loadImage(url) {
-  return new Promise((ok, fail) => {
-    const img = new Image();
-    img.onload = () => ok(img);
-    img.onerror = () => fail(new Error("not an image this browser can open"));
-    img.src = url;
-  });
-}
-
-const b64Bytes = (url) => Math.floor((url.length - url.indexOf(",") - 1) * 3 / 4);
-
-// draw: img on a canvas of at most side pixels, as type (a data URL)
-function draw(img, side, type, quality) {
-  const w0 = img.naturalWidth, h0 = img.naturalHeight;
-  const k = Math.min(1, side / Math.max(w0, h0));
-  const c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(w0 * k));
-  c.height = Math.max(1, Math.round(h0 * k));
-  const g = c.getContext("2d");
-  if (type === "image/jpeg") {
-    g.fillStyle = "#fff"; // JPEG has no transparency
-    g.fillRect(0, 0, c.width, c.height);
-  }
-  g.drawImage(img, 0, 0, c.width, c.height);
-  return { url: c.toDataURL(type, quality), w: c.width, h: c.height };
-}
-
-async function prepareImage(file) {
-  if (file.type && !file.type.startsWith("image/")) throw new Error((file.name || "a file") + " is not an image");
-  const img = await loadImage(await readDataURL(file));
-  if (!img.naturalWidth || !img.naturalHeight) throw new Error("not an image this browser can open");
-  let type = file.type === "image/png" ? "image/png" : "image/jpeg";
-  let out = draw(img, IMG_SIDE, type, 0.85);
-  if (type === "image/png" && b64Bytes(out.url) > IMG_BYTES) {
-    type = "image/jpeg"; // a photo saved as PNG
-    out = draw(img, IMG_SIDE, type, 0.85);
-  }
-  for (const q of [0.7, 0.5]) {
-    if (b64Bytes(out.url) <= IMG_BYTES) break;
-    out = draw(img, IMG_SIDE, "image/jpeg", q);
-    type = "image/jpeg";
-  }
-  const bytes = b64Bytes(out.url);
-  if (bytes > IMG_BYTES) throw new Error("an image is too large even at " + IMG_SIDE + "px");
-  return {
-    data: out.url.slice(out.url.indexOf(",") + 1),
-    thumb: draw(img, 160, "image/jpeg", 0.7).url,
-    w: out.w, h: out.h, bytes, type,
-  };
 }
 
 async function addImages(files) {
@@ -779,34 +447,10 @@ async function addImages(files) {
   if (current) renderTarget(detailTarget());
 }
 
-// thumbs: the images as small pictures, each with × to take it out (box) or
-// without (the sheet)
-function thumbs(box, images, removable) {
-  box.replaceChildren();
-  images.forEach((im) => {
-    const t = el("span", "thumb");
-    const img = el("img");
-    img.alt = "image " + im.w + "×" + im.h;
-    img.src = im.thumb; // a data: URL drawn here, from the phone's own file
-    t.append(img, el("span", "size", kb(im.bytes)));
-    if (removable) {
-      const x = el("button", "x", "×");
-      x.type = "button";
-      x.setAttribute("aria-label", "remove the image");
-      x.addEventListener("click", () => dropAttached(current, [im]));
-      t.append(x);
-    }
-    box.append(t);
-  });
-  box.hidden = !images.length;
-}
-
-const kb = (n) => (n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB");
-
 function renderThumbs() {
   const box = $("d-thumbs");
   const images = attached(current);
-  thumbs(box, images, true);
+  thumbs(box, images, (im) => dropAttached(current, [im]));
   if (preparing) {
     box.append(el("span", "thumb-note", "reading…"));
     box.hidden = false;
@@ -856,23 +500,9 @@ function openSendSheet(slug, text, images) {
 
 function showSheet() {
   const { slug, text, images } = tsend;
-  const isTapi = slug === TAPI;
   busy = true;
-  $("tsheet-title").textContent = isTapi ? "send to tapi" : "send to " + slug;
-  $("tsheet-to-cap").textContent = isTapi ? "to — the orchestrator, not one session" : "to — the session";
   const s = sessions.find((x) => x.slug === slug);
-  $("tsheet-to").textContent = isTapi ? "tapi (orchestrator)" : slug + (s ? " · " + s.repo : "");
-  $("tsheet-warn").hidden = !isTapi;
-  $("tsheet-cap").textContent = text ? "text — all of it, as it will be typed (" + [...text].length + " chars, " + text.split("\n").length + " lines)" : "text — none (the images alone)";
-  $("tsheet-text").textContent = text;
-  $("tsheet-text").hidden = !text;
-  $("tsheet-text").scrollTop = 0;
-  $("tsheet-imgs-cap").textContent = images.length + " image" + (images.length > 1 ? "s" : "") + " — pekoed saves them outside the worktree and adds a line with each one's path, for the agent to open";
-  $("tsheet-imgs-cap").hidden = !images.length;
-  thumbs($("tsheet-imgs"), images, false);
-  $("tsheet-ok").textContent = isTapi ? "send to tapi" : "send";
-  $("tsheet-ok").disabled = false;
-  $("tsheet").hidden = false;
+  showSendSheet(slug === TAPI, slug, s && s.repo, text, images);
 }
 
 function closeTapiSheet() {
@@ -896,9 +526,7 @@ async function doSheetSend() {
   sending = true;
   $("d-send-btn").disabled = true; // no second send while this one is out
   try {
-    const body = { text };
-    if (images.length) body.images = images.map((im) => ({ data: im.data }));
-    const r = await api("/api/tapi/send", body);
+    const r = await api("/api/tapi/send", sendBody(text, images));
     drafts.delete(TAPI);
     dropAttached(TAPI, images);
     const ta = $("d-text");
@@ -906,7 +534,7 @@ async function doSheetSend() {
       ta.value = "";
       fitComposer();
     }
-    toast("sent → tapi" + (images.length ? " (" + images.length + " image" + (images.length > 1 ? "s" : "") + ")" : ""), true);
+    toast("sent → tapi" + imagesNote(images.length), true);
     // ● until it shows up in the transcript (✓): what was typed, with
     // the image lines pekoed added
     chat.pending.push({ text: (r && typeof r.text === "string" && r.text) || text, at: Date.now() });
@@ -925,12 +553,8 @@ async function doSheetSend() {
 }
 
 // ---- keypad: a question's menu (AskUserQuestion) by its keys ----
-// Shown only while the session waits on a question; pekoed refuses keys
-// in any other state (a permission menu stays allow/deny only).
-
-function questionUp(s) {
-  return !!s && s.state === "waiting" && s.wait_kind === "question" && !s.stopped;
-}
+// Shown only while the session waits on a question (questionUp); pekoed
+// refuses keys in any other state (a permission menu stays allow/deny only).
 
 function renderKeypad(s) {
   const pad = $("d-keys");
@@ -976,190 +600,28 @@ let inboxSig = ""; // what is on screen
 let inboxHeld = false; // a redraw was skipped (a note being typed, the sheet open)
 let inboxTyping = false;
 const inboxDraft = new Map(); // id → {rev, choice, note, changed}: what the person picked, for the rev shown
-let ianswer = null; // the answer in the confirm sheet
+const isheet = inboxSheet(inboxDraft, {
+  close: () => resumeInbox(),
+  done: () => {
+    inboxSig = "";
+    refresh();
+  },
+});
 
-const KINDS = {
-  decision: ["?", "secondary", "decision"],
-  approve: ["!", "warn", "approve"],
-  login: ["@", "primary", "login"],
-  fyi: ["i", "dim", "fyi"],
-};
-
-const txt = (s) => document.createTextNode(String(s));
-const short = (sha) => (sha ? String(sha).slice(0, 9) : "-");
-
-// link: an anchor for an http(s) URL with nothing odd in it; anything else
-// (javascript:, data:, a path) stays plain text
-function link(url, text) {
-  const u = String(url ?? "");
-  if (!/^https?:\/\//i.test(u) || /[\s"<>\\]/.test(u)) return el("span", "r-dim", text ?? u);
-  const a = el("a", "lnk", text ?? u);
-  a.href = u;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  return a;
+function openInboxSheet(it) {
+  isheet.open(it);
 }
 
-function factRow(label, ...nodes) {
-  const r = el("div", "fact");
-  r.append(el("span", "fk", label), ...nodes);
-  return r;
-}
-
-function factsBlock(it) {
-  const box = el("div", "facts");
-  box.append(el("div", "sub", "pekoe read"));
-  const f = it.facts;
-  if (!f) {
-    box.append(el("div", "fact r-dim", "(not about a session)"));
-  } else if (f.gone) {
-    box.append(factRow("session", colored("warn", f.slug + " is gone")));
-  } else {
-    const ses = [txt(f.slug), sep(), txt(f.state)];
-    if (f.branch) ses.push(sep(), txt(f.branch + (f.base ? " → " + f.base : "")));
-    box.append(factRow("session", ...ses));
-    const d = f.diffstat || { added: 0, deleted: 0, files: 0 };
-    box.append(factRow("HEAD", txt(short(f.head)), sep(), colored("ok", "+" + d.added), txt(" "), colored("err", "−" + d.deleted), txt(" · " + d.files + " files")));
-    if (f.pr) {
-      const n = [f.pr_url ? link(f.pr_url, "#" + f.pr) : txt("#" + f.pr)];
-      const ps = f.pr_status;
-      if (ps) {
-        n.push(sep(), txt(ps.state || "?"), sep(), txt("CI "), colored(ps.fail ? "dim" : "ok", ps.pass + " pass"), txt(" "),
-          colored(ps.fail ? "err" : "dim", ps.fail + " fail"), txt(" " + ps.pending + " pending"));
-        if (ps.review_decision) n.push(sep(), txt(ps.review_decision));
-        if (ps.merge_state) n.push(sep(), txt(ps.merge_state));
-        if (ps.unresolved) n.push(sep(), colored("warn", ps.unresolved + " unresolved"));
-      }
-      box.append(factRow("PR", ...n));
-    }
-    if (f.pr_repo) box.append(factRow("fork", colored("warn", "PR in " + f.pr_repo), txt(" · pushed to " + f.push_repo + " (origin)")));
-    const ts = f.test && f.test.status;
-    if (ts && ts !== "none") box.append(factRow("test", colored(ts === "pass" ? "ok" : ts === "fail" ? "err" : ts === "error" || ts === "blocked" ? "warn" : "dim", ts)));
-    for (const o of f.overlaps || []) {
-      box.append(factRow("forecast", o.conflict ? colored("err", "conflicts") : txt("overlaps"), txt(" with " + o.slug)));
-    }
-    if (f.report) box.append(factRow("report", txt(reportId(f.report.id) + " " + f.report.status + " · " + ago(f.report.at) + " ago")));
-    if (f.git_blocked) box.append(factRow("git", colored("warn", ".git changed: git stopped")));
-    if (f.merge) {
-      for (const c of f.merge.conds || []) box.append(factRow(c.name, colored(c.ok ? "ok" : "err", c.ok ? "✓" : "✗"), txt(" " + c.detail)));
-    }
-  }
-  for (const l of it.links || []) box.append(factRow("link", link(l)));
-  return box;
-}
-
-// draftOf: the person's pick for it. When the item changed since it was
-// drawn (its rev went up: HEAD moved, CI turned), the choice is dropped
-// and the card says so, as the TUI's modal does.
-function draftOf(it) {
-  let d = inboxDraft.get(it.id);
-  if (!d) {
-    d = { rev: it.rev, choice: null, note: "", changed: false };
-    inboxDraft.set(it.id, d);
-  } else if (d.rev !== it.rev) {
-    d.changed = d.changed || d.choice !== null;
-    d.choice = null;
-    d.rev = it.rev;
-  }
-  return d;
-}
-
-// pekoedItem: pekoed's own item (merge / wait / send back): answered by
-// choosing only, never by a note alone (pekoed refuses that too).
-function pekoedItem(it) {
-  return it.from === "pekoed" && it.kind === "approve";
-}
-
-// canAnswer: an option chosen, or a note written (with options and none
-// chosen, the note alone is the answer: none of them; not pekoed's item).
-function canAnswer(it, d) {
-  if (d.choice !== null) return true;
-  if ((it.options || []).length && pekoedItem(it)) return false;
-  return d.note.trim() !== "";
-}
-
-function inboxCard(it) {
-  const d = draftOf(it);
-  const card = el("div", "card ibox");
-  const [icon, role, word] = KINDS[it.kind] || ["?", "dim", it.kind];
-  const head = el("div", "line1 ihead");
-  head.append(colored(role, icon, "ic"), el("span", "name r-text", questionId(it.id)), colored(role, word, "word"), el("span", "age", ago(it.created_at)));
-  const body = el("div", "body");
-  body.append(factsBlock(it));
-  if (d.changed) body.append(el("div", "also r-warn", "⚠ changed while you looked: check the facts again"));
-
-  const says = el("div", "says");
-  says.append(el("div", "sub", "the agent says (its words, not pekoe's)"));
-  const from = el("div", "from");
-  from.append(txt("from " + it.from));
-  if (it.claimed) from.append(txt(" "), colored("warn", "⚠ claims to be " + it.claimed));
-  says.append(from, el("div", "q", it.question));
-  if (it.context) says.append(el("pre", "input ctx", it.context));
-  body.append(says);
-
-  const btn = el("button", "btn key", "answer…");
-  btn.type = "button";
-  const update = () => (btn.disabled = !canAnswer(it, d) || !!ianswer);
-  const opts = el("div", "opts");
-  opts.setAttribute("role", "radiogroup");
-  (it.options || []).forEach((o, i) => {
-    const b = el("button", "opt");
-    b.type = "button";
-    b.setAttribute("role", "radio");
-    b.append(el("span", "num", String(i + 1)), el("span", "otext", o));
-    if (it.recommend === i) b.append(el("span", "rec", "recommended (agent)"));
-    b.addEventListener("click", () => {
-      d.choice = d.choice === i ? null : i;
-      d.changed = false;
-      paint();
-      update();
-    });
-    opts.append(b);
+function card(it) {
+  return inboxCard(it, draftOf(inboxDraft, it), {
+    busy: () => isheet.isOpen(),
+    focus: () => (inboxTyping = true),
+    blur: () => {
+      inboxTyping = false;
+      setTimeout(resumeInbox, 300); // after a tap on answer… has landed
+    },
+    answer: openInboxSheet,
   });
-  const paint = () => opts.querySelectorAll(".opt").forEach((b, i) => {
-    b.classList.toggle("sel", d.choice === i);
-    b.setAttribute("aria-checked", String(d.choice === i));
-  });
-  paint();
-  if (opts.childNodes.length) body.append(opts);
-
-  const ta = el("textarea", "note");
-  ta.rows = 2;
-  ta.maxLength = 4000;
-  ta.placeholder = !(it.options || []).length ? "answer in words" : pekoedItem(it) ? "note (optional; send back needs one)" : "note (optional; or, with nothing chosen, the answer on its own: none of these)";
-  ta.value = d.note;
-  ta.addEventListener("input", () => {
-    d.note = ta.value;
-    update();
-  });
-  ta.addEventListener("focus", () => (inboxTyping = true));
-  ta.addEventListener("blur", () => {
-    inboxTyping = false;
-    setTimeout(resumeInbox, 300); // after a tap on answer… has landed
-  });
-  btn.addEventListener("click", () => openInboxSheet(it));
-  const row = el("div", "row");
-  row.append(btn);
-  body.append(ta, row);
-  update();
-  card.append(head, body);
-  return card;
-}
-
-const MERGE_LOOK = { running: ["●", "warn", "merging"], merged: ["✓", "ok", "merged"], failed: ["✗", "err", "not merged"] };
-
-// mergeRow: pekoed's merge after a "merge" answer (pekoed's words only).
-function mergeRow(it) {
-  const r = it.answer.merge;
-  const [icon, role, word] = MERGE_LOOK[r.state] || ["?", "dim", r.state];
-  const row = el("div", "card");
-  const head = el("div", "line1");
-  head.append(colored(role, icon, "ic"), el("span", "name r-text", "PR #" + r.pr), colored(role, word, "word"), el("span", "age", ago(r.at)));
-  const body = el("div", "body");
-  body.append(el("div", "also", (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + " · inbox " + questionId(it.id)));
-  if (r.detail) body.append(el("div", "also " + (r.state === "failed" ? "r-err" : "r-dim"), r.detail));
-  row.append(head, body);
-  return row;
 }
 
 function renderInbox() {
@@ -1175,11 +637,11 @@ function renderInbox() {
     rows.append(el("div", "empty", "nothing waits for you"));
     return;
   }
-  for (const it of inbox) rows.append(inboxCard(it));
+  for (const it of inbox) rows.append(card(it));
 }
 
 function holdInbox() {
-  return inboxTyping || !!ianswer;
+  return inboxTyping || isheet.isOpen();
 }
 
 function resumeInbox() {
@@ -1206,124 +668,9 @@ async function refreshInbox() {
   }
 }
 
-// openInboxSheet: what will be sent, to whom, before it is.
-function openInboxSheet(it) {
-  const d = inboxDraft.get(it.id);
-  if (!d || !canAnswer(it, d)) return;
-  const note = d.note.trim();
-  ianswer = { id: it.id, rev: d.rev, choice: d.choice, note };
-  $("isheet-title").textContent = "answer inbox " + questionId(it.id);
-  $("isheet-to").textContent = it.from + (it.about && it.about !== it.from ? " · about " + it.about : "");
-  $("isheet-q").textContent = it.question;
-  const a = [];
-  if (d.choice !== null) a.push(d.choice + 1 + ". " + it.options[d.choice] + (it.recommend === d.choice ? "  (same as the agent recommended)" : ""));
-  else if ((it.options || []).length) a.push("none of the options (the note alone)");
-  if (note) a.push("note: " + note);
-  $("isheet-a").textContent = a.join("\n");
-  $("isheet-warn").hidden = false;
-  let warn = "as of rev " + d.rev + ": if the facts change before this reaches pekoe, it is refused and shown again";
-  if (it.from === "pekoed" && it.kind === "approve" && d.choice === 0 && it.options[0] === "merge") {
-    warn = "pekoed checks the conditions again and runs gh pr merge on PR #" + ((it.facts && it.facts.pr) || "?") + " at the HEAD it asked about. " + warn;
-  }
-  $("isheet-warn").textContent = warn;
-  $("isheet-ok").disabled = false;
-  $("isheet").hidden = false;
-}
-
-function closeInboxSheet() {
-  $("isheet").hidden = true;
-  ianswer = null;
-  resumeInbox();
-}
-
-async function doInboxAnswer() {
-  const a = ianswer;
-  if (!a) return;
-  $("isheet-ok").disabled = true;
-  const body = { rev: a.rev, note: a.note };
-  if (a.choice !== null) body.choice = a.choice;
-  try {
-    await api("/api/inbox/" + encodeURIComponent(String(a.id)) + "/answer", body);
-    inboxDraft.delete(a.id);
-    toast("answered " + questionId(a.id), true);
-  } catch (e) {
-    const d = inboxDraft.get(a.id);
-    if (e.status === 409 && d) {
-      d.choice = null;
-      d.changed = true;
-      toast(questionId(a.id) + " changed or was closed: look again");
-    } else {
-      toast(questionId(a.id) + ": " + e.message);
-    }
-  }
-  closeInboxSheet();
-  inboxSig = "";
-  refresh();
-}
-
 // ---- overview: counts, tapi, and every session's flow (read only) ----
 
-const STEP_NAMES = { impl: "impl", pr: "PR", ci: "CI", review: "review", merge: "merge" };
-const STEP_LOOK = { done: ["✓", "ok"], now: ["●", "warn"], fail: ["✗", "err"], todo: ["○", "dim"] };
 let overviewSig = "";
-
-function renderCounts(c) {
-  const box = $("o-counts");
-  box.replaceChildren();
-  const tile = (role, icon, n, word, hash) => {
-    const t = el(hash ? "a" : "div", "tile");
-    if (hash) t.href = hash;
-    t.append(colored(n ? role : "dim", icon), el("span", "n", String(n)), el("span", "w", word));
-    box.append(t);
-  };
-  tile("ok", "●", c.running, "running");
-  if (c.queued) tile("dim", "◌", c.queued, "queued");
-  tile("warn", "●", c.waiting, "waiting");
-  tile("secondary", "✓", c.review, "to review");
-  tile("primary", "#", c.open_prs, "open PRs");
-  tile("ok", "✓", c.ready, "ready to merge");
-  tile("warn", "?", c.inbox_open, "inbox", "#/inbox");
-  tile("secondary", "☰", c.ledger_open, "requests open");
-}
-
-// tapiLine: icon  tapi  state  age, as a session's line1
-function tapiLine() {
-  const l1 = el("div", "line1");
-  if (!tapi) {
-    l1.append(colored("dim", "○", "ic"), el("span", "name r-text", "tapi"), colored("dim", "not readable", "word"));
-    return l1;
-  }
-  const lk = tapi.look || { icon: "○", role: "dim", word: tapi.state };
-  let word = lk.word, role = lk.role;
-  if (!tapi.started) [word, role] = ["not started", "dim"];
-  else if (!tapi.alive) [word, role] = ["exited", "dim"];
-  l1.append(colored(role, lk.icon, "ic"), el("span", "name r-text", "tapi"), colored(role, word, "word"),
-    el("span", "age", tapi.started && tapi.state !== "idle" ? ago(tapi.state_since) : ""));
-  return l1;
-}
-
-function renderTapi() {
-  const box = $("o-tapi");
-  box.replaceChildren();
-  if (!tapi) {
-    box.append(el("div", "empty", "(tapi is not readable)"));
-    return;
-  }
-  box.append(tapiLine());
-  if (tapi.started && tapi.answerable) box.append(el("div", "also r-warn", "⚠ tapi waits for a permission: answer it at the terminal"));
-  else if (tapi.started && tapi.state === "waiting") box.append(el("div", "also r-warn", "? tapi asks: open it to answer"));
-  if (tapi.last_message) box.append(el("div", "msg last", tapi.last_message));
-}
-
-function parentLabel(g) {
-  switch (g.parent) {
-    case "+tapi": return "tapi";
-    case "": return "opened directly";
-    case "human": return "you";
-    case "unknown": return "unknown";
-  }
-  return "from " + g.parent;
-}
 
 function flowRow(f) {
   const wrap = el("div", "flow");
@@ -1334,39 +681,21 @@ function flowRow(f) {
   const steps = el("div", "steps");
   f.steps.forEach((s, i) => {
     if (i) steps.append(el("span", "arrow", "→"));
-    const [icon, role] = STEP_LOOK[s.status] || ["○", "dim"];
-    const sp = el("span", "step st-" + (STEP_LOOK[s.status] ? s.status : "todo"));
-    sp.append(colored(role, icon), txt(" " + (STEP_NAMES[s.name] || s.name)));
-    steps.append(sp);
+    steps.append(stepCell(s, true));
   });
   wrap.append(b, steps);
   const notes = el("div", "miss");
-  if (f.merge) {
-    if (f.merge.ready) {
-      notes.append(el("div", "r-ok", "✓ evidence ready · waiting for a person to merge" + (f.merge.inbox ? " (inbox " + questionId(f.merge.inbox) + ")" : "")));
-    }
-    for (const c of f.merge.conds || []) {
-      if (c.ok) continue;
-      const line = el("div");
-      line.append(colored("err", "✗"), txt(" " + c.name + ": " + c.detail));
-      notes.append(line);
-    }
-  } else {
-    for (const s of f.steps) {
-      if (s.status !== "fail" || !s.detail) continue;
-      const line = el("div");
-      line.append(colored("err", "✗"), txt(" " + (STEP_NAMES[s.name] || s.name) + ": " + s.detail));
-      notes.append(line);
-    }
+  if (f.merge && f.merge.ready) {
+    notes.append(el("div", "r-ok", "✓ evidence ready · waiting for a person to merge" + (f.merge.inbox ? " (inbox " + questionId(f.merge.inbox) + ")" : "")));
   }
-  if (!f.merge && f.after && f.after.length) notes.append(el("div", null, "after " + f.after.join(", "))); // with a PR, merge.check's after says it
+  notes.append(...missing(f));
   if (notes.childNodes.length) wrap.append(notes);
   return wrap;
 }
 
 function renderOverview(o) {
-  renderCounts(o.counts || {});
-  renderTapi();
+  renderCounts($("o-counts"), o.counts || {});
+  renderTapi($("o-tapi"), tapi);
   const box = $("o-flow");
   box.replaceChildren();
   const groups = o.groups || [];
@@ -1404,20 +733,9 @@ async function refreshOverview() {
   }
 }
 
-// ---- tapi chat: the conversation as bubbles ----
-// pekoed reads tapi's Claude Code transcript (/api/tapi/transcript): the
-// person's words, tapi's words, the tools it called (name and one main
-// argument) and how long each turn took; never tool results or thinking.
-// tapi's words are untrusted (as the inbox): they go into the DOM with
-// textContent, through a small markdown of our own (headings, lists,
-// checkboxes, inline code; no links, no HTML). chatView takes items and a
-// name, not tapi: a session's transcript can use it later.
+// ---- tapi chat: the conversation as bubbles (lib/chat.js) ----
 
-const CHAT_FOLD = 15; // lines shown before "more"
 const CHAT_KEEP = 1500; // items kept in the page
-const SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-
 const chat = {
   cursor: "",
   items: [], // ChatItem, and {kind: "conv"} where a new conversation starts
@@ -1437,312 +755,6 @@ try {
   if (localStorage.getItem("pekoe.tapiView") === "screen") chatChoice = "screen";
 } catch (e) { /* no storage: chat */ }
 let spinTimer = 0, blinkTimer = 0, blinkEyes = "";
-
-const pad2 = (n) => String(n).padStart(2, "0");
-function hm(iso) {
-  const d = new Date(iso);
-  return isNaN(d) ? "" : pad2(d.getHours()) + ":" + pad2(d.getMinutes());
-}
-function dayKey(iso) {
-  const d = new Date(iso);
-  return isNaN(d) ? "" : d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
-}
-function dayLabel(iso) {
-  const d = new Date(iso);
-  return d.getMonth() + 1 + "/" + d.getDate() + " " + DAYS[d.getDay()];
-}
-function dur(ms) {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return s + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m" + pad2(s % 60) + "s";
-  return Math.floor(s / 3600) + "h" + pad2(Math.floor(s / 60) % 60) + "m";
-}
-
-// mdSpans: a line's inline parts, as data (no HTML is ever built):
-// {code} for `code`, {bold: [parts]} for **bold**, {text} for the rest.
-// Bold opens on ** with no blank after it and closes on the next ** with
-// no blank before it; neither may sit inside code (code inside bold is
-// fine). An unclosed ** stays as written.
-function mdSpans(s) {
-  const codes = [];
-  const cre = /`([^`\n]+)`/g;
-  let m;
-  while ((m = cre.exec(s))) codes.push([m.index, cre.lastIndex]);
-  const codeAt = (i) => codes.find(([a, b]) => i >= a && i < b);
-  const plain = (a, b) => {
-    const out = [];
-    let at = a;
-    for (const [x, y] of codes) {
-      if (x < a || y > b) continue;
-      if (x > at) out.push({ text: s.slice(at, x) });
-      out.push({ code: s.slice(x + 1, y - 1) });
-      at = y;
-    }
-    if (at < b) out.push({ text: s.slice(at, b) });
-    return out;
-  };
-  const out = [];
-  let at = 0, i = 0;
-  while ((i = s.indexOf("**", i)) >= 0) {
-    const c = codeAt(i) || codeAt(i + 1);
-    if (c) {
-      i = c[1];
-      continue;
-    }
-    if (!/\S/.test(s[i + 2] || "")) {
-      i += 2;
-      continue;
-    }
-    let j = i + 3, close = -1;
-    while ((j = s.indexOf("**", j)) >= 0) {
-      const d = codeAt(j) || codeAt(j + 1);
-      if (d) {
-        j = d[1];
-        continue;
-      }
-      if (/\S/.test(s[j - 1])) {
-        close = j;
-        break;
-      }
-      j++;
-    }
-    if (close < 0) {
-      i += 2;
-      continue;
-    }
-    out.push(...plain(at, i), { bold: plain(i + 2, close) });
-    at = i = close + 2;
-  }
-  out.push(...plain(at, s.length));
-  return out;
-}
-
-// mdInline: a line's parts as elements, every word through textContent
-function mdInline(parent, s) {
-  const put = (to, parts) => {
-    for (const p of parts) {
-      if (p.bold) put(to.appendChild(el("strong")), p.bold);
-      else if (p.code !== undefined) to.append(el("code", null, p.code));
-      else to.append(txt(p.text));
-    }
-  };
-  put(parent, mdSpans(s));
-}
-
-// mdLines: a naive markdown, one element per line. Headings, list markers
-// and checkboxes (dim, monospace), inline code, bold, fenced code
-// (monospace, as written). Nothing becomes a link.
-function mdLines(lines) {
-  const frag = document.createDocumentFragment();
-  let fence = null;
-  for (const ln of lines) {
-    if (/^\s*```/.test(ln)) {
-      if (fence) fence = null;
-      else frag.append((fence = el("pre", "fence")));
-      continue;
-    }
-    if (fence) {
-      fence.append(txt((fence.childNodes.length ? "\n" : "") + ln));
-      continue;
-    }
-    const h = ln.match(/^ {0,3}#{1,6}\s+(.*)$/);
-    if (h) {
-      const e = el("div", "h");
-      mdInline(e, h[1].replace(/\s+#+\s*$/, ""));
-      frag.append(e);
-      continue;
-    }
-    const line = el("div", "l");
-    const m = ln.match(/^(\s*)([-*+]|\d{1,3}[.)])\s+(\[[ xX]\]\s+)?(.*)$/);
-    if (m) {
-      if (m[1]) line.append(txt(m[1]));
-      const num = /\d/.test(m[2]);
-      const mark = m[3] ? (num ? m[2] + " " : "- ") + m[3].trim() : num ? m[2] : "•";
-      line.append(el("span", "cb", mark), txt(" "));
-      mdInline(line, m[4]);
-    } else {
-      mdInline(line, ln);
-    }
-    frag.append(line);
-  }
-  // a fence opened on the last line shown (folded) has nothing in it yet
-  for (const f of frag.querySelectorAll(".fence")) if (!f.childNodes.length) f.remove();
-  return frag;
-}
-
-// mdBody: the agent's words; past CHAT_FOLD lines folded behind "more"
-function mdBody(text, key, onToggle) {
-  const box = el("div", "md");
-  const lines = String(text).split("\n");
-  const long = lines.length > CHAT_FOLD;
-  const open = chat.open.has(key);
-  box.append(mdLines(long && !open ? lines.slice(0, CHAT_FOLD) : lines));
-  if (long) {
-    const b = el("button", "more");
-    b.type = "button";
-    if (open) b.append(el("span", "r-secondary", "less ‹"));
-    else b.append(el("span", "r-secondary", "more ›"), txt("  +" + (lines.length - CHAT_FOLD) + " lines"));
-    b.addEventListener("click", () => {
-      if (chat.open.has(key)) chat.open.delete(key);
-      else chat.open.add(key);
-      onToggle();
-    });
-    box.append(b);
-  }
-  return box;
-}
-
-function bubbleLine(body, meta) {
-  const line = el("div", "line");
-  const b = el("div", "bubble");
-  b.append(body);
-  line.append(b);
-  if (meta) line.append(meta);
-  return line;
-}
-
-// metaOf: the time under a bubble, with ✓ (sent) / ● (not in the
-// transcript yet) for the person's, the turn's length for the agent's
-function metaOf(top, topRole, at) {
-  const m = el("div", "meta");
-  if (top) m.append(topRole ? colored(topRole, top) : txt(top), el("br"));
-  m.append(txt(hm(at)));
-  return m;
-}
-
-// markRewound marks the words a person took back (rewound: true): a prompt
-// interrupted (ctrl+c, esc) before the first word of the reply leaves the
-// conversation and Claude Code's screen, and the prompt sent after it is
-// written as another child of the same parent. The chat leaves them out
-// as the screen does. Only lines typed at the prompt have a parent; one
-// taken in the middle of a turn (typed while the agent worked) never is
-// (docs/web.md 「取り消された発言」).
-function markRewound(items) {
-  const last = new Map(); // parent -> the newest item typed after it
-  for (const it of items) {
-    if (it.kind !== "human" && it.kind !== "pekoe") continue;
-    if (!it.parent || !it.id) continue;
-    const prev = last.get(it.parent);
-    if (prev && prev.id !== it.id) prev.rewound = true;
-    last.set(it.parent, it);
-  }
-}
-
-// chatBlocks groups items into what is drawn: day lines, the person's
-// turns, the agent's turns (tool lines and bubbles), pekoe's lines.
-function chatBlocks(items, pending) {
-  const out = [];
-  let day = "", cur = null;
-  const dayOf = (at) => {
-    const k = dayKey(at);
-    if (k && k !== day) {
-      day = k;
-      out.push({ type: "day", label: dayLabel(at) });
-      cur = null;
-    }
-  };
-  items.forEach((it, i) => {
-    if (it.kind === "conv") {
-      out.push({ type: "conv" });
-      cur = null;
-      return;
-    }
-    if (it.kind === "turn") {
-      if (cur && cur.type === "agent") cur.ms = it.ms;
-      return;
-    }
-    if (it.rewound) return; // taken back (markRewound): not on the agent's screen either
-    dayOf(it.at);
-    if (it.kind === "pekoe") {
-      out.push({ type: "pekoe", text: it.text, at: it.at });
-      cur = null;
-    } else if (it.kind === "human") {
-      if (!cur || cur.type !== "me") out.push((cur = { type: "me", msgs: [] }));
-      cur.msgs.push({ text: it.text, at: it.at, sent: true });
-    } else if (it.kind === "agent" || it.kind === "tool") {
-      if (!cur || cur.type !== "agent" || cur.ms) out.push((cur = { type: "agent", parts: [], ms: 0 }));
-      const last = cur.parts[cur.parts.length - 1];
-      if (it.kind === "agent") cur.parts.push({ type: "text", text: it.text, at: it.at, i });
-      else if (it.name === "AskUserQuestion" && it.question) cur.parts.push({ type: "ask", text: it.question, at: it.at, i });
-      else if (last && last.type === "tools") last.list.push(it);
-      else cur.parts.push({ type: "tools", list: [it], i });
-    }
-  });
-  for (const p of pending) {
-    dayOf(p.at);
-    if (!cur || cur.type !== "me") out.push((cur = { type: "me", msgs: [] }));
-    cur.msgs.push({ text: p.text, at: p.at, sent: false });
-  }
-  return out;
-}
-
-function toolsLine(list, key, onToggle) {
-  const frag = document.createDocumentFragment();
-  const open = chat.open.has(key);
-  const b = el("button", "tools");
-  b.type = "button";
-  b.setAttribute("aria-expanded", String(open));
-  const words = list.map((t) => (t.name + " " + (t.input || "")).trim()).join(" · ");
-  b.append(el("span", "ic", open ? "⌄" : "›"), txt(list.length + (list.length === 1 ? " tool · " : " tools · ") + words));
-  b.addEventListener("click", () => {
-    if (chat.open.has(key)) chat.open.delete(key);
-    else chat.open.add(key);
-    onToggle();
-  });
-  frag.append(b);
-  if (open) {
-    const box = el("div", "tool-list");
-    for (const t of list) {
-      const r = el("div");
-      r.append(el("span", "n", t.name), txt(t.input ? " " + t.input : ""));
-      box.append(r);
-    }
-    frag.append(box);
-  }
-  return frag;
-}
-
-// chatView draws items (and the person's unsent words) for an agent called
-// name. onToggle redraws after a fold opens or closes.
-function chatView(items, pending, name, onToggle) {
-  const frag = document.createDocumentFragment();
-  for (const bl of chatBlocks(items, pending)) {
-    if (bl.type === "day") {
-      frag.append(el("div", "divider", bl.label));
-    } else if (bl.type === "conv") {
-      frag.append(el("div", "divider", "new conversation"));
-    } else if (bl.type === "pekoe") {
-      const p = el("div", "sysline", bl.text);
-      p.title = bl.text;
-      frag.append(p);
-    } else if (bl.type === "me") {
-      const turn = el("div", "turn me");
-      bl.msgs.forEach((m, j) => {
-        const last = j === bl.msgs.length - 1;
-        const body = el("div", "plain", m.text);
-        turn.append(bubbleLine(body, last ? metaOf(m.sent ? "✓" : "●", m.sent ? "" : "secondary", m.at) : null));
-      });
-      frag.append(turn);
-    } else {
-      const turn = el("div", "turn agent");
-      const who = el("div", "who");
-      who.append(el("span", "ic", "◆"), txt(name));
-      turn.append(who);
-      const lastText = bl.parts.map((p) => p.type !== "tools").lastIndexOf(true);
-      bl.parts.forEach((p, j) => {
-        if (p.type === "tools") {
-          turn.append(toolsLine(p.list, "t" + p.i, onToggle));
-          return;
-        }
-        const body = mdBody(p.text, "m" + p.i, onToggle);
-        const meta = j === lastText ? metaOf(bl.ms ? dur(bl.ms) : "", "", p.at) : null;
-        turn.append(bubbleLine(body, meta));
-      });
-      frag.append(turn);
-    }
-  }
-  return frag;
-}
 
 // ---- tapi chat: the page around chatView ----
 
@@ -1885,7 +897,7 @@ function renderChat(force) {
     // empty only once the transcript has been read; before that, loading
     items.append(el("div", "empty", chat.ok === true ? "no messages yet" : "loading…"));
   }
-  items.append(chatView(chat.items, chat.pending, "tapi", () => renderChat(true)));
+  items.append(chatView(chat.items, chat.pending, "tapi", chat.open, () => renderChat(true)));
   if (stick) toBottom();
   else log.scrollTop = top;
   updateJump();
@@ -2183,9 +1195,6 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("hashchange", route);
 $("back").addEventListener("click", () => go(null));
-$("sheet-cancel").addEventListener("click", closeSheet);
-$("sheet-ok").addEventListener("click", doAnswer);
-$("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) closeSheet(); });
 $("d-send").addEventListener("submit", doSend);
 $("tsheet-cancel").addEventListener("click", closeTapiSheet);
 $("tsheet-ok").addEventListener("click", doSheetSend);
@@ -2195,9 +1204,6 @@ $("d-file").addEventListener("change", (e) => {
   addImages(files);
 });
 $("tsheet").addEventListener("click", (e) => { if (e.target === $("tsheet")) closeTapiSheet(); });
-$("isheet-cancel").addEventListener("click", closeInboxSheet);
-$("isheet-ok").addEventListener("click", doInboxAnswer);
-$("isheet").addEventListener("click", (e) => { if (e.target === $("isheet")) closeInboxSheet(); });
 $("d-pause").addEventListener("click", togglePause);
 for (const b of $("d-keys").querySelectorAll("button[data-key]")) {
   b.addEventListener("click", () => pressKey(b.dataset.key));

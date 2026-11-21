@@ -106,6 +106,13 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 type webSurface struct {
 	tapiSend    bool        // POST /api/tapi/send is allowed
 	confirmTapi func() bool // the page puts a send to tapi through the confirm sheet
+	// always: a permission prompt may be answered "always" (the agent's
+	// "don't ask again"). Only the local GUI, as the TUI's A; never the
+	// phone (docs/gui.md 「決まったこと」5).
+	always bool
+	// index is the page served at / (a path in webui): the phone's
+	// index.html, or the local GUI's desktop page.
+	index string
 }
 
 // webMux registers the static files and the API both front doors serve.
@@ -117,6 +124,12 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	}))
+	if sf.index != "" {
+		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache")
+			http.ServeFileFS(w, r, static, sf.index)
+		})
+	}
 	mux.HandleFunc("GET /icon.png", serveIcon(180))
 	mux.HandleFunc("GET /icon-512.png", serveIcon(512))
 	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +143,7 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	})
 	mux.HandleFunc("GET /api/sessions", d.webSessions)
 	mux.HandleFunc("GET /api/sessions/{slug}/screen", d.webScreen)
-	mux.HandleFunc("POST /api/sessions/{slug}/answer", d.webAnswer)
+	mux.HandleFunc("POST /api/sessions/{slug}/answer", d.webAnswer(sf.always))
 	mux.HandleFunc("POST /api/sessions/{slug}/send", d.webSend)
 	mux.HandleFunc("POST /api/sessions/{slug}/keys", d.webKeys)
 	mux.HandleFunc("GET /api/inbox", d.webInbox)
@@ -464,16 +477,29 @@ type webAnswerIn struct {
 	Tool *state.Tool `json:"tool"`
 }
 
-func (d *Daemon) webAnswer(w http.ResponseWriter, r *http.Request) {
+// webAnswer answers a permission prompt: allow or deny, and "always" only
+// where the surface allows it (the local GUI). Only these words: the key
+// aliases session.answer also takes (y, n, a, A) never come over HTTP.
+func (d *Daemon) webAnswer(always bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { d.webAnswerAs(w, r, always) }
+}
+
+func (d *Daemon) webAnswerAs(w http.ResponseWriter, r *http.Request, always bool) {
 	slug := r.PathValue("slug")
 	var in webAnswerIn
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	// "always" (and its key aliases) never comes from the phone: a
-	// standing permission deserves the full terminal.
-	if in.Answer != "allow" && in.Answer != "deny" {
+	// "always" never comes from the phone: a standing permission deserves
+	// the full terminal (or the Mac's own screen, the local GUI).
+	switch {
+	case in.Answer == "allow", in.Answer == "deny":
+	case in.Answer == "always" && always:
+	case always:
+		http.Error(w, "answer must be allow, deny or always", http.StatusBadRequest)
+		return
+	default:
 		http.Error(w, "answer must be allow or deny", http.StatusBadRequest)
 		return
 	}

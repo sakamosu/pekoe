@@ -2,7 +2,9 @@
 
 pekoed が動いている Mac 自身のブラウザから、localhost で待ち受ける Web の画面で pekoe を操作する。
 
-**状態**: 段階 0(入口だけ: 待ち受け・認証・今の Web UI をそのまま配る)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`、`pekoe gui`)。段階 1 以降は設計で、まだコードは無い。レビューで決まったことは下の「決まったこと」にまとめた。
+**状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 以降は設計で、まだコードは無い。
+
+**段階 1 の見た目は仮。** 配置(左に一覧・右に画面・工程表の表)とデータのつなぎ込みまでで、色・フォント・余白は `/theme.css` のトークンと今の Web UI の `app.css` をそのまま使い、新しい色・装飾・動きは足していない。最終的なデザインは docs/ui-guidelines.md の更新の後に別の PR で行う。差し替えが CSS と DOM の構造だけで済むように、GUI のスタイルは `webui/gui/gui.css` にだけ書き(HTML の `style` 属性・`gui.js` からの `style` の書き込みは無い。`TestGUIStylesOnlyInCSS`。例外は画面の色というデータで、エージェントの画面の `#rrggbb` の色は前から `lib/term.js` が CSSOM で入れている)、クラス名は役割で付けた(`.session-list`・`.screen-pane`・`.dashboard-table` など)。レビューで決まったことは下の「決まったこと」にまとめた。
 
 根拠はファイル名で添える。コードを読んで確かめたことと、推測(「推測」「要確認」と書く)を分ける。
 
@@ -40,7 +42,7 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 | 段階 | 中身 | ねらい |
 | --- | --- | --- |
 | **0. 入口だけ**(実装済み) | localhost の待ち受けと認証(下の「認証」)を作り、今の Web UI の静的ファイル(`internal/daemon/webui/`)と API をそのまま Mac のブラウザに配る。iPhone と同じ 8 つの機能が Mac で使える | 一番危ない部分(認証・脅威モデル)を先に、小さく固める。画面はまだスマホ向けのまま |
-| **1. MVP** | デスクトップ向けの画面(下の「MVP」) | 「TUI が苦手な人が毎日の操作をできる」最小 |
+| **1. MVP**(実装済み。見た目は仮) | デスクトップ向けの画面(下の「MVP」) | 「TUI が苦手な人が毎日の操作をできる」最小 |
 | **2. TUI と同等(操作)** | セッションの作成(`session.new`、リポジトリの選択、issue から)、land(衝突予報つきの確認)、dev server の起動・停止、セッションの終了・worktree の削除(確認つき)、undo・再起動、片付け(`cleanup`)、tapi chat、PR の表示(チェック・レビュー・スレッドを読み、エージェントに送る)、issue の一覧、受信箱の dismiss | TUI のキー一覧(README の「TUI」、`docs/design.md`)の操作を一通り GUI で |
 | ~~3. TUI と同等(重いもの)~~ **作らない** | レビュー面(差分を読み、行にコメントし、承認する。TUI では nvim の `r`)、run 窓(`!`、1 回のコマンドを人が打って対話する)、エージェントの画面への生の入力(TUI で `↵` で入る入力) | どれも端末の再現か、任意のキー・コマンドを送る経路で、XSS が通ったときの被害が大きい。GUI では作らず「それは TUI で」とする(下の「決まったこと」7) |
 | **4. HTML の検証** | 集計(`stats`)のグラフ、セッションの時系列(いつ動き・待ち・終わったか)、触るファイルの重なりの図(`conflicts.list`)、証拠(スクショ・ログ)の表示、デスクトップ通知(Notification API) | 目的 2。どれが TUI に戻す価値があるかも見る |
@@ -56,7 +58,16 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 - **質問へのキーパッド**: AskUserQuestion のメニューに答える(今の `POST …/keys`)。これが無いと質問に答えられず「毎日の操作」にならないので、MVP に入れる
 - **受信箱への回答**: 事実が先・推奨を既定にしない・確認シート・`rev` の突き合わせ(`docs/web.md` の「受信箱(Inbox タブ)の扱い」と同じ)
 
-MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りる(段階 0 でそのまま使えることを確かめた)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で足すのは、GUI の入口だけ `always` を受け付けること。
+MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りた(段階 0 でそのまま使えることを確かめ、段階 1 の画面もこれだけで作った)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で変えたのは、GUI の入口だけ `always` を受け付けること(`webSurface.always`)と、GUI の `/` でデスクトップ向けのページを返すこと(`webSurface.index`)。
+
+段階 1 で作ったもの(`internal/daemon/webui/gui/`):
+
+- 左にセッション一覧(リポジトリごと。`/api/sessions` が待ちを上に並べるので、待ちのあるリポジトリが上に来る)。待ちの行には何を待っているか(ツールと入力、質問)を 1 行
+- 概要(`#/`): 件数・tapi の状態と、依頼ごとのセッションを `impl → review → PR → CI → merge` の列と「マージの前に足りないもの」の列の 1 つの表で
+- セッション(`#/s/<slug>`): 色つきの画面(最後 80 行、選択中は止まる、一時停止)、許可待ちに deny / allow / always(どれも確認シートで pekoe の要約と画面を並べる。always には何を許すかの注意を出す)、質問には画面の横にキーパッド、send(`⌘⏎` で送る。画像は選ぶ・貼り付け・ドロップで付け、画像つきは確認シート)。許可待ちの間は send を止める(pekoed も 409 で断る)
+- 受信箱(`#/inbox`): Web UI と同じカードと確認シート(事実が先・推奨を既定にしない・`rev` の突き合わせ)を、幅があれば横に並べる
+- tapi chat(`#/tapi`): 吹き出しと画面の切り替え、確認シートなしの send、質問のキーパッド。tapi の許可待ちには答えない(今の Web UI と同じく端末で)
+- 狭い幅では一覧を上、画面を下に積む(使えるが、スマホ向けの作りではない。スマホは Web UI)
 
 ### 後回しにするもの
 
@@ -111,7 +122,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 4. **CORS なし**: `Access-Control-Allow-*` を一切返さず、`OPTIONS` は 403。クロスオリジンのページは `Authorization` ヘッダ付きの要求をプリフライトで止められる
 5. **トークン**: `/api/*` は `Authorization: Bearer` を定数時間で比べる(`crypto/subtle`、`http.go` の `guard` と同じ)。静的ファイル(`/`・`app.js`・`app.css`・`/theme.css`)はトークンなしで返す(中身はバイナリに埋め込んだ公開のもの)。`/theme.css` はユーザーのパレットの色だけで秘密を含まない
 6. **書き込み**: 今の Web UI と同じく `Content-Type: application/json` を要る(`X-Pekoe-Web` の代わりに `Authorization` がカスタムヘッダの役をする)
-7. **応答のヘッダ**: 今と同じ CSP(`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。`web.go` の `webCSP` を両方の入口で使う)・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy: no-referrer`、API は `Cache-Control: no-store`。Chrome では `require-trusted-types-for 'script'` を足すと、`innerHTML` などへの文字列の代入をブラウザが断るので、XSS の守りをもう 1 枚にできる(Safari・Firefox は無視する)。段階 0 は今の Web UI と同じ CSP のままにした。段階 1 で GUI の画面を作るときに足すか決める(要確認: 今の `app.js` が足しても動くか)
+7. **応答のヘッダ**: 今と同じ CSP(`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。`web.go` の `webCSP` を両方の入口で使う)・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy: no-referrer`、API は `Cache-Control: no-store`。Chrome では `require-trusted-types-for 'script'` を足すと、`innerHTML` などへの文字列の代入をブラウザが断るので、XSS の守りをもう 1 枚にできる(Safari・Firefox は無視する)。段階 0・1 は今の Web UI と同じ CSP のままにした(下の「残っている要確認」)
 8. **記録**: 拒否は理由つきで `pekoed.log` に `gui: <code> <method> <path>: <理由>`。送信の記録(`sends` の `via`)と受信箱の答え(`answer.via`)は `gui`(`webPeer.Via`。tailnet の `webVia` は `web:<端末名>`)。allow / deny / keys / send のログの行は Web UI と同じ形で、`local … (from gui)` と出る
 9. **メソッド**: GET・HEAD・POST だけ。`/api/` の外への POST は 403
 
@@ -147,8 +158,8 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 - **面ごとの方針はハンドラに引数で渡す。** 今のハンドラには iPhone 向けの方針が入っている: `always` は 400、tapi への send は `allow_devices` が要る、`confirm_tapi_send`。面ごとの値は `webSurface`(`web.go`)に持たせ、`webMux` に渡す。段階 0 の GUI は tapi への send を `allow_devices` なし・確認シートなしで通す(TUI と同じ。「決まったこと」6)。`always` は段階 1 で `webSurface` に足す(「決まったこと」5)
 - **静的ファイルは段階で変える。**
   - 段階 0: 今の `webui/` をそのまま配る
-  - 段階 1 から: デスクトップ向けの入口を別に作る(例 `guiui/index.html`)。画面の描画(Run の色)・自前のマークダウン・API の呼び出し・確認シートは、今の `app.js`(約 2200 行)から ES モジュールに切り出して両方から読む。ビルドの道具(bundler)は入れない(CSP の `script-src 'self'` のまま `<script type="module">` で読める)
-  - 切り出しは段階 1 で行う(「決まったこと」8)。今の Web UI のコードを動かすことになるので、今の Web UI の挙動を変えない形で行う
+  - 段階 1(実装済み): デスクトップ向けの入口を別に作った(`webui/gui/index.html`・`gui.js`・`gui.css`。GUI の `/` だけがこれを返し、tailnet の `/` は今の `index.html`)。画面の描画(Run の色、`lib/term.js`)・自前のマークダウン(`lib/md.js`)・API の呼び出しとサインイン(`lib/api.js`)・確認シート(`lib/sheets.js`)・受信箱のカード(`lib/inbox.js`)・工程表の部品(`lib/overview.js`)・tapi chat の吹き出し(`lib/chat.js`)・画像の添付(`lib/images.js`)・行の組み立て(`lib/fmt.js`・`lib/dom.js`)を、今の `app.js` から ES モジュールに切り出して両方から読む。ビルドの道具(bundler)は入れない(CSP の `script-src 'self'` のまま `<script type="module">` で読む)。`app.js` は電話の画面の組み立て(ルーティング・iOS のビューポート・一覧・詳細)だけを持つ
+  - 切り出しは段階 1 で行った(「決まったこと」8)。今の Web UI の挙動と見た目は変えていない(`app.css` は触っていない。切り出しの前後で、同じ偽のデータの電話の幅の画面を撮り比べ、一覧は画素まで同じだった)。JS のテスト(`TestWebMarkdownBold`・`TestWebMarkRewound`)はモジュールを node で import して動かす
   - 段階 0 で今の `app.js` に足したのは、フラグメントのトークンの交換・`Authorization` ヘッダ・401 のときのサインアウトの表示だけ(上の「認証」5・6)。tailnet ではどれも働かない
 - **新しい API は段階 2 から。** 段階 0・1 は今の `/api/*` で足りる。段階 2 で足すもの(session.new・land・dev など)は、今の Web UI に出すかどうかと別に決め、GUI の mux にだけ登録できるようにする
 
@@ -205,7 +216,7 @@ session_ttl = "12h"       # セッションのトークンの有効期限(最後
 2. **ブラウザ操作への備え**: (a) 文書(README)と `pekoe gui` の出力で「GUI はエージェントに操作させないブラウザ・プロファイルで開く」と案内するだけ。Touch ID(WebAuthn)は段階 1 には入れず後回し。入れるときの要確認(127.0.0.1 のオリジンでは使えずオリジンの見直しが要ること、CDP の仮想認証器)は脅威モデルの表に書いた
 3. **セッションのトークンの置き場**: `sessionStorage`(再読み込みは通る、新しいタブ・再起動で入り直し)
 4. **ブラウザのプロファイルは denyRead に足さない**(pekoe の役目を超え、エージェントの作業を壊しうる)
-5. **`always`**: GUI では許可待ちに `always` を出す(TUI の `A` に合わせる)。段階 0 は今の Web UI の画面を使い、そこに `always` のボタンは無いので、**API の側で GUI の入口だけ `always` を受け付けるのも段階 1 に回した**。使う画面の無い入口を先に開けない(使われない受け口は、テストもされないまま XSS や誤操作の的だけを増やす)ため。段階 1 で `webSurface` に足し、GUI の mux にだけ効かせる。段階 0 では GUI でも `always` は 400(`TestGUIAnswer`)
+5. **`always`**: GUI では許可待ちに `always` を出す(TUI の `A` に合わせる)。段階 0 は今の Web UI の画面を使い、そこに `always` のボタンは無いので、API の側で GUI の入口だけ `always` を受け付けるのは段階 1 に回した(使う画面の無い入口を先に開けない)。**段階 1 で実装した**: `webSurface.always` を GUI の mux にだけ立て、`POST /api/sessions/{slug}/answer` は GUI からだけ `always` を受け付ける(「always」という語だけ。`a`・`A` などのキーの別名は GUI でも 400)。tailnet の Web UI は今までどおり 400(`TestGUIAnswer`・`TestGUIAlwaysOnlyOnGUI`・`TestWebNoAlways`)。画面では deny / allow / always の 3 つのボタンを並べ、always も確認シートを通し、「この先の同じ種類の許可も聞かれなくなる」ことと画面で範囲を確かめることを書く
 6. **tapi への send**: GUI では確認シートなしで送れる(TUI と同じ)。Web UI の `allow_devices` の条件は GUI には効かない(`GET /api/tapi` は `sendable: true`・`confirm_send: false`。`TestGUITapiSend`)。Web UI 側の挙動は変えていない
 7. **段階 3(レビュー面・run 窓・生の入力)は GUI では作らない。** 「それは TUI で」とする
 8. **静的ファイルの切り出し**: 段階 1 で今の `app.js` を ES モジュールに切り出す
@@ -216,5 +227,5 @@ session_ttl = "12h"       # セッションのトークンの有効期限(最後
 
 - Safari・Firefox で、`file://` の HTML から `http://127.0.0.1` への `location.replace` / `meta refresh` が通るか(Chrome では確かめた)
 - Jupyter がリダイレクト用の HTML を開く作りにしている理由(上の「認証」3。記憶による推測)
-- `require-trusted-types-for 'script'` を足しても今の `app.js` が動くか(段階 1 で決める)
+- `require-trusted-types-for 'script'` を足すか: 段階 1 では足さず、CSP は今のまま(依頼で「CSP は今のまま」とした)。HTML を作る入口の禁止は、`webui/` の下のすべての JS をテストで縛る形に広げた(`TestWebInboxScriptIsText`)。足すかは見た目の作業の PR か段階 2 で決める
 - WebAuthn を入れるときの、オリジンと CDP の仮想認証器の件(「決まったこと」2)

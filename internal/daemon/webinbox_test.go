@@ -2,10 +2,12 @@ package daemon
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,17 +146,47 @@ func TestWebInboxScriptIsText(t *testing.T) {
 		t.Fatalf("the words, as they were: %+v", its)
 	}
 
-	js, err := webFiles.ReadFile("webui/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
+	// every script of both pages (the phone's app.js, the local GUI's
+	// gui/, the modules they share in lib/): no HTML sink anywhere
 	sinks := regexp.MustCompile(`innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment|DOMParser|srcdoc|\beval\(|new Function|setAttribute\(\s*["']on`)
-	if m := sinks.FindAllString(string(js), -1); len(m) > 0 {
-		t.Fatalf("app.js builds HTML or code from strings: %v", m)
+	var scripts []string
+	fs.WalkDir(webFiles, "webui", func(p string, e fs.DirEntry, err error) error {
+		if err == nil && !e.IsDir() && strings.HasSuffix(p, ".js") {
+			scripts = append(scripts, p)
+		}
+		return err
+	})
+	for _, want := range []string{"webui/app.js", "webui/gui/gui.js", "webui/lib/dom.js", "webui/lib/md.js"} {
+		if !slices.Contains(scripts, want) {
+			t.Fatalf("%s is not among the scripts checked: %v", want, scripts)
+		}
+	}
+	for _, p := range scripts {
+		js, err := webFiles.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m := sinks.FindAllString(string(js), -1); len(m) > 0 {
+			t.Errorf("%s builds HTML or code from strings: %v", p, m)
+		}
 	}
 	// links: only http(s) become anchors (a javascript: link stays text)
-	if !strings.Contains(string(js), `/^https?:\/\//i`) {
-		t.Fatalf("app.js does not check a link's scheme before making it an anchor")
+	dom, _ := webFiles.ReadFile("webui/lib/dom.js")
+	if !strings.Contains(string(dom), `/^https?:\/\//i`) {
+		t.Fatalf("lib/dom.js does not check a link's scheme before making it an anchor")
+	}
+	// the pages load scripts only as files of their own (no inline script,
+	// as the CSP says)
+	for _, p := range []string{"webui/index.html", "webui/gui/index.html"} {
+		b, _ := webFiles.ReadFile(p)
+		for _, m := range regexp.MustCompile(`<script[^>]*>`).FindAllString(string(b), -1) {
+			if !regexp.MustCompile(`^<script type="module" src="/[a-z/]+\.js"></script>$`).MatchString(m + "</script>") {
+				t.Errorf("%s: %s", p, m)
+			}
+		}
+		if regexp.MustCompile(`<script[^>]*>[^<]`).Match(b) || regexp.MustCompile(`\son[a-z]+=`).Match(b) {
+			t.Errorf("%s has inline script", p)
+		}
 	}
 }
 

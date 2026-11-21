@@ -2,28 +2,64 @@ package daemon
 
 import (
 	"encoding/json"
+	"io/fs"
+	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
-// The bubbles' markdown (docs/web.md 「描画」): **bold** is bold on one
-// line, around text and code but never inside code (inline or a fence),
-// and an unclosed ** stays as written. mdSpans is taken out of app.js as it
-// is and run in node (skipped without node); the page builds elements from
-// its parts through textContent only (TestWebInbox: no HTML from strings).
-func TestWebMarkdownBold(t *testing.T) {
+// runWebModule runs prog as an ES module in node, with the page's files
+// (webui/, as embedded) written to a temp dir: prog imports them by name,
+// e.g. import { mdSpans } from "lib/md.js". Skipped without node.
+func runWebModule(t *testing.T, prog string) []byte {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node not found: the bubbles' markdown is not run")
+		t.Skip("node not found: the page's modules are not run")
 	}
-	js, err := webFiles.ReadFile("webui/app.js")
+	dir := t.TempDir()
+	err = fs.WalkDir(webFiles, "webui", func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		b, err := webFiles.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(to, b, 0o644)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := regexp.MustCompile(`(?s)\nfunction mdSpans\(s\) \{\n.*?\n\}\n`).Find(js)
-	if src == nil {
-		t.Fatal("mdSpans not found in app.js")
+	base := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(dir, "webui")) + "/"}).String()
+	prog = regexp.MustCompile(`from "((?:lib|gui)/[a-z]+\.js)"`).ReplaceAllStringFunc(prog, func(m string) string {
+		return `from "` + base + strings.TrimSuffix(strings.TrimPrefix(m, `from "`), `"`) + `"`
+	})
+	out, err := exec.Command(node, "--input-type=module", "-e", prog).CombinedOutput()
+	if err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+	return out
+}
+
+// The bubbles' markdown (docs/web.md 「描画」): **bold** is bold on one
+// line, around text and code but never inside code (inline or a fence),
+// and an unclosed ** stays as written. mdSpans (lib/md.js, shared by both
+// pages) is imported as it is and run in node (skipped without node); the
+// page builds elements from its parts through textContent only
+// (TestWebInboxScriptIsText: no HTML from strings).
+func TestWebMarkdownBold(t *testing.T) {
+	js, err := webFiles.ReadFile("webui/lib/md.js")
+	if err != nil {
+		t.Fatal(err)
 	}
 	cases := []struct{ in, want string }{
 		{"**画像の流れ**", `[{"bold":[{"text":"画像の流れ"}]}]`},
@@ -49,11 +85,8 @@ func TestWebMarkdownBold(t *testing.T) {
 		ins[i] = c.in
 	}
 	in, _ := json.Marshal(ins)
-	prog := string(src) + "\nconsole.log(JSON.stringify(" + string(in) + ".map((s) => JSON.stringify(mdSpans(s)))));\n"
-	out, err := exec.Command(node, "-e", prog).CombinedOutput()
-	if err != nil {
-		t.Fatalf("node: %v\n%s", err, out)
-	}
+	prog := `import { mdSpans } from "lib/md.js";` + "\nconsole.log(JSON.stringify(" + string(in) + ".map((s) => JSON.stringify(mdSpans(s)))));\n"
+	out := runWebModule(t, prog)
 	var got []string
 	if err := json.Unmarshal(out, &got); err != nil || len(got) != len(cases) {
 		t.Fatalf("node output: %v\n%s", err, out)
