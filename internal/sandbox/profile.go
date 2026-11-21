@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -45,9 +46,10 @@ func seatbeltArgs(tool string, p Policy, argv []string) []string {
 	}
 	subpath := func(k string) string { return `(subpath (param "` + k + `"))` }
 	literal := func(k string) string { return `(literal (param "` + k + `"))` }
-	rule("file-read*", subpath, variants(p.DenyRead))
-	rule("file-write*", subpath, variants(append(append([]string{}, p.DenyWrite...), p.DenyRead...)))
-	rule("file-write*", literal, ancestors(variants(append(append([]string{}, p.DenyWrite...), p.DenyRead...))))
+	reads := append(append([]string{}, p.DenyRead...), p.DenyReadIfPresent...)
+	rule("file-read*", subpath, variants(reads))
+	rule("file-write*", subpath, variants(append(append([]string{}, p.DenyWrite...), reads...)))
+	rule("file-write*", literal, ancestors(variants(append(append([]string{}, p.DenyWrite...), reads...))))
 	rule("network-outbound", func(k string) string { return "(remote unix-socket " + subpath(k) + ")" }, variants(p.DenyConnect))
 	prof.WriteString("(deny lsopen)\n(deny appleevent-send)\n")
 	out := append([]string{tool, "-p", prof.String()}, params...)
@@ -74,7 +76,8 @@ func seatbeltArgs(tool string, p Policy, argv []string) []string {
 //     read-only.
 //
 // pekoed makes its data and config directories and the tokens before it
-// runs anything, so those are always there.
+// runs anything, so those are always there. A missing DenyReadIfPresent
+// path is left out (no guard).
 //
 // The command gets a pid namespace and a /proc of its own, so it cannot
 // read pekoed's memory or environment through /proc/<pid>, and it dies
@@ -94,6 +97,11 @@ func bwrapArgs(tool string, p Policy, argv []string, h host) []string {
 		}
 	}
 	writes, reads := real(p.DenyWrite), real(p.DenyRead)
+	for _, d := range real(p.DenyReadIfPresent) {
+		if _, ok := kind(d); ok && !slices.Contains(reads, d) {
+			reads = append(reads, d)
+		}
+	}
 	there := map[string]bool{}
 	var roDirs []string
 	for _, d := range writes {
