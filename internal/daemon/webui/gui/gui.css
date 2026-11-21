@@ -392,27 +392,72 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .kv-k { color: var(--dim); white-space: nowrap; }
 .kv-v.zero { color: var(--dim); }
 
-.table-box { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
-.table-box > .empty { padding: 12px 16px; }
-.pipeline { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px; }
-.pipeline th { padding: 10px 8px; font-weight: 500; color: var(--dim); text-align: left; white-space: nowrap; }
-.pipeline th.col-step { text-align: center; }
-.pipeline th:first-child, .pipeline td:first-child { padding-left: 16px; }
-.pipeline th:last-child, .pipeline td:last-child { padding-right: 16px; }
-.pipeline td { padding: 12px 8px; border-top: 1px solid var(--border); vertical-align: top; }
-.pipeline .col-step { text-align: center; white-space: nowrap; }
-.s-word { color: var(--dim); }
-.col-branch { min-width: 12em; }
-.flow-name { padding: 0; border: 0; background: none; color: var(--text); text-align: left; overflow-wrap: anywhere; }
-.flow-name:hover { color: var(--secondary); }
-.flow-sub { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
-.col-status { min-width: 12em; }
+/* Pipeline: Request box → tree → Branch box → five step boxes → Status.
+   Every row is 60px; the tree's pieces are placed for that height (the
+   trunk from the first row's middle to the last row's turn). Wider than
+   the column: the Branch box shrinks to 160px, then the box scrolls. */
+.pipe-box { overflow-x: auto; }
+.pipe-box > .empty { padding: 12px 0; }
+.pipeline { --pl-cols: 132px 28px minmax(160px, 288px) repeat(5, 96px) minmax(150px, 1fr); min-width: 950px; font-size: 12px; }
+.pl-group { position: relative; }
+.pl-row { display: grid; grid-template-columns: var(--pl-cols); height: 60px; align-items: center; }
+.pl-head { height: auto; padding-bottom: 4px; color: var(--dim); }
+.pl-head .pl-step { display: block; padding-left: 12px; text-align: center; }
+.pl-head .pl-status { padding-left: 16px; }
+.pl-req, .pl-bcell { min-width: 0; }
+.pl-rbox, .pl-branch {
+  box-sizing: border-box; height: 44px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.pl-rbox { display: flex; flex-direction: column; justify-content: center; padding: 0 12px; min-width: 0; }
+.pl-rid { font-weight: 600; color: var(--text); }
+.pl-rsub, .pl-none { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-none { padding-left: 12px; }
+.pl-tree { position: relative; align-self: stretch; }
+.pl-flat { position: absolute; left: 0; right: 0; top: 29.25px; height: 1.5px; background: var(--dim); }
+.pl-corner {
+  position: absolute; left: 14px; right: 0; top: 18.75px; height: 12px; box-sizing: border-box;
+  border-left: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim); border-bottom-left-radius: 12px;
+}
+/* one trunk per request: left = the Request column + half the tree's */
+.pl-trunk { position: absolute; left: 146px; top: 30px; bottom: 41.25px; border-left: 1.5px solid var(--dim); }
+.pl-branch {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 12px; color: var(--text); font: inherit; text-align: left;
+}
+.pl-branch:hover { border-color: var(--secondary); }
+.pl-bname { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-badge {
+  flex: none; box-sizing: border-box; height: 20px; padding: 0 7px; border: 1px solid var(--border); border-radius: 10px;
+  font-size: 11px; line-height: 18px; color: var(--dim); white-space: nowrap;
+}
+.pl-badge.now { border-color: var(--ok); color: var(--text); }
+.pl-badge .pl-bsym { color: var(--ok); }
+.pl-step { display: flex; align-items: center; }
+/* the 12px line before a box: solid dim up to the step under way, dashed border after */
+.pl-link { flex: none; width: 12px; border-top: 1.5px solid var(--dim); }
+.pl-link.todo { border-top: 1.5px dashed var(--border); }
+.pl-box {
+  flex: none; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 4px;
+  width: 84px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: nowrap;
+}
+.pl-word { color: var(--dim); }
+.b-done .pl-sym { color: var(--secondary); }
+.b-now { border-color: var(--ok); }
+.b-now .pl-sym { color: var(--ok); }
+.b-todo { border-style: dashed; }
+.b-todo .pl-sym { color: var(--dim); }
+.b-fail { border-color: var(--err); }
+.b-fail .pl-sym { color: var(--err); }
+.b-you { border-color: var(--warn); }
+.b-you .pl-sym, .b-you .pl-word { color: var(--warn); }
+.pl-status { min-width: 0; padding-left: 16px; }
 .st-top { white-space: nowrap; }
 .s-age { color: var(--dim); }
-.st-miss { margin-top: 2px; font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
-/* past rows: dim, word and symbol, but the one symbol that tells them apart */
-.pipeline tr.past td, .pipeline tr.past .flow-name, .pipeline tr.past .r-ok, .pipeline tr.past .r-err,
-.pipeline tr.past .r-warn, .pipeline tr.past .r-dim { color: var(--dim); }
+.st-note { margin-top: 2px; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-more { margin-top: 8px; padding: 4px 0; border: 0; background: none; color: var(--secondary); font: inherit; font-size: 12px; }
+.pl-more:hover { color: var(--text); }
+/* past rows (merged): everything dim, the boxes' frames border */
+.pl-row.past .pl-branch, .pl-row.past .pl-sym, .pl-row.past .pl-word, .pl-row.past .st-top .sym { color: var(--dim); }
+.pl-row.past .pl-box { border-color: var(--border); }
 
 /* tapi on the right */
 .tapi-panel {
