@@ -152,7 +152,9 @@ func TestGUIInterrupt(t *testing.T) {
 	// a question: Escape would back out of its menu (the keypad has esc)
 	event(t, d, "PreToolUse", "main", map[string]any{"tool_name": "AskUserQuestion", "tool_input": map[string]any{"question": "which db?"}})
 	refused("a question")
-	event(t, d, "Stop", "main", map[string]any{})
+	// stop waits for onStop (its git in the worktree): the temp dir goes
+	// when the test ends
+	stop(t, d, "main", map[string]any{})
 	if st := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"}).State; st == state.Running {
 		t.Fatalf("still running after Stop")
 	}
