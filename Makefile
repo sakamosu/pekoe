@@ -11,7 +11,7 @@ TAGS    := $(if $(WEB),-tags web)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
 LDFLAGS := -X pekoe/internal/daemon.Version=$(or $(VERSION),dev)
 
-.PHONY: build test vet vulncheck install install-launchd uninstall-launchd nvim-test clean
+.PHONY: build test vet fmtcheck vulncheck install install-launchd uninstall-launchd nvim-test clean
 
 build:
 	$(GO) build $(TAGS) -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/pekoe
@@ -29,6 +29,12 @@ test: vet
 vet:
 	$(GO) vet ./...
 	$(GO) vet -tags web ./...
+
+# fails listing the files gofmt would change (fix them with gofmt -w)
+GOFMT   ?= gofmt
+fmtcheck:
+	@out="$$($(GOFMT) -l .)" || exit 1; \
+	if [ -n "$$out" ]; then echo "gofmt: these files need gofmt -w:"; echo "$$out"; exit 1; fi
 
 # known vulnerabilities reachable from both builds, checked with the Go that
 # builds them (GOTOOLCHAIN=local: auto would switch Go and hide stdlib ones)

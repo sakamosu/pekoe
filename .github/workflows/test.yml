@@ -91,6 +91,11 @@ jobs:
           command -v luac python3
           if [ "$RUNNER_OS" = Linux ]; then bwrap --version; bwrap --ro-bind / / true && echo "bwrap works"; fi
 
+      # gofmt を通らないファイルがあれば一覧を出して落とす(OS で結果は変わらないので Linux だけ)
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: make fmtcheck
+
       - name: make test
         # -v で飛ばしたテストとその理由もログに残す(次の step で拾う)。
         # -count=1: 戻したキャッシュにあるテストの結果を使い回さず、毎回走らせる
