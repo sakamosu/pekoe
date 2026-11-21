@@ -311,22 +311,51 @@ const isheet = inboxSheet(inboxDraft, {
   },
 });
 
+// the Overview's stats (merges per day, today's tokens): read at most every
+// STATS_EVERY (pekoed reads the transcripts' new lines for it, and a merge
+// is seen at most once a minute), as the TUI's dashboard does
+const STATS_EVERY = 30000;
+const stats = { st: null, err: "", at: 0 };
+// Requests: the last five closed, or the whole ledger (Open ledger: up to
+// the 500 closed last, the rest is `pekoe ledger --all`)
+let ledgerAll = false, ledger = null, ledgerErr = "";
+
+async function refreshStats() {
+  if (Date.now() - stats.at < STATS_EVERY) return;
+  stats.at = Date.now();
+  try {
+    stats.st = await api("/api/stats");
+    stats.err = "";
+  } catch (e) {
+    stats.err = e.message;
+  }
+}
+
+async function refreshLedger() {
+  try {
+    ledger = await api("/api/ledger?closed=" + (ledgerAll ? 500 : 5));
+    ledgerErr = "";
+  } catch (e) {
+    ledgerErr = e.message;
+  }
+}
+
 async function refreshDashboard() {
   try {
-    const [o, ib] = await Promise.all([api("/api/overview"), api("/api/inbox")]);
+    const [o, ib] = await Promise.all([api("/api/overview"), api("/api/inbox"), refreshStats(), refreshLedger()]);
     overview = o;
     if (view !== "dashboard") return;
-    const sig = JSON.stringify([o.counts, o.groups]);
+    const has = (slug) => sessions.some((x) => x.slug === slug);
+    const sig = JSON.stringify([o.counts, o.groups, stats.st, stats.err, ledger, ledgerErr, ledgerAll, (ledger && [...ledger.open, ...ledger.closed].flatMap((e) => e.sessions || []).map(has)) || []]);
     if (sig !== dashSig) {
       dashSig = sig;
-      renderTiles($("o-tiles"), o.counts || {});
+      renderTiles($("o-tiles"), o.counts || {}, stats);
       const groups = o.groups || [];
       const moving = renderPipeline($("o-rows"), groups, go);
       $("o-empty").hidden = !!groups.length;
       $("o-flow").hidden = !groups.length;
       $("p-count").textContent = moving + " moving";
-      const [op, cl] = renderRequests($("r-rows"), groups, go);
-      $("r-count").textContent = op + " open · " + cl + " closed";
+      renderLedger(has);
     }
     const items = ib.items || [];
     const isig = JSON.stringify([items, ib.merges || []]);
@@ -341,6 +370,30 @@ async function refreshDashboard() {
     toast(e.message);
   }
 }
+
+function renderLedger(has) {
+  const box = $("r-rows");
+  const btn = $("r-ledger");
+  btn.textContent = ledgerAll ? "Close ledger" : "Open ledger";
+  btn.setAttribute("aria-expanded", String(ledgerAll));
+  if (!ledger) {
+    box.replaceChildren();
+    const l = el("div", "empty");
+    if (ledgerErr) l.append(colored("err", "✗", "sym"), txt(" ledger unavailable · " + ledgerErr));
+    else l.append(txt("loading…"));
+    box.append(l);
+    $("r-count").textContent = "";
+    return;
+  }
+  const [op, cl] = renderRequests(box, ledger, { open: go, has, expanded: ledgerAll });
+  $("r-count").textContent = op + " open · " + cl + " closed";
+}
+
+$("r-ledger").addEventListener("click", () => {
+  ledgerAll = !ledgerAll;
+  dashSig = "";
+  refreshDashboard();
+});
 
 function renderInbox() {
   const rows = $("i-rows");

@@ -418,6 +418,10 @@ func clearGUIPages() {
 func (d *Daemon) guiHandler(port int) http.Handler {
 	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html", gui: true})
 	mux.HandleFunc("POST /api/gui/session", d.guiSessionHandler)
+	// the Dashboard's merges, tokens and ledger (guidash.go): the GUI's
+	// mux only, the phone's Web UI has no use for them
+	mux.HandleFunc("GET /api/stats", d.guiStats)
+	mux.HandleFunc("GET /api/ledger", d.guiLedger)
 	return d.guiGuard(port, mux)
 }
 
