@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"pekoe/internal/paths"
+	"pekoe/internal/state"
 )
 
 // The images waiting for a send (gui/attach.js, run in node; skipped
@@ -92,5 +94,31 @@ func TestGUITapiSendImages(t *testing.T) {
 	}
 	if rs := tapiSends(t, d); len(rs) != 1 || rs[0].Via != viaGUI || rs[0].Text != typed || !rs[0].OK {
 		t.Fatalf("send log: %+v", rs)
+	}
+}
+
+// A session's send answers what was typed, as tapi's does: the chat's "not
+// sent yet" bubble (●) waits for those words, the image lines in them, to
+// come back from the transcript. Without them it waited for the words
+// alone, which never came, and stayed five minutes beside the real one.
+func TestGUISessionSendImagesAnswersTyped(t *testing.T) {
+	d, fe, repo, h, _ := guiSetup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	s := guiSignIn(t, d, h)
+	for _, text := range []string{"見て", ""} {
+		w := doGUI(t, h, guiReq{method: "POST", path: "/api/sessions/main/send", bearer: s,
+			body: map[string]any{"text": text, "images": imgs(testPNG(t, 5, 5))}})
+		var r struct {
+			OK     bool   `json:"ok"`
+			Images int    `json:"images"`
+			Text   string `json:"text"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &r) != nil {
+			t.Fatalf("send %q: %d %s", text, w.Code, w.Body)
+		}
+		typed := lastText(fe)
+		if !r.OK || r.Images != 1 || r.Text != typed || len(typedImages(r.Text)) != 1 {
+			t.Fatalf("send %q answered %+v, typed %q", text, r, typed)
+		}
 	}
 }

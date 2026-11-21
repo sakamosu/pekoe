@@ -627,7 +627,9 @@ func (d *Daemon) webSend(w http.ResponseWriter, r *http.Request) {
 		webErr(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "images": len(files)})
+	// text: what was typed (with the image lines), as tapi's send: the
+	// page looks for it in the transcript to mark its bubble sent
+	writeJSON(w, map[string]any{"ok": true, "images": len(files), "text": typed})
 }
 
 // webQuestion: a question (AskUserQuestion, elicitation) is up, the menu
