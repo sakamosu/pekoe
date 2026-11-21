@@ -665,6 +665,24 @@ func TestGUIStylesOnlyInCSS(t *testing.T) {
 	}
 }
 
+// Inline code in the chat's bubbles is painted code, in the phone's page and
+// the GUI alike (docs/ui-guidelines.md のカラートークン code); a fence keeps
+// text.
+func TestBubbleInlineCodeColor(t *testing.T) {
+	re := regexp.MustCompile(`(?s)\.bubble code \{([^}]*)\}`)
+	fence := regexp.MustCompile(`(?s)\.bubble \.fence \{([^}]*)\}`)
+	for _, p := range []string{"webui/app.css", "webui/gui/gui.css"} {
+		css, _ := webFiles.ReadFile(p)
+		m := re.FindSubmatch(css)
+		if m == nil || !strings.Contains(string(m[1]), "color: var(--code);") {
+			t.Errorf("%s: .bubble code is not var(--code): %q", p, m)
+		}
+		if f := fence.FindSubmatch(css); f == nil || strings.Contains(string(f[1]), "--code") {
+			t.Errorf("%s: .bubble .fence: %q", p, f)
+		}
+	}
+}
+
 // The GUI's shell sheet (docs/gui-design.md 決まったこと 6) comes up for
 // every send pekoed's shellBang would take for a shell command: gui/shell.js
 // run in node against the same inputs (skipped without node). The page may

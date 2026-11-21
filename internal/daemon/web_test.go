@@ -605,7 +605,7 @@ func TestWebTheme(t *testing.T) {
 		t.Fatalf("a bad color got into the CSS:\n%s", css)
 	}
 	// the chat: bubble_me from primary_end, tapi's face from [mascot]
-	for _, want := range []string{"--bubble-me: #1c2c51;", "--chrome: #1a1927;", "--raised: #2a2939;", "--tapi-bd: #e4c49a;", "--tapi-sh: #c7a57c;", "--tapi-eye: #2b201c;"} {
+	for _, want := range []string{"--bubble-me: #1c2c51;", "--code: #9bb7f2;", "--chrome: #1a1927;", "--raised: #2a2939;", "--tapi-bd: #e4c49a;", "--tapi-sh: #c7a57c;", "--tapi-eye: #2b201c;"} {
 		if !strings.Contains(css, want) {
 			t.Errorf("theme.css lacks %q:\n%s", want, css)
 		}
@@ -614,7 +614,7 @@ func TestWebTheme(t *testing.T) {
 	// OS or by the page's choice; fixed, [theme.colors] stays in :root
 	light := ":root[data-gui][data-theme=\"light\"] {\n  color-scheme: light;\n  --bg: #f4f4fa;"
 	if !strings.Contains(css, light) || !strings.Contains(css, "@media (prefers-color-scheme: light) {\n:root[data-gui]:not([data-theme=\"dark\"]) {") ||
-		!strings.Contains(css, "--ok: #06791f;") || !strings.Contains(css, "--bubble-me: #d9e5fd;") || strings.Count(css, "--ok: #00ff00;") != 1 {
+		!strings.Contains(css, "--ok: #06791f;") || !strings.Contains(css, "--bubble-me: #d9e5fd;") || !strings.Contains(css, "--code: #3e5fad;") || strings.Count(css, "--ok: #00ff00;") != 1 {
 		t.Errorf("light palette:\n%s", css)
 	}
 	if root := css[:strings.Index(css, "}")]; strings.Contains(root, "data-gui") || strings.Contains(root, "#f4f4fa") {
@@ -623,7 +623,10 @@ func TestWebTheme(t *testing.T) {
 	d.Global.Theme.Colors = map[string]string{"primary_end": "#ff8800"}
 	d.Global.Mascot.Colors = map[string]string{"bd": "#AABBCC", "eye": "url(x)"}
 	css = doWeb(t, h, webReq{path: "/theme.css", from: ipPhone}).Body.String()
-	if strings.Contains(css, "--bubble-me: #1c2c51;\n  --tapi") || !strings.Contains(css, "--tapi-bd: #aabbcc;") ||
+	if root := css[:strings.Index(css, "}")]; strings.Contains(root, "--bubble-me: #1c2c51;") || strings.Contains(root, "--code: #9bb7f2;") {
+		t.Errorf("bubble_me and code do not follow primary_end:\n%s", root)
+	}
+	if !strings.Contains(css, "--tapi-bd: #aabbcc;") ||
 		!strings.Contains(css, "--tapi-eye: #2b201c;") || strings.Contains(css, "url(") {
 		t.Fatalf("overrides:\n%s", css)
 	}

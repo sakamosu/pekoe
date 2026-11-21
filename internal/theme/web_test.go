@@ -57,6 +57,34 @@ func TestBubbleMeFollowsPrimaryEnd(t *testing.T) {
 	}
 }
 
+// code is primary_end's hue at primary_end's default depth (docs/
+// ui-guidelines.md のカラートークン code): #9bb7f2 for the default; a
+// [theme.colors] primary_end carries the hue along at L0.78; a solid border
+// keeps the default end's hue. The light value is fixed.
+func TestCodeFollowsPrimaryEnd(t *testing.T) {
+	if p := WebPalette(nil); p[CodeKey] != "#9bb7f2" {
+		t.Fatalf("default code: %q", p[CodeKey])
+	}
+	if p := WebLightPalette(); p[CodeKey] != "#3e5fad" {
+		t.Fatalf("light code: %q", p[CodeKey])
+	}
+	p := WebPalette(&config.Theme{Colors: map[string]string{"primary": "#ff0000", PrimaryEndKey: "#ff8800"}})
+	got := p[CodeKey]
+	rgb, ok := parseHex(got)
+	if !ok {
+		t.Fatalf("code: %q", got)
+	}
+	o, s := toOKLCH(rgb), toOKLCH(must("#ff8800"))
+	if d := o.H - s.H; d > 6 || d < -6 || o.L < 0.76 || o.L > 0.80 {
+		t.Fatalf("code %s: L %.3f h %.1f, primary_end h %.1f", got, o.L, o.H, s.H)
+	}
+	for _, c := range []map[string]string{{"primary": "#ff0000"}, {PrimaryEndKey: "cyan"}, {"secondary": "#ff8800"}} {
+		if p := WebPalette(&config.Theme{Colors: c}); p[CodeKey] != "#9bb7f2" {
+			t.Fatalf("%v: code %q", c, p[CodeKey])
+		}
+	}
+}
+
 // chrome and raised: the GUI's grounds, bg's hue a step lighter; a
 // [theme.colors] bg carries them along.
 func TestWebGrounds(t *testing.T) {

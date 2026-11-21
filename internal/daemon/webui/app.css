@@ -596,10 +596,12 @@ body.pinned .toast { bottom: calc(var(--tab-h) + 72px + env(safe-area-inset-bott
 .bubble .h { margin: 8px 0 2px; font-weight: 700; white-space: pre-wrap; }
 .bubble .h:first-child { margin-top: 0; }
 .bubble .cb { color: var(--dim); font: 13px var(--mono); }
-/* code in the words: a small box sunk into bg */
+/* code in the words: a small box sunk into bg, in code (not text, not a
+   link's secondary: docs/ui-guidelines.md). A fence stays text: a block
+   of colored lines would be neon prose */
 .bubble code {
   padding: 1px 5px; border-radius: 4px; background: var(--bg);
-  font: 13px var(--mono); color: var(--text);
+  font: 13px var(--mono); color: var(--code);
 }
 .bubble .fence {
   margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--bg);

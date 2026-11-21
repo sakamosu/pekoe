@@ -20,6 +20,12 @@ var hexRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 // hue, as select is primary's. Derived, never set.
 const BubbleMeKey = "bubble_me"
 
+// CodeKey is the chat's inline code (docs/ui-guidelines.md のカラートークン
+// code): primary_end's hue at primary_end's default depth (L0.78, C0.09),
+// so a `word` in the bubble reads apart from the text and from a link
+// (secondary, 50° away). Derived, never set.
+const CodeKey = "code"
+
 // ChromeKey and RaisedKey are the local GUI's two extra grounds
 // (docs/gui-design.md のカラートークン): chrome under the title bar, the
 // sidebar, the tabs and the status line; raised under the open row and the
@@ -62,6 +68,17 @@ func BubbleMe(primaryEnd string) string {
 	return clipHex(oklch{L: 0.30, C: 0.07, H: h})
 }
 
+// Code derives code from primary_end (#rrggbb): L0.78 C0.09 at its hue (the
+// default comes out #9bb7f2, primary_end itself). "" (a solid border) or a
+// bad value takes the default primary_end's hue, as BubbleMe does.
+func Code(primaryEnd string) string {
+	h := float64(defaultEndHue)
+	if rgb, ok := parseHex(primaryEnd); ok {
+		h = toOKLCH(rgb).H
+	}
+	return clipHex(oklch{L: 0.78, C: 0.09, H: h})
+}
+
 // webGround is chrome or raised for a bg the user set: bg's chroma and hue,
 // dL lighter.
 func webGround(bg string, dL float64) string {
@@ -74,7 +91,7 @@ func webGround(bg string, dL float64) string {
 // WebPalette is the truecolor palette as the TUI paints it: the defaults
 // with the user's [theme.colors] on top, "primary_end" when the focus
 // border is a ramp (absent ⇒ solid primary, as in Load), "bubble_me"
-// (BubbleMe of the primary_end in effect) and the GUI's "chrome" and
+// (BubbleMe of the primary_end in effect), "code" (Code of it) and the GUI's "chrome" and
 // "raised". Only #rrggbb values are taken: the result goes into CSS.
 func WebPalette(cfg *config.Theme) map[string]string {
 	pick := func(key, def string) string {
@@ -83,7 +100,7 @@ func WebPalette(cfg *config.Theme) map[string]string {
 		}
 		return def
 	}
-	out := make(map[string]string, len(WebRoles)+4)
+	out := make(map[string]string, len(WebRoles)+5)
 	for _, r := range WebRoles {
 		out[string(r)] = pick(string(r), defaultHex[r])
 	}
@@ -96,6 +113,7 @@ func WebPalette(cfg *config.Theme) map[string]string {
 		out[PrimaryEndKey] = end
 	}
 	out[BubbleMeKey] = BubbleMe(out[PrimaryEndKey])
+	out[CodeKey] = Code(out[PrimaryEndKey])
 	out[ChromeKey], out[RaisedKey] = defaultChrome, defaultRaised
 	if bg := out[string(Bg)]; bg != defaultHex[Bg] {
 		out[ChromeKey], out[RaisedKey] = webGround(bg, 0.0224), webGround(bg, 0.0901)
@@ -111,7 +129,7 @@ var webLight = map[string]string{
 	string(Border): "#ccccdb", string(Dim): "#616174", string(Text): "#202030",
 	string(Primary): "#ba2997", PrimaryEndKey: "#4c6ebd", string(Secondary): "#0e6f81",
 	string(Warn): "#796500", string(Ok): "#06791f", string(Err): "#cc1331",
-	string(Select): "#fdd8ef", BubbleMeKey: "#d9e5fd",
+	string(Select): "#fdd8ef", BubbleMeKey: "#d9e5fd", CodeKey: "#3e5fad",
 }
 
 // WebLightPalette is a copy of the light palette.

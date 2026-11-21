@@ -70,16 +70,17 @@ ui-guidelines.md のうち、そのまま GUI にも効くもの。この文書�
 | dim | `#848495` | `#616174` | 0.50 / 0.030 / 285 | 補助テキスト、待機(◦)、過ぎたもの(merged・closed の行) |
 | text | `#e0e0eb` | `#202030` | 0.25 / 0.030 / 284 | 本文 |
 | primary | `#ff87da` | `#ba2997` | 0.55 / 0.210 / 340 | フォーカス中のタイトル(Inbox カードの見出し)、選択中のタブの上辺、開いている行の左バー、モードのピル、グラデーションの始点 |
-| primary_end | `#9bb7f2` | `#4c6ebd` | 0.55 / 0.129 / 265 | グラデーションの終点。単独では使わない。**例外: bubble_me の色相の元**(下) |
+| primary_end | `#9bb7f2` | `#4c6ebd` | 0.55 / 0.129 / 265 | グラデーションの終点。単独では使わない。**例外: bubble_me の色相の元と code の文字色**(下) |
 | secondary | `#11cded` | `#0e6f81` | 0.50 / 0.085 / 215 | キー文字、リンク、人の番(ready to merge・merged・done・`◉ you`・未送信の ◉) |
 | warn | `#edc812` | `#796500` | 0.51 / 0.105 / 95 | 確認待ち、auto mode |
 | ok | `#51d75e` | `#06791f` | 0.50 / 0.156 / 145 | 稼働中、通過したゲート、diff の +、ゲージの値 |
 | err | `#ff7172` | `#cc1331` | 0.54 / 0.210 / 22 | 失敗、stale、送れなかった、Deny のキー、diff の − |
 | select | `#441e39` | `#fdd8ef` | 0.92 / 0.051 / 340 | 主ボタンの地、ステータスラインのセグメント |
 | bubble_me **(GUI で変更)** | `#1c2c51` | `#d9e5fd` | 0.92 / 0.035 / 264 | 自分の吹き出しの地だけ。文字や記号には使わない |
+| code | `#9bb7f2` | `#3e5fad` | 0.50 / 0.130 / 265 | 吹き出しのインラインコードの文字(地は bg の小箱)。コードブロックは text のまま。ダークは ui-guidelines.md |
 
 - **chrome と raised** は bg と同じ色相 285 の無彩色の派生(ダークは L0.22 と L0.29、C0.03)。色相を足さないので「派生色は同一色相で L と C を落とす」の範囲に入る。段は ダーク `bg 0.20 < chrome 0.22 < surface 0.24 < raised 0.29 < border 0.36`。ライトは `raised 0.91 < chrome 0.95 < bg 0.97 < surface 0.99` で、chrome が bg より暗く、カード(surface)が一番明るい(紙が浮く向き)
-- **primary_end の例外**: ui-guidelines.md の注記「primary_end は役割を持たない」に、「bubble_me の色相の元にする」を足す。bubble_me は primary_end を select と同じ深さ(ダーク L0.30・C0.07)に落とした影で、吹き出しの地として面で出るが、文字・記号・枠には使わないので「単独の文字や記号に使うことは禁止」は保たれる。色相 265 は secondary(215)から 50° 離れており、キー文字のシアンと取り違えない(ui-guidelines.md の primary_end の説明と同じ理由)
+- **primary_end の例外**: ui-guidelines.md の注記「primary_end は役割を持たない」に、「bubble_me の色相の元にする」を足す。bubble_me は primary_end を select と同じ深さ(ダーク L0.30・C0.07)に落とした影で、吹き出しの地として面で出るが、文字・記号・枠には使わないので、bubble_me については「単独の文字や記号に使うことは禁止」は保たれる。code(吹き出しのインラインコードの文字)はこれと違い、primary_end の色相を文字に使う唯一の例外で、ui-guidelines.md の同じ注記に断り書きを足した(ダークは primary_end と同じ L0.78・C0.09、ライトは他のアクセントと同じ L0.50 の #3e5fad)。色相 265 は secondary(215)から 50° 離れており、キー文字のシアンと取り違えない(ui-guidelines.md の primary_end の説明と同じ理由)
 - **導出**: 今の `theme.BubbleMe`(`internal/theme/web.go`)は secondary から計算している。primary_end から計算するように変える(実装の PR)。primary だけを上書きして primary_end が無いとき(単色の枠)は、既定の primary_end の色相 265 を使う(推奨。select と同じ色相にすると「押せるもの」と見分けにくい)
 - **グラデーション**: `linear-gradient(to bottom right in oklch, var(--primary), var(--primary-end))`。方向は TUI と同じ左上 → 右下。`in oklch` の補間に対応しないブラウザでは primary 単色の枠に落とす(`@supports` で切り替える。推測: 対応は Chrome 111・Safari 16.2・Firefox 127 前後から。要確認)。primary_end が無い(単色の設定)ときも primary 単色
 
@@ -104,6 +105,7 @@ WCAG 2.x の相対輝度で計算した(sRGB の hex から。スクリプトは
 - **対 raised はアクセントがどれも 4.5:1 を割る(4.2〜4.4)。** モックでは開いている行(raised)に `Ready to merge`(secondary)と diff の `+1604 −95`(ok / err)が乗っているので、ライトではここが下限を割る。そこで raised の上では語を text にし、色は記号だけに持たせる(決まったこと 12)
 - select の上: text 12.4、キー文字の secondary 4.50(ちょうど下限)、err 4.4(Deny を主ボタンにしない限り select の上には乗らない)
 - bubble_me の上: text 12.6、dim 4.8
+- code(インラインコード)は地の bg の小箱の上: 5.6(対 surface 5.9・対 bubble_me 4.8 なので、小箱の外に出ても下限に入る)。ダークは対 bg 9.1・対 surface 8.3・対 bubble_me 6.8。secondary との輝度比は 1.05 で明るさでは分かれないので、色相(265 と 215)と小箱・等幅で見分ける
 - モードのピル(primary の地に bg の文字): 5.0
 
 **ダーク**(ui-guidelines.md の値は対 bg。GUI で足した地に対して計算し直した):

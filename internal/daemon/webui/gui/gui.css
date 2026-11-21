@@ -452,7 +452,7 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .bubble .h { margin: 8px 0 2px; font-weight: 600; white-space: pre-wrap; }
 .bubble .h:first-child { margin-top: 0; }
 .bubble .cb { color: var(--dim); font: 12px var(--mono); }
-.bubble code { padding: 1px 4px; border-radius: 4px; background: var(--bg); font: 12px var(--mono); }
+.bubble code { padding: 1px 4px; border-radius: 4px; background: var(--bg); font: 12px var(--mono); color: var(--code); }
 .bubble .fence { margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--bg); font: 12px/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .bubble .more { display: block; width: 100%; margin-top: 6px; padding: 6px 0 0; border: 0; border-top: 1px solid var(--border); background: none; text-align: left; font-size: 12px; color: var(--dim); }
 .bubble strong { font-weight: 600; }
