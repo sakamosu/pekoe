@@ -556,7 +556,7 @@ func TestGUIDesktopPage(t *testing.T) {
 	if csp := w.Header().Get("Content-Security-Policy"); csp != webCSP {
 		t.Fatalf("csp %q", csp)
 	}
-	for _, p := range []string{"/gui/gui.js", "/gui/gui.css", "/lib/dom.js", "/lib/api.js", "/lib/sheets.js", "/app.css"} {
+	for _, p := range []string{"/gui/gui.js", "/gui/dash.js", "/gui/gui.css", "/lib/dom.js", "/lib/api.js", "/lib/sheets.js", "/app.css"} {
 		w := doGUI(t, h, guiReq{path: p})
 		want := "javascript"
 		if strings.HasSuffix(p, ".css") {
@@ -597,16 +597,75 @@ func TestGUIPagesClearedAtStart(t *testing.T) {
 	}
 }
 
-// The desktop page's look is provisional (docs/gui.md 段階 1): every style
-// is in gui/gui.css, so the final design can replace it and keep the DOM.
-// No style attribute in the HTML, no style set from gui.js, no <style>.
+// Every style of the desktop page is in gui/gui.css (docs/gui-design.md の
+// 「実装の制約との整合」: the CSP's style-src 'self' refuses inline style,
+// and the look stays in one place). No style attribute in the HTML, no
+// <style>, no style set from the page's scripts. The page loads nothing
+// from outside (fonts included: system-ui, 決まったこと 2).
 func TestGUIStylesOnlyInCSS(t *testing.T) {
 	html, _ := webFiles.ReadFile("webui/gui/index.html")
 	if m := regexp.MustCompile(`(?i)\sstyle\s*=|<style`).FindAllString(string(html), -1); len(m) > 0 {
 		t.Errorf("gui/index.html: %v", m)
 	}
+	if m := regexp.MustCompile(`(?i)(href|src)\s*=\s*"(https?:)?//`).FindAllString(string(html), -1); len(m) > 0 {
+		t.Errorf("gui/index.html loads from outside: %v", m)
+	}
+	ents, err := webFiles.ReadDir("webui/gui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range ents {
+		if !strings.HasSuffix(e.Name(), ".js") {
+			continue
+		}
+		n++
+		js, _ := webFiles.ReadFile("webui/gui/" + e.Name())
+		if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
+			t.Errorf("gui/%s sets styles: %v", e.Name(), m)
+		}
+	}
+	if n < 2 {
+		t.Fatalf("gui/ scripts checked: %d", n)
+	}
+	css, _ := webFiles.ReadFile("webui/gui/gui.css")
+	if m := regexp.MustCompile(`(?i)@import|@font-face|url\(`).FindAllString(string(css), -1); len(m) > 0 {
+		t.Errorf("gui/gui.css loads something: %v", m)
+	}
+}
+
+// The GUI's shell sheet (docs/gui-design.md 決まったこと 6) comes up for
+// every send pekoed's shellBang would take for a shell command: gui/shell.js
+// run in node against the same inputs (skipped without node). The page may
+// ask once more than pekoed (U+FEFF), never once less. And the send path
+// asks it before anything leaves.
+func TestGUIShellBangMatchesPekoed(t *testing.T) {
+	ins := []string{
+		"!ls", "  !ls", "\t\n!ls", "\r\n!ls", "\x00!ls", "\x1b!ls", "\x7f!ls", "\u0085!ls", " !ls", "　!ls",
+		" !ls", " !ls", "\v\f!ls", "\x01 \x02 !rm -rf x", "\ufeff!ls",
+		"ls", "a!", " ls !x", "", "   ", "！ls", "​!ls", "x\n!ls", "!",
+	}
+	raw, _ := json.Marshal(ins)
+	out := runWebModule(t, `import { shellBang } from "gui/shell.js";
+console.log(JSON.stringify(`+string(raw)+`.map(shellBang)));`)
+	var got []bool
+	if err := json.Unmarshal(out, &got); err != nil || len(got) != len(ins) {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	for i, in := range ins {
+		want := shellBang(in)
+		if want && !got[i] {
+			t.Errorf("%q: pekoed takes it for a shell command, the page sends it without the sheet", in)
+		}
+		if !want && got[i] && in != "\ufeff!ls" {
+			t.Errorf("%q: the page asks, pekoed would not", in)
+		}
+	}
 	js, _ := webFiles.ReadFile("webui/gui/gui.js")
-	if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
-		t.Errorf("gui/gui.js sets styles: %v", m)
+	if !strings.Contains(string(js), `if (shellBang(text)) return openShellSheet(slug, text, images, ta);`) {
+		t.Fatal("gui.js: doSend does not put a ! send through the shell sheet")
+	}
+	if i, j := strings.Index(string(js), "if (shellBang(text))"), strings.Index(string(js), "sendTo(slug, text, [], ta);"); i < 0 || j < 0 || i > j {
+		t.Fatal("gui.js: the shell sheet does not come before a plain send")
 	}
 }

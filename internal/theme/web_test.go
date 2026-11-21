@@ -27,25 +27,68 @@ func TestWebPalette(t *testing.T) {
 	}
 }
 
-// bubble_me is secondary at select's depth: #003643 for the default, and a
-// [theme.colors] secondary carries it along (same hue, L0.30, C0.07).
-func TestBubbleMeFollowsSecondary(t *testing.T) {
-	if p := WebPalette(nil); p[BubbleMeKey] != "#003643" {
+// bubble_me is primary_end at select's depth (docs/gui-design.md 決まったこと
+// 9): #1c2c51 for the default; a [theme.colors] primary_end carries it
+// along (same hue, L0.30); a solid border (primary alone) keeps the
+// default end's hue, never primary's.
+func TestBubbleMeFollowsPrimaryEnd(t *testing.T) {
+	if p := WebPalette(nil); p[BubbleMeKey] != "#1c2c51" {
 		t.Fatalf("default bubble_me: %q", p[BubbleMeKey])
 	}
-	p := WebPalette(&config.Theme{Colors: map[string]string{"secondary": "#ff8800"}})
+	// secondary no longer moves it
+	if p := WebPalette(&config.Theme{Colors: map[string]string{"secondary": "#ff8800"}}); p[BubbleMeKey] != "#1c2c51" {
+		t.Fatalf("bubble_me follows secondary: %q", p[BubbleMeKey])
+	}
+	p := WebPalette(&config.Theme{Colors: map[string]string{"primary": "#ff0000", PrimaryEndKey: "#ff8800"}})
 	got := p[BubbleMeKey]
-	if got == "#003643" || !hexRe.MatchString(got) {
-		t.Fatalf("bubble_me did not follow secondary: %q", got)
+	if got == "#1c2c51" || !hexRe.MatchString(got) {
+		t.Fatalf("bubble_me did not follow primary_end: %q", got)
 	}
 	rgb, _ := parseHex(got)
 	o, s := toOKLCH(rgb), toOKLCH(must("#ff8800"))
 	if d := o.H - s.H; d > 6 || d < -6 || o.L < 0.28 || o.L > 0.33 {
-		t.Fatalf("bubble_me %s: L %.3f h %.1f, secondary h %.1f", got, o.L, o.H, s.H)
+		t.Fatalf("bubble_me %s: L %.3f h %.1f, primary_end h %.1f", got, o.L, o.H, s.H)
 	}
-	// a value that is not #rrggbb is not taken: the default's bubble
-	p = WebPalette(&config.Theme{Colors: map[string]string{"secondary": "cyan"}})
-	if p[BubbleMeKey] != "#003643" {
-		t.Fatalf("bad secondary: %q", p[BubbleMeKey])
+	// solid border, or a value that is not #rrggbb: the default end's hue
+	for _, c := range []map[string]string{{"primary": "#ff0000"}, {PrimaryEndKey: "cyan"}} {
+		if p := WebPalette(&config.Theme{Colors: c}); p[BubbleMeKey] != "#1c2c51" {
+			t.Fatalf("%v: bubble_me %q", c, p[BubbleMeKey])
+		}
 	}
+}
+
+// chrome and raised: the GUI's grounds, bg's hue a step lighter; a
+// [theme.colors] bg carries them along.
+func TestWebGrounds(t *testing.T) {
+	p := WebPalette(nil)
+	if p[ChromeKey] != "#1a1927" || p[RaisedKey] != "#2a2939" {
+		t.Fatalf("defaults: %s %s", p[ChromeKey], p[RaisedKey])
+	}
+	p = WebPalette(&config.Theme{Colors: map[string]string{"bg": "#102030"}})
+	bg := toOKLCH(must("#102030"))
+	for _, k := range []string{ChromeKey, RaisedKey} {
+		o := toOKLCH(must(p[k]))
+		if o.L <= bg.L || o.H-bg.H > 6 || bg.H-o.H > 6 {
+			t.Fatalf("%s %s from bg #102030: L %.3f h %.1f", k, p[k], o.L, o.H)
+		}
+	}
+	// the light palette is fixed: every role the CSS writes, as #rrggbb
+	l := WebLightPalette()
+	for _, k := range append([]string{ChromeKey, RaisedKey, PrimaryEndKey, BubbleMeKey}, roleNames()...) {
+		if !hexRe.MatchString(l[k]) {
+			t.Fatalf("light %s: %q", k, l[k])
+		}
+	}
+	l["bg"] = "#000000"
+	if WebLightPalette()["bg"] != "#f4f4fa" {
+		t.Fatal("WebLightPalette is not a copy")
+	}
+}
+
+func roleNames() []string {
+	var out []string
+	for _, r := range WebRoles {
+		out = append(out, string(r))
+	}
+	return out
 }

@@ -2,7 +2,7 @@
 
 ローカル GUI(docs/gui.md、`internal/daemon/webui/gui/`)の見た目の基準。段階 1 の見た目は仮で(docs/gui.md の冒頭)、最終的な見た目はこの文書に照らして別の PR で作り、レビューする。
 
-**状態**: 原則の文書だけ。CSS・JS・HTML はまだ変えていない。原則の文書の PR で挙げた未決事項 12 件は、末尾の「決まったこと」のとおりユーザーが決めた(2026-11-21)。
+**状態**: 原則の文書の PR で挙げた未決事項 12 件は、末尾の「決まったこと」のとおりユーザーが決めた(2026-11-21)。見た目はこの文書に沿って実装した(`internal/daemon/webui/gui/`・`/theme.css`)。実装で決めたこと・データが無くて出していないものは末尾の「実装で決めたこと」に書いた。
 
 根拠はファイル名で添える。「モック」はユーザーが作ったデザインのモック(Dashboard・Session・Session states の 3 枚、2026-11-21。リポジトリには入れていない)と、そのハンドオフの文書を指す。モックの寸法と色は inline style から読んだ。コードと docs で確かめたことと、推測(「推測」「要確認」と書く)を分ける。
 
@@ -310,3 +310,23 @@ ui-guidelines.md のチェックリストのうち、GUI に効くものと GUI 
 - [ ] `!` で始まる send に確認シートがある(シェルのコマンドとして実行されること・宛先・全文)
 - [ ] 狭い幅で横の列が下に回り、メインが消えない
 - [ ] キーボードだけで押せて、フォーカスの輪が見える
+
+## 実装で決めたこと
+
+見た目の PR で、文書に書いていなかったことを決めたもの、文書どおりにできずに変えたもの。
+
+- **ライトは GUI のページだけ。** `/theme.css` のライトの節は `:root[data-gui]` に限った(`gui/index.html` の `<html data-gui>`)。iPhone の Web UI も同じ `/theme.css` を読むが、TUI と同じくダークだけのまま(Web UI まで OS の外観で変わると、今の見た目が変わるため)。bubble_me の変更(決まったこと 9)は両方に効く
+- **chrome と raised の導出**: 既定のダークは表の hex(`#1a1927`・`#2a2939`)。`[theme.colors]` の bg を上書きしたときだけ、その bg の色相と彩度のまま L を +0.022 / +0.090 した色にする(`theme.WebPalette`)
+- **GUI のページは `app.css` を読まない。** 共有するのは `/theme.css` と `lib/` のモジュールだけで、`lib/` が組む部品(吹き出し・画面の色・画像のサムネイル・確認シート)の見た目も `gui/gui.css` に書いた
+- **タイトルバーの検索欄**はサイドバーの絞り込み(名前・ブランチ・リポジトリ)。コマンドの実行・PR や依頼の検索は段階 2 の候補。`n New session` は GUI から作る API が無いので出していない
+- **アイコンレール**は Sessions だけ。Worktrees・Changes・Settings はビューが無いので出していない(段階 2 の候補)
+- **Inbox のカード**: 見出しは pekoed の項目なら問いの文、エージェントの項目なら pekoe の言葉(`A decision asked by <slug>`)にし、エージェントの文は事実の後に「The agent says」として出す(事実が先)。主ボタンは `Answer…`(選んだら `<選択肢>…`)で、確認シートを通す。選択肢は既定で選ばない。PR の URL があれば `Open PR #n`。レポートの要約(エージェントの言葉)と `View diff` は今の API に無いので出していない
+- **Overview** は `Right now` の件数のタイルだけ。日別のマージ数の棒・今日のトークンは API に無いので出していない(値を作らない。段階 2 の候補)
+- **Requests** はセッションが持つ依頼(`/api/overview` の `groups[].request`)から作る。台帳そのものの一覧と「Open ledger」は API に無いので出していない
+- **tapi パネル**は tapi の transcript の吹き出し。モックの「送受信の一覧(差出人 → 宛先・種別)」と `T Reset` は API に無い。前を読むのは、ページが持っている分(最大 1500 件)を `Show earlier` で 120 件ずつ出し、transcript の `earlier` が立っていれば「ここには無い、TUI で」と出す(決まったこと 7)
+- **Session の右パネル**は `/api/sessions` にあるもの(SESSION・CHANGES・LINKED・NOTICES)。USAGE・Cost・BACKGROUND・モデル・auto mode は API に無いので出していない
+- **送達**: `delivered` は send の応答が返った(pekoed がエージェントの入力欄に打った)こと。エージェントが取り込んだかを pekoed は知らないので `queued · agent is busy` は出していない。送れなければ `✗ not sent · <理由>` と `Retry`
+- **鮮度**: `◉ live · updated Ns ago`・`✗ stale · last screen Ns ago · retrying`・一時停止・選択中の保留。間隔は固定なので `idle · checking every …` は出さない(決まったこと 8)
+- **キー**: 入力欄の外でだけ効く。`:` 絞り込み、許可のカードで `y` / `A` / `n`(確認シートを開くだけ)、質問のカードで `1`〜`9`、送信欄で `⌘↵`。ステータスラインにはそのビューのキーだけを出す
+- **`!` の判定**は `gui/shell.js`(pekoed の `shellBang` と同じ。`TestGUIShellBangMatchesPekoed` が同じ入力で突き合わせる)
+

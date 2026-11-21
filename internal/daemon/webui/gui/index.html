@@ -1,164 +1,215 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-gui>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <meta name="referrer" content="no-referrer">
 <title>pekoe</title>
 <link rel="icon" href="/icon.png">
 <link rel="stylesheet" href="/theme.css">
-<link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/gui/gui.css">
 <script type="module" src="/gui/gui.js"></script>
 </head>
-<!-- the local GUI's desktop page (docs/gui.md 段階 1): the sessions on the
-     left, the view on the right. What it draws with is shared with the
-     phone's page (lib/); the sheets keep the phone's ids. -->
+<!-- the local GUI's desktop page (docs/gui.md 段階 1, look: docs/gui-design.md):
+     the title bar, the sessions on the left (icon rail + list), the tabs
+     and the view, the status line. What it draws with is shared with the
+     phone's page (lib/); the sheets keep the phone's ids. No style here:
+     every style is in gui.css (TestGUIStylesOnlyInCSS). -->
 <body class="gui">
-<header class="bar">
-  <h1 class="pill" id="title">pekoe</h1>
-  <nav class="view-nav" id="nav" aria-label="views">
-    <a class="view-tab" id="n-overview" href="#/">Overview</a>
-    <a class="view-tab" id="n-inbox" href="#/inbox">Inbox <span class="badge" id="n-inbox-n" hidden></span></a>
-    <a class="view-tab" id="n-tapi" href="#/tapi"><span class="ic" id="n-tapi-ic">○</span> tapi chat</a>
-  </nav>
-  <span class="sum" id="sum"></span>
-  <span class="signed-in-as" id="who"></span>
+<header class="titlebar">
+  <div class="tb-left"><span class="brand">pekoe</span></div>
+  <label class="search" for="q">
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+    <input type="search" id="q" placeholder="Filter sessions by name or repository" autocomplete="off" spellcheck="false" aria-label="filter sessions">
+    <span class="kbd" aria-hidden="true">:</span>
+  </label>
+  <div class="tb-right">
+    <span class="daemon" id="daemon" aria-live="polite"></span>
+    <button type="button" class="btn sm" id="theme-btn" aria-label="switch theme">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>
+      <span id="theme-word">Light</span>
+    </button>
+  </div>
 </header>
 
-<div class="gui-layout">
-  <aside class="session-list panel" id="side" aria-label="sessions">
-    <div class="ttl"><span class="name">◆ Sessions</span> <span id="s-count"></span></div>
-    <div class="session-rows" id="s-rows" aria-live="polite"></div>
-    <div class="foot" id="s-foot" hidden></div>
+<div class="gui-body">
+  <aside class="sidebar" aria-label="sessions">
+    <nav class="rail" aria-label="views">
+      <button type="button" class="rail-btn" aria-label="Sessions" title="Sessions" aria-current="true">
+        <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M8 2L2 5l6 3 6-3-6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg>
+      </button>
+    </nav>
+    <div class="session-list">
+      <div class="side-head"><span class="label">SESSIONS</span><span class="label-n" id="s-count"></span></div>
+      <div class="chips" role="group" aria-label="show">
+        <button type="button" class="chip" data-filter="all" aria-pressed="true">All <span class="n" id="f-all"></span></button>
+        <button type="button" class="chip" data-filter="needs" aria-pressed="false">Needs you <span class="n" id="f-needs"></span></button>
+        <button type="button" class="chip" data-filter="running" aria-pressed="false">Running <span class="n" id="f-running"></span></button>
+      </div>
+      <div class="session-rows" id="s-rows">
+        <button type="button" class="tapi-card" id="s-tapi"></button>
+        <div id="s-groups"></div>
+      </div>
+      <div class="side-foot" id="s-foot" hidden></div>
+    </div>
   </aside>
 
-  <main class="gui-view" id="overview" hidden>
-    <section class="panel">
-      <div class="ttl"><span class="name">◆ Overview</span> <span class="at" id="o-at"></span></div>
-      <div class="counts" id="o-counts"></div>
-    </section>
-    <section class="panel">
-      <div class="ttl"><span class="name">◆ tapi</span></div>
-      <div class="tapi" id="o-tapi"></div>
-      <a class="btn key small open-tapi" href="#/tapi">talk to tapi ›</a>
-    </section>
-    <section class="panel focus">
-      <div class="ttl"><span class="name">◆ Flow</span> <span class="dim">impl → review → PR → CI → merge · what is missing before a merge</span></div>
-      <div class="dashboard-scroll">
-        <table class="dashboard-table" id="o-flow">
-          <thead>
-            <tr>
-              <th class="col-session" scope="col">session</th>
-              <th class="col-state" scope="col">state</th>
-              <th class="col-step" scope="col">impl</th>
-              <th class="col-step" scope="col">review</th>
-              <th class="col-step" scope="col">PR</th>
-              <th class="col-step" scope="col">CI</th>
-              <th class="col-step" scope="col">merge</th>
-              <th class="col-missing" scope="col">missing before a merge</th>
-            </tr>
-          </thead>
-        </table>
-        <div class="empty" id="o-empty" hidden>no sessions</div>
+  <main class="main">
+    <div class="tabs" role="tablist" id="tabs" aria-label="views"></div>
+
+    <!-- Dashboard: Inbox · Overview · Pipeline · Requests, tapi on the right -->
+    <div class="view dashboard" id="dashboard" hidden>
+      <div class="dash-main">
+        <section class="dash-sec" id="inbox" aria-labelledby="h-inbox">
+          <div class="sec-head"><h2 id="h-inbox">Inbox</h2><span class="sec-n" id="i-count"></span><span class="rule" aria-hidden="true"></span></div>
+          <div class="inbox-list" id="i-rows" aria-live="polite"></div>
+          <div class="merges" id="i-merges" hidden></div>
+        </section>
+        <section class="dash-sec" aria-labelledby="h-overview">
+          <div class="sec-head"><h2 id="h-overview">Overview</h2><span class="rule" aria-hidden="true"></span></div>
+          <div class="tiles" id="o-tiles"></div>
+        </section>
+        <section class="dash-sec" aria-labelledby="h-pipeline">
+          <div class="sec-head"><h2 id="h-pipeline">Pipeline</h2><span class="sec-n" id="p-count"></span><span class="rule" aria-hidden="true"></span></div>
+          <div class="table-box">
+            <table class="pipeline" id="o-flow">
+              <thead>
+                <tr>
+                  <th class="col-branch" scope="col">Branch</th>
+                  <th class="col-step" scope="col">impl</th>
+                  <th class="col-step" scope="col">review</th>
+                  <th class="col-step" scope="col">PR</th>
+                  <th class="col-step" scope="col">CI</th>
+                  <th class="col-step" scope="col">merge</th>
+                  <th class="col-status" scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="o-rows"></tbody>
+            </table>
+            <div class="empty" id="o-empty" hidden>No sessions</div>
+          </div>
+        </section>
+        <section class="dash-sec" aria-labelledby="h-requests">
+          <div class="sec-head"><h2 id="h-requests">Requests</h2><span class="sec-n" id="r-count"></span><span class="rule" aria-hidden="true"></span></div>
+          <div class="list-box" id="r-rows"></div>
+        </section>
       </div>
-    </section>
-  </main>
 
-  <main class="gui-view" id="inbox" hidden>
-    <section class="panel focus">
-      <div class="ttl"><span class="name">◆ Inbox</span> <span id="i-count"></span></div>
-      <div class="cap">pekoe's facts and links come first, the agent's words after. A recommendation is the agent's opinion and is not preselected.</div>
-      <div class="inbox-list" id="i-rows" aria-live="polite"></div>
-    </section>
-  </main>
-
-  <main class="gui-view detail" id="detail" hidden>
-    <section class="panel session-head" id="d-head-panel">
-      <div class="ttl"><span class="name" id="d-kind">◆ Session</span></div>
-      <div class="head" id="d-head"></div>
-    </section>
-    <section class="card session-ask" id="d-ask" hidden></section>
-    <div class="session-work">
-      <section class="panel focus screen-panel screen-pane" id="d-panel">
-        <div class="ttl" id="d-ttl"><span class="name">&gt; Agent</span> <span id="d-name"></span></div>
-        <div class="ttl chat-ttl" id="c-ttl" hidden>
-          <span class="name"><span class="face" id="c-face" aria-hidden="true"></span> <span class="t">tapi chat</span> <span class="state" id="c-state"></span></span>
-          <span class="seg" role="group" aria-label="view">
-            <button type="button" id="c-v-chat" aria-pressed="true">chat</button>
-            <button type="button" id="c-v-screen" aria-pressed="false">screen</button>
-          </span>
+      <aside class="tapi-panel" aria-label="tapi">
+        <div class="tp-head">
+          <a class="tp-name" href="#/tapi">tapi</a>
+          <span class="tp-state" id="c-state"></span>
         </div>
-        <div class="chat" id="c-chat" hidden>
+        <div class="chat" id="c-chat">
           <div class="log" id="c-log" role="log" tabindex="0">
+            <div id="c-earlier"></div>
             <div id="c-items"></div>
             <div id="c-tail"></div>
           </div>
-          <button type="button" class="jump" id="c-jump" hidden><span class="r-secondary">↓</span> latest</button>
+          <button type="button" class="jump" id="c-jump" hidden><span class="r-secondary">↓</span> Latest</button>
         </div>
-        <div class="screen-box" id="d-screen-box">
-          <div class="screen-tools">
-            <button type="button" class="btn key small" id="d-pause" aria-pressed="false">❚❚ pause</button>
-            <span id="d-live"></span>
-            <span class="c-why" id="c-why" hidden></span>
-            <span class="at" id="d-at"></span>
+        <form class="composer tapi-composer" id="c-send" autocomplete="off">
+          <label class="comp-label" for="c-text">Ask tapi</label>
+          <div class="comp-box">
+            <textarea id="c-text" rows="3" maxlength="4000" placeholder="ask tapi"></textarea>
+            <div class="comp-row">
+              <button type="button" class="btn sm shell" id="c-shell"><span class="k">!</span> Shell</button>
+              <button type="submit" class="btn sm primary push" id="c-send-btn"><span class="k">⌘↵</span> Send</button>
+            </div>
           </div>
-          <pre id="d-screen" tabindex="0"></pre>
-        </div>
-      </section>
-      <section class="card keypad" id="d-keys" hidden aria-label="question menu keys">
-        <div class="keys-cap"><span class="ic r-warn">?</span>question menu · a key is sent as soon as you press it</div>
-        <div class="keys-grid arrows">
-          <span></span>
-          <button type="button" class="btn key" data-key="Up" aria-label="up">↑</button>
-          <span></span>
-          <button type="button" class="btn key" data-key="Left" aria-label="left">←</button>
-          <button type="button" class="btn key" data-key="Down" aria-label="down">↓</button>
-          <button type="button" class="btn key" data-key="Right" aria-label="right">→</button>
-        </div>
-        <div class="keys-grid three">
-          <button type="button" class="btn key" data-key="Tab">Tab</button>
-          <button type="button" class="btn key" data-key="BTab" aria-label="Shift-Tab">⇧Tab</button>
-          <button type="button" class="btn key" data-key="Space">Space</button>
-        </div>
-        <div class="keys-grid nums">
-          <button type="button" class="btn key" data-key="1">1</button>
-          <button type="button" class="btn key" data-key="2">2</button>
-          <button type="button" class="btn key" data-key="3">3</button>
-          <button type="button" class="btn key" data-key="4">4</button>
-          <button type="button" class="btn key" data-key="5">5</button>
-          <button type="button" class="btn key" data-key="6">6</button>
-          <button type="button" class="btn key" data-key="7">7</button>
-          <button type="button" class="btn key" data-key="8">8</button>
-          <button type="button" class="btn key" data-key="9">9</button>
-        </div>
-        <div class="keys-grid two">
-          <button type="button" class="btn deny" data-key="Escape">Esc</button>
-          <button type="button" class="btn allow" data-key="Enter">Enter ⏎</button>
-        </div>
-      </section>
+          <div class="delivery" id="c-delivery" aria-live="polite" hidden></div>
+        </form>
+      </aside>
     </div>
-    <form class="send" id="d-send" autocomplete="off">
-      <div class="to" id="d-to" aria-live="polite">
-        <span class="to-k">to</span>
-        <span class="to-slug" id="d-to-slug"></span>
-        <span class="to-repo" id="d-to-repo"></span>
+
+    <!-- Session (or tapi): header, the screen and the input, facts on the right -->
+    <div class="view detail" id="detail" hidden>
+      <div class="s-head">
+        <div class="s-head-main" id="d-head"></div>
+        <span class="fresh" id="d-fresh" aria-live="off"></span>
+        <button type="button" class="btn xs" id="d-refresh">Refresh</button>
       </div>
-      <div class="send-note" id="d-send-note" hidden></div>
-      <!-- images for the next send (choose, paste or drop): the page
-           re-encodes each as JPEG or PNG; pekoed checks and saves them -->
-      <div class="thumbs" id="d-thumbs" hidden></div>
-      <div class="send-row">
-        <span class="attach" id="d-attach">
-          <label class="ibtn" for="d-file" aria-label="attach images" title="attach images (or paste / drop them)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg><input type="file" id="d-file" accept="image/*" multiple></label>
-        </span>
-        <textarea id="d-text" rows="2" maxlength="4000" placeholder="send a short instruction · ⌘⏎ to send" aria-describedby="d-to"></textarea>
-        <button type="submit" class="ibtn go" id="d-send-btn" aria-label="send" title="send (⌘⏎)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5l16 7.5-16 7.5 2.5-7.5z"/><path d="M7 12h6"/></svg></button>
+      <div class="s-cols">
+        <div class="s-center">
+          <section class="screen" aria-label="Screen">
+            <div class="screen-head">
+              <span class="screen-name">Screen</span>
+              <span class="dim">last 80 lines</span>
+              <span class="push"></span>
+              <button type="button" class="btn xs" id="d-follow" hidden>Follow ↓</button>
+              <button type="button" class="btn xs" id="d-pause" aria-pressed="false">Pause</button>
+            </div>
+            <div class="screen-scroll" id="d-screen-scroll">
+              <pre id="d-screen" tabindex="0"></pre>
+            </div>
+          </section>
+          <div class="dock">
+            <div class="delivery" id="d-delivery" aria-live="polite" hidden></div>
+            <section class="wait-card focus-card" id="d-ask" hidden></section>
+            <section class="wait-card focus-card keypad" id="d-keys" hidden aria-label="question">
+              <div class="wc-head"><span class="r-warn">◉</span><span class="wc-title">Question from the agent</span><span class="dim" id="d-keys-age"></span></div>
+              <div class="wc-q" id="d-keys-q"></div>
+              <div class="wc-cap dim">Each key goes to the agent's menu as soon as you press it. Watch the screen above.</div>
+              <div class="keys nums">
+                <button type="button" class="btn key" data-key="1"><span class="k">1</span></button>
+                <button type="button" class="btn key" data-key="2"><span class="k">2</span></button>
+                <button type="button" class="btn key" data-key="3"><span class="k">3</span></button>
+                <button type="button" class="btn key" data-key="4"><span class="k">4</span></button>
+                <button type="button" class="btn key" data-key="5"><span class="k">5</span></button>
+                <button type="button" class="btn key" data-key="6"><span class="k">6</span></button>
+                <button type="button" class="btn key" data-key="7"><span class="k">7</span></button>
+                <button type="button" class="btn key" data-key="8"><span class="k">8</span></button>
+                <button type="button" class="btn key" data-key="9"><span class="k">9</span></button>
+              </div>
+              <div class="keys">
+                <button type="button" class="btn key" data-key="Up" aria-label="up"><span class="k">↑</span></button>
+                <button type="button" class="btn key" data-key="Down" aria-label="down"><span class="k">↓</span></button>
+                <button type="button" class="btn key" data-key="Left" aria-label="left"><span class="k">←</span></button>
+                <button type="button" class="btn key" data-key="Right" aria-label="right"><span class="k">→</span></button>
+                <button type="button" class="btn key" data-key="Tab"><span class="k">Tab</span></button>
+                <button type="button" class="btn key" data-key="BTab" aria-label="Shift-Tab"><span class="k">⇧Tab</span></button>
+                <button type="button" class="btn key" data-key="Space"><span class="k">Space</span></button>
+              </div>
+              <div class="keys">
+                <button type="button" class="btn primary" data-key="Enter"><span class="k">↵</span> Enter</button>
+                <button type="button" class="btn" data-key="Escape"><span class="k">esc</span> Escape</button>
+                <button type="button" class="btn" id="d-type-else">Type something else</button>
+              </div>
+            </section>
+            <form class="composer focus-card" id="d-send" autocomplete="off">
+              <div class="comp-label" id="d-to" aria-live="polite">
+                <span class="to-k">Send to</span>
+                <span class="to-slug" id="d-to-slug"></span>
+                <span class="to-repo" id="d-to-repo"></span>
+              </div>
+              <div class="send-note" id="d-send-note" hidden></div>
+              <!-- images for the next send (choose, paste or drop): the page
+                   re-encodes each as JPEG or PNG; pekoed checks and saves them -->
+              <div class="thumbs" id="d-thumbs" hidden></div>
+              <textarea id="d-text" rows="3" maxlength="4000" placeholder="send a short instruction" aria-describedby="d-to"></textarea>
+              <div class="comp-row">
+                <span class="attach" id="d-attach">
+                  <label class="btn icon" for="d-file" aria-label="attach images" title="attach images (or paste / drop them)">+<input type="file" id="d-file" accept="image/*" multiple></label>
+                </span>
+                <button type="button" class="btn shell" id="d-shell" title="a line starting with ! runs as a shell command in the agent"><span class="k">!</span> Shell</button>
+                <button type="submit" class="btn primary push" id="d-send-btn"><span class="k">⌘↵</span> Send</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <aside class="s-info" id="d-info" aria-label="session facts"></aside>
       </div>
-    </form>
+    </div>
   </main>
 </div>
+
+<footer class="statusline" id="status">
+  <span class="mode" id="st-mode">DASHBOARD</span>
+  <span class="seg" id="st-seg" hidden></span>
+  <span class="st-info" id="st-info"></span>
+  <span class="hints" id="st-hints"></span>
+</footer>
 
 <div class="sheet-back" id="sheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
@@ -169,7 +220,7 @@
     <div class="sheet-cap">screen — the prompt as the agent shows it (scroll up for more)</div>
     <pre class="input sheet-screen" id="sheet-screen"></pre>
     <div class="row">
-      <button class="btn" id="sheet-cancel">cancel</button>
+      <button class="btn" id="sheet-cancel">Cancel</button>
       <button class="btn" id="sheet-ok"></button>
     </div>
   </div>
@@ -186,8 +237,8 @@
     <pre class="input" id="isheet-a"></pre>
     <div class="sheet-warn" id="isheet-warn" hidden></div>
     <div class="row">
-      <button class="btn" id="isheet-cancel">cancel</button>
-      <button class="btn allow" id="isheet-ok">answer</button>
+      <button class="btn" id="isheet-cancel">Cancel</button>
+      <button class="btn allow primary" id="isheet-ok">Answer</button>
     </div>
   </div>
 </div>
@@ -205,8 +256,28 @@
     <div class="sheet-cap" id="tsheet-imgs-cap" hidden></div>
     <div class="thumbs" id="tsheet-imgs" hidden></div>
     <div class="row">
-      <button class="btn" id="tsheet-cancel">cancel</button>
-      <button class="btn allow" id="tsheet-ok">send</button>
+      <button class="btn" id="tsheet-cancel">Cancel</button>
+      <button class="btn allow" id="tsheet-ok">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- the shell sheet (docs/gui-design.md 決まったこと 6): a send whose text
+     starts with ! (pekoed's shellBang) runs as a shell command in the
+     agent's input box, with no permission prompt: what runs, and where,
+     before it goes -->
+<div class="sheet-back" id="xsheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="xsheet-title">
+    <h2 id="xsheet-title">Run a shell command</h2>
+    <div class="sheet-warn" id="xsheet-warn"></div>
+    <div class="sheet-cap">where — the agent's input box (its working directory)</div>
+    <div class="target" id="xsheet-to"></div>
+    <div class="sheet-cap" id="xsheet-cap">text — all of it, as it will be typed</div>
+    <pre class="input whole" id="xsheet-text"></pre>
+    <div class="sheet-cap" id="xsheet-imgs" hidden></div>
+    <div class="row">
+      <button class="btn" id="xsheet-cancel">Cancel</button>
+      <button class="btn" id="xsheet-ok">Run it</button>
     </div>
   </div>
 </div>
