@@ -30,6 +30,7 @@ import { paneWidth, SIDE_PANE, TAPI_PANE } from "./panewidth.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
+import { confirmSheet } from "./confirm.js";
 import { picker } from "./picker.js";
 import { agentRows, updateNotice, nodes, panelFacts } from "./panel.js";
 
@@ -158,12 +159,20 @@ function closeTab(slug) {
 
 async function refresh() {
   try {
-    const [r, t] = await Promise.all([api("/api/sessions"), api("/api/tapi").catch(() => null)]);
+    // the sidebar's "Ready to merge", Needs you, a session's header and
+    // LINKED read the overview on every screen: off the Dashboard it is
+    // read here too (else it stays as it was when the Dashboard was left)
+    const [r, t, o] = await Promise.all([
+      api("/api/sessions"),
+      api("/api/tapi").catch(() => null),
+      view === "dashboard" ? null : api("/api/overview").catch(() => null),
+    ]);
     sessions = r.sessions || [];
     tapi = t;
     listOk = Date.now();
     listFail = "";
     if (view === "dashboard") await refreshDashboard();
+    else if (o) overview = o;
     renderSide();
     renderTabs();
     if (view === "detail") renderDetail();
@@ -1009,56 +1018,13 @@ function renderStatus() {
 
 // ---- New session, tapi's Reset, Interrupt (actions.js): each through #csheet ----
 
-let csheet = null; // {run, back}: what OK does, what Cancel goes back to
-
-// openConfirm shows w (actions.js's words) in #csheet. run() does it; it
-// may return a function to call once the sheet is closed. back: Cancel
-// goes back there (the New session form) instead of closing.
-function openConfirm(w, run, back) {
-  csheet = { run, back };
-  busy = true;
-  $("csheet").querySelector(".sheet").classList.toggle("danger", !!w.danger);
-  $("csheet-title").textContent = w.title;
-  $("csheet-to-cap").textContent = w.toCap;
-  $("csheet-to").textContent = w.to;
-  const box = $("csheet-facts");
-  box.replaceChildren();
-  for (const f of w.facts) box.append(el("div", "sheet-cap", f.cap), el(f.pre ? "pre" : "div", f.pre ? "input whole" : "sheet-fact", f.text));
-  $("csheet-warn").textContent = w.warn;
-  $("csheet-warn").hidden = !w.warn;
-  $("csheet-cancel").textContent = back ? "Back" : "Cancel";
-  const ok = $("csheet-ok");
-  ok.textContent = w.ok;
-  ok.className = "btn" + (w.danger ? "" : " primary"); // a destructive one is never the main button
-  ok.disabled = false;
-  $("csheet").hidden = false;
-  (w.focusOk ? ok : $("csheet-cancel")).focus();
-}
-
-function closeConfirm() {
-  const c = csheet;
-  $("csheet").hidden = true;
-  csheet = null;
-  busy = false;
-  if (c && c.back) c.back();
-}
-
-async function confirmRun() {
-  const c = csheet;
-  if (!c || $("csheet-ok").disabled) return;
-  $("csheet-ok").disabled = true;
-  let after = null;
-  try {
-    after = await c.run();
-  } catch (e) {
-    toast(e.message);
-  }
-  $("csheet").hidden = true;
-  csheet = null;
-  busy = false;
-  if (typeof after === "function") after();
-  refresh();
-}
+// confirm.js: OK runs it; while its request runs, Cancel / Back and Esc
+// wait (the sheet closes when the request ends)
+const { open: openConfirm, close: closeConfirm, run: confirmRun } = confirmSheet({
+  setBusy: (b) => (busy = b),
+  toast,
+  refresh: () => refresh(),
+});
 
 // New session: the form (#nsheet), then the confirm sheet. The fields keep
 // what was typed until a session is made.
