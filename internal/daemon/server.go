@@ -667,6 +667,7 @@ func (d *Daemon) registerHandlers() {
 		"session.transcript": bind(d.hSessionTranscript),
 		"session.commands":   bind(d.hSessionCommands),
 		"session.files":      bind(d.hSessionFiles),
+		"session.panel":      bind(d.hSessionPanel),
 		"session.screen":     bind(d.hScreen),
 		"session.resize":     bind(d.hResize),
 		"session.seen":       bind(d.hSeen),

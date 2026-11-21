@@ -2,7 +2,7 @@
 
 pekoed が動いている Mac 自身のブラウザから、localhost で待ち受ける Web の画面で pekoe を操作する。
 
-**状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 は一部(New session・tapi の Reset・Interrupt、セッションの吹き出しと送信欄の `/ Commands`・`@ Files`。下の「段階 2 の一部」の 2 つの節)を実装し、残りと段階 4 の大半は設計で、まだコードは無い。
+**状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 は一部(New session・tapi の Reset・Interrupt、issue から New session・tapi の Start、セッションの吹き出しと送信欄の `/ Commands`・`@ Files`、サイドバーのビューの枠(レール)、Session の右パネルのモデル・モード・Context・更新。下の「段階 2 の一部」の 5 つの節)を実装し、残りと段階 4 の大半は設計で、まだコードは無い。
 
 **見た目は [docs/gui-design.md](gui-design.md) のとおり。** 段階 1 は配置とデータのつなぎ込みまでで見た目は仮にしてあり、その後の PR でデザイン原則に沿って作り直した(タイトルバー・アイコンレール付きのサイドバー・タブ・ステータスライン、Dashboard・Session・許可と質問のカード、ダークとライト)。GUI のスタイルは `webui/gui/gui.css` にだけ書く(HTML の `style` 属性・`gui/` のスクリプトからの `style` の書き込み・外から読むフォントや CSS は無い。`TestGUIStylesOnlyInCSS`。例外は画面の色というデータで、エージェントの画面の `#rrggbb` の色は前から `lib/term.js` が CSSOM で入れている)。GUI のページは今の Web UI の `app.css` を読まない(共有するのは `/theme.css` のトークンと `lib/` のモジュール)。レビューで決まったことは下の「決まったこと」にまとめた。
 
@@ -129,6 +129,19 @@ export default {
 - 見た目は既存の部品を使う: 区画の頭は `side-head` と `label`(大文字の小さなラベル)、行は `srow`(開いている行は `sel` と `aria-current`)、空は `empty`。新しい class は gui.css のそのビューの節に、`TestGUIStylesOnlyInCSS` のとおり。描画は `lib/dom.js` の `el`・`txt`・`colored` で textContent だけ(`TestWebInboxScriptIsText` が `gui/views/` も見る)
 - 状態の記号・色・語は `gui/states.js`(`stateBits`・`tapiState`・`readySet`)を使い、Sessions・Session のヘッダとそろえる(docs/gui-design.md の決まったこと 3)
 - 人だけの操作(書き込み・削除・設定の書き込み)をビューに置くなら、今の操作と同じく確認シートを通し、GUI の mux にだけ登録する(Settings の書き込みは今の範囲の外)
+
+### 段階 2 の一部: Session の右パネルのモデル・モード・Context・更新
+
+Session の右パネルに `AGENT` の節(モデル・effort・モード・Context のトークン数)を足し、`NOTICES` に `Update installed` を出す(`gui/panel.js`)。データは `GET /api/sessions/{slug}/panel` = `session.panel`(GUI の mux だけ・人間だけ。`internal/daemon/sessionpanel.go`)。ページは Session を開いている間、一覧の更新(3 秒)のついでに 5 秒より古ければ読み直す。
+
+- **モデル**: transcript の最後の assistant の `message.model`(`last_model`。hook のたびに pekoed が読んでいるもの)。`claude-<名前>-<n>-<n>`(日付つきも)は Claude Code の呼び方(`claude-opus-5-5` → `Opus 5.5`)、それ以外は id のまま。id は `[A-Za-z0-9._:-]` の 80 文字までだけ
+- **effort**: hook の共通入力の `effort.level`(Claude Code の hooks の公式の形。`PreToolUse`・`PostToolUse`・`Stop` などツールの文脈のある hook と effort のあるモデルだけに来る)。まだ来ていなければ pekoe が起動に渡したもの(`pekoe new --effort`、`[agents.*] effort`)に `· as started` を添える。値は `low`・`medium`・`high`・`xhigh`・`max` だけ
+- **モード**: hook の共通入力の `permission_mode`(`default`・`plan`・`acceptEdits`・`auto`・`dontAsk`・`bypassPermissions` だけ)。語は Claude Code のモードの呼び方(`default` は Manual なので `manual`)。`auto`(`auto mode on`)と `bypassPermissions` は warn(docs/gui-design.md のトークン表の用途「auto mode」。エージェントが聞かずに動くことを人に知らせる)。値を持たない hook は前の値を残す。⇧Tab で切り替えてから次の hook までは古い
+- **Context**: `tokens`(最後の usage の合計)を TUI と同じ短縮(`115.4k tokens`。正確な数は `title`)。**% とゲージは出さない**: 窓の大きさは transcript に無く(statusline の入力だけ)、200k と決め打つと 1M の窓のモデルで誤る。5h / 7d・Context の % は statusline の中継を入れてから(後回し)。Cost と BACKGROUND は出さない
+- **Update installed**: エージェントが動かしている版(transcript の行の `version`。pekoe が読む最後の行のもの)と、入っている版(pekoed がエージェントのコマンドを `--version` で動かした出力)を比べ、動いている版が古ければ `✓ Update installed · 2.1.325 → 2.1.330 · restart the agent to apply`。比べるのは `x.y.z` の数どうしだけ(`2.1.99 < 2.1.100`)。`--version` の出力は 1 行目が `x.y.z (Claude Code)` のときだけ使い、それ以外(プレリリースの版・別の文・失敗)は出さない。`/restart` のボタンは作らない(再起動のときの hook の順と pekoed の状態を確かめてから。後回し)
+  - **`--version` をいつ動かすか**: パネルが読まれたときに、コマンドのプログラムごとに 10 分に 1 回まで(失敗も 10 分覚える。5 秒で打ち切り、出力は 4KB まで)。pekoed の再起動で取り直す。動かすのはエージェントのコマンドの最初の語で、その名前が `claude` のときだけ(ラッパーの `--version` は何をするか分からないので動かさない)。pekoed がエージェントを起動するときと同じコマンド
+- **Claude Code でないエージェント(codex など)**: hooks も transcript も読まず `--version` も動かさない。`AGENT` に `◦ not Claude Code: pekoe reads no model, mode or version of this agent` の 1 行だけ。tapi には出さない(tapi のパネルは別)
+- **信頼しないもの**: どれもエージェントの自己申告。hook(`session.event`)は token なしで送れ、エージェントは自分のセッションのモード・effort を偽れる。transcript もエージェントが書き換えられる(モデル・版・トークン数)。**表示だけに使い、許可・マージなどの判断には使わない。** 偽って出せるのは「auto mode でない」「更新がある」といった表示だけで、値は決まった語と数の形に絞って `textContent` で描く。`--version` を動かすのは pekoed で、エージェントはどのプログラムを動かすかを選べない(config.toml の command)。人間だけの操作にしたのは、pekoed にプログラムを動かさせる呼び出しだから
 
 MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りた(段階 0 でそのまま使えることを確かめ、段階 1 の画面もこれだけで作った)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で変えたのは、GUI の入口だけ `always` を受け付けること(`webSurface.always`)と、GUI の `/` でデスクトップ向けのページを返すこと(`webSurface.index`)。
 

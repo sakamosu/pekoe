@@ -201,6 +201,13 @@ type Session struct {
 	// was held (LandHeld): the merge time stats counts once it lands, not
 	// when the hold ended. Zero: not held.
 	LandHeldAt time.Time `json:"land_held_at,omitempty"`
+	// RunEffort, PermissionMode: the hooks' common input effort.level and
+	// permission_mode, the last a hook carried. AgentVersion: the Claude
+	// Code version on the transcript's last lines. The agent's own word:
+	// shown (the local GUI's Session panel), never decided on.
+	RunEffort      string `json:"run_effort,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+	AgentVersion   string `json:"agent_version,omitempty"`
 }
 
 // DevExit is how a session's dev hook ended.

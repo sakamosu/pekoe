@@ -188,6 +188,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#段階-2-の一部-セッションの吹き出しと送信欄の--"]
 
 [[tip]]
+id = "local-gui-session-panel"
+short = "pekoe gui の Session の右パネルにモデル・モード・Context"
+detail = "AGENT にモデルと effort、モード(auto mode は黄色)、Context のトークン数。動く Claude Code が入っている版より古ければ NOTICES に Update installed。どれも自己申告で表示だけ。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-session-の右パネルのモデルモードcontext更新"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"

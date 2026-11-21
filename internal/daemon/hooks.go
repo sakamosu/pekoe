@@ -308,6 +308,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		d.tapiEvent(hook, hp)
 		return map[string]any{"slug": slug}, nil
 	}
+	d.noteHookFacts(slug, p.Payload) // sessionpanel.go
 	var turn uint64
 	d.mu.Lock()
 	if st := d.out[slug]; st != nil {
@@ -621,9 +622,10 @@ func (d *Daemon) readTokens(slug, path string) {
 	}
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
-	tokens, model := 0, ""
+	tokens, model, version := 0, "", ""
 	for sc.Scan() {
 		var e struct {
+			Version string `json:"version"` // Claude Code's, on every line
 			Message struct {
 				Model string `json:"model"`
 				Usage struct {
@@ -644,10 +646,16 @@ func (d *Daemon) readTokens(slug, path string) {
 			if m := e.Message.Model; m != "" && m != "<synthetic>" {
 				model = m
 			}
+			if validVersion(e.Version) {
+				version = e.Version
+			}
 		}
 	}
-	if tokens > 0 || model != "" {
+	if tokens > 0 || model != "" || version != "" {
 		d.update(slug, func(s *state.Session) {
+			if version != "" {
+				s.AgentVersion = version
+			}
 			if tokens > 0 {
 				s.Tokens = tokens
 			}

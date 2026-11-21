@@ -443,6 +443,9 @@ func (d *Daemon) guiHandler(port int) http.Handler {
 	mux.HandleFunc("GET /api/sessions/{slug}/transcript", d.guiSessionTranscript)
 	mux.HandleFunc("GET /api/sessions/{slug}/commands", d.guiSessionCommands)
 	mux.HandleFunc("GET /api/sessions/{slug}/files", d.guiSessionFiles)
+	// the Session panel's model, mode, context and update (sessionpanel.go):
+	// the GUI's mux only, as the chat
+	mux.HandleFunc("GET /api/sessions/{slug}/panel", d.guiSessionPanel)
 	return d.guiGuard(port, mux)
 }
 
