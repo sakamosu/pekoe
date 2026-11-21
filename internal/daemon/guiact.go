@@ -32,19 +32,17 @@ type guiRepo struct {
 	Sessions int    `json:"sessions"`
 }
 
-// guiRepos is GET /api/repos: repo.list, as the TUI's w lists them.
+// guiRepos is GET /api/repos: repo.list, as the TUI's w lists them (the
+// ones with a directory, each directory once: guiRepoList).
 func (d *Daemon) guiRepos(w http.ResponseWriter, r *http.Request) {
-	res, err := d.CallAs(humanCaller(webVia(peerFrom(r))), "repo.list", nil)
+	ks, err := d.guiRepoList(humanCaller(webVia(peerFrom(r))))
 	if err != nil {
 		webErr(w, err)
 		return
 	}
-	ks, _ := res.([]KnownRepo)
 	out := []guiRepo{}
 	for _, k := range ks {
-		if k.Dir != "" {
-			out = append(out, guiRepo{ID: k.ID, Name: k.Name, Dir: k.Dir, Sessions: k.Sessions})
-		}
+		out = append(out, guiRepo{ID: k.ID, Name: k.Name, Dir: k.Dir, Sessions: k.Sessions})
 	}
 	writeJSON(w, map[string]any{"repos": out})
 }

@@ -3,12 +3,14 @@
 package gitx
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 type Error struct {
@@ -722,6 +725,7 @@ type Line struct {
 	Old  int    `json:"old"`
 	New  int    `json:"new"`
 	Text string `json:"text"`
+	Cut  bool   `json:"cut,omitempty"` // ReadDiff cut the text at its lineMax
 }
 
 type Hunk struct {
@@ -819,73 +823,181 @@ func diffGitPaths(rest string) (oldPath, path string) {
 	return strings.TrimPrefix(unquotePath(a), "a/"), strings.TrimPrefix(unquotePath(b), "b/")
 }
 
+// ParseDiff parses git diff's output (all of it in memory: ReadDiff reads
+// a stream).
 func ParseDiff(s string) []FileDiff {
-	var files []FileDiff
-	var f *FileDiff
-	var h *Hunk
-	oldN, newN := 0, 0
-	finishHunk := func() {
-		if f != nil && h != nil {
-			h.ID = HunkID(f.Path, *h)
-			f.Hunks = append(f.Hunks, *h)
-		}
-		h = nil
-	}
+	var p diffParser
 	for _, ln := range strings.Split(s, "\n") {
-		switch {
-		case strings.HasPrefix(ln, "diff --git "):
-			finishHunk()
-			files = append(files, FileDiff{Status: "M"})
-			f = &files[len(files)-1]
-			// diff --git a/x b/y (the only names a binary or mode-only
-			// change gets)
-			f.OldPath, f.Path = diffGitPaths(strings.TrimPrefix(ln, "diff --git "))
-		case f == nil:
-		case h == nil && strings.HasPrefix(ln, "new file mode"):
-			f.Status = "A"
-		case h == nil && strings.HasPrefix(ln, "deleted file mode"):
-			f.Status = "D"
-		case h == nil && strings.HasPrefix(ln, "rename from "):
-			f.Status = "R"
-			f.OldPath = unquotePath(strings.TrimPrefix(ln, "rename from "))
-		case h == nil && strings.HasPrefix(ln, "rename to "):
-			f.Path = unquotePath(strings.TrimPrefix(ln, "rename to "))
-		case h == nil && strings.HasPrefix(ln, "Binary files"):
-			f.Binary = true
-		case h == nil && strings.HasPrefix(ln, "--- "):
-		case h == nil && strings.HasPrefix(ln, "+++ "):
-			if p := headerPath(strings.TrimPrefix(ln, "+++ ")); p != "/dev/null" {
-				f.Path = strings.TrimPrefix(p, "b/")
+		p.line(ln, false)
+	}
+	return p.finish()
+}
+
+// ReadDiff parses a diff as it is read, holding only what it keeps.
+// lineMax > 0 cuts the text of a hunk's line at lineMax bytes (never half
+// a character; Cut is set) without reading the rest into memory. keep,
+// when set, is asked about each line of a hunk (its text already cut): a
+// line it refuses is counted (the file's Added / Deleted, the hunk's
+// numbering, skipped) but not kept, and a hunk left with no line is
+// dropped. A last line without its "\n" (git ends every line with one, so
+// the reader was stopped in the middle of it) is marked cut. The error is
+// r's.
+func ReadDiff(r io.Reader, lineMax int, keep func(Line) bool) (files []FileDiff, skipped int, err error) {
+	p := diffParser{lineMax: lineMax, keep: keep}
+	br := bufio.NewReaderSize(r, 64<<10)
+	var long []byte // a line longer than the reader's buffer: its head
+	for {
+		b, rerr := br.ReadSlice('\n')
+		if rerr == bufio.ErrBufferFull {
+			// the head is enough for any header (a path is at most 4096
+			// bytes) and for a hunk's line cut at lineMax; the rest is not kept
+			if long == nil {
+				long = append([]byte{}, b...)
 			}
-		case strings.HasPrefix(ln, "@@"):
-			finishHunk()
-			m := hunkRe.FindStringSubmatch(ln)
-			if m == nil {
-				continue
-			}
-			h = &Hunk{Header: ln, OldStart: atoi(m[1], 0), OldLines: atoi(m[2], 1), NewStart: atoi(m[3], 0), NewLines: atoi(m[4], 1)}
-			oldN, newN = h.OldStart, h.NewStart
-		case h != nil && strings.HasPrefix(ln, "+"):
-			h.Lines = append(h.Lines, Line{Kind: "+", New: newN, Text: ln[1:]})
-			newN++
-			f.Added++
-		case h != nil && strings.HasPrefix(ln, "-"):
-			h.Lines = append(h.Lines, Line{Kind: "-", Old: oldN, Text: ln[1:]})
-			oldN++
-			f.Deleted++
-		case h != nil && strings.HasPrefix(ln, " "):
-			h.Lines = append(h.Lines, Line{Kind: " ", Old: oldN, New: newN, Text: ln[1:]})
-			oldN++
-			newN++
-		case h != nil && strings.HasPrefix(ln, `\`):
-			// "\ No newline at end of file"
+			continue
 		}
+		cut := long != nil
+		if cut {
+			b, long = long, nil
+		}
+		if rerr != nil && rerr != io.EOF {
+			return p.finish(), p.skipped, rerr
+		}
+		ln := strings.TrimSuffix(string(b), "\n")
+		if rerr == io.EOF {
+			if ln != "" || cut {
+				p.line(ln, true)
+			}
+			return p.finish(), p.skipped, nil
+		}
+		p.line(ln, cut)
 	}
-	finishHunk()
-	if f != nil && f.Path == "" {
-		f.Path = f.OldPath
+}
+
+// diffParser reads a diff one line at a time (ParseDiff, ReadDiff).
+type diffParser struct {
+	lineMax int
+	keep    func(Line) bool
+	skipped int
+
+	files            []FileDiff
+	f                *FileDiff
+	h                *Hunk
+	oldN, newN       int
+	oldLeft, newLeft int  // lines the hunk's header says are still to come
+	dropped          bool // keep refused a line of h
+}
+
+func (p *diffParser) finishHunk() {
+	if p.f != nil && p.h != nil && (len(p.h.Lines) > 0 || !p.dropped) {
+		p.h.ID = HunkID(p.f.Path, *p.h)
+		p.f.Hunks = append(p.f.Hunks, *p.h)
 	}
-	return files
+	p.h, p.dropped = nil, false
+}
+
+// hunkLine adds a line of the current hunk (kind is " ", "+" or "-").
+func (p *diffParser) hunkLine(kind, text string, cut bool) {
+	l := Line{Kind: kind, Text: text, Cut: cut}
+	switch kind {
+	case "+":
+		l.New = p.newN
+		p.newN++
+		p.newLeft--
+		p.f.Added++
+	case "-":
+		l.Old = p.oldN
+		p.oldN++
+		p.oldLeft--
+		p.f.Deleted++
+	default:
+		l.Old, l.New = p.oldN, p.newN
+		p.oldN++
+		p.newN++
+		p.oldLeft--
+		p.newLeft--
+	}
+	if p.lineMax > 0 && len(l.Text) > p.lineMax {
+		l.Text, l.Cut = cutUTF8(l.Text, p.lineMax), true
+	}
+	if p.keep != nil && !p.keep(l) {
+		p.skipped++
+		p.dropped = true
+		return
+	}
+	p.h.Lines = append(p.h.Lines, l)
+}
+
+// line takes one line of the diff (without its "\n"); cut: the rest of
+// it was not read.
+func (p *diffParser) line(ln string, cut bool) {
+	switch {
+	case strings.HasPrefix(ln, "diff --git "):
+		p.finishHunk()
+		p.files = append(p.files, FileDiff{Status: "M"})
+		p.f = &p.files[len(p.files)-1]
+		// diff --git a/x b/y (the only names a binary or mode-only
+		// change gets)
+		p.f.OldPath, p.f.Path = diffGitPaths(strings.TrimPrefix(ln, "diff --git "))
+	case p.f == nil:
+	case p.h == nil && strings.HasPrefix(ln, "new file mode"):
+		p.f.Status = "A"
+	case p.h == nil && strings.HasPrefix(ln, "deleted file mode"):
+		p.f.Status = "D"
+	case p.h == nil && strings.HasPrefix(ln, "rename from "):
+		p.f.Status = "R"
+		p.f.OldPath = unquotePath(strings.TrimPrefix(ln, "rename from "))
+	case p.h == nil && strings.HasPrefix(ln, "rename to "):
+		p.f.Path = unquotePath(strings.TrimPrefix(ln, "rename to "))
+	case p.h == nil && strings.HasPrefix(ln, "Binary files"):
+		p.f.Binary = true
+	case p.h == nil && strings.HasPrefix(ln, "--- "):
+	case p.h == nil && strings.HasPrefix(ln, "+++ "):
+		if hp := headerPath(strings.TrimPrefix(ln, "+++ ")); hp != "/dev/null" {
+			p.f.Path = strings.TrimPrefix(hp, "b/")
+		}
+	case strings.HasPrefix(ln, "@@"):
+		p.finishHunk()
+		m := hunkRe.FindStringSubmatch(ln)
+		if m == nil {
+			return
+		}
+		h := &Hunk{Header: ln, OldStart: atoi(m[1], 0), OldLines: atoi(m[2], 1), NewStart: atoi(m[3], 0), NewLines: atoi(m[4], 1)}
+		p.h = h
+		p.oldN, p.newN = h.OldStart, h.NewStart
+		p.oldLeft, p.newLeft = h.OldLines, h.NewLines
+	case p.h != nil && strings.HasPrefix(ln, "+"):
+		p.hunkLine("+", ln[1:], cut)
+	case p.h != nil && strings.HasPrefix(ln, "-"):
+		p.hunkLine("-", ln[1:], cut)
+	case p.h != nil && strings.HasPrefix(ln, " "):
+		p.hunkLine(" ", ln[1:], cut)
+	case p.h != nil && ln == "" && p.oldLeft > 0 && p.newLeft > 0:
+		// a blank context line under diff.suppressBlankEmpty (git prints
+		// no space before it); the end of the output is not one
+		p.hunkLine(" ", "", false)
+	case p.h != nil && strings.HasPrefix(ln, `\`):
+		// "\ No newline at end of file"
+	}
+}
+
+func (p *diffParser) finish() []FileDiff {
+	p.finishHunk()
+	if p.f != nil && p.f.Path == "" {
+		p.f.Path = p.f.OldPath
+	}
+	return p.files
+}
+
+// cutUTF8 keeps at most n bytes of s, never half a character.
+func cutUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
 }
 
 // HunkID identifies a hunk by file path + its changed content, so the id

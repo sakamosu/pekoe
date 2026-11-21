@@ -41,6 +41,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -473,7 +474,8 @@ var subcommandFlags = map[string][]string{
 	"push":      {"--receive-pack=git-receive-pack"},
 }
 
-func run(ctx context.Context, dir string, env []string, stdin []byte, pinned bool, args ...string) ([]byte, error) {
+// command builds git's command line as RunRaw runs it.
+func command(ctx context.Context, dir string, env []string, pinned bool, args []string) (*exec.Cmd, error) {
 	var pinEnv []string
 	if pinned {
 		var err error
@@ -498,6 +500,14 @@ func run(ctx context.Context, dir string, env []string, stdin []byte, pinned boo
 	// once ctx is done, do not wait on a child git left behind (ssh on a
 	// stalled network keeps the pipes open after git itself was killed)
 	cmd.WaitDelay = time.Second
+	return cmd, nil
+}
+
+func run(ctx context.Context, dir string, env []string, stdin []byte, pinned bool, args ...string) ([]byte, error) {
+	cmd, err := command(ctx, dir, env, pinned, args)
+	if err != nil {
+		return nil, err
+	}
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -508,4 +518,41 @@ func run(ctx context.Context, dir string, env []string, stdin []byte, pinned boo
 		return out, &Error{Args: args, Stderr: stderr.String(), Err: err}
 	}
 	return out, nil
+}
+
+// RunStream runs git as RunRaw does, handing its stdout to read as it
+// comes instead of holding all of it. When read returns before the end
+// (it has what it wants), git is stopped and the rest is never read. The
+// error is read's, else git's (a git stopped that way is not an error).
+func RunStream(ctx context.Context, dir string, env []string, read func(io.Reader) error, args ...string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd, err := command(ctx, dir, env, true, args)
+	if err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return &Error{Args: args, Err: err}
+	}
+	if err := cmd.Start(); err != nil {
+		return &Error{Args: args, Stderr: stderr.String(), Err: err}
+	}
+	rerr := read(out)
+	var one [1]byte
+	early := false
+	if n, _ := out.Read(one[:]); n > 0 {
+		early = true
+		cancel() // read stopped before the end: stop git
+	}
+	werr := cmd.Wait()
+	if rerr != nil {
+		return rerr
+	}
+	if werr != nil && !(early && context.Cause(ctx) == context.Canceled) {
+		return &Error{Args: args, Stderr: stderr.String(), Err: werr}
+	}
+	return nil
 }

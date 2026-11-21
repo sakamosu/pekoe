@@ -10,15 +10,18 @@
 // title bar's box filters the files by path.
 //
 // GET /api/sessions/{slug}/changes and /diff?path= (guichanges.go), read
-// again when the session's diffstat moves. Paths and the diff's lines are
-// the agent's: text only (el / txt), and color is only on the symbols
-// and the + / − tokens.
+// again when the session's diffstat moves. Drawn again only when what is
+// shown changed (not on every 3 s refresh: a selection in the diff, the
+// focus on a row would be lost), and a diff with new text waits while
+// text in the old one is selected. Paths and the diff's lines are the
+// agent's: text only (el / txt), and color is only on the symbols and the
+// + / − tokens.
 
 import { el, colored, txt } from "../../lib/dom.js";
 import { api, TAPI } from "../../lib/api.js";
 import { diffBits } from "../dash.js";
 
-const STATUS = { A: ["ok", "added"], M: ["warn", "modified"], D: ["err", "deleted"] };
+const STATUS = { A: ["ok", "added"], M: ["warn", "modified"], D: ["err", "deleted"], T: ["warn", "type changed"] };
 
 let ctx = null; // {go}
 let ui = null; // the elements mount built
@@ -34,12 +37,30 @@ let diff = null; // that diff (null: being read)
 let diffFailed = "";
 let seq = 0; // drops answers to list reads that are no longer wanted
 let dseq = 0; // the same for diff reads
+let drawn = ""; // what render last drew from the page's data (shownSig)
+let held = false; // a draw waits for the selection in the diff to go
 
 const statSig = (s) => (s && s.diffstat ? [s.diffstat.files, s.diffstat.added, s.diffstat.deleted].join(",") : "") + "|" + (s ? s.state : "");
 
 function current() {
   if (!st.current || st.current === TAPI) return null;
   return st.sessions.find((s) => s.slug === st.current) || null;
+}
+
+// shownSig: what the drawing takes from the page's data (the rest it
+// draws is the view's own reads, which draw when they change); the open
+// diff takes nothing from it
+function shownSig() {
+  if (open !== null) return "diff";
+  const s = current();
+  if (s) return JSON.stringify([s.slug, s.branch, s.diffstat]);
+  return JSON.stringify(st.sessions.filter((x) => x.diffstat && x.diffstat.files > 0 && x.state !== "landed").map((x) => [x.slug, x.branch, x.repo, x.diffstat]));
+}
+
+function selecting(node) {
+  const sel = document.getSelection ? document.getSelection() : null;
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !node.contains) return false;
+  return node.contains(sel.anchorNode) || node.contains(sel.focusNode);
 }
 
 function reason(e) {
@@ -50,18 +71,21 @@ function reason(e) {
 
 async function readList() {
   const my = ++seq;
+  let r = null, why = "";
   try {
-    const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/changes");
-    if (my !== seq || !ui) return;
+    r = await api("/api/sessions/" + encodeURIComponent(slug) + "/changes");
+  } catch (e) {
+    why = reason(e);
+  }
+  if (my !== seq || !ui) return;
+  const was = JSON.stringify([files, overlaps, failed]);
+  if (r) {
     files = r.files || [];
     overlaps = r.overlaps || [];
-    failed = "";
-  } catch (e) {
-    if (my !== seq || !ui) return;
-    files = files || [];
-    failed = reason(e);
-  }
-  render();
+  } else files = files || [];
+  failed = why;
+  // the list is drawn when it changed (the open diff draws on its read)
+  if (open === null && JSON.stringify([files, overlaps, failed]) !== was) render();
   if (open) readDiff();
 }
 
@@ -71,12 +95,15 @@ async function readDiff() {
   try {
     const r = await api("/api/sessions/" + encodeURIComponent(slug) + "/diff?path=" + encodeURIComponent(path));
     if (my !== dseq || !ui || open !== path) return;
+    if (!diffFailed && JSON.stringify(r) === JSON.stringify(diff)) return; // the same text: kept as drawn
     diff = r;
     diffFailed = "";
   } catch (e) {
     if (my !== dseq || !ui || open !== path) return;
+    const why = e && e.status === 404 ? "No longer changed in this session" : reason(e);
+    if (!diff && why === diffFailed) return;
     diff = null;
-    diffFailed = e && e.status === 404 ? "No longer changed in this session" : reason(e);
+    diffFailed = why;
   }
   render();
 }
@@ -184,6 +211,8 @@ function renderNone(box) {
 
 function renderList() {
   const box = ui.rows;
+  // a row with the focus has it again after the rows are made anew
+  const had = document.activeElement && box.contains && box.contains(document.activeElement) ? document.activeElement.title : null;
   box.replaceChildren();
   ui.count.textContent = files ? String(files.length) : "";
   const s = current();
@@ -204,6 +233,10 @@ function renderList() {
     const shown = files.filter((c) => !q || c.path.toLowerCase().includes(q));
     box.append(...shown.map(fileRow));
     if (!shown.length && !failed) box.append(el("div", "empty", files.length ? "Nothing matches" : "No changes yet"));
+    if (had) {
+      const row = [...box.childNodes].find((b) => b.title === had);
+      if (row && row.focus) row.focus();
+    }
   }
   const foot = ui.foot;
   foot.replaceChildren();
@@ -257,7 +290,12 @@ function renderDiff() {
 
 function render() {
   if (!ui) return;
+  drawn = shownSig();
   const inDiff = open !== null;
+  // new text for the open diff while some of it is selected: drawn when
+  // the selection is gone (update looks again)
+  held = inDiff && selecting(ui.diff);
+  if (held) return;
   ui.list.hidden = inDiff;
   ui.file.hidden = !inDiff;
   if (inDiff) renderDiff();
@@ -318,14 +356,18 @@ export default {
     ui = { list, count, who, rows, foot, file, back: backBtn, path, diff: diffBox };
     slug = null;
     sig = "";
-    follow();
+    drawn = "";
+    held = false;
+    // nothing is read yet: the rail's update right after names the
+    // session open now (not the one open the last time it was shown)
   },
 
   update(state) {
     st = state;
     if (!ui) return;
+    const was = slug;
     follow();
-    render();
+    if (slug !== was || held || shownSig() !== drawn) render();
   },
 
   query(text) {
@@ -335,6 +377,7 @@ export default {
 
   unmount() {
     ui = null;
+    st = { sessions: [], current: null };
     seq++;
     dseq++;
     slug = null;
