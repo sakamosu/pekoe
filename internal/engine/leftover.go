@@ -199,12 +199,31 @@ func (r leftoverRule) pick(procs map[int]proc, in procInfo) []proc {
 			}
 		}
 	}
+	// late: p is a pane another tmux server (one a window started) opened
+	// after it started: a client from outside the window asked for it (a
+	// person's `tmux -L x new`, a new window there). Such a pane and what
+	// runs in it are not taken, nor the server while it has one (stopping
+	// it would close the pane); the panes it opened as it started are.
+	late := func(p proc) bool {
+		s, ok := procs[p.ppid]
+		if !ok || !isTmux(s.cmd) {
+			return false
+		}
+		return s.start.IsZero() || p.start.IsZero() || p.start.After(s.start.Add(muxSlack))
+	}
+	busy := map[int]bool{} // tmux servers with a late pane
+	for _, p := range procs {
+		if late(p) {
+			busy[p.ppid] = true
+		}
+	}
 	// under: one of pid's parents matched (a child that went elsewhere,
-	// or runs a system binary outside the worktree)
+	// or runs a system binary outside the worktree), not through a late
+	// pane
 	under := func(pid int) bool {
 		for n := 0; pid > 1 && n < 4096; n++ {
 			p, ok := procs[pid]
-			if !ok {
+			if !ok || late(p) {
 				return false
 			}
 			if match[p.ppid] {
@@ -216,7 +235,7 @@ func (r leftoverRule) pick(procs map[int]proc, in procInfo) []proc {
 	}
 	var out []proc
 	for pid, p := range procs {
-		if pid <= 1 || only[pid] || kept(pid) {
+		if pid <= 1 || only[pid] || kept(pid) || busy[pid] {
 			continue
 		}
 		if match[pid] || under(pid) {
@@ -224,6 +243,16 @@ func (r leftoverRule) pick(procs map[int]proc, in procInfo) []proc {
 		}
 	}
 	return out
+}
+
+// muxSlack: a pane a tmux server opened within this of its own start
+// (ps shows whole seconds) came with the command that started it.
+const muxSlack = time.Second
+
+// isTmux reports whether cmd (a process's command line) runs tmux.
+func isTmux(cmd string) bool {
+	f, _, _ := strings.Cut(cmd, " ")
+	return filepath.Base(f) == "tmux"
 }
 
 // listProcs is this user's processes: pid -> proc.
@@ -337,7 +366,8 @@ const leftoverGrace = 2 * time.Second
 // are still running now that its windows are closed (call it after
 // KillSession): pick says which. Never pekoed and what it runs, the tmux
 // server, a live window's processes, another daemon's (another socket) or
-// another session's. A process that cleared or rewrote $TMUX /
+// another session's, a pane another tmux server (one a window started)
+// opened after it started, and that server while it has one. A process that cleared or rewrote $TMUX /
 // $PEKOE_SESSION, or (environment unreadable) left the worktree or a
 // session someone holds, is not found.
 func (t *Tmux) KillLeftovers(scope LeftoverScope) ([]Leftover, error) {

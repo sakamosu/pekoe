@@ -116,6 +116,51 @@ func TestLeftoverPick(t *testing.T) {
 	}
 }
 
+// Another tmux server a's window started: the panes it opened as it
+// started are a's, and go; a pane opened in it later (a person's `tmux -L
+// x new`) stays, with what runs in it and the server.
+func TestLeftoverPickOtherTmux(t *testing.T) {
+	const sock = "/s/pekoe"
+	since := time.Date(2026, 11, 20, 10, 0, 0, 0, time.Local)
+	at := since.Add(time.Minute)
+	a := []string{"PEKOE_SESSION=a", "TMUX=/s/pekoe,10,0"}
+	procs := map[int]proc{}
+	env := map[int][]string{}
+	add := func(pid, ppid int, e []string, start time.Time, cmd string) {
+		procs[pid] = proc{pid: pid, ppid: ppid, start: start, cmd: cmd}
+		env[pid] = e
+	}
+	add(1, 0, nil, since, "/sbin/launchd")
+	add(200, 1, a, at, "/opt/homebrew/bin/tmux -L x new-session -d -s job sleep 120") // started from a's window
+	add(201, 200, nil, at.Add(time.Second), "sleep 120")                              // the pane it opened as it started
+	add(202, 201, nil, at.Add(time.Hour), "sleep 1")                                  // … and what runs in it, later
+	// a person's pane, opened later (Linux shows its environment: the
+	// server's, with the server's own $TMUX)
+	add(203, 200, []string{"PEKOE_SESSION=a", "TMUX=/tmp/tmux-501/x,200,1"}, at.Add(2*time.Second), "-zsh")
+	add(204, 203, nil, at.Add(time.Hour), "nvim")                     // … and what runs in it
+	add(300, 1, a, at, "tmux -L y new-session -d sleep 120")          // another one, only its own panes
+	add(301, 300, nil, at, "sleep 120")                               //
+	add(400, 1, a, time.Time{}, "tmux -L z new-session -d sleep 120") // start unknown
+	add(401, 400, nil, at, "sleep 120")                               //
+	add(500, 1, a, at, "/usr/local/bin/mytmux -L w")                  // not tmux: all of it goes
+	add(501, 500, []string{"HOME=/h"}, at.Add(time.Hour), "sh")       //
+	in := procInfo{
+		env:  func(pid int) []string { return env[pid] },
+		cwds: func([]int) map[int]string { return nil },
+		sid:  func(pid int) int { return pid },
+		gone: func(pid int) bool { _, ok := procs[pid]; return !ok },
+	}
+	r := leftoverRule{LeftoverScope: LeftoverScope{Slug: "a", Since: since}, socket: sock}
+	var got []int
+	for _, p := range r.pick(procs, in) {
+		got = append(got, p.pid)
+	}
+	sort.Ints(got)
+	if want := []int{201, 202, 300, 301, 500, 501}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestParseProcs(t *testing.T) {
 	out := "    1     0     0 Mon Nov 17 09:00:00 2026     /sbin/launchd\n" +
 		"  412     1   501 Thu Nov  5 10:01:02 2026     /bin/zsh -c while :; do :; done\n" +
@@ -343,5 +388,104 @@ func TestKillLeftovers(t *testing.T) {
 	// nothing left: a second call stops nothing
 	if again, err := tm.KillLeftovers(LeftoverScope{Slug: "a", Dir: wt, Since: since}); err != nil || len(again) != 0 {
 		t.Fatalf("again: %v %v", again, err)
+	}
+}
+
+// Against real tmux servers: a's window starts another tmux server and
+// leaves it; later a person (outside pekoe) opens a pane there. Closing
+// a's windows and KillLeftovers stops the pane the server opened for a,
+// and leaves the person's pane and the server.
+func TestKillLeftoversOtherTmuxServer(t *testing.T) {
+	testenv.NeedTmux(t)
+	since := time.Now()
+	d := testenv.ShortDir(t, "bx")
+	t.Setenv("TMUX_TMPDIR", d)
+	wt := filepath.Join(d, "wt")
+	if err := os.Mkdir(wt, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tm := &Tmux{Socket: "pekoe-test-lx", Session: "t", PidFile: filepath.Join(t.TempDir(), "tmux.pid")}
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", "_keeper", "sleep 120"); err != nil {
+		t.Fatal(err)
+	}
+	tm.recordPid()
+	server := tm.recordedPid()
+	const other = "pekoe-test-lxo"
+	var pids []int
+	t.Cleanup(func() { // never leave a server or a pane behind
+		for _, pid := range pids {
+			syscall.Kill(pid, syscall.SIGKILL)
+		}
+		exec.Command("tmux", "-L", other, "kill-server").Run()
+		tm.KillServer()
+		killTmuxPid(server, tm.Socket)
+	})
+	panePid := func(sess string) int {
+		t.Helper()
+		out, err := exec.Command("tmux", "-L", other, "list-panes", "-t", "="+sess, "-F", "#{pane_pid}").Output()
+		pid, err2 := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil || err2 != nil || pid <= 1 {
+			t.Fatalf("pane of %s: %q %v", sess, out, err)
+		}
+		pids = append(pids, pid)
+		return pid
+	}
+	if _, err := tm.run("new-window", "-d", "-t", "=t:", "-n", "a~agent", "-c", wt, "-e", "PEKOE_SESSION=a",
+		"tmux -L "+other+" new-session -d -s job 'sleep 120'; exec sleep 120"); err != nil {
+		t.Fatal(err)
+	}
+	var job int
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if exec.Command("tmux", "-L", other, "has-session", "-t", "=job").Run() == nil {
+			job = panePid("job")
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatal("the window did not start the other server")
+		}
+	}
+	out, _ := exec.Command("tmux", "-L", other, "display-message", "-p", "#{pid}").Output()
+	otherServer, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	pids = append(pids, otherServer)
+	// later than the server's start by more than ps's whole seconds tell
+	time.Sleep(2100 * time.Millisecond)
+	c := exec.Command("tmux", "-L", other, "new-session", "-d", "-s", "person", "-c", d, "sleep 120")
+	for _, kv := range os.Environ() { // a person's: not in pekoe's tmux
+		if !strings.HasPrefix(kv, "TMUX=") && !strings.HasPrefix(kv, "PEKOE_SESSION=") {
+			c.Env = append(c.Env, kv)
+		}
+	}
+	if out, err := c.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	person := panePid("person")
+
+	if err := tm.KillSession("a"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	stopped, err := tm.KillLeftovers(LeftoverScope{Slug: "a", Dir: wt, Since: since})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []int
+	for _, l := range stopped {
+		got = append(got, l.PID)
+	}
+	if !reflect.DeepEqual(got, []int{job}) {
+		t.Errorf("stopped %v, want only a's pane %d (%v)", got, job, stopped)
+	}
+	for end := time.Now().Add(3 * time.Second); alive(job) && time.Now().Before(end); {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if alive(job) {
+		t.Error("a's pane in the other server still runs")
+	}
+	time.Sleep(300 * time.Millisecond)
+	if !alive(person) {
+		t.Errorf("the person's pane %d was stopped", person)
+	}
+	if !alive(otherServer) {
+		t.Errorf("the other server %d (the person's pane is in it) was stopped", otherServer)
 	}
 }
