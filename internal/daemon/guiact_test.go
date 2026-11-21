@@ -304,7 +304,7 @@ func TestGUINewSession(t *testing.T) {
 // prompt), the reset sheet says the requests and the inbox stay, and the
 // New session sheet shows the whole prompt and warns of a leading '!'.
 func TestGUIActions(t *testing.T) {
-	out := runWebModule(t, `import { interruptWhy, resetSheet, newWhy, newSheet } from "gui/actions.js";
+	out := runWebModule(t, `import { interruptWhy, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "gui/actions.js";
 const s = (o) => Object.assign({ state: "running", stopped: false }, o);
 const why = [
   interruptWhy(s({}), false),
@@ -320,12 +320,21 @@ const why = [
 const reset = resetSheet({ started: true, state: "running", ledger_open: 3, inbox_open: 2 });
 const n1 = newSheet({ name: "pekoe", dir: "/r/pekoe" }, " feat/x ", "!ls\nmore");
 const n2 = newSheet({ name: "pekoe", dir: "/r/pekoe" }, "feat/x", "  ");
+const det = { number: 12, title: "<img src=x onerror=alert(1)>", author: "eve", url: "https://github.com/me/app/issues/12", text: "GitHub issue #12 に対応してください。\n~~~markdown\n# t\n~~~" };
+const n3 = newSheet({ name: "pekoe", dir: "/r/pekoe" }, "fix/12", "and a test", det);
+const n4 = newSheet({ name: "pekoe", dir: "/r/pekoe" }, "fix/12", " ", det);
+const row = { number: 12, title: "Login", labels: ["bug", "ui"], branch: "fix/login", session: { branch: "fix/12", state: "running" } };
 console.log(JSON.stringify({
   why,
   reset: [reset.danger, reset.facts.map((f) => f.text).join("\n"), reset.warn],
   new1: [n1.to, n1.facts[0].text, n1.facts[2].text, n1.facts[2].pre, n1.warn],
   new2: [n2.facts[2].pre, n2.warn],
   newWhy: [newWhy(null, "x"), newWhy({}, " "), newWhy({}, "a b"), newWhy({}, "feat/x")],
+  issue3: [n3.title, n3.facts.map((f) => f.cap + "=" + f.text).join("|"), n3.facts[3].text, n3.facts[3].pre, n3.warn],
+  issue4: [n4.facts[3].text],
+  rows: [issueLine(row), issueMeta(row), issueMeta({ number: 1, title: "x", labels: [] })],
+  branch: [pickIssueBranch("", "", row), pickIssueBranch("fix/old", "fix/old", row), pickIssueBranch("mine/x", "fix/old", row)],
+  start: [tapiStart(null), tapiStart({ started: false }), tapiStart({ started: true, alive: false }), tapiStart({ started: true, alive: true })],
 }));`)
 	var got struct {
 		Why    []bool   `json:"why"`
@@ -333,6 +342,11 @@ console.log(JSON.stringify({
 		New1   []any    `json:"new1"`
 		New2   []any    `json:"new2"`
 		NewWhy []string `json:"newWhy"`
+		Issue3 []any    `json:"issue3"`
+		Issue4 []string `json:"issue4"`
+		Rows   []string `json:"rows"`
+		Branch []string `json:"branch"`
+		Start  []string `json:"start"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("node: %v %s", err, out)
@@ -352,11 +366,30 @@ console.log(JSON.stringify({
 	if got.NewWhy[0] == "" || got.NewWhy[1] == "" || got.NewWhy[2] == "" || got.NewWhy[3] != "" {
 		t.Errorf("newWhy: %q", got.NewWhy)
 	}
+	// from an issue: the issue's text heads the prompt the sheet shows whole,
+	// the issue's author and title are named, and a warning says who wrote it
+	det := "GitHub issue #12 に対応してください。\n~~~markdown\n# t\n~~~"
+	if got.Issue3[0] != "New session in pekoe from #12" || !strings.Contains(got.Issue3[1].(string), "#12 <img src=x onerror=alert(1)> · opened by eve") ||
+		got.Issue3[2] != det+"\n\nand a test" || got.Issue3[3] != true || !strings.Contains(got.Issue3[4].(string), "whoever can open an issue") {
+		t.Errorf("issue sheet: %v", got.Issue3)
+	}
+	if got.Issue4[0] != det {
+		t.Errorf("issue sheet without a prompt: %q", got.Issue4)
+	}
+	if want := []string{"#12 Login", "bug, ui · session fix/12 · running", ""}; fmt.Sprint(got.Rows) != fmt.Sprint(want) {
+		t.Errorf("issue rows: %q", got.Rows)
+	}
+	if want := []string{"fix/login", "fix/login", "mine/x"}; fmt.Sprint(got.Branch) != fmt.Sprint(want) {
+		t.Errorf("pickIssueBranch: %q", got.Branch)
+	}
+	if want := []string{"", "start", "restart", ""}; fmt.Sprint(got.Start) != fmt.Sprint(want) {
+		t.Errorf("tapiStart: %q", got.Start)
+	}
 	// the page wires each one to its sheet, and the keys to the sheet, never
 	// to the call itself
 	js, _ := webFiles.ReadFile("webui/gui/gui.js")
 	for _, want := range []string{
-		`openConfirm(newSheet(repo, branch, prompt)`, `openConfirm(resetSheet(tapi)`, `openConfirm(w, async () => {
+		`openConfirm(newSheet(repo, branch, prompt, det)`, `openConfirm(resetSheet(tapi)`, `openConfirm(w, async () => {
     await api(apiBase(slug) + "/interrupt", {});`,
 		`if (e.key === "T") {
     e.preventDefault();
@@ -365,6 +398,21 @@ console.log(JSON.stringify({
 		if !strings.Contains(string(js), want) {
 			t.Errorf("gui.js lacks %q", want)
 		}
+	}
+	// the issue's text reaches POST /api/sessions only as the digest of what
+	// the sheet showed (pekoed reads the issue itself); issue rows and the
+	// pick are drawn with textContent (el / textContent, never HTML)
+	for _, want := range []string{`issue: det.number, issue_sig: det.sig`, `pick.textContent = is ? issueLine(is) : "none";`, `b.append(el("span", "t", issueLine(is)));`,
+		`if (e.key === "t" && tapiStart(tapi)) {`} {
+		if !strings.Contains(string(js), want) {
+			t.Errorf("gui.js lacks %q", want)
+		}
+	}
+	if strings.Contains(string(js), "det.text") {
+		t.Error("gui.js sends the issue's text itself")
+	}
+	if strings.Count(string(js), `"/api/tapi/start"`) != 1 {
+		t.Error("gui.js calls /api/tapi/start from more than one place")
 	}
 	if strings.Count(string(js), `"/interrupt"`) != 1 || strings.Count(string(js), `"/api/tapi/reset"`) != 1 || strings.Count(string(js), `api("/api/sessions", {`) != 1 {
 		t.Error("gui.js calls an operation outside its confirm sheet")
