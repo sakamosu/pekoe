@@ -121,7 +121,8 @@ type webSurface struct {
 // webMux registers the static files and the API both front doors serve.
 func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	mux := http.NewServeMux()
-	static, _ := fs.Sub(webFiles, "webui")
+	sub, _ := fs.Sub(webFiles, "webui")
+	static := webVersionedFS{sub} // the icon URLs versioned (webicon.go)
 	files := http.FileServerFS(static)
 	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -138,17 +139,23 @@ func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	}
 	// The home screen icon (webui/icon.png 180×180, icon-512.png): PNGs
 	// with no alpha, full bleed (iOS rounds the corners itself and paints
-	// transparency black). Cached for a day, unlike the pages.
-	for _, name := range []string{"icon.png", "icon-512.png"} {
+	// transparency black). The pages refer to /icon.png?v=<version>
+	// (webicon.go): that URL never changes its picture, so it is cached for
+	// good; the bare one (old pages) for a day.
+	for _, name := range webIconNames {
 		mux.HandleFunc("GET /"+name, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Cache-Control", "max-age=86400")
+			if v := r.URL.Query().Get("v"); v != "" && v == webIconVersions[name] {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "max-age=86400")
+			}
 			http.ServeFileFS(w, r, static, name)
 		})
 	}
 	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
 		b, _ := webFiles.ReadFile("webui/manifest.webmanifest")
 		w.Header().Set("Content-Type", "application/manifest+json")
-		w.Write(b)
+		w.Write(webVersionIcons(b))
 	})
 	mux.HandleFunc("GET /theme.css", d.webThemeCSS)
 	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
