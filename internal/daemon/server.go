@@ -224,6 +224,7 @@ type Daemon struct {
 	finishing   sync.Map             // slug -> chan closed when finishLand or rm of it ends (holdFinishing)
 	sendLocks   sync.Map             // slug -> *sync.Mutex: one session.send at a time (sessions.go)
 	interrupted interrupts           // when each agent was last interrupted (interrupt.go)
+	fileLists   sync.Map             // slug -> *fileListing: the last session.files listing (sessionchat.go)
 	promptLocks sync.Map             // slug -> *sync.Mutex: one snapshotPrompt at a time (hooks.go)
 	tests       testRuns             // [hooks] test runs (hooks.go)
 
@@ -661,14 +662,17 @@ func (d *Daemon) registerHandlers() {
 			}
 			return d.hKeys(p)
 		}),
-		"session.answer":    bind(d.hAnswer),
-		"session.interrupt": bind(d.hInterrupt),
-		"session.screen":    bind(d.hScreen),
-		"session.resize":    bind(d.hResize),
-		"session.seen":      bind(d.hSeen),
-		"session.kill":      bind(d.hKill),
-		"session.restart":   bind(d.hRestart),
-		"session.undo":      bind(d.hUndo),
+		"session.answer":     bind(d.hAnswer),
+		"session.interrupt":  bind(d.hInterrupt),
+		"session.transcript": bind(d.hSessionTranscript),
+		"session.commands":   bind(d.hSessionCommands),
+		"session.files":      bind(d.hSessionFiles),
+		"session.screen":     bind(d.hScreen),
+		"session.resize":     bind(d.hResize),
+		"session.seen":       bind(d.hSeen),
+		"session.kill":       bind(d.hKill),
+		"session.restart":    bind(d.hRestart),
+		"session.undo":       bind(d.hUndo),
 		"session.progress": bind(func(p slugP) (any, error) {
 			d.mu.Lock()
 			defer d.mu.Unlock()

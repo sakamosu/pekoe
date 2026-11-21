@@ -135,16 +135,28 @@
       </div>
       <div class="s-cols">
         <div class="s-center">
-          <section class="screen" aria-label="Screen">
+          <!-- the agent: its chat (the transcript as bubbles) or its screen
+               (the last 80 lines), as chosen; the screen while it waits -->
+          <section class="screen" aria-label="the agent">
             <div class="screen-head">
-              <span class="screen-name">Screen</span>
-              <span class="dim">last 80 lines</span>
+              <div class="seg-toggle" role="group" aria-label="show the agent as">
+                <button type="button" class="seg-btn" id="d-mode-chat" aria-pressed="false" title="the conversation from Claude Code's transcript: words and the tools called, no tool output">Chat</button>
+                <button type="button" class="seg-btn" id="d-mode-screen" aria-pressed="true" title="the agent's screen as it draws it (the last 80 lines)">Screen</button>
+              </div>
+              <span class="dim" id="d-pane-note">last 80 lines</span>
               <span class="push"></span>
               <button type="button" class="btn xs" id="d-follow" hidden>Follow ↓</button>
               <button type="button" class="btn xs" id="d-pause" aria-pressed="false">Pause</button>
             </div>
             <div class="screen-scroll" id="d-screen-scroll">
               <pre id="d-screen" tabindex="0"></pre>
+            </div>
+            <div class="chat s-chat" id="d-chat" hidden>
+              <div class="log" id="d-log" role="log" tabindex="0" aria-label="chat">
+                <div id="d-earlier"></div>
+                <div id="d-items"></div>
+              </div>
+              <button type="button" class="jump" id="d-jump" hidden><span class="r-secondary">↓</span> Latest</button>
             </div>
           </section>
           <div class="dock">
@@ -190,12 +202,17 @@
               <!-- images for the next send (choose, paste or drop): the page
                    re-encodes each as JPEG or PNG; pekoed checks and saves them -->
               <div class="thumbs" id="d-thumbs" hidden></div>
-              <textarea id="d-text" rows="3" maxlength="4000" placeholder="send a short instruction" aria-describedby="d-to"></textarea>
+              <!-- / and @ (picker.js): the session's commands and files, put
+                   into the text; nothing is sent from the list -->
+              <div class="picker" id="d-pick" role="listbox" aria-label="commands and files to put into the text" hidden></div>
+              <textarea id="d-text" rows="3" maxlength="4000" placeholder="send a short instruction" aria-describedby="d-to" aria-autocomplete="list"></textarea>
               <div class="comp-row">
                 <span class="attach" id="d-attach">
                   <label class="btn icon" for="d-file" aria-label="attach images" title="attach images (or paste / drop them)">+<input type="file" id="d-file" accept="image/*" multiple></label>
                 </span>
                 <button type="button" class="btn shell" id="d-shell" title="a line starting with ! runs as a shell command in the agent"><span class="k">!</span> Shell</button>
+                <button type="button" class="btn" id="d-cmds" title="the slash commands of the session's agent (or type / at the start): puts one into the text"><span class="k">/</span> Commands</button>
+                <button type="button" class="btn" id="d-files" title="the files of the session's worktree (or type @): puts @path into the text"><span class="k">@</span> Files</button>
                 <button type="submit" class="btn primary push" id="d-send-btn"><span class="k">⌘↵</span> Send</button>
               </div>
             </form>
