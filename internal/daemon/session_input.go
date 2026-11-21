@@ -41,6 +41,13 @@ func (d *Daemon) send(p sendP, agent bool) (any, error) {
 	if _, err := d.get(p.Slug); err != nil {
 		return nil, err
 	}
+	// Without the human token, never a leading '!' (shellBang): checked
+	// here, where every text an agent types goes through, not in
+	// authorize, so a path that calls send for an agent in process is held
+	// too.
+	if agent && shellBang(p.Text) {
+		return nil, errShellSend
+	}
 	// One send per session at a time, so each text is typed right after
 	// its own check, not after a check that a parallel send's wait made
 	// stale.

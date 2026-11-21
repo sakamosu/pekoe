@@ -73,6 +73,9 @@ func (d *Daemon) hSendAs(who *Caller, p sendP) (any, error) {
 		d.noteTyped(p.Slug) // a person's text: no inbox delivery in the middle of it
 	}
 	res, err := d.send(p, !who.Human())
+	if errors.Is(err, errShellSend) {
+		log.Printf("session.send from %s to %s refused: the text starts with '!'", who.ID(), p.Slug)
+	}
 	if sendLogged(who, p) {
 		d.recordSend(who, p.Slug, "send", p.Text, err)
 	}

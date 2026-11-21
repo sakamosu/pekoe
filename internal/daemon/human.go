@@ -22,8 +22,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"unicode"
 
 	"pekoe/internal/config"
 	"pekoe/internal/engine"
@@ -282,6 +284,13 @@ func (d *Daemon) authorize(req Request, who *Caller) error {
 // caller's, so an agent that gets no sandbox from pekoe would run the
 // caller's words outside the sandbox the caller is in.
 func (d *Daemon) hAgentNew(who *Caller, p newP) (any, error) {
+	// the prompt goes into the new agent's input box when its agent takes
+	// it by paste ([agents.<name>] prompt = "paste"); refused for every
+	// agent, so it does not hang on how the command line one is read
+	if shellBang(p.Prompt) {
+		log.Printf("session.new from %s refused: the prompt starts with '!'", who.ID())
+		return nil, errShellPrompt
+	}
 	if p.Repo == "" {
 		return d.hNew(p) // "repo path required"
 	}
@@ -375,3 +384,23 @@ func (d *Daemon) authorizeSend(raw json.RawMessage) error {
 
 // errDigitSend: see authorizeSend.
 var errDigitSend = errors.New("session.send without the human token: text may not start with a digit (in a permission menu it would pick a choice); start it with a word")
+
+// shellBang reports whether text, as typed (CleanText) and past leading
+// white space, starts with '!'. A '!' typed first into Claude Code's empty
+// input box (and opencode's) switches it to its shell mode: the rest of the
+// line runs as a command in that agent's directory, outside what its own
+// turn decided and without a permission prompt. A person may do that (the
+// shell mode of `pekoe send`); an agent without the human token may not
+// make another session (or itself, or tapi) run a command that way. Leading
+// spaces are refused too: what the box does with them is the agent's, and
+// no hub instruction needs them.
+func shellBang(text string) bool {
+	return strings.HasPrefix(strings.TrimLeftFunc(engine.CleanText(text), unicode.IsSpace), "!")
+}
+
+// errShellSend / errShellPrompt: see shellBang. send(p, true) and
+// hAgentNew refuse them.
+var (
+	errShellSend   = errors.New("session.send without the human token: text may not start with '!' (an agent's input box would run the rest as a shell command); start it with a word")
+	errShellPrompt = errors.New("session.new without the human token: the prompt may not start with '!' (an agent's input box would run the rest as a shell command); start it with a word")
+)
