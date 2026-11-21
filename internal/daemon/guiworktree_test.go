@@ -168,13 +168,13 @@ r.empty = box.textContent;
 console.log(JSON.stringify(r));`)
 	var got struct {
 		Loading, Text, None, Failed, Empty string
-		ReadsMount, ReadsSame, ReadsNew     int
-		Groups, Trunk                       []string
-		Rows                                [][]string
-		Imgs, ByRepo                        int
-		Went                                []string
-		AfterUnmount                        bool
-		Remount                             []any
+		ReadsMount, ReadsSame, ReadsNew    int
+		Groups, Trunk                      []string
+		Rows                               [][]string
+		Imgs, ByRepo                       int
+		Went                               []string
+		AfterUnmount                       bool
+		Remount                            []any
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("node: %v %s", err, out)
