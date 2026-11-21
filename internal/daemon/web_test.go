@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -404,6 +405,42 @@ func TestWebStatic(t *testing.T) {
 		w := doWeb(t, h, webReq{path: path, from: ipPhone})
 		if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Type"), ctype) {
 			t.Errorf("%s: %d %s", path, w.Code, w.Header().Get("Content-Type"))
+		}
+	}
+}
+
+// The home screen icons are the embedded PNGs at their size, with no
+// alpha channel and no dark corners: iOS rounds the corners itself and
+// paints anything transparent black, so the picture has to fill the square.
+func TestWebIcon(t *testing.T) {
+	_, _, _, h := webSetup(t)
+	for path, size := range map[string]int{"/icon.png": 180, "/icon-512.png": 512} {
+		w := doWeb(t, h, webReq{path: path, from: ipPhone})
+		if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("%s: %d %q", path, w.Code, w.Header().Get("Content-Type"))
+		}
+		if cc := w.Header().Get("Cache-Control"); cc != "max-age=86400" {
+			t.Errorf("%s: Cache-Control %q", path, cc)
+		}
+		body := w.Body.Bytes()
+		// IHDR's colour type (byte 25): 2 is RGB, 0 grey. image/png
+		// decodes both into types that carry alpha, so look at the header.
+		if len(body) < 26 || (body[25] != 2 && body[25] != 0) {
+			t.Fatalf("%s: not an RGB PNG without alpha", path)
+		}
+		img, err := png.Decode(w.Body)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if b := img.Bounds(); b.Dx() != size || b.Dy() != size {
+			t.Errorf("%s: %v, want %dx%d", path, b, size, size)
+		}
+		n := size - 1
+		for _, p := range [][2]int{{0, 0}, {n, 0}, {0, n}, {n, n}} {
+			r, g, b, a := img.At(p[0], p[1]).RGBA()
+			if a != 0xffff || (r+g+b)>>8 < 3*0x40 {
+				t.Errorf("%s: corner %v is dark or transparent: %d %d %d %d", path, p, r>>8, g>>8, b>>8, a>>8)
+			}
 		}
 	}
 }

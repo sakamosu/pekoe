@@ -286,7 +286,7 @@ config.toml を GUI から書くと、**pekoed が設定を書く初めての経
 
 ### 分かったこと(コードを正とする)
 
-依頼の前提では「今の Web UI は tsnet を使うので build tag `web` のビルドにだけ入っている」だったが、コードを読むと**ハンドラと静的ファイルは既定のビルドにも入っている**。build tag が付いているのは tsnet の待ち受け(`internal/daemon/webts.go`、`//go:build web`)とその代わり(`webts_off.go`、`//go:build !web`)だけで、`web.go`・`webinbox.go`・`webtapi.go`・`webimage.go`・`webicon.go` と `//go:embed webui` には tag が無い。既定のビルドでは誰も呼ばないだけ。
+依頼の前提では「今の Web UI は tsnet を使うので build tag `web` のビルドにだけ入っている」だったが、コードを読むと**ハンドラと静的ファイルは既定のビルドにも入っている**。build tag が付いているのは tsnet の待ち受け(`internal/daemon/webts.go`、`//go:build web`)とその代わり(`webts_off.go`、`//go:build !web`)だけで、`web.go`・`webinbox.go`・`webtapi.go`・`webimage.go` と `//go:embed webui` には tag が無い。既定のビルドでは誰も呼ばないだけ。
 
 ### 方針
 
