@@ -216,6 +216,13 @@ type Session struct {
 	RunEffort      string `json:"run_effort,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
 	AgentVersion   string `json:"agent_version,omitempty"`
+	// PromptAt is when the agent last took an instruction
+	// (UserPromptSubmit: pekoe send, an inbox answer, words typed into its
+	// window). PromptPRHead is the PR's head (PRStatus.HeadSHA) then, ""
+	// when it had no PR or its head was not read yet. The Pipeline's steps
+	// go back to impl from them (daemon/webinbox.go's reopenOf).
+	PromptAt     time.Time `json:"prompt_at,omitempty"`
+	PromptPRHead string    `json:"prompt_pr_head,omitempty"`
 }
 
 // DevExit is how a session's dev hook ended.

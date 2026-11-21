@@ -436,6 +436,66 @@ console.log(JSON.stringify(res));
 	})
 }
 
+// A branch sent back to work after its PR (webinbox.go's reopenOf), as
+// the Pipeline draws what pekoed decided: (a) impl now, the PR's box to do
+// with its number kept, CI and the merge to do whatever the old checks
+// said, "reopened" (by the later request when one is tied to it) and not
+// what the merge waits on; (b) nothing changed: the merge is yours again;
+// (c) work the PR lacks: impl done, review to do; (d) the review asked
+// again is now.
+func TestGUIPipelineReopen(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+import { renderPipeline } from "gui/dash.js";
+const at = new Date(Date.now() - 120000).toISOString();
+const steps = (...st) => ["impl", "review", "pr", "ci", "merge"].map((name, i) => ({ name, status: st[i] || "todo" }));
+const look = { icon: "◉", role: "ok", word: "run" };
+const busy = { ready: false, conds: [{ name: "settled", ok: false, detail: "agent is running" }] };
+const lacks = { ready: false, conds: [{ name: "settled", ok: false, detail: "HEAD has 1 commit not in PR #289 (run pekoe land)" }] };
+const row = (slug, o) => ({ slug, branch: slug, state: "running", state_since: at, look, pr: 289, ci: { pass: 3, fail: 0, pending: 0 }, ...o });
+const rows = [
+  row("a", { reopened: true, steps: steps("now"), merge: busy }),
+  row("a2", { reopened: true, later: [{ id: 975, now: true }], steps: steps("now"), merge: busy }),
+  row("aw", { state: "waiting", reopened: true, steps: steps("now"), merge: busy }),
+  row("b", { state: "done", steps: steps("done", "done", "done", "done", "now"), merge: { ready: true, conds: [] } }),
+  row("c", { state: "done", steps: steps("done"), merge: lacks }),
+  row("d", { steps: steps("done", "now"), merge: lacks }),
+];
+const box = el0("div");
+renderPipeline(box, [{ parent: "", rows }], () => {}, { expanded: true });
+const rowsOf = (n) => find(n, (x) => /\bpl-row\b/.test(x.className) && !/pl-head/.test(x.className));
+const res = {};
+res.boxes = rowsOf(box).map((r) => find(r, (x) => /\bpl-box\b/.test(x.className)).map((b) => b.className.replace("pl-box b-", "") + ":" + b.textContent).join(" "));
+res.status = rowsOf(box).map((r) => (r.children[r.children.length - 1].children[1] || { textContent: "" }).textContent);
+console.log(JSON.stringify(res));
+`)
+	var res struct{ Boxes, Status []string }
+	if err := json.Unmarshal(out, &res); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	want := func(what string, got, want any) {
+		t.Helper()
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s:\n got %v\nwant %v", what, got, want)
+		}
+	}
+	want("boxes", res.Boxes, []string{
+		"now:◉now todo:○ todo:○#289 todo:○ todo:○",
+		"now:◉now todo:○ todo:○#289 todo:○ todo:○",
+		"you:◉you todo:○ todo:○#289 todo:○ todo:○",
+		"done:✓done done:✓done done:✓#289 done:✓done you:◉you",
+		"done:✓done todo:○ todo:○#289 todo:○ todo:○",
+		"done:✓done now:◉now todo:○#289 todo:○ todo:○",
+	})
+	want("status", res.Status, []string{
+		"reopened",
+		"reopened by r975",
+		"reopened",
+		"ready · your merge",
+		"merge waits on HEAD has 1 commit not in PR #289 (run pekoe land)",
+		"merge waits on HEAD has 1 commit not in PR #289 (run pekoe land)",
+	})
+}
+
 // fakeDOM: the little of the DOM dash.js's Overview and Requests use, for
 // node. textContent replaces the children with one text node (never
 // parses), so markup in the data stays text.

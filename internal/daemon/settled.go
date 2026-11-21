@@ -158,10 +158,21 @@ func (d *Daemon) sentSince(slug string) (*state.SendRecord, *state.Report, error
 	return nil, rp, nil
 }
 
+// tookUp: s's agent took r up (an instruction came in at or after it,
+// Session.PromptAt) and has stopped since (done or idle after that). It
+// may have only answered a question: whether anything changed is the
+// worktree's to say.
+func tookUp(s *state.Session, r *state.SendRecord) bool {
+	if s.PromptAt.IsZero() || s.PromptAt.Before(r.At) || !s.StateSince.After(s.PromptAt) {
+		return false
+	}
+	return s.State == state.Done || s.State == state.Idle
+}
+
 // settledCheck is merge.go's settled condition: s's work is over (its
 // agent is not running or waiting, its worktree has nothing uncommitted
 // and no commit the PR lacks, nothing was sent to it since its last
-// report). ok false says why.
+// report that it has not taken up and stopped after). ok false says why.
 func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 	var why []string
 	if b := agentBusy(s); b != "" {
@@ -178,7 +189,12 @@ func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 		why = append(why, fmt.Sprintf("HEAD has %d commit%s not in PR #%d (run pekoe land)", n, plural(n), s.PR))
 	}
 	r, rp, err := d.sentSince(s.Slug)
+	since := "nothing sent since its last report"
 	switch {
+	case err == nil && r != nil && tookUp(s, r):
+		// it took the text up and ended that turn; what it left behind
+		// is the worktree's to say (above)
+		since = fmt.Sprintf("it stopped after what %s sent (%s, %s)", r.From, r.Kind, r.At.Local().Format("15:04:05"))
 	case err != nil:
 		why = append(why, "could not read the send log: "+err.Error())
 	case r != nil && rp != nil:
@@ -189,7 +205,7 @@ func (d *Daemon) settledCheck(s *state.Session) (ok bool, detail string) {
 	if len(why) > 0 {
 		return false, strings.Join(why, "; ")
 	}
-	return true, "agent " + string(s.State) + ", worktree clean, nothing sent since its last report"
+	return true, "agent " + string(s.State) + ", worktree clean, " + since
 }
 
 // landHold says why a merged PR's session is not torn down yet ("" when

@@ -340,6 +340,10 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 				s.State = state.Running
 			}
 			s.WaitKind, s.PendingTool = "", nil
+			s.PromptAt, s.PromptPRHead = time.Now(), ""
+			if ps := s.PRStatus; ps != nil && s.PR > 0 {
+				s.PromptPRHead = ps.HeadSHA
+			}
 		})
 	case "PreToolUse":
 		tool := summarizeTool(hp.ToolName, hp.ToolInput)
