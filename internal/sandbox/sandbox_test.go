@@ -439,6 +439,14 @@ func TestDefaultPolicy(t *testing.T) {
 			t.Fatalf("DenyWrite has %s: %v", ok, p.DenyWrite)
 		}
 	}
+	for _, b := range BrowserProfiles() {
+		if !slices.Contains(p.DenyReadIfPresent, b) {
+			t.Fatalf("DenyReadIfPresent lacks %s: %v", b, p.DenyReadIfPresent)
+		}
+	}
+	if runtime.GOOS == "darwin" && !slices.Contains(p.DenyReadIfPresent, filepath.Join(home, "Library", "Application Support", "Google", "Chrome")) {
+		t.Fatalf("DenyReadIfPresent lacks Chrome's profile: %v", p.DenyReadIfPresent)
+	}
 	if !slices.Contains(p.DenyConnect, filepath.Join(home, "share", "nvim")) {
 		t.Fatalf("DenyConnect lacks the review surface's nvim sockets: %v", p.DenyConnect)
 	}
@@ -507,5 +515,109 @@ echo '#!/bin/sh' > "$G/hooks/pre-commit" && echo hooks-ok; echo '[core] hooksPat
 		if !strings.Contains(o, okay) {
 			t.Fatalf("%s missing: what builds and husky write is blocked:\n%s", okay, o)
 		}
+	}
+}
+
+// The browsers' profiles, where the local GUI's session token may be
+// written: macOS's below ~/Library, Linux's below ~/.config (and
+// $XDG_CONFIG_HOME) and ~, and none elsewhere.
+func TestBrowserProfiles(t *testing.T) {
+	mac := browserProfiles("darwin", "/Users/u", "/x/config")
+	for _, want := range []string{"/Users/u/Library/Application Support/Google/Chrome", "/Users/u/Library/Application Support/Firefox",
+		"/Users/u/Library/Application Support/Microsoft Edge", "/Users/u/Library/Application Support/BraveSoftware",
+		"/Users/u/Library/Application Support/Arc", "/Users/u/Library/Safari", "/Users/u/Library/Containers/com.apple.Safari"} {
+		if !slices.Contains(mac, want) {
+			t.Errorf("darwin lacks %s: %v", want, mac)
+		}
+	}
+	for _, p := range mac {
+		// Seatbelt denies writing the ancestors too (seatbeltArgs): only
+		// below ~/Library, never ~/.config
+		if !strings.HasPrefix(p, "/Users/u/Library/") {
+			t.Errorf("darwin: %s", p)
+		}
+	}
+	lin := browserProfiles("linux", "/home/u", "/x/config")
+	for _, want := range []string{"/home/u/.config/google-chrome", "/home/u/.config/chromium", "/x/config/google-chrome", "/home/u/.mozilla", "/home/u/snap/firefox"} {
+		if !slices.Contains(lin, want) {
+			t.Errorf("linux lacks %s: %v", want, lin)
+		}
+	}
+	if n := len(browserProfiles("linux", "/home/u", "/home/u/.config/")); n != len(linuxConfigBrowsers)+len(linuxHomeBrowsers) {
+		t.Errorf("XDG_CONFIG_HOME = ~/.config counted twice: %d", n)
+	}
+	if got := browserProfiles("linux", "/home/u", "relative"); slices.Contains(got, "relative/google-chrome") {
+		t.Errorf("relative XDG_CONFIG_HOME: %v", got)
+	}
+	if got := browserProfiles("freebsd", "/home/u", ""); len(got) != 0 {
+		t.Errorf("freebsd: %v", got)
+	}
+}
+
+// DenyReadIfPresent is denied like DenyRead by Seatbelt (by path, there
+// or not), and by bwrap only where it is: a missing one makes no guard.
+func TestDenyReadIfPresent(t *testing.T) {
+	p := Policy{DenyReadIfPresent: []string{"/Users/u/Library/Application Support/Firefox"}}
+	got := seatbeltArgs("/usr/bin/sandbox-exec", p, []string{"sh"})
+	if !strings.Contains(got[2], "(deny file-read* (subpath (param ") {
+		t.Fatalf("no read rule:\n%s", got[2])
+	}
+	if !slices.Contains(got, "P0=/Users/u/Library/Application Support/Firefox") {
+		t.Fatalf("not a parameter: %q", got)
+	}
+
+	kinds := map[string]bool{"/": true, "/h": true, "/h/u": true, "/h/u/.config": true, "/h/u/.config/gh": true,
+		"/h/u/.config/google-chrome": true, "/h/u/.mozilla": true, "/h/u/pk": true, "/h/u/pk/human-token": false}
+	p = Policy{
+		DenyRead:          []string{"/h/u/pk/human-token"},
+		DenyReadIfPresent: []string{"/h/u/.config/google-chrome", "/h/u/.config/chromium", "/h/u/snap/firefox", "/h/u/.mozilla", "/h/u/pk/human-token"},
+	}
+	var made []Stub
+	gotb := strings.Join(bwrapArgs("/usr/bin/bwrap", p, []string{"sh"}, fakeHost(kinds, &made)), " ")
+	want := "/usr/bin/bwrap --dev-bind / / --die-with-parent --unshare-pid --proc /proc" +
+		" --ro-bind /dev/null /h/u/pk/human-token" +
+		" --tmpfs /h/u/.config/google-chrome --remount-ro /h/u/.config/google-chrome" +
+		" --tmpfs /h/u/.mozilla --remount-ro /h/u/.mozilla -- sh"
+	if gotb != want {
+		t.Fatalf("got\n%s\nwant\n%s", gotb, want)
+	}
+	if len(made) != 0 {
+		t.Fatalf("made %v", made)
+	}
+}
+
+// A browser profile in the real sandbox: its files (Chrome's Session
+// Storage, where a GUI tab's token may be) cannot be read; the rest of ~
+// can.
+func TestRealDefaultPolicyBrowserProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PEKOE_HOME", filepath.Join(home, "pk"))
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("PATH", "/usr/bin:/bin")
+	os.MkdirAll(filepath.Join(home, "pk", "share"), 0o700)
+	profiles := BrowserProfiles()
+	if len(profiles) == 0 {
+		t.Skipf("no browser profiles on %s", runtime.GOOS)
+	}
+	ss := filepath.Join(profiles[0], "Default", "Session Storage")
+	os.MkdirAll(ss, 0o700)
+	os.WriteFile(filepath.Join(ss, "000003.log"), []byte("pekoe.gui.token=GUI-TOKEN\n"), 0o600)
+	os.WriteFile(filepath.Join(home, "notes"), []byte("READABLE\n"), 0o600)
+	s := realSandbox(t, DefaultPolicy(""))
+	argv, err := s.Wrap([]string{"/bin/sh", "-c", `cat "$S/000003.log"; ls "$S"; cat "$H/notes"`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := exec.Command(argv[0], argv[1:]...)
+	c.Env = append(os.Environ(), "S="+ss, "H="+home)
+	out, _ := c.CombinedOutput()
+	o := string(out)
+	if strings.Contains(o, "GUI-TOKEN") || strings.Contains(o, "000003.log\n") {
+		t.Fatalf("the browser profile is readable:\n%s", o)
+	}
+	if !strings.Contains(o, "READABLE") {
+		t.Fatalf("~ is not readable:\n%s", o)
 	}
 }

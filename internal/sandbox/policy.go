@@ -18,7 +18,9 @@ import (
 // and config.toml ([web] auth_key) — and state.db (with
 // its -wal and -shm: other sessions' prompts, review comments, reports and
 // the inbox, which agents read only through pekoed's API, filtered by
-// caller; the agents' own sandbox denies it too).
+// caller; the agents' own sandbox denies it too). And the browsers'
+// profiles (BrowserProfiles: the local GUI's session token may be written
+// there; DenyReadIfPresent, as most are not installed).
 //
 // Write: pekoe's data and config directories (else the command could turn
 // the sandbox off, change the hooks, or replace the token), and places
@@ -47,7 +49,8 @@ func DefaultPolicy(webStateDir string) Policy {
 			paths.GlobalConfig(),
 			paths.StateDB(), paths.StateDB() + "-wal", paths.StateDB() + "-shm",
 		},
-		DenyWrite: []string{paths.DataDir(), paths.ConfigDir()},
+		DenyReadIfPresent: BrowserProfiles(),
+		DenyWrite:         []string{paths.DataDir(), paths.ConfigDir()},
 	}
 	if webStateDir != "" && webStateDir != paths.WebStateDir() {
 		p.DenyRead = append(p.DenyRead, webStateDir)

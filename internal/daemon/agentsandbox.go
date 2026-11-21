@@ -23,11 +23,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 
 	"pekoe/internal/gitwatch"
 	"pekoe/internal/gitx"
 	"pekoe/internal/paths"
+	"pekoe/internal/sandbox"
 )
 
 type claudeSettings struct {
@@ -59,12 +61,29 @@ type claudeSettings struct {
 // UI's tsnet state (also where [web] state_dir moved it), the local GUI's
 // one-time sign-in pages (gui.go) and pekoe's config directory. dir
 // reports a directory.
+//
+// And the browsers' profiles (sandbox.BrowserProfiles), as the hooks'
+// sandbox denies them: the local GUI's session token may be written
+// there, and an agent that read it could hand it to its own dev server
+// or tests, which reach 127.0.0.1. Bash's sandbox and the Read tool only:
+// browser automation runs in MCP servers and in browsers started through
+// LaunchServices, outside both. On Linux only those there now (the
+// settings are written at every start): Claude Code's sandbox is bwrap
+// there too, which can only cover a path that exists.
 func (d *Daemon) agentSecrets() (files, dirs []string) {
 	db := paths.StateDB()
 	files = []string{paths.HumanTokenFile(), paths.TokenFile(), db, db + "-wal", db + "-shm"}
 	dirs = []string{paths.WebStateDir(), paths.GUIDir(), paths.ConfigDir()}
 	if sd := d.cfg().Web.StateDir; sd != "" {
 		dirs = append(dirs, sd)
+	}
+	for _, b := range sandbox.BrowserProfiles() {
+		if runtime.GOOS == "linux" {
+			if _, err := os.Stat(b); err != nil {
+				continue
+			}
+		}
+		dirs = append(dirs, b)
 	}
 	return files, dirs
 }

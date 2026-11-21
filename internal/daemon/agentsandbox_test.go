@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"pekoe/internal/config"
 	"pekoe/internal/engine"
 	"pekoe/internal/paths"
+	"pekoe/internal/sandbox"
 	"pekoe/internal/state"
 )
 
@@ -222,5 +224,34 @@ func TestClaudeSandboxSettingsSubmodules(t *testing.T) {
 	// the git directory itself stays writable (commits)
 	if slices.Contains(c.Sandbox.Filesystem.DenyWrite, realpath(filepath.Join(gitDir, "modules"))) {
 		t.Error("modules/ itself denied")
+	}
+}
+
+// The browsers' profiles are kept from Bash (denyRead) and the Read tool,
+// as from the hooks' sandbox: the local GUI's session token may be written
+// there. On Linux only those there (bwrap binds over paths); elsewhere all.
+func TestClaudeSandboxSettingsBrowserProfiles(t *testing.T) {
+	d, _, repo := setup(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	profiles := sandbox.BrowserProfiles()
+	if len(profiles) == 0 {
+		t.Skipf("no browser profiles on %s", runtime.GOOS)
+	}
+	there := profiles[0]
+	os.MkdirAll(there, 0o700)
+	c := decodeSettings(t, d.claudeSandboxSettings("main", []string{repo}, nil))
+	for _, p := range profiles {
+		want := p == there || runtime.GOOS != "linux"
+		if got := slices.Contains(c.Sandbox.Filesystem.DenyRead, p); got != want {
+			t.Errorf("denyRead has %s: %v, want %v", p, got, want)
+		}
+		if got := slices.Contains(c.Permissions.Deny, "Read(/"+p+"/**)"); got != want {
+			t.Errorf("permissions.deny has Read of %s: %v, want %v", p, got, want)
+		}
+	}
+	if runtime.GOOS == "darwin" && !slices.Contains(c.Sandbox.Filesystem.DenyRead, filepath.Join(home, "Library", "Application Support", "Google", "Chrome")) {
+		t.Errorf("denyRead lacks Chrome's profile: %v", c.Sandbox.Filesystem.DenyRead)
 	}
 }

@@ -53,6 +53,12 @@ func (e *UnavailableError) Unwrap() error { return ErrUnavailable }
 type Policy struct {
 	// DenyRead: files and directories whose contents stay unreadable.
 	DenyRead []string
+	// DenyReadIfPresent: DenyRead for paths pekoe does not own, which
+	// need not be there (browser profiles). Seatbelt denies them by path
+	// all the same; bwrap covers those there when the command starts and
+	// leaves a missing one alone, where DenyRead would make its parent
+	// read-only (there is nothing in it to read yet).
+	DenyReadIfPresent []string
 	// DenyWrite: files and directories that cannot be written, created,
 	// renamed or removed (anything below a directory included).
 	DenyWrite []string
