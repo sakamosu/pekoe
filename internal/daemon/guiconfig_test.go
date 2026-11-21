@@ -62,7 +62,7 @@ func TestGUIConfig(t *testing.T) {
 	// no file: every setting at its default, nothing set, empty lists
 	v, body := get()
 	if v.Exists || v.Path != paths.GlobalConfig() || len(v.Problems) != 0 || len(v.Restart) != 0 ||
-		!strings.Contains(body, `"restart":[]`) || !strings.Contains(body, `"problems":[]`) {
+		!strings.Contains(body, `"restart":[]`) || !strings.Contains(body, `"waiting":[]`) || !strings.Contains(body, `"problems":[]`) {
 		t.Fatalf("no file: %s", body)
 	}
 	if k := key(v, "http", "port"); k.Value != float64(47777) || k.Set || !k.Restart || k.Doc == "" {
@@ -96,8 +96,8 @@ func TestGUIConfig(t *testing.T) {
 	if k := key(v, "http", "port"); k.Value != float64(port) || !k.Set {
 		t.Errorf("http.port: %+v (running %d)", k, port)
 	}
-	if !v.Exists || !slices.Equal(v.Restart, []string{"http.port"}) {
-		t.Errorf("restart: %+v", v.Restart)
+	if !v.Exists || !slices.Equal(v.Restart, []string{"http.port"}) || !slices.Equal(v.Waiting, []string{"http.port"}) {
+		t.Errorf("restart: %+v, waiting %+v", v.Restart, v.Waiting)
 	}
 	if len(v.Problems) != 1 || v.Problems[0].Key != "cleanup.bogus" || v.Problems[0].Fatal {
 		t.Errorf("problems: %+v", v.Problems)
@@ -251,5 +251,52 @@ console.log(JSON.stringify(r));
 	}
 	if want := []string{"true", "0", `""`, "(hidden)", "[]", `["a", "b"]`, "{}", `{ a = "x", b = 2 }`, "(unset)"}; !slices.Equal(got.Fmt, want) {
 		t.Errorf("fmt: %v", got.Fmt)
+	}
+}
+
+// Settings marks "! waits for restart" on the keys config.toml changed, not
+// on the whole section: [web] allow_devices alone changing leaves the other
+// [web] keys at "restart" (bughunt3 settings-docs). Skipped without node.
+func TestGUISettingsWaitsOnlyChangedKeys(t *testing.T) {
+	d, _, _ := setup(t)
+	start := "[web]\nallow_users = [\"me@github\"]\n"
+	if err := os.WriteFile(paths.GlobalConfig(), []byte(start), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.reloadConfig()
+	g, _ := config.ParseGlobal([]byte(start))
+	d.cfgMu.Lock()
+	d.started, d.Global, d.cfgRestart = g, g, nil
+	d.cfgMu.Unlock()
+	if err := os.WriteFile(paths.GlobalConfig(), []byte(start+"allow_devices = [\"iphone\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.reloadConfig()
+	res, err := d.hConfigShow(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := res.(configShow); !slices.Equal(v.Restart, []string{"web"}) || !slices.Equal(v.Waiting, []string{"web.allow_devices"}) {
+		t.Fatalf("restart %v, waiting %v", v.Restart, v.Waiting)
+	}
+	raw, _ := json.Marshal(res)
+	out := runWebModule(t, fakeDOM+`
+import view from "gui/views/settings.js";
+const data = `+string(raw)+`;
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => data, text: async () => "" });
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const box = el0("div");
+view.mount(box, { go: () => {} });
+await tick(); await tick();
+const rows = find(box, (n) => /\bview-settings-key\b/.test(n.className));
+const waiting = rows.filter((n) => n.textContent.includes("waits for restart")).map((n) => n.children[0].children[0].textContent);
+console.log(JSON.stringify(waiting));
+`)
+	var waiting []string
+	if err := json.Unmarshal(out, &waiting); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	if !slices.Equal(waiting, []string{"allow_devices"}) {
+		t.Errorf("waits for restart on %v", waiting)
 	}
 }

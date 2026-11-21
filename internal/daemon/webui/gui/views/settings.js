@@ -33,8 +33,9 @@ export function fmtValue(v) {
 const full = (s, k) => (s.name === k.key ? k.key : s.name + "." + k.key);
 
 // waits: config.toml changed it, and it keeps its running value until
-// pekoed restarts (the restart list names "http.port", "web", "sandbox")
-const waits = (restart, s, k) => k.restart && (restart.includes(full(s, k)) || restart.includes(s.name));
+// pekoed restarts. waiting names the keys ("web.allow_devices"); the
+// restart list's "web" names the section, not which of its keys changed
+const waits = (waiting, s, k) => k.restart && waiting.includes(full(s, k));
 
 // matches: the box's text in the key, section, value or doc; "restart"
 // also finds the keys whose change waits for a restart
@@ -42,11 +43,11 @@ function matches(s, k, q) {
   return [s.name, full(s, k), k.doc, fmtValue(k.value), k.restart ? "restart" : ""].some((x) => String(x || "").toLowerCase().includes(q));
 }
 
-function keyRow(s, k, restart) {
+function keyRow(s, k, waiting) {
   const r = el("div", "view-settings-key" + (k.set ? " set" : ""));
   const l1 = el("div", "view-settings-k1");
   l1.append(el("span", "view-settings-name", k.key));
-  if (waits(restart, s, k)) {
+  if (waits(waiting, s, k)) {
     const w = el("span", "view-settings-tag");
     w.append(colored("warn", "!", "sym"), txt(" waits for restart"));
     w.title = "config.toml changed this; pekoed uses the value it started with until pekoe daemon restart";
@@ -118,6 +119,7 @@ function render() {
     out.push(p);
   }
   if ((data.problems || []).length) out.push(problemsBox(data.problems));
+  const waiting = data.waiting || [];
 
   const q = query.toLowerCase();
   let shown = 0;
@@ -133,7 +135,7 @@ function render() {
     if (set) h.append(el("span", "label-n", set + " set"));
     sec.append(h);
     if (s.doc) sec.append(el("p", "view-settings-sdoc", s.doc));
-    for (const k of keys) sec.append(keyRow(s, k, restart));
+    for (const k of keys) sec.append(keyRow(s, k, waiting));
     out.push(sec);
   }
   if (q && !shown) out.push(el("div", "empty", "Nothing matches “" + query + "”"));

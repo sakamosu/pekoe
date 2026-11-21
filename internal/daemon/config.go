@@ -74,6 +74,7 @@ func (d *Daemon) reloadConfig() {
 	}
 	changed := !slices.Equal(restart, d.cfgRestart)
 	d.cfgRestart = restart
+	d.cfgWaiting = config.RestartKeys(running, next)
 	d.cfgMu.Unlock()
 	if len(restart) > 0 {
 		if changed {

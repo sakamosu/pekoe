@@ -158,6 +158,7 @@ type Daemon struct {
 	started    *config.Global // what pekoed started with ([http], [web], [sandbox] stay)
 	cfgRaw     []byte         // config.toml's contents behind Global
 	cfgRestart []string       // settings changed that wait for a restart
+	cfgWaiting []string       // the same key by key (config.RestartKeys), for config.show
 	// sbx wraps the commands that come from a worktree (internal/sandbox)
 	sbx     *sandbox.Sandbox
 	ln      net.Listener
