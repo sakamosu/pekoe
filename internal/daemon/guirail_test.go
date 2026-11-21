@@ -25,6 +25,7 @@ func TestGUIRailViews(t *testing.T) {
 	out := runWebModule(t, fakeDOM+`
 N.prototype.removeAttribute = function (k) { delete this.attrs[k]; };
 import { VIEWS, SIDE_KEY, sideRail, readSide } from "gui/rail.js";
+globalThis.fetch = () => new Promise(() => {}); // the Worktrees view's read: never answered here
 const m = new Map();
 const store = () => ({ getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) });
 const went = [];
@@ -62,9 +63,16 @@ r.running = find(p.box, (n) => /\bsrow\b/.test(n.className)).length;
 find(p.box, (n) => /\bchip\b/.test(n.className) && n.textContent.startsWith("All"))[0].click();
 p.buttons[1].click();
 r.worktrees = at(p);
-p.r.query("x"); // a view without a search ignores the box
-p.r.update(data);
-r.worktrees2 = p.box.textContent === r.worktrees.text;
+// a view without a search (one still not built) ignores the box
+const plain = VIEWS.findIndex((v) => !v.search);
+if (plain >= 0) {
+  p.buttons[plain].click();
+  const before = p.box.textContent;
+  p.r.query("x");
+  p.r.update(data);
+  r.worktrees2 = p.input.disabled && p.box.textContent === before;
+  p.buttons[1].click();
+} else r.worktrees2 = true;
 p = page(); // the tab reloaded
 r.reload = at(p);
 p.r.update(data);
@@ -128,10 +136,11 @@ console.log(JSON.stringify({ contract, ...r }));`)
 	if !got.None || got.Running != 1 {
 		t.Errorf("filter: none %v, running %d", got.None, got.Running)
 	}
-	// Worktrees: the not-yet view, the box off, the choice kept
-	if w := got.Worktrees; w.ID != "worktrees" || !slices.Equal(w.Cur, []string{"worktrees"}) || w.Label != "worktrees" || !w.Off || w.Value != "" ||
-		w.Ph != "Nothing to filter in Worktrees" || w.Kept == nil || *w.Kept != "worktrees" ||
-		!strings.Contains(w.Text, "WORKTREES") || !strings.Contains(w.Text, "Not built yet") || strings.Contains(w.Text, "SESSIONS") {
+	// Worktrees: its own filter in the box, the choice kept (its rows:
+	// TestGUIWorktreesView)
+	if w := got.Worktrees; w.ID != "worktrees" || !slices.Equal(w.Cur, []string{"worktrees"}) || w.Label != "worktrees" || w.Off || w.Value != "" ||
+		w.Ph != "Filter worktrees by branch or repository" || w.Kept == nil || *w.Kept != "worktrees" ||
+		!strings.Contains(w.Text, "WORKTREES") || strings.Contains(w.Text, "Not built yet") || strings.Contains(w.Text, "SESSIONS") {
 		t.Errorf("worktrees: %+v", w)
 	}
 	if !got.Worktrees2 {
