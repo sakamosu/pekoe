@@ -139,6 +139,20 @@ keys = ["pekoe gui", "[gui]"]
 docs = ["docs/gui.md"]
 
 [[tip]]
+id = "local-gui-theme"
+short = "pekoe gui の画面はライトにもなる"
+detail = "既定は OS の外観(ライト・ダーク)に合わせる。タイトルバーのボタンで切り替えられ、選んだものはそのタブの間だけ覚える。[theme.colors] の上書きはダークにだけ効く。"
+keys = ["pekoe gui"]
+docs = ["docs/gui-design.md#カラートークン"]
+
+[[tip]]
+id = "local-gui-shell"
+short = "pekoe gui の送信欄で ! のコマンドを送る前に確かめる"
+detail = "! で始まる文は Claude Code が許可なしにシェルのコマンドとして動かすので、送る前に確認シートで宛先と全文を見せる。入力欄の外では、許可待ちに y / A / n、質問に 1-9 が効く。"
+keys = ["pekoe gui"]
+docs = ["docs/gui-design.md#決まったこと"]
+
+[[tip]]
 id = "web-tapi-confirm"
 short = "tapi への send の確認シートは設定で切れる"
 detail = "[web] confirm_tapi_send = false にすると、Web UI の tapi chat で send がシートなしで送られる。再起動は要らない。切ると誤送信や端末を拾われたときの守りが allow_devices と画面ロックだけになる。"

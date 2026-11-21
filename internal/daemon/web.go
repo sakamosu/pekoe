@@ -360,7 +360,11 @@ func toWebSession(s *state.Session) webSession {
 }
 
 // webThemeCSS is the TUI's palette as CSS variables, so the phone shows
-// the same colors (and the user's [theme.colors]) as the terminal.
+// the same colors (and the user's [theme.colors]) as the terminal. The
+// local GUI's page (<html data-gui>) also gets the light palette
+// (docs/gui-design.md 決まったこと 11): by the OS's appearance, or by the
+// page's own choice (data-theme). The phone's page has no data-gui and stays
+// dark, as the TUI.
 func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
 	var cfg *config.Theme
 	if g := d.cfg(); g != nil {
@@ -369,15 +373,11 @@ func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
 	p := theme.WebPalette(cfg)
 	var b strings.Builder
 	b.WriteString(":root {\n")
-	for _, role := range theme.WebRoles {
-		fmt.Fprintf(&b, "  --%s: %s;\n", role, p[string(role)])
-	}
 	end := p[theme.PrimaryEndKey]
 	if end == "" {
 		end = p[string(theme.Primary)] // solid focus border, as in the TUI
 	}
-	fmt.Fprintf(&b, "  --primary-end: %s;\n", end)
-	fmt.Fprintf(&b, "  --bubble-me: %s;\n", p[theme.BubbleMeKey])
+	writeWebPalette(&b, p, end)
 	// tapi's face in the chat title, painted as the TUI paints pearl1
 	var mc config.Mascot
 	if d.Global != nil {
@@ -395,9 +395,27 @@ func (d *Daemon) webThemeCSS(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&b, "  --tapi-%s: %s;\n", c.name, v)
 	}
 	b.WriteString("}\n")
+	light := theme.WebLightPalette()
+	var lb strings.Builder
+	lb.WriteString("  color-scheme: light;\n")
+	writeWebPalette(&lb, light, light[theme.PrimaryEndKey])
+	fmt.Fprintf(&b, "@media (prefers-color-scheme: light) {\n:root[data-gui]:not([data-theme=\"dark\"]) {\n%s}\n}\n", lb.String())
+	fmt.Fprintf(&b, ":root[data-gui][data-theme=\"light\"] {\n%s}\n", lb.String())
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Write([]byte(b.String()))
+}
+
+// writeWebPalette writes a palette's roles as CSS variables (end: the
+// focus ramp's end, primary when the border is solid).
+func writeWebPalette(b *strings.Builder, p map[string]string, end string) {
+	for _, role := range theme.WebRoles {
+		fmt.Fprintf(b, "  --%s: %s;\n", role, p[string(role)])
+	}
+	fmt.Fprintf(b, "  --chrome: %s;\n", p[theme.ChromeKey])
+	fmt.Fprintf(b, "  --raised: %s;\n", p[theme.RaisedKey])
+	fmt.Fprintf(b, "  --primary-end: %s;\n", end)
+	fmt.Fprintf(b, "  --bubble-me: %s;\n", p[theme.BubbleMeKey])
 }
 
 // webRank orders the list: waiting first (oldest wait on top), then
