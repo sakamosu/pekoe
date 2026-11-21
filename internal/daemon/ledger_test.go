@@ -169,6 +169,60 @@ func TestNewWithRequest(t *testing.T) {
 	}
 }
 
+// The request that made a session stays its origin when a later one is
+// linked (the GUI's Pipeline keeps the branch under it and shows the later
+// one as a badge, marked while it is open and the one at work); a session
+// made without a request has no origin, whatever is linked to it after.
+func TestLinkKeepsOrigin(t *testing.T) {
+	d, _, repo := setup(t)
+	call[state.Session](t, d, "session.open", map[string]any{"path": repo, "resume": "new"})
+	tapi := agentAs(TapiSlug)
+	promptEvent(t, d, tapi, TapiSlug, "CSV を直して")
+	promptEvent(t, d, tapi, TapiSlug, "CSV の見出しも直して")
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.keep", map[string]any{"id": 2})
+	s := callAs[state.Session](t, d, tapi, "session.new", map[string]any{"repo": repo, "branch": "feat/csv", "prompt": "直す", "request": 1})
+	waitCreated(t, d, s.Slug)
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.link", map[string]any{"id": 2, "slug": s.Slug})
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.link", map[string]any{"id": 2, "slug": "main"})
+	got := call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+	if got.Origin != 1 || got.Request != 2 || fmt.Sprint(got.Later) != "[2]" {
+		t.Fatalf("feat-csv: %+v", got)
+	}
+	f := d.webFlowOf(&got, nil)
+	if f.Origin != 1 || f.Parent != TapiSlug || fmt.Sprint(f.Later) != "[{2 true}]" {
+		t.Fatalf("flow: %+v", f)
+	}
+	m := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
+	if mf := d.webFlowOf(&m, nil); m.Origin != 0 || mf.Origin != 0 || fmt.Sprint(mf.Later) != "[{2 true}]" {
+		t.Fatalf("main: %+v %+v", m, mf)
+	}
+	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 2, "as": "done", "evidence": []string{"https://x/pull/5"}})
+	got = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
+	if f := d.webFlowOf(&got, nil); fmt.Sprint(f.Later) != "[{2 false}]" {
+		t.Fatalf("done: %+v", f.Later)
+	}
+}
+
+// A session from before Origin was recorded takes the request it had as
+// its origin, until a link: then that request stays the origin.
+func TestLinkRequestBeforeOrigin(t *testing.T) {
+	s := &state.Session{Request: 4}
+	if originOf(s) != 4 {
+		t.Fatalf("old session: %d", originOf(s))
+	}
+	linkRequest(s, 9)
+	linkRequest(s, 9)
+	linkRequest(s, 4)
+	if s.Origin != 4 || s.Request != 4 || fmt.Sprint(s.Later) != "[9]" || originOf(s) != 4 {
+		t.Fatalf("linked: %+v", s)
+	}
+	n := &state.Session{}
+	linkRequest(n, 3)
+	if n.Origin != 0 || originOf(n) != 0 || fmt.Sprint(n.Later) != "[3]" {
+		t.Fatalf("no origin: %+v", n)
+	}
+}
+
 // tapi.reset forgets the conversation, not the ledger.
 func TestTapiResetKeepsLedger(t *testing.T) {
 	d, _, _ := setup(t)

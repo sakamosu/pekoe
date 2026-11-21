@@ -139,6 +139,13 @@ keys = ["pekoe gui", "[gui]"]
 docs = ["docs/gui.md"]
 
 [[tip]]
+id = "gui-pipeline-tree"
+short = "pekoe gui の Pipeline は依頼ごとのツリーで見せる"
+detail = "ブランチは作った依頼の箱の下にぶら下がり、あとから入った依頼は札(◉ r2 が取り組み中、+r2 が済み)。工程の箱は ✓ 済み・◉ 緑が進行中・◉ 黄が人の番・✗ が失敗。待ちの理由は Status の 2 行目に出る。"
+keys = ["pekoe gui"]
+docs = ["docs/gui-design.md#pipeline"]
+
+[[tip]]
 id = "local-gui-theme"
 short = "pekoe gui の画面はライトにもなる"
 detail = "既定は OS の外観(ライト・ダーク)に合わせる。タイトルバーのボタンで System → Dark → Light と巡り、選んだものはそのタブの間だけ覚える(System で OS に戻る)。[theme.colors] の上書きはダークにだけ効く。"

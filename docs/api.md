@@ -234,6 +234,8 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "report": {"id": 17, "status": "done", "summary": "CSV の空行を飛ばすように直した", "at": "…", "head": "3f2a…"}, // 最新の報告(summary は 1 行目、200 文字まで)
   "review": {"id": 15, "verdict": "pending", "reviewed_sha": "3f2a…", "at": "…"}, // 最新の status: review の報告(pending = レビュー中・pass・fail)。後に別の報告が来ても残る。無ければ省略
   "request": 4,                    // 結んだ依頼の id(pekoe new --request、ledger.link)。無ければ省略
+  "origin": 4,                     // セッションを作った依頼の id(pekoe new --request)。後の ledger.link では変わらない。無ければ省略(手で作った・これを記録する前に作ったセッション。後者は request を作った依頼とみなし、最初の ledger.link のときに origin に移す)
+  "later": [7],                    // 作った後に ledger.link で結んだ依頼の id(結んだ順。origin は入れない)。無ければ省略
   "after": ["feat-api"],           // このセッションが後に来るセッションの slug(session.new の after)。hold が無ければ記録と表示だけで、起動は止めない
   "hold": true,                    // session.new の hold(pekoe new --hold): after がすべて landed になるまで起動しない。無ければ省略
   "holding": ["feat-api"],         // queued の間、after のうちまだ landed でないもの。起動したら消える

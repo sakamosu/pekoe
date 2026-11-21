@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -520,7 +521,7 @@ func (d *Daemon) linkLedger(method string, id int64, slug string) (*state.Ledger
 	if err != nil {
 		return nil, err
 	}
-	d.update(slug, func(s *state.Session) { s.Request = id })
+	d.update(slug, func(s *state.Session) { linkRequest(s, id) })
 	d.ledgerChanged(e)
 	return e, nil
 }
@@ -633,4 +634,28 @@ func (d *Daemon) hLedgerDelete(p ledgerIDP) (any, error) {
 	d.emit("ledger.removed", map[string]int64{"id": p.ID})
 	d.emit("tapi.updated", d.tapiView())
 	return nil, nil
+}
+
+// linkRequest ties s to entry id after it was made: id becomes the
+// request it works on now and, unless it made the session, one of the
+// later ones. A session from before Origin was recorded takes the request
+// it had as the one that made it (pekoe new --request was the way in).
+func linkRequest(s *state.Session, id int64) {
+	if s.Origin == 0 && len(s.Later) == 0 && s.Request != 0 {
+		s.Origin = s.Request
+	}
+	s.Request = id
+	if id == s.Origin || slices.Contains(s.Later, id) {
+		return
+	}
+	s.Later = append(s.Later, id)
+}
+
+// originOf: the request that made s (Origin; for a session from before it
+// was recorded and never linked since, Request).
+func originOf(s *state.Session) int64 {
+	if s.Origin == 0 && len(s.Later) == 0 {
+		return s.Request
+	}
+	return s.Origin
 }

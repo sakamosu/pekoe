@@ -77,21 +77,8 @@
         </section>
         <section class="dash-sec" aria-labelledby="h-pipeline">
           <div class="sec-head"><h2 id="h-pipeline">Pipeline</h2><span class="sec-n" id="p-count"></span><span class="rule" aria-hidden="true"></span></div>
-          <div class="table-box">
-            <table class="pipeline" id="o-flow">
-              <thead>
-                <tr>
-                  <th class="col-branch" scope="col">Branch</th>
-                  <th class="col-step" scope="col">impl</th>
-                  <th class="col-step" scope="col">review</th>
-                  <th class="col-step" scope="col">PR</th>
-                  <th class="col-step" scope="col">CI</th>
-                  <th class="col-step" scope="col">merge</th>
-                  <th class="col-status" scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody id="o-rows"></tbody>
-            </table>
+          <div class="pipe-box">
+            <div class="pipeline" id="o-flow" role="table" aria-label="Pipeline: requests, their branches and the steps"></div>
             <div class="empty" id="o-empty" hidden>No sessions</div>
           </div>
         </section>

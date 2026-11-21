@@ -171,7 +171,7 @@ WCAG 2.x の相対輝度で計算した(sRGB の hex から。スクリプトは
   | `not sent · retry` | ✗ | err | 送れなかった |
 
   鮮度と送達は画面に出す。`queued` は pekoed が知れるかを確かめ、無理なら最初は出さない。ポーリングの間隔は今の固定のまま(決まったこと 8)
-- **記号だけ色、語は text か dim。** 表のセル(Pipeline の `✓ done`)、ゲート(`✓ land pekoe land done`)、鮮度の行は、記号を状態色にして語を dim(または text)にする。語まで色にするのは「人の番」を目立たせたいときだけ(`Ready to merge`・`◉ you`・`✓ merge ready`、どれも secondary)
+- **記号だけ色、語は text か dim。** 表のセル(Pipeline の `✓ done`)、ゲート(`✓ land pekoe land done`)、鮮度の行は、記号を状態色にして語を dim(または text)にする。語まで色にするのは「人の番」を目立たせたいときだけ(Pipeline の工程の箱の `◉ you` は warn、受信箱のカードの `✓ merge ready` は secondary。docs/ui-guidelines.md の「状態の表現」の「人の番」と ✓ の色の規則)
 - **過ぎたものは行ごと dim。** マージ済みの Pipeline の行、閉じた依頼の行は記号も語も dim に落とし、残すのは状態を区別する記号 1 つまで(モックの `↣ Merged` の ↣ だけ secondary)
 - **ゲージは数値とペア**(TUI と同じ)。値は ok、80% を超えたら warn(TUI のゲージの規則。モックはまだ ok だけ)、残りは border。`Context 14%` のように % を必ず添える
 - **棒グラフ**: 過去の日は dim、今日だけ secondary(TUI のスパークラインの「最新点だけ secondary」と同じ)
@@ -232,8 +232,36 @@ GUI のフォーカスは 3 つの層に分け、それぞれ表し方を 1 つ�
 
 1. **Inbox**: 人の対応待ち。先頭のカードが注意のフォーカス(グラデーションの枠)。見出し(primary、18px)・状態・出どころ、実行対象を bg に沈めた 1 行、レポートの要約とリンク、ゲート(1 件 1 行、「記号 名前 説明」)、ボタン(主ボタンは 1 つ)。事実が先・推奨を既定にしない・確認シートは今の受信箱の規則のまま(docs/web.md の「受信箱(Inbox)の扱い」)
 2. **Overview**: タイル 3 枚(いまの状態の件数、マージ数と日別の棒、今日のトークン)。枠は border、地は塗らない
-3. **Pipeline**: 工程の表(Branch / impl / review / PR / CI / merge / Status)。セルは「記号 語」。人の番は `◉ you`(secondary)。過ぎた行は dim
+3. **Pipeline**: 依頼のツリーと工程の箱のレール(Request / Branch / impl / review / PR / CI / merge / Status)。下の「Pipeline」
 4. **Requests**: 開いている依頼を先頭に、閉じたものを直近 5 件。右上に台帳へのリンク
+
+#### Pipeline
+
+左から右へ、Request の箱 → ツリーの線 → Branch の箱 → 5 工程の箱のレール → Status。表に `✓ done` と `○` を並べるだけでは流れに見えず、同じ依頼から出たブランチのまとまりも見えなかったので、ツリーと箱にした(2026-11-22 のハンドオフ)。
+
+- **ツリーは「ワークツリーを作った依頼」で組む。** ブランチは自分を作った依頼(`origin`。`pekoe new --request`)の下にだけぶら下がり、あとから `pekoe ledger link` で入った依頼(`later`)は線ではなく Branch の箱の札で見せる。r2 が入ってもブランチは r1 のグループに居続け、行を組み直さない。作った依頼が無いブランチ(手で作った、依頼なしの `pekoe new`)は Request の箱もツリーの線も付けず、Request の列に dim の `no request` と書いて依頼のグループの後ろに並べる。自分のブランチを持たない依頼は Pipeline に出さない(札だけ。依頼そのものは Requests で見る)
+- **行と列**: グループの中はブランチ 1 本に 1 行、高さ 60px 固定。列は Request 132px・線 28px・Branch 288px・工程が「線 12px + 箱 84px」× 5・残りが Status。見出しは dim の 12px、工程の見出しは箱の真上に中央ぞろえ。グループの並びは、動いている行があるものを先に、新しい依頼が上。グループの中は状態の順(waiting → running → done・failed → その他 → landed。`/api/overview` と同じ。同じ状態の中は `/api/overview` の順)
+- **Request の箱**: 高さ 44px・surface・border・角丸 8px。依頼の ID(太字)と dim の 11px で `tapi · 4 branches`(依頼元とブランチの本数。1 本なら `1 branch`)。グループの 1 行目と中心をそろえる
+- **ツリーの線**: 1.5px の dim。1 行目へは水平にまっすぐ、2 行目以降は Request と Branch の間の中ほど(左から 14px)の幹から角丸 12px で曲がって入る。**幹は依頼ごとに 1 本の要素で引き**(行ごとに継ぎ足すと角丸の分の隙間と行の境目の段差が出る)、各行が描くのは曲がり角だけ。幹は最後の枝の曲がり始めで終わる。CSP で `style` 属性を使えないので、位置は行の高さ 60px を前提に CSS で決めてある(`.pl-trunk`・`.pl-corner`・`.pl-flat`)
+- **Branch の箱**: 高さ 44px・surface・border・角丸 8px。ブランチ名(あふれたら末尾を省略)と札(縮めない)。押すとセッションのタブを開く。札は高さ 20px・角丸 10px・11px で、いまそのブランチが取り組んでいる依頼(open のもの)は `◉ r2`(◉ と枠が ok、文字は text)、済んだ依頼は `+r2`(枠 border、文字 dim)
+- **工程の箱**: 幅 84px・高さ 28px・surface・角丸 6px・12px、「記号 語」を中央に。済み `✓ done`(PR は `✓ #279`。✓ は secondary、枠は border)、進行中 `◉ now`(CI は `◉ 2/4` = 通った数/全体。◉ と枠が ok)、未着手 `○`(枠は border の破線)、失敗 `✗ fail`(✗ と枠が err)、人の番 `◉ you`(◉・語・枠が warn)。語は人の番だけ warn で、ほかは dim
+- **箱をつなぐ線**: Branch の箱と impl の間、箱と箱の間を 12px で。緑にしない。到達した工程の手前(済み・進行中・失敗・人の番の箱の左)は dim の実線、まだの工程の手前は border の破線
+- **Status**: 1 行目はセッションの状態(`◉ run · 2m`・`✓ done · 50s`。記号は状態色、語は text の英小文字)。2 行目は dim の 1 行で、あとから入った依頼で impl に戻った(`reopened by r2`。作った依頼が無いブランチでは `working on r2`)・失敗した工程とその理由(`CI: 1 failed`)・人のマージ待ち(`ready · your merge`)・マージを止めている理由(`merge waits on CI · agent running`)のどれか 1 つ。待ちは ✗ で並べない
+- **過ぎた行**(landed): 記号・語・枠を dim / border に落とす
+- **多いとき**: 8 行まで出し、残りは `Show N more`(押すと全部と `Show less`)
+
+決めたこと(ハンドオフで未決だったもの。原則は docs/ui-guidelines.md の「状態の表現」):
+
+1. **済んだ工程の ✓ の色は secondary。** 工程が「済んだ」は完了の色。ok の ✓ は合否の「合」(PR の CI 全成功・承認済みのハンク)だけに使う。CI の箱の done も secondary
+2. **マージ待ち(人の番)は warn。** 確認待ちの ◉ warn に合わせる(語の `you` も warn)。エージェントが waiting のときの impl の箱も同じ `◉ you`。受信箱の `✓ merge ready` と TUI の `ready to merge` は「根拠が揃った」(完了)を言うので secondary のまま
+3. **Status の 2 行目の文言**: `merge waits on <理由> · <理由>`。理由は merge.check の揃っていない条件を短い語にしたもの: `CI`(実行中)・`CI 1 failed`・`PR status`(まだ読んでいない)・`review`・`re-review`(PR の HEAD が変わった)・`merge state behind` など(CI が済んでいないときの UNSTABLE・BLOCKED は CI と同じことを言うので出さない)・`conflicts`・`earlier sessions`(after)・`agent running` / `agent waiting`(settled)・`pekoe land`。詳しい理由は工程の箱の title(ホバー)と受信箱のゲートで読む
+4. **CI の全体の数**は PR のチェックの `pass + fail + pending`(pekoed が GitHub から読んだもの)。まだ読んでいなければ `now`
+5. **失敗の行**: 失敗した箱だけ err。右の線と箱は未着手と同じ(破線・○)
+6. **進行中の語は `now` のまま。** 状態語の `run` はセッションの状態(Status)の語で、工程の箱は「いまここ」を言う別の語にしておく(同じ行に `◉ run` と `◉ run` が並ぶと、どちらの話か分からない)
+7. **狭い幅**: Branch の箱を 160px まで縮め、それでも入らなければ区画の中で横にスクロールする(最小 950px)
+8. **札が多いとき**: 2 つまでは全部、3 つ以上は先頭の 1 つ(取り組んでいる依頼、無ければいちばん新しい依頼)と `+K`(残りの数)
+9. **依頼なしの行**は依頼のグループの後ろ
+10. **作った依頼の記録**: pekoed はこれまで、`ledger.link` でセッションの `request` を上書きしていた。セッションに `origin`(作った依頼)と `later`(後から結んだ依頼)を足し、`/api/overview` の Flow に `parent`・`origin`・`later`・`ci` を足した(docs/web.md の「Overview」)。これを入れる前に作ったセッションは、`request` を作った依頼とみなす
 
 tapi パネル: ヘッダ(`tapi`・状態・`T Reset`)、送受信の一覧(古い順。差出人 → 宛先・種別・経過は吹き出しの外に dim で、本文は吹き出しの中に)、下端に送信欄。自分の発言の吹き出しだけ bubble_me、ほかは surface。
 
