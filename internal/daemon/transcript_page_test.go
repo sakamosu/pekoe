@@ -65,3 +65,76 @@ func TestReadChatBeforePastLongLine(t *testing.T) {
 		})
 	}
 }
+
+// claude --continue (tapi.restart, a session that could not be resumed)
+// starts a new transcript with the conversation so far copied into it, and
+// writes a "continued-in" line naming it at the end of the old one. That is
+// the same conversation going on: the page starts over from the new
+// transcript, with no "new conversation" line and the words drawn once.
+func TestReadChatContinuedIn(t *testing.T) {
+	dir := t.TempDir()
+	conv := []string{
+		`{"parentUuid":null,"type":"user","message":{"role":"user","content":"first ask"},"uuid":"u1","timestamp":"2026-11-21T10:00:00Z","origin":{"kind":"human"}}`,
+		`{"parentUuid":"u1","type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"done"}]},"uuid":"a1","timestamp":"2026-11-21T10:00:05Z"}`,
+	}
+	oldID, newID := "aaaaaaaa-1111", "bbbbbbbb-2222"
+	p1 := filepath.Join(dir, oldID+".jsonl")
+	p2 := filepath.Join(dir, newID+".jsonl")
+	writeChat(t, p1, conv)
+	first, err := readChat(p1, "")
+	if err != nil || len(first.Items) != 2 {
+		t.Fatalf("first read: %+v %v", first, err)
+	}
+	// Claude Code starts again with --continue: the line in the old
+	// transcript comes at once, the new transcript only with the first
+	// prompt (and the hooks name it before it is there)
+	appendChat(t, p1, `{"type":"continued-in","timestamp":"2026-11-21T11:00:00Z","sessionId":"`+oldID+`","continuedInSessionId":"`+newID+`"}`+"\n"+
+		`{"type":"last-prompt","sessionId":"`+oldID+`"}`+"\n")
+	wait, err := readChat(p2, first.Cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wait.Reset || wait.NewConversation || len(wait.Items) != 0 || wait.Cursor != first.Cursor {
+		t.Fatalf("before the copy is written: %+v (cursor was %q)", wait, first.Cursor)
+	}
+	// a page back in the old one meanwhile reads the old one
+	back := chatCursor(oldID, int64(len(conv[0])+1))
+	if p, err := readChatBefore(p2, back); err != nil || len(p.Items) != 1 || p.Items[0].Text != "first ask" || p.Before != "" {
+		t.Fatalf("page back before the copy: %+v %v", p, err)
+	}
+	writeChat(t, p2, append(append([]string{}, conv...),
+		`{"parentUuid":"a1","type":"user","message":{"role":"user","content":"after the restart"},"uuid":"u2","timestamp":"2026-11-21T11:00:10Z","origin":{"kind":"human"}}`))
+	next, err := readChat(p2, wait.Cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !next.Reset || next.NewConversation || next.Conversation != newID {
+		t.Fatalf("reset %v new_conversation %v conversation %q", next.Reset, next.NewConversation, next.Conversation)
+	}
+	var texts []string
+	for _, it := range next.Items {
+		texts = append(texts, it.Text)
+	}
+	if got := strings.Join(texts, "|"); got != "first ask|done|after the restart" {
+		t.Fatalf("items %q", got)
+	}
+	if _, err := readChatBefore(p2, back); err != errChatMoved {
+		t.Fatalf("page back in the old one after the copy: %v", err)
+	}
+
+	// /clear (no continued-in for it) is still another conversation
+	p3 := filepath.Join(dir, "cccccccc-3333.jsonl")
+	writeChat(t, p3, []string{`{"type":"user","message":{"role":"user","content":"fresh"},"uuid":"c1","timestamp":"2026-11-21T12:00:00Z","origin":{"kind":"human"}}`})
+	cleared, err := readChat(p3, next.Cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cleared.Reset || !cleared.NewConversation || len(cleared.Items) != 1 {
+		t.Fatalf("/clear: %+v", cleared)
+	}
+	// a cleared conversation not written yet is a new one at once, as before
+	gone, err := readChat(filepath.Join(dir, "dddddddd-4444.jsonl"), cleared.Cursor)
+	if err != nil || !gone.Reset || !gone.NewConversation {
+		t.Fatalf("an empty new conversation: %+v %v", gone, err)
+	}
+}

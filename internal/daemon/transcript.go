@@ -84,7 +84,8 @@ type ChatItem struct {
 // ChatPage is what one read returns. Cursor goes back as after for the
 // next read. Reset: Items start over (the first read, another
 // conversation, or a transcript that got shorter); the page drops what it
-// had. NewConversation: after named another conversation (/clear, a reset).
+// had. NewConversation: after named another conversation (/clear, a reset;
+// not one claude --continue went on in: continuedIn).
 // Earlier: older items were left out; Before, when set, reads them
 // (readChatBefore: a page back, as far as the start of the transcript).
 type ChatPage struct {
@@ -125,11 +126,21 @@ func readChat(path, after string) (ChatPage, error) {
 	}
 	pc, off, ok := parseChatCursor(after)
 	page := ChatPage{Conversation: conv, Items: []ChatItem{}}
+	// claude --continue: the conversation the page has goes on in this
+	// transcript, not another one (continuedIn)
+	moved := ok && pc != conv
+	continued := moved && continuedIn(filepath.Join(filepath.Dir(path), pc+".jsonl"), conv)
 	f, size, err := openChat(path)
 	if errors.Is(err, os.ErrNotExist) {
+		if continued {
+			// the copy is written with the first prompt: until then
+			// the page keeps what it has
+			page.Conversation, page.Cursor = pc, after
+			return page, nil
+		}
 		page.Cursor = chatCursor(conv, 0)
 		page.Reset = !ok || pc != conv || off > 0
-		page.NewConversation = ok && pc != conv
+		page.NewConversation = moved
 		return page, nil
 	}
 	if err != nil {
@@ -139,7 +150,7 @@ func readChat(path, after string) (ChatPage, error) {
 	start := off
 	if !ok || pc != conv || off > size {
 		page.Reset = true
-		page.NewConversation = ok && pc != conv
+		page.NewConversation = moved && !continued
 		start = max(size-chatTail, 0)
 	}
 	lines, first, pos, err := chatLinesIn(f, start, size-start, chatChunk, page.Reset && start > 0)
@@ -172,6 +183,12 @@ func readChatBefore(path, before string) (ChatPage, error) {
 		return ChatPage{}, errBadChatCursor
 	}
 	if pc != conv {
+		// continued in path (readChat), which is not written yet: the
+		// page still has the old one, and reads back in it
+		old := filepath.Join(filepath.Dir(path), pc+".jsonl")
+		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) && continuedIn(old, conv) {
+			return readChatBefore(old, before)
+		}
 		return ChatPage{}, errChatMoved
 	}
 	f, size, err := openChat(path)
@@ -305,6 +322,50 @@ func lineStart(f *os.File, at int64) (int64, error) {
 		end = from
 	}
 	return 0, nil
+}
+
+// continuedIn tells whether the transcript at path (the conversation the
+// page had) says it went on in conversation conv: Claude Code started
+// again with --continue (tapi.restart, a session that could not be
+// resumed) writes a "continued-in" line naming the new transcript at the
+// end of the old one, as it starts and before the new one is written, and
+// copies the conversation so far into the new one (the same uuids). The
+// last MiB is looked at: only a line or two comes after it.
+func continuedIn(path, conv string) bool {
+	if _, err := chatConv(path); err != nil {
+		return false
+	}
+	f, size, err := openChat(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	start := max(size-(1<<20), 0)
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return false
+	}
+	r := bufio.NewReaderSize(io.LimitReader(f, size-start), 64<<10)
+	if start > 0 {
+		if _, _, err := readLine(r); err != nil {
+			return false
+		}
+	}
+	for {
+		_, line, err := readLine(r)
+		if err != nil {
+			return false
+		}
+		if !bytes.Contains(line, []byte(`"continued-in"`)) {
+			continue
+		}
+		var e struct {
+			Type string `json:"type"`
+			To   string `json:"continuedInSessionId"`
+		}
+		if json.Unmarshal(line, &e) == nil && e.Type == "continued-in" && e.To == conv {
+			return true
+		}
+	}
 }
 
 func flatChat(lines []chatLineAt) []ChatItem {
