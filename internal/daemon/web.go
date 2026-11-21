@@ -445,6 +445,7 @@ func writeWebPalette(b *strings.Builder, p map[string]string, end string) {
 	fmt.Fprintf(b, "  --raised: %s;\n", p[theme.RaisedKey])
 	fmt.Fprintf(b, "  --primary-end: %s;\n", end)
 	fmt.Fprintf(b, "  --bubble-me: %s;\n", p[theme.BubbleMeKey])
+	fmt.Fprintf(b, "  --code: %s;\n", p[theme.CodeKey])
 }
 
 // webRank orders the list: waiting first (oldest wait on top), then
