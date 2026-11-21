@@ -22,6 +22,7 @@ import { SPIN, bubbleLine } from "../lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "../lib/sheets.js";
 import { shellBang } from "./shell.js";
 import { guardPageDrops } from "./drop.js";
+import { attachments } from "./attach.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { flows, readySet, stateBits, tapiState } from "./states.js";
 import { sideRail } from "./rail.js";
@@ -37,12 +38,11 @@ let overview = null; // the last /api/overview (the Dashboard; LINKED and "ready
 let view = "dashboard"; // dashboard | detail
 let current = null; // the slug in the detail view, or TAPI
 let busy = false; // a sheet is open: the cards it was opened from stay as they are
-let sending = false, pressing = false, preparing = false;
+let sending = false, pressing = false;
 let listTimer = 0, screenTimer = 0, chatTimer = 0, tickTimer = 0;
 let listOk = 0, listFail = ""; // when the list last came, and why it did not
 const openTabs = []; // the sessions opened in this tab, oldest first
 const drafts = new Map(); // slug → unsent text: one session's words never ride along to another
-const attachments = new Map(); // slug → images for its next send (same rule)
 const deliveries = new Map(); // slug → {st: sending | delivered | failed, text, at, why}
 
 // ---- theme: the OS's appearance, or this tab's choice (決まったこと 11) ----
@@ -490,7 +490,7 @@ function renderTarget(s) {
   }
   note.textContent = why;
   note.hidden = !why;
-  $("d-send-btn").disabled = !s || !!why || sending || preparing;
+  $("d-send-btn").disabled = !s || !!why || sending || att.preparing(current);
   $("d-shell").disabled = !s || !!why;
   // / and @ list the session's commands and files: not tapi's (its
   // directory is pekoe's, not a repository)
@@ -498,7 +498,7 @@ function renderTarget(s) {
     $(id).hidden = isTapi;
     $(id).disabled = !s || !!why;
   }
-  $("d-attach").classList.toggle("off", preparing || attached(current).length >= IMG_MAX || !!why);
+  $("d-attach").classList.toggle("off", att.preparing(current) || att.get(current).length >= IMG_MAX || !!why);
   renderDelivery($("d-delivery"), current);
 }
 
@@ -717,51 +717,39 @@ $("d-type-else").addEventListener("click", () => $("d-text").focus());
 
 // ---- send: words and images; a send starting with ! through the shell sheet ----
 
-const attached = (slug) => (slug && attachments.get(slug)) || [];
+// images for the next send (attach.js): the session's send box by its
+// slug, the Dashboard's tapi panel by PANEL (never a slug), so the two
+// never mix, not even with tapi's own tab (#/tapi, TAPI)
+const PANEL = Symbol("tapi panel");
+const att = attachments({
+  max: IMG_MAX, prepare: prepareImage, toast,
+  changed: (key) => {
+    if (key === PANEL) renderPanelThumbs();
+    else if (key === current) renderThumbs();
+  },
+});
 
-function dropAttached(slug, images) {
-  const left = attached(slug).filter((im) => !images.includes(im));
-  if (left.length) attachments.set(slug, left);
-  else attachments.delete(slug);
-  if (current === slug) renderThumbs();
-}
-
-function renderThumbs() {
-  const box = $("d-thumbs");
-  const images = attached(current);
-  thumbs(box, images, (im) => dropAttached(current, [im]));
-  if (preparing) {
+// drawThumbs: the images by a send box, × to take one out ("reading…"
+// while files are being read, n/IMG_MAX once there are some)
+function drawThumbs(box, key) {
+  const images = att.get(key);
+  thumbs(box, images, (im) => att.drop(key, [im]));
+  if (att.preparing(key)) {
     box.append(el("span", "thumb-note", "reading…"));
     box.hidden = false;
   } else if (images.length) {
     box.append(el("span", "thumb-note", images.length + "/" + IMG_MAX));
   }
+}
+
+function renderThumbs() {
+  drawThumbs($("d-thumbs"), current);
   if (current) renderTarget(detailTarget());
 }
 
-async function addImages(files) {
-  const slug = current;
-  files = files.filter((f) => !f.type || f.type.startsWith("image/"));
-  if (!slug || !files.length) return;
-  const room = IMG_MAX - attached(slug).length;
-  if (room <= 0) {
-    toast("at most " + IMG_MAX + " images in one send");
-    return;
-  }
-  if (files.length > room) toast("at most " + IMG_MAX + " images in one send: took the first " + room);
-  preparing = true;
-  renderThumbs();
-  const got = [];
-  for (const f of files.slice(0, room)) {
-    try {
-      got.push(await prepareImage(f));
-    } catch (e) {
-      toast(e.message);
-    }
-  }
-  preparing = false;
-  if (got.length) attachments.set(slug, [...attached(slug), ...got]);
-  renderThumbs();
+function renderPanelThumbs() {
+  drawThumbs($("c-thumbs"), PANEL);
+  renderChatHead();
 }
 
 // renderDelivery: what was sent last to slug and how it went (決まったこと
@@ -795,9 +783,10 @@ function doSend(from) {
   const ta = isPanel ? $("c-text") : $("d-text");
   const text = ta.value.trim();
   const slug = isPanel ? TAPI : current;
-  const images = isPanel ? [] : attached(slug);
+  const key = isPanel ? PANEL : slug;
+  const images = att.get(key);
   const btn = isPanel ? $("c-send-btn") : $("d-send-btn");
-  if ((!text && !images.length) || !slug || sending || preparing || btn.disabled) return;
+  if ((!text && !images.length) || !slug || sending || att.preparing(key) || btn.disabled) return;
   if (slug === TAPI && !tapiUp()) return toast("tapi is not running");
   if (slug !== TAPI && !sessions.some((x) => x.slug === slug)) return toast(slug + " is gone");
   if (shellBang(text)) return openShellSheet(slug, text, images, ta);
@@ -868,7 +857,8 @@ async function sendTo(slug, text, images, ta) {
   try {
     const r = await api(apiBase(slug) + "/send", sendBody(text, images));
     if (ta === $("d-text")) drafts.delete(slug);
-    dropAttached(slug, images);
+    // the images leave the composer they came from (the panel's by PANEL)
+    att.drop(ta === $("c-text") ? PANEL : slug, images);
     if (ta.value.trim() === text) ta.value = "";
     deliveries.set(slug, { st: "delivered", text: text || imagesNote(images.length).trim(), at: Date.now() });
     // ● until it shows up in the transcript (✓)
@@ -904,8 +894,9 @@ function renderChatHead() {
   const st = $("c-state");
   st.replaceChildren(...tapiState(tapi));
   const ok = tapiUp() && tapi.sendable && !tapi.answerable;
-  $("c-send-btn").disabled = !ok || sending;
+  $("c-send-btn").disabled = !ok || sending || att.preparing(PANEL);
   $("c-shell").disabled = !ok;
+  $("c-attach").classList.toggle("off", !ok || att.preparing(PANEL) || att.get(PANEL).length >= IMG_MAX);
   renderTapiStart();
   $("c-text").placeholder = !tapiUp() ? "tapi is not running" : !tapi.sendable ? "pekoed does not take a send to tapi here" : tapi.answerable ? "tapi waits for a permission: answer it in the terminal first" : "ask tapi";
   renderChatTail();
@@ -1490,28 +1481,32 @@ for (const [btn, ta] of [["d-shell", "d-text"], ["c-shell", "c-text"]]) {
   });
 }
 $("d-text").addEventListener("input", () => renderTarget(detailTarget()));
-// images: chosen, pasted (a screenshot on the clipboard) or dropped
-$("d-file").addEventListener("change", (e) => {
-  const files = [...(e.target.files || [])];
-  e.target.value = "";
-  addImages(files);
-});
-$("d-text").addEventListener("paste", (e) => {
-  const files = [...((e.clipboardData && e.clipboardData.files) || [])];
-  if (!files.length) return;
-  e.preventDefault();
-  addImages(files);
-});
-$("d-send").addEventListener("dragover", (e) => {
-  e.preventDefault();
-  $("d-send").classList.add("is-drop-target");
-});
-$("d-send").addEventListener("dragleave", () => $("d-send").classList.remove("is-drop-target"));
-$("d-send").addEventListener("drop", (e) => {
-  e.preventDefault();
-  $("d-send").classList.remove("is-drop-target");
-  addImages([...((e.dataTransfer && e.dataTransfer.files) || [])]);
-});
+// images: chosen, pasted (a screenshot on the clipboard) or dropped, in
+// the session's send box and in the Dashboard's tapi panel alike. A paste
+// without files (text) keeps its default.
+for (const [form, ta, file, key] of [["d-send", "d-text", "d-file", () => current], ["c-send", "c-text", "c-file", () => PANEL]]) {
+  $(file).addEventListener("change", (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = "";
+    att.add(key(), files);
+  });
+  $(ta).addEventListener("paste", (e) => {
+    const files = [...((e.clipboardData && e.clipboardData.files) || [])];
+    if (!files.length) return;
+    e.preventDefault();
+    att.add(key(), files);
+  });
+  $(form).addEventListener("dragover", (e) => {
+    e.preventDefault();
+    $(form).classList.add("is-drop-target");
+  });
+  $(form).addEventListener("dragleave", () => $(form).classList.remove("is-drop-target"));
+  $(form).addEventListener("drop", (e) => {
+    e.preventDefault();
+    $(form).classList.remove("is-drop-target");
+    att.add(key(), [...((e.dataTransfer && e.dataTransfer.files) || [])]);
+  });
+}
 // a file dropped anywhere else: not opened by the browser (drop.js)
 guardPageDrops(window);
 $("tsheet-cancel").addEventListener("click", closeSheets);

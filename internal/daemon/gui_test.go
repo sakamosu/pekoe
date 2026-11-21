@@ -754,8 +754,8 @@ console.log(JSON.stringify(r));`)
 	}
 	js, _ := webFiles.ReadFile("webui/gui/gui.js")
 	s := string(js)
-	i, j := strings.Index(s, `$("d-send").addEventListener("drop"`), strings.Index(s, "guardPageDrops(window);")
-	if i < 0 || j < 0 {
-		t.Fatal("gui.js: the send box's drop or the page's guard is missing")
+	i, j := strings.Index(s, `$(form).addEventListener("drop"`), strings.Index(s, "guardPageDrops(window);")
+	if i < 0 || j < 0 || !strings.Contains(s, `[["d-send", "d-text", "d-file", () => current], ["c-send", "c-text", "c-file", () => PANEL]]`) {
+		t.Fatal("gui.js: the send boxes' drop or the page's guard is missing")
 	}
 }
