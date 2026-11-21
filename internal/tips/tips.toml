@@ -153,6 +153,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui.md#段階"]
 
 [[tip]]
+id = "local-gui-actions"
+short = "pekoe gui で新規作成・Interrupt・tapi の Reset"
+detail = "n New session で作り(TUI の n)、動いているエージェントは esc Interrupt で止める(Escape を 1 回)。T Reset は tapi の会話だけ消し、依頼と受信箱は残す。どれも確認シートを通す。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-new-sessiontapi-の-resetinterrupt"]
+
+[[tip]]
 id = "local-gui-shell"
 short = "pekoe gui の送信欄で ! のコマンドを送る前に確かめる"
 detail = "! で始まる文は Claude Code が許可なしにシェルのコマンドとして動かすので、送る前に確認シートで宛先と全文を見せる。入力欄の外では、許可待ちに y / A / n、質問に 1-9 が効く。"

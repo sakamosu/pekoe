@@ -681,7 +681,8 @@ func webErr(w http.ResponseWriter, err error) {
 	switch {
 	case strings.Contains(err.Error(), "no such session"):
 		code = http.StatusNotFound
-	case errors.Is(err, errPromptUp), errors.Is(err, errPromptUpTyped), errors.Is(err, errPromptUpTUI):
+	case errors.Is(err, errPromptUp), errors.Is(err, errPromptUpTyped), errors.Is(err, errPromptUpTUI),
+		errors.Is(err, errInterruptState):
 		code = http.StatusConflict
 	}
 	http.Error(w, err.Error(), code)

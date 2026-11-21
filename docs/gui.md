@@ -2,7 +2,7 @@
 
 pekoed が動いている Mac 自身のブラウザから、localhost で待ち受ける Web の画面で pekoe を操作する。
 
-**状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 以降は設計で、まだコードは無い。
+**状態**: 段階 0(入口だけ: 待ち受け・認証)と段階 1(MVP: デスクトップ向けの画面、GUI だけの `always`)を実装した(`internal/daemon/gui.go`・`cmd/pekoe/gui.go`・`internal/daemon/webui/gui/`、`pekoe gui`)。段階 2 は一部(New session・tapi の Reset・Interrupt。下の「段階 2 の一部」)を実装し、残りと段階 4 の大半は設計で、まだコードは無い。
 
 **見た目は [docs/gui-design.md](gui-design.md) のとおり。** 段階 1 は配置とデータのつなぎ込みまでで見た目は仮にしてあり、その後の PR でデザイン原則に沿って作り直した(タイトルバー・アイコンレール付きのサイドバー・タブ・ステータスライン、Dashboard・Session・許可と質問のカード、ダークとライト)。GUI のスタイルは `webui/gui/gui.css` にだけ書く(HTML の `style` 属性・`gui/` のスクリプトからの `style` の書き込み・外から読むフォントや CSS は無い。`TestGUIStylesOnlyInCSS`。例外は画面の色というデータで、エージェントの画面の `#rrggbb` の色は前から `lib/term.js` が CSSOM で入れている)。GUI のページは今の Web UI の `app.css` を読まない(共有するのは `/theme.css` のトークンと `lib/` のモジュール)。レビューで決まったことは下の「決まったこと」にまとめた。
 
@@ -43,7 +43,7 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 | --- | --- | --- |
 | **0. 入口だけ**(実装済み) | localhost の待ち受けと認証(下の「認証」)を作り、今の Web UI の静的ファイル(`internal/daemon/webui/`)と API をそのまま Mac のブラウザに配る。iPhone と同じ 8 つの機能が Mac で使える | 一番危ない部分(認証・脅威モデル)を先に、小さく固める。画面はまだスマホ向けのまま |
 | **1. MVP**(実装済み。見た目は docs/gui-design.md) | デスクトップ向けの画面(下の「MVP」) | 「TUI が苦手な人が毎日の操作をできる」最小 |
-| **2. TUI と同等(操作)** | セッションの作成(`session.new`、リポジトリの選択、issue から)、land(衝突予報つきの確認)、dev server の起動・停止、セッションの終了・worktree の削除(確認つき)、undo・再起動、片付け(`cleanup`)、tapi chat、PR の表示(チェック・レビュー・スレッドを読み、エージェントに送る)、issue の一覧、受信箱の dismiss | TUI のキー一覧(README の「TUI」、`docs/design.md`)の操作を一通り GUI で |
+| **2. TUI と同等(操作)**(一部実装: セッションの作成・tapi の Reset・Interrupt) | セッションの作成(`session.new`、リポジトリの選択、issue から)、land(衝突予報つきの確認)、dev server の起動・停止、セッションの終了・worktree の削除(確認つき)、undo・再起動、片付け(`cleanup`)、tapi chat、PR の表示(チェック・レビュー・スレッドを読み、エージェントに送る)、issue の一覧、受信箱の dismiss | TUI のキー一覧(README の「TUI」、`docs/design.md`)の操作を一通り GUI で |
 | ~~3. TUI と同等(重いもの)~~ **作らない** | レビュー面(差分を読み、行にコメントし、承認する。TUI では nvim の `r`)、run 窓(`!`、1 回のコマンドを人が打って対話する)、エージェントの画面への生の入力(TUI で `↵` で入る入力) | どれも端末の再現か、任意のキー・コマンドを送る経路で、XSS が通ったときの被害が大きい。GUI では作らず「それは TUI で」とする(下の「決まったこと」7) |
 | **4. HTML の検証**(一部実装: Dashboard の集計と台帳) | 集計(`stats`)のグラフ(**実装済み**: Overview の日別のマージ数の棒と今日のトークン、`GET /api/stats`)、セッションの時系列(いつ動き・待ち・終わったか)、触るファイルの重なりの図(`conflicts.list`)、証拠(スクショ・ログ)の表示、デスクトップ通知(Notification API) | 目的 2。どれが TUI に戻す価値があるかも見る |
 
@@ -63,6 +63,14 @@ Web UI は「Mac 自身からは使わせない」ことで、同じ Mac で動�
 - `GET /api/stats`: `stats {days: 7}`。Overview の `Merged`(今日と 7 日のマージ数、日別の棒。過去の日は dim、今日は secondary、0 の日は border の 2px。数は各棒の `<title>` と図の `aria-label` で読める)と `Tokens today`(out / in / cache write / cache read。値は `pekoe stats` と同じ短縮で、正確な数は `title`)。pekoed は呼ばれるたびに transcript の新しい行を読むので、ページは TUI のダッシュボードと同じく 30 秒に 1 回までしか読まない
 - `GET /api/ledger?closed=N`: `ledger.list {status: "all"}` を開いているものと、閉じた時刻の新しい順の `N` 件に分ける。Requests は開いている依頼を先頭に、閉じたもの(`done`・`dropped`・`chat`、pekoed が自動で閉じたものは `closed by pekoe`)を直近 5 件。`Open ledger` はその場で展開して閉じたものを 500 件まで出す(残りは `pekoe ledger --all`)。依頼の id は TUI と同じ `r123`。依頼の文は人の入力なので、ほかと同じく `textContent` で描く
 
+### 段階 2 の一部: New session・tapi の Reset・Interrupt
+
+TUI の `n`・`T`・(打っている間の)`esc` と同じ意味の操作を、どれも確認シートを通して足した(**実装済み**。`internal/daemon/guiact.go`・`interrupt.go`・`webui/gui/actions.js`、docs/web.md の API の表)。ハンドラは GUI の mux にだけ登録し、tailnet の Web UI には無い(人が Mac の画面から行う操作で、iPhone からの用途は今は無い。出すなら別に決める)。どれも GUI の Caller(人)で呼ぶ:
+
+- **New session**(タイトルバーの `n New session`、入力欄の外で `n`。許可のカードでは `n` は Deny が先): `GET /api/repos`(`repo.list` のうちディレクトリの分かるもの)からリポジトリを選び、ブランチ名とプロンプトを入れ、`Continue` で確認シート(リポジトリとディレクトリ・ブランチ・エージェント・プロンプトの全文)を見せてから `POST /api/sessions` = `session.new`(TUI の `n`・`pekoe new` と同じ。人の呼び出しなので `hNew`)。ページが渡すのはリポジトリの id だけで、pekoed が知っているディレクトリに置き換える(パスは受け取らない)。エージェントは選ばない: TUI の `n` にも選択は無く、リポジトリの設定の `agent`(無ければ `claude`)になる。`issue から`(`from`)は TUI の `n` にあるが今回は入れていない。プロンプトの先頭の `!` は断らない(#254 で断るのは token なしの呼び出しだけ。GUI は人)。ただし `prompt = "paste"` のエージェント(opencode)では入力欄に打たれてシェルのコマンドとして動くので、確認シートに `!` の警告を出す(判定は送信欄と同じ `gui/shell.js`)。作ったらそのセッションのタブへ移る
+- **tapi の Reset**(Dashboard の tapi パネルのヘッダの `T Reset`、入力欄の外で `T`): `POST /api/tapi/reset` = `tapi.reset`(TUI の `T`・`pekoe tapi reset`)。確認シートに、消えるもの(tapi の窓と会話の記録。元に戻せない)と残るもの(依頼(ledger)・受信箱・報告・送信の記録・セッション。tapi は次の起動で開いている依頼を読み直す)、tapi が動いている最中ならそのターンが止まることを書く。Reset の後の tapi は起動していない(TUI の `T` と同じ)。GUI に起動の操作はまだ無いので、TUI の `t` で起動する
+- **Interrupt**(セッションと tapi のヘッダの `esc Interrupt`、入力欄の外で `esc`): `POST /api/sessions/{slug}/interrupt` = `session.interrupt`、`POST /api/tapi/interrupt` = `tapi.interrupt`(どちらも新しいメソッドで人だけ。docs/api.md)。pekoed がエージェントの窓に Escape を 1 回だけ送る。生のキーを GUI に出さず(docs/gui-design.md 決まったこと 5)名前付きの操作にした。tapi にも効かせる: TUI では tapi chat に打っている間も `esc` がそのまま tapi に届く(`internal/tui/pty.go` の `ptyTypingKey` はセッションと tapi chat の両方の pty に使う)ので、同じ操作を出す。送ってよいのはエージェントが動いているときだけ(hooks の状態が `running` で、画面の下端にターンのスピナー行 `esc to interrupt` があり、メニュー(`Enter to select`)が無い)で、それ以外は 409 で何も送らない。画面も見るのは、Claude Code が esc で止めたターンには Stop を出さず、1 回 Interrupt した後も hooks の状態が次の入力まで `running` のままになるため(画面を見ないと、2 秒後の 2 回目が idle の入力欄に届く): 許可待ち(hooks の状態、またはまだ報告されていない画面の許可メニュー。`send` と同じ `promptUp`)では Escape がエージェントの「No」になるので Deny を使ってもらう、質問待ちではメニューを抜けてしまう(キーパッドに `esc` がある)、idle では入力欄を消し、2 回続くと Claude Code の巻き戻しのメニューが開く。同じ理由で、同じエージェントへの Interrupt は 2 秒に 1 回まで(二度押しで 2 回目の Escape にしない)。`send` と同じ送信の排他の中で送るので、貼り付けと Enter の間には入らない。確認シートは OK にフォーカスを置く(`esc` → `↵` で送れる。シートそのものが確認)。確かめてから Escape を送るまでの数ミリ秒に許可ダイアログが出る隙間は、`send` と同じく塞ぎきれない(エージェントの描画は止められない)が、許可ダイアログでの Escape は「No」なので、許可する方向には倒れない
+
 MVP では画面のための新しい API を足さない。今の Web UI の `/api/*` で足りた(段階 0 でそのまま使えることを確かめ、段階 1 の画面もこれだけで作った)。段階 0 で足したのは認証のためのもの(ソケットの `gui.*` と `POST /api/gui/session`、下の「認証」)だけ。段階 1 で変えたのは、GUI の入口だけ `always` を受け付けること(`webSurface.always`)と、GUI の `/` でデスクトップ向けのページを返すこと(`webSurface.index`)。
 
 段階 1 で作ったもの(`internal/daemon/webui/gui/`。見た目は docs/gui-design.md の「画面の構成」):
@@ -77,7 +85,7 @@ MVP では画面のための新しい API を足さない。今の Web UI の `/
 
 ### 後回しにするもの
 
-- 段階 2 のすべてと、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
+- 段階 2 のうち上の 3 つ以外と、段階 4 の Dashboard の集計と台帳(上)以外(段階 3 は作らない)
 - Touch ID(WebAuthn)を allow の前に挟むこと(脅威モデルの「エージェントがブラウザを操作する」と「決まったこと」2)
 - 別の端末(LAN の他の PC)からの接続。待ち受けは `127.0.0.1` だけで、`0.0.0.0` には開かない(外から使うのは Web UI の役目)
 - Service Worker・オフライン・PWA としてのインストール

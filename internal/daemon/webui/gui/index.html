@@ -26,6 +26,7 @@
   </label>
   <div class="tb-right">
     <span class="daemon" id="daemon" aria-live="polite"></span>
+    <button type="button" class="btn sm" id="new-btn" title="a new session in a repository pekoe knows (the TUI's n)"><span class="k">n</span> New session</button>
     <button type="button" class="btn sm" id="theme-btn" aria-label="switch theme">
       <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg>
       <span id="theme-word">System</span>
@@ -100,6 +101,7 @@
         <div class="tp-head">
           <a class="tp-name" href="#/tapi">tapi</a>
           <span class="tp-state" id="c-state"></span>
+          <button type="button" class="btn xs push" id="c-reset" title="forget tapi's conversation (pekoe tapi reset)"><span class="k r-err">T</span> Reset</button>
         </div>
         <div class="chat" id="c-chat">
           <div class="log" id="c-log" role="log" tabindex="0">
@@ -128,6 +130,7 @@
       <div class="s-head">
         <div class="s-head-main" id="d-head"></div>
         <span class="fresh" id="d-fresh" aria-live="off"></span>
+        <button type="button" class="btn xs" id="d-interrupt" title="stop the agent's turn: Escape once, after a confirmation"><span class="k">esc</span> Interrupt</button>
         <button type="button" class="btn xs" id="d-refresh">Refresh</button>
       </div>
       <div class="s-cols">
@@ -278,6 +281,41 @@
     <div class="row">
       <button class="btn" id="xsheet-cancel">Cancel</button>
       <button class="btn" id="xsheet-ok">Run it</button>
+    </div>
+  </div>
+</div>
+
+<!-- New session (the TUI's n): a repository pekoe knows, a branch and a
+     prompt; Continue shows them once more in the confirm sheet (#csheet) -->
+<div class="sheet-back" id="nsheet" hidden>
+  <form class="sheet" id="nform" role="dialog" aria-modal="true" aria-labelledby="nsheet-title" autocomplete="off">
+    <h2 id="nsheet-title">New session</h2>
+    <label class="sheet-cap" for="n-repo">repository — one pekoe knows (the TUI's w lists the same)</label>
+    <select class="field" id="n-repo"></select>
+    <label class="sheet-cap" for="n-branch">branch — new, in a worktree of its own</label>
+    <input class="field" id="n-branch" placeholder="feat/x" spellcheck="false" autocapitalize="off">
+    <label class="sheet-cap" for="n-prompt">prompt — the agent's first instruction (optional)</label>
+    <textarea class="field" id="n-prompt" rows="6" maxlength="16000" placeholder="what the agent should do"></textarea>
+    <div class="sheet-warn" id="n-err" role="alert" hidden></div>
+    <div class="row">
+      <button type="button" class="btn" id="n-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="n-next">Continue</button>
+    </div>
+  </form>
+</div>
+
+<!-- the confirm sheet of New session, tapi's Reset and Interrupt: what
+     happens and to what, before it does -->
+<div class="sheet-back" id="csheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="csheet-title">
+    <h2 id="csheet-title"></h2>
+    <div class="sheet-cap" id="csheet-to-cap"></div>
+    <div class="target" id="csheet-to"></div>
+    <div id="csheet-facts"></div>
+    <div class="sheet-warn" id="csheet-warn" hidden></div>
+    <div class="row">
+      <button type="button" class="btn" id="csheet-cancel">Cancel</button>
+      <button type="button" class="btn" id="csheet-ok"></button>
     </div>
   </div>
 </div>

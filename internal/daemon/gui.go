@@ -416,12 +416,21 @@ func clearGUIPages() {
 // without the confirm sheet, "always" on a permission prompt), the desktop
 // page at / (webui/gui/), and the token exchange.
 func (d *Daemon) guiHandler(port int) http.Handler {
-	mux := d.webMux(webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html", gui: true})
+	sf := webSurface{tapiSend: true, confirmTapi: func() bool { return false }, always: true, index: "gui/index.html", gui: true}
+	mux := d.webMux(sf)
 	mux.HandleFunc("POST /api/gui/session", d.guiSessionHandler)
 	// the Dashboard's merges, tokens and ledger (guidash.go): the GUI's
 	// mux only, the phone's Web UI has no use for them
 	mux.HandleFunc("GET /api/stats", d.guiStats)
 	mux.HandleFunc("GET /api/ledger", d.guiLedger)
+	// the TUI's n, T and esc (guiact.go): the GUI's mux only. A new
+	// session, tapi's reset and an interrupt are a person's, from the Mac's
+	// own screen; the phone's Web UI does not offer them
+	mux.HandleFunc("GET /api/repos", d.guiRepos)
+	mux.HandleFunc("POST /api/sessions", d.guiNew)
+	mux.HandleFunc("POST /api/sessions/{slug}/interrupt", d.guiInterrupt)
+	mux.HandleFunc("POST /api/tapi/interrupt", d.guiTapiInterrupt(sf))
+	mux.HandleFunc("POST /api/tapi/reset", d.guiTapiReset(sf))
 	return d.guiGuard(port, mux)
 }
 
