@@ -25,6 +25,7 @@ import { guardPageDrops } from "./drop.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { flows, readySet, stateBits, tapiState } from "./states.js";
 import { sideRail } from "./rail.js";
+import { sideWidth } from "./sidewidth.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
@@ -78,6 +79,8 @@ const side = sideRail({
   buttons: [...document.querySelectorAll(".rail-btn")], side: $("side"), box: $("side-view"), input: $("q"),
   store: tabStore, ctx: { go },
 });
+// its width: the grip on the right edge (sidewidth.js), kept in localStorage
+sideWidth({ side: $("side"), grip: $("side-grip"), store: () => window.localStorage, room: () => window.innerWidth });
 
 function renderSide() {
   side.update({ sessions, tapi, overview, current });

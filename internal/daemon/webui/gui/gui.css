@@ -108,7 +108,18 @@ a:hover { color: var(--text); }
 
 /* ---- body: the sidebar and the main column ---- */
 .gui-body { flex: 1; min-height: 0; display: flex; }
-.sidebar { flex: none; width: 300px; display: flex; background: var(--chrome); border-right: 1px solid var(--border); }
+.sidebar { flex: none; position: relative; width: var(--side-w, 300px); display: flex; background: var(--chrome); border-right: 1px solid var(--border); }
+/* the grip on the sidebar's right edge (gui/sidewidth.js): 8px to take
+   hold of, over the border; the line shows on hover, drag and focus */
+.side-grip {
+  position: absolute; top: 0; bottom: 0; right: -5px; width: 9px; z-index: 2;
+  cursor: col-resize; touch-action: none; background: transparent;
+}
+.side-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; }
+.side-grip:hover::after, body.side-resizing .side-grip::after { background: var(--primary); }
+.side-grip:focus-visible { outline: 0; }
+.side-grip:focus-visible::after { background: var(--primary); }
+body.side-resizing { cursor: col-resize; user-select: none; }
 .rail {
   flex: none; width: 48px; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 8px 0; border-right: 1px solid var(--border);
@@ -658,6 +669,7 @@ a:hover { color: var(--text); }
   .search { order: 3; flex-basis: 100%; max-width: none; }
   .gui-body { flex-direction: column; }
   .sidebar { width: auto; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-grip { display: none; }
   .sidebar { flex-direction: column; }
   .rail { width: auto; flex-direction: row; padding: 4px 8px; border-right: 0; border-bottom: 1px solid var(--border); }
   .rail-btn.foot { margin-top: 0; margin-left: auto; }
