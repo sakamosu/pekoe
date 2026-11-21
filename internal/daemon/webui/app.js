@@ -29,7 +29,7 @@ let pressing = false; // a keypad key is in flight
 let touching = false; // a finger is on the list: do not move rows under it
 const drafts = new Map(); // slug → unsent text, so one session's words never ride along to another
 const attachments = new Map(); // slug → images for the next send (same rule): [{data (base64), thumb (data URL), w, h, bytes, type}]
-let preparing = false; // images being read and re-encoded
+const preparing = new Set(); // targets whose images are being read and re-encoded (per target, like the attachments)
 
 // ---- the wide layout (an iPad on its side; app.css 「the wide layout」) ----
 // From --wide-min (app.css :root) on, the page puts a rail on the left and
@@ -585,7 +585,7 @@ function renderTarget(s) {
     // itself) is what shows the send goes to tapi. When tapi is not
     // running it stays, to say why nothing can be sent
     to.hidden = !!s;
-    $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending || preparing;
+    $("d-send-btn").disabled = !s || !tapi.sendable || s.answerable || sending || preparing.has(current);
     $("d-attach").hidden = !!tapi && !tapi.sendable;
     renderComposer(); // no attach, nothing to fold
     return;
@@ -595,7 +595,7 @@ function renderTarget(s) {
   $("d-to-slug").textContent = current || "";
   $("d-to-repo").textContent = s ? [s.repo, s.branch !== s.slug ? s.branch : ""].filter(Boolean).join(" · ") : "is gone";
   to.classList.toggle("gone", !s);
-  $("d-send-btn").disabled = !s || sending || preparing;
+  $("d-send-btn").disabled = !s || sending || preparing.has(current);
   $("d-attach").hidden = false;
   renderComposer();
 }
@@ -734,7 +734,7 @@ async function doSend(ev) {
   // the target is fixed here, from the same `current` the label shows
   const slug = current;
   const images = attached(slug);
-  if ((!text && !images.length) || !slug || sending || preparing) return;
+  if ((!text && !images.length) || !slug || sending || preparing.has(slug)) return;
   if (slug === TAPI) {
     openTapiSheet(text, images);
     return;
@@ -800,7 +800,7 @@ async function addImages(files) {
     return;
   }
   if (files.length > room) toast("at most " + IMG_MAX + " images in one send: took the first " + room);
-  preparing = true;
+  preparing.add(slug);
   renderThumbs();
   const got = [];
   for (const f of files.slice(0, room)) {
@@ -810,7 +810,7 @@ async function addImages(files) {
       toast(e.message);
     }
   }
-  preparing = false;
+  preparing.delete(slug);
   if (got.length) attachments.set(slug, [...attached(slug), ...got]);
   if (current === slug) renderThumbs();
   if (current) renderTarget(detailTarget());
@@ -820,13 +820,14 @@ function renderThumbs() {
   const box = $("d-thumbs");
   const images = attached(current);
   thumbs(box, images, (im) => dropAttached(current, [im]));
-  if (preparing) {
+  const reading = preparing.has(current);
+  if (reading) {
     box.append(el("span", "thumb-note", "reading…"));
     box.hidden = false;
   } else if (images.length) {
     box.append(el("span", "thumb-note", images.length + "/" + IMG_MAX));
   }
-  $("d-attach").classList.toggle("off", preparing || images.length >= IMG_MAX);
+  $("d-attach").classList.toggle("off", reading || images.length >= IMG_MAX);
   renderComposer();
 }
 

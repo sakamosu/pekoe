@@ -76,3 +76,53 @@ console.log(JSON.stringify({ got, items: chat.items.length, draws: drawn.length 
 		t.Fatalf("chat past CHAT_KEEP:\n got %s\nwant %s", out, want)
 	}
 }
+
+// The images being read belong to the session they were chosen for, like
+// the attachments: reading session a's images never leaves b's + off nor
+// "reading…" under b's box, nor holds b's send; a's own box shows them
+// once they are read.
+func TestWebImagesReadingPerTarget(t *testing.T) {
+	prog := `const IMG_MAX = 4;
+const toasts = [];
+const toast = (m) => toasts.push(m);
+const mkNode = () => { const n = { kids: [], hidden: true, cls: new Set(), disabled: false,
+  classList: { toggle: (c, on) => (on ? n.cls.add(c) : n.cls.delete(c)) },
+  append: (...k) => n.kids.push(...k), replaceChildren: () => (n.kids = []) }; return n; };
+const nodes = {};
+const $ = (id) => (nodes[id] ||= mkNode());
+const el = (tag, cls, text) => ({ tag, cls, text });
+const thumbs = (box, images) => { box.replaceChildren(); images.forEach((im) => box.append(el("span", "thumb", im.name))); };
+const renderComposer = () => {};
+let sending = false;
+const sessions = [{ slug: "a" }, { slug: "b" }];
+const sent = [], opened = [];
+const sendTo = (slug) => sent.push(slug), openSendSheet = (slug) => opened.push(slug), openTapiSheet = () => {};
+const TAPI = "+tapi";
+let done;
+const prepareImage = (f) => new Promise((res) => { done = () => res({ name: f.name }); });
+let current = "a";
+const detailTarget = () => current;
+const renderTarget = () => {};
+` + appParts(t, "attachments", "preparing", "attached", "dropAttached", "addImages", "renderThumbs", "doSend") + `
+const look = () => ({ off: $("d-attach").cls.has("off"), notes: $("d-thumbs").kids.filter((k) => k.cls === "thumb-note").map((k) => k.text) });
+const r = {};
+const reading = addImages([{ name: "a1" }]);
+r.aReading = look();
+current = "b"; renderThumbs(); // the page moves to b (route draws b's thumbs)
+r.bWhileA = look();
+$("d-text").value = "hi";
+await doSend({ preventDefault() {} });
+r.bSends = sent.join(",");
+done(); await reading;
+r.bAfterA = look();
+r.aHas = attached("a").map((im) => im.name).join(",");
+current = "a"; renderThumbs();
+r.aBack = look();
+console.log(JSON.stringify(r));`
+	out := strings.TrimSpace(string(runWebModule(t, prog)))
+	want := `{"aReading":{"off":true,"notes":["reading…"]},"bWhileA":{"off":false,"notes":[]},"bSends":"b",` +
+		`"bAfterA":{"off":false,"notes":[]},"aHas":"a1","aBack":{"off":false,"notes":["1/4"]}}`
+	if out != want {
+		t.Fatalf("reading images per target:\n got %s\nwant %s", out, want)
+	}
+}
