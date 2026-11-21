@@ -26,7 +26,7 @@ import { attachments } from "./attach.js";
 import { THEME_WORDS, nextTheme, readTheme, saveTheme, applyTheme } from "./theme.js";
 import { flows, readySet, stateBits, tapiState } from "./states.js";
 import { sideRail } from "./rail.js";
-import { sideWidth } from "./sidewidth.js";
+import { paneWidth, SIDE_PANE, TAPI_PANE } from "./panewidth.js";
 import { cap, diffBits, inboxCard, mergeRow, renderTiles, renderPipeline, renderRequests } from "./dash.js";
 import { interruptWhy, interruptSheet, resetSheet, newWhy, newSheet, issueLine, issueMeta, pickIssueBranch, tapiStart } from "./actions.js";
 import { chatPane, selectingIn } from "./chatpane.js";
@@ -79,8 +79,28 @@ const side = sideRail({
   buttons: [...document.querySelectorAll(".rail-btn")], side: $("side"), box: $("side-view"), input: $("q"),
   store: tabStore, ctx: { go },
 });
-// its width: the grip on the right edge (sidewidth.js), kept in localStorage
-sideWidth({ side: $("side"), grip: $("side-grip"), store: () => window.localStorage, room: () => window.innerWidth });
+// its width, and the dashboard's tapi panel's: the grips on the edges they
+// share with the main column (panewidth.js), kept in localStorage. The
+// main column keeps MAIN_MIN between them, and the sidebar comes first:
+// its room is the window less the tapi panel's narrowest, the tapi panel's
+// is what the sidebar leaves. So a wider sidebar (or a narrower window)
+// narrows the tapi panel first, its chosen width kept, and the split
+// depends only on the window and the two choices. The tapi panel counts
+// only while it is shown (the Dashboard, not a Session) and beside the main
+// column (wider than gui.css's 1180px, where it goes under it); route()
+// redoes both when the view changes, and crossing 1180px fires resize.
+const beside = window.matchMedia ? window.matchMedia("(min-width: 1181px)") : { matches: true };
+let tapiWidth = null;
+const tapiBeside = () => beside.matches && !$("dashboard").hidden;
+const sideWidth = paneWidth({
+  pane: $("side"), grip: $("side-grip"), o: SIDE_PANE, store: () => window.localStorage,
+  room: () => window.innerWidth - (tapiBeside() ? TAPI_PANE.min : 0),
+  changed: () => tapiWidth?.apply(),
+});
+tapiWidth = paneWidth({
+  pane: $("tapi-panel"), grip: $("tapi-grip"), o: TAPI_PANE, store: () => window.localStorage,
+  room: () => window.innerWidth - sideWidth.width(),
+});
 
 function renderSide() {
   side.update({ sessions, tapi, overview, current });
@@ -1327,6 +1347,8 @@ function route() {
   ta.value = (current && drafts.get(current)) || "";
   $("dashboard").hidden = view !== "dashboard";
   $("detail").hidden = view !== "detail";
+  sideWidth.apply(); // the tapi panel came or went: the sidebar's bound moves
+  tapiWidth.apply(); // and the tapi panel's room with it
   renderSide();
   renderTabs();
   pick.close();

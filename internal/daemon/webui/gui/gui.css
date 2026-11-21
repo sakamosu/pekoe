@@ -109,17 +109,23 @@ a:hover { color: var(--text); }
 /* ---- body: the sidebar and the main column ---- */
 .gui-body { flex: 1; min-height: 0; display: flex; }
 .sidebar { flex: none; position: relative; width: var(--side-w, 300px); display: flex; background: var(--chrome); border-right: 1px solid var(--border); }
-/* the grip on the sidebar's right edge (gui/sidewidth.js): 8px to take
-   hold of, over the border; the line shows on hover, drag and focus */
-.side-grip {
-  position: absolute; top: 0; bottom: 0; right: -5px; width: 9px; z-index: 2;
+/* the grips on the edges the panes share with the main column
+   (gui/panewidth.js): the sidebar's right edge, the tapi panel's left
+   one. 8px to take hold of, over the border; the line shows on hover,
+   drag and focus */
+.pane-grip {
+  position: absolute; top: 0; bottom: 0; width: 9px; z-index: 2;
   cursor: col-resize; touch-action: none; background: transparent;
 }
-.side-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; }
-.side-grip:hover::after, body.side-resizing .side-grip::after { background: var(--primary); }
-.side-grip:focus-visible { outline: 0; }
-.side-grip:focus-visible::after { background: var(--primary); }
-body.side-resizing { cursor: col-resize; user-select: none; }
+.side-grip { right: -5px; }
+.tapi-grip { left: -5px; }
+.side-grip::after { left: 3px; }
+.tapi-grip::after { left: 4px; }
+.pane-grip::after { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; background: transparent; }
+.pane-grip:hover::after, .pane-grip.held::after { background: var(--primary); }
+.pane-grip:focus-visible { outline: 0; }
+.pane-grip:focus-visible::after { background: var(--primary); }
+body.pane-resizing { cursor: col-resize; user-select: none; }
 .rail {
   flex: none; width: 48px; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 8px 0; border-right: 1px solid var(--border);
@@ -410,7 +416,7 @@ body.side-resizing { cursor: col-resize; user-select: none; }
 
 /* tapi on the right */
 .tapi-panel {
-  flex: 0 0 340px; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  flex: 0 0 var(--tapi-w, 340px); position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column;
   background: var(--chrome); border-left: 1px solid var(--border);
 }
 .tp-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -658,6 +664,7 @@ body.side-resizing { cursor: col-resize; user-select: none; }
   .dash-main { flex: none; overflow: visible; }
   .tapi-panel { flex: none; border-left: 0; border-top: 1px solid var(--border); }
   .tapi-panel .chat { flex: none; height: 480px; }
+  .tapi-grip { display: none; }
   .detail { overflow-y: auto; }
   .s-cols { flex: none; flex-direction: column; }
   .s-center { flex: none; }

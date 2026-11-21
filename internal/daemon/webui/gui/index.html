@@ -56,8 +56,8 @@
     </nav>
     <div class="side-view" id="side-view"></div>
     <!-- the sidebar's right edge: drag, double-click for the default, or
-         the arrow keys (gui/sidewidth.js). Not shown when stacked. -->
-    <div class="side-grip" id="side-grip" role="separator" aria-orientation="vertical" aria-controls="side" aria-label="Sidebar width" title="Drag to resize · double-click to reset" tabindex="0"></div>
+         the arrow keys (gui/panewidth.js). Not shown when stacked. -->
+    <div class="pane-grip side-grip" id="side-grip" role="separator" aria-orientation="vertical" aria-controls="side" aria-label="Sidebar width" title="Drag to resize · double-click to reset" tabindex="0"></div>
   </aside>
 
   <main class="main">
@@ -101,7 +101,11 @@
         </section>
       </div>
 
-      <aside class="tapi-panel" aria-label="tapi">
+      <aside class="tapi-panel" id="tapi-panel" aria-label="tapi">
+        <!-- the panel's left edge: drag left to widen it, double-click for
+             the default, or the arrow keys (gui/panewidth.js). Not shown
+             when the panel goes under the main column. -->
+        <div class="pane-grip tapi-grip" id="tapi-grip" role="separator" aria-orientation="vertical" aria-controls="tapi-panel" aria-label="tapi panel width" title="Drag to resize · double-click to reset" tabindex="0"></div>
         <div class="tp-head">
           <a class="tp-name" href="#/tapi">tapi</a>
           <span class="tp-state" id="c-state"></span>
