@@ -146,6 +146,13 @@ keys = ["pekoe gui"]
 docs = ["docs/gui-design.md#カラートークン"]
 
 [[tip]]
+id = "local-gui-sidebar-width"
+short = "pekoe gui のサイドバーは幅を変えられる"
+detail = "サイドバーの右端をドラッグすると幅が変わり、ダブルクリックで既定の幅に戻る。右端にフォーカスして ←/→ でも動く。決めた幅はブラウザに残る(既定の port = 0 では次の待ち受けで既定に戻る)。"
+keys = ["pekoe gui"]
+docs = ["docs/gui.md#段階-2-の一部-サイドバーのビューレール"]
+
+[[tip]]
 id = "local-gui-dashboard-stats"
 short = "pekoe gui の Overview にマージ数と今日のトークン"
 detail = "Dashboard の Overview に今日と 7 日のマージ数・日別の棒・今日のトークンが出る(pekoe stats と同じ数)。Requests は開いている依頼と閉じた直近 5 件で、Open ledger で閉じたものを遡れる。"

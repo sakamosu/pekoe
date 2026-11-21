@@ -615,6 +615,11 @@ func TestGUIPagesClearedAtStart(t *testing.T) {
 // and the look stays in one place). No style attribute in the HTML, no
 // <style>, no style set from the page's scripts. The page loads nothing
 // from outside (fonts included: system-ui, 決まったこと 2).
+// sideWidthStyle is the one style a gui/ script may set (gui/sidewidth.js):
+// shown is clampWidth's whole number of px, made on the line before.
+const sideWidthStyle = `shown = clampWidth(want, room());
+    side.style.setProperty("--side-w", shown + "px");`
+
 func TestGUIStylesOnlyInCSS(t *testing.T) {
 	html, _ := webFiles.ReadFile("webui/gui/index.html")
 	if m := regexp.MustCompile(`(?i)\sstyle\s*=|<style`).FindAllString(string(html), -1); len(m) > 0 {
@@ -634,6 +639,14 @@ func TestGUIStylesOnlyInCSS(t *testing.T) {
 			views++
 		}
 		js, _ := webFiles.ReadFile(p)
+		if p == "webui/gui/sidewidth.js" {
+			// the one exception: the sidebar's width as a custom property,
+			// a whole number of px clampWidth made (TestGUISideWidth)
+			if c := strings.Count(string(js), sideWidthStyle); c != 1 {
+				t.Errorf("gui/sidewidth.js: %q %d times, want once", sideWidthStyle, c)
+			}
+			js = []byte(strings.Replace(string(js), sideWidthStyle, "", 1))
+		}
 		if m := regexp.MustCompile(`\.style\b|setAttribute\(\s*["']style|cssText`).FindAllString(string(js), -1); len(m) > 0 {
 			t.Errorf("%s sets styles: %v", strings.TrimPrefix(p, "webui/"), m)
 		}
