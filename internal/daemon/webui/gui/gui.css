@@ -398,7 +398,7 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
    the column: the Branch box shrinks to 160px, then the box scrolls. */
 .pipe-box { overflow-x: auto; }
 .pipe-box > .empty { padding: 12px 0; }
-.pipeline { --pl-cols: 132px 28px minmax(160px, 288px) repeat(5, 96px) minmax(150px, 1fr); min-width: 950px; font-size: 12px; }
+.pipeline { --pl-cols: 160px 28px minmax(160px, 288px) repeat(5, 96px) minmax(150px, 1fr); min-width: 978px; font-size: 12px; }
 .pl-group { position: relative; }
 .pl-row { display: grid; grid-template-columns: var(--pl-cols); height: 60px; align-items: center; }
 .pl-head { height: auto; padding-bottom: 4px; color: var(--dim); }
@@ -419,7 +419,7 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
   border-left: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim); border-bottom-left-radius: 12px;
 }
 /* one trunk per request: left = the Request column + half the tree's */
-.pl-trunk { position: absolute; left: 146px; top: 30px; bottom: 41.25px; border-left: 1.5px solid var(--dim); }
+.pl-trunk { position: absolute; left: 174px; top: 30px; bottom: 41.25px; border-left: 1.5px solid var(--dim); }
 .pl-branch {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 12px; color: var(--text); font: inherit; text-align: left;
 }
