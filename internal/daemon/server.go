@@ -170,6 +170,7 @@ type Daemon struct {
 	http    httpListen
 	token   string
 	web     webState // phone UI on the tailnet ([web], web.go / webts.go)
+	gui     guiState // the local GUI on 127.0.0.1 ([gui], gui.go)
 	authKey string   // TS_AUTHKEY, taken out of the environment (takeAuthKeyEnv)
 
 	humanToken string // unlocks the human-only methods over the socket (human.go)
@@ -251,7 +252,7 @@ type Daemon struct {
 }
 
 func New() (*Daemon, error) {
-	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir(), paths.NvimDir()); err != nil {
+	if err := paths.Ensure(paths.DataDir(), paths.ConfigDir(), paths.ReposConfigDir(), paths.NvimDir(), paths.GUIDir()); err != nil {
 		return nil, err
 	}
 	// files written by versions that used 0644 / 0755
@@ -275,6 +276,7 @@ func New() (*Daemon, error) {
 		lock.Close()
 		return nil, err
 	}
+	clearGUIPages() // their tokens were the last pekoed's
 	humanToken, err := loadOrCreateHumanToken()
 	if err != nil {
 		db.Close()
@@ -387,6 +389,7 @@ func (d *Daemon) Stop() { d.stopOnce.Do(func() { close(d.stop) }) }
 
 func (d *Daemon) shutdown() {
 	d.stopWeb()
+	d.stopGUI()
 	if d.httpSrv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		d.httpSrv.Shutdown(ctx)
@@ -631,6 +634,10 @@ func (d *Daemon) registerHandlers() {
 			}
 			return map[string]any{"port": h.port, "token": d.token}, nil
 		},
+		"gui.open":   func(json.RawMessage) (any, error) { return d.hGUIOpen() },
+		"gui.status": func(json.RawMessage) (any, error) { return d.hGUIStatus() },
+		"gui.revoke": func(json.RawMessage) (any, error) { return d.hGUIRevoke() },
+		"gui.stop":   func(json.RawMessage) (any, error) { return d.hGUIStop() },
 		"web.status": func(json.RawMessage) (any, error) {
 			st := d.web.get()
 			st.Built = webBuilt

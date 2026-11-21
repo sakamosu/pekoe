@@ -272,6 +272,13 @@ main { padding: 4px 10px 8px; }
   background: var(--surface); border: 1px solid var(--err);
   font-size: 13px;
 }
+/* the local GUI signed out (docs/gui.md): stays until `pekoe gui` again */
+.gui-auth {
+  position: fixed; left: 12px; right: 12px; top: calc(12px + env(safe-area-inset-top)); z-index: 30;
+  padding: 10px 12px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--warn); color: var(--text);
+  font-size: 13px;
+}
 .toast .ic { margin-right: 6px; color: var(--err); }
 .toast.ok { border-color: var(--ok); }
 .toast.ok .ic { color: var(--ok); }

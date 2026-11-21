@@ -51,6 +51,9 @@ type webPeer struct {
 	Device string `json:"device"` // machine name, e.g. iphone-15
 	Tagged bool   `json:"-"`      // a tagged node (owned by tags, not a person)
 	Self   bool   `json:"-"`      // the node runs on this machine (its hostname)
+	// Via is how the caller is recorded (send log, inbox answers) when it
+	// is not "web:<device>": "gui" for the local GUI (gui.go).
+	Via string `json:"-"`
 }
 
 // whoIsFunc resolves a connection's remote address ("100.x.y.z:port").
@@ -88,6 +91,25 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	if o.local == nil {
 		o.local = isLocalAddr
 	}
+	// tapi chat: send only with allow_devices, and the confirm sheet as
+	// [web] confirm_tapi_send says (read per request)
+	sendable := len(lowerSet(o.cfg.AllowDevices)) > 0
+	return webGuard(o, d.webMux(webSurface{
+		tapiSend:    sendable,
+		confirmTapi: func() bool { return d.cfg().Web.ConfirmTapiSendOn() },
+	}))
+}
+
+// webSurface is what differs between the two front doors of the same
+// handlers: the phone on the tailnet (webGuard) and the local GUI on
+// 127.0.0.1 (guiGuard, gui.go).
+type webSurface struct {
+	tapiSend    bool        // POST /api/tapi/send is allowed
+	confirmTapi func() bool // the page puts a send to tapi through the confirm sheet
+}
+
+// webMux registers the static files and the API both front doors serve.
+func (d *Daemon) webMux(sf webSurface) *http.ServeMux {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(webFiles, "webui")
 	files := http.FileServerFS(static)
@@ -113,17 +135,36 @@ func (d *Daemon) webHandler(o webOpts) http.Handler {
 	mux.HandleFunc("POST /api/sessions/{slug}/keys", d.webKeys)
 	mux.HandleFunc("GET /api/inbox", d.webInbox)
 	mux.HandleFunc("POST /api/inbox/{id}/answer", d.webInboxAnswer)
-	// tapi chat (webtapi.go): its screen, send (only with allow_devices)
-	// and the question keypad. No allow/deny: tapi's permission prompts
-	// are answered at the terminal.
-	sendable := len(lowerSet(o.cfg.AllowDevices)) > 0
-	mux.HandleFunc("GET /api/tapi", d.webTapi(sendable))
+	// tapi chat (webtapi.go): its screen, send (webSurface.tapiSend) and
+	// the question keypad. No allow/deny: tapi's permission prompts are
+	// answered at the terminal.
+	mux.HandleFunc("GET /api/tapi", d.webTapi(sf))
 	mux.HandleFunc("GET /api/tapi/screen", d.webTapiScreen)
 	mux.HandleFunc("GET /api/tapi/transcript", d.webTapiTranscript)
-	mux.HandleFunc("POST /api/tapi/send", d.webTapiSend(sendable))
+	mux.HandleFunc("POST /api/tapi/send", d.webTapiSend(sf.tapiSend))
 	mux.HandleFunc("POST /api/tapi/keys", d.webTapiKeys)
 	mux.HandleFunc("GET /api/overview", d.webOverview)
-	return webGuard(o, mux)
+	return mux
+}
+
+// webCSP is the pages' Content-Security-Policy, on both front doors.
+const webCSP = "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
+// webSecurityHeaders: what every response of both front doors carries.
+func webSecurityHeaders(h http.Header) {
+	h.Set("Content-Security-Policy", webCSP)
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Frame-Options", "DENY")
+}
+
+// webLimitBody caps the request body (a send carries its images).
+func webLimitBody(w http.ResponseWriter, r *http.Request) {
+	limit := int64(webMaxBody)
+	if webSendBody(r) {
+		limit = webMaxSendBody // the images ride in it (webimage.go)
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 }
 
 type peerKey struct{}
@@ -150,10 +191,7 @@ func webGuard(o webOpts, next http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("X-Frame-Options", "DENY")
+		webSecurityHeaders(h)
 		host := strings.ToLower(r.Host)
 		if hh, _, err := net.SplitHostPort(host); err == nil {
 			host = hh
@@ -212,11 +250,7 @@ func webGuard(o webOpts, next http.Handler) http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			h.Set("Cache-Control", "no-store")
 		}
-		limit := int64(webMaxBody)
-		if webSendBody(r) {
-			limit = webMaxSendBody // the images ride in it (webimage.go)
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		webLimitBody(w, r)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), peerKey{}, p)))
 	})
 }

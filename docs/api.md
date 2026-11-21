@@ -64,7 +64,7 @@
   | `cleanup.list` | ハブのエージェントの `pekoe cleanup`(片付けの候補を読むだけ。`session.list` で見えるものを理由ごとに分け、worktree の未コミットのファイル数と push していないコミット数を足す。git は worktree ごとに 10 秒に 1 回まで。消すのは `worktree.rm` で、token なしでは landed だけ。下の表) |
   | `conflicts.list` | ハブのエージェントの `pekoe conflicts`(並列にするか・順番にするかを、触るファイルの重なりで決める。同じ情報は `session.list` の各セッションの `overlaps` で既に見える。token なしでは計算し直しは 10 秒に 1 回まで。下の表) |
 
-- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send`・リポジトリを忘れさせる `repo.forget` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、`session.screen`・`tapi.screen`・`tapi.transcript`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
+- それ以外はすべて token が要る。ないか違えば `<method>: only a person can do this: …` のエラーで、何もしない。人間の判断(`session.answer`・`session.keys`・`review.*` の承認やコメント・`error.send`・`pick.send`・リポジトリを忘れさせる `repo.forget` など)、sandbox の外で何かを動かすもの(`init.write`・`run.start`・`review.surface`・`session.open`・`issues.*`・`pr.view`・`pr.failed_log` の gh 呼び出しなど)、秘密や他のセッションの中身を返すもの(`ext.info` の HTTP token、`web.status` のログイン URL、ブラウザを人としてサインインさせる一度きりのトークンを書く `gui.open` と、ローカル GUI の `gui.status`・`gui.revoke`・`gui.stop`、`session.screen`・`tapi.screen`・`tapi.transcript`・`error.get` / `error.list` のソースの抜粋、`changes`・`review.files` など)、TUI の内部の記録(`session.seen`・`session.resize`・`daemon.status` など)。分類と理由の一覧は `internal/daemon/human.go` の `agentMethods` / `humanMethods`(登録した全メソッドがどちらかに載っていることをテストで確かめている)
 - `land` は token なしでも使える。push と PR 作成は、エージェントの sandbox が github.com / api.github.com を許していればエージェントが自分の Bash でもできるので、断っても守りにならない。テストは pekoed の sandbox で動き(下の「hooks の sandbox」)、マージは人間が決める(pekoed がマージするのは、根拠の項目に人が `merge` と答えたときだけ。下の「マージしてよいかの根拠」)。後片付け(teardown と worktree の削除)はマージを検出してから(下の「PR の状態のポーリング」が `MERGED` を見たその回、または `watchMerges` の早い方)。ただし origin のないリポジトリでは land がその場で base を fast-forward して worktree を消すので、token なしでは `land in a repository without origin …: only a person can do this` で断る(origin の有無は land の中で読む値で決める)
 - `worktree.rm` は token なしでは landed のセッションだけを消す(`hAgentRm`)。landed のセッションは、マージを検知した pekoed が teardown と worktree の削除を済ませていて、残っているのは一覧の記録(DB の行・プロンプトやレビュー・付随ファイル)だけ、コードは base にある。ほかの状態(creating・running・waiting・idle・done・reviewing・approved・failed)は worktree と未コミットの変更を消すので `rm of a <state> session …: only a person can do this` で断る。`force` も断る。landed でも worktree のディレクトリが残っている(teardown や削除が失敗した)ときは、消さずに `… is still there …: only a person can do this` で断る(pekoe が作っていない worktree は元から消さないので、記録だけ消す)。状態は、セッションを一覧から外すのと同じロックの中でもう一度確かめる(その間に同じ slug の `session.new` が landed のセッションを置き換えても、新しい方は消さない)。token なしでは teardown も git も動かさない
 - `dev.toggle` は token なしでは、呼び出し元の窓のセッション(下の「呼び出し元の識別」)の dev server だけを起動・停止する(`hAgentDevToggle`)。エージェントの sandbox はポートを listen できないので、UI を確かめるには pekoed に dev server を立ててもらうしかない。動かすのはリポジトリの設定の `[hooks] dev` で、Stop のたびに誰でも走らせられる `[hooks] test` と同じく hooks の sandbox で動く(下の「hooks の sandbox」)ので、新しい実行の経路は増えない。別の slug は `dev.toggle: a session starts or stops only its own dev server (<自分>, not <相手>): only a person can do this`、窓に当たらない呼び出し(`unknown`)は `pekoe cannot tell which session is calling` で断る。tapi chat の窓からも断る。1 セッションに dev server は 1 つ(動いていれば止める)は token つきと同じ
@@ -102,7 +102,7 @@ pekoed は sandbox の外で動くので、エージェントが書き換えら�
 - 包むもの: Stop のたびの `[hooks] test`、`[review] gatekeeper`(`claude -p` も worktree の `CLAUDE.md` や `.claude/settings.json` を読む)、`session.new` の `setup`、`dev.toggle` の `dev`(tmux の窓のコマンドを `exec sandbox-exec … $SHELL -c '…'` にする)と、dev を止めるときの `dev_stop`、`worktree.rm` / land 後の `teardown`、`land` のテスト。シェル・環境変数・cwd・標準入出力はそのまま。子プロセス(make → go test、npm → node)にも効く。pekoed が動かす git もすべてこの sandbox で包む(下の「pekoed が動かす git」。git だけは sandbox が使えなくても動かす)
 - 包まないもの: `run.start`(run 窓。人間が打ったコマンドで、自分の端末で打つのと同じ)、エージェント自身の起動(Claude Code の sandbox の役目)、`review.surface` の nvim。nvim のサーバーソケットは `nvim --listen <データディレクトリ>/nvim/<slug のハッシュ>.sock` で pekoe の管理下に置く(下の「つなげない」。既定の `$TMPDIR/nvim.$USER/…` だと hooks の中から `nvim --server … --remote-send` で外のコマンドを打てる)。パスが unix ソケットの上限(約 104 バイト)を超えるときだけ、これまでどおり nvim に任せる
 - macOS: `/usr/bin/sandbox-exec`。プロファイルは `(allow default)` に deny を足す。パスは `-D` の引数で渡し、プロファイルに埋めない。Seatbelt は解決後のパスで照合するので、各パスを書いたままのものと symlink を解いたもの(`/tmp` → `/private/tmp`)の両方で塞ぐ
-  - 読めない: `human-token`、`http-token`、tsnet の state(`[web] state_dir` と既定の場所)、`config.toml`(`[web] auth_key`)、`state.db` と `-wal`・`-shm`(他のセッションのプロンプト・レビューのコメント・報告・受信箱。エージェントの sandbox と同じ扱い)
+  - 読めない: `human-token`、`http-token`、tsnet の state(`[web] state_dir` と既定の場所)、ローカル GUI の一度きりのトークンの HTML(`<データディレクトリ>/gui/`)、`config.toml`(`[web] auth_key`)、`state.db` と `-wal`・`-shm`(他のセッションのプロンプト・レビューのコメント・報告・受信箱。エージェントの sandbox と同じ扱い)
   - 書けない: データディレクトリと設定ディレクトリ(sandbox を外す・hooks を書き換える・token を差し替えることを防ぐ)、あとで sandbox の外で実行されるもの(シェルの起動ファイル、`~/.gitconfig`・`~/.config/git`、`~/.ssh`、tmux・vim / nvim の設定、`~/Library/LaunchAgents`、`$PATH` のうち書き込めるディレクトリ。pekoed は git・gh・tmux を `$PATH` から起動する)、次に起動する Claude Code が読んで実行するもの(`~/.claude.json`(user スコープの MCP サーバー)、`~/.claude/` の `settings.json`・`settings.local.json`・`skills`・`hooks`・`plugins`・`agents`・`commands`・`rules`・`output-styles`・`CLAUDE.md`。`$CLAUDE_CONFIG_DIR` があればその下の同じもの)。`~/.claude/projects` やキャッシュは書ける(門番の `claude -p` が書く。`~/.claude.json` や `plugins` に書けなくても `claude -p` は動く)。`settings.json` の `statusLine` が `~/.claude` 直下の自作スクリプトを指すときは、そのスクリプトは塞がない(場所が決まっていない)。上のどれかの親ディレクトリも名前の変更・削除はできない(`~/.local/share` をずらせば規則の外に出てしまう)
   - 書ける(塞がない): リポジトリ本体の `.git/hooks`・`.git/config`(husky・pre-commit・lefthook が `npm install` や setup から書く)。代わりに pekoed が見張る(下の「本体の .git の見張り」)
   - つなげない: tmux のソケットのディレクトリ(`$TMUX_TMPDIR/tmux-<uid>`。つなげれば sandbox の外で動く窓を開ける)と、レビュー面の nvim のソケットのディレクトリ(`<データディレクトリ>/nvim`)。pekoed のソケットにはつなげる(token なしの扱い)。ほかの unix ソケット(Docker・ssh-agent・自分で開いた nvim など)は塞がない(テストやビルドが使う)
@@ -340,6 +340,10 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `error.send` | `{id, slug?, text?}` | エラーをエージェントに送る。1 行で済むものはそのまま、それ以外は `~/.local/share/pekoe/<repo-id>/errors/<slug>-<n>.md` に書いて `@<path> <text>` の 1 行を送る。`ErrorReport`(sent) |
 | `error.ignore` | `{id}` | 無視する(同じ指紋が再発するまで出さない)。`ErrorReport`(ignored) |
 | `ext.info` | — | `{port, token}`(`pekoe ext`)。`port` は実際に待ち受けている番号。待ち受けていない(bind に失敗した)ときは理由を添えて断る |
+| `gui.open` | — | `{port, file, expires, browser?}`(`pekoe gui`)。ローカル GUI を `127.0.0.1` で待ち受けていなければ始め(`[gui] port`、`0` は空いているもの)、一度きりのトークン(32 バイト・60 秒・1 回)を作って、`http://127.0.0.1:<port>/#t=<トークン>` へ移るだけの HTML を `<データディレクトリ>/gui/open-<乱数>.html`(0600、ディレクトリは 0700)に書く。答えにトークンは入れない(CLI はファイルのパスだけを `open` / `xdg-open` に渡す)。bind に失敗したらファイルを書かずに断る(そのポートにいるものが偽の GUI かもしれないので、CLI はブラウザを開かない)。`[gui] enable = false` でも断る。下の「HTTP(ローカル GUI)」・[gui.md](gui.md) |
+| `gui.status` | — | `{enabled, listening, port?, sessions, last_used?}`(`pekoe gui --status`)。`sessions` は有効なセッションのトークンの数 |
+| `gui.revoke` | — | `{revoked}`(`pekoe gui --revoke`)。セッションのトークンと、まだ使われていない一度きりのトークン(とその HTML)を全部失効させる |
+| `gui.stop` | — | `{stopped, revoked}`(`pekoe gui --stop`)。待ち受けを止め、トークンも全部失効させる |
 | `web.status` | — | `{built, enabled, state, auth_url?, urls?, error?, backend?, backend_error?}`(`pekoe web`)。`built` はこのバイナリに Web UI が入っているか(`-tags web`)。state は `off` `unavailable`(Web UI なしのビルドで有効にされている)`starting` `needs-login` `running` `error`。`auth_url` は初回参加のログイン URL。`backend` は Tailscale の backend の状態(`NoState` `Starting` `Running` など)、`backend_error` は backend が control から受け取った最後のエラー(Running になると消える)。`starting` のまま進まない理由を見るため |
 | `issues.list` | `{repo? \| repo_id?, filter?: "mine"\|"open"\|"label", label?, refresh?}` | `IssueList`(下記)。`gh issue list --state open --json number,title,labels,assignees,updatedAt,comments,url`、`mine` は `--assignee @me`。3 分キャッシュし、`refresh` で取り直す |
 | `tapi.get` | — | `Tapi`(下記) |
@@ -416,14 +420,14 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に送ったか付�
 | `session.send` の agent の窓への指示(`submit` つき、または token なし) | 呼び出し元(TUI・CLI は `human`) | `send` |
 | 受信箱の答えの配送(下の「判断の受信箱」) | `pekoed` | `inbox` |
 | tapi への配送(下の「tapi への配送」。`to` は `+tapi`) | `pekoed` | `deliver` |
-| Web UI からの tapi への送信(`POST /api/tapi/send`。`to` は `+tapi`、docs/web.md「tapi chat の扱い」) | `human` | `send` |
+| Web UI・ローカル GUI からの tapi への送信(`POST /api/tapi/send`。`to` は `+tapi`、docs/web.md「tapi chat の扱い」) | `human` | `send` |
 
 ```jsonc
 // SendRecord
 {"id": 3, "at": "…", "from": "+tapi", "to": "feat-csv", "kind": "new", "text": "…", "via": "socket", "ok": true, "error": ""}
 ```
 
-- `via` はソケット経由なら `socket`、Web UI からなら `web:<端末名>`
+- `via` はソケット経由なら `socket`、Web UI からなら `web:<端末名>`、ローカル GUI からなら `gui`
 - 記録しないもの: 打鍵(`session.keys`・`tapi.keys`)、TUI が入力をそのまま流す `submit` なしの `session.send`、dev・run の窓への送信、TUI・CLI からの `tapi.send`、ピック・エラー・レビューの送信
 - 送れなかったもの(許可ダイアログが出ていた、先頭が数字だったなど。token なしの受け付け時の確認で断ったものも)も `ok: false` とエラーで残す
 - 本文は 64 KiB で切る
@@ -883,6 +887,27 @@ Web UI 入りのビルド(`make install WEB=1`)で `[web] enable = true` のと�
 
 POST には `X-Pekoe-Web: 1` と `Content-Type: application/json` が要る(CSRF 対策)。
 
-## 4. MCP(エージェント → nvim)
+## 4. HTTP(ローカル GUI、127.0.0.1)
+
+`pekoe gui`(`gui.open`)が初めて呼ばれたときだけ、`127.0.0.1:<port>` で待ち受ける(既定のビルドにも入っている。`::1`・`0.0.0.0` には開かない)。パス・中身は上の「3. HTTPS」と同じハンドラで、違うのは入口の確認(`internal/daemon/gui.go` の `guiGuard`)と次の点だけ。設計と脅威モデルは [gui.md](gui.md)。
+
+| method / path | body | 処理 |
+| --- | --- | --- |
+| `POST /api/gui/session` | `{token}` | 一度きりのトークンを、セッションのトークン(32 バイト、pekoed のメモリにだけ持つ)に替える。`{token}` を返す。無い・失効した(60 秒)トークンは 401。**使用済みのトークン**がもう一度来たら、誰かが人より先に使ったとみなしてセッションのトークンを全部失効させ、401 とログに残す |
+| 上の「3. HTTPS」の `/api/*` | | 同じもの。ただし `GET /api/tapi` の `sendable` は常に `true`、`confirm_send` は常に `false`(TUI と同じく確認なしで送れる。`allow_devices` は見ない)。`GET /api/me` は `{login: "local", device: "gui"}`。送信の記録と受信箱の答えの `via` は `gui`。`always` は段階 0 では Web UI と同じく 400 |
+
+すべてのリクエストで確かめること(違えば理由を `pekoed.log` に `gui: <code> <method> <path>: <理由>`):
+
+- 接続元がループバックでなければ 403
+- `Host` が `127.0.0.1:<port>` と完全一致でなければ 421(`localhost:<port>` も断る。DNS rebinding)
+- `Origin` があれば `http://127.0.0.1:<port>` と完全一致でなければ 403。`/api/*` は `Sec-Fetch-Site` があれば `same-origin` でなければ 403
+- GET・HEAD・POST 以外(`OPTIONS` を含む)は 403。`Access-Control-Allow-*` は返さない
+- `/api/*` は(`POST /api/gui/session` を除き)`Authorization: Bearer <セッションのトークン>` が要る(定数時間で比べる)。無い・違う・失効した(`[gui] session_ttl`、最後に使ってから。既定 12h)ものは 401。静的ファイル(`/`・`app.js`・`app.css`・`theme.css`・アイコン)はトークンなしで返す
+- POST は `Content-Type: application/json` が要る(415)。`/api/` の外への POST は 403
+- 応答には Web UI と同じ CSP・`X-Frame-Options: DENY`・`nosniff`・`Referrer-Policy: no-referrer`、`/api/*` には `Cache-Control: no-store`
+
+トークンはどれも pekoed のメモリにだけあるので、pekoed の再起動で全部失効する(開いていたタブは `pekoe gui` で入り直す)。起動時に前の pekoed が残した `open-*.html` を消す。
+
+## 5. MCP(エージェント → nvim)
 
 `pekoe mcp` が stdio の MCP サーバとして動き、デーモンに中継する。`claude mcp add pekoe -- pekoe mcp` で登録する。ツールは `open_in_editor(path, line, note?)` と `session_list()`。

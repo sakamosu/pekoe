@@ -49,16 +49,18 @@ type webTapi struct {
 	// Answerable: a permission prompt is up (answer it at the terminal;
 	// send and keys are refused meanwhile).
 	Answerable bool `json:"answerable"`
-	// Sendable: [web] allow_devices is set, so the web UI may send to tapi.
+	// Sendable: [web] allow_devices is set, so the web UI may send to tapi
+	// (always on the local GUI, as in the TUI).
 	Sendable bool `json:"sendable"`
 	// ConfirmSend: [web] confirm_tapi_send (default true): the page puts
 	// a send through the confirm sheet. Read on every request, so a saved
 	// config.toml applies without a restart. pekoed's checks of the send
-	// are the same either way.
+	// are the same either way. Always false on the local GUI (the TUI
+	// sends without one).
 	ConfirmSend bool `json:"confirm_send"`
 }
 
-func (d *Daemon) webTapiView(sendable bool) webTapi {
+func (d *Daemon) webTapiView(sendable, confirm bool) webTapi {
 	t := d.tapiView()
 	return webTapi{
 		Started: t.Started, Alive: t.Alive, State: t.State, WaitKind: t.WaitKind,
@@ -67,13 +69,13 @@ func (d *Daemon) webTapiView(sendable bool) webTapi {
 		Look:        toWebLook(theme.Look(theme.WebIcons(), t.State, 0, false)),
 		Answerable:  tapiAnswerable(t.State, t.WaitKind),
 		Sendable:    sendable,
-		ConfirmSend: d.cfg().Web.ConfirmTapiSendOn(),
+		ConfirmSend: confirm,
 	}
 }
 
-func (d *Daemon) webTapi(sendable bool) http.HandlerFunc {
+func (d *Daemon) webTapi(sf webSurface) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, d.webTapiView(sendable))
+		writeJSON(w, d.webTapiView(sf.tapiSend, sf.confirmTapi()))
 	}
 }
 

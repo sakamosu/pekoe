@@ -42,7 +42,7 @@ func TestClaudeSandboxSettings(t *testing.T) {
 	}
 	gitDir := filepath.Join(repo, ".git")
 	db := paths.StateDB()
-	for _, p := range []string{paths.HumanTokenFile(), paths.TokenFile(), db, db + "-wal", db + "-shm", paths.WebStateDir(), paths.ConfigDir(), moved} {
+	for _, p := range []string{paths.HumanTokenFile(), paths.TokenFile(), db, db + "-wal", db + "-shm", paths.WebStateDir(), paths.GUIDir(), paths.ConfigDir(), moved} {
 		if !slices.Contains(sb.Filesystem.DenyRead, p) {
 			t.Errorf("denyRead lacks %s: %v", p, sb.Filesystem.DenyRead)
 		}
@@ -70,6 +70,8 @@ func TestClaudeSandboxSettings(t *testing.T) {
 		"Read(/" + paths.ConfigDir() + "/**)",
 		"Edit(/" + paths.ConfigDir() + "/**)",
 		"Read(/" + paths.WebStateDir() + "/**)",
+		"Read(/" + paths.GUIDir() + "/**)",
+		"Edit(/" + paths.GUIDir() + "/**)",
 		"Read(/" + moved + "/**)",
 		"Edit(/" + realpath(filepath.Join(gitDir, "config")) + ")",
 		"Edit(/" + realpath(filepath.Join(gitDir, "hooks")) + "/**)",

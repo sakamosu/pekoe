@@ -81,6 +81,7 @@ flowchart LR
 | [docs/design.md](docs/design.md) | 設計書(状態モデル・worktree フロー・ターミナル層・レビュー・CLI とキー) |
 | [docs/api.md](docs/api.md) | pekoed の API(unix socket・HTTP・HTTPS・MCP) |
 | [docs/web.md](docs/web.md) | iPhone 用 Web UI の構成・設定・脅威モデル |
+| [docs/gui.md](docs/gui.md) | Mac 自身のブラウザで使うローカル GUI(`pekoe gui`)の認証・脅威モデル・段階(段階 0 は実装済み) |
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
@@ -221,6 +222,7 @@ pekoe                                                 # TUI
 | `pekoe skills install\|uninstall\|status [--yes]` | pekoe の Claude Code スキルを `~/.claude/skills` にリンク / 解除 / 確認します([Claude Code スキル](#claude-code-スキル)) |
 | `pekoe ext` | Chrome 拡張に入力する port と token を表示します(port は、pekoed が実際に待ち受けているものです。ほかの pekoed が使っているなどの理由で待ち受けられなかった場合は、理由を表示して拒否します。`pekoe daemon status` にも `http off (…)` と表示されます) |
 | `pekoe web` | Web UI の状態・URL・初回のログイン URL を表示します |
+| `pekoe gui [--no-open\|--status\|--revoke\|--stop]` | ローカル GUI(この Mac 自身のブラウザで `127.0.0.1` に開く Web UI)を、一度きりのサインインのリンクで開きます。`--status` は待ち受けているかとサインイン中のブラウザの数、`--revoke` は全部をサインアウト、`--stop` は待ち受けを止めます |
 | `pekoe mcp` | エージェント用の MCP サーバー(stdio)です |
 | `pekoe daemon start\|stop\|restart\|status` | デーモンを操作します。`stop` はプロセスが終了するまで待ちます。`restart` は停止を待ってから起動し直し、前後のバージョンを表示します(`make install` の後に使います。動いていなければ起動するだけです)。エージェントは tmux の中で動き続けます。開いている TUI は、pekoed との接続が切れる(再起動・停止)と、そのことを端末に表示し、pekoed がまた応答するまで最長 20 秒待ってから開き直します。戻らなければ、その旨のエラーで終了します(終了コード 1)。このとき、TUI が pekoed を自分で起動することはありません |
 | `pekoe daemon stop --kill-agents [--yes]` | tmux サーバー(`$PEKOE_TMUX_SOCKET`)も止めます。**既定のソケット `pekoe` に対して使うと、すべてのエージェントが止まります**。隔離環境の片付け用です |
@@ -372,7 +374,7 @@ pekoe は、機能を「こう使うと便利」という形で 1 つずつ紹�
 
 1. **Claude Code のエージェントは、pekoe が設定を渡す Claude Code の sandbox の中で動きます(既定)。** pekoe は Claude Code を起動するたびに(新規・`open`・再起動・デーモン再起動後の再開。tapi chat も含みます。`[agents.*]` の `command` が `claude` で始まるものすべてが対象です)、`--settings <データディレクトリ>/agent-settings/<slug>.json` を付けます。中身は次のとおりで、パスには `$PEKOE_HOME`・`$XDG_DATA_HOME`・`$XDG_CONFIG_HOME`・`[web] state_dir` を反映した実際の値が入ります:
    - `sandbox.enabled: true`・`allowUnsandboxedCommands: false`(`dangerouslyDisableSandbox` での再実行を許しません)・`failIfUnavailable: true`(sandbox が使えなければ、Claude Code は起動しません)・`filesystem.disabled: false`
-   - `filesystem.denyRead`: `human-token`・`http-token`・`state.db`(と `-wal`・`-shm`。プロンプト・レビューのコメント・報告・送信の記録が入っています。エージェントは、pekoed の API を通してだけ読めます)・tsnet の state・pekoe の設定ディレクトリ(`~/.config/pekoe`)。Bash のコマンドとその子プロセスに、OS のレベルで効きます
+   - `filesystem.denyRead`: `human-token`・`http-token`・`state.db`(と `-wal`・`-shm`。プロンプト・レビューのコメント・報告・送信の記録が入っています。エージェントは、pekoed の API を通してだけ読めます)・tsnet の state・ローカル GUI のサインイン用のページ(`~/.local/share/pekoe/gui/`)・pekoe の設定ディレクトリ(`~/.config/pekoe`)。Bash のコマンドとその子プロセスに、OS のレベルで効きます
    - `permissions.deny`: 同じパスへの `Read(...)` と `Edit(...)`(sandbox の外で動く Read / Edit ツール向け)、`agent-settings` 自身と書き出したスキルの文(`skills/`)への `Edit(...)`
    - `permissions.allow`: Web UI から送られた自分宛ての画像のディレクトリ(`<データディレクトリ>/images/<slug>/`、tapi chat は `images/+tapi/`)への `Read(...)`。送られた文の `[image] <パス>` を、確認なしで開けます([docs/web.md](docs/web.md) の「画像の扱い」)
    - `filesystem.denyWrite` と `Edit(...)`: リポジトリの `.git/config`・`.git/config.worktree`・`.git/hooks` と、サブモジュールの git ディレクトリ(`.git/modules/…`。エージェントの起動時に存在するもの)の中の同じファイル(commit はできます。あなたが自分で実行する git が従う設定は、書き換えられません)
@@ -441,6 +443,14 @@ Web UI と Chrome 拡張は、ソケットを通らない人間用の入口な�
 
 証明書のホスト名は、Certificate Transparency ログに載ります。設計と脅威モデルは [docs/web.md](docs/web.md) にあります。
 
+### この Mac のブラウザから(ローカル GUI)
+
+`pekoe gui` は、Web UI と同じ画面と API を、この Mac 自身のブラウザに `127.0.0.1` でだけ配ります(どのビルドでも使えます。打つまでは何も待ち受けず、`[gui] enable = false` で使えなくなります)。画面は今はスマホ向けのままで、デスクトップ向けの画面は後の段階です(設計: [docs/gui.md](docs/gui.md))。Web UI との違いは、tapi への send に `allow_devices` も確認シートも要らないこと(TUI と同じ)です。`always` はまだ出しません。
+
+サインイン: pekoed が一度きりのトークン(1 回・60 秒)を `~/.local/share/pekoe/gui/` のページ(0600。エージェントと hooks の sandbox からは読めません)に書き、CLI はそのファイルを開きます。トークンはコマンドラインに載りません。ページはそれをセッションのトークンに替え、タブの `sessionStorage` に置いて `Authorization: Bearer` で送ります(Cookie は使いません。`127.0.0.1` の Cookie は別のポートのエージェントの dev server にも届くため)。新しいタブや pekoed の再起動のあとは、もう一度 `pekoe gui` を打ちます。ポートは既定で毎回空いているものです(`[gui] port`)。決まったポートを bind できないときは、`pekoe gui` はブラウザを開きません。
+
+**エージェントに操作させないブラウザ(プロファイル)で開いてください。** そのタブを操作できるもの(Claude in Chrome・Playwright・Chrome DevTools)は、あなたとして許可待ちに答えられます。
+
 ## 設定
 
 `~/.config/pekoe/repos/<repo-id>.toml`(repo-id は、origin の URL を正規化したものです。clone し直しても同じ設定が適用されます。`pekoe init` で下書きできます):
@@ -497,6 +507,11 @@ allow_users   = ["you@github"]      # Tailscale のログイン名
 allow_devices = ["iphone-15"]       # 任意。この端末だけに絞る
 hostname      = "pekoe"             # tailnet のマシン名
 confirm_tapi_send = true            # tapi への send の前に確認シート。false ですぐ送る(再起動は要らない)
+[gui]                       # 127.0.0.1 のローカル GUI(pekoe gui、docs/gui.md)
+enable      = true          # false で pekoe gui を断る。true でも最初の pekoe gui までは待ち受けない
+port        = 0             # 0 で待ち受けを始めるたびに空いているもの。始めるときに読む(pekoe gui --stop の後の pekoe gui)
+session_ttl = "12h"         # ブラウザのサインインは、使わないままこの時間で切れる
+browser     = ""            # 開く macOS のアプリ(open -a)。例 "Safari"。空なら既定のブラウザ
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
@@ -539,7 +554,7 @@ enable = true               # false で両方とも出さない
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
 ```
 
-時間の設定(`[notify]`・`[mascot] sleep_after`・`[pr] poll_every`・`[cleanup] stale_after`)は、Go の duration(`30s`・`2m`・`1h30m`)で書きます。空の値や読めない値は既定値になり、下限より短い値は下限になります。
+時間の設定(`[notify]`・`[mascot] sleep_after`・`[pr] poll_every`・`[cleanup] stale_after`・`[gui] session_ttl`)は、Go の duration(`30s`・`2m`・`1h30m`)で書きます。空の値や読めない値は既定値になり、下限より短い値は下限になります。
 
 保存した変更は、再起動なしで反映されます。pekoed は変更から 1 秒以内に `config.toml` を読み直し、TUI もそれに続きます。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` するまでは起動時の値のままです(TUI のメッセージ行と `pekoe daemon status` に、該当する設定の名前が表示されます)。ファイルを読めない場合、設定は前のままになり、TUI が理由を表示します。知らないキーや受け付けない値は、`pekoe config check` で確認できます([コマンド](#コマンド))。
 
