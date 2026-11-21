@@ -305,7 +305,7 @@ pekoed が仲立ちしたテキストの送信を、誰が誰に何を送った�
 | tapi への配送 | `pekoed` | `deliver` |
 
 - 記録しないもの: 打鍵(`session.keys`)、tapi chat への人の入力(`tapi.send`。会話は Claude Code の記録にあり、依頼は ledger に記録される)、ピック・エラー・レビューの送信(段階 3 以降に足すか決める)
-- 実装: `session.send` のうち記録するのは agent の窓への「指示」(`submit` つき、または token なし)だけにした。TUI は人がエージェントの窓に打った文字を `submit` なしの `session.send` で流しており、これは打鍵と同じ扱い(細かすぎ、パスワードもありうる)。dev・run の窓への送信も記録しない。`via` は `socket` か `web:<端末名>`。`session.new` の `from`(gh#N)は本文の先頭に `--from gh#N` の行として入れる。token なしの受け付け時の確認(許可ダイアログ・先頭が数字)で断った send も `ok: false` で残す
+- 実装: `session.send` のうち記録するのは agent の窓への「指示」(`submit` つき、または token なし)だけにした。TUI は人がエージェントの窓に打った文字を `submit` なしの `session.send` で流しており、これは打鍵と同じ扱い(細かすぎ、パスワードもありうる)。dev・run の窓への送信も記録しない。`via` は `socket` か `web:<端末名>`。`session.new` の `from`(gh#N)は本文の先頭に `--from gh#N` の行として入れる。token なしの受け付け時の確認(許可ダイアログ・先頭が数字・先頭が `!`)で断った send も `ok: false` で残す
 - 送れなかったもの(許可ダイアログで断ったなど)も `ok: false` とエラーで残す
 - 本文は 64 KiB で切る
 
