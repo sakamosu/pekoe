@@ -24,6 +24,13 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
+/* a home-screen app on iOS 26 (black-translucent, viewport-fit=cover) gets
+   a viewport short by the status bar while the document is shorter than
+   the screen, and draws nothing below it. The body's min-height keeps Now
+   and Sessions as tall as the screen; the detail view's body is fixed
+   (body.pinned) and leaves the document empty, so the document keeps the
+   height itself (html.standalone: app.js) */
+html.standalone { min-height: 100vh; }
 body {
   font: 15px/1.45 var(--sans);
   font-variant-numeric: tabular-nums;
