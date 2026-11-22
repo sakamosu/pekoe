@@ -338,6 +338,7 @@ type webSession struct {
 	LastMessage string      `json:"last_message,omitempty"`
 	Diffstat    state.Stat  `json:"diffstat"`
 	PR          int         `json:"pr,omitempty"`
+	PRURL       string      `json:"pr_url,omitempty"` // the PR on GitHub (prURL)
 	Stopped     bool        `json:"stopped,omitempty"`
 	Error       string      `json:"error,omitempty"`
 	Test        string      `json:"test,omitempty"`        // pass | fail | running
@@ -371,7 +372,7 @@ func webAnswerable(s *state.Session) bool {
 	return s.State == state.Waiting && s.WaitKind != "question" && !s.Stopped
 }
 
-func toWebSession(s *state.Session) webSession {
+func (d *Daemon) toWebSession(s *state.Session) webSession {
 	ws := webSession{
 		Slug: s.Slug, Repo: s.Repo, Branch: s.Branch, Agent: s.Agent,
 		State: s.State, WaitKind: s.WaitKind, StateSince: s.StateSince,
@@ -380,6 +381,7 @@ func toWebSession(s *state.Session) webSession {
 		PR: s.PR, Stopped: s.Stopped, Error: s.Error, GitBlocked: s.GitBlocked != "", Queue: s.Queue,
 		Test: s.Test.Status, Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
 		Group: webGroup(s.State), Main: s.Path != "" && s.Path == s.RepoDir,
+		PRURL: d.prURL(s),
 	}
 	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {
 		wl := toWebLook(l)
@@ -483,7 +485,7 @@ func (d *Daemon) webSessions(w http.ResponseWriter, r *http.Request) {
 	})
 	out := make([]webSession, 0, len(list))
 	for _, s := range list {
-		out = append(out, toWebSession(s))
+		out = append(out, d.toWebSession(s))
 	}
 	writeJSON(w, map[string]any{"sessions": out, "at": time.Now()})
 }
@@ -574,7 +576,7 @@ func (d *Daemon) webAnswerAs(w http.ResponseWriter, r *http.Request, always bool
 		return
 	}
 	if ss, ok := res.(*state.Session); ok {
-		writeJSON(w, toWebSession(ss))
+		writeJSON(w, d.toWebSession(ss))
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})

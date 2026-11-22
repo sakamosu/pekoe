@@ -259,11 +259,7 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 	if d.checkGitDir(s) {
 		f.Head, _ = gitx.RevParse(s.Path, "HEAD")
 	}
-	if s.PR > 0 {
-		if base := d.webBase(s.RepoDir); base != "" {
-			f.PRURL = fmt.Sprintf("%s/pull/%d", base, s.PR)
-		}
-	}
+	f.PRURL = d.prURL(s)
 	if r := d.ghRepoInfoOf(s.RepoDir); r.Fork() {
 		f.PRRepo, f.PushRepo = r.Base, r.Origin
 	}
@@ -283,6 +279,18 @@ func (d *Daemon) inboxFacts(slug string) *state.InboxFacts {
 func (d *Daemon) webBase(repoDir string) string {
 	if r := d.ghRepoInfoOf(repoDir).Base; r != "" {
 		return "https://" + r
+	}
+	return ""
+}
+
+// prURL is the page of s's PR on GitHub, built from its repository's remotes
+// (webBase): "" with no PR or no GitHub remote.
+func (d *Daemon) prURL(s *state.Session) string {
+	if s.PR <= 0 {
+		return ""
+	}
+	if base := d.webBase(s.RepoDir); base != "" {
+		return fmt.Sprintf("%s/pull/%d", base, s.PR)
 	}
 	return ""
 }

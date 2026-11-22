@@ -89,6 +89,7 @@ type webNowRequest struct {
 // webMerged is one merge pekoed did on a person's "merge".
 type webMerged struct {
 	PR    int       `json:"pr"`
+	PRURL string    `json:"pr_url,omitempty"` // the PR on GitHub, from the item's facts
 	Item  int64     `json:"item"`
 	About string    `json:"about,omitempty"`
 	At    time.Time `json:"at"`
@@ -142,12 +143,16 @@ func (d *Daemon) nowOf(list []*state.Session, open []state.InboxItem, merges []s
 		case m.State == state.MergeFailed && !mergedAfterAll(m, bySlug[it.About]):
 			need := webNeed{Kind: needMergeFailed, Since: m.At, Item: &it}
 			if s := bySlug[it.About]; s != nil {
-				ws := toWebSession(s)
+				ws := d.toWebSession(s)
 				need.Session = &ws
 			}
 			n.Needs = append(n.Needs, need)
 		case m.State == state.MergeMerged, m.State == state.MergeFailed:
-			n.Merged = append(n.Merged, webMerged{PR: m.PR, Item: it.ID, About: it.About, At: m.At})
+			wm := webMerged{PR: m.PR, Item: it.ID, About: it.About, At: m.At}
+			if f := it.Facts; f != nil && f.PR == m.PR {
+				wm.PRURL = f.PRURL
+			}
+			n.Merged = append(n.Merged, wm)
 		}
 	}
 
@@ -177,7 +182,7 @@ func (d *Daemon) nowOf(list []*state.Session, open []state.InboxItem, merges []s
 	}
 	sort.SliceStable(waiting, func(i, j int) bool { return waiting[i].StateSince.Before(waiting[j].StateSince) })
 	for _, s := range waiting {
-		ws := toWebSession(s)
+		ws := d.toWebSession(s)
 		n.Needs = append(n.Needs, webNeed{Kind: needWaiting, Since: s.StateSince, Session: &ws})
 	}
 

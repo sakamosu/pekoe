@@ -33,6 +33,33 @@ export function link(url, text) {
   return a;
 }
 
+// prLink: a PR's number ("#4") as a link to the PR on GitHub when pekoed
+// sent its page (pr_url), else as text. Its click stays with the link: a
+// row around it that opens or selects on a click (asButton) does not do
+// that too. Its keys go on to the page (the GUI's keys work with the link
+// focused); asButton takes only keys on the row itself.
+export function prLink(url, text) {
+  if (!url) return txt(text);
+  const a = link(url, text);
+  a.addEventListener("click", (e) => e.stopPropagation());
+  return a;
+}
+
+// asButton makes e (a div) act as a button: fn on a click, Enter or Space,
+// in the tab order. For a row that holds a link (prLink): an <a> inside a
+// <button> is not allowed, and its click would go to the button.
+export function asButton(e, fn) {
+  e.setAttribute("role", "button");
+  e.tabIndex = 0;
+  e.addEventListener("click", fn);
+  e.addEventListener("keydown", (ev) => {
+    if (ev.target !== e || (ev.key !== "Enter" && ev.key !== " ")) return;
+    ev.preventDefault();
+    fn(ev);
+  });
+  return e;
+}
+
 let toastTimer = 0;
 
 // toast: a short line at the bottom (#toast): ✓ for done, ✗ for an error

@@ -50,7 +50,8 @@ let p = page();
 r.first = at(p);
 p.r.update(data);
 r.sessions = at(p);
-const rows = find(p.box, (n) => n.tag === "button" && /\bsrow\b/.test(n.className));
+// a row is a <button>, or a div acting as one (asButton) when it can hold a PR link
+const rows = find(p.box, (n) => /\bsrow\b/.test(n.className) && (n.tag === "button" || n.attrs.role === "button"));
 r.rows = rows.map((b) => [b.className, b.attrs["aria-current"] || ""]);
 rows[1].click();
 find(p.box, (n) => /\btapi-card\b/.test(n.className))[0].click();

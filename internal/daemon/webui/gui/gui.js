@@ -11,7 +11,7 @@
 // output is untrusted text), and no style is set from here: every look is
 // a class in gui.css (TestGUIStylesOnlyInCSS).
 
-import { $, el, colored, txt, toast } from "../lib/dom.js";
+import { $, el, colored, txt, toast, prLink } from "../lib/dom.js";
 import { api, guiSignIn, TAPI, apiBase } from "../lib/api.js";
 import { ago, hm, cutNote, questionUp, requestId } from "../lib/fmt.js";
 import { termLines, screenRows } from "../lib/term.js";
@@ -443,7 +443,7 @@ function renderInfo(s) {
     error: [colored("warn", "!", "sym"), txt(" could not run")],
   }[s.test];
   sec("CHANGES", row("diff", d || txt("none")), test ? row("test", ...test) : null,
-    s.pr ? row("PR", ...(s.pr_look ? [colored(s.pr_look.role, s.pr_look.icon, "sym"), txt(" ")] : []), txt("#" + s.pr + (s.pr_look ? " " + s.pr_look.word : ""))) : null,
+    s.pr ? row("PR", ...(s.pr_look ? [colored(s.pr_look.role, s.pr_look.icon, "sym"), txt(" ")] : []), prLink(s.pr_url, "#" + s.pr), ...(s.pr_look ? [txt(" " + s.pr_look.word)] : [])) : null,
     s.state === "running" && s.last_tool ? row("now", colored("ok", "◉", "sym"), txt(" " + s.last_tool)) : null);
   const fg = flows(overview).find(({ f }) => f.slug === s.slug);
   if (fg) {

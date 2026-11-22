@@ -3,12 +3,12 @@
 // lib/ (ES modules, no bundler). Everything the page shows is put into the
 // DOM with textContent (agent output is untrusted text).
 
-import { $, el, colored, txt, sep, toast } from "./lib/dom.js";
+import { $, el, colored, txt, sep, toast, prLink, asButton } from "./lib/dom.js";
 import { api, guiSignIn, TAPI, apiBase } from "./lib/api.js";
 import { requestId, questionId, ago, hm, short, look, details, line1, cutNote, questionUp } from "./lib/fmt.js";
 import { termLines, screenRows } from "./lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "./lib/images.js";
-import { draftOf, inboxCard, mergeRow } from "./lib/inbox.js";
+import { draftOf, inboxCard, mergeRow, mergePRURL } from "./lib/inbox.js";
 import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing, STEP_LOOK, STEP_NAMES } from "./lib/overview.js";
 import { SPIN, bubbleLine, markRewound, chatView, comesBack } from "./lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "./lib/sheets.js";
@@ -122,7 +122,7 @@ function phoneDetails(s) {
   if (s.git_blocked) add(colored("warn", "!"), txt(" .git changed"));
   if (s.state === "queued" && s.queue) add(txt(s.queue));
   if (s.pr) {
-    const n = [txt("#" + s.pr)];
+    const n = [prLink(s.pr_url, "#" + s.pr)];
     if (s.pr_look) n.push(txt(" "), colored(s.pr_look.role, s.pr_look.icon + " " + s.pr_look.word));
     add(...n);
   }
@@ -134,8 +134,8 @@ function phoneDetails(s) {
 // sessionRow: icon · two lines · state and age. A session in the
 // repository's own checkout is named by the repository (main under it).
 function sessionRow(s) {
-  const b = el("button", "srow");
-  b.type = "button";
+  // a div acting as a button: the PR's number in it is a link (asButton)
+  const b = el("div", "srow");
   const lk = look(s);
   const g = groupOf(s);
   const icon = g === "idle" ? "◦" : lk.icon;
@@ -149,7 +149,7 @@ function sessionRow(s) {
   const right = el("span", "rt");
   right.append(colored(lk.role, lk.word, "w"), el("span", "age", s.state === "idle" ? "" : ago(s.state_since)));
   b.append(colored(g === "idle" ? "dim" : lk.role, icon, "si"), mid, right);
-  b.addEventListener("click", () => go(s.slug));
+  asButton(b, () => go(s.slug));
   return b;
 }
 
@@ -286,6 +286,13 @@ const NEED_KINDS = {
   fyi: ["i", "dim", "fyi"],
 };
 
+// prNote: "PR #N was not merged", the number a link to the PR
+function prNote(it, m) {
+  const nt = el("span", "nt", "PR ");
+  nt.append(prLink(mergePRURL(it), "#" + m.pr), txt(" was not merged"));
+  return nt;
+}
+
 // needCard: one thing that waits on the person
 function needCard(nd) {
   const card = el("div", "card need");
@@ -302,7 +309,7 @@ function needCard(nd) {
   const body = el("div", "body");
   if (nd.kind === "merge_failed") {
     const m = (it.answer && it.answer.merge) || {};
-    head.append(colored("err", "✗", "si"), el("span", "nt", "PR #" + m.pr + " was not merged"), el("span", "age", ago(nd.since)));
+    head.append(colored("err", "✗", "si"), prNote(it, m), el("span", "age", ago(nd.since)));
     const s = nd.session;
     const target = el("div", "target");
     target.append(txt((s && s.branch) || it.about || "-"), sep(), txt("HEAD " + short(m.head)));
@@ -317,7 +324,7 @@ function needCard(nd) {
       const target = el("div", "target");
       target.append(txt(f.branch || f.slug));
       if (f.head) target.append(sep(), txt("HEAD " + short(f.head)));
-      if (f.pr) target.append(sep(), txt("#" + f.pr));
+      if (f.pr) target.append(sep(), prLink(f.pr_url, "#" + f.pr));
       body.append(target);
     }
     body.append(el("div", "why", it.question));
@@ -467,10 +474,16 @@ function renderMerged(n) {
   const list = $("n-merged-list");
   list.replaceChildren();
   for (const m of ms) {
-    const a = el("a", "mrow");
-    a.href = "#/inbox";
-    a.addEventListener("click", () => (inboxScrollTo = m.item));
-    a.append(colored("secondary", "↣", "si"), el("span", "pr", "#" + m.pr), el("span", "br", m.about || ""), el("span", "age", ago(m.at)));
+    // a div acting as a link to the inbox: the PR's number in it is a link
+    // to the PR (asButton)
+    const a = el("div", "mrow");
+    asButton(a, () => {
+      inboxScrollTo = m.item;
+      location.hash = "#/inbox";
+    });
+    const pr = el("span", "pr");
+    pr.append(prLink(m.pr_url, "#" + m.pr));
+    a.append(colored("secondary", "↣", "si"), pr, el("span", "br", m.about || ""), el("span", "age", ago(m.at)));
     list.append(a);
   }
 }

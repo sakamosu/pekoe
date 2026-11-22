@@ -1,7 +1,7 @@
 // How a session reads on both pages: the TUI's line (icon, name, state,
 // age) and its dim details, pekoe's ids, times and sizes.
 
-import { el, colored, sep } from "./dom.js";
+import { el, colored, sep, prLink } from "./dom.js";
 
 // pekoe's own numbers carry a letter for their kind (internal/ids), so they
 // are not taken for a GitHub PR or issue (#185): r651 a request, q12 an
@@ -69,7 +69,7 @@ export function details(s, withRepo) {
   if (s.git_blocked) add(colored("warn", "!"), document.createTextNode(".git changed: git stopped"));
   if (s.state === "queued" && s.queue) add(document.createTextNode(s.queue));
   if (s.pr) {
-    const n = [document.createTextNode("#" + s.pr)];
+    const n = [prLink(s.pr_url, "#" + s.pr)];
     if (s.pr_look) n.push(document.createTextNode(" "), colored(s.pr_look.role, s.pr_look.icon));
     add(...n);
   }
