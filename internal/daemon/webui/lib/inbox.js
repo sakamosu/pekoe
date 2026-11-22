@@ -4,7 +4,7 @@
 // never chosen for the person. Every string goes in with textContent; a
 // link becomes an anchor only when it is http(s) (dom.js link).
 
-import { el, txt, sep, colored, link } from "./dom.js";
+import { el, txt, sep, colored, link, prLink } from "./dom.js";
 import { ago, short, questionId, reportId } from "./fmt.js";
 
 const KINDS = {
@@ -35,7 +35,7 @@ export function factsBlock(it) {
     const d = f.diffstat || { added: 0, deleted: 0, files: 0 };
     box.append(factRow("HEAD", txt(short(f.head)), sep(), colored("ok", "+" + d.added), txt(" "), colored("err", "−" + d.deleted), txt(" · " + d.files + " files")));
     if (f.pr) {
-      const n = [f.pr_url ? link(f.pr_url, "#" + f.pr) : txt("#" + f.pr)];
+      const n = [prLink(f.pr_url, "#" + f.pr)];
       const ps = f.pr_status;
       if (ps) {
         n.push(sep(), txt(ps.state || "?"), sep(), txt("CI "), colored(ps.fail ? "dim" : "ok", ps.pass + " pass"), txt(" "),
@@ -160,6 +160,10 @@ export function inboxCard(it, d, on) {
   return card;
 }
 
+// mergePRURL: the merged PR's page, from the item's facts when they are
+// about the same PR ("" otherwise)
+export const mergePRURL = (it) => (it.facts && it.answer && it.answer.merge && it.facts.pr === it.answer.merge.pr && it.facts.pr_url) || "";
+
 const MERGE_LOOK = { running: ["●", "warn", "merging"], merged: ["↣", "secondary", "merged"], failed: ["✗", "err", "not merged"] };
 
 // mergeRow: pekoed's merge after a "merge" answer (pekoed's words only).
@@ -168,7 +172,9 @@ export function mergeRow(it) {
   const [icon, role, word] = MERGE_LOOK[r.state] || ["?", "dim", r.state];
   const row = el("div", "card");
   const head = el("div", "line1");
-  head.append(colored(role, icon, "ic"), el("span", "name r-text", "PR #" + r.pr), colored(role, word, "word"), el("span", "age", ago(r.at)));
+  const name = el("span", "name r-text", "PR ");
+  name.append(prLink(mergePRURL(it), "#" + r.pr));
+  head.append(colored(role, icon, "ic"), name, colored(role, word, "word"), el("span", "age", ago(r.at)));
   const body = el("div", "body");
   body.append(el("div", "also", (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + " · inbox " + questionId(it.id)));
   if (r.detail) body.append(el("div", "also " + (r.state === "failed" ? "r-err" : "r-dim"), r.detail));

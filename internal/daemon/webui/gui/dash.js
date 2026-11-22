@@ -6,9 +6,9 @@
 // textContent (lib/dom.js); the bars are SVG built with createElementNS and
 // numeric attributes (no style).
 
-import { el, txt, colored, link } from "../lib/dom.js";
+import { el, txt, colored, link, prLink } from "../lib/dom.js";
 import { ago, short, questionId, reportId, requestId } from "../lib/fmt.js";
-import { canAnswer } from "../lib/inbox.js";
+import { canAnswer, mergePRURL } from "../lib/inbox.js";
 import { STEP_NAMES } from "../lib/overview.js";
 
 export const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : "");
@@ -57,14 +57,14 @@ function gates(it) {
     box.append(gate("", "", "diff", ...(dd ? [dd, txt(" · " + d.files + (d.files === 1 ? " file" : " files"))] : [txt("no changes")])));
     if (f.pr) {
       const ps = f.pr_status;
-      const n = ["#" + f.pr];
+      const n = [];
       if (ps) {
         n.push(ps.state || "?", "CI " + ps.pass + " pass " + ps.fail + " fail " + ps.pending + " pending");
         if (ps.review_decision) n.push(ps.review_decision);
         if (ps.merge_state) n.push(ps.merge_state);
         if (ps.unresolved) n.push(ps.unresolved + " unresolved");
       }
-      box.append(gate(ps && ps.fail ? "err" : "", "✗", "PR", txt(n.join(" · "))));
+      box.append(gate(ps && ps.fail ? "err" : "", "✗", "PR", prLink(f.pr_url, "#" + f.pr), ...(n.length ? [txt(" · " + n.join(" · "))] : [])));
     }
     if (f.pr_repo) box.append(gate("warn", "!", "fork", txt("PR in " + f.pr_repo + " · pushed to " + f.push_repo + " (origin)")));
     const ts = f.test && f.test.status;
@@ -202,7 +202,9 @@ export function mergeRow(it) {
   const r = it.answer.merge;
   const [icon, role, word] = MERGE_LOOK[r.state] || ["?", "dim", r.state];
   const row = el("div", "lrow");
-  row.append(colored(role, icon, "sym"), el("span", "l-id", "PR #" + r.pr), el("span", "l-text", word + " · " + (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + (r.detail ? " · " + r.detail : "")), el("span", "l-age", ago(r.at)));
+  const id = el("span", "l-id", "PR ");
+  id.append(prLink(mergePRURL(it), "#" + r.pr));
+  row.append(colored(role, icon, "sym"), id, el("span", "l-text", word + " · " + (it.about || "") + " · HEAD " + (r.head || "").slice(0, 7) + (r.method ? " · " + r.method : "") + (r.detail ? " · " + r.detail : "")), el("span", "l-age", ago(r.at)));
   return row;
 }
 
@@ -531,7 +533,12 @@ function stepCell(f, name) {
   const step = (f.steps || []).find((x) => x.name === name);
   box.title = (STEP_NAMES[name] || name) + ": " + (step && step.detail ? step.detail : kind);
   box.append(el("span", "pl-sym", icon));
-  if (word) box.append(el("span", "pl-word", word));
+  // the PR's number: a link to the PR (the box itself does nothing on a click)
+  if (word && name === "pr" && f.pr && word === "#" + f.pr && f.pr_url) {
+    const a = prLink(f.pr_url, word);
+    a.className += " pl-word";
+    box.append(a);
+  } else if (word) box.append(el("span", "pl-word", word));
   cell.append(box);
   return cell;
 }

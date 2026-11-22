@@ -5,7 +5,7 @@
 // filters it by name, branch or repository. A view of the rail
 // (gui/rail.js; the contract is in docs/gui.md 「サイドバーのビュー」).
 
-import { el, colored, txt } from "../../lib/dom.js";
+import { el, colored, txt, prLink, asButton } from "../../lib/dom.js";
 import { ago } from "../../lib/fmt.js";
 import { TAPI } from "../../lib/api.js";
 import { diffBits } from "../dash.js";
@@ -28,8 +28,8 @@ function shown(s, ready) {
 
 function sideRow(s, ready) {
   const sel = s.slug === st.current;
-  const b = el("button", "srow" + (sel ? " sel" : "") + (s.state === "landed" ? " past" : ""));
-  b.type = "button";
+  // a div acting as a button: the PR's number in it is a link (asButton)
+  const b = el("div", "srow" + (sel ? " sel" : "") + (s.state === "landed" ? " past" : ""));
   const l1 = el("span", "sr-1");
   l1.append(el("span", "sr-name", s.branch || s.slug), el("span", "sr-age", s.state === "idle" ? "" : ago(s.state_since)));
   const l2 = el("span", "sr-2");
@@ -37,13 +37,13 @@ function sideRow(s, ready) {
   if (s.pr) {
     const pr = el("span", "sr-pr");
     if (s.pr_look) pr.append(colored(s.pr_look.role, s.pr_look.icon, "sym"), txt(" "));
-    pr.append(txt("#" + s.pr));
+    pr.append(prLink(s.pr_url, "#" + s.pr));
     l2.append(pr);
   }
   const d = diffBits(s.diffstat);
   if (d) l2.append(d);
   b.append(l1, l2);
-  b.addEventListener("click", () => ctx.go(s.slug));
+  asButton(b, () => ctx.go(s.slug));
   if (sel) b.setAttribute("aria-current", "true");
   return b;
 }

@@ -123,7 +123,7 @@ func (d *Daemon) guiNew(w http.ResponseWriter, r *http.Request) {
 			s = u
 		}
 	}
-	writeJSON(w, toWebSession(s))
+	writeJSON(w, d.toWebSession(s))
 }
 
 // guiInterrupt is POST /api/sessions/{slug}/interrupt: session.interrupt
@@ -138,7 +138,7 @@ func (d *Daemon) guiInterrupt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s, ok := res.(*state.Session); ok && s != nil {
-		writeJSON(w, toWebSession(s))
+		writeJSON(w, d.toWebSession(s))
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true})

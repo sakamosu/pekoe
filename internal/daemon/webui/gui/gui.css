@@ -169,6 +169,7 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .sr-2 .word { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sr-2 .sym + .word { margin-left: -4px; }
 .sr-pr { flex: none; }
+.srow[role="button"] { cursor: pointer; }
 .sr-2 .diff { margin-left: auto; flex: none; }
 .srow.one { flex-direction: row; align-items: center; gap: 6px; min-height: 36px; padding: 0 8px; }
 .sr-repo { min-width: 0; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -457,6 +458,9 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
   width: 84px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: nowrap;
 }
 .pl-word { color: var(--dim); }
+/* the PR's number: a link to the PR, in the link's color */
+.pl-box a.pl-word, .b-you a.pl-word { color: var(--secondary); text-decoration: none; }
+.pl-box a.pl-word:hover { text-decoration: underline; }
 .b-done .pl-sym { color: var(--secondary); }
 .b-now { border-color: var(--ok); }
 .b-now .pl-sym { color: var(--ok); }

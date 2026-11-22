@@ -148,6 +148,7 @@ type webFlow struct {
 	StateSince time.Time   `json:"state_since"`
 	Look       webLook     `json:"look"`
 	PR         int         `json:"pr,omitempty"`
+	PRURL      string      `json:"pr_url,omitempty"` // the PR on GitHub (prURL)
 	PRLook     *webLook    `json:"pr_look,omitempty"`
 	After      []string    `json:"after,omitempty"`
 	Report     string      `json:"report,omitempty"` // the latest report's status (not its words)
@@ -330,7 +331,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	f := webFlow{
 		Slug: s.Slug, Repo: s.Repo, Branch: s.Branch, State: s.State, StateSince: s.StateSince,
 		Look: toWebLook(theme.Look(theme.WebIcons(), s.State, 0, false)),
-		PR:   s.PR, After: s.After,
+		PR:   s.PR, PRURL: d.prURL(s), After: s.After,
 	}
 	if l, ok := theme.PRLook(theme.WebIcons(), s.PRStatus); ok {
 		wl := toWebLook(l)

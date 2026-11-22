@@ -496,6 +496,86 @@ console.log(JSON.stringify(res));
 	})
 }
 
+// A PR's number is a link to the PR when pekoed sent its page (pr_url):
+// the Pipeline's PR box (✓ #4, the box itself does nothing on a click),
+// the session list's row, the details' PR row and the merges; text
+// without one. The link opens in a new tab and keeps its click from the
+// row around it (its keys go on to the page's own keys), which acts as a button (asButton) on a click,
+// Enter or Space on the row itself.
+func TestGUIPRLinks(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+import { renderPipeline } from "gui/dash.js";
+import { prLink, asButton } from "lib/dom.js";
+import { mergePRURL } from "lib/inbox.js";
+const steps = (...st) => ["impl", "review", "pr", "ci", "merge"].map((name, i) => ({ name, status: st[i] || "todo" }));
+const look = { icon: "◉", role: "ok", word: "run" };
+const url = "https://github.com/me/app/pull/4";
+const box = el0("div");
+renderPipeline(box, [{ parent: "", rows: [
+  { slug: "a", branch: "a", state: "running", look, pr: 4, pr_url: url, steps: steps("done", "done", "done", "now") },
+  { slug: "b", branch: "b", state: "running", look, pr: 5, steps: steps("done", "done", "done", "now") },
+  { slug: "c", branch: "c", state: "running", look, pr: 6, pr_url: "https://github.com/me/app/pull/6", reopened: true, steps: steps("now") },
+] }], () => {}, { expanded: true });
+const prBox = (slug) => find(box, (x) => /\bpl-row\b/.test(x.className) && find(x, (y) => y.className === "pl-bname" && y.textContent === slug).length)
+  .flatMap((r) => find(r, (x) => /\bpl-box\b/.test(x.className)))[2];
+const word = (b) => b.children[1];
+const res = {};
+res.boxes = ["a", "b", "c"].map((s) => { const w = word(prBox(s)); return [w.tag, w.className, w.textContent, w.href || "", w.target || "", w.rel || ""].join("|"); });
+res.box = prBox("a").textContent;
+let stopped = 0;
+const ev = () => ({ stopPropagation: () => stopped++ });
+const a = word(prBox("a"));
+a.on.click(ev());
+res.stopped = stopped;
+res.keyHandler = "keydown" in a.on;
+res.none = [prLink("", "#7").tag, prLink("", "#7").text, prLink("javascript:alert(1)", "#7").tag];
+const row = el0("div");
+let went = 0;
+asButton(row, () => went++);
+res.row = [row.attrs.role, row.tabIndex];
+const key = (target, k) => { let pd = 0; row.on.keydown({ target, key: k, preventDefault: () => pd++ }); return pd; };
+res.keys = [key(row, "Enter"), key(row, " "), key(row, "a"), key(a, "Enter")];
+row.click();
+res.went = went;
+res.merge = [
+  mergePRURL({ facts: { pr: 4, pr_url: url }, answer: { merge: { pr: 4 } } }),
+  mergePRURL({ facts: { pr: 3, pr_url: url }, answer: { merge: { pr: 4 } } }),
+  mergePRURL({ answer: { merge: { pr: 4 } } }),
+];
+console.log(JSON.stringify(res));
+`)
+	var res struct {
+		Boxes, None, Merge []string
+		Box                string
+		Stopped, Went      int
+		KeyHandler         bool
+		Row                []any
+		Keys               []int
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	want := func(what string, got, want any) {
+		t.Helper()
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s:\n got %v\nwant %v", what, got, want)
+		}
+	}
+	want("the PR box's number", res.Boxes, []string{
+		"a|lnk pl-word|#4|https://github.com/me/app/pull/4|_blank|noopener noreferrer",
+		"span|pl-word|#5|||",
+		"a|lnk pl-word|#6|https://github.com/me/app/pull/6|_blank|noopener noreferrer",
+	})
+	want("the box", res.Box, "✓#4")
+	want("the link keeps its click", res.Stopped, 1)
+	want("the link's keys go on to the page (the GUI's keys)", res.KeyHandler, false)
+	want("no URL, or not http(s): text", res.None, []string{"#text", "#7", "span"})
+	want("a row acting as a button", res.Row, []any{"button", 0})
+	want("Enter and Space on the row press it; other keys and keys on the link do not", res.Keys, []int{1, 1, 0, 0})
+	want("pressed", res.Went, 3)
+	want("the merged PR's page from the facts about it", res.Merge, []string{"https://github.com/me/app/pull/4", "", ""})
+}
+
 // fakeDOM: the little of the DOM dash.js's Overview and Requests use, for
 // node. textContent replaces the children with one text node (never
 // parses), so markup in the data stays text.
