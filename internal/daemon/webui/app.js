@@ -1222,6 +1222,11 @@ function fitViewport() {
   document.body.classList.toggle("cut", !kb && shortBelow(h) > 0);
 }
 
+// standalone: the page runs as a home-screen app
+function standalone() {
+  return navigator.standalone === true || (!!window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+}
+
 // shortBelow: by how much the page stops above the screen's bottom in a
 // home-screen app (the WebKit bug above; 0 when it reaches it). Such an app
 // (black-translucent status bar) runs from the screen's top to its bottom,
@@ -1229,8 +1234,7 @@ function fitViewport() {
 // width, the top inset is there (the page still starts at the top, so what
 // is missing is at the bottom) and the shortfall is about a status bar.
 function shortBelow(h) {
-  const standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
-  if (!standalone || !window.screen) return 0;
+  if (!standalone() || !window.screen) return 0;
   const land = window.innerWidth > h;
   const sw = land ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
   const sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
@@ -1685,6 +1689,8 @@ $("d-unfold").addEventListener("click", () => {
   renderComposer();
   $("d-text").focus();
 });
+// the document as tall as the screen in a home-screen app (app.css)
+document.documentElement.classList.toggle("standalone", standalone());
 if (window.visualViewport) {
   visualViewport.addEventListener("resize", fitViewport);
   visualViewport.addEventListener("scroll", fitViewport);
