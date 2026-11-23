@@ -211,6 +211,8 @@ var specs = map[string]spec{
 
 	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
 
+	"voice-backend-say": {use: "pekoe voice-backend-say version|check|voices|synth --voice NAME --lang ja|en --out PATH   (the bundled speech backend, run by pekoed; text on stdin)", vals: []string{"voice", "lang", "out"}},
+
 	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web", "allow-unverified"}, vals: []string{"version"}},
 }
 

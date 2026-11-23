@@ -293,7 +293,8 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
   - voice を有効にしたとき・セッションができたとき・名前が変わったとき、そのセッションの wait / done / error(1 人分の文)と idle_all を、手が空いているときに 1 つずつ合成してキャッシュに入れる
   - まとめた文(`_many`)は先に作らない(組み合わせが多い)
   - 手元の `say`(macOS 15、Kyoko)で短い文の合成は 0.45〜0.9 秒かかった。キャッシュが無いと、寄せ集めの 300ms と合わせて 1 秒を超えることがある
-- キャッシュ: `<データディレクトリ>/voice/cache/<sha256>.wav`(`$PEKOE_HOME` に従う。データディレクトリはエージェントの sandbox からも pekoe の sandbox からも書けないので、キャッシュの WAV を差し替えられない)。キーは backend の名前・`version` の出力・声の名前・言語・文。全体で 50MB を超えたら古いもの(更新時刻)から消す。起動時と 1 時間ごとに見る
+- キャッシュ: `<データディレクトリ>/voice/cache/<sha256>.wav`(`$PEKOE_HOME` に従う。データディレクトリはエージェントの sandbox からも pekoe の sandbox からも書けないので、キャッシュの WAV を差し替えられない)。キーは backend の名前・`version` の出力・声の名前・言語・文。全体で 50MB を超えたら古いもの(更新時刻。キャッシュから使うたびに更新する)から消す。起動時と 1 時間ごとに見る
+- read の文(声 `reader`)はキャッシュしない(15「残すもの」)。合成した WAV は `<データディレクトリ>/voice/tmp/` の一時ファイルで、鳴らし終えたら消す(`Engine.Release`。消し残しは古いものから `Engine.CleanTmp` で消す)
 
 ## 10. speech backend の約束事 v1
 
@@ -360,6 +361,8 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 
 `name` は論理的な名前、`lang` は言語、`label` は backend 側の声の名前(人が読むためのもので、pekoe は表示するだけ)。
 
+約束事のテスト: pekoe のリポジトリで `PEKOE_VOICE_CONTRACT=<backend の絶対パス> go test ./internal/voice/backend -run TestContractExternal -v` を回すと、この節の約束事(`version`・知らないサブコマンド・`check`・`voices`・言語ごとの `synth`・知らない声の名前・対応しない言語・並行 2 本)を、pekoed と同じ呼び方で確かめる。同梱の say も同じテストを通す。
+
 ### 10.4 pekoe が backend に期待しないこと
 
 - 再生・音量・中断(pekoe がする)
@@ -369,7 +372,7 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 ### 10.5 フォールバック
 
 - pekoed は voice を有効にしたとき・設定が変わったとき・`pekoe voice backends` のときに、`backend` のパスを確かめて(10.2)`version` と `check` を呼ぶ。パスが使えない・失敗したら `fallback` を同じように確かめて使う。`fallback` も同梱の say か `[voice.backends]` の名前で、`PATH` からは探さない
-- 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `check` をもう一度呼ぶ。通れば元に戻す
+- 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `version` と `check` をもう一度呼ぶ。通れば元に戻す。失敗を数えるのは発話キュー(8 の Q11)で、3 回目にキューが backend 側の `Failover()` を呼ぶ(切り替えたら true。fallback に居る・fallback が無い・使えないなら false で、キューが 60 秒合成を止める)。5 分後の確かめ直しは backend 側が次の合成のときにする
 - どちらも使えなければ何も鳴らさず、`pekoe voice` と `voice.updated` の `error` に理由を出す
 
 ### 10.6 同梱の backend: say
@@ -377,7 +380,8 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 - macOS の `say` を使う。依存が無く、通信しない
 - `/usr/bin/say -v <声> --file-format=WAVE --data-format=LEI16@24000 -o <out> -f -`(文字は標準入力から)
 - 声の既定: ja は `Kyoko`、無ければ `/usr/bin/say -v '?'` の最初の `ja_JP` の声。en は `-v` を付けない(システムの既定の声)。`tapi` と `reader` は同じ声。声の割り当てを変えたいときは `[voice.say]` の `ja` / `en`(11)
-- `check` は `/usr/bin/say` があることと、ja のときは日本語の声が 1 つ以上あることを見る
+- `check` は `/usr/bin/say` があり、`/usr/bin/say -v '?'` で声の一覧が読めることを見る。`check` は言語を受け取らない(10.3)ので、日本語の声が無いことは `check` では言わない: そのとき `voices` は ja の声を出さず、`synth --lang ja` が「日本語の声が無い(システム設定 › アクセシビリティ › 読み上げコンテンツで足す)」で失敗する(Q11 で fallback・停止に進む)
+- `[voice.say]` の声は pekoed が渡すのではなく、`pekoe voice-backend-say` が自分で `config.toml` を読んで使う(P1-3 でつなぐ。P1-2 では既定の声だけ)
 - 実装は pekoe 本体の隠しサブコマンド `pekoe voice-backend-say <version|check|voices|synth …>`。pekoed は名前が `say` なら、いつも自分の実行ファイル(`os.Executable` のリンクを辿ったもの。hook に書く pekoe と同じ)をこの形で呼ぶ。`PATH` の `pekoe-voice-say` は見ない。同梱の say も約束事どおりに呼ぶので、約束事のテスト(16 の P1-2)を同じように通す。別の実行ファイルにしないのは、リリース・Homebrew・`pekoe update` の配る物を増やさないため
 
 ### 10.7 P2 の外部 backend: pekoe-voice-voicevox
@@ -577,7 +581,7 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 
 #### P1-3 daemon へのつなぎ・再生・設定・API
 
-- 作るもの: `internal/voice/player`(`/usr/bin/afplay`)、`internal/daemon/voice.go`(4.2 の受け取り、13 の RPC とイベント、kv のミュート、`session.removed` の片付け、先の合成)、`config` の `[voice]`(11。`docs.go`・`check.go`)、`session.event` の `MessageDisplay` を受け付けるだけ(捨てる。P3 で使う)
+- 作るもの: `internal/voice/player`(`/usr/bin/afplay`)、`internal/daemon/voice.go`(4.2 の受け取り、13 の RPC とイベント、kv のミュート、`session.removed` の片付け、先の合成)、`config` の `[voice]`(11。`docs.go`・`check.go`)、`session.event` の `MessageDisplay` を受け付けるだけ(捨てる。P3 で使う)、`pekoe voice-backend-say` に `[voice.say]` を渡す(`backend.SayOptions`)
 - 完了条件: daemon のテストで、偽の合成・偽の再生を差し込んだ pekoed に `update` で state を変えると、期待した発話がキューに積まれ・まとまり・古いものが捨てられることを確かめる(偽エンジン `fakeEngine` は変えない。`engine.Engine` にメソッドを足さない)。`enable = false` のときは backend も player も一度も呼ばれないことをテストで固定する。`voice.*` が token なしで断られることをテストする。`[voice.backends]` の `pekoe config check` の警告(11)のテストがある。docs/api.md・docs/design.md(データの置き場の表に `voice.log`・`voice/cache`)・README の設定の節を直す
 - やらないこと: CLI、TUI
 
