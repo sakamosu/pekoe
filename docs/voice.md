@@ -128,6 +128,7 @@ flowchart LR
 | 場所 | 中身 | 依存 |
 | --- | --- | --- |
 | `internal/voice` | 純粋な論理: モードの決め方(policy)、呼び名と文言(phrases)、発話キュー(queue)、read の整形(shape)。時計・合成・再生はインターフェースで受け取る | `internal/state` の型だけ。exec もファイルも触らない |
+| `internal/voice/voicetest` | テスト用の偽の時計・合成・再生(`Advance` でだけ進む時計、テストが終わらせるまで戻らない `Synth` / `Play`)。daemon のテストでも使う | なし |
 | `internal/voice/backend` | 設定のパスを確かめる(`PATH` からは探さない。10.2)・`version` / `check` / `voices` / `synth` を呼ぶ・時間切れ・フォールバック・WAV のキャッシュ | `os/exec`、`internal/paths` |
 | `internal/voice/player` | 再生(`afplay`)と中断。darwin 以外は「使えない」を返す実装 | `os/exec` |
 | `internal/daemon/voice.go` | つなぎ: 遷移・hook・フォーカスを `internal/voice` に渡す、RPC、イベント、設定の読み直し | 上の 3 つ |
@@ -267,6 +268,19 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 - **Q9 read の積み残し**: 新しいターンが始まったら前のターンの read を捨てる。1 メッセージで積むのは `max_sentences` 文まで
 - **Q10 先読み**: 鳴っている間に、次に鳴らす予定の 1 つを合成しておく(`synth` の同時実行は 2 まで)。先読みしたものも鳴らす直前に Q5 を確かめる
 - **Q11 失敗**: `synth` が失敗・時間切れ(3 秒)になったら、その発話は捨て、ログに理由(backend の標準エラーの 1 行)を残す。backend が 3 回続けて失敗したら fallback に切り替え(10.5)、fallback も失敗したら 60 秒は合成を試さない(`voice.updated` の `error` に出す)
+
+実装(P1-1)で決めた細部:
+
+- インターフェース: `Synth(ctx, text, voice, lang string) (wavPath string, err error)` と `Play(ctx, wavPath string) error`。どちらも終わるまで戻らず、`ctx` の取り消しで止まる。引数が素の文字なので、backend と player は `internal/voice` を import せずに満たせる。時計は `Now` と `AfterFunc`
+- Q2・Q3: narrate が寄せ集めの 300ms の間にあるときは、read も鳴らし始めない(read の 1 文で narrate が遅れないように)
+- Q7: 積まなかったものはログに残さない(積んだものだけを残す)
+- モード(7): 積むときに mute なら、narrate はログに `muted` と残して積まない。read はモードが `read` でなければ黙って捨てる(6.1)
+- Q8: 止めた発話は、プロセスが本当に終わってから次を鳴らす(Q1 を崩さない)。Q9 で捨てた read は `interrupted`
+- Q10: 取り消した合成も、戻ってくるまでは同時実行の 2 に数える
+- Q11: 続けての失敗は `FailLimit`(3)回ごとに数え直す。3 回目で `Failover`(daemon が backend の切り替えにつなぐ)を呼び、切り替えられなければ 60 秒止める。`Failover` は fallback の `check` を待つので数秒かかりうる: キューのロックの外で呼び、その間は新しい合成を始めない(`Push` や `Status` は止まらない)。止めている間に鳴らす番が来た発話は、待たせずに `failed`(理由 `synth paused after repeated failures`)で捨てる。取り消した合成の失敗は数えない
+- ログの `spoken` は鳴らし始めたときに書く(待ち時間はそこまで)
+- wav の後始末: キューは使い終えた wav(鳴らし終えた・合成した後に捨てた)を `Release` で知らせる(reader の声の一時ファイルを backend が消すため)
+- `[voice.phrases]` の空(空白だけ)の上書きも、既定に戻して警告する(空の文の合成が Q11 の失敗に数えられないように)
 
 ログ(14.4)には、積んだ発話それぞれについて、鳴らした(`spoken`)・まとめた(`merged`)・捨てた理由(`stale` `old` `muted` `interrupted` `failed`)と、積んでから鳴り始めるまでのミリ秒を残す。「状態が変わってから 1 秒以内」はこの数で確かめる。
 
