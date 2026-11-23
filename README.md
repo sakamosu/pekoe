@@ -87,6 +87,7 @@ Design docs are in Japanese.
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
+| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; a spec, not built yet. The proposal it came from: [docs/voice-proposal.md](docs/voice-proposal.md)) |
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
