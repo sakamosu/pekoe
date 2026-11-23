@@ -45,10 +45,13 @@ type voiceState struct {
 
 type voiceStatusMsg struct{ st *daemon.VoiceStatus }
 
-// voiceToggledMsg: <prefix> m did this (st nil: voice is off).
+// voiceToggledMsg: <prefix> m or :voice mute / unmute did this. called:
+// voice.mute was called (voice was on when the status was read); st is what
+// pekoed answered.
 type voiceToggledMsg struct {
-	st    *daemon.VoiceStatus
-	muted bool
+	st     *daemon.VoiceStatus
+	muted  bool
+	called bool
 }
 
 type voiceFocusMsg struct{ gen int }
@@ -123,13 +126,21 @@ func (m *model) toggleMute() tea.Cmd {
 		if err := m.cl.Call("voice.mute", p, &after); err != nil {
 			return errMsg{err}
 		}
-		return voiceToggledMsg{st: &after, muted: mute}
+		return voiceToggledMsg{st: &after, muted: mute, called: true}
 	}
 }
 
 func (m *model) onVoiceToggled(msg voiceToggledMsg) {
 	m.setVoice(msg.st)
 	switch {
+	case !msg.st.Enabled && msg.called:
+		// turned off between the status read and voice.mute: pekoed kept
+		// the mute (or unmute) all the same, so say both
+		if msg.muted {
+			m.setMsg(tx("voice muted · voice is off · pekoe voice on"), false)
+		} else {
+			m.setMsg(tx("voice unmuted · voice is off · pekoe voice on"), false)
+		}
 	case !msg.st.Enabled:
 		m.setMsg(tx("voice is off · pekoe voice on"), false)
 	case msg.muted:
@@ -242,7 +253,7 @@ func (m *model) openVoiceLog() tea.Cmd {
 }
 
 // voiceMuteCmd is :voice mute / :voice unmute (while voice is off it only
-// says so, like <prefix> m).
+// says so and keeps no mute, like <prefix> m).
 func (m *model) voiceMuteCmd(mute bool) tea.Cmd {
 	if m.cl == nil {
 		return nil
@@ -263,7 +274,7 @@ func (m *model) voiceMuteCmd(mute bool) tea.Cmd {
 		if err := m.cl.Call("voice.mute", p, &st); err != nil {
 			return errMsg{err}
 		}
-		return voiceToggledMsg{st: &st, muted: mute}
+		return voiceToggledMsg{st: &st, muted: mute, called: true}
 	}
 }
 
@@ -306,11 +317,12 @@ func (vm *voiceLogModal) other(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// add puts a line just logged on top; the selection stays on its line
-// (unless that line is the oldest of voiceLogN and drops out: then the
-// last line).
+// add puts a line just logged on top; the selection stays on its line,
+// the top line too (unless that line is the oldest of voiceLogN and drops
+// out: then the bottom line). While loading nothing is selected yet: the
+// selection is on the newest once it has loaded.
 func (vm *voiceLogModal) add(e voice.LogEntry) {
-	had := len(vm.log) > 0
+	had := len(vm.log) > 0 && !vm.loading
 	vm.log = append([]voice.LogEntry{e}, vm.log...)
 	if len(vm.log) > voiceLogN {
 		vm.log = vm.log[:voiceLogN]

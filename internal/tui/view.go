@@ -248,7 +248,6 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 	return rows, sels, footer
 }
 
-// sessionLine: icon  name  state  age  +add -del  test  (grid columns)
 // truncRunes keeps s within n runes, marking the cut with an ellipsis
 // (three cells, "...", in the wide table: what is kept shrinks by as much).
 func truncRunes(s string, n int) string {

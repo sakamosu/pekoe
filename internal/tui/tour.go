@@ -230,6 +230,9 @@ func (m *model) endTour() tea.Cmd {
 		m.setMsg("tutorial: "+err.Error(), true)
 	}
 	m.voiceResend() // the tour sent "" (voice.go); the saved model does not know
+	// a tick the tour scheduled may still be on its way: the next gen must
+	// not be one of its, or that tick would send without the wait
+	m.voice.gen = live.voice.gen
 	var cmds []tea.Cmd
 	for _, msg := range t.pending {
 		_, c := m.Update(msg)
