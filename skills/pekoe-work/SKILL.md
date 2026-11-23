@@ -81,4 +81,5 @@ pekoe report - --status done < report.md     # 長文は stdin
 
 - マージ、`pekoe rm`、他のセッションへの `pekoe send`、`pekoe answer`
 - 依頼元や人に頼まれていない範囲の変更、ついでのリファクタリング
+- 頼まれない限り CI(GitHub Actions のワークフロー・ジョブ・OS や版のマトリクス)を足す・広げる。確かめるのは手元のテストと独立レビュー(と上の「確かめ方」)が基本。private リポジトリの Actions は分単位の課金で macOS は倍率が高く、上限に当たると CI ごと止まる。CI の無いリポジトリでも pekoed はマージの根拠を揃ったと見る(ci は「該当なし」)
 - 報告せずに止まる(終わったときも詰まったときも `pekoe report`)

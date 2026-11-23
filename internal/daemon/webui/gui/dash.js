@@ -417,6 +417,8 @@ export function stepLook(f, name) {
       if (name === "ci" && f.ci && f.ci.pass + f.ci.fail + f.ci.pending > 0) return ["now", "◉", f.ci.pass + "/" + (f.ci.pass + f.ci.fail + f.ci.pending)];
       return ["now", "◉", "now"];
   }
+  // a PR with no CI checks at all: not required (merge.check), said so
+  if (name === "ci" && /^no CI checks/.test(step.detail || "")) return ["todo", "○", "n/a"];
   // a PR to push again (the branch went back to work): its number stays
   if (name === "pr" && f.pr) return ["todo", "○", "#" + f.pr];
   return ["todo", "○", ""];
@@ -472,7 +474,7 @@ export function badges(later) {
 // waitPhrase: one unmet merge condition in a few words. merge_state
 // UNSTABLE or BLOCKED is left out while CI is not through (it says the
 // same); BEHIND, DIRTY and the rest are shown. ci with no checks at all
-// is not a wait (none will come): statusNote says it on its own.
+// is met (merge.check: not required), so it is never a wait.
 function waitPhrase(c, conds) {
   switch (c.name) {
     case "land":
@@ -514,11 +516,8 @@ export function statusNote(f) {
   if (f.merge && f.merge.ready) return "ready · your merge";
   if (f.merge) {
     const conds = f.merge.conds || [];
-    const noCI = conds.some((c) => c.name === "ci" && !c.ok && c.detail === "no CI checks");
-    const unmet = conds.filter((c) => !c.ok && !(noCI && c.name === "ci"));
-    const ws = [...new Set(unmet.map((c) => waitPhrase(c, conds)).filter(Boolean))];
-    const parts = [...(noCI ? ["no CI checks"] : []), ...(ws.length ? ["merge waits on " + ws.join(" · ")] : [])];
-    if (parts.length) return parts.join(" · ");
+    const ws = [...new Set(conds.filter((c) => !c.ok).map((c) => waitPhrase(c, conds)).filter(Boolean))];
+    if (ws.length) return "merge waits on " + ws.join(" · ");
   }
   if (f.after && f.after.length) return "after " + f.after.join(", ");
   return "";

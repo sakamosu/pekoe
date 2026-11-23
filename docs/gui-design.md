@@ -253,7 +253,7 @@ GUI のフォーカスは 3 つの層に分け、それぞれ表し方を 1 つ�
   - push して PR の HEAD が変われば、いつもの判定(review は今の HEAD で合格しているか、CI は新しい HEAD の結果)に戻る
   - マージ待ちの判定(merge.check の settled)も合わせた: 最後の報告の後に送った文は、エージェントがそれを受け取り(`prompt_at` が送った時刻以降)、その後で手を止めた(done・idle)なら、もう止める理由にしない。変わったかどうかは worktree の検査が言う
 - **箱をつなぐ線**: Branch の箱と impl の間、箱と箱の間を 12px で。緑にしない。到達した工程の手前(済み・進行中・失敗・人の番の箱の左)は dim の実線、まだの工程の手前は border の破線
-- **Status**: 1 行目はセッションの状態(`◉ run · 2m`・`✓ done · 50s`。記号は状態色、語は text の英小文字)。2 行目は dim の 1 行で、あとから入った依頼で impl に戻った(`reopened by r2`。作った依頼が無いブランチでは `working on r2`。ただしレビュー・PR まで進んで作業に戻ったブランチは `reopened by r2`)・依頼の結ばれていない指示で作業に戻った(`reopened`。このときマージを止めている理由は出さない)・失敗した工程とその理由(`CI: 1 failed`)・人のマージ待ち(`ready · your merge`)・マージを止めている理由(`merge waits on CI · agent running`)のどれか 1 つ。PR に CI のチェックが 1 つも無い(merge.check の ci が `no CI checks`)ときは待っても来ないので「待ち」と書かず `no CI checks`(ほかに揃っていない条件があれば `no CI checks · merge waits on review`)。待ちは ✗ で並べない
+- **Status**: 1 行目はセッションの状態(`◉ run · 2m`・`✓ done · 50s`。記号は状態色、語は text の英小文字)。2 行目は dim の 1 行で、あとから入った依頼で impl に戻った(`reopened by r2`。作った依頼が無いブランチでは `working on r2`。ただしレビュー・PR まで進んで作業に戻ったブランチは `reopened by r2`)・依頼の結ばれていない指示で作業に戻った(`reopened`。このときマージを止めている理由は出さない)・失敗した工程とその理由(`CI: 1 failed`)・人のマージ待ち(`ready · your merge`)・マージを止めている理由(`merge waits on CI · agent running`)のどれか 1 つ。PR に CI のチェックが 1 つも無い(merge.check の ci が `no CI checks (not required)`)ときは ci は揃っている(該当なし)ので、待ちにも書かない。CI の箱は `○ n/a`。待ちは ✗ で並べない
 - **過ぎた行**(landed): 記号・語・枠を dim / border に落とす
 - **多いとき**: 8 行まで出し、残りは `Show N more`(押すと全部と `Show less`)
 

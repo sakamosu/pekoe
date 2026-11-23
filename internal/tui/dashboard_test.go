@@ -491,6 +491,13 @@ func TestDashStagesReview(t *testing.T) {
 		{"PR, head changed the reviewed change", opened(&state.Session{State: state.Done, Review: pass}),
 			review(false, "レビューした abc1234 から PR の HEAD def5678 で差分の中身が変わった(再レビューが要る)", true),
 			[5]int{stOK, stStale, stOK, stOK, stNone}, "needs re-review", "差分の中身が変わった(再レビューが要る)"},
+		{"PR with no CI checks: ci not required, ready", func() *state.Session {
+			s := opened(&state.Session{State: state.Done, Review: pass})
+			s.PRStatus.Pass = 0
+			return s
+		}(), &state.MergeCheck{PR: 42, PRHead: "def5678", Ready: true, Missing: []string{}, Conds: []state.MergeCond{
+			{Name: "land", OK: true}, {Name: "review", OK: true}, {Name: "ci", OK: true, Detail: "no CI checks (not required)"}}},
+			[5]int{stOK, stOK, stOK, stNone, stReady}, "ready to merge", ""},
 		{"PR, re-review under way", opened(&state.Session{State: state.Done, Review: &state.ReviewSummary{ID: 4, Verdict: "pending", ReviewedSHA: "def5678"}}),
 			review(false, "独立レビューの最中(報告 p4・def5678)", false), [5]int{stOK, stRun, stOK, stOK, stNone}, "in review", ""},
 	}

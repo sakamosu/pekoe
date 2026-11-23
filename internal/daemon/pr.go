@@ -301,6 +301,8 @@ func (v *PRView) Summary() *state.PRStatus {
 			}
 		case "pending":
 			st.Pending++
+		case "skip":
+			st.Skip++
 		}
 	}
 	st.CIResult = ciResult(st, v.Checks)

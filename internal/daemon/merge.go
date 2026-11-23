@@ -164,8 +164,14 @@ func (d *Daemon) mergeCheck(s *state.Session) *state.MergeCheck {
 		add("ci", false, "%d failed", ps.Fail)
 	case ps.Pending > 0:
 		add("ci", false, "%d pending", ps.Pending)
+	case ps.Pass == 0 && ps.Skip > 0:
+		// checks there, none passed (all cancelled or skipped): not met,
+		// as before; only a PR with no checks at all is "not required"
+		add("ci", false, "none passed (%d skipped or cancelled)", ps.Skip)
 	case ps.Pass == 0:
-		add("ci", false, "no CI checks")
+		// a repository with no CI: nothing to wait for, and pekoe does not
+		// ask for one (the evidence is the local tests and the review)
+		add("ci", true, "no CI checks (not required)")
 	default:
 		add("ci", true, "all %d passed", ps.Pass)
 	}

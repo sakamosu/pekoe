@@ -141,6 +141,36 @@ func TestMergeEvidenceMissing(t *testing.T) {
 	}
 }
 
+// A repository with no CI: a PR with no checks at all is met for ci (not
+// required), so the item is made when the rest is there. A failed or
+// running check still keeps it back (TestMergeEvidenceMissing).
+func TestMergeEvidenceNoCI(t *testing.T) {
+	d, _ := mergeSetup(t)
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.Pass = 0; x.PRStatus = &c })
+	c := mergeCheckOf(t, d)
+	if !c.Ready || len(c.Missing) != 0 {
+		t.Fatalf("check: %+v", c)
+	}
+	var ci state.MergeCond
+	for _, x := range c.Conds {
+		if x.Name == "ci" {
+			ci = x
+		}
+	}
+	if !ci.OK || ci.Detail != "no CI checks (not required)" {
+		t.Fatalf("ci: %+v", ci)
+	}
+	d.checkMerges()
+	if its := mergeItems(t, d, "open"); len(its) != 1 || its[0].Kind != "approve" {
+		t.Fatalf("items: %+v", its)
+	}
+	// checks there but every one skipped or cancelled: not "no CI", not met
+	d.update("main", func(x *state.Session) { c := *x.PRStatus; c.Skip = 2; x.PRStatus = &c })
+	if c := mergeCheckOf(t, d); c.Ready || strings.Join(c.Missing, ",") != "ci" {
+		t.Fatalf("all skipped: %+v", c)
+	}
+}
+
 // Completion criterion: the PR's head moves after the item was made → it
 // is withdrawn; a passing review of the new head makes a new one.
 func TestMergeEvidenceHeadMoved(t *testing.T) {
