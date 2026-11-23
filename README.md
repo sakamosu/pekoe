@@ -87,7 +87,7 @@ Design docs are in Japanese.
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
-| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 partly built: the CLI pekoe voice) |
+| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI) |
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
@@ -271,6 +271,7 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `^q` `<` `>` / `^q` `=` | Narrow / widen the left pane by 4 columns / reset to the default (40%). Width and zoom are kept in `~/.local/share/pekoe/layout.json`, so the TUI after a restart and agents started from the CLI get the same width. Has no effect below 100 columns (stacked layout) |
 | `^q` `,` | Edit `config.toml` (`pekoe config edit` in this terminal; the TUI comes back when the editor closes) |
 | `^q` `o` | tapi's dashboard in one move (even while typing into tapi chat or an agent, whichever session is selected: it selects the tapi row and focuses [4]; [tapi chat](#tapi-chat)) |
+| `^q` `m` | Mute voice / unmute it (`pekoe voice`; stops what is sounding and the queue). Works from any panel and while typing, and you keep typing. The bar shows `voice` while tapi speaks and `muted ^q m` while muted |
 | `n` | New worktree + session |
 | `t` / `T` | Open tapi chat and talk to it ([tapi chat](#tapi-chat)) / reset tapi chat (asks first) |
 | `w` | Choose a repository |
@@ -284,7 +285,8 @@ A toast appears when a session you aren't looking at goes to wait / error. tapi 
 | `u` `R` | Undo the last prompt / restart the agent (resume) |
 | `s` `i` `↵` | Send / ignore / show details of an error card (errors pekoed found in the dev server or browser). While a card is shown, typing is `a` |
 | `x` `D` | End the session (keep the worktree) / delete the worktree (asks first) |
-| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
+| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `voice` `cleanup` `config` `ext` `tutorial` `q`) |
+| `:voice` | What voice said, newest 50 first (`pekoe voice log`): time, result (`spoken` `merged` `muted` …), kind and the sentence; the selected line adds the backend, latency and reason. Grows while open. `j` `k` move, `esc` `q` close. `:voice mute` / `:voice unmute` too |
 | `:cleanup` | The cleanup list (`pekoe cleanup`): landed, merged and long-stopped sessions with their warnings (uncommitted files, unpushed commits, an open PR). `space` marks one, `a` marks every landed one, `D` removes the marked ones (or the selected one) after a confirm that names each worktree it deletes and repeats the warnings |
 | `H` | Tutorial again (also `:tutorial`, see [Tutorial](#tutorial)) |
 | `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |

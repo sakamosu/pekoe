@@ -85,7 +85,7 @@ flowchart LR
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
-| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は一部実装済み: CLI の pekoe voice) |
+| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由) |
@@ -268,6 +268,7 @@ pekoe                                                 # TUI
 | `^q` `<` `>` / `^q` `=` | 左ペインを 4 列ずつ狭める・広げる / 既定(40%)に戻す。幅とズームは `~/.local/share/pekoe/layout.json` に保存され、再起動後の TUI でも、CLI から起動するエージェントでも同じ幅になります。100 列未満(縦並び)では効きません |
 | `^q` `,` | `config.toml` を編集する(この端末で `pekoe config edit` を実行します。エディタを閉じると TUI に戻ります) |
 | `^q` `o` | tapi のダッシュボードへ一度の操作で移る(tapi chat やエージェントに入力している最中でも、どのセッションを選んでいても使えます。tapi の行を選んで [4] に入ります。[tapi chat](#tapi-chat)) |
+| `^q` `m` | 音声(`pekoe voice`)をミュートする / 戻す。鳴っているものもキューも止まります。どのパネルからでも、入力中でも使え、入力はそのまま続きます。tapi が喋っている間は最下行に `voice`、ミュート中は `muted ^q m` と出ます |
 | `n` | 新しい worktree とセッションを作る |
 | `t` / `T` | tapi chat を開いて話しかける([tapi chat](#tapi-chat))/ tapi chat をリセットする(確認あり) |
 | `w` | リポジトリを選ぶ |
@@ -281,7 +282,8 @@ pekoe                                                 # TUI
 | `u` `R` | 最後のプロンプトを undo する / エージェントを再起動する(resume) |
 | `s` `i` `↵` | エラーカード(dev server やブラウザのエラーを pekoed が見つけて表示するもの)を送る / 無視する / 詳細を見る。カードが出ている間、入力は `a` で始めます |
 | `x` `D` | セッションを終了する(worktree は残します)/ worktree を削除する(確認あり) |
-| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `cleanup` `config` `ext` `tutorial` `q`) |
+| `/` `?` `:` | 絞り込み / キー一覧(選んで Enter で実行)/ コマンド(`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `voice` `cleanup` `config` `ext` `tutorial` `q`) |
+| `:voice` | 音声が喋ったことを新しい方から 50 件(`pekoe voice log`)。時刻・結果(`spoken` `merged` `muted` など)・種類・文を並べ、選んだ行は backend・待ち時間・理由も出します。開いている間も増えます。`j` `k` で動き、`esc` `q` で閉じます。`:voice mute` / `:voice unmute` も使えます |
 | `:cleanup` | 片付けの一覧(`pekoe cleanup`)。landed・マージ済み・長く止まっているセッションを、警告(未コミットのファイル・push していないコミット・開いている PR)付きで表示します。`space` で 1 つ選び、`a` で landed をすべて選び、`D` で選んだもの(なければカーソルのもの)を削除します。削除前の確認には、削除する worktree と警告がもう一度表示されます |
 | `H` | チュートリアルをもう一度見る(`:tutorial` でも同じです。[チュートリアル](#チュートリアル)) |
 | `.` | 次の tip(4 の空き表示に tip が出ている間だけ。[TIPS](#tips)) |

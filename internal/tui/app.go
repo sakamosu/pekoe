@@ -170,6 +170,7 @@ type model struct {
 	tapi  *tapiState // the mascot (tapi.go)
 	chat  chatState  // tapi chat in the main panel (chat.go)
 	dash  dashState  // the dashboard on the tapi row (dashboard.go)
+	voice voiceState // pekoe voice: the pill, the focus sent, <prefix> m (voice.go)
 	order *ptyOrder  // keys reach the ptys in the order typed (order.go); a pointer so the tour can copy the model
 
 	spinning bool     // the 80 ms spinner tick is scheduled
@@ -289,7 +290,7 @@ func pump(cl *client.Client, p *tea.Program) {
 
 func (m *model) Init() tea.Cmd {
 	m.spinning = m.g.AnimateOn()
-	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadInbox(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
+	cmds := []tea.Cmd{m.loadSessions(), m.loadTapi(), m.loadInbox(), m.loadRepos(), m.loadTabs(), m.loadPicks(), m.loadErrors(), m.loadVoice(), tick(), spin(m.g.AnimateOn()), m.resizeAll(), tea.SetWindowTitle("pekoe")}
 	cmds = append(cmds, m.tapiInit()...)
 	if kittyEnabled() {
 		cmds = append(cmds, writeTerm(kittyPush)) // Kitty keyboard: disambiguate, report alternate keys
@@ -538,12 +539,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.tour != nil { // the tutorial owns the screen and the keys (tour.go)
 		cmd := m.tourUpdate(msg)
 		if m.tour != nil {
-			return m, cmd
+			return m, tea.Batch(cmd, m.voiceFocusSync()) // the tour shows no session: voice.focus ""
 		}
 		// it just ended: the real model catches up like after any update
 		m.issueSync()
 		m.tipSync()
-		return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
+		return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft(), m.voiceFocusSync())
 	}
 	defer m.maybeAutoTour()
 	defer m.markSeen()
@@ -571,7 +572,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.disarmUnderModal()
 	m.syncNarrowTab()
 	m.tipSync()
-	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft())
+	return m, tea.Batch(cmd, m.previewSync(), m.repoSync(), m.unzoomIfLeft(), m.voiceFocusSync())
 }
 
 func (m *model) routeKeys(keys []tea.KeyMsg) tea.Cmd {
@@ -641,6 +642,9 @@ func (m *model) upsert(s *state.Session) {
 
 func (m *model) onEvent(ev client.Event) tea.Cmd {
 	if cmd, ok := m.chatEvent(ev); ok {
+		return cmd
+	}
+	if cmd, ok := m.voiceEvent(ev); ok {
 		return cmd
 	}
 	switch ev.Event {

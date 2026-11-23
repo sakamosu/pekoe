@@ -2,11 +2,15 @@ package tui
 
 import (
 	"encoding/json"
+	"strings"
+	"sync"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"pekoe/internal/daemon"
 	"pekoe/internal/engine"
+	"pekoe/internal/voice"
 )
 
 // These tests pin who eats a key first in onKey: modal → typing (chat, the
@@ -347,5 +351,160 @@ func TestClickDisarmsPrefix(t *testing.T) {
 	click(m, 1, 3) // straight to the left column, not typing
 	if m.prefix || m.prefixType {
 		t.Errorf("click on the left after ^q: prefix %v fromTyping %v", m.prefix, m.prefixType)
+	}
+}
+
+// fakeVoice answers voice.status and voice.mute for a fake pekoed, on top
+// of tapi chat's replies; each voice.mute flips the mute.
+type fakeVoice struct {
+	mu    sync.Mutex
+	st    daemon.VoiceStatus
+	log   []voice.LogEntry
+	other func(string) any
+}
+
+func (v *fakeVoice) reply(method string) any {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	switch method {
+	case "voice.status":
+		return v.st
+	case "voice.mute":
+		if v.st.MutedUntil == "" {
+			v.st.MutedUntil = "forever"
+		} else {
+			v.st.MutedUntil = ""
+		}
+		return v.st
+	case "voice.log":
+		return v.log
+	}
+	return v.other(method)
+}
+
+// voiceModel is chatModel with voice enabled (or not) in the fake pekoed.
+func voiceModel(t *testing.T, enabled bool) (*model, *fakePekoed, *fakeVoice) {
+	t.Helper()
+	m, f, cr := chatModel(t)
+	v := &fakeVoice{st: daemon.VoiceStatus{Enabled: enabled, Supported: true}, other: cr.reply}
+	f.reply = v.reply
+	runCmd(m, m.loadVoice())
+	return m, f, v
+}
+
+// <prefix> m mutes from every panel and while typing (into a session's
+// agent, into tapi chat, on a narrow screen): the key never reaches the
+// pty, and whoever was typing types on. Again unmutes.
+func TestKeyOrderPrefixMute(t *testing.T) {
+	type setup struct {
+		name  string
+		width int
+		prep  func(*model)
+		// after: focus, typing, tapi chat open
+		focus  int
+		typing bool
+		chat   bool
+	}
+	cases := []setup{
+		{"sessions", 140, func(m *model) { m.focus = pSessions }, pSessions, false, false},
+		{"tapi row", 140, func(m *model) { m.focus = pSessions; m.sel = tapiSel }, pSessions, false, false},
+		{"worktrees", 140, func(m *model) { m.focus = pSecond }, pSecond, false, false},
+		{"issues", 140, func(m *model) { m.focus, m.sub2 = pSecond, subIssues }, pSecond, false, false},
+		{"changes", 140, func(m *model) { m.focus = pThird }, pThird, false, false},
+		{"picks", 140, func(m *model) { m.focus, m.sub3 = pThird, 1 }, pThird, false, false},
+		{"agent", 140, func(m *model) { m.focus = pAgent }, pAgent, false, false},
+		{"typing into the agent", 140, func(m *model) { m.focus, m.typing = pAgent, true }, pAgent, true, false},
+		{"typing, zoomed", 140, func(m *model) { m.focus, m.typing, m.layout.Zoom = pAgent, true, true }, pAgent, true, false},
+		{"typing, narrow", 90, func(m *model) { m.focus, m.typing = pAgent, true }, pAgent, true, false},
+		{"typing into tapi chat", 140, func(m *model) { keys(m, key("t")) }, pAgent, true, true},
+		{"tapi chat, not typing", 140, func(m *model) {
+			keys(m, key("t"))
+			r := m.panelRect(pSecond)
+			clickAt(m, r.x+3, r.y+2)
+		}, pSessions, false, true}, // as after ^q > (TestChatLeaveUntypedLayout)
+	}
+	for _, c := range cases {
+		m, f, _ := voiceModel(t, true)
+		m.width = c.width
+		c.prep(m)
+		keys(m, ctrlQ, runes(muteKey))
+		mu := f.find("voice.mute")
+		if len(mu) != 1 || mu[0]["off"] != nil {
+			t.Errorf("%s: voice.mute %v", c.name, mu)
+			continue
+		}
+		if m.msg != "voice muted · ^q m" {
+			t.Errorf("%s: msg %q", c.name, m.msg)
+		}
+		if m.prefix || m.prefixType || m.chat.reopen {
+			t.Errorf("%s: the prefix is not spent: prefix %v fromTyping %v reopen %v", c.name, m.prefix, m.prefixType, m.chat.reopen)
+		}
+		if m.focus != c.focus || m.typing != c.typing || m.chat.open != c.chat {
+			t.Errorf("%s: focus %d typing %v chat %v, want %d %v %v", c.name, m.focus, m.typing, m.chat.open, c.focus, c.typing, c.chat)
+		}
+		if n := len(f.find("session.keys")) + len(f.find("tapi.keys")); n != 0 {
+			t.Errorf("%s: m reached a pty (%d)", c.name, n)
+		}
+		if m.modal != nil {
+			t.Errorf("%s: a modal opened: %T", c.name, m.modal)
+		}
+		keys(m, ctrlQ, runes(muteKey))
+		mu = f.find("voice.mute")
+		if len(mu) != 2 || mu[1]["off"] != true || m.msg != "voice on · ^q m" {
+			t.Errorf("%s: again: voice.mute %v msg %q", c.name, mu, m.msg)
+		}
+	}
+}
+
+// With [voice] enable = false, <prefix> m only says so: nothing is muted.
+func TestKeyOrderPrefixMuteOff(t *testing.T) {
+	m, f, _ := voiceModel(t, false)
+	m.focus, m.typing = pAgent, true
+	keys(m, ctrlQ, runes(muteKey))
+	if n := len(f.find("voice.mute")); n != 0 {
+		t.Fatalf("voice.mute while off: %d", n)
+	}
+	if m.msg != "voice is off · pekoe voice on" || !m.typing {
+		t.Fatalf("msg %q typing %v", m.msg, m.typing)
+	}
+}
+
+// The prefix keys stay what they were with m added: the help lists the
+// same ones plus m, and each still does its own thing.
+func TestKeyOrderPrefixKeysKept(t *testing.T) {
+	m, f, _ := voiceModel(t, true)
+	var got []string
+	for _, g := range m.globalHelpKeys() {
+		if strings.HasPrefix(g[0], "^q ") {
+			got = append(got, g[0])
+		}
+	}
+	want := []string{"^q h l", "^q z", "^q < >", "^q =", "^q ,", "^q o", "^q m"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("prefix keys in the help: %q, want %q", got, want)
+	}
+	// z from typing: zooms and types on, and mutes nothing
+	m.focus, m.typing = pAgent, true
+	keys(m, ctrlQ, runes("z"))
+	if !m.layout.Zoom || !m.typing || len(f.find("voice.mute")) != 0 {
+		t.Fatalf("^q z: zoom %v typing %v mute %d", m.layout.Zoom, m.typing, len(f.find("voice.mute")))
+	}
+	// h / l move the focus
+	m.typing = false
+	keys(m, ctrlQ, runes("h"))
+	if m.focus != pSessions {
+		t.Fatalf("^q h: focus %d", m.focus)
+	}
+	keys(m, ctrlQ, runes("l"))
+	if m.focus != pAgent {
+		t.Fatalf("^q l: focus %d", m.focus)
+	}
+	// o: the dashboard
+	keys(m, ctrlQ, runes(dashKey))
+	onDash(t, m, "^q o")
+	// a key the prefix does not know still falls through (? opens the help)
+	keys(m, ctrlQ, runes("?"))
+	if _, ok := m.modal.(*helpModal); !ok {
+		t.Fatalf("^q ?: modal %T", m.modal)
 	}
 }

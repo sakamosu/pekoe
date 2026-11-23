@@ -227,6 +227,7 @@ func (m *model) endTour() tea.Cmd {
 	if err := saveTourSeen(m.tourPath, m.tourLang); err != nil {
 		m.setMsg("tutorial: "+err.Error(), true)
 	}
+	m.voiceResend() // the tour sent "" (voice.go); the saved model does not know
 	var cmds []tea.Cmd
 	for _, msg := range t.pending {
 		_, c := m.Update(msg)
@@ -270,6 +271,8 @@ func (m *model) tourUpdate(msg tea.Msg) tea.Cmd {
 	case tapiTickMsg, splashDoneMsg, tea.FocusMsg, tea.BlurMsg:
 		cmd, _ := m.tapiUpdate(msg)
 		return cmd
+	case voiceFocusMsg: // sent now, not kept: the end sends the real focus again anyway
+		return m.onVoiceFocus(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.tourApply() // narrow ↔ wide shows the left panels differently

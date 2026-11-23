@@ -11,7 +11,8 @@ import (
 //
 //  1. an open modal takes every key
 //  2. typing: tapi chat, the prefix (leaves), a dead pane, else the pty
-//  3. the key after the prefix: layout keys, the config key, l / h
+//  3. the key after the prefix: layout keys, the config key, the dashboard
+//     key, the mute key, l / h
 //     (anything else falls through)
 //  4. the [1] filter, then the issue query, take printable keys
 //  5. the picks input and the error card in [4]
@@ -63,25 +64,15 @@ func (m *model) onKeyAfterPrefix(k tea.KeyMsg) (tea.Cmd, bool) {
 	reopen := m.chat.reopen // the prefix left tapi chat (chat.go)
 	m.chat.reopen = false
 	if cmd, ok := m.layoutKey(k.String()); ok {
-		switch {
-		case fromTyping && !narrow(m.width): // straight back to the agent
-			m.focus, m.typing = pAgent, true
-			if reopen { // … or to tapi
-				cmd = tea.Batch(cmd, m.showChatAgain())
-			}
-		case reopen && !fromTyping: // the prefix left tapi chat nobody typed into: it shows again, still untyped
-			if !m.zoomed() {
-				m.focus = m.chat.reopenFocus
-			}
-			cmd = tea.Batch(cmd, m.showChatAgain())
-		}
-		return cmd, true
+		return m.backFromPrefix(cmd, fromTyping, !narrow(m.width), reopen), true
 	}
 	switch k.String() {
 	case configKey:
 		return m.editConfig(), true
 	case dashKey: // the dashboard, from wherever (tapi chat, a session)
 		return m.goDash(), true
+	case muteKey: // voice, from wherever: typing goes on where it was
+		return m.backFromPrefix(m.toggleMute(), fromTyping, true, reopen), true
 	}
 	// after ^q left typing, any other key is a plain key: l still lands
 	if !fromTyping {
@@ -95,6 +86,26 @@ func (m *model) onKeyAfterPrefix(k tea.KeyMsg) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
+}
+
+// backFromPrefix: after a prefix key that changes nothing of what [4] shows
+// (z < > =, m), whoever was typing types again (unless back is false: a
+// layout key on a narrow screen does nothing), and tapi chat the prefix
+// left untyped shows again.
+func (m *model) backFromPrefix(cmd tea.Cmd, fromTyping, back, reopen bool) tea.Cmd {
+	switch {
+	case fromTyping && back: // straight back to the agent
+		m.focus, m.typing = pAgent, true
+		if reopen { // … or to tapi
+			cmd = tea.Batch(cmd, m.showChatAgain())
+		}
+	case reopen && !fromTyping: // the prefix left tapi chat nobody typed into: it shows again, still untyped
+		if !m.zoomed() {
+			m.focus = m.chat.reopenFocus
+		}
+		cmd = tea.Batch(cmd, m.showChatAgain())
+	}
+	return cmd
 }
 
 // onKeyFilter edits the [1] filter: it takes every key while on.

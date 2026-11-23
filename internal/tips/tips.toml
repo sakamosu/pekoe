@@ -671,6 +671,13 @@ keys = ["pekoe voice", "[voice]"]
 docs = ["docs/voice.md", "README.ja.md#設定"]
 
 [[tip]]
+id = "voice-mute"
+short = "^q m で音声をすぐ止めてミュート"
+detail = "入力中でも、どのパネルからでも効く。鳴っているものもキューも止まり、もう一度押すと戻る。ミュート中は最下行に muted ^q m と出る。:voice で喋ったことを新しい方から見返す。"
+keys = ["^q m"]
+docs = ["docs/voice.md", "README.ja.md#tui"]
+
+[[tip]]
 id = "notify-timing"
 short = "待ちの知らせの間合いは [notify] で変えられる"
 detail = "トーストの長さ toast_for(5s)、台詞の点滅 blink_after(30s)、OS 通知 os_after(2m)。[mascot] sleep_after(3m)で tapi が眠るまで、[pr] poll_every(1m、下限 30s)で PR を見る間隔。保存すれば再起動なしで効く。"

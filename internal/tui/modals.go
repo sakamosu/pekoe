@@ -653,7 +653,7 @@ var tipHelpKey = [2]string{tipKey, "next tip"}
 // of the help).
 func (m *model) globalHelpKeys() [][2]string {
 	p := m.prefixLabel()
-	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {p + " " + configKey, "edit config.toml"}, {p + " " + dashKey, "tapi's dashboard (from anywhere, typing too)"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {tourKey, "tutorial (replay)"}, {"q", "quit"}}
+	return [][2]string{{"1-4", "focus panel"}, {"tab", "next panel"}, {"[ ]", "sub tab"}, {"]a [a", "next wait or PR news / back"}, {"]r", "next review"}, {p, "leave typing (back to Sessions)"}, {p + " h l", "focus left / main panel"}, {p + " z", "zoom the main panel (toggle)"}, {p + " < >", "narrow / widen the left panels"}, {p + " =", "default panel widths"}, {p + " " + configKey, "edit config.toml"}, {p + " " + dashKey, "tapi's dashboard (from anywhere, typing too)"}, {p + " " + muteKey, "mute voice (toggle)"}, {"t", "talk to tapi (tapi chat)"}, {"T", "reset tapi chat"}, {"w", "switch repository"}, {":", "command"}, {tourKey, "tutorial (replay)"}, {"q", "quit"}}
 }
 
 // Names of the panel key lists in helpSets.
@@ -823,7 +823,7 @@ func (c *commandModal) view() []string {
 	if c.err != "" {
 		lines = append(lines, "", th.FG(theme.Err, c.err))
 	}
-	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · inbox · cleanup · config · ext · tutorial · q"))
+	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · inbox · voice [mute|unmute] · cleanup · config · ext · tutorial · q"))
 	return c.m.modalFrame(c.m.modalWidth(80), th.Bold(theme.Primary, "Command"), lines, c.hints(), false)
 }
 
@@ -885,6 +885,16 @@ func (c *commandModal) key(k tea.KeyMsg) tea.Cmd {
 		case "config":
 			m.modal = nil
 			return m.editConfig()
+		case "voice":
+			m.modal = nil
+			switch arg {
+			case "":
+				return m.openVoiceLog()
+			case "mute", "unmute":
+				return done(m.voiceMuteCmd(arg == "mute"))
+			}
+			m.modal = c
+			c.err = "voice: mute, unmute, or nothing for what was said"
 		case "inbox":
 			m.modal = nil
 			m.inboxRoundReset()
