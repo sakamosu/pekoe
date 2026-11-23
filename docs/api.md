@@ -379,6 +379,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
 | `voice.status` | — | `VoiceStatus`(下の「音声(voice)」) |
 | `voice.mute` | `{for?: "30m"}` / `{until?: RFC3339}` / `{off?: true}` | `VoiceStatus`。全体のミュート。どれも無ければ unmute まで。ミュートは鳴っているものを止めてキューを空にする。期限は state.db の kv(`voice.mute_until`)に残り、再起動しても続く |
+| `voice.mode` | `{slug, mode: "read"\|"narrate"\|"mute"\|"auto"}` | `VoiceStatus`。セッションのモード(`pekoe voice mode`。docs/voice.md 7 の 2 番目: 全体のミュートの次に効き、フォーカス・`focus_mode`・`background_mode` より先)。`auto` は「決めていない」に戻す。state.db の kv(`voice.mode.<slug>`)に残り、再起動しても続き、`session.removed`(`pekoe rm`)で消える。slug は今あるセッションか `+tapi`(無ければエラー)。無効の間も覚える。積んであるものは鳴らす直前に決め直す(鳴っているものは止めない) |
 | `voice.stop` | — | `null`。鳴っている発話を止める(キューは残す) |
 | `voice.say` | `{text, voice?: "tapi"\|"reader", lang?: "ja"\|"en"}` | `VoiceStatus`。文をそのまま合成して鳴らす(`pekoe voice test`)。キューの先頭に積み、ミュート中も鳴らす。text は 2000 バイトまで。voice が無効(`[voice] enable = false`)・macOS 以外ではエラー(無効の間は何も動かさない) |
 | `voice.focus` | `{slug: "feat-x"\|"+tapi"\|"", term_focused}` | `null`。クライアントが [4] に出しているもの。接続ごとに覚え、最後に送ってきた接続のものを使う。接続が切れたらその接続の分を消す。無効の間も覚えるだけ |
@@ -865,6 +866,7 @@ docs/voice.md の pekoe voice。`voice.*` はすべて人間だけ(エージェ�
   "backend_error": "",             // 設定の backend を使っていない理由(fallback 中など)
   "muted_until": "forever",        // "" はミュートなし、"forever" は unmute まで、それ以外は RFC3339
   "focus": "feat-x",               // 最後に voice.focus を送ったクライアントが [4] に出しているもの
+  "modes": {"feat-y": "mute"},     // voice.mode で決めたモード(slug ごと。auto は入らない。無ければ {})
   "queue": 2,
   "speaking": {"slug": "feat-x", "kind": "wait", "text": "csv export、確認待ちだよ"} // 無ければ null
 }

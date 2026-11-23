@@ -675,8 +675,8 @@ func TestVoiceMethodsNeedToken(t *testing.T) {
 	w := newVoiceWorld(t)
 	w.config(voiceOn)
 	c := dialPipe(t, w.d)
-	for _, m := range []string{"voice.status", "voice.mute", "voice.stop", "voice.say", "voice.focus", "voice.log", "voice.backends"} {
-		params := map[string]any{"text": "hi", "slug": "x", "for": "1m"}
+	for _, m := range []string{"voice.status", "voice.mute", "voice.mode", "voice.stop", "voice.say", "voice.focus", "voice.log", "voice.backends"} {
+		params := map[string]any{"text": "hi", "slug": "x", "for": "1m", "mode": "mute"}
 		if e := c.call(m, params, ""); !strings.Contains(e, "only a person can do this") {
 			t.Errorf("%s without the token: %q", m, e)
 		}
@@ -739,5 +739,127 @@ func TestVoiceWarmsAhead(t *testing.T) {
 	}
 	if got := w.logLine(); got != "" {
 		t.Fatalf("made-ahead sentences went through the queue:\n%s", got)
+	}
+}
+
+// voice.mode (pekoe voice mode, rule 7.2): kept in state.db as
+// voice.mode.<slug> and in voice.status; auto deletes it; an unknown mode
+// or session is refused; it is taken while voice is off too.
+func TestVoiceModeKept(t *testing.T) {
+	w := newVoiceWorld(t)
+	w.add("feat-a", state.Running)
+	st := call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": "feat-a", "mode": "mute"})
+	if st.Modes["feat-a"] != voice.ModeMute || w.d.DB.Get(kvVoiceMode+"feat-a") != "mute" {
+		t.Fatalf("while off: modes %v, kv %q", st.Modes, w.d.DB.Get(kvVoiceMode+"feat-a"))
+	}
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": TapiSlug, "mode": "read"})
+	w.config(voiceOn)
+	if st := w.status(); len(st.Modes) != 2 || st.Modes["feat-a"] != voice.ModeMute || st.Modes[TapiSlug] != voice.ModeRead {
+		t.Fatalf("modes %v", st.Modes)
+	}
+	st = call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": TapiSlug, "mode": "auto"})
+	if _, ok := st.Modes[TapiSlug]; ok || w.d.DB.Get(kvVoiceMode+TapiSlug) != "" {
+		t.Fatalf("auto: modes %v, kv %q", st.Modes, w.d.DB.Get(kvVoiceMode+TapiSlug))
+	}
+	for _, bad := range []string{`{"slug":"feat-a","mode":"loud"}`, `{"slug":"feat-a","mode":""}`, `{"slug":"nope","mode":"read"}`, `{"slug":"","mode":"read"}`} {
+		if _, err := w.d.Call("voice.mode", json.RawMessage(bad)); err == nil {
+			t.Errorf("voice.mode %s: no error", bad)
+		}
+	}
+	if w.d.DB.Get(kvVoiceMode+"nope") != "" || w.d.DB.Get(kvVoiceMode) != "" {
+		t.Fatal("a refused voice.mode was kept")
+	}
+
+	// a pekoed restart: a new voice reads state.db again
+	h := newVoiceHub(w.d)
+	if m := h.modeFor("feat-a"); m != voice.ModeMute {
+		t.Fatalf("after a restart: %s", m)
+	}
+	if m := h.modeFor(TapiSlug); m != voice.ModeNarrate {
+		t.Fatalf("auto after a restart: %s", m)
+	}
+	if st := h.status(); len(st.Modes) != 1 || st.Modes["feat-a"] != voice.ModeMute {
+		t.Fatalf("status after a restart: %v", st.Modes)
+	}
+}
+
+// A session's own mode decides over focus and background (7.2), when it is
+// queued and again before it is said; the global mute beats it (7.1); auto
+// goes back to the default.
+func TestVoiceModeDecides(t *testing.T) {
+	w := newVoiceWorld(t)
+	w.add("feat-a", state.Running)
+	w.add("feat-b", state.Running)
+	w.config(voiceOn)
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": "feat-a", "mode": "mute"})
+	w.set("feat-a", state.Waiting)
+	w.advance(time.Second)
+	w.waitLog("feat-a wait muted")
+	if n, _, _, _, _ := w.eng.count(); n != 0 {
+		t.Fatal("a session set to mute was said")
+	}
+
+	// auto: the default (background narrate) again
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": "feat-a", "mode": "auto"})
+	w.set("feat-a", state.Running)
+	w.set("feat-a", state.Waiting)
+	w.advance(300 * time.Millisecond)
+	c := w.syn.Next(t)
+	if c.Text != "a needs you" {
+		t.Fatalf("after auto: %q", c.Text)
+	}
+	c.OK("a.wav")
+	p := w.pl.Next(t)
+
+	// feat-b is queued (past the gather delay) while feat-a sounds, then
+	// set to mute: decided again before it is said, it is not
+	w.set("feat-b", state.Waiting)
+	w.advance(300 * time.Millisecond)
+	if w.status().Queue+w.syn.Pending() == 0 {
+		t.Fatal("feat-b was not queued")
+	}
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": "feat-b", "mode": "mute"})
+	if w.syn.Pending() > 0 { // synthesized ahead while feat-a sounds
+		w.syn.Next(t).OK("b.wav")
+	}
+	p.Finish()
+	w.advance(time.Second)
+	w.waitLog("feat-b wait muted")
+	if l := w.logLine(); strings.Contains(l, "feat-b wait spoken") {
+		t.Fatalf("queued before mute, said after:\n%s", l)
+	}
+
+	// the global mute beats a session's own narrate
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": "feat-a", "mode": "narrate"})
+	call[VoiceStatus](t, w.d, "voice.mute", map[string]any{})
+	if m := w.d.voice.modeFor("feat-a"); m != voice.ModeMute {
+		t.Fatalf("muted: %s", m)
+	}
+	call[VoiceStatus](t, w.d, "voice.mute", map[string]any{"off": true})
+	if m := w.d.voice.modeFor("feat-a"); m != voice.ModeNarrate {
+		t.Fatalf("unmuted: %s", m)
+	}
+}
+
+// pekoe rm (session.removed) deletes the session's mode: a new session of
+// the same slug starts with none.
+func TestVoiceModeGoesWithRm(t *testing.T) {
+	w := newVoiceWorld(t)
+	s := newSession(t, w.d, w.repo, "feat/x")
+	call[VoiceStatus](t, w.d, "voice.mode", map[string]any{"slug": s.Slug, "mode": "read"})
+	if w.d.DB.Get(kvVoiceMode+s.Slug) != "read" {
+		t.Fatal("not kept")
+	}
+	call[any](t, w.d, "worktree.rm", map[string]any{"slug": s.Slug, "force": true})
+	w.settle()
+	if v := w.d.DB.Get(kvVoiceMode + s.Slug); v != "" {
+		t.Fatalf("kv after rm: %q", v)
+	}
+	if st := w.status(); len(st.Modes) != 0 {
+		t.Fatalf("modes after rm: %v", st.Modes)
+	}
+	nw := newSession(t, w.d, w.repo, "feat/x")
+	if nw.Slug != s.Slug || w.d.voice.modeFor(nw.Slug) != voice.ModeNarrate {
+		t.Fatalf("new %s: %s", nw.Slug, w.d.voice.modeFor(nw.Slug))
 	}
 }

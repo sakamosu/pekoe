@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +88,16 @@ func cmdVoice(args []string) error {
 			return err
 		}
 		return voiceMute(map[string]any{"off": true}, os.Stdout)
+	case "mode":
+		if len(pos) != 2 {
+			return &usageError{use: use, msg: "a session and a mode (read, narrate, mute or auto) are required"}
+		}
+		if _, ok := voice.ParseMode(pos[1]); !ok {
+			return &usageError{use: use, msg: fmt.Sprintf("%q is not read, narrate, mute or auto", pos[1])}
+		}
+		cl := connect()
+		defer cl.Close()
+		return voiceMode(cl, pos[0], voice.Mode(pos[1]), os.Stdout)
 	case "stop":
 		if err := noArgs(); err != nil {
 			return err
@@ -211,6 +222,18 @@ func printVoiceStatus(out io.Writer, st daemon.VoiceStatus, now time.Time) {
 		focus = "none"
 	}
 	fmt.Fprintln(out, "focus:", focus)
+	if len(st.Modes) > 0 {
+		slugs := make([]string, 0, len(st.Modes))
+		for s := range st.Modes {
+			slugs = append(slugs, s)
+		}
+		slices.Sort(slugs)
+		var parts []string
+		for _, s := range slugs {
+			parts = append(parts, s+" "+string(st.Modes[s]))
+		}
+		fmt.Fprintln(out, "modes:", strings.Join(parts, " · "))
+	}
 	if !st.Enabled {
 		return
 	}
@@ -288,6 +311,31 @@ func voiceMute(p map[string]any, out io.Writer) error {
 	}
 	if !st.Enabled {
 		fmt.Fprintln(out, "(voice is off: pekoe voice on)")
+	}
+	return nil
+}
+
+// ---- mode ----
+
+func voiceMode(cl voiceCaller, slug string, m voice.Mode, out io.Writer) error {
+	var st daemon.VoiceStatus
+	if err := cl.Call("voice.mode", map[string]any{"slug": slug, "mode": string(m)}, &st); err != nil {
+		return err
+	}
+	if jsonOut {
+		printJSON(st)
+		return nil
+	}
+	if m == voice.ModeAuto {
+		fmt.Fprintf(out, "%s: no mode of its own (the focus / background default)\n", slug)
+	} else {
+		fmt.Fprintf(out, "%s: %s\n", slug, m)
+	}
+	switch {
+	case !st.Enabled:
+		fmt.Fprintln(out, "(voice is off: pekoe voice on)")
+	case st.MutedUntil != "":
+		fmt.Fprintln(out, "(voice is muted: pekoe voice unmute)")
 	}
 	return nil
 }

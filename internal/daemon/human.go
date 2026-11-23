@@ -192,6 +192,7 @@ var humanMethods = map[string]string{
 	// pekoe voice (docs/voice.md 12, 13): an agent must not make the Mac speak
 	"voice.status":   "pekoe voice: whether voice is on, the backend, the queue and the sentence being said",
 	"voice.mute":     "pekoe voice mute / unmute: a person's choice",
+	"voice.mode":     "pekoe voice mode: which sessions are read aloud or kept quiet",
 	"voice.stop":     "pekoe voice stop: stops the sentence being said",
 	"voice.say":      "pekoe voice test: makes the Mac say any sentence",
 	"voice.focus":    "the TUI says what it shows: decides which session is not narrated",

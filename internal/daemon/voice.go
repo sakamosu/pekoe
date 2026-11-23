@@ -25,6 +25,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,9 @@ import (
 const (
 	kvVoiceMute      = "voice.mute_until"
 	voiceMuteForever = "forever"
+	// kvVoiceMode + slug: the mode set with pekoe voice mode (7). No key is
+	// auto; pekoe rm deletes it.
+	kvVoiceMode = "voice.mode."
 )
 
 // voiceLogMax is the size of voice.log before it is rotated to voice.log.1
@@ -89,11 +93,14 @@ type VoiceStatus struct {
 	Error       string `json:"error"`
 	PausedUntil string `json:"paused_until,omitempty"`
 	// BackendError is why the configured backend is not the one in use.
-	BackendError string          `json:"backend_error,omitempty"`
-	MutedUntil   string          `json:"muted_until"` // "", "forever" or RFC3339
-	Focus        string          `json:"focus"`
-	Queue        int             `json:"queue"`
-	Speaking     *voice.Speaking `json:"speaking"`
+	BackendError string `json:"backend_error,omitempty"`
+	MutedUntil   string `json:"muted_until"` // "", "forever" or RFC3339
+	Focus        string `json:"focus"`
+	// Modes are the modes set with pekoe voice mode, by slug (auto is left
+	// out).
+	Modes    map[string]voice.Mode `json:"modes"`
+	Queue    int                   `json:"queue"`
+	Speaking *voice.Speaking       `json:"speaking"`
 }
 
 type voiceFocus struct {
@@ -134,7 +141,8 @@ type voiceHub struct {
 	mutedEver  bool      // muted until unmute
 	focusMode  voice.Mode
 	bgMode     voice.Mode
-	focus      map[any]voiceFocus // by connection
+	modes      map[string]voice.Mode // pekoe voice mode, by slug (kv voice.mode.<slug>)
+	focus      map[any]voiceFocus    // by connection
 	focusSeq   uint64
 
 	logMu sync.Mutex // voice.log
@@ -155,6 +163,7 @@ func newVoiceHub(d *Daemon) *voiceHub {
 	}
 	h.in.init()
 	h.out.init()
+	h.loadModes()
 	return h
 }
 
@@ -488,6 +497,7 @@ func (d *Daemon) voiceEmitted(ev string, data any) {
 		}
 	case "session.removed":
 		if s, ok := data.(*state.Session); ok && s != nil {
+			d.voice.forgetMode(s.Slug)
 			d.voice.removed(s.Slug)
 		}
 	case "inbox.updated":
@@ -517,9 +527,39 @@ func (h *voiceHub) modeFor(slug string) voice.Mode {
 	defer h.polMu.Unlock()
 	f := h.focusLocked()
 	return voice.Policy{
-		Muted: h.mutedLocked(), Focus: f.slug,
+		Muted: h.mutedLocked(), Modes: h.modes, Focus: f.slug,
 		FocusMode: h.focusMode, BackgroundMode: h.bgMode,
 	}.ModeFor(slug)
+}
+
+// loadModes reads the modes kept in state.db (they outlast a restart). A
+// value that is not a mode is skipped.
+func (h *voiceHub) loadModes() {
+	modes := map[string]voice.Mode{}
+	if h.d.DB != nil {
+		for _, kv := range h.d.DB.Prefixed(kvVoiceMode) {
+			if m, ok := voice.ParseMode(kv[1]); ok && m != voice.ModeAuto {
+				modes[strings.TrimPrefix(kv[0], kvVoiceMode)] = m
+			}
+		}
+	}
+	h.polMu.Lock()
+	h.modes = modes
+	h.polMu.Unlock()
+}
+
+// forgetMode: the session is gone (pekoe rm); so is its mode.
+func (h *voiceHub) forgetMode(slug string) {
+	h.polMu.Lock()
+	_, had := h.modes[slug]
+	delete(h.modes, slug)
+	h.polMu.Unlock()
+	if err := h.d.DB.Delete(kvVoiceMode + slug); err != nil {
+		log.Printf("voice: forget the mode of %s: %v", slug, err)
+	}
+	if had {
+		h.out.Do(h.emitStatus)
+	}
 }
 
 func (h *voiceHub) mutedLocked() bool {
@@ -576,6 +616,10 @@ func (h *voiceHub) status() VoiceStatus {
 	st := VoiceStatus{Enabled: g.Voice.Enable, Supported: h.supported, Backend: g.Voice.BackendName(), MutedUntil: h.mutedUntilText()}
 	h.polMu.Lock()
 	st.Focus = h.focusLocked().slug
+	st.Modes = make(map[string]voice.Mode, len(h.modes))
+	for k, m := range h.modes {
+		st.Modes[k] = m
+	}
 	h.polMu.Unlock()
 	if !on {
 		return st
@@ -916,6 +960,62 @@ func (h *voiceHub) focusChanged(before voiceFocus) {
 	if now.slug != before.slug {
 		h.out.Do(h.emitStatus)
 	}
+}
+
+type voiceModeP struct {
+	Slug string `json:"slug"`
+	Mode string `json:"mode"`
+}
+
+// hMode is pekoe voice mode: the mode of one session (7, rule 2); auto
+// takes it back to the policy. Kept in state.db (voice.mode.<slug>) until
+// the session is removed. Remembered while voice is off too. What is queued
+// is decided again before it is said; what is being said goes on.
+func (h *voiceHub) hMode(p voiceModeP) (any, error) {
+	m, ok := voice.ParseMode(p.Mode)
+	if !ok {
+		return nil, fmt.Errorf("mode: %q is not read, narrate, mute or auto", p.Mode)
+	}
+	if p.Slug == "" {
+		return nil, errors.New("slug: required")
+	}
+	known := func() bool {
+		if p.Slug == TapiSlug {
+			return true
+		}
+		h.d.mu.Lock()
+		defer h.d.mu.Unlock()
+		_, ok := h.d.sessions[p.Slug]
+		return ok
+	}
+	if !known() {
+		return nil, fmt.Errorf("no session %q", p.Slug)
+	}
+	var err error
+	if m == voice.ModeAuto {
+		err = h.d.DB.Delete(kvVoiceMode + p.Slug)
+	} else {
+		err = h.d.DB.Set(kvVoiceMode+p.Slug, string(m))
+	}
+	if err != nil {
+		return nil, err
+	}
+	h.polMu.Lock()
+	if m == voice.ModeAuto {
+		delete(h.modes, p.Slug)
+	} else {
+		h.modes[p.Slug] = m
+	}
+	h.polMu.Unlock()
+	if !known() {
+		// removed while this was being set: its session.removed may have
+		// come before the kv was written
+		h.forgetMode(p.Slug)
+		return nil, fmt.Errorf("no session %q", p.Slug)
+	}
+	h.out.Do(h.emitStatus)
+	h.out.flush()
+	return h.status(), nil
 }
 
 type voiceLogP struct {

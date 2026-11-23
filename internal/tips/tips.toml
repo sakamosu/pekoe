@@ -671,6 +671,13 @@ keys = ["pekoe voice", "[voice]"]
 docs = ["docs/voice.md", "README.ja.md#設定"]
 
 [[tip]]
+id = "voice-mode"
+short = "pekoe voice mode <slug> mute で 1 つだけ黙らせる"
+detail = "既定はフォーカス中が read、ほかが narrate。read・narrate・mute を決めると、そのセッションはフォーカスに関係なくそれで喋る。auto で既定に戻す。全体の mute が勝ち、pekoe rm で消える。"
+keys = ["pekoe voice"]
+docs = ["docs/voice.md"]
+
+[[tip]]
 id = "voice-mute"
 short = "^q m で音声をすぐ止めてミュート"
 detail = "入力中でも、どのパネルからでも効く。鳴っているものもキューも止まり、もう一度押すと戻る。ミュート中は最下行に muted ^q m と出る。:voice で喋ったことを新しい方から見返す。"
