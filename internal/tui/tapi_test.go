@@ -21,7 +21,7 @@ func tapiModel(t *testing.T, color string, mc config.Mascot) *model {
 	t.Setenv("PEKOE_COLOR", color)
 	m := newModel(nil, "")
 	m.g.Mascot = mc
-	m.buildTapi(nil)
+	m.buildTapi()
 	m.width, m.height = 100, 16
 	m.tapi.splash = false
 	return m

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/glyphguard"
 )
 
@@ -47,3 +48,24 @@ func TestIconsNotAmbiguous(t *testing.T) {
 // replaced them all (the glyphs picked are in「段階 2 で決めたこと」). A new
 // one goes here only with the stage that removes it.
 var knownIconViolations = []glyphguard.Known{}
+
+// With the wide table ([theme] ambiguous = "wide", or measured) every icon
+// set falls to ascii, nerd included: its private-use icons and │ are
+// ambiguous-width too (docs/ambiguous-width.md「決めること」(3) b).
+func TestIconsWide(t *testing.T) {
+	defer ambiguous.SetWide(ambiguous.IsWide())
+	t.Setenv("PEKOE_ICONS", "nerd")
+	ambiguous.SetWide(true)
+	for _, cfg := range []string{"", "nerd", "unicode", "ascii"} {
+		name := IconsName(cfg)
+		if name != "ascii" {
+			t.Errorf("IconsName(%q) = %q with the wide table, want ascii", cfg, name)
+		}
+		uses := append(iconUses(Icons(name)), glyphguard.Use{Where: "TestRunningMark", Glyph: TestRunningMark})
+		glyphguard.CheckWide(t, uses)
+	}
+	ambiguous.SetWide(false)
+	if got := IconsName("unicode"); got != "nerd" { // PEKOE_ICONS first
+		t.Errorf("IconsName without the wide table = %q", got)
+	}
+}

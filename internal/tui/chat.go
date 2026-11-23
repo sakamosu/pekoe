@@ -266,16 +266,16 @@ func (m *model) viewChat(width, height int) []string {
 	face := m.tapi.r.Line(m.eyesFor(mood, false))
 	extra := ""
 	if v := m.chat.info; v != nil {
-		extra = "· " + v.Agent
+		extra = tx("· ") + v.Agent
 		switch {
 		case mood == mascot.Wait && v.WaitKind != "":
-			extra += " · " + m.tapi.r.Paint(mascot.Wait, v.WaitKind)
+			extra += tx(" · ") + m.tapi.r.Paint(mascot.Wait, v.WaitKind)
 		case mood == mascot.Work:
-			extra += " · " + m.tapi.r.Paint(mascot.Work, "thinking")
+			extra += tx(" · ") + m.tapi.r.Paint(mascot.Work, "thinking")
 		}
 	}
 	if m.typing {
-		extra += " · " + th.FG(theme.Secondary, "typing")
+		extra += tx(" · ") + th.FG(theme.Secondary, "typing")
 	}
 	title := face + " " + m.panelTitle(4, "", "tapi the orchestrator", extra, f)
 	if m.tour != nil { // the tutorial's card has tapi's face (one face at a time)
@@ -285,7 +285,7 @@ func (m *model) viewChat(width, height int) []string {
 	var rows []row
 	switch {
 	case m.chat.screen == nil && (m.chat.info == nil || !m.chat.info.Started):
-		rows = m.bigRows(cw, ch, mascot.Sleep, "waking tapi up …", "")
+		rows = m.bigRows(cw, ch, mascot.Sleep, tx("waking tapi up …"), "")
 	default:
 		rows = m.ptyBody(m.chatPty(), cw, ch)
 	}

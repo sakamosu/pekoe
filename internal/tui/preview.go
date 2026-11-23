@@ -397,9 +397,9 @@ func (m *model) previewHints() [][2]string {
 func (m *model) previewKeysFull() [][3]string {
 	return [][3]string{
 		{"R", "retake the screenshot", "R"},
-		{"m", "desktop / mobile (390×844)", "m"},
+		{"m", tx("desktop / mobile (390×844)"), "m"},
 		{"c", "before / after", "c"},
-		{"g", "go to a path (/settings …)", "g"},
+		{"g", tx("go to a path (/settings …)"), "g"},
 		{"o", "open the page in Chrome", "o"},
 		{"v", "next window (dev / agent)", "v"},
 		{"esc", "back to the agent", "esc"},
@@ -424,13 +424,13 @@ func (m *model) viewPreview(width, height int, s *state.Session) []string {
 	}
 	extra := fmt.Sprintf(":%d%s", s.Port, path)
 	if p != nil && p.Mobile {
-		extra += " · mobile"
+		extra += tx(" · mobile")
 	}
 	if m.pv.compare {
-		extra += " · before/after"
+		extra += tx(" · before/after")
 	}
 	if p != nil && p.Busy {
-		extra += " · " + th.FG(theme.Secondary, "capturing")
+		extra += tx(" · ") + th.FG(theme.Secondary, "capturing")
 	}
 	title := m.panelTitle(4, m.ic.Browser, "Preview "+s.Slug, extra, f)
 	cw, ch := width-4, height-2
@@ -438,7 +438,7 @@ func (m *model) viewPreview(width, height int, s *state.Session) []string {
 		var rows []row
 		switch {
 		case p == nil:
-			rows = []row{{Text: th.FG(theme.Dim, "…")}}
+			rows = []row{{Text: th.FG(theme.Dim, tx("…"))}}
 		case p.Busy:
 			rows = m.bigRows(cw, ch, mascot.Work, "capturing "+strings.TrimPrefix(m.previewURL(s), "http://"), "headless Chrome")
 		case p.Error != "":
@@ -474,7 +474,7 @@ func (m *model) previewRows(p *daemon.Preview, cw, ch int) []row {
 	}
 	for _, sl := range slots {
 		if sl.label != "" {
-			l := sl.label + " · " + theme.Ago(time.Since(sl.shot.At)) + " ago"
+			l := sl.label + tx(" · ") + theme.Ago(time.Since(sl.shot.At)) + " ago"
 			add(sl.y-1, sl.x, th.FG(theme.Dim, clip(l, sl.cols)), min(w(l), sl.cols))
 		}
 		id, ok := m.pv.live[sl.key()]
@@ -514,12 +514,12 @@ func (m *model) dashedShot(sl pvSlot) []string {
 	if name == "" {
 		name = "after"
 	}
-	text := fmt.Sprintf("%s %d×%d · png", name, sl.shot.Width, sl.shot.Height)
+	text := fmt.Sprintf(tx("%s %d×%d · png"), name, sl.shot.Width, sl.shot.Height)
 	if sl.rows < 3 || sl.cols < 6 {
 		return []string{th.FG(theme.Dim, fit(text, sl.cols))}
 	}
 	in := sl.cols - 2
-	out := []string{th.FG(theme.Border, strings.Repeat("┄", sl.cols))}
+	out := []string{th.FG(theme.Border, strings.Repeat(tx("┄"), sl.cols))}
 	mid := (sl.rows - 2) / 2
 	for r := 0; r < sl.rows-2; r++ {
 		t := ""
@@ -528,15 +528,15 @@ func (m *model) dashedShot(sl pvSlot) []string {
 		}
 		pad := max(in-w(t), 0)
 		cell := strings.Repeat(" ", pad/2) + th.FG(theme.Dim, clip(t, in)) + strings.Repeat(" ", pad-pad/2)
-		out = append(out, th.FG(theme.Border, "┆")+cell+th.FG(theme.Border, "┆"))
+		out = append(out, th.FG(theme.Border, tx("┆"))+cell+th.FG(theme.Border, tx("┆")))
 	}
-	return append(out, th.FG(theme.Border, strings.Repeat("┄", sl.cols)))
+	return append(out, th.FG(theme.Border, strings.Repeat(tx("┄"), sl.cols)))
 }
 
 func (m *model) previewFooter(p *daemon.Preview) string {
 	th := m.th
 	shot := func(name string, s *daemon.Shot) string {
-		return fmt.Sprintf("%s %d×%d · %s ago", name, s.Width, s.Height, theme.Ago(time.Since(s.At)))
+		return fmt.Sprintf(tx("%s %d×%d · %s ago"), name, s.Width, s.Height, theme.Ago(time.Since(s.At)))
 	}
 	parts := []string{shot("after", p.After)}
 	switch {
@@ -576,7 +576,7 @@ func (p *pathModal) view() []string {
 		"",
 		th.FG(theme.Dim, fmt.Sprintf("localhost:%d", p.port)) + p.in.render(th, true),
 		"",
-		th.FG(theme.Dim, "a path like /settings · a pasted URL keeps its path"),
+		th.FG(theme.Dim, tx("a path like /settings · a pasted URL keeps its path")),
 	}
 	return p.m.modalFrame(p.m.modalWidth(64), th.Bold(theme.Primary, "Preview path"), lines, p.hints(), false)
 }

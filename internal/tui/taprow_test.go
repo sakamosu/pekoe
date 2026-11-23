@@ -270,7 +270,7 @@ func TestTapiRowCalmIconIsTapiBody(t *testing.T) {
 		m := repoModel(t, "truecolor", 120)
 		m.ic = theme.Icons("unicode")
 		m.g.Mascot.Palette = tc.palette
-		m.buildTapi(nil)
+		m.buildTapi()
 		alive := func(s state.State) *daemon.Tapi {
 			return &daemon.Tapi{Started: true, Alive: true, State: s, StateSince: time.Now()}
 		}

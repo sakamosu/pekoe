@@ -113,12 +113,14 @@ func tourOther(lang string) string {
 	return tourJa
 }
 
-// text is the step's text in lang (tourJa, else English).
+// text is the step's text in lang (tourJa, else English), as drawn (tx).
 func (s tourStep) text(lang string) tourCopy {
+	c := s.en
 	if lang == tourJa {
-		return s.ja
+		c = s.ja
 	}
-	return s.en
+	c.title, c.body, c.narrow = tx(c.title), tx(c.body), tx(c.narrow)
+	return c
 }
 
 // tourEnvLang is the language the environment asks for: the first of
@@ -343,12 +345,12 @@ func (m *model) tourApply() {
 func (m *model) tourHints() [][2]string {
 	lang := [2]string{tourLangKey, tourOther(m.tour.lang)}
 	if m.tour.step == len(tourSteps)-1 {
-		return [][2]string{{"↵", "done"}, {"←", "back"}, lang}
+		return [][2]string{{"↵", "done"}, {tx("←"), "back"}, lang}
 	}
 	if m.tour.step == 0 {
 		return [][2]string{{"↵", "next"}, {"esc", "skip"}, lang}
 	}
-	return [][2]string{{"↵", "next"}, {"←", "back"}, {"esc", "skip"}, lang}
+	return [][2]string{{"↵", "next"}, {tx("←"), "back"}, {"esc", "skip"}, lang}
 }
 
 // tourCopy is the current step's text in the tour's language.
@@ -480,7 +482,7 @@ func tourMood(step int) mascot.Mood {
 func (m *model) tourCard(width, maxH int) []string {
 	th := m.th
 	inner := max(width-4, 1)
-	right := th.FG(theme.Dim, fmt.Sprintf("sample · %d/%d", m.tour.step+1, len(tourSteps)))
+	right := th.FG(theme.Dim, fmt.Sprintf(tx("sample · %d/%d"), m.tour.step+1, len(tourSteps)))
 	// tapi tells the tour: its face heads the card (the bar keeps only its
 	// speech meanwhile, docs/mascot.md: one face at a time), with the
 	// step's mood. The eyes are no East Asian Ambiguous glyph
@@ -512,8 +514,8 @@ func (m *model) tourCard(width, maxH int) []string {
 	b := m.borderPainter(theme.Primary, width, height)
 	// a heavy frame: the target's focus frame has the same ramp, so the
 	// weight of the line is what tells the card from it
-	tl, tr, bl, br, vt := "┏", "┓", "┗", "┛", "┃"
-	hz := strings.Repeat("━", max(width-2, 0))
+	tl, tr, bl, br, vt := tx("┏"), tx("┓"), tx("┗"), tx("┛"), tx("┃")
+	hz := strings.Repeat(tx("━"), max(width-2, 0))
 	surf := func(s string) string {
 		s = " " + fit(s, inner) + " "
 		if th.Mode == theme.Truecolor {

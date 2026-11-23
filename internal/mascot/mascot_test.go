@@ -179,15 +179,6 @@ func TestRowMoodKeepsDoneUntilSeen(t *testing.T) {
 	}
 }
 
-func TestParseCPR(t *testing.T) {
-	if c, ok := parseCPR([]byte("junk\x1b[12;3R")); !ok || c != 3 {
-		t.Fatalf("c=%d ok=%v", c, ok)
-	}
-	if _, ok := parseCPR([]byte("\x1b[12")); ok {
-		t.Fatal("partial")
-	}
-}
-
 func TestDetectShape(t *testing.T) {
 	for _, k := range []string{"TERM_PROGRAM", "TERM", "GHOSTTY_RESOURCES_DIR", "KITTY_WINDOW_ID", "WEZTERM_PANE"} {
 		t.Setenv(k, "")
@@ -333,8 +324,17 @@ func TestDetectGlyphs(t *testing.T) {
 		{"auto", "nerd", "unicode"},
 		{"", "unicode", "unicode"},
 	} {
-		if got := DetectGlyphs(c.cfg, c.icons, nil); got != c.want {
+		if got := DetectGlyphs(c.cfg, c.icons, false); got != c.want {
 			t.Errorf("DetectGlyphs(%q, %q) = %q, want %q", c.cfg, c.icons, got, c.want)
+		}
+	}
+	// the wide table ([theme] ambiguous): auto falls to ascii, an explicit
+	// choice stays
+	for _, c := range []struct{ cfg, want string }{
+		{"auto", "ascii"}, {"", "ascii"}, {"narrow", "unicode"}, {"unicode", "unicode"}, {"ascii", "ascii"},
+	} {
+		if got := DetectGlyphs(c.cfg, "nerd", true); got != c.want {
+			t.Errorf("DetectGlyphs(%q, nerd, wide) = %q, want %q", c.cfg, got, c.want)
 		}
 	}
 }

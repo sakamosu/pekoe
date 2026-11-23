@@ -64,3 +64,16 @@ func TestCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestBadWide(t *testing.T) {
+	for r, bad := range map[rune]bool{
+		'a': false, '-': false, '∙': false, '◉': false, '✓': false,
+		'─': true, '│': true, '╭': true, '█': true, '▌': true, '╥': true, // box and blocks are not allowed here
+		'\uF120': true, '\U000F06A9': true, // nor private use
+		'●': true, '…': true, '·': true, '→': true, '⚠': true,
+	} {
+		if got := BadWide(r) != ""; got != bad {
+			t.Errorf("BadWide(%q U+%04X) = %q, want bad=%v", r, r, BadWide(r), bad)
+		}
+	}
+}

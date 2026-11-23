@@ -1,6 +1,6 @@
 # 曖昧幅の文字の扱い(設計メモ)
 
-issue #85 の調査と案。段階 1(テストの土台)・段階 2(状態アイコンの置き換え)・段階 3(マスコットの置き換え)は済んだ(作業中の顔の吹き出しの泡 `° ·` だけは段階 3 の対象から外し、例外として残した。下の「段階 1 で決めたこと」「段階 2 で決めたこと」「段階 3 で決めたこと」)。方針を決めるための材料として、今の使用箇所・代わりの文字・幅計算・検出・端末の事情を調べ、「決めること」ごとにおすすめを書く。数字は 2026-11 時点の main(`4c4a74c`)と、手元の Mac で測った結果。
+issue #85 の調査と案。段階 1(テストの土台)・段階 2(状態アイコンの置き換え)・段階 3(マスコットの置き換え)・段階 4(`[theme] ambiguous` と `wide` の表)は済んだ(作業中の顔の吹き出しの泡 `° ·` だけは段階 3 の対象から外し、例外として残した。下の「段階 1 で決めたこと」〜「段階 4 で決めたこと」)。方針を決めるための材料として、今の使用箇所・代わりの文字・幅計算・検出・端末の事情を調べ、「決めること」ごとにおすすめを書く。数字は 2026-11 時点の main(`4c4a74c`)と、手元の Mac で測った結果。
 
 ## 要点(おすすめ)
 
@@ -127,7 +127,7 @@ pekoe の幅の数え方はすべて `charmbracelet/x/ansi` に集まってい�
 
 ## 4. 検出
 
-今の `auto`(`internal/mascot/detect.go`): TUI が端末を取る前に、行頭で `●` を出して `ESC[6n` で桁を聞き、3 桁目以降なら曖昧幅が広い(A)とみなす。300ms で返事が無ければ判定しない。結果は `[mascot] glyphs` の `auto` だけに効き、マスコットを ascii にする。ダッシュボードの絵(`dashGlyphs`)もこれを見ているが、アイコンセット・本文・枠線は変わらない。設定の再読み込みでは測り直さない(TUI が端末を持っているため)。
+調べた時点の `auto`(`internal/mascot/detect.go`。段階 4 で `internal/ambiguous` に移した。下の「段階 4 で決めたこと」): TUI が端末を取る前に、行頭で `●` を出して `ESC[6n` で桁を聞き、3 桁目以降なら曖昧幅が広い(A)とみなす。300ms で返事が無ければ判定しない。結果は `[mascot] glyphs` の `auto` だけに効き、マスコットを ascii にする。ダッシュボードの絵(`dashGlyphs`)もこれを見ているが、アイコンセット・本文・枠線は変わらない。設定の再読み込みでは測り直さない(TUI が端末を持っているため)。
 
 B を自動で見分けられるか:
 
@@ -217,7 +217,7 @@ ambiguous = "auto"   # auto | narrow | wide
 1. **テストの土台**(振る舞いは変えない): マスコットの spec、`IconSet` の unicode / nerd、未読の印などの既定の字に曖昧幅が入ったら落ちるテスト。枠線(U+2500–257F)・ブロック要素(U+2580–259F)・私用領域を許可リストに、今ある違反を「既知の違反」のリストに入れ、後の PR で減らす。曖昧幅でなくても日本語フォントで全角に描かれる字(`⚠ ▱ ▪`)は、EAW だけでは拾えないので、字ごとに確かめた許可リスト(この文書の表)にする案も合わせて決める(決めたことは下の「段階 1 で決めたこと」。禁止のリストにした)。`theme.Confetti` のテストが先例
 2. **状態アイコンの置き換え**(済み。下の「段階 2 で決めたこと」): unicode / nerd のセットの `● ○ ◆ ◎ ▶ ⊙ ± ≡ …`(`…` は Pending)、未読の `•`(B では崩れないので `wide` の表だけでもよい)、ロゴの `●`、レビューの見出しの `○`、テスト実行中のバッジ `…test` の `…`、`⚠`。アイコンの後ろの空白のテスト
 3. **マスコットの置き換え**(済み。下の「段階 3 で決めたこと」): 目と 1 セル表示の `● •`、`˙`、`╥`。吹き出しの泡 `° ·` は対象から外す(例外として残す)。`narrowGlyph` をなくし、`mascot.glyphs = "narrow"` を読むだけにする。チュートリアルのカードの顔をステップごとの表情に戻す。`docs/mascot.md` の互換性の表を書き直す
-4. **`[theme] ambiguous` と `wide` の表**: 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
+4. **`[theme] ambiguous` と `wide` の表**(済み。下の「段階 4 で決めたこと」): 検出を `internal/mascot` から、マスコット以外も使える場所に移す。本文の記号・枠線・アイコンを `wide` の表に切り替える仕組み(`fit` の `…` を含む)。`RUNEWIDTH_EASTASIAN` を立てて exec し直す。`pekoe config check`、tips、README の設定の説明
 5. **ドキュメント**: `docs/mascot.md`・`docs/ui-guidelines.md`・README を特定のフォントを前提にしない書き方に(JPDOC は例として残す)。(ダッシュボードのバーの `▰ ▱` は `▅ ▁` に替えて済み)
 
 1 は単独で入れられる。2 と 3 は互いに独立で、1 の既知の違反を減らす。4 は 2・3 の後(`wide` の表が置き換え後の字を前提にするため)。
@@ -276,9 +276,54 @@ ambiguous = "auto"   # auto | narrow | wide
 | ci_failed の目 | `╥ ╥` | 替えない | 罫線の範囲で、B では端末が自前で描く。A の端末では段階 4 の `wide` の表(マスコットは ascii の `T T`)で扱う |
 | 作業中の顔の吹き出しの泡(`workBubbles`) | `· ° °` | 替えない(例外) | 曖昧幅だが、表示が崩れたという報告が無いので残す。B(JPDOC)では収まり、A の端末では `auto` がマスコットを ascii(`. o O`)にする。`internal/tui/ambiguous_test.go` の既知の違反に、例外として残したことを書いて入れたまま |
 
-- `narrowGlyph` をなくした。`mascot.glyphs = "narrow"` は読み続け(`pekoe config check` も通る)、`DetectGlyphs` で `unicode` として扱う。`auto`(CPR で広いと測れば ascii)と `ascii` の動きは変えていない。`config check` で「不要になった」と出すのは段階 4
+- `narrowGlyph` をなくした。`mascot.glyphs = "narrow"` は読み続け(`pekoe config check` も通る)、`DetectGlyphs` で `unicode` として扱う。`auto`(CPR で広いと測れば ascii)と `ascii` の動きは変えていない。`config check` で「不要になった」と出すのは段階 4(済み)
 - チュートリアルのカードの顔を、ステップごとの表情(`tourStep.mood`)に戻した。`^ ^` に固定していたのは、`●` `•` が B で崩れたため
-- 残り: `internal/tips/tips.toml` の `mascot-glyphs` と README の `[mascot] glyphs` の説明はまだ narrow を「● を 🞄 に替える」と書いている(段階 4 の tips・README で直す)。Web UI の tapi chat の顔(`internal/daemon/webui/app.js`)はブラウザが描くので対象外で、`● ●` `• •` のまま
+- 残り: `internal/tips/tips.toml` の `mascot-glyphs` と README の `[mascot] glyphs` の説明はまだ narrow を「● を 🞄 に替える」と書いている(段階 4 で直した)。Web UI の tapi chat の顔(`internal/daemon/webui/app.js`)はブラウザが描くので対象外で、`● ●` `• •` のまま
+
+### 段階 4 で決めたこと(`[theme] ambiguous` と `wide` の表)
+
+設定は「設定の形と移行」のとおり `[theme] ambiguous = "auto" | "narrow" | "wide"`(既定 auto。`pekoe config check` が値を確かめ、`config show` は auto と出す)。
+
+**判定と exec し直し**(`internal/ambiguous`。CPR と termios は `internal/mascot` から移した)
+
+- TUI(`pekoe` と `pekoe review`)は、端末を取る前・pekoed につなぐ前に `ambiguous.Setup` を呼ぶ。`auto` は今までと同じ CPR(行頭に `●` を出して `ESC[6n`、300ms)で測り、答えが無ければ narrow。`narrow` と `wide` は測らずに従う
+- wide のときは `RUNEWIDTH_EASTASIAN=1` と目印の `PEKOE_AMBIGUOUS_REEXEC=1` を足して自分を `syscall.Exec` する。元の環境に同じ名前があれば先に除く(同じ名前が 2 つあると先のものが勝つため)
+- exec し直したプロセスは目印を見て、2 つを `os.Unsetenv` で外す(x/ansi は `init` で読み終えているので効き続ける)。測り直さない。外したあとに起こすもの(自動で起こす pekoed とその先の tmux・エージェント、エディタ)には伝わらない
+- 人が自分で `RUNEWIDTH_EASTASIAN=1` を立てていたとき(起動した時点で幅の関数がすでに 2 と数える)は、設定によらず wide の表にする。exec はせず、変数も外さない(本人の環境なので)。手で組んだ枠が 1 セルを前提にしているので、2 と数えるなら表も wide でないと崩れる
+- exec に失敗したら、wide の表だけで続ける(取り込んだ画面は 1 と数えたまま)
+- 設定の再読み込みでは切り替えない。TUI を開き直すと効く(tip にも書いた)
+- CLI(`pekoe ls` など)と `pekoe --help` の tapi は測らない。`ambiguous = "wide"` と書いたときだけ、アイコンと tapi を ascii にする。CLI の本文の記号は置き換えない(行ごとの出力で、枠を組まないため)
+
+**wide の表**(`ambiguous.Table`。値はすべて ASCII)
+
+| 区分 | 字 → 置き換え |
+| --- | --- |
+| 本文の記号 | `·` → `-`、`…` → `...`、`→` → `->`、`←` → `<-`、`↔` → `<->`、`×` → `x`、`— –` → `-`、`⇧` → `Shift+`、ほかに `° ’ ‘ “ ” • ● ○ ◆ ▶ ± ≡ ˙` |
+| 枠線 | `─ ━ ┄ ┅ ┈` → `-`、`│ ┃ ┆ ┇ ┊` → `|`、角・分岐・交差 → `+`、`╥` → `T`。1 対 1(枠を手で組む箇所がセルを数えているため) |
+| ブロック要素 | スパークラインの 8 段 `▁▂▃▄▅▆▇█` → `_.:-=+*#`(高さの順を保つ)、`▏ ▎ ▍ ▌` → `|`、`▀` → `"`。ダッシュボードのバー `▅ ▁` は `= _` |
+| アイコン | `theme.IconsName` が ascii を返す(`icons`・`$PEKOE_ICONS` によらない。nerd の私用領域も曖昧幅なので) |
+| マスコット | `mascot.glyphs = "auto"` は ascii。`unicode` / `ascii` を明示したときはそれに従う(「設定の形と移行」の表の `unicode` の行) |
+| `fit` の切り詰め | `...` |
+
+- `·` は `.` でなく `-` にした。区切りとして読め、文末の `.` と紛れない
+- 作業中の顔の泡 `· ° °` は、wide ではマスコットが ascii(`. o O`)になるので出ない
+
+**置き換えの仕組み**
+
+- TUI(`internal/tui`)の文字列リテラルのうち曖昧幅の字を含むもの(約 340 か所)を `tx()` に通した。`tx` は既定の表では何もしない。置き換えは測る前(`w`・`fit`・lipgloss の前)に起きるので、`...` のように幅が変わる字も枠の計算に入る。定数とパッケージ変数(ダッシュボードのバー・トースト・チュートリアルの文など)は使う場所で `tx` に通す。TIPS の本文も表示するときに通す
+- 外から来たもの(エージェントの画面・差分・報告・issue の本文など)には `tx` をかけない。差分の `…` を `...` と見せると中身を取り違える。wide では幅の関数がそれを 2 セルと数えるので、端末(経路 A)と食い違わず、枠を押し出さない(エージェントの画面は行の途中で切れる)
+- マスコット(`internal/mascot`)が出す本文(`FitBanner` の `…`、Sessions の tapi の行の `idle · …`)も同じ `ambiguous.Text` に通した
+- Web UI(ブラウザが描く)と nvim のプラグインは対象外
+
+**テスト**
+
+- `internal/ambiguous`: 表の値が ASCII で、枠線・ブロックは 1 対 1 であること、`Decide`(設定・目印・人が立てた変数・測った結果の組み合わせ)、`ExecEnv`(既存の値を除いて足す)、exec し直したプロセスが 2 つの変数を外すこと
+- `internal/tui` の `TestWideLiteralsWrapped`: 曖昧幅の字を含むリテラルが `tx` を通るか例外の表(理由つき)にあり、その字が wide の表にあること。新しく `·` や `─` を `tx` なしで書くと落ちる
+- `internal/tui` の `TestWideScreens`: wide の表で、チュートリアルの全ステップのサンプル画面(Sessions・ダッシュボード・受信箱・PR・レビューなど)・メイン画面・ヘルプ・狭い画面を描き、曖昧幅の字が 1 つも無いこと(`glyphguard.BadWide`。既定の表と違い、枠線・ブロック要素・私用領域も許さない)
+- `internal/theme` の `TestIconsWide`、`internal/mascot` の `TestFaceWide`: アイコンと tapi が wide の表で曖昧幅の字を使わないこと
+- `internal/config`: `theme.ambiguous` の値の確かめと、`mascot.glyphs = "narrow"` の案内
+
+**`mascot.glyphs = "narrow"`**: 読み続けて unicode と同じに描く。`pekoe config check` が「no longer needed」と出し、端末が 2 セルで数えるなら `[theme] ambiguous = "wide"` と案内する。tips の `mascot-glyphs` を書き直し、`theme-ambiguous` を足した(`[theme]` は tip を持ったので `NoTip` から外した)。
 
 ## 付録: 調べ方
 

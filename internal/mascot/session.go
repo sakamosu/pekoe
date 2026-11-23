@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/state"
 )
 
@@ -134,9 +135,9 @@ func (s Summary) Speech() string {
 	case 0:
 		return "idle"
 	case 1:
-		return "idle · " + s.Cloudy[0] + " ci red"
+		return ambiguous.Text("idle · ") + s.Cloudy[0] + " ci red"
 	}
-	return fmt.Sprintf("idle · %d prs ci red", len(s.Cloudy))
+	return fmt.Sprintf(ambiguous.Text("idle · %d prs ci red"), len(s.Cloudy))
 }
 
 // IsCloudy: the idle face clouds over while some open PR is red.

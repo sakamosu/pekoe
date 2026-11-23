@@ -146,7 +146,7 @@ func checkWebURL(u string) error {
 	}
 	shown := u
 	if len(shown) > 200 {
-		shown = shown[:200] + "…"
+		shown = shown[:200] + tx("…")
 	}
 	why := "not a web link"
 	if err == nil && p.Scheme != "" && p.Scheme != "http" && p.Scheme != "https" {

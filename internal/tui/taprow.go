@@ -42,7 +42,7 @@ func (m *model) tapiHeading(cw int) string {
 		name = fit(name, max(cw-4, 1))
 	}
 	head := "  " + th.FG(theme.Text, name) + " "
-	return head + th.FG(theme.Border, strings.Repeat("━", max(cw-w(head), 0)))
+	return head + th.FG(theme.Border, strings.Repeat(tx("━"), max(cw-w(head), 0)))
 }
 
 // tapiRowName is the name on the row; tapiWordX is where its state word

@@ -24,6 +24,7 @@ port = 47778
 [theme]
 mode = "truecolor"
 icons = "unicode"
+ambiguous = "wide"
 [theme.colors]
 primary = "#ff87da"
 dim = "#888"
@@ -61,6 +62,30 @@ auth_key = "tskey-x"
 	}
 }
 
+// mascot.glyphs = "narrow" still reads (the TUI draws it as unicode), but
+// config check says it is no longer needed and points at [theme] ambiguous
+// (docs/ambiguous-width.md「設定の形と移行」).
+func TestCheckGlyphsNarrowNoLongerNeeded(t *testing.T) {
+	g, err := ParseGlobal([]byte("[mascot]\nglyphs = \"narrow\"\n"))
+	if err != nil || g.Mascot.Glyphs != "narrow" {
+		t.Fatalf("narrow must still read: %v %+v", err, g.Mascot)
+	}
+	ps := Check([]byte("[mascot]\nglyphs = \"narrow\"\n"))
+	if len(ps) != 1 || ps[0].Fatal || ps[0].Key != "mascot.glyphs" {
+		t.Fatalf("got %+v", ps)
+	}
+	for _, want := range []string{`"narrow" is no longer needed`, "remove it", `[theme] ambiguous = "wide"`} {
+		if !strings.Contains(ps[0].Msg, want) {
+			t.Errorf("missing %q in %q", want, ps[0].Msg)
+		}
+	}
+	for _, v := range []string{"auto", "unicode", "ascii"} {
+		if ps := Check([]byte("[mascot]\nglyphs = \"" + v + "\"\n")); len(ps) != 0 {
+			t.Errorf("glyphs = %q: %s", v, problems(ps))
+		}
+	}
+}
+
 func TestCheckSyntax(t *testing.T) {
 	ps := Check([]byte("[theme]\nmode = \"ansi\"\nicons = nerd\n"))
 	if len(ps) != 1 || !ps[0].Fatal || !strings.HasPrefix(ps[0].Msg, "syntax error: line 3") {
@@ -80,6 +105,7 @@ port = 70000
 [theme]
 mode = "256"
 icons = "emoji"
+ambiguous = "double"
 [theme.colors]
 primary = "pink"
 [theme.ansi]
@@ -120,6 +146,7 @@ state_dir = "rel/dir"
 		"http.port: 70000 is not a port",
 		`theme.mode: "256" is not one of auto | truecolor | ansi | none`,
 		`theme.icons: "emoji"`,
+		`theme.ambiguous: "double" is not one of auto | narrow | wide`,
 		`theme.colors.primary: "pink" is not a color`,
 		"theme.ansi.dim: 300",
 		`mascot.shape: "square"`,

@@ -749,10 +749,17 @@ docs = ["docs/mascot.md#pr-と-ci-への反応"]
 
 [[tip]]
 id = "mascot-glyphs"
-short = "tapi の顔が崩れたら [mascot] glyphs を変える"
-detail = "曖昧幅を全角で描くフォント(Moralerspace など)では ● がはみ出す。glyphs = \"narrow\" で ● を中立幅の字に替える。ascii なら ASCII の字だけで描く。既定の auto は ● の幅を測る。"
+short = "tapi を ASCII だけで描くなら [mascot] glyphs = \"ascii\""
+detail = "既定の auto は、どのフォントでも 1 セルに収まる字で描き、[theme] ambiguous が wide のときは ASCII。以前の narrow はもう要らない(pekoe config check が消してよいと教える)。"
 keys = ["[mascot]"]
 docs = ["docs/mascot.md#実装仕様", "README.ja.md#設定"]
+
+[[tip]]
+id = "theme-ambiguous"
+short = "枠や記号がずれたら [theme] ambiguous = \"wide\""
+detail = "端末が ● ─ などの曖昧幅を 2 セルで数える設定(iTerm2 など)向け。既定の auto は TUI を開くときに測る。wide では枠線を + - |、記号を ... -> にし、アイコンと tapi は ascii。開き直すと効く。"
+keys = ["[theme]"]
+docs = ["docs/ambiguous-width.md", "README.ja.md#設定"]
 
 [[tip]]
 id = "nvim-diagnostics"

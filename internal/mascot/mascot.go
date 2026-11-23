@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/theme"
 )
 
@@ -483,7 +484,7 @@ func clipAll(text []string, n int) []string {
 	out := make([]string, len(text))
 	for i, t := range text {
 		if ansi.StringWidth(t) > n {
-			t = ansi.Truncate(t, n, "…")
+			t = ansi.Truncate(t, n, ambiguous.Text("…"))
 		}
 		out[i] = t
 	}

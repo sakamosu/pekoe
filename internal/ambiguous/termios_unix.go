@@ -1,6 +1,6 @@
 //go:build darwin || linux || freebsd || netbsd || openbsd
 
-package mascot
+package ambiguous
 
 import (
 	"os"

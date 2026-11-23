@@ -47,6 +47,9 @@ func Effective(g *Global) *Global {
 	if c.Theme.Icons == "" {
 		c.Theme.Icons = "nerd"
 	}
+	if c.Theme.Ambiguous == "" {
+		c.Theme.Ambiguous = "auto"
+	}
 	if c.Mascot.Shape == "" {
 		c.Mascot.Shape = "auto"
 	}

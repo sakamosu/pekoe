@@ -91,7 +91,7 @@ Design docs are in Japanese.
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
-| [docs/ambiguous-width.md](docs/ambiguous-width.md) | Ambiguous-width characters: why the state icons and tapi's eyes avoid them |
+| [docs/ambiguous-width.md](docs/ambiguous-width.md) | Ambiguous-width characters: why the state icons and tapi's eyes avoid them, and `[theme] ambiguous = "wide"` for terminals that count them two cells |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
 
 For developers: [CONTRIBUTING.md](CONTRIBUTING.md) (tests, sandbox, cutting a release) and [docs/verification.md](docs/verification.md) (how the implementation maps to the design, guidelines and mock).
@@ -523,11 +523,12 @@ browser     = ""            # macOS app to open it with (open -a), e.g. "Safari"
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
+ambiguous = "auto"          # how the terminal counts ambiguous-width glyphs (● · ─): auto (measured when the TUI opens) | narrow (one cell) | wide (two cells: frames + - |, symbols ... -> <-, ascii icons and tapi; read when the TUI opens; docs/ambiguous-width.md)
 [theme.colors]              # override by role (tokens in docs/ui-guidelines.md)
 primary = "#ff87da"
 [mascot]                    # the mascot tapi (docs/mascot.md)
 shape   = "auto"            # auto | round (sextant blocks) | block (quadrant blocks)
-glyphs  = "auto"            # auto (measures the width of ●) | unicode | ascii (narrow, a former value, draws as unicode)
+glyphs  = "auto"            # auto (ascii when [theme] ambiguous is wide) | unicode | ascii (narrow, a former value, is no longer needed: it draws as unicode)
 palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
 splash  = true              # splash screen at startup
 sleep_after = "3m"          # tapi falls asleep when every session is idle and no key was pressed for this long (at least 10s)

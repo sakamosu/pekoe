@@ -88,7 +88,7 @@ flowchart LR
 | [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
-| [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由) |
+| [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由と、曖昧幅を 2 セルで数える端末向けの `[theme] ambiguous = "wide"`) |
 | [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim プラグイン / Chrome 拡張 |
 
 開発者向けには、[CONTRIBUTING.md](CONTRIBUTING.md)(テスト・隔離環境・リリースの手順。英語)と [docs/verification.md](docs/verification.md)(設計書・デザイン原則・モックと実装の対応表)があります。
@@ -520,11 +520,12 @@ browser     = ""            # 開く macOS のアプリ(open -a)。例 "Safari"�
 [theme]
 mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
+ambiguous = "auto"          # 端末が曖昧幅の字(● · ─)を何セルで数えるか: auto(TUI を開くときに測る) | narrow(1 セル) | wide(2 セル。枠線を + - |、記号を ... -> <- にし、アイコンと tapi は ascii。TUI を開くときに読む。docs/ambiguous-width.md)
 [theme.colors]              # 役割単位で上書き(docs/ui-guidelines.md のトークン)
 primary = "#ff87da"
 [mascot]                    # マスコット tapi(docs/mascot.md)
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
-glyphs  = "auto"            # auto(● の幅を測る) | unicode | ascii(narrow は以前の値で unicode と同じ)
+glyphs  = "auto"            # auto([theme] ambiguous が wide なら ascii) | unicode | ascii(narrow は以前の値で、もう要らない。unicode と同じ)
 palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
 sleep_after = "3m"          # 全セッションが idle でキー入力もなくこれだけ経つと tapi が眠る(下限 10s)

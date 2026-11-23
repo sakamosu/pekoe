@@ -55,9 +55,9 @@ func inboxHoldsUp(it state.InboxItem) bool {
 func (m *model) orchWait() (text string, since time.Time, ok bool) {
 	if m.chatWaits() {
 		if m.quietNotify() {
-			return "chat waits · t", m.chat.info.StateSince, true
+			return tx("chat waits · t"), m.chat.info.StateSince, true
 		}
-		return tapiNeedsYou, m.chat.info.StateSince, true
+		return tx(tapiNeedsYou), m.chat.info.StateSince, true
 	}
 	if m.quietNotify() {
 		return "", time.Time{}, false
@@ -66,9 +66,9 @@ func (m *model) orchWait() (text string, since time.Time, ok bool) {
 	if len(its) == 0 {
 		return "", time.Time{}, false
 	}
-	text = "? " + its[0].From + " asks · ]a"
+	text = "? " + its[0].From + tx(" asks · ]a")
 	if len(its) > 1 {
-		text = fmt.Sprintf("? %d questions · ]a", len(its))
+		text = fmt.Sprintf(tx("? %d questions · ]a"), len(its))
 	}
 	return text, its[0].CreatedAt, true
 }
@@ -94,7 +94,7 @@ func (m *model) tapiOnChat() {
 		return
 	}
 	m.tapi.toasted[key] = true
-	m.waitToast("+tapi", mascot.Wait, tapiNeedsYou)
+	m.waitToast("+tapi", mascot.Wait, tx(tapiNeedsYou))
 }
 
 // orchNotify is escalate's part for tapi and the inbox: the OS

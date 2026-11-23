@@ -131,3 +131,46 @@ func Check(t testing.TB, uses []Use, known []Known) {
 		}
 	}
 }
+
+// BadWide reports why r must not be in the wide table ([theme] ambiguous =
+// "wide", internal/ambiguous), or "". The terminal counts every East Asian
+// Ambiguous glyph as two cells there, so nothing is allowed regardless:
+// box drawing, block elements and private use (nerd font icons) included.
+func BadWide(r rune) string {
+	if r < 0x80 {
+		return ""
+	}
+	if width.LookupRune(r).Kind() == width.EastAsianAmbiguous {
+		return "East Asian Ambiguous"
+	}
+	if why, ok := WideInFonts[r]; ok {
+		return "wide in fonts: " + why
+	}
+	return ""
+}
+
+// CheckWide fails t for each glyph in uses that BadWide rejects. The wide
+// table has no known list: it starts clean.
+func CheckWide(t testing.TB, uses []Use) {
+	t.Helper()
+	seen := map[string]bool{}
+	var bad []string
+	for _, u := range uses {
+		for _, r := range u.Glyph {
+			why := BadWide(r)
+			if why == "" {
+				continue
+			}
+			s := fmt.Sprintf("%s: %q (U+%04X) %s", u.Where, r, r, why)
+			if !seen[s] {
+				seen[s] = true
+				bad = append(bad, s)
+			}
+		}
+	}
+	sort.Strings(bad)
+	if len(bad) > 0 {
+		t.Errorf("ambiguous-width glyphs in the wide table (docs/ambiguous-width.md「段階 4 で決めたこと」); use ASCII or add the glyph to internal/ambiguous's table:\n  %s",
+			strings.Join(bad, "\n  "))
+	}
+}

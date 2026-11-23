@@ -16,6 +16,7 @@ func cmdReview(args []string) error {
 	if err != nil {
 		return err
 	}
+	setupAmbiguous() // the review surface is a TUI too
 	cl := connect()
 	defer cl.Close()
 	if len(pos) > 0 && strings.HasPrefix(pos[0], "gh#") {

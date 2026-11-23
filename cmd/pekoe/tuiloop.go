@@ -7,7 +7,9 @@ import (
 	"os"
 	"time"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/client"
+	"pekoe/internal/config"
 	"pekoe/internal/hooks"
 	"pekoe/internal/paths"
 	"pekoe/internal/tui"
@@ -19,6 +21,7 @@ import (
 const tuiReconnectWait = 20 * time.Second
 
 func runTUI() error {
+	setupAmbiguous()
 	cl := connect()
 	if !hooks.Installed() {
 		fmt.Fprintln(os.Stderr, "hint: Claude Code hooks are not installed; run `pekoe hooks install` so pekoe can see agent states.")
@@ -35,6 +38,19 @@ func runTUI() error {
 			}
 			return err
 		})
+}
+
+// setupAmbiguous decides the glyph table ([theme] ambiguous) before the TUI
+// takes the terminal and before pekoed is started: with the wide table it
+// runs pekoe again with RUNEWIDTH_EASTASIAN=1, which the process run again
+// takes out of its environment at once (internal/ambiguous). A config.toml
+// that does not read measures, like auto.
+func setupAmbiguous() {
+	cfg := ""
+	if g, err := config.LoadGlobal(); err == nil {
+		cfg = g.Theme.Ambiguous
+	}
+	ambiguous.Setup(cfg, ambiguous.TTY())
 }
 
 // tuiLoop runs the TUI. When the connection to pekoed ends (a restart or a

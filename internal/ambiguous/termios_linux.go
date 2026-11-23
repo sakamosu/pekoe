@@ -1,6 +1,6 @@
 //go:build linux
 
-package mascot
+package ambiguous
 
 import "golang.org/x/sys/unix"
 

@@ -356,7 +356,7 @@ func (m *model) newFromIssue(cur *daemon.Issue) tea.Cmd {
 		return nil
 	}
 	if s := m.issueSession(cur); s != nil {
-		m.setMsg(fmt.Sprintf("#%d already has a session: %s · ↵ jump", cur.Number, s.Branch), false)
+		m.setMsg(fmt.Sprintf(tx("#%d already has a session: %s · ↵ jump"), cur.Number, s.Branch), false)
 	}
 	branch := daemon.SuggestBranch(cur.Number, cur.Title, cur.Labels)
 	from := fmt.Sprintf("gh#%d", cur.Number)
@@ -481,11 +481,11 @@ func (m *model) issuesTitle(f bool) string {
 	if m.iss.query != "" || m.iss.queryOn {
 		extra += " filter:" + m.iss.query
 		if m.iss.queryOn {
-			extra += cursorMark + "▏"
+			extra += cursorMark + tx("▏")
 		}
 	}
 	if m.iss.loading {
-		extra += " …"
+		extra += tx(" …")
 	}
 	return m.panelTitle(2, m.ic.Issues, fmt.Sprintf("Issues %d", n), extra, f)
 }
@@ -509,11 +509,11 @@ func (m *model) issueRows(cw int, f bool) []row {
 	is := &m.iss
 	switch {
 	case is.list == nil && m.curRepo() == nil:
-		return []row{{Text: th.FG(theme.Dim, "  no repository · w pick one")}}
+		return []row{{Text: th.FG(theme.Dim, tx("  no repository · w pick one"))}}
 	case is.list == nil && is.err != "":
 		return []row{{Text: th.FG(theme.Err, "  "+is.err)}}
 	case is.list == nil:
-		return []row{{Text: th.FG(theme.Dim, "  loading issues…")}}
+		return []row{{Text: th.FG(theme.Dim, tx("  loading issues…"))}}
 	case is.list.Unavailable != "":
 		return []row{{Text: th.FG(theme.Dim, "  "+is.list.Unavailable)}}
 	}
@@ -524,7 +524,7 @@ func (m *model) issueRows(cw int, f bool) []row {
 		case is.query != "":
 			hint = "no match"
 		case is.filter == "mine":
-			hint = "no open issues assigned to you · f all"
+			hint = tx("no open issues assigned to you · f all")
 		case is.filter == "label":
 			hint = "no open issues labeled " + is.label
 		}
@@ -610,12 +610,12 @@ func (m *model) viewIssue(width, height int) []string {
 		right = th.FG(lk.Role, lk.Icon) + " " + th.FG(theme.Dim, s.Branch+" "+lk.Word)
 	}
 	if det != nil {
-		extra = "· " + strings.ToLower(det.State)
+		extra = tx("· ") + strings.ToLower(det.State)
 		if det.Author != "" {
-			extra += " · @" + det.Author
+			extra += tx(" · @") + det.Author
 		}
 		if !det.CreatedAt.IsZero() {
-			extra += " · " + theme.Ago(time.Since(det.CreatedAt)) + " ago"
+			extra += tx(" · ") + theme.Ago(time.Since(det.CreatedAt)) + " ago"
 		}
 	}
 	title = m.panelTitle(4, m.ic.Issues, fmt.Sprintf("Issue #%d", cur.Number), extra, f)
@@ -649,12 +649,12 @@ func (m *model) issueDetailRows(cur *daemon.Issue, det *daemon.IssueDetail, cw i
 	} else {
 		meta = append(meta, fmt.Sprintf("%d comments", cur.Comments))
 	}
-	lines = append(lines, th.FG(theme.Dim, clip(strings.Join(meta, " · "), cw)), "")
+	lines = append(lines, th.FG(theme.Dim, clip(strings.Join(meta, tx(" · ")), cw)), "")
 	switch {
 	case m.iss.viewErr[cur.Number] != "":
 		lines = append(lines, th.FG(theme.Err, clip(m.iss.viewErr[cur.Number], cw)))
 	case det == nil:
-		lines = append(lines, th.FG(theme.Dim, "loading…"))
+		lines = append(lines, th.FG(theme.Dim, tx("loading…")))
 	default:
 		if strings.TrimSpace(det.Body) == "" {
 			lines = append(lines, th.FG(theme.Dim, "no description"))
@@ -664,10 +664,10 @@ func (m *model) issueDetailRows(cur *daemon.Issue, det *daemon.IssueDetail, cw i
 		for _, c := range det.Thread {
 			head := " @" + c.Author
 			if !c.CreatedAt.IsZero() {
-				head += " · " + theme.Ago(time.Since(c.CreatedAt)) + " ago"
+				head += tx(" · ") + theme.Ago(time.Since(c.CreatedAt)) + " ago"
 			}
 			head += " "
-			lines = append(lines, "", th.FG(theme.Border, "──")+th.FG(theme.Dim, clip(head, max(cw-3, 0)))+th.FG(theme.Border, strings.Repeat("─", max(cw-2-w(head), 0))))
+			lines = append(lines, "", th.FG(theme.Border, tx("──"))+th.FG(theme.Dim, clip(head, max(cw-3, 0)))+th.FG(theme.Border, strings.Repeat(tx("─"), max(cw-2-w(head), 0))))
 			lines = append(lines, renderMarkdown(th, m.ic, c.Body, cw)...)
 		}
 	}
@@ -701,7 +701,7 @@ func (m *model) issuePanelHints() [][2]string {
 
 func issuePanelKeysFull() [][3]string {
 	return [][3]string{{"j/k", "move (shows the issue)", "j"}, {"↵", "jump to its session / read", "\r"}, {"n", "new session from the issue", "n"},
-		{"f", "mine → open → label", "f"}, {"/", "filter", "/"}, {"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"esc", "back to the agent", "esc"}}
+		{"f", tx("mine → open → label"), "f"}, {"/", "filter", "/"}, {"o", "open in the browser", "o"}, {"R", "refresh from GitHub", "R"}, {"esc", "back to the agent", "esc"}}
 }
 
 // issueMouse: wheel scrolls the issue, a click focuses the panel; nothing
