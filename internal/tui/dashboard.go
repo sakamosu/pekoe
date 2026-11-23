@@ -743,9 +743,9 @@ func (m *model) viewDash(width, height int) []string {
 }
 
 // dashGlyphs: the dashboard may draw its pictures (the stage bar, emoji).
-// Not with the ascii icon set, nor with [mascot] glyphs = "ascii" (set,
-// or measured: the terminal draws ambiguous glyphs wide), which ask for
-// plain characters.
+// Not with the ascii icon set, nor with [mascot] glyphs = "ascii", which
+// ask for plain characters; the wide table ([theme] ambiguous) makes both
+// ascii.
 func (m *model) dashGlyphs() bool {
 	return m.ic.Name != "ascii" && (m.tapi.r == nil || !m.tapi.r.ASCII())
 }
