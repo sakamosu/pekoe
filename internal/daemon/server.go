@@ -756,6 +756,7 @@ func (d *Daemon) registerHandlers() {
 	}
 	d.handlers["voice.status"] = func(json.RawMessage) (any, error) { return d.voice.status(), nil }
 	d.handlers["voice.mute"] = bind(d.voice.hMute)
+	d.handlers["voice.mode"] = bind(d.voice.hMode)
 	d.handlers["voice.stop"] = func(json.RawMessage) (any, error) { return d.voice.hStop() }
 	d.handlers["voice.say"] = bind(d.voice.hSay)
 	d.handlers["voice.log"] = bind(d.voice.hLog)

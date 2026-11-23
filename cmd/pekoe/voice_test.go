@@ -422,3 +422,65 @@ func TestVoiceCommands(t *testing.T) {
 		t.Fatalf("refused commands reached pekoed: %v", c)
 	}
 }
+
+// pekoe voice mode sends {slug, mode} to voice.mode; a wrong number of
+// arguments or an unknown mode is refused before pekoed, and pekoed's "no
+// session" comes back as the error.
+func TestVoiceModeCommand(t *testing.T) {
+	fd := startFakeDaemon(t)
+	fd.results = map[string]any{
+		"voice.mode": daemon.VoiceStatus{Enabled: true, Supported: true, Modes: map[string]voice.Mode{"feat-x": voice.ModeMute}},
+	}
+	params := func() string {
+		fd.mu.Lock()
+		defer fd.mu.Unlock()
+		return string(fd.params["voice.mode"])
+	}
+	out, err := capture(t, func() error { return cmdVoice([]string{"mode", "feat-x", "mute"}) })
+	if err != nil || params() != `{"mode":"mute","slug":"feat-x"}` || !strings.Contains(out, "feat-x: mute") {
+		t.Fatalf("mode: %v %s %q", err, params(), out)
+	}
+	out, err = capture(t, func() error { return cmdVoice([]string{"mode", "+tapi", "auto"}) })
+	if err != nil || params() != `{"mode":"auto","slug":"+tapi"}` || !strings.Contains(out, "+tapi: no mode of its own") {
+		t.Fatalf("auto: %v %s %q", err, params(), out)
+	}
+	jsonOut = true
+	out, err = capture(t, func() error { return cmdVoice([]string{"mode", "feat-x", "mute"}) })
+	jsonOut = false
+	if err != nil || !strings.Contains(out, `"modes": {`) || !strings.Contains(out, `"feat-x": "mute"`) {
+		t.Fatalf("--json: %v %q", err, out)
+	}
+	fd.reset()
+	for _, args := range [][]string{
+		{"mode"}, {"mode", "feat-x"}, {"mode", "feat-x", "loud"}, {"mode", "feat-x", "read", "extra"}, {"mode", "feat-x", "READ"},
+		{"mode", "feat-x", "read", "--for", "1m"},
+	} {
+		if err := cmdVoice(args); err == nil {
+			t.Errorf("%v accepted", args)
+		} else if _, ok := err.(*usageError); !ok {
+			t.Errorf("%v: %v, want a usage error", args, err)
+		}
+	}
+	if c := fd.calls(); len(c) > 0 {
+		t.Fatalf("refused commands reached pekoed: %v", c)
+	}
+	fd.errs = map[string]string{"voice.mode": `no session "nope"`}
+	if _, err := capture(t, func() error { return cmdVoice([]string{"mode", "nope", "read"}) }); err == nil || !strings.Contains(err.Error(), `no session "nope"`) {
+		t.Fatalf("unknown slug: %v", err)
+	}
+}
+
+// pekoe voice lists the sessions' own modes, sorted; none, no line.
+func TestVoiceStatusModes(t *testing.T) {
+	var b bytes.Buffer
+	printVoiceStatus(&b, daemon.VoiceStatus{Enabled: true, Supported: true, Backend: "say", Using: "say",
+		Modes: map[string]voice.Mode{"feat-b": voice.ModeMute, "feat-a": voice.ModeRead}}, time.Now())
+	if !strings.Contains(b.String(), "\nmodes: feat-a read · feat-b mute\n") {
+		t.Fatalf("status:\n%s", b.String())
+	}
+	b.Reset()
+	printVoiceStatus(&b, daemon.VoiceStatus{Enabled: true, Supported: true, Modes: map[string]voice.Mode{}}, time.Now())
+	if strings.Contains(b.String(), "modes:") {
+		t.Fatalf("no modes:\n%s", b.String())
+	}
+}
