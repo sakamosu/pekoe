@@ -129,6 +129,7 @@ type voiceHub struct {
 	eng      voiceEngine
 	q        *voice.Queue
 	tr       *voice.Tracker
+	rd       *voice.Reader // read's text (6.1-6.3)
 	phrases  voice.Phrases
 	stopRun  chan struct{} // closed when this run (on with these settings) ends
 	tapiSt   state.State
@@ -239,7 +240,7 @@ func (h *voiceHub) apply(g *config.Global) {
 		close(h.stopRun)
 		h.stopRun = nil
 	}
-	h.on, h.key, h.q, h.tr, h.eng = false, "", nil, nil, nil
+	h.on, h.key, h.q, h.tr, h.rd, h.eng = false, "", nil, nil, nil, nil
 	h.mu.Unlock()
 	if old != nil {
 		old.Close() // stops the sound, empties the queue
@@ -288,13 +289,21 @@ func (h *voiceHub) start(v config.Voice, key string) {
 		OnUpdate:     func(voice.Status) { h.out.Do(h.emitStatus) },
 	})
 	tr = voice.NewTracker(h.clock, func(it voice.Item) { q.Push(it) })
+	skip := v.Read.Skip
+	if len(skip) == 0 {
+		skip = voice.DefaultSkip
+	}
+	rd := voice.NewReader(voice.ReadConfig{
+		Clock: h.clock, Skip: skip, Mode: h.modeFor,
+		MaxSentences: v.MaxSentences(), MaxTurnSentences: v.MaxTurnSentences(),
+	})
 	stop := make(chan struct{})
 	h.warmMu.Lock()
 	h.warmed, h.warmTodo = map[string]bool{}, nil
 	h.warmMu.Unlock()
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.on, h.key, h.eng, h.q, h.tr, h.phrases, h.stopRun = true, key, eng, q, tr, phrases, stop
+	h.on, h.key, h.eng, h.q, h.tr, h.rd, h.phrases, h.stopRun = true, key, eng, q, tr, rd, phrases, stop
 	log.Printf("voice: on (backend %s, fallback %q, lang %s)", v.BackendName(), v.FallbackName(), lang)
 
 	// the states now are the starting point: nothing is said about them.
@@ -366,6 +375,24 @@ func (h *voiceHub) current(tr *voice.Tracker) bool {
 	return h.on && h.tr == tr
 }
 
+// reader is the running Reader (nil when off), used on in after current
+// said the Tracker is the running one.
+func (h *voiceHub) reader() *voice.Reader {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.rd
+}
+
+// readParts are the running Reader and Queue, nil when off.
+func (h *voiceHub) readParts() (*voice.Reader, *voice.Queue) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.on {
+		return nil, nil
+	}
+	return h.rd, h.q
+}
+
 // parts are the running Tracker and Queue, nil when off.
 func (h *voiceHub) parts() (*voice.Tracker, *voice.Queue) {
 	h.mu.Lock()
@@ -390,7 +417,7 @@ func (h *voiceHub) close() {
 		close(h.stopRun)
 		h.stopRun = nil
 	}
-	h.on, h.q, h.tr, h.eng = false, nil, nil, nil
+	h.on, h.q, h.tr, h.rd, h.eng = false, nil, nil, nil, nil
 	h.mu.Unlock()
 	if q != nil {
 		q.Close()
@@ -431,6 +458,9 @@ func (h *voiceHub) removed(slug string) {
 		if h.current(tr) {
 			tr.Removed(slug)
 			q.Removed(slug)
+			if rd := h.reader(); rd != nil {
+				rd.Removed(slug)
+			}
 		}
 	})
 }
@@ -476,13 +506,122 @@ func (h *voiceHub) tapi(st state.State, since time.Time) {
 	})
 }
 
-// userPrompt: the person typed into the session (Q8: its read stops).
-func (h *voiceHub) userPrompt(slug string) {
-	_, q := h.parts()
-	if q == nil {
+// ---- read (docs/voice.md 6) ----
+
+// readIn hands f the running Reader and Queue on in, in order; nothing
+// while voice is off or after it was rebuilt meanwhile.
+func (h *voiceHub) readIn(f func(*voice.Reader, *voice.Queue)) {
+	rd, q := h.readParts()
+	if rd == nil {
 		return
 	}
-	h.in.Do(func() { q.UserPrompt(slug) })
+	h.in.Do(func() {
+		h.mu.Lock()
+		cur := h.on && h.rd == rd
+		h.mu.Unlock()
+		if cur {
+			f(rd, q)
+		}
+	})
+}
+
+func pushAll(q *voice.Queue, items []voice.Item) {
+	for _, it := range items {
+		q.Push(it)
+	}
+}
+
+// display: one MessageDisplay batch of the session (6.1, 6.2).
+func (h *voiceHub) display(slug string, d voice.Display) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) { pushAll(q, rd.Display(slug, d)) })
+}
+
+// stopHook: the session's Stop, with last_assistant_message (6.1: read
+// when no MessageDisplay of the turn came).
+func (h *voiceHub) stopHook(slug, text string) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) { pushAll(q, rd.Stop(slug, "", text)) })
+}
+
+// userPrompt: the person typed into the session (Q8: its read stops).
+// running is the session's hooks state before this prompt updates it: a
+// prompt while running is typed ahead, and the turn goes unread up to its
+// Stop (6.3).
+func (h *voiceHub) userPrompt(slug string, running bool) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) {
+		rd.UserPrompt(slug, running)
+		q.UserPrompt(slug)
+	})
+}
+
+// interrupted: an interrupt through pekoe (session.interrupt,
+// tapi.interrupt, an Escape in session.keys / tapi.keys): the session's
+// read stops and the turn is not read on (6.3).
+func (h *voiceHub) interrupted(slug string) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) {
+		rd.Interrupt(slug)
+		q.StopRead(slug, "interrupted")
+	})
+}
+
+// discardRead: the session's mode may no longer be read (pekoe voice
+// mode); "" is every session (the focus moved, a mute). The messages begun
+// are not read on (6.2).
+func (h *voiceHub) discardRead(slug string) {
+	h.readIn(func(rd *voice.Reader, _ *voice.Queue) {
+		if slug == "" {
+			rd.DiscardAll()
+		} else {
+			rd.Discard(slug)
+		}
+	})
+}
+
+// voiceInterrupted: an interrupt of slug's agent went through pekoe.
+func (d *Daemon) voiceInterrupted(slug string) {
+	if d.voice != nil && d.readsAgent(slug) {
+		d.voice.interrupted(slug)
+	}
+}
+
+// readsAgent: slug's agent is Claude Code, the one read follows (6.1;
+// codex is a later stage).
+func (d *Daemon) readsAgent(slug string) bool {
+	g := d.cfg()
+	name := g.Tapi.Agent
+	if slug != TapiSlug {
+		d.mu.Lock()
+		s := d.sessions[slug]
+		if s != nil {
+			name = s.Agent
+		}
+		d.mu.Unlock()
+		if s == nil {
+			return false
+		}
+	}
+	ag, ok := g.Agents[name]
+	return ok && isClaude(ag.Command)
+}
+
+// readRunning: slug works by the hooks now (before a UserPromptSubmit
+// updates it).
+func (d *Daemon) readRunning(slug string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if slug == TapiSlug {
+		return d.tapi.state == state.Running
+	}
+	s := d.sessions[slug]
+	return s != nil && s.State == state.Running
+}
+
+// messageDisplayP is a MessageDisplay hook's input (docs/voice.md 3.2).
+type messageDisplayP struct {
+	TurnID    string `json:"turn_id"`
+	MessageID string `json:"message_id"`
+	Index     int    `json:"index"`
+	Final     bool   `json:"final"`
+	Delta     string `json:"delta"`
 }
 
 // voiceEmitted is emit's look at the events voice follows.
@@ -854,6 +993,7 @@ func (h *voiceHub) hMute(p voiceMuteP) (any, error) {
 	h.loadMute()
 	if _, q := h.parts(); q != nil && kv != "" {
 		q.Mute()
+		h.discardRead("")
 	}
 	h.out.Do(h.emitStatus)
 	h.out.flush()
@@ -954,6 +1094,9 @@ func (h *voiceHub) focusChanged(before voiceFocus) {
 			tr.Focus(now.slug, now.termFocused)
 			if now.slug != before.slug {
 				q.FocusMoved()
+				if rd := h.reader(); rd != nil {
+					rd.DiscardAll()
+				}
 			}
 		})
 	}
@@ -1007,6 +1150,7 @@ func (h *voiceHub) hMode(p voiceModeP) (any, error) {
 		h.modes[p.Slug] = m
 	}
 	h.polMu.Unlock()
+	h.discardRead(p.Slug)
 	if !known() {
 		// removed while this was being set: its session.removed may have
 		// come before the kv was written

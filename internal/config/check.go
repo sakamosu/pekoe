@@ -187,13 +187,13 @@ func Check(b []byte) []Problem {
 	if sd := g.Web.StateDir; sd != "" && !filepath.IsAbs(sd) && !strings.HasPrefix(sd, "~/") {
 		add("web.state_dir", "%q must be an absolute path (or start with ~/)", sd)
 	}
-	checkVoice(add, g.Voice, md.IsDefined("voice", "read", "max_sentences"))
+	checkVoice(add, g.Voice, md.IsDefined("voice", "read", "max_sentences"), md.IsDefined("voice", "read", "max_turn_sentences"))
 	return out
 }
 
 // checkVoice: [voice] (docs/voice.md 11). [voice.backends] is checked by
 // path only: no backend is run.
-func checkVoice(add func(string, string, ...any), v Voice, maxSet bool) {
+func checkVoice(add func(string, string, ...any), v Voice, maxSet, turnSet bool) {
 	oneOf := func(key, val string, allowed ...string) {
 		if val != "" && !slices.Contains(allowed, val) {
 			add(key, "%q is not one of %s (the default is used)", val, strings.Join(allowed, " | "))
@@ -204,6 +204,9 @@ func checkVoice(add func(string, string, ...any), v Voice, maxSet bool) {
 	oneOf("voice.background_mode", v.BackgroundMode, VoiceModes...)
 	if n := v.Read.MaxSentences; maxSet && (n < 1 || n > MaxVoiceSentences) {
 		add("voice.read.max_sentences", "%d is not between 1 and %d (%d is used)", n, MaxVoiceSentences, DefaultVoiceMaxSentences)
+	}
+	if n := v.Read.MaxTurnSentences; turnSet && (n < 1 || n > MaxVoiceTurnSentences) {
+		add("voice.read.max_turn_sentences", "%d is not between 1 and %d (%d is used)", n, MaxVoiceTurnSentences, DefaultVoiceTurnSentences)
 	}
 	for _, k := range v.Read.Skip {
 		if !slices.Contains(VoiceSkips, k) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -181,6 +182,13 @@ func (d *Daemon) sendKeys(p keysP) (any, error) {
 	if len(p.Keys) > 0 {
 		if err := d.Eng.SendKeys(p.Slug, w, p.Keys...); err != nil {
 			return nil, err
+		}
+		if w == engine.WinAgent && slices.Contains(p.Keys, "Escape") {
+			// an Escape through pekoe (the TUI's esc while typing into
+			// [4]) stops the agent's turn: its read stops too
+			// (docs/voice.md 6.3). Not hex 1b: mouse and other
+			// sequences begin with it
+			d.voiceInterrupted(p.Slug)
 		}
 	}
 	return nil, nil

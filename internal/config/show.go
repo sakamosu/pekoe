@@ -69,6 +69,7 @@ func Effective(g *Global) *Global {
 	c.Voice.FocusMode = g.Voice.Focus()
 	c.Voice.BackgroundMode = g.Voice.Background()
 	c.Voice.Read.MaxSentences = g.Voice.MaxSentences()
+	c.Voice.Read.MaxTurnSentences = g.Voice.MaxTurnSentences()
 	if len(g.Voice.Read.Skip) == 0 {
 		c.Voice.Read.Skip = slices.Clone(VoiceSkips)
 	}

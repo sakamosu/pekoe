@@ -656,8 +656,8 @@ func TestVoiceRemovedTapiAndAsk(t *testing.T) {
 	}
 }
 
-// MessageDisplay is taken and nothing answered (P3 reads it); the hook
-// changes no state.
+// MessageDisplay is taken and nothing answered (read takes its text,
+// voiceread_test.go); the hook changes no state.
 func TestVoiceMessageDisplayTaken(t *testing.T) {
 	w := newVoiceWorld(t)
 	w.add("feat-a", state.Running)

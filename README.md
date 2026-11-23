@@ -87,7 +87,7 @@ Design docs are in Japanese.
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
-| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI; P2's external VOICEVOX backend works, the backend contract is published: [Voice backends](#voice-backends-voicevox)) |
+| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI; P2's external VOICEVOX backend works, the backend contract is published: [Voice backends](#voice-backends-voicevox); P3 built: read, Claude Code's replies in the focused session, stopped by a prompt or an esc through pekoe) |
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
@@ -605,8 +605,11 @@ enable = false              # off by default: while off nothing is said, no back
 lang = "auto"               # auto (LC_ALL, LC_MESSAGES, LANG) | ja | en
 backend = "say"             # "say" (bundled, macOS's say) or a name in [voice.backends]; PATH is never searched
 fallback = "say"            # used when backend cannot be; "" for none
-focus_mode = "read"         # the session shown in the TUI: read | narrate | mute (read speaks as narrate for now)
+focus_mode = "read"         # the session shown in the TUI: read | narrate | mute (read also reads Claude Code's replies aloud)
 background_mode = "narrate" # the other sessions: read | narrate | mute
+[voice.read]                # how much of a reply read says (code, tables, URLs and paths are skipped)
+max_sentences = 5           # of one message (1-50)
+max_turn_sentences = 10     # of one turn (1-100; 800 characters at most whatever this says)
 [voice.phrases]             # override what tapi says: wait done error ask idle_all and wait_many … ({name} / {names})
 wait = "{name} needs you"
 [voice.backends]            # external backends: name = absolute (or ~/) path; only these are run

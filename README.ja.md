@@ -85,7 +85,7 @@ flowchart LR
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
-| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI。P2 の外部の VOICEVOX の backend が動き、backend の約束事を公開した: [音声の backend](#音声の-backendvoicevox)) |
+| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI。P2 の外部の VOICEVOX の backend が動き、backend の約束事を公開した: [音声の backend](#音声の-backendvoicevox)。P3 の read も実装済み: フォーカス中の Claude Code の返事を読み、入力・pekoe を通した esc で止まる) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由と、曖昧幅を 2 セルで数える端末向けの `[theme] ambiguous = "wide"`) |
@@ -602,8 +602,11 @@ enable = false              # 既定はオフ。オフの間は何も喋らず�
 lang = "auto"               # auto(LC_ALL → LC_MESSAGES → LANG)| ja | en
 backend = "say"             # "say"(同梱。macOS の say)か [voice.backends] の名前。PATH からは探さない
 fallback = "say"            # backend が使えないとき。"" でフォールバックしない
-focus_mode = "read"         # TUI で見ているセッション: read | narrate | mute(read は今は narrate と同じ)
+focus_mode = "read"         # TUI で見ているセッション: read | narrate | mute(read は Claude Code の返事も読む)
 background_mode = "narrate" # それ以外: read | narrate | mute
+[voice.read]                # read で読む量(コード・表・URL・パスは飛ばす)
+max_sentences = 5           # 1 メッセージで読む文の数(1〜50)
+max_turn_sentences = 10     # 1 ターンで読む文の数(1〜100。これとは別に 800 文字まで)
 [voice.phrases]             # 喋る文の上書き: wait done error ask idle_all と wait_many など({name} / {names})
 wait = "{name}、確認待ちだよ"
 [voice.backends]            # 外部の backend: 名前 = 絶対パス(か ~/ で始まるパス)。ここに書いたものだけを動かす

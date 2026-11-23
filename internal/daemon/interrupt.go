@@ -127,6 +127,7 @@ func (d *Daemon) sendInterrupt(slug string, now func() (state.State, string, boo
 	if err := d.Eng.SendKeys(slug, engine.WinAgent, "Escape"); err != nil {
 		return err
 	}
+	d.voiceInterrupted(slug) // its read stops (docs/voice.md 6.3)
 	// a person's key, as the TUI's esc through tapi.keys / session.keys:
 	// no delivery right into the input box they just stopped (inboxTypedQuiet)
 	d.noteTyped(slug)

@@ -398,8 +398,11 @@ type Voice struct {
 
 // VoiceRead is [voice.read]: how much of an assistant message read says.
 type VoiceRead struct {
-	MaxSentences int      `toml:"max_sentences" json:"max_sentences"` // 1-50, default 5
-	Skip         []string `toml:"skip" json:"skip"`                   // code | table | url | path
+	MaxSentences int `toml:"max_sentences" json:"max_sentences"` // 1-50, default 5
+	// MaxTurnSentences is how many sentences of one turn are read
+	// (docs/voice.md 6.2).
+	MaxTurnSentences int      `toml:"max_turn_sentences" json:"max_turn_sentences"` // 1-100, default 10
+	Skip             []string `toml:"skip" json:"skip"`                             // code | table | url | path
 }
 
 // VoiceSay is [voice.say]: the bundled say backend's voice by language
@@ -411,9 +414,11 @@ type VoiceSay struct {
 
 // Voice defaults and limits.
 const (
-	DefaultVoiceBackend      = "say"
-	DefaultVoiceMaxSentences = 5
-	MaxVoiceSentences        = 50
+	DefaultVoiceBackend       = "say"
+	DefaultVoiceMaxSentences  = 5
+	MaxVoiceSentences         = 50
+	DefaultVoiceTurnSentences = 10
+	MaxVoiceTurnSentences     = 100
 )
 
 // VoiceModes are what focus_mode and background_mode take.
@@ -467,6 +472,14 @@ func (v Voice) MaxSentences() int {
 		return n
 	}
 	return DefaultVoiceMaxSentences
+}
+
+// MaxTurnSentences is [voice.read] max_turn_sentences as used.
+func (v Voice) MaxTurnSentences() int {
+	if n := v.Read.MaxTurnSentences; n >= 1 && n <= MaxVoiceTurnSentences {
+		return n
+	}
+	return DefaultVoiceTurnSentences
 }
 
 type Global struct {
