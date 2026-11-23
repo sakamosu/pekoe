@@ -87,7 +87,7 @@ Design docs are in Japanese.
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
 | [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
-| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI) |
+| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI; P2's external VOICEVOX backend works, the backend contract is published: [Voice backends](#voice-backends-voicevox)) |
 | [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
 | [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
@@ -458,6 +458,43 @@ The certificate's hostname appears in Certificate Transparency logs. Design and 
 Signing in: pekoed writes a one-time token (valid once, for 60 s) into a page under `~/.local/share/pekoe/gui/` (0600, unreadable from the agents' and hooks' sandboxes) and the CLI opens that file, so the token is never on a command line. The page trades it for a session token kept in the tab's `sessionStorage` and sent as `Authorization: Bearer` (no cookie: a cookie for `127.0.0.1` would also reach an agent's dev server on another port). A new tab, or pekoed restarting, means `pekoe gui` again, as does `session_ttl` with no action of yours (allow, send…; the screen refreshing doesn't count) or 24 hours after signing in (`session_ttl` if longer). The port is a free one each time by default (`[gui] port`); if a fixed port can't be bound, `pekoe gui` refuses to open the browser.
 
 **Open it in a browser or profile no agent drives.** Whatever can drive that tab (Claude in Chrome, Playwright, Chrome DevTools) can answer permission prompts as you.
+
+### Voice backends (VOICEVOX)
+
+`pekoe voice` ([docs/voice.md](docs/voice.md)) speaks with macOS's `say` out of the box. Any other speech engine plugs in as an external **backend**: an executable that turns one sentence into a WAV file. pekoe runs only the backends written with an absolute path in `[voice.backends]`, and never searches `PATH` for them.
+
+Example: [pekoe-voice-voicevox](https://github.com/sakamosu/pekoe-voice-voicevox) (Japanese only; not public yet, so the link and the steps below work once it is published) speaks in a [VOICEVOX](https://voicevox.hiroshiba.jp/) voice through a local VOICEVOX engine (the VOICEVOX app, or its Docker image, listening on `127.0.0.1:50021`). Build it and put it where agents can't write (pekoe warns about a path under your home):
+
+```sh
+git clone https://github.com/sakamosu/pekoe-voice-voicevox.git
+cd pekoe-voice-voicevox
+go build -o pekoe-voice-voicevox .
+install -m 755 pekoe-voice-voicevox /opt/homebrew/bin/
+```
+
+Then in `config.toml` (keep `enable = true`: with voice off, no backend runs):
+
+```toml
+[voice]
+enable = true
+backend = "voicevox"
+fallback = "say"            # used while the VOICEVOX engine isn't running
+
+[voice.backends]
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # the absolute path you installed it to
+```
+
+`pekoe voice backends` shows whether it is used, and `pekoe voice test "テストだよ"` says a sentence with it. Its voice, speed and reading dictionary are set in its own config file (its README).
+
+Each VOICEVOX voice has its own terms of use: if you publish audio made with it (a demo video, a stream), credit it the way that character's terms say (for the default voice: `VOICEVOX:もち子(cv 明日葉よもぎ)`).
+
+**Writing a backend of your own**: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1): the subcommands `version`, `check`, `voices` and `synth`, what goes in and out, the time limits and the environment it runs in. To check a backend against it, run in a clone of this repository:
+
+```sh
+PEKOE_VOICE_CONTRACT=/absolute/path/to/your-backend go test ./internal/voice/backend -run TestContractExternal -v
+```
+
+The bundled `say` passes the same test.
 
 ## Configuration
 
