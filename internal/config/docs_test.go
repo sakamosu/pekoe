@@ -111,7 +111,7 @@ command = "ab"
 		}
 	}
 	wantNames := []string{"http", "web", "gui", "keys", "theme", "mascot", "agents.a.b", "agents.claude", "agents.codex", "agents.opencode", "agents.zed",
-		"review", "ports", "tapi", "tips", "sandbox", "animate", "picks", "orchestrator", "notify", "cleanup", "pr"}
+		"review", "ports", "tapi", "tips", "sandbox", "animate", "picks", "orchestrator", "notify", "cleanup", "pr", "voice"}
 	if !slices.Equal(names, wantNames) {
 		t.Errorf("sections %v", names)
 	}
@@ -205,9 +205,16 @@ func change(v reflect.Value, path []string) bool {
 			v.SetInt(v.Int() + 1)
 		case reflect.Bool:
 			v.SetBool(!v.Bool())
-		case reflect.Pointer: // *bool: unset reads as true
+		case reflect.Pointer: // *bool: unset reads as true; *string: unset is a default
+			if v.Type().Elem().Kind() == reflect.String {
+				x := "x"
+				v.Set(reflect.ValueOf(&x))
+				break
+			}
 			f := false
 			v.Set(reflect.ValueOf(&f))
+		case reflect.Struct: // a sub-table ([voice.read]): its first key
+			return change(v.Field(0), nil)
 		case reflect.Slice:
 			v.Set(reflect.Append(v, reflect.ValueOf("x")))
 		case reflect.Map:

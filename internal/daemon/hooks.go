@@ -300,9 +300,17 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 	if hook == "" {
 		hook = hp.HookEventName
 	}
+	if hook == "MessageDisplay" {
+		// read's text (docs/voice.md 6.1, P3): taken and dropped for now.
+		// The hook does not wait for an answer
+		return nil, nil
+	}
 	slug := d.resolveSession(p.Session, hp.Cwd)
 	if slug == "" {
 		return map[string]any{"ignored": true}, nil // not a pekoe session
+	}
+	if hook == "UserPromptSubmit" {
+		d.voice.userPrompt(slug) // the session's read stops (Q8)
 	}
 	if slug == TapiSlug {
 		d.tapiEvent(hook, hp)

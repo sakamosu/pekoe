@@ -253,6 +253,7 @@ type Daemon struct {
 	stopping     atomic.Int32         // Stop hooks being handled (onStop); tests wait for none
 	hooking      atomic.Int32         // session.event calls being handled (hEvent); shutdown waits for them
 	gitw         gitWatches           // .git/hooks and config around the hooks (gitwatch.go)
+	voice        *voiceHub            // pekoe voice (voice.go)
 }
 
 func New() (*Daemon, error) {
@@ -308,6 +309,7 @@ func New() (*Daemon, error) {
 		changes:   newChangeLog(),
 		typedAt:   map[string]time.Time{},
 	}
+	d.voice = newVoiceHub(d)
 	d.registerHandlers()
 	return d, nil
 }
@@ -358,7 +360,8 @@ func (d *Daemon) Run() error {
 	_ = os.WriteFile(paths.PidFile(), []byte(fmt.Sprint(os.Getpid())), paths.FilePerm)
 
 	d.restore()
-	go d.queueLoop() // queued sessions start as slots free up (queue.go)
+	d.voice.apply(d.cfg()) // off unless [voice] enable = true (voice.go)
+	go d.queueLoop()       // queued sessions start as slots free up (queue.go)
 	d.kickQueue()
 	go d.outputLoop()
 	go d.tickLoop()
@@ -392,6 +395,7 @@ func (d *Daemon) Run() error {
 func (d *Daemon) Stop() { d.stopOnce.Do(func() { close(d.stop) }) }
 
 func (d *Daemon) shutdown() {
+	d.voice.close()
 	d.stopWeb()
 	d.stopGUI()
 	if d.httpSrv != nil {
@@ -554,6 +558,7 @@ func (d *Daemon) emit(ev string, data any) {
 	if d.testHook != nil {
 		d.testHook(ev, data)
 	}
+	d.voiceEmitted(ev, data)
 	if ev == "inbox.updated" {
 		// Tapi.inbox_open may have changed
 		defer d.emit("tapi.updated", d.tapiView())
@@ -749,6 +754,12 @@ func (d *Daemon) registerHandlers() {
 	for k, h := range d.previewHandlers() {
 		d.handlers[k] = h
 	}
+	d.handlers["voice.status"] = func(json.RawMessage) (any, error) { return d.voice.status(), nil }
+	d.handlers["voice.mute"] = bind(d.voice.hMute)
+	d.handlers["voice.stop"] = func(json.RawMessage) (any, error) { return d.voice.hStop() }
+	d.handlers["voice.say"] = bind(d.voice.hSay)
+	d.handlers["voice.log"] = bind(d.voice.hLog)
+	d.handlers["voice.backends"] = func(json.RawMessage) (any, error) { return d.voice.hBackends() }
 	d.callerHandlers = map[string]func(*Caller, json.RawMessage) (any, error){
 		"session.new":    bindAs(d.hNewAs),
 		"session.send":   bindAs(d.hSendAs),
@@ -767,6 +778,7 @@ func (d *Daemon) registerHandlers() {
 		"ledger.close":   bindAs(d.hLedgerClose),
 		"ledger.link":    bindAs(d.hLedgerLink),
 		"ledger.keep":    bindAs(d.hLedgerKeep),
+		"voice.focus":    bindAs(d.voice.hFocus),
 	}
 	for k, h := range d.callerHandlers {
 		h := h

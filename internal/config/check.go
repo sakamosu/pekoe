@@ -18,6 +18,9 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"pekoe/internal/voice"
+	"pekoe/internal/voice/backend"
 )
 
 // Problem is one thing wrong in config.toml.
@@ -179,7 +182,71 @@ func Check(b []byte) []Problem {
 	if sd := g.Web.StateDir; sd != "" && !filepath.IsAbs(sd) && !strings.HasPrefix(sd, "~/") {
 		add("web.state_dir", "%q must be an absolute path (or start with ~/)", sd)
 	}
+	checkVoice(add, g.Voice, md.IsDefined("voice", "read", "max_sentences"))
 	return out
+}
+
+// checkVoice: [voice] (docs/voice.md 11). [voice.backends] is checked by
+// path only: no backend is run.
+func checkVoice(add func(string, string, ...any), v Voice, maxSet bool) {
+	oneOf := func(key, val string, allowed ...string) {
+		if val != "" && !slices.Contains(allowed, val) {
+			add(key, "%q is not one of %s (the default is used)", val, strings.Join(allowed, " | "))
+		}
+	}
+	oneOf("voice.lang", v.Lang, "auto", "ja", "en")
+	oneOf("voice.focus_mode", v.FocusMode, VoiceModes...)
+	oneOf("voice.background_mode", v.BackgroundMode, VoiceModes...)
+	if n := v.Read.MaxSentences; maxSet && (n < 1 || n > MaxVoiceSentences) {
+		add("voice.read.max_sentences", "%d is not between 1 and %d (%d is used)", n, MaxVoiceSentences, DefaultVoiceMaxSentences)
+	}
+	for _, k := range v.Read.Skip {
+		if !slices.Contains(VoiceSkips, k) {
+			add("voice.read.skip", "%q is not one of %s (ignored)", k, strings.Join(VoiceSkips, " | "))
+		}
+	}
+	for _, msg := range voice.CheckPhrases(v.Phrases) {
+		// "[voice.phrases] wait: …" → key voice.phrases.wait
+		rest := strings.TrimPrefix(msg, "[voice.phrases] ")
+		k, why, _ := strings.Cut(rest, ": ")
+		add("voice.phrases."+k, "%s", why)
+	}
+	for _, name := range sortedKeys(v.Backends) {
+		key := "voice.backends." + name
+		p := v.Backends[name]
+		switch {
+		case name == backend.Builtin:
+			add(key, "%q is the bundled backend's name; this entry is never used (backend = \"say\" always runs the bundled one)", name)
+			continue
+		case !backend.ValidName(name):
+			add(key, "%q is not a backend name (lower-case letters, digits and -); not used", name)
+			continue
+		}
+		abs, err := backend.ExpandPath(p)
+		if err != nil {
+			add(key, "%v; not used", err)
+			continue
+		}
+		if err := (&backend.Backend{Name: name, Path: abs}).Check(); err != nil {
+			add(key, "%s; not used", strings.TrimPrefix(err.Error(), "voice backend "+name+" path: "))
+			continue
+		}
+		if w := backend.HomeWarning(abs); w != "" {
+			add(key, "note: %s", w)
+		}
+	}
+	named := func(key, name string) {
+		if name == "" || name == backend.Builtin {
+			return
+		}
+		if _, ok := v.Backends[name]; !ok {
+			add(key, "%q is neither \"say\" nor in [voice.backends] (PATH is not searched)", name)
+		}
+	}
+	named("voice.backend", strings.TrimSpace(v.Backend))
+	if v.Fallback != nil {
+		named("voice.fallback", strings.TrimSpace(*v.Fallback))
+	}
 }
 
 var hexRe = regexp.MustCompile(`^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$`)

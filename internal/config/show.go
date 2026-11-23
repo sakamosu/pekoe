@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -57,6 +58,16 @@ func Effective(g *Global) *Global {
 	}
 	if strings.TrimSpace(c.Web.AuthKey) != "" {
 		c.Web.AuthKey = Hidden
+	}
+	c.Voice.Lang = g.Voice.LangSetting()
+	c.Voice.Backend = g.Voice.BackendName()
+	fb := g.Voice.FallbackName()
+	c.Voice.Fallback = &fb
+	c.Voice.FocusMode = g.Voice.Focus()
+	c.Voice.BackgroundMode = g.Voice.Background()
+	c.Voice.Read.MaxSentences = g.Voice.MaxSentences()
+	if len(g.Voice.Read.Skip) == 0 {
+		c.Voice.Read.Skip = slices.Clone(VoiceSkips)
 	}
 	c.Agents = map[string]Agent{}
 	for k, a := range g.Agents {

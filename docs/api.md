@@ -377,6 +377,13 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `preview.capture` | `{slug, path?, width?, height?, mobile?: bool}` | `Preview`。headless Chrome で `http://localhost:<port><path>` を撮り、終わってから返る。`path` と `mobile` は次回以降も使う(既定 `/`、デスクトップ 1280×800、モバイル 390×844)。撮れなかった理由は `error` に入る |
 | `preview.get` | `{slug}` | `Preview` |
 | `preview.watch` | `{slug, on: bool}` | `Preview`。表示中の印。on のセッションはエージェントが手を止めたとき(running → waiting / idle / done)に自動で撮り直す |
+| `voice.status` | — | `VoiceStatus`(下の「音声(voice)」) |
+| `voice.mute` | `{for?: "30m"}` / `{until?: RFC3339}` / `{off?: true}` | `VoiceStatus`。全体のミュート。どれも無ければ unmute まで。ミュートは鳴っているものを止めてキューを空にする。期限は state.db の kv(`voice.mute_until`)に残り、再起動しても続く |
+| `voice.stop` | — | `null`。鳴っている発話を止める(キューは残す) |
+| `voice.say` | `{text, voice?: "tapi"\|"reader", lang?: "ja"\|"en"}` | `VoiceStatus`。文をそのまま合成して鳴らす(`pekoe voice test`)。キューの先頭に積み、ミュート中も鳴らす。text は 2000 バイトまで。voice が無効(`[voice] enable = false`)・macOS 以外ではエラー(無効の間は何も動かさない) |
+| `voice.focus` | `{slug: "feat-x"\|"+tapi"\|"", term_focused}` | `null`。クライアントが [4] に出しているもの。接続ごとに覚え、最後に送ってきた接続のものを使う。接続が切れたらその接続の分を消す。無効の間も覚えるだけ |
+| `voice.log` | `{n?: 50}` | 発話のログ(`voice.log`)の新しい方から n 件(1000 まで) |
+| `voice.backends` | — | `{backends: [{name, path, using, fallback, version?, check, voices?, warnings?}], candidates: [{name, path, line}], note?}`。同梱の say と `[voice.backends]` に `version`・`check`・`voices` を呼んだ結果と、pekoed の `PATH` にある `pekoe-voice-*` の候補(動かさない。`line` は `[voice.backends]` に書く行の例)。voice が無効の間は backend を動かさず、パスの確かめだけをして `note` に理由 |
 
 ### 報告(report)
 
@@ -838,13 +845,40 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `tapi.updated` | `Tapi`(受信箱・依頼の件数が変わったときも) |
 | `tapi.output` | `{}`(tapi chat の画面更新の合図。30ms で間引く) |
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
+| `voice.updated` | `VoiceStatus`(鳴り始め・鳴り終わり・ミュート・backend の切り替え・エラー。変わったときだけ。token つきの購読にだけ届く) |
+| `voice.logged` | `voice.log` の 1 件(ログに書くたび。token つきの購読にだけ届く) |
 | `config.reloaded` | `{error?, restart?: [name]}`(config.toml が変わって読み直した。`error` があれば読めず、前の設定のまま。ファイルの中身は載せない。token つきの購読にだけ届く) |
+
+### 音声(voice)
+
+docs/voice.md の pekoe voice。`voice.*` はすべて人間だけ(エージェントが Mac を喋らせられないように)。`[voice] enable = false`(既定)の間、pekoed は backend を探さず・呼ばず、`afplay` も呼ばない。
+
+`VoiceStatus`:
+
+```jsonc
+{
+  "enabled": true,                 // [voice] enable
+  "supported": true,               // macOS だけ true
+  "backend": "say", "using": "say",  // 設定の名前 / 今使っているもの(fallback 中は fallback の名前、使えなければ "")
+  "error": "",                     // 何も喋れない理由: どの backend も使えない、または合成に続けて失敗して止めている(Q11)
+  "paused_until": "2026-11-23T15:31:00+09:00", // Q11 で合成を止めている間だけ: いつまで
+  "backend_error": "",             // 設定の backend を使っていない理由(fallback 中など)
+  "muted_until": "forever",        // "" はミュートなし、"forever" は unmute まで、それ以外は RFC3339
+  "focus": "feat-x",               // 最後に voice.focus を送ったクライアントが [4] に出しているもの
+  "queue": 2,
+  "speaking": {"slug": "feat-x", "kind": "wait", "text": "csv export、確認待ちだよ"} // 無ければ null
+}
+```
+
+`voice.log` の 1 件: `{time, slug?, kind, text, result, reason?, latency_ms, backend?}`(docs/voice.md 14.4)。ファイルは `~/.local/share/pekoe/voice.log`(0600、1MB で `voice.log.1` に回す)。
+
+`session.event` の `hook: "MessageDisplay"` は受け付けて何もせずに `null` を返す(read で使う。P3)。
 
 ### config.toml の再読み込み
 
 pekoed は 1 秒ごとに `~/.config/pekoe/config.toml` を読み、中身が前と違えば再起動なしで読み直して `config.reloaded` を出す。書くのは `pekoe config edit`(pekoed を通さない。エージェントの sandbox からは `~/.config/pekoe` を読み書きできず、RPC で書けるようにするとその抜け道になる)か人の手で、pekoed は読むだけ。読んだ設定を返すのも人間だけの `config.show`(ローカル GUI の Settings)だけ。TUI は `config.reloaded` を受けて自分でファイルを読み直す(テーマ・アイコン・マスコット・TIPS・アニメーションを作り直し、ほかは使うたびに読む)。
 
-- すぐ効く: `[theme]` `[mascot]` `[tips]` `animate` `[picks]` `[orchestrator]` `[notify]` `[cleanup]` `[pr]`(次のポーリングから) `[keys]` `[review]` `[agents.*]` `[tapi]`(次に tapi chat を始めるとき) `[ports]`(次に割り当てるポートから)
+- すぐ効く: `[theme]` `[mascot]` `[tips]` `animate` `[picks]` `[orchestrator]` `[notify]` `[cleanup]` `[pr]`(次のポーリングから) `[keys]` `[review]` `[agents.*]` `[tapi]`(次に tapi chat を始めるとき) `[ports]`(次に割り当てるポートから) `[voice]`(変わったら作り直す: 鳴っているものを止め、backend を確かめ直し、今の状態を基準に取る)
 - 再起動まで効かない(`config.RestartNeeded`): `[http] port`(待ち受け)・`[web]`(tsnet と sandbox の拒否リスト)・`[sandbox]`(hooks と git の包み方)。pekoed は起動したときの値のまま動き、変わった名前を `config.reloaded` の `restart` と `daemon.status` の `config_restart` に出す(`pekoe daemon status` と TUI のメッセージ行にも)。元の値に戻せば消える
 - 読めない(構文エラー・型の違い): 前の設定のまま動き続け、`error` 付きの `config.reloaded` を出し、ログに理由を書く。TUI はファイルを自分で読んで理由をメッセージ行に出す。ファイルが消えたら既定値に戻る
 

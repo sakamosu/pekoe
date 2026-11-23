@@ -35,6 +35,7 @@ var SectionDocs = map[string]string{
 	"notify":       "when the TUI tells you something waits",
 	"cleanup":      "pekoe cleanup / :cleanup",
 	"pr":           "pekoed's polling of the sessions' PRs",
+	"voice":        "tapi says state changes aloud (macOS; docs/voice.md)",
 }
 
 // KeyDocs: one line per key, by its dotted name ("agents.*.model" for every
@@ -100,6 +101,17 @@ var KeyDocs = map[string]string{
 
 	"cleanup.stale_after": "list a stopped session as stale after this long without a change",
 	"pr.poll_every":       "ask GitHub about each open PR at most this often (at least 30s)",
+
+	"voice.enable":          "false (the default): nothing is said, no backend runs, nothing plays",
+	"voice.lang":            "auto (LC_ALL, LC_MESSAGES, LANG) | ja | en",
+	"voice.backend":         "\"say\" (bundled) or a name in [voice.backends]; PATH is never searched",
+	"voice.fallback":        "used when backend cannot be: \"say\" or a name in [voice.backends]; \"\" for none",
+	"voice.focus_mode":      "the session shown in the TUI: read | narrate | mute (read speaks as narrate until it is built)",
+	"voice.background_mode": "the other sessions: read | narrate | mute",
+	"voice.read":            "max_sentences (1-50) of a message read aloud, and skip (code | table | url | path)",
+	"voice.phrases":         "override what tapi says (wait, done, error, ask, idle_all and their _many); {name} / {names}",
+	"voice.backends":        "external backends: name = absolute (or ~/) path; only these are run",
+	"voice.say":             "the bundled say backend's voice: ja / en (\"\": Kyoko or the first ja_JP voice / the system's voice)",
 }
 
 // ShownKey is one setting as the Settings view shows it.

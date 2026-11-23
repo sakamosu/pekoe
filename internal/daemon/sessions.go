@@ -120,6 +120,7 @@ func (d *Daemon) update(slug string, f func(s *state.Session)) (*state.Session, 
 	c := d.copyLocked(s)
 	d.mu.Unlock()
 	d.sessionChanges(&before, c) // under evMu: in change order
+	d.voice.session(&before, c)  // the same order; returns at once (voice.go)
 	d.emit("session.updated", c)
 	if c.State != prev {
 		switch c.State {

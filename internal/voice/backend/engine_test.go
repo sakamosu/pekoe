@@ -377,6 +377,27 @@ func TestSynthCache(t *testing.T) {
 	}
 }
 
+// The bundled say's voices ([voice.say], Options.Variant) are part of the
+// cache key: another voice is synthesized again, not served from the cache.
+func TestSynthCacheVariant(t *testing.T) {
+	w := newPathWorld(t)
+	ctx := context.Background()
+	o := w.opts("say", "", nil)
+	o.Variant = "ja=Kyoko"
+	p1, err := New(o).Synth(ctx, "ci、終わったよ", "tapi", "ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Variant = "ja=Otoya"
+	p2, err := New(o).Synth(ctx, "ci、終わったよ", "tapi", "ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p1 == p2 {
+		t.Fatal("another [voice.say] voice was served from the cache")
+	}
+}
+
 // At most MaxSynth synth calls run at once through the engine.
 func TestEngineLimitsParallelSynth(t *testing.T) {
 	w := newPathWorld(t)
