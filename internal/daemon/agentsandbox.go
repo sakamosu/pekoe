@@ -28,8 +28,10 @@ import (
 
 	"pekoe/internal/gitwatch"
 	"pekoe/internal/gitx"
+	"pekoe/internal/hooks"
 	"pekoe/internal/paths"
 	"pekoe/internal/sandbox"
+	"pekoe/internal/voice/backend"
 )
 
 type claudeSettings struct {
@@ -52,6 +54,47 @@ type claudeSettings struct {
 			AllowUnixSockets []string `json:"allowUnixSockets"`
 		} `json:"network"`
 	} `json:"sandbox"`
+	Hooks claudeHooks `json:"hooks,omitempty"`
+}
+
+// claudeHooks is the "hooks" of Claude Code's settings: event → groups.
+type claudeHooks map[string][]claudeHookGroup
+
+type claudeHookGroup struct {
+	Hooks []claudeHook `json:"hooks"`
+}
+
+type claudeHook struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+	Timeout int    `json:"timeout"`
+}
+
+// readHookTimeout is the MessageDisplay hook's timeout in seconds, below
+// Claude Code's default (10): the hook holds the text back from the
+// screen until it returns (docs/voice.md 3.1, 3.2).
+const readHookTimeout = 2
+
+// selfExe is pekoe's own executable, the one the hooks name (tests swap it).
+var selfExe = backend.SelfExecutable
+
+// readHooks are the hooks pekoe adds to a Claude Code agent's settings for
+// voice's read (docs/voice.md 3.1): MessageDisplay, when [voice] is on and
+// focus_mode or background_mode is read at the agent's start. Other
+// settings add none (nil), as does a pekoe whose executable is not found.
+// Hooks given with --settings run as well as those in
+// ~/.claude/settings.json (they are merged), which this leaves alone.
+func (d *Daemon) readHooks() claudeHooks {
+	v := d.cfg().Voice
+	if !v.Enable || (v.Focus() != "read" && v.Background() != "read") {
+		return nil
+	}
+	exe := selfExe()
+	if exe == "" {
+		return nil
+	}
+	h := claudeHook{Type: "command", Command: hooks.Command(exe, "MessageDisplay"), Timeout: readHookTimeout}
+	return claudeHooks{"MessageDisplay": {{Hooks: []claudeHook{h}}}}
 }
 
 // agentSecrets: what an agent must not read (nor change with the Edit
@@ -146,6 +189,11 @@ func permPath(p string) string { return "/" + p }
 // (webimage.go) is readable with the Read tool without asking: the agent is
 // told to open them, and they are outside its worktree.
 func (d *Daemon) claudeSandboxSettings(slug string, repoDirs, readOnly []string) string {
+	b, _ := json.Marshal(d.sandboxSettings(slug, repoDirs, readOnly))
+	return string(b)
+}
+
+func (d *Daemon) sandboxSettings(slug string, repoDirs, readOnly []string) claudeSettings {
 	sf, sd := d.agentSecrets()
 	gf, gd := gitProtected(repoDirs)
 	sf, sd, gf, gd = withReal(sf), withReal(sd), withReal(gf), withReal(gd)
@@ -188,7 +236,29 @@ func (d *Daemon) claudeSandboxSettings(slug string, repoDirs, readOnly []string)
 			c.Permissions.Allow = append(c.Permissions.Allow, "Read("+permPath(dir)+"/**)")
 		}
 	}
-	b, _ := json.Marshal(c)
+	return c
+}
+
+// agentSettings is the --settings JSON of a Claude Code agent: the
+// sandbox's (when sandbox) and read's hooks (readHooks), or "" when it
+// gets neither. An agent without the sandbox gets a file with the hooks
+// alone.
+func (d *Daemon) agentSettings(slug string, sandbox bool, repoDirs, readOnly []string) string {
+	h := d.readHooks()
+	var v any
+	switch {
+	case sandbox:
+		c := d.sandboxSettings(slug, repoDirs, readOnly)
+		c.Hooks = h
+		v = c
+	case h != nil:
+		v = struct {
+			Hooks claudeHooks `json:"hooks"`
+		}{h}
+	default:
+		return ""
+	}
+	b, _ := json.Marshal(v)
 	return string(b)
 }
 
@@ -204,11 +274,16 @@ func agentSettingsFile(slug string) string {
 }
 
 // withAgentSandbox appends --settings <file> to a Claude Code agent's
-// command line unless [agents.<name>] sandbox = false; other agents get
-// nothing. readOnly: see claudeSandboxSettings. The settings go through a file: written inline they take a few
+// command line unless [agents.<name>] sandbox = false and voice's read
+// adds no hooks (agentSettings); other agents get nothing. readOnly: see
+// claudeSandboxSettings. The settings go through a file: written inline they take a few
 // KB of tmux's command line, which the prompt needs (promptArgMax).
 func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs, readOnly []string) (string, error) {
-	if !sandbox || !isClaude(cmd) {
+	if !isClaude(cmd) {
+		return cmd, nil
+	}
+	settings := d.agentSettings(slug, sandbox, repoDirs, readOnly)
+	if settings == "" {
 		return cmd, nil
 	}
 	f := agentSettingsFile(slug)
@@ -219,7 +294,7 @@ func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs, read
 	if err != nil {
 		return "", err
 	}
-	_, err = tmp.WriteString(d.claudeSandboxSettings(slug, repoDirs, readOnly))
+	_, err = tmp.WriteString(settings)
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
@@ -228,7 +303,7 @@ func (d *Daemon) withAgentSandbox(slug, cmd string, sandbox bool, repoDirs, read
 	}
 	if err != nil {
 		os.Remove(tmp.Name())
-		return "", fmt.Errorf("writing the agent's sandbox settings: %w", err)
+		return "", fmt.Errorf("writing the agent's settings: %w", err)
 	}
 	return cmd + " --settings " + shellQuote(f), nil
 }

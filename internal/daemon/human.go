@@ -328,7 +328,7 @@ func (d *Daemon) hAgentNew(who *Caller, p newP) (any, error) {
 
 // agentMayStart: without the human token, session.new starts only an agent
 // pekoe puts in its sandbox (a Claude Code command whose [agents.<name>]
-// sandbox is not false, the test withAgentSandbox makes), or the agent the
+// sandbox is not false: agentSandboxed), or the agent the
 // caller itself runs (no more than the caller can already do). An agent
 // name pekoe does not know is left to hNew ("unknown agent").
 func (d *Daemon) agentMayStart(who *Caller, name string) error {

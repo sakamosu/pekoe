@@ -872,7 +872,7 @@ docs/voice.md の pekoe voice。`voice.*` はすべて人間だけ(エージェ�
 
 `voice.log` の 1 件: `{time, slug?, kind, text, result, reason?, latency_ms, backend?}`(docs/voice.md 14.4)。ファイルは `~/.local/share/pekoe/voice.log`(0600、1MB で `voice.log.1` に回す)。
 
-`session.event` の `hook: "MessageDisplay"` は受け付けて何もせずに `null` を返す(read で使う。P3)。
+`session.event` の `hook: "MessageDisplay"` は受け付けて何もせずに `null` を返す(read で使う。P3)。この hook は、エージェントの起動の時点で `[voice] enable = true` で `focus_mode` か `background_mode` が `read` のとき、pekoe が Claude Code の `--settings` のファイル(`agent-settings/<slug>.json`。`[agents.*] sandbox = false` でも hook だけのファイルを書いて渡す)に `{"type": "command", "command": "<pekoe の絶対パス> event MessageDisplay", "timeout": 2}` として入れる(docs/voice.md 3.1)。`pekoe event MessageDisplay` は返事を待たない: `session.event` の 1 行を書いてすぐ閉じ(接続と書き込みで合わせて 1 秒まで)、標準出力に何も書かず exit 0(出力は Claude Code に表示の差し替えとみなされる)。
 
 ### config.toml の再読み込み
 
