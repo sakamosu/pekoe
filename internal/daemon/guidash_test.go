@@ -277,7 +277,7 @@ console.log(JSON.stringify(res));
 // inside a request, the rows in the overview's order of states.
 func TestGUIPipelineRender(t *testing.T) {
 	out := runWebModule(t, fakeDOM+`
-import { renderPipeline, pipelineModel, statusNote, PIPE_ROWS } from "gui/dash.js";
+import { renderPipeline, pipelineModel, statusNote, stepLook, PIPE_ROWS } from "gui/dash.js";
 const at = new Date(Date.now() - 120000).toISOString();
 const steps = (...st) => ["impl", "review", "pr", "ci", "merge"].map((name, i) => ({ name, status: st[i] || "todo" }));
 const look = { icon: "◉", role: "ok", word: "run" };
@@ -354,8 +354,10 @@ const head = find(box, (x) => /pl-head/.test(x.className))[0];
 res.head = head.children.map((c) => (c.attrs.role || "-") + (c.attrs["aria-hidden"] ? ":hidden" : "")).join(" ");
 res.cols = [head.children.filter((c) => c.attrs.role === "columnheader").length, ...rowsOf(box).map((r) => r.children.filter((c) => c.attrs.role === "cell").length)];
 res.noCI = [
-  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "no CI checks" }, { name: "merge_state", ok: false, detail: "merge_state is BLOCKED" }] } }),
-  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "no CI checks" }, { name: "review", ok: false, detail: "no review" }] } }),
+  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: true, detail: "no CI checks (not required)" }, { name: "merge_state", ok: false, detail: "merge_state is BLOCKED" }] } }),
+  statusNote({ state: "done", steps: [], merge: { conds: [{ name: "ci", ok: true, detail: "no CI checks (not required)" }, { name: "review", ok: false, detail: "no review" }] } }),
+  statusNote({ state: "done", steps: [], merge: { ready: true, conds: [{ name: "ci", ok: true, detail: "no CI checks (not required)" }] } }),
+  stepLook({ state: "done", steps: [{ name: "ci", status: "todo", detail: "no CI checks (not required)" }] }, "ci").join(""),
 ];
 // waiting: the step it is on is the person's turn, except CI (GitHub's)
 const wait = (st, ci) => { const wb = el0("div"); renderPipeline(wb, [{ rows: [{ slug: "w", branch: "w", state: "waiting", look, steps: st, ci }] }], () => {}); return find(wb, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "); };
@@ -427,7 +429,7 @@ console.log(JSON.stringify(res));
 	want("expanded: all of them", res.ReqAll, []string{"r1tapi · 11 branches"})
 	want("header: the tree column hidden, not a columnheader", res.Head, "columnheader -:hidden columnheader columnheader columnheader columnheader columnheader columnheader columnheader")
 	want("header and body rows have as many columns", res.Cols, []int{8, 8, 8, 8, 8, 8, 8})
-	want("no CI checks is not a wait", res.NoCI, []string{"no CI checks", "no CI checks · merge waits on review"})
+	want("no CI checks is met (not required), never a wait", res.NoCI, []string{"merge waits on merge state blocked", "merge waits on review", "ready · your merge", "todo○n/a"})
 	want("waiting: the step it is on is you, never CI", res.Wait, []string{
 		"done:✓done you:◉you todo:○ todo:○ todo:○",
 		"done:✓done done:✓done you:◉you todo:○ todo:○",

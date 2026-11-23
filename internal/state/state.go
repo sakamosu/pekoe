@@ -83,6 +83,7 @@ type PRStatus struct {
 	Pass           int       `json:"pass"`
 	Fail           int       `json:"fail"`
 	Pending        int       `json:"pending"`
+	Skip           int       `json:"skip,omitempty"`            // checks that ended neutral / skipped / cancelled / stale (in none of the three)
 	FailedChecks   []string  `json:"failed_checks,omitempty"`   // names of the failing checks (the first few)
 	ReviewDecision string    `json:"review_decision,omitempty"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
 	Unresolved     int       `json:"unresolved"`                // unresolved review threads
@@ -106,7 +107,7 @@ func (p *PRStatus) Same(q *PRStatus) bool {
 		return false
 	}
 	return p.CIHead == q.CIHead && p.CIResult == q.CIResult && p.State == q.State && p.Draft == q.Draft && p.Pass == q.Pass && p.Fail == q.Fail &&
-		p.Pending == q.Pending && p.ReviewDecision == q.ReviewDecision && p.Unresolved == q.Unresolved &&
+		p.Pending == q.Pending && p.Skip == q.Skip && p.ReviewDecision == q.ReviewDecision && p.Unresolved == q.Unresolved &&
 		p.MergeState == q.MergeState && p.HeadSHA == q.HeadSHA && p.LastComment.Equal(q.LastComment) && p.LastThread.Equal(q.LastThread)
 }
 

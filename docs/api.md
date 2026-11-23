@@ -210,7 +210,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "pr_status": {                   // PR の要約(60 秒ごと(`[pr] poll_every`)にポーリング。PR ビューを開いている間は 15 秒)
     "state": "OPEN",               // OPEN | MERGED | CLOSED
     "draft": false,
-    "pass": 5, "fail": 1, "pending": 0,   // checks の数
+    "pass": 5, "fail": 1, "pending": 0, "skip": 0,   // checks の数(skip は neutral・skipped・cancelled・stale。0 なら省略)
     "failed_checks": ["test (ubuntu)"],   // 落ちている check の名前(10 件まで、1 件 60 文字まで)
     "review_decision": "CHANGES_REQUESTED", // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED
     "unresolved": 2,               // 未解決のレビュースレッド
@@ -512,7 +512,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 | --- | --- |
 | `land` | `pekoe land` が PR を作った(`landing`)、PR が `OPEN` |
 | `review` | 最新の `status: review` の報告が `verdict: pass` で(`pending` は揃わない)、その `reviewed_sha` が PR の HEAD(`pr_status.head_sha`)と同じ(短い SHA は前方一致)か、PR の HEAD と差分の中身が同じ(下) |
-| `ci` | PR の HEAD のチェックが 1 件以上あり、失敗も実行中もない |
+| `ci` | PR の HEAD のチェックに失敗も実行中もない。チェックが 1 件も無い PR(CI の無いリポジトリ)は「該当なし」で揃う(`detail` は `no CI checks (not required)`)。チェックがあって全部 skip・キャンセルなどで通ったものが 0 件なら揃わない |
 | `merge_state` | `pr_status.merge_state` が `CLEAN` |
 | `conflicts` | 衝突予報(`overlaps`)に `conflict` がない(自動で合わさる重なりはよい) |
 | `after` | `after` のセッションがすべて `landed`。landed になってから `pekoe rm` された相手も揃ったものとして扱う(`<slug> landed and was removed`。消えたときに landed だったかを state.db に残すので、pekoed を再起動しても変わらない)。landed になる前に rm された相手は `is gone` で揃わない。同じ slug で作り直されたセッションがあれば、そのセッションの状態で見る(作り直した方も landed の前に rm されたら `is gone`) |
@@ -539,7 +539,7 @@ pekoed は `pekoe land` 済みのセッション(`landing`。push して PR を�
 ```
 
 - **review が見る報告**: そのセッションに付いた報告(`report.list {slug}`)だけ。`report.post` は呼び出し元のセッションにしか書けないので、作業セッションの中のサブエージェント(U3 の (a)。窓が同じなのでそのセッションに付く)の合格は数えるが、別のセッション(`pekoe new review/<slug>`。U3 の (b))が出した合格はそのレビューのセッションに付き、数えない。その場合 `review` は `no independent review reported` のまま揃わず、根拠の項目は作られない(人は項目なしでマージできる)。別のセッションのレビューを数えるかは、U3 の (b) を実際に使い始めてから決める(docs/orchestration.md の段階 3 の「実装:」)
-- **rebase の後の合格の引き継ぎ**: `pekoe land` は `origin/<base>` に rebase してから push するので、レビューした後に land すると PR の HEAD の SHA が変わる。`reviewed_sha` と PR の HEAD が違うとき、pekoed はレビューしたコミットの変更(base(`origin/<base>`、無ければ `<base>`)との merge-base から)を、PR の HEAD の merge-base に rebase と同じ 3-way マージで載せ直し(`git merge-tree --write-tree`。worktree にも ref にも触らない)、できた tree が PR の HEAD の tree と完全に一致したときだけ合格を引き継ぐ(`detail` は「… は rebase し直しただけで差分の中身が同じ」)。ファイル・バイト・場所のどれかが違えば(同じ行を文脈の同じ別の場所に足したものも)揃わず、`review_stale: true` で「再レビューが要る」と出る。載せ直しが衝突したときは、衝突がすべて「両側が同じ場所に行を足しただけ」(diff3 で base 側が空。同じファイルの末尾に、base とレビューした変更がそれぞれテストを足したなど)で、PR の HEAD がその両方をそのまま(どちらかを先に)残し、ほかに何も変えていないときだけ同じと見なす。両側が同じ行を書き換えた衝突(解決した行はどちらにも無い新しい文になる)・片側がファイルを消した・名前を変えた衝突、衝突したファイルのどれかの版に衝突マーカーに似た行(`<<<<<<<` などで始まる行)があるもの(git の印と見分けられない)は揃わない。PR の HEAD がこの worktree に無い(よそから push された)など比べられないときも揃わず、`detail` に比べられなかった理由が出る(安全側)。結果はコミットの組と、そのときの base(`origin/<base>`)のコミットごとに覚える(読んだ `origin/<base>` が古くて違うと出ても、base が進めば比べ直す)。引き継ぐのは「レビューした変更と同じ変更」であることまでで、新しい base との組み合わせは CI が確かめる
+- **rebase の後の合格の引き継ぎ**: `pekoe land` は `origin/<base>` に rebase してから push するので、レビューした後に land すると PR の HEAD の SHA が変わる。`reviewed_sha` と PR の HEAD が違うとき、pekoed はレビューしたコミットの変更(base(`origin/<base>`、無ければ `<base>`)との merge-base から)を、PR の HEAD の merge-base に rebase と同じ 3-way マージで載せ直し(`git merge-tree --write-tree`。worktree にも ref にも触らない)、できた tree が PR の HEAD の tree と完全に一致したときだけ合格を引き継ぐ(`detail` は「… は rebase し直しただけで差分の中身が同じ」)。ファイル・バイト・場所のどれかが違えば(同じ行を文脈の同じ別の場所に足したものも)揃わず、`review_stale: true` で「再レビューが要る」と出る。載せ直しが衝突したときは、衝突がすべて「両側が同じ場所に行を足しただけ」(diff3 で base 側が空。同じファイルの末尾に、base とレビューした変更がそれぞれテストを足したなど)で、PR の HEAD がその両方をそのまま(どちらかを先に)残し、ほかに何も変えていないときだけ同じと見なす。両側が同じ行を書き換えた衝突(解決した行はどちらにも無い新しい文になる)・片側がファイルを消した・名前を変えた衝突、衝突したファイルのどれかの版に衝突マーカーに似た行(`<<<<<<<` などで始まる行)があるもの(git の印と見分けられない)は揃わない。PR の HEAD がこの worktree に無い(よそから push された)など比べられないときも揃わず、`detail` に比べられなかった理由が出る(安全側)。結果はコミットの組と、そのときの base(`origin/<base>`)のコミットごとに覚える(読んだ `origin/<base>` が古くて違うと出ても、base が進めば比べ直す)。引き継ぐのは「レビューした変更と同じ変更」であることまでで、新しい base との組み合わせは(CI のあるリポジトリなら)CI が確かめる
 - `conds` は上の表の順で常に 7 つ。`detail` は pekoed が書く 1 行(英語)。`review` の `detail` には誰のレビューか(作者のセッションの中のレビューならそう書く。docs/orchestration.md の U3)を入れる
 - **判定のログ**: `pekoe land` の後のセッションの判定(揃った、または揃っていない条件と `detail`)は、変わるたびに pekoed.log に 1 行出る(`merge evidence feat-csv: PR #42 HEAD 3f2a1b0: not ready: ci: 1 pending`・`…: evidence ready`)。`merge.check` は landed になったセッションを出さないので、項目が出なかった理由はマージの後はここで読む
 - 項目: `options` は `["merge", "wait", "send back"]`、`recommend` はなし。`facts` は他の項目と同じ(`facts.merge` に上の判定)、`links` は PR の URL、`context` は条件ごとの `detail` と、`merge` で走るもの(方法と HEAD)。前の `merge` が失敗していればその理由も。`facts` が変われば(CI が落ちた・HEAD が動いた)他の項目と同じく `rev` が上がり、古い `rev` への答えは断られる

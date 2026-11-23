@@ -453,8 +453,10 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 		step("ci", stepNow, fmt.Sprintf("%d pending", ps.Pending))
 	case ps.Pass > 0:
 		step("ci", stepDone, fmt.Sprintf("all %d passed", ps.Pass))
-	default:
-		step("ci", stepTodo, "no CI checks")
+	case ps.Skip > 0:
+		step("ci", stepTodo, fmt.Sprintf("none passed (%d skipped or cancelled)", ps.Skip))
+	default: // a repository with no CI: not required (merge.check)
+		step("ci", stepTodo, "no CI checks (not required)")
 	}
 
 	// マージ: the person decides; pekoed merges only on their "merge"
