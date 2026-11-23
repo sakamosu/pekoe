@@ -283,6 +283,15 @@ func (m *model) onFeatureMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case cleanupMsg:
 		return m.onCleanup(msg), true
 
+	case voiceStatusMsg:
+		m.setVoice(msg.st)
+		return nil, true
+	case voiceToggledMsg:
+		m.onVoiceToggled(msg)
+		return nil, true
+	case voiceFocusMsg:
+		return m.onVoiceFocus(msg), true
+
 	case inboxMsg:
 		m.onInboxList(msg)
 		return nil, true

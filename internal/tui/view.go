@@ -1123,6 +1123,9 @@ func (m *model) viewBar() string {
 	if m.zoomed() { // the left column is hidden: say so, and how to get it back
 		segs = append(segs, m.pill("zoom "+th.FG(theme.Dim, m.prefixLabel()+" z"), theme.Surface, theme.Text, false))
 	}
+	if v := m.voicePill(); v != "" {
+		segs = append(segs, v)
+	}
 	repo := m.curRepo()
 	path := "" // the selected session's worktree; none for a picked repository
 	if s := m.current(); s != nil && (m.chosen == nil || m.chosen.ID == s.RepoID) {
