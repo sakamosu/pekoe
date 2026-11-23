@@ -1,10 +1,10 @@
 # pekoe voice — 仕様書
 
-状態: 仕様(未実装)。企画書 [voice-proposal.md](voice-proposal.md) を今の pekoe のコードと docs に突き合わせ、言葉と構造を今の pekoe に直したもの。企画書と食い違うところはこの文書が正で、食い違いの一覧は「2. 企画書と今の pekoe のずれ」にある。人に決めてもらうことは「17. 決めてほしいこと」にまとめ、それぞれ推奨の案で本文を書いた(決まったら本文を直す)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: 仕様(未実装)。企画書 [voice-proposal.md](voice-proposal.md) を今の pekoe のコードと docs に突き合わせ、言葉と構造を今の pekoe に直したもの。企画書と食い違うところはこの文書が正で、食い違いの一覧は「2. 企画書と今の pekoe のずれ」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
-エージェントの状態が変わったら、tapi が音声で短く知らせる(**narrate**)。今見ているセッションは、アシスタントの本文も読み上げる(**read**)。合成は外部の実行ファイル(**backend**、`pekoe-voice-<名前>`)に任せ、pekoed は文字を渡して WAV を受け取り、鳴らすだけにする。
+エージェントの状態が変わったら、tapi が音声で短く知らせる(**narrate**)。今見ているセッションは、アシスタントの本文も読み上げる(**read**)。合成は外部の実行ファイル(**backend**。`config.toml` に絶対パスで書いたものだけを動かす。macOS の `say` を使うものは同梱)に任せ、pekoed は文字を渡して WAV を受け取り、鳴らすだけにする。
 
 - 目的・背景・やらないこと(音声入力・合成エンジンの同梱・LLM での文の生成・iPhone での再生・Linux)は企画書の §1〜§3 のまま
 - 対応 OS は macOS だけ。ほかの OS では `[voice] enable = true` でも何もしない(`pekoe voice` が `unsupported` と言う)
@@ -63,7 +63,7 @@
 
 試し方(P3 でやり直すとき): hook は「時刻と入力の JSON をファイルに書き、`MessageDisplay` では 1.5 秒眠ってから `script` の出力に自分と前のバッチの `delta` が出ているかを調べる」シェルスクリプト。`script -q -t 0 <記録> claude --setting-sources local --settings <hook を書いた JSON> "<段落 5 つの返事を頼む文>"` で動かす。初めてのディレクトリでは信頼の確認が出るので、信頼済みの一時ディレクトリで動かす。
 
-### 3.3 そのほかの推奨
+### 3.3 そのほか(推奨の案で決まった。17)
 
 - **呼び名**: slug から種類の接頭辞を外し、`-` `_` を空白にしたもの(5.2)。番号は無いので作らない。理由: 一覧・トースト・バーの台詞がどれも slug で言っているので、耳で聞いた名前と画面の名前が一致する。並びの番号は、セッションが増減・landed で並び替わると同じ番号が別のセッションを指す。17 の D1
 - **表情**: 増やさない。バーに `voice` の札を出す(14.3)。理由: 顔は目の 3 文字だけで状態を表していて、口が無い(docs/mascot.md)。「喋っている」を目で表すと、集約の状態(wait など)が読めなくなる。17 の D5
@@ -87,7 +87,7 @@ flowchart LR
     core --> pl["internal/voice/player<br/>afplay"]
     core -- "voice.updated / ログ" --> evout["イベント・voice.log"]
   end
-  be -- "exec(argv。シェルを通さない)" --> ext["pekoe-voice-&lt;名前&gt;<br/>(say は同梱)"]
+  be -- "exec(argv。シェルを通さない)" --> ext["config.toml に絶対パスで書いた backend<br/>(say は同梱。PATH からは探さない)"]
 ```
 
 ### 4.1 パッケージの切り方
@@ -95,7 +95,7 @@ flowchart LR
 | 場所 | 中身 | 依存 |
 | --- | --- | --- |
 | `internal/voice` | 純粋な論理: モードの決め方(policy)、呼び名と文言(phrases)、発話キュー(queue)、read の整形(shape)。時計・合成・再生はインターフェースで受け取る | `internal/state` の型だけ。exec もファイルも触らない |
-| `internal/voice/backend` | backend を探す・`version` / `check` / `voices` / `synth` を呼ぶ・時間切れ・フォールバック・WAV のキャッシュ | `os/exec`、`internal/paths` |
+| `internal/voice/backend` | 設定のパスを確かめる(`PATH` からは探さない。10.2)・`version` / `check` / `voices` / `synth` を呼ぶ・時間切れ・フォールバック・WAV のキャッシュ | `os/exec`、`internal/paths` |
 | `internal/voice/player` | 再生(`afplay`)と中断。darwin 以外は「使えない」を返す実装 | `os/exec` |
 | `internal/daemon/voice.go` | つなぎ: 遷移・hook・フォーカスを `internal/voice` に渡す、RPC、イベント、設定の読み直し | 上の 3 つ |
 | `cmd/pekoe/voice.go` | `pekoe voice …` | `internal/client`、`internal/config` |
@@ -239,14 +239,14 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 
 ## 9. 再生
 
-- `afplay <WAV のパス>` で鳴らす。止めるときはプロセスに SIGTERM(1 秒で終わらなければ SIGKILL)
+- `/usr/bin/afplay <WAV のパス>` で鳴らす(絶対パス。`PATH` から探さない。15 の「実行ファイルの探し方」)。止めるときはプロセスに SIGTERM(1 秒で終わらなければ SIGKILL)
 - 再生は `internal/voice/player` の `Player` インターフェース 1 か所にまとめる(Web UI で鳴らす実装を後から足すため。企画書 §14)
 - 音量は持たない(システムの音量に従う)
 - 1 秒以内に鳴り始めるために、合成を先にしておく:
   - voice を有効にしたとき・セッションができたとき・名前が変わったとき、そのセッションの wait / done / error(1 人分の文)と idle_all を、手が空いているときに 1 つずつ合成してキャッシュに入れる
   - まとめた文(`_many`)は先に作らない(組み合わせが多い)
   - 手元の `say`(macOS 15、Kyoko)で短い文の合成は 0.45〜0.9 秒かかった。キャッシュが無いと、寄せ集めの 300ms と合わせて 1 秒を超えることがある
-- キャッシュ: `<データディレクトリ>/voice/cache/<sha256>.wav`(`$PEKOE_HOME` に従う)。キーは backend の名前・`version` の出力・声の名前・言語・文。全体で 50MB を超えたら古いもの(更新時刻)から消す。起動時と 1 時間ごとに見る
+- キャッシュ: `<データディレクトリ>/voice/cache/<sha256>.wav`(`$PEKOE_HOME` に従う。データディレクトリはエージェントの sandbox からも pekoe の sandbox からも書けないので、キャッシュの WAV を差し替えられない)。キーは backend の名前・`version` の出力・声の名前・言語・文。全体で 50MB を超えたら古いもの(更新時刻)から消す。起動時と 1 時間ごとに見る
 
 ## 10. speech backend の約束事 v1
 
@@ -258,14 +258,31 @@ pekoe は文字を渡して WAV ファイルを受け取るだけ。再生・中
 
 ### 10.2 見つけ方
 
-- `PATH` にある `pekoe-voice-<名前>` を backend とみなす(git のサブコマンドと同じ)。`<名前>` は英小文字・数字・`-` だけ
-- `PATH` は pekoed のもの。launchd で動かしている pekoed は `PATH` が短いことがあるので、`pekoe voice backends` は見つからなかったときに pekoed の `PATH` を出す
-- `config.toml` の `[voice] backend` が使う名前、`fallback` が代わりの名前
-- `say` だけは pekoe に同梱している(10.6)。`PATH` に `pekoe-voice-say` があればそちらを使う
+pekoe は `PATH` から backend を探さない。動かすのは次の 2 つだけ:
+
+- **同梱の say**: `backend = "say"`(と `fallback = "say"`)は常に同梱のもの(10.6)を指す。`PATH` に `pekoe-voice-say` があっても使わない
+- **外部の backend**: `config.toml` の `[voice.backends]` に、名前と**絶対パス**を書いたもの。`[voice] backend` / `fallback` はその名前で指す
+
+```toml
+[voice]
+backend = "voicevox"
+fallback = "say"
+
+[voice.backends]
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"
+```
+
+- 名前は英小文字・数字・`-` だけ。`say` は同梱のための名前で、`[voice.backends]` に `say` を書いても使わない(`pekoe config check` が警告する)
+- パスは絶対パスか、`~/` で始まるもの(ホームに展開する。`[web] state_dir` と同じ)。それ以外(相対パス・`~user/`・空)は使わず、`pekoe config check` が警告する
+- 使う前に毎回(`version` / `check` / `synth` のたびに)、パスが通常のファイル(シンボリックリンクなら辿った先)で実行できることを確かめる。無い・実行できない・相対パス・`backend` の名前が `[voice.backends]` に無い、のどれでも、その backend は「使えない」になり、`fallback` に落ちる(10.5)。理由はログ(データディレクトリの `pekoed.log` と `voice.log`)と `voice.updated` の `error` に出す。`PATH` に同じ名前のものがあっても代わりに使わない
+- パス(またはリンクの先)がホームの下にあると、`pekoe voice backends` と `pekoe config check` が「エージェントや pekoe の sandbox の中のコマンドが書き換えられる場所かもしれない」と警告する(動かすのは止めない。置き場を決めるのは人)。勧める置き場は Homebrew の prefix(`/opt/homebrew/bin`)や `/usr/local/bin`
+- `pekoe voice backends` は `PATH` にある `pekoe-voice-*` を**候補として見せるだけ**で、動かさない(`version` も `check` も呼ばない)。それぞれに `config.toml` に書く行の例(`voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"`)を添える。`version` / `check` / `voices` を呼ぶのは、同梱の say と `[voice.backends]` に書いてあるものだけ
+
+なぜ `PATH` から探さないか: pekoed は backend を sandbox の外で動かす。`PATH` の中のディレクトリ(`~/.local/bin` など)はエージェントや pekoe の sandbox の中のコマンドが書ける場合があり(pekoe の sandbox は起動時に書ける `PATH` のディレクトリへの書き込みを止めるが、まだ無いディレクトリを作って置かれる・後から `PATH` が変わる・sandbox の付かないエージェントは防げない。15)、そこに `pekoe-voice-say` などを置かれると、voice を有効にした pekoed がそれを sandbox の外で動かしてしまう。`config.toml` はエージェントの sandbox からも pekoe の sandbox からも書けない(読むこともできない)ので、動かすものは人が書いたパスだけになる
 
 ### 10.3 呼び方
 
-pekoe は backend をシェルを通さずに起動する(引数は argv で渡す)。作業ディレクトリは pekoe のデータディレクトリ。環境は pekoed のものに `PEKOE_VOICE_PROTOCOL=1` を足したもの。
+pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起動する(引数は argv で渡す)。作業ディレクトリは pekoe のデータディレクトリ。環境は pekoed のものに `PEKOE_VOICE_PROTOCOL=1` を足し、`PATH` を `/usr/bin:/bin:/usr/sbin:/sbin` と backend の実行ファイルのあるディレクトリだけにしたもの(backend がさらに動かすコマンドを、エージェントが書ける `PATH` のディレクトリから拾わないように)。ほかのコマンド(インタプリタを含む)が要る backend は、絶対パスで呼ぶこと(スクリプトなら `#!/usr/bin/env python3` ではなく `#!/opt/homebrew/bin/python3` のように)。
 
 | コマンド | 入力 | 出力 | 時間切れ |
 | --- | --- | --- | --- |
@@ -277,7 +294,7 @@ pekoe は backend をシェルを通さずに起動する(引数は argv で渡�
 - pekoe は使う前に `version` を呼び、出力(前後の空白を除く)が `1` でなければその backend を使わない。知らないサブコマンドには 0 以外で終わること(将来のバージョンの確かめに使う)
 - `--voice` は pekoe 側の論理的な名前。v1 で使うのは `tapi`(narrate)と `reader`(read)。実際の声への割り当ては backend の設定で決め、言語ごとに持てるようにする。知らない名前が来たら、その言語の既定の声で合成する(エラーにしない。pekoe が後から名前を足しても壊れないように)
 - `--lang` は `ja` か `en`。対応していない言語なら 0 以外で終わる
-- `--out` は pekoe が作った空のディレクトリの中の、まだ無いファイルのパス。backend はそこに書くだけで、ほかの場所に書かない(キャッシュは backend 自身の場所に持ってよい)
+- `--out` は pekoe がデータディレクトリの下(`voice/tmp/`)に作った空のディレクトリの中の、まだ無いファイルのパス(`/tmp` は使わない)。backend はそこに書くだけで、ほかの場所に書かない(キャッシュは backend 自身の場所に持ってよい)
 - 出力は WAV(RIFF)、リニア PCM 16 ビット、モノラルかステレオ、標本化周波数は自由(`afplay` が鳴らせるもの)。pekoe は exit 0 でも、ファイルが無い・空・先頭が `RIFF` でないものは失敗とみなす
 - 失敗したら 0 以外で終わり、理由を標準エラーに 1 行で書く。pekoe はそれをログに残す。標準エラーは 1KB までしか読まない
 - 時間切れになったら pekoe はプロセスグループごと止め(SIGTERM、1 秒後に SIGKILL)、その発話を捨てる
@@ -304,17 +321,17 @@ pekoe は backend をシェルを通さずに起動する(引数は argv で渡�
 
 ### 10.5 フォールバック
 
-- pekoed は voice を有効にしたとき・設定が変わったとき・`pekoe voice backends` のときに、`backend` の `version` と `check` を呼ぶ。失敗したら `fallback` を同じように確かめて使う
+- pekoed は voice を有効にしたとき・設定が変わったとき・`pekoe voice backends` のときに、`backend` のパスを確かめて(10.2)`version` と `check` を呼ぶ。パスが使えない・失敗したら `fallback` を同じように確かめて使う。`fallback` も同梱の say か `[voice.backends]` の名前で、`PATH` からは探さない
 - 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `check` をもう一度呼ぶ。通れば元に戻す
 - どちらも使えなければ何も鳴らさず、`pekoe voice` と `voice.updated` の `error` に理由を出す
 
 ### 10.6 同梱の backend: say
 
 - macOS の `say` を使う。依存が無く、通信しない
-- `say -v <声> --file-format=WAVE --data-format=LEI16@24000 -o <out> -f -`(文字は標準入力から)
-- 声の既定: ja は `Kyoko`、無ければ `say -v '?'` の最初の `ja_JP` の声。en は `-v` を付けない(システムの既定の声)。`tapi` と `reader` は同じ声。声の割り当てを変えたいときは `[voice.say]` の `ja` / `en`(11)
-- `check` は `say` があることと、ja のときは日本語の声が 1 つ以上あることを見る
-- 実装は pekoe 本体の隠しサブコマンド `pekoe voice-backend-say <version|check|voices|synth …>`。pekoed は名前が `say` で `PATH` に `pekoe-voice-say` が無ければ、自分の実行ファイルをこの形で呼ぶ。同梱の say も約束事どおりに呼ぶので、約束事のテスト(16 の P1-2)を同じように通す。別の実行ファイルにしないのは、リリース・Homebrew・`pekoe update` の配る物を増やさないため
+- `/usr/bin/say -v <声> --file-format=WAVE --data-format=LEI16@24000 -o <out> -f -`(文字は標準入力から)
+- 声の既定: ja は `Kyoko`、無ければ `/usr/bin/say -v '?'` の最初の `ja_JP` の声。en は `-v` を付けない(システムの既定の声)。`tapi` と `reader` は同じ声。声の割り当てを変えたいときは `[voice.say]` の `ja` / `en`(11)
+- `check` は `/usr/bin/say` があることと、ja のときは日本語の声が 1 つ以上あることを見る
+- 実装は pekoe 本体の隠しサブコマンド `pekoe voice-backend-say <version|check|voices|synth …>`。pekoed は名前が `say` なら、いつも自分の実行ファイル(`os.Executable` のリンクを辿ったもの。hook に書く pekoe と同じ)をこの形で呼ぶ。`PATH` の `pekoe-voice-say` は見ない。同梱の say も約束事どおりに呼ぶので、約束事のテスト(16 の P1-2)を同じように通す。別の実行ファイルにしないのは、リリース・Homebrew・`pekoe update` の配る物を増やさないため
 
 ## 11. 設定
 
@@ -324,8 +341,8 @@ pekoe は backend をシェルを通さずに起動する(引数は argv で渡�
 [voice]
 enable = false             # 既定は無効。無効の間は何も鳴らさず、backend も呼ばず、hook も入れない
 lang = "auto"              # auto | ja | en。auto は LC_ALL → LC_MESSAGES → LANG
-backend = "say"            # pekoe-voice-<名前>
-fallback = "say"           # backend が使えないとき。"" でフォールバックしない
+backend = "say"            # "say"(同梱)か [voice.backends] の名前。PATH からは探さない(10.2)
+fallback = "say"           # backend が使えないとき。同じく "say" か [voice.backends] の名前。"" でフォールバックしない
 focus_mode = "read"        # フォーカス中のセッション: read | narrate | mute
 background_mode = "narrate" # それ以外: read | narrate | mute
 
@@ -337,6 +354,9 @@ skip = ["code", "table", "url", "path"]
 # wait = "{name}、確認待ちだよ"
 # wait_many = "{names}が確認待ちだよ"
 
+[voice.backends]           # 外部の backend: 名前 = 絶対パス(か ~/ で始まるパス)。ここに書いたものだけを動かす
+# voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"
+
 [voice.say]                # 同梱の say backend の声
 # ja = "Kyoko"
 # en = ""                  # "" はシステムの既定の声
@@ -345,6 +365,7 @@ skip = ["code", "table", "url", "path"]
 - すぐ効く: すべて。`enable` を `true` にすると backend を確かめて基準の状態を取り(喋らない)、`false` にすると鳴っているものを止めてキューを空にする
 - read 用の hook(3.1)は、エージェントを次に起動するときから入る・外れる
 - 値が違うとき(`lang = "fr"` など)は既定に戻し、`pekoe config check` が警告する(既存の節と同じ)
+- `[voice.backends]` の確かめ(`pekoe config check`): 名前が英小文字・数字・`-` でない、`say` を書いた、パスが絶対パスでも `~/` でもない、ファイルが無い・実行できない、`backend` / `fallback` の名前が `say` でも `[voice.backends]` にも無い、はどれも警告。パスがホームの下なら注意(10.2)。`check` はパスの確かめだけで、backend を動かさない
 - 時間帯のミュート(`quiet_hours`)は P4
 
 ## 12. CLI
@@ -356,12 +377,12 @@ skip = ["code", "table", "url", "path"]
 | `pekoe voice mute [--for 30m]` / `unmute` | 全体のミュート。`--for` を付けなければ `unmute` まで。鳴っているものを止め、キューを空にする |
 | `pekoe voice stop` | 今の発話を止める(キューは残す) |
 | `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま合成して鳴らす。ミュート中・無効のときも鳴らす(試すためのもの)。キューの先頭に積み、鳴っているものの後に鳴らす |
-| `pekoe voice backends` | `PATH` にある `pekoe-voice-*` と同梱の `say` の一覧と、それぞれの `version`・`check`・`voices`。使っているもの・fallback に印。`--json` |
+| `pekoe voice backends` | 設定済みの backend(同梱の say と `[voice.backends]`)の一覧と、それぞれのパス・`version`・`check`・`voices`。使っているもの・fallback に印。その下に、pekoed の `PATH` にある `pekoe-voice-*` を「候補」として出す(動かさない。`version` も `check` も呼ばない)。候補には `config.toml` に書く行の例(`[voice.backends]` の `voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"`)を添える。`--json` |
 | `pekoe voice log [-n 50]` | 発話のログ(14.4)の新しい方から。`--json` |
 | `pekoe voice mode <slug> read\|narrate\|mute\|auto` | セッションのモード(7)。P3 |
 
 - どれも人間だけ(`voice.*` の RPC は token が要る。docs/api.md「人間だけの操作」の許可リストに足さない)。エージェントの窓から Mac を喋らせられないようにする
-- `on` / `off` は `pekoe config edit` と同じく pekoed を通さない(エージェントの sandbox から `~/.config/pekoe` を書けないようにしてあり、RPC にすると抜け道になる)。`$PEKOE_SESSION` がある窓(エージェント)からは断る。書き換えは `[voice]` の表の `enable = …` の 1 行だけで、ほかの行・コメントは変えない(表が無ければファイルの末尾に足す)。書いた後に `config.ParseGlobal` で読めなければ元に戻して失敗にする。置き換えは同じディレクトリの一時ファイルからの rename 1 回(`config edit` と同じ)。pekoed は 1 秒以内に読み直す。17 の D4
+- `on` / `off` は `pekoe config edit` と同じく pekoed を通さない(エージェントの sandbox から `~/.config/pekoe` を書けないようにしてあり、RPC にすると抜け道になる)。`$PEKOE_SESSION` がある窓(エージェント)からは断る。ただしこれは誤操作よけで、環境変数を消せば通る。守りの本体は、エージェントの sandbox が `~/.config/pekoe` を書けない(読めない)ことと、pekoe の sandbox(hooks のコマンド)も同じく書けないこと(15)。書き換えは `[voice]` の表の `enable = …` の 1 行だけで、ほかの行・コメントは変えない(表が無ければファイルの末尾に足す)。書いた後に `config.ParseGlobal` で読めなければ元に戻して失敗にする。置き換えは同じディレクトリの一時ファイルからの rename 1 回(`config edit` と同じ)。pekoed は 1 秒以内に読み直す。17 の D4(決定)
 - `mute` の期限は state.db の kv(`voice.mute_until`)に残し、pekoed を再起動しても続く
 - 受け付けるフラグは `cmd/pekoe/flags.go` に宣言する(知らないフラグはエラー)
 
@@ -378,7 +399,7 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 | `voice.focus` | `{"slug": "feat-x" \| "+tapi" \| "", "term_focused": true}` | クライアントが [4] に出しているもの。接続ごとに覚え、最後に送ってきた接続のものを使う。接続が切れたらその接続の分を消す |
 | `voice.mode` | `{"slug", "mode"}` | セッションのモード(P3) |
 | `voice.log` | `{"n": 50}` | ログの新しい方から |
-| `voice.backends` | — | 見つかった backend と `version`・`check`・`voices` の結果 |
+| `voice.backends` | — | 設定済みの backend(同梱の say と `[voice.backends]`)のパスと `version`・`check`・`voices` の結果、パスの警告。加えて pekoed の `PATH` にある `pekoe-voice-*` の候補(名前とパスだけ。動かさない) |
 
 `VoiceStatus`:
 
@@ -447,7 +468,20 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 - **既定は無効**。`enable = false` の間、pekoed は backend を探さず・呼ばず、`afplay` も呼ばず、`--settings` に hook を入れない。`voice.focus` を受けても覚えるだけ(TUI は無効の間は送らない)
 - **マイクは使わない**
 - **外に出るもの**: backend に渡すのは、narrate では呼び名(slug から作ったもの)と定型文、read ではエージェントの返事の文。同梱の `say` はローカルで完結し通信しない。外部の TTS API を使う backend を入れると、返事の文(コードは読まないが、文の中の識別子・説明は含みうる)が外に送られる。README の voice の節と `pekoe voice backends` の出力に書く。業務で使うときは「ローカルの backend(`say`、ローカルの VOICEVOX エンジン)だけを使う」運用ができる
-- **呼び出しの経路**: backend はシェルを通さずに argv で起動し、文字は標準入力で渡す(エージェントが書いた文がコマンドラインに乗らない)。backend の名前は `config.toml` からだけ来る(エージェントは書けない)。backend は worktree の中のものではないので、pekoe の sandbox(`internal/sandbox`)では包まない(`gh` と同じ扱い)
+- **呼び出しの経路**: backend はシェルを通さずに argv で起動し、文字は標準入力で渡す(エージェントが書いた文がコマンドラインに乗らない)。backend は pekoe の sandbox(`internal/sandbox`)では包まない(人が選んで入れたプログラムで、`gh` と同じ扱い)。だからこそ、何を動かすかはエージェントが触れない所だけで決める(次の項)
+- **実行ファイルの探し方**: pekoed が sandbox の外で動かすものは、どれもエージェントが書けない所で決まったパスにする。`PATH` からは探さない。`PATH` の中のディレクトリは、エージェントや pekoe の sandbox の中のコマンド(hooks の `test`・`setup` など)が書けることがある: pekoe の sandbox は起動時に書ける `PATH` のディレクトリ(`writablePathDirs`)への書き込みを止めるが、まだ無いディレクトリ(`~/.local/bin` を作って置く)・後から変わる `PATH`・sandbox の付かないエージェントは防げない(`internal/sandbox/policy.go` も「This list cannot be complete」と書いている)。voice で動かすものと、その決め方:
+
+  | 動かすもの | パスの決め方 |
+  | --- | --- |
+  | 外部の backend | `config.toml` の `[voice.backends]` に人が書いた絶対パスだけ(10.2)。`PATH` の `pekoe-voice-*` は候補として見せるだけで動かさない |
+  | 同梱の say | pekoed 自身の実行ファイル(`os.Executable` のリンクを辿ったもの)の `voice-backend-say`。`PATH` の `pekoe-voice-say` は見ない |
+  | `say`(同梱の say の中) | `/usr/bin/say` |
+  | `afplay` | `/usr/bin/afplay` |
+  | `MessageDisplay` の hook | `--settings` のファイルに pekoe の絶対パスを書く(今の `pekoe hooks install` と同じ)。ファイルはデータディレクトリの `agent-settings/` で、どちらの sandbox からも書けない |
+  | backend がさらに動かすもの | backend の環境の `PATH` を `/usr/bin:/bin:/usr/sbin:/sbin` と backend のディレクトリだけにする(10.3)。それ以外は backend が絶対パスで呼ぶ(約束事に書いた) |
+
+  backend の作業ディレクトリ・`--out` の一時ディレクトリ・WAV のキャッシュはどれもデータディレクトリの下に置く(`/tmp` やエージェントが書ける所に置かない。データディレクトリはどちらの sandbox からも書けない)。pekoe 自身の実行ファイルが書ける場所(`go install` の `~/go/bin` など)にあるときの危うさは、今の hooks・pekoed と同じで、voice で新しく増えるものではない
+- **`config.toml` の守り**: `[voice] enable` と `[voice.backends]` を書けるのは人だけ。守りの本体は、エージェントの sandbox(Claude Code の `--settings`。`agentsandbox.go`)と pekoe の sandbox(`DenyRead` / `DenyWrite` に `config.toml` と設定のディレクトリ)が `~/.config/pekoe` を読めも書けもしないこと。`pekoe voice on|off` が `$PEKOE_SESSION` のある窓で断るのは誤操作よけで、環境変数を消せば通る(守りではない)。sandbox の付かないエージェント(`[agents.*] sandbox = false`、codex・opencode など)は今でも `config.toml` を直接書けるので、`on|off` を CLI にしても新しい穴は増えない(そのエージェントはもともと人と同じ権限で動いている)
 - **誰が喋らせられるか**: `voice.*` は token が要る(人間だけ)。エージェントが Mac に任意の文を喋らせることはできない。エージェントが影響できるのは、自分の state(hook)と返事の文(read)と slug(呼び名)だけ
 - **残すもの**: ログは 0600 で、read の文は先頭 80 文字だけ。WAV のキャッシュは定型文と呼び名(read の文はキャッシュしない)
 - **hook の安全**: `pekoe event MessageDisplay` は何も出力しない(出力すると Claude Code の表示が差し替わる)。返事を待たず、時間切れは 2 秒
@@ -457,7 +491,7 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 | 段階 | 中身 | 終わりの条件 |
 | --- | --- | --- |
 | **P1** | narrate(wait / done / error / ask / idle_all)+ 同梱の say + 再生 + 発話キュー + ミュート + CLI + TUI(`^q m`・札・`:voice`・フォーカス) | 下の P1-1〜P1-5 の完了条件。確認待ち・完了・エラーを呼び名付きで、状態が変わってから 1 秒以内(キャッシュ済みの文)に喋ることを、`scripts/sandbox.sh` の中で実際に鳴らし、`voice.log` の待ち時間で確かめる |
-| **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる |
+| **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる |
 | **P3** | read: `MessageDisplay` の pty での確かめ → 整形・中断・フォーカス連動・`pekoe voice mode` | フォーカス中のセッションの本文を、コードを飛ばして読む。入力すると止まる |
 | **P4**(任意) | 長文の要約、`quiet_hours`、まとめ方の改良、PR・CI の反応を喋るか | — |
 
@@ -475,20 +509,20 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 
 #### P1-2 `internal/voice/backend` と同梱の say
 
-- 作るもの: 10 の約束事を呼ぶ側(探す・`version`・`check`・`voices`・`synth`・時間切れ・プロセスグループの停止・WAV の確かめ・フォールバック・キャッシュ)、`pekoe voice-backend-say`、約束事のテスト(どの backend にも当てられる形。P2 の VOICEVOX でも使う)
-- 完了条件: 偽の backend(テストのバイナリ自身を backend として起動するなど。`/tmp` を直書きしない)で、成功・0 以外の終了・時間切れ・空のファイル・RIFF でない出力・`version` が `1` でない・並行 2 本の各場合のテストがある。本物の `say` を使うテストは darwin で `say` があるときだけ動き、無ければ理由を添えて飛ぶ。`NoTip` に `voice-backend-say` を入れる
+- 作るもの: 10 の約束事を呼ぶ側(10.2 のパスの決め方と確かめ・`version`・`check`・`voices`・`synth`・時間切れ・プロセスグループの停止・WAV の確かめ・フォールバック・キャッシュ)、`pekoe voice-backend-say`、約束事のテスト(どの backend にも当てられる形。P2 の VOICEVOX でも使う)
+- 完了条件: 偽の backend(テストのバイナリ自身を backend として起動するなど。`/tmp` を直書きしない)で、成功・0 以外の終了・時間切れ・空のファイル・RIFF でない出力・`version` が `1` でない・並行 2 本の各場合のテストがある。本物の `say` を使うテストは darwin で `/usr/bin/say` があるときだけ動き、無ければ理由を添えて飛ぶ。`NoTip` に `voice-backend-say` を入れる。**`PATH` から勝手に動かさないことのテスト**: テスト用の `PATH` に、呼ばれたら印のファイルを書く `pekoe-voice-say` と `pekoe-voice-voicevox` を置き、(1) `backend = "say"` で同梱のものが動き `PATH` のものが呼ばれない (2) `backend = "voicevox"` で `[voice.backends]` に無いとき、`PATH` のものは呼ばれず fallback に落ち、理由が残る (3) 相対パス・`~user/`・無いファイル・実行できないファイルのとき同じく fallback に落ちる (4) `~/` は展開されて動く (5) 候補の列挙(`voice.backends` の候補)が `PATH` のものを一度も起動しない、を確かめる。backend の子の環境の `PATH` が 10.3 のとおりであることも確かめる
 - やらないこと: 再生、daemon へのつなぎ
 
 #### P1-3 daemon へのつなぎ・再生・設定・API
 
-- 作るもの: `internal/voice/player`(afplay)、`internal/daemon/voice.go`(4.2 の受け取り、13 の RPC とイベント、kv のミュート、`session.removed` の片付け、先の合成)、`config` の `[voice]`(11。`docs.go`・`check.go`)、`session.event` の `MessageDisplay` を受け付けるだけ(捨てる。P3 で使う)
-- 完了条件: daemon のテストで、偽の合成・偽の再生を差し込んだ pekoed に `update` で state を変えると、期待した発話がキューに積まれ・まとまり・古いものが捨てられることを確かめる(偽エンジン `fakeEngine` は変えない。`engine.Engine` にメソッドを足さない)。`enable = false` のときは backend も player も一度も呼ばれないことをテストで固定する。`voice.*` が token なしで断られることをテストする。docs/api.md・docs/design.md(データの置き場の表に `voice.log`・`voice/cache`)・README の設定の節を直す
+- 作るもの: `internal/voice/player`(`/usr/bin/afplay`)、`internal/daemon/voice.go`(4.2 の受け取り、13 の RPC とイベント、kv のミュート、`session.removed` の片付け、先の合成)、`config` の `[voice]`(11。`docs.go`・`check.go`)、`session.event` の `MessageDisplay` を受け付けるだけ(捨てる。P3 で使う)
+- 完了条件: daemon のテストで、偽の合成・偽の再生を差し込んだ pekoed に `update` で state を変えると、期待した発話がキューに積まれ・まとまり・古いものが捨てられることを確かめる(偽エンジン `fakeEngine` は変えない。`engine.Engine` にメソッドを足さない)。`enable = false` のときは backend も player も一度も呼ばれないことをテストで固定する。`voice.*` が token なしで断られることをテストする。`[voice.backends]` の `pekoe config check` の警告(11)のテストがある。docs/api.md・docs/design.md(データの置き場の表に `voice.log`・`voice/cache`)・README の設定の節を直す
 - やらないこと: CLI、TUI
 
 #### P1-4 CLI `pekoe voice`
 
 - 作るもの: 12 のコマンド(`mode` を除く)、`on` / `off` の `config.toml` の 1 行の書き換え、`flags.go` の宣言
-- 完了条件: `on` / `off` の書き換えのテスト(表が無い・`enable` が無い・コメントがある・ほかの節が後ろにある・書いた後に読めない場合)。`$PEKOE_SESSION` があると `on` / `off` を断るテスト。`scripts/sandbox.sh sh -c 'pekoe voice on; pekoe voice test "テスト"; pekoe voice backends; pekoe voice log'` の出力を証拠に付ける(音が鳴ったかは人の耳で。鳴らせない環境なら報告にそう書く)。`cmd/pekoe/tipcover_test.go` が通るよう tip を足す
+- 完了条件: `on` / `off` の書き換えのテスト(表が無い・`enable` が無い・コメントがある・ほかの節が後ろにある・書いた後に読めない場合)。`$PEKOE_SESSION` があると `on` / `off` を断るテスト。`pekoe voice backends` が、テスト用の `PATH` に置いた `pekoe-voice-*`(呼ばれたら印を書くもの)を候補として出し、書く行の例を添え、一度も起動しないテスト。`scripts/sandbox.sh sh -c 'pekoe voice on; pekoe voice test "テスト"; pekoe voice backends; pekoe voice log'` の出力を証拠に付ける(音が鳴ったかは人の耳で。鳴らせない環境なら報告にそう書く)。`cmd/pekoe/tipcover_test.go` が通るよう tip を足す
 - やらないこと: TUI
 
 #### P1-5 TUI
@@ -504,11 +538,11 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 - `/tmp` を直書きしない(CLAUDE.md「テスト」)。偽のデーモンは `internal/testenv` の `Listen` と `client.DialSocket`
 - 最後の確かめは `scripts/sandbox.sh` の隔離環境で、本物のデーモンに触らない
 
-## 17. 決めてほしいこと
+## 17. 決めたこと
 
-それぞれ推奨の案で本文を書いた。
+2026-11-23 に利用者が決めた。どれも推奨の案で、本文はそれに合わせてある。D4 は決めるときに、守りの本体と脅威の整理(15「`config.toml` の守り」)を書き足すことになった。
 
-| | 問い | 選択肢 | 推奨 |
+| | 問い | 選択肢 | 決定と理由 |
 | --- | --- | --- | --- |
 | D1 | セッションの呼び名(企画書の「2番」) | (a) slug から種類の接頭辞を外したもの(`csv export`) (b) ブランチ名そのまま(`feat/csv-export`) (c) TUI の一覧に番号を新しく出し、その番号で呼ぶ (d) (a) に加えて、あだ名を付けられるようにする(`pekoe voice name <slug> <呼び名>`) | **(a)**。画面の名前と一致し、番号のように並び替えで指すものが変わらない。(c) は一覧の列を 1 つ増やし、landed で並びが変わると同じ番号が別のセッションになる。(d) は試用で聞き取りにくい名前が多ければ P4 で |
 | D2 | 見ているセッションの narrate | (a) 喋らない(TUI が [4] に出していて端末にフォーカスがあるとき。トーストと同じ) (b) 喋る(企画書どおり。read でも状態の変化を言う) | **(a)**。目の前にあるものを言うのはうるさく、試用で「見直す」になりやすい。端末から目を離していれば(フォーカスが無ければ)喋る |
