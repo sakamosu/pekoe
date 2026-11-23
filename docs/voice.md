@@ -1,6 +1,6 @@
 # pekoe voice — 仕様書
 
-状態: 仕様(未実装)。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: P1-1〜P1-3(`internal/voice`・backend・daemon へのつなぎ)を実装済み。CLI・TUI・read は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
@@ -381,7 +381,7 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 - `/usr/bin/say -v <声> --file-format=WAVE --data-format=LEI16@24000 -o <out> -f -`(文字は標準入力から)
 - 声の既定: ja は `Kyoko`、無ければ `/usr/bin/say -v '?'` の最初の `ja_JP` の声。en は `-v` を付けない(システムの既定の声)。`tapi` と `reader` は同じ声。声の割り当てを変えたいときは `[voice.say]` の `ja` / `en`(11)
 - `check` は `/usr/bin/say` があり、`/usr/bin/say -v '?'` で声の一覧が読めることを見る。`check` は言語を受け取らない(10.3)ので、日本語の声が無いことは `check` では言わない: そのとき `voices` は ja の声を出さず、`synth --lang ja` が「日本語の声が無い(システム設定 › アクセシビリティ › 読み上げコンテンツで足す)」で失敗する(Q11 で fallback・停止に進む)
-- `[voice.say]` の声は pekoed が渡すのではなく、`pekoe voice-backend-say` が自分で `config.toml` を読んで使う(P1-3 でつなぐ。P1-2 では既定の声だけ)
+- `[voice.say]` の声は pekoed が渡すのではなく、`pekoe voice-backend-say` が自分で `config.toml` を読んで使う(読めなければ既定の声)。キャッシュのキーには `[voice.say]` の声も入れる(`backend.Options.Variant`。声を変えたらキャッシュから古い声を出さない)
 - 実装は pekoe 本体の隠しサブコマンド `pekoe voice-backend-say <version|check|voices|synth …>`。pekoed は名前が `say` なら、いつも自分の実行ファイル(`os.Executable` のリンクを辿ったもの。hook に書く pekoe と同じ)をこの形で呼ぶ。`PATH` の `pekoe-voice-say` は見ない。同梱の say も約束事どおりに呼ぶので、約束事のテスト(16 の P1-2)を同じように通す。別の実行ファイルにしないのは、リリース・Homebrew・`pekoe update` の配る物を増やさないため
 
 ### 10.7 P2 の外部 backend: pekoe-voice-voicevox
@@ -438,8 +438,8 @@ skip = ["code", "table", "url", "path"]
 | `pekoe voice on` / `off` | `config.toml` の `[voice] enable` を `true` / `false` に書き換える(下) |
 | `pekoe voice mute [--for 30m]` / `unmute` | 全体のミュート。`--for` を付けなければ `unmute` まで。鳴っているものを止め、キューを空にする |
 | `pekoe voice stop` | 今の発話を止める(キューは残す) |
-| `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま合成して鳴らす。ミュート中・無効のときも鳴らす(試すためのもの)。キューの先頭に積み、鳴っているものの後に鳴らす |
-| `pekoe voice backends` | 設定済みの backend(同梱の say と `[voice.backends]`)の一覧と、それぞれのパス・`version`・`check`・`voices`。使っているもの・fallback に印。その下に、pekoed の `PATH` にある `pekoe-voice-*` を「候補」として出す(動かさない。`version` も `check` も呼ばない)。候補には `config.toml` に書く行の例(`[voice.backends]` の `voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"`)を添える。`--json` |
+| `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま合成して鳴らす。ミュート中も鳴らす(試すためのもの)。無効(`enable = false`)のときは断る(15: 無効の間は何も動かさない。先に `pekoe voice on`)。キューの先頭に積み、鳴っているものの後に鳴らす |
+| `pekoe voice backends` | 設定済みの backend(同梱の say と `[voice.backends]`)の一覧と、それぞれのパス・`version`・`check`・`voices`。使っているもの・fallback に印。無効の間は backend を動かさず、パスの確かめだけを出す(15)。その下に、pekoed の `PATH` にある `pekoe-voice-*` を「候補」として出す(動かさない。`version` も `check` も呼ばない)。候補には `config.toml` に書く行の例(`[voice.backends]` の `voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"`)を添える。`--json` |
 | `pekoe voice log [-n 50]` | 発話のログ(14.4)の新しい方から。`--json` |
 | `pekoe voice mode <slug> read\|narrate\|mute\|auto` | セッションのモード(7)。P3 |
 
@@ -457,11 +457,11 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 | `voice.status` | — | `VoiceStatus`(下) |
 | `voice.mute` | `{"for": "30m"}` / `{"until": "<RFC3339>"}` / `{"off": true}` | ミュートを決める。`VoiceStatus` |
 | `voice.stop` | — | 鳴っているものを止める |
-| `voice.say` | `{"text", "voice", "lang"}` | `pekoe voice test`。text は 2000 バイトまで |
+| `voice.say` | `{"text", "voice", "lang"}` | `pekoe voice test`。text は 2000 バイトまで。無効の間は断る |
 | `voice.focus` | `{"slug": "feat-x" \| "+tapi" \| "", "term_focused": true}` | クライアントが [4] に出しているもの。接続ごとに覚え、最後に送ってきた接続のものを使う。接続が切れたらその接続の分を消す |
 | `voice.mode` | `{"slug", "mode"}` | セッションのモード(P3) |
 | `voice.log` | `{"n": 50}` | ログの新しい方から |
-| `voice.backends` | — | 設定済みの backend(同梱の say と `[voice.backends]`)のパスと `version`・`check`・`voices` の結果、パスの警告。加えて pekoed の `PATH` にある `pekoe-voice-*` の候補(名前とパスだけ。動かさない) |
+| `voice.backends` | — | 設定済みの backend(同梱の say と `[voice.backends]`)のパスと `version`・`check`・`voices` の結果、パスの警告。加えて pekoed の `PATH` にある `pekoe-voice-*` の候補(名前とパスだけ。動かさない)。無効の間は backend を動かさず、パスの確かめだけ(`note` に理由) |
 
 `VoiceStatus`:
 
@@ -470,7 +470,9 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
   "enabled": true,
   "supported": true,              // darwin だけ true
   "backend": "say", "using": "say", // 設定の名前 / 今使っているもの(fallback 中は fallback の名前)
-  "error": "",                    // どちらも使えないときの理由
+  "error": "",                    // 何も喋れない理由: どちらも使えない、または Q11 で合成を止めている
+  "paused_until": "2026-11-23T15:31:00+09:00", // Q11 で合成を止めている間だけ: いつまで(P1-3 で足した)
+  "backend_error": "",            // 設定の backend を使っていない理由(fallback 中など。P1-3 で足した)
   "muted_until": "2026-11-23T15:30:00+09:00", // "" はミュートなし、"forever" は unmute まで
   "focus": "feat-x",
   "queue": 2,
@@ -522,6 +524,8 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 
 - `voice`: `[voice] enable` と `pekoe voice on` で、状態が変わったら tapi が喋る。keys: `["pekoe voice", "[voice]"]`
 - `voice-mute`: `^q m` で音声をすぐ止めてミュート。`:voice` で喋ったことを見返す。keys: `["^q m"]`
+
+P1-3 で `[voice]` の節を足したとき(`TestTipsCoverSections` が節に tip を求める)に、`voice` を keys `["[voice]"]` で足した(まだ `pekoe voice` が無いため)。P1-4 で `pekoe voice` を keys に足し、文面に `pekoe voice on` を入れる(id は変えない)。
 
 網羅テスト(`tipcover_test.go`・`TestTipsCoverSections`)が、ヘルプのキー・サブコマンド・設定の節と突き合わせる。隠しサブコマンド `voice-backend-say` は `internal/tips/cover.go` の `NoTip` に「backend の約束事の実装で、人が打たない」と理由を添えて入れる。
 
@@ -585,6 +589,17 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 - 完了条件: daemon のテストで、偽の合成・偽の再生を差し込んだ pekoed に `update` で state を変えると、期待した発話がキューに積まれ・まとまり・古いものが捨てられることを確かめる(偽エンジン `fakeEngine` は変えない。`engine.Engine` にメソッドを足さない)。`enable = false` のときは backend も player も一度も呼ばれないことをテストで固定する。`voice.*` が token なしで断られることをテストする。`[voice.backends]` の `pekoe config check` の警告(11)のテストがある。docs/api.md・docs/design.md(データの置き場の表に `voice.log`・`voice/cache`)・README の設定の節を直す
 - やらないこと: CLI、TUI
 
+P1-3 で決めた細部(実装 `internal/daemon/voice.go`):
+
+- 仕様との違い: 12 の `pekoe voice test` は「無効のときも鳴らす」だったが、15「`enable = false` の間、pekoed は backend を探さず・呼ばず、`afplay` も呼ばず」と P1-3 の完了条件に合わせ、無効の間は `voice.say` を断る。`voice.backends` も無効の間は backend を動かさない(パスの確かめと候補だけ)。12・13 をそう直した
+- 受け取り: `update`(`evMu` の下)と `emit`(`session.created`・`session.removed`・`inbox.updated`・`tapi.updated`)から、voice の 1 本の goroutine に順に渡してすぐ返す。無効の間は渡しもしない。キューの `Log` / `OnUpdate` はキューのロックの下で呼ばれるので、`voice.log` への書き込みと `voice.updated` / `voice.logged` の送り出しは別の 1 本の goroutine でする(`voice.updated` は中身が変わったときだけ)
+- tapi chat の state は `tapi.updated` の `Tapi.state` の前後を見て、slug `+tapi` の遷移として渡す。受信箱は `inbox.updated` のたびに open の項目を読み直して `Tracker.Inbox` に渡す
+- `[voice]` のどれかが変わったら作り直す(鳴っているものを止め、新しい backend で `Select`、今の状態を基準に取る)。キューの文言(`[voice.phrases]`)などが作るときに決まるため
+- 先の合成(9)は、キューが空で鳴っておらず合成もしていないときに 1 つずつ。tapi chat は wait だけ(done・failed にならない)。失敗しても Q11 の失敗には数えない
+- `voice.focus` は接続ごと(接続が切れたら消す)。in-process の呼び出し(テスト・Web UI)は 1 つの「接続」として扱う
+- `session.event` の `MessageDisplay` は `null` を返して何もしない(P3)。`UserPromptSubmit` は `Queue.UserPrompt` に渡す(read が無い P1 では何も起きない)
+- キャッシュの掃除(`Prune`・`CleanTmp`)は有効にしたときと 1 時間ごと。`voice.mode`(P3)はまだ無い
+
 #### P1-4 CLI `pekoe voice`
 
 - 作るもの: 12 のコマンド(`mode` を除く)、`on` / `off` の `config.toml` の 1 行の書き換え、`flags.go` の宣言
@@ -601,6 +616,7 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 
 - 音を出すもの(`afplay`・`say`)は、`internal/voice` と daemon のテストでは使わない(インターフェースの偽物)。本物を使うテストは darwin で、その実行ファイルがあるときだけ動き、無ければ理由を添えて飛ぶ
 - 時間の規則(300ms・5 秒・10 秒・30 秒)は偽の時計で進める。`time.Sleep` で待たない
+- 本物の `afplay` を使うテスト(`internal/voice/player`)は、先に `/usr/bin/afplay` を直接動かして 0.1 秒の無音を 2 回鳴らしてみて、鳴らせない(音の出口が無い CI のランナーなど)・1 回に 2 秒を超える環境では、測った秒数と理由を添えて飛ぶ。環境だけを測るので、`Player` の退行(止まらないなど)は SKIP に隠れず FAIL になる(P1-2 の say と同じ考え方)。鳴らすのは無音の WAV だけ
 - `/tmp` を直書きしない(CLAUDE.md「テスト」)。偽のデーモンは `internal/testenv` の `Listen` と `client.DialSocket`
 - 最後の確かめは `scripts/sandbox.sh` の隔離環境で、本物のデーモンに触らない
 

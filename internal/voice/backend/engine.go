@@ -24,6 +24,11 @@ type Options struct {
 	// voice/tmp and voice/cache under it.
 	Dir string
 
+	// Variant is what else makes the same backend and version sound
+	// different (the bundled say's [voice.say] voices): part of the cache
+	// key, so a changed voice is not served from the cache.
+	Variant string
+
 	Timeouts Timeouts
 	Now      func() time.Time
 	// Logf writes one line to pekoed.log (nil: nowhere).
@@ -284,6 +289,9 @@ func (e *Engine) Synth(ctx context.Context, text, voice, lang string) (string, e
 		}
 	}
 	keep := voice != ReaderVoice
+	if b.Name == Builtin && e.o.Variant != "" {
+		ver += "\x00" + e.o.Variant
+	}
 	key := Key(b.Name, ver, voice, lang, text)
 	if keep {
 		if p, ok := e.cache.Get(key); ok {

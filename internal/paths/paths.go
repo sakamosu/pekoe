@@ -150,6 +150,10 @@ func SkillsDir() string { return filepath.Join(DataDir(), "skills") }
 // sandbox could use to run anything outside it.
 func NvimDir() string { return filepath.Join(DataDir(), "nvim") }
 
+// VoiceLog is pekoe voice's log of what was said (JSON Lines, 0600;
+// docs/voice.md 14.4).
+func VoiceLog() string { return filepath.Join(DataDir(), "voice.log") }
+
 // LockFile is held (flock) by the one pekoed serving this data directory.
 func LockFile() string { return filepath.Join(DataDir(), "pekoed.lock") }
 

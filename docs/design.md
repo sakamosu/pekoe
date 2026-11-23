@@ -357,6 +357,8 @@ Lua プラグイン 1 つがデーモンの unix socket に繋がり、レビュ
 | worktree 本体 | `~/worktrees/<repo>/<slug>` | pekoe が削除していい領域はこの配下だけ |
 | 見せた tip の記録 | `~/.local/share/pekoe/tips.json` | TUI と `pekoe tip`(tapi chat)で共通。一巡したら空からやり直す |
 | チュートリアルを見た記録 | `~/.local/share/pekoe/tutorial.json` | ないと TUI の起動時にツアーが始まる。やめても見た扱い。ツアー中に切り替えて選んだ言語(`lang`: `ja` / `en`)も残し、次のツアーはその言語で始まる(選んでいなければ `LC_ALL` → `LC_MESSAGES` → `LANG`) |
+| 発話のログ | `~/.local/share/pekoe/voice.log`(0600、JSON Lines) | `[voice] enable = true` のときだけ書く。1MB で `voice.log.1` に回す(1 世代)。read の文は先頭 80 文字だけ(docs/voice.md 14.4) |
+| 音声のキャッシュ・一時ファイル | `~/.local/share/pekoe/voice/cache/`・`voice/tmp/` | 定型文の WAV(50MB を超えたら古いものから消す)と、合成の出力先。read の文はキャッシュしない(docs/voice.md 9) |
 | ポート台帳・DB 名・セッション ID・状態 | `~/.local/share/pekoe/state.db`(SQLite) | デーモンの外部記憶。再起動後の復元に使う |
 | デーモンの socket | `~/.local/share/pekoe/pekoed.sock` | TUI・CLI・nvim が繋ぐ。`$PEKOE_SOCK` → `$PEKOE_HOME/share/pekoed.sock` → `$XDG_DATA_HOME/pekoe/pekoed.sock` → この既定の順で決まる |
 | デーモンのロック | `~/.local/share/pekoe/pekoed.lock` | 動いている pekoed が `flock` で持つ。1 つの state.db に pekoed は 1 つ |

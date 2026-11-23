@@ -556,11 +556,24 @@ stale_after = "72h"         # list a stopped session (done, idle, failed …) as
 enable = true               # false hides both
 [sandbox]                   # commands from worktrees ([hooks], gatekeeper) and pekoed's git run in a sandbox
 enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
+[voice]                     # tapi says state changes aloud (macOS only; docs/voice.md)
+enable = false              # off by default: while off nothing is said, no backend runs and nothing plays
+lang = "auto"               # auto (LC_ALL, LC_MESSAGES, LANG) | ja | en
+backend = "say"             # "say" (bundled, macOS's say) or a name in [voice.backends]; PATH is never searched
+fallback = "say"            # used when backend cannot be; "" for none
+focus_mode = "read"         # the session shown in the TUI: read | narrate | mute (read speaks as narrate for now)
+background_mode = "narrate" # the other sessions: read | narrate | mute
+[voice.phrases]             # override what tapi says: wait done error ask idle_all and wait_many … ({name} / {names})
+wait = "{name} needs you"
+[voice.backends]            # external backends: name = absolute (or ~/) path; only these are run
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"
+[voice.say]                 # the bundled say's voices; "" is Kyoko (or the first ja_JP voice) / the system's voice
+ja = "Kyoko"
 ```
 
 The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`, `[gui] session_ttl`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
 
-Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
+Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[voice]` is taken up as a whole: a change stops what is being said and starts voice again from the states as they are. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
 
 `[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks` `sandbox` `model` `effort`. `sandbox` (default `true`) applies only when `command` starts with `claude` ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
 
@@ -579,6 +592,7 @@ Saved changes apply without a restart: pekoed reads `config.toml` again within a
 | Human token (needed to answer permission prompts and the like; keep it from agents) | `~/.local/share/pekoe/human-token` |
 | Claude Code settings pekoe passes to each agent (its sandbox) | `~/.local/share/pekoe/agent-settings/<slug>.json` |
 | The skills' text (`pekoe skills install`) | `~/.local/share/pekoe/skills/` |
+| What voice said, and its WAV cache | `~/.local/share/pekoe/voice.log`, `voice/cache/` (only when `[voice]` is enabled) |
 | Keys of the Web UI's tsnet node | `~/.local/share/pekoe/tsnet/` (only when `[web]` is enabled) |
 | Per-prompt snapshots / review points | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>` (never pushed, not in `git log`) |
 | Worktrees | `~/worktrees/<repo>/<slug>` (pekoe only deletes under here) |

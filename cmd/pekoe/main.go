@@ -147,7 +147,7 @@ func main() {
 	case "voice-backend-say":
 		// the bundled speech backend (docs/voice.md 10.6), run by pekoed;
 		// not in usage(): a person does not type it
-		os.Exit(backend.SayMain(args, backend.SayOptions{}, os.Stdin, os.Stdout, os.Stderr))
+		os.Exit(backend.SayMain(args, sayOptions(), os.Stdin, os.Stdout, os.Stderr))
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
@@ -158,6 +158,22 @@ func main() {
 	}
 	exitUsage(err)
 	die(err)
+}
+
+// sayOptions are config.toml's [voice.say] for the bundled say backend: it
+// reads them itself (pekoed passes nothing but the protocol's arguments).
+// A config.toml that does not read gives the default voices; nothing is
+// printed (stdout is the protocol's).
+func sayOptions() backend.SayOptions {
+	g, err := config.LoadGlobal()
+	if err != nil {
+		return backend.SayOptions{}
+	}
+	return sayOptionsOf(g)
+}
+
+func sayOptionsOf(g *config.Global) backend.SayOptions {
+	return backend.SayOptions{JA: strings.TrimSpace(g.Voice.Say.JA), EN: strings.TrimSpace(g.Voice.Say.EN)}
 }
 
 // helpTapi is tapi on top of `pekoe --help` (a still image).

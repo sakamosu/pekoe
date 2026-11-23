@@ -189,6 +189,14 @@ var humanMethods = map[string]string{
 	"init.detect":        "reads any repository's files",
 	"repo.list":          "every repository pekoe knows",
 	"worktree.list":      "every worktree",
+	// pekoe voice (docs/voice.md 12, 13): an agent must not make the Mac speak
+	"voice.status":   "pekoe voice: whether voice is on, the backend, the queue and the sentence being said",
+	"voice.mute":     "pekoe voice mute / unmute: a person's choice",
+	"voice.stop":     "pekoe voice stop: stops the sentence being said",
+	"voice.say":      "pekoe voice test: makes the Mac say any sentence",
+	"voice.focus":    "the TUI says what it shows: decides which session is not narrated",
+	"voice.log":      "what was said: session names and the start of agents' text",
+	"voice.backends": "runs the configured backends' version / check / voices outside any sandbox",
 	// the TUI's bookkeeping: no use to an agent
 	"daemon.status":    "pid, port and socket (the TUI and `pekoe daemon`)",
 	"session.resize":   "the TUI's pane size",

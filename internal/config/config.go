@@ -374,6 +374,97 @@ type Sandbox struct {
 
 func (s Sandbox) On() bool { return s.Enable == nil || *s.Enable }
 
+// Voice is [voice]: tapi says state changes aloud (docs/voice.md). Off by
+// default: while off pekoed runs no backend and plays nothing. Every key
+// applies without a restart.
+type Voice struct {
+	Enable bool   `toml:"enable"`
+	Lang   string `toml:"lang"` // auto | ja | en
+	// Backend and Fallback name the bundled "say" or a [voice.backends]
+	// entry (PATH is never searched). Fallback unset is "say"; "" is none.
+	Backend        string            `toml:"backend"`
+	Fallback       *string           `toml:"fallback"`
+	FocusMode      string            `toml:"focus_mode"`      // read | narrate | mute
+	BackgroundMode string            `toml:"background_mode"` // read | narrate | mute
+	Read           VoiceRead         `toml:"read"`
+	Phrases        map[string]string `toml:"phrases"`
+	Backends       map[string]string `toml:"backends"` // name → absolute (or ~/) path
+	Say            VoiceSay          `toml:"say"`
+}
+
+// VoiceRead is [voice.read]: how much of an assistant message read says.
+type VoiceRead struct {
+	MaxSentences int      `toml:"max_sentences" json:"max_sentences"` // 1-50, default 5
+	Skip         []string `toml:"skip" json:"skip"`                   // code | table | url | path
+}
+
+// VoiceSay is [voice.say]: the bundled say backend's voice by language
+// ("" is the default: Kyoko or the first ja_JP voice; the system's voice).
+type VoiceSay struct {
+	JA string `toml:"ja" json:"ja"`
+	EN string `toml:"en" json:"en"`
+}
+
+// Voice defaults and limits.
+const (
+	DefaultVoiceBackend      = "say"
+	DefaultVoiceMaxSentences = 5
+	MaxVoiceSentences        = 50
+)
+
+// VoiceModes are what focus_mode and background_mode take.
+var VoiceModes = []string{"read", "narrate", "mute"}
+
+// VoiceSkips are what [voice.read] skip takes.
+var VoiceSkips = []string{"code", "table", "url", "path"}
+
+// LangSetting is lang as used: auto for unset or a value pekoe does not
+// take.
+func (v Voice) LangSetting() string {
+	switch v.Lang {
+	case "ja", "en":
+		return v.Lang
+	}
+	return "auto"
+}
+
+// BackendName is backend as used ("say" when unset).
+func (v Voice) BackendName() string {
+	if strings.TrimSpace(v.Backend) == "" {
+		return DefaultVoiceBackend
+	}
+	return v.Backend
+}
+
+// FallbackName is fallback as used: "say" when unset, "" for none.
+func (v Voice) FallbackName() string {
+	if v.Fallback == nil {
+		return DefaultVoiceBackend
+	}
+	return strings.TrimSpace(*v.Fallback)
+}
+
+func voiceMode(m, def string) string {
+	if slices.Contains(VoiceModes, m) {
+		return m
+	}
+	return def
+}
+
+// Focus is focus_mode as used (read by default).
+func (v Voice) Focus() string { return voiceMode(v.FocusMode, "read") }
+
+// Background is background_mode as used (narrate by default).
+func (v Voice) Background() string { return voiceMode(v.BackgroundMode, "narrate") }
+
+// MaxSentences is [voice.read] max_sentences as used.
+func (v Voice) MaxSentences() int {
+	if n := v.Read.MaxSentences; n >= 1 && n <= MaxVoiceSentences {
+		return n
+	}
+	return DefaultVoiceMaxSentences
+}
+
 type Global struct {
 	HTTP struct {
 		Port int `toml:"port"`
@@ -405,6 +496,7 @@ type Global struct {
 	Notify       Notify       `toml:"notify"`
 	Cleanup      Cleanup      `toml:"cleanup"`
 	PR           PR           `toml:"pr"`
+	Voice        Voice        `toml:"voice"`
 }
 
 func DefaultAgents() map[string]Agent {

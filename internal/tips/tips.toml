@@ -664,6 +664,13 @@ keys = ["^q ,", "pekoe config"]
 docs = ["README.ja.md#設定"]
 
 [[tip]]
+id = "voice"
+short = "[voice] enable = true で状態の変化を tapi が喋る"
+detail = "macOS だけ。確認待ち・終わった・エラー・受信箱の質問を、セッションの呼び名付きで短く読み上げる。既定はオフで、オフの間は何も鳴らさない。声は同梱の say([voice.say] で変えられる)。"
+keys = ["[voice]"]
+docs = ["docs/voice.md", "README.ja.md#設定"]
+
+[[tip]]
 id = "notify-timing"
 short = "待ちの知らせの間合いは [notify] で変えられる"
 detail = "トーストの長さ toast_for(5s)、台詞の点滅 blink_after(30s)、OS 通知 os_after(2m)。[mascot] sleep_after(3m)で tapi が眠るまで、[pr] poll_every(1m、下限 30s)で PR を見る間隔。保存すれば再起動なしで効く。"

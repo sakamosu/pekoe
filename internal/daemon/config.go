@@ -84,6 +84,7 @@ func (d *Daemon) reloadConfig() {
 		log.Printf("config: reloaded")
 	}
 	d.emit("config.reloaded", ConfigReload{Restart: restart})
+	d.voice.apply(d.cfg()) // [voice] applies at once (voice.go)
 }
 
 // configRestart names the changed settings that wait for a restart.

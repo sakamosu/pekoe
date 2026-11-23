@@ -553,11 +553,24 @@ stale_after = "72h"         # 止まっている(done・idle・failed など)セ
 enable = true               # false で両方とも出さない
 [sandbox]                   # worktree から来るコマンド([hooks]・門番)と pekoed の git を sandbox で動かす
 enable = true               # false で sandbox なしに動かす(使えない環境では動かさない。git はそれでも動かす)
+[voice]                     # 状態が変わったら tapi が喋る(macOS だけ。docs/voice.md)
+enable = false              # 既定はオフ。オフの間は何も喋らず、backend も動かさず、何も鳴らさない
+lang = "auto"               # auto(LC_ALL → LC_MESSAGES → LANG)| ja | en
+backend = "say"             # "say"(同梱。macOS の say)か [voice.backends] の名前。PATH からは探さない
+fallback = "say"            # backend が使えないとき。"" でフォールバックしない
+focus_mode = "read"         # TUI で見ているセッション: read | narrate | mute(read は今は narrate と同じ)
+background_mode = "narrate" # それ以外: read | narrate | mute
+[voice.phrases]             # 喋る文の上書き: wait done error ask idle_all と wait_many など({name} / {names})
+wait = "{name}、確認待ちだよ"
+[voice.backends]            # 外部の backend: 名前 = 絶対パス(か ~/ で始まるパス)。ここに書いたものだけを動かす
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"
+[voice.say]                 # 同梱の say の声。"" は Kyoko(無ければ最初の ja_JP の声)/ システムの既定の声
+ja = "Kyoko"
 ```
 
 時間の設定(`[notify]`・`[mascot] sleep_after`・`[pr] poll_every`・`[cleanup] stale_after`・`[gui] session_ttl`)は、Go の duration(`30s`・`2m`・`1h30m`)で書きます。空の値や読めない値は既定値になり、下限より短い値は下限になります。
 
-保存した変更は、再起動なしで反映されます。pekoed は変更から 1 秒以内に `config.toml` を読み直し、TUI もそれに続きます。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` するまでは起動時の値のままです(TUI のメッセージ行と `pekoe daemon status` に、該当する設定の名前が表示されます)。ファイルを読めない場合、設定は前のままになり、TUI が理由を表示します。知らないキーや受け付けない値は、`pekoe config check` で確認できます([コマンド](#コマンド))。
+保存した変更は、再起動なしで反映されます。pekoed は変更から 1 秒以内に `config.toml` を読み直し、TUI もそれに続きます。`[voice]` は節ごと読み直し、変わったら鳴っているものを止めて、今の状態から始め直します。例外は `[http] port`・`[web]`・`[sandbox]` で、`pekoe daemon restart` するまでは起動時の値のままです(TUI のメッセージ行と `pekoe daemon status` に、該当する設定の名前が表示されます)。ファイルを読めない場合、設定は前のままになり、TUI が理由を表示します。知らないキーや受け付けない値は、`pekoe config check` で確認できます([コマンド](#コマンド))。
 
 `[agents.<name>]` には、`command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` `model` `effort` を書けます。`sandbox`(既定は `true`)は、`command` が `claude` で始まるものにだけ効きます([エージェントに pekoe を使わせるときの権限](#エージェントに-pekoe-を使わせるときの権限))。`arg` は、最初のプロンプトを `--` の後ろに置いて渡します(`claude -- '<プロンプト>'`)。そのため、`-` で始まるプロンプトがオプションとして解釈されることはありません。`--` を受け付けないエージェントには、`paste` を使ってください。Claude Code の許可メニューへの回答としては、既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送ります。Claude Code の挙動が変わった場合は、`[agents.claude]` で直せます。
 
@@ -576,6 +589,7 @@ enable = true               # false で sandbox なしに動かす(使えない�
 | 人間用トークン(許可待ちへの回答などに必要です。エージェントには読ませません) | `~/.local/share/pekoe/human-token` |
 | pekoe が各エージェントに渡す Claude Code の設定(sandbox) | `~/.local/share/pekoe/agent-settings/<slug>.json` |
 | スキルの文(`pekoe skills install`) | `~/.local/share/pekoe/skills/` |
+| 喋ったことの記録・音声のキャッシュ | `~/.local/share/pekoe/voice.log`・`voice/cache/`(`[voice]` が有効なときだけ) |
 | Web UI の tsnet ノードの鍵 | `~/.local/share/pekoe/tsnet/`(`[web]` が有効なときだけ) |
 | プロンプト単位のスナップショット / レビュー地点 | `refs/pekoe/<slug>/prompt-<n>` / `review-<n>`(push されず、`git log` にも出ません) |
 | worktree | `~/worktrees/<repo>/<slug>`(pekoe が削除するのは、この配下だけです) |
