@@ -236,7 +236,7 @@ func (h *voiceHub) apply(g *config.Global) {
 		if old != nil {
 			log.Printf("voice: off")
 		}
-		h.emitStatus()
+		h.out.Do(h.emitStatus)
 		return
 	}
 	h.start(v, key)
@@ -270,15 +270,16 @@ func (h *voiceHub) start(v config.Voice, key string) {
 	})
 	tr = voice.NewTracker(h.clock, func(it voice.Item) { q.Push(it) })
 	stop := make(chan struct{})
-	h.mu.Lock()
-	h.on, h.key, h.eng, h.q, h.tr, h.phrases, h.stopRun = true, key, eng, q, tr, phrases, stop
-	h.mu.Unlock()
 	h.warmMu.Lock()
 	h.warmed, h.warmTodo = map[string]bool{}, nil
 	h.warmMu.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.on, h.key, h.eng, h.q, h.tr, h.phrases, h.stopRun = true, key, eng, q, tr, phrases, stop
 	log.Printf("voice: on (backend %s, fallback %q, lang %s)", v.BackendName(), v.FallbackName(), lang)
 
-	// the states now are the starting point: nothing is said about them
+	// the states now are the starting point: nothing is said about them.
+	// Queued under mu with on: no change can be queued before it
 	h.in.Do(func() {
 		if !h.current(tr) {
 			return
@@ -301,10 +302,23 @@ func (h *voiceHub) start(v config.Voice, key string) {
 		h.warm(phrases.Render(voice.KindIdleAll, nil))
 	})
 	go func() {
+		// turning voice off (or rebuilding it) stops the check of the backend
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		go func() {
+			select {
+			case <-stop:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
 		if err := eng.Select(ctx); err != nil {
 			log.Printf("voice: %v", err)
+		}
+		select {
+		case <-stop:
+			return
+		default:
 		}
 		h.out.Do(h.emitStatus)
 		eng.Maintain()
