@@ -85,16 +85,23 @@ voice が前提にするものが、今の pekoe ではどうなっていて、�
 
 ### 3.2 `MessageDisplay` を試した結果
 
-手元の Claude Code 2.1.330 で、pekoe の外の一時ディレクトリから、`--setting-sources local --settings <一時ファイル>` で hook を渡して試した(本物の `~/.claude/settings.json` も pekoe の hook も使わない。`PEKOE_*` を環境から外した)。hook は呼ばれた時刻・入力の JSON を記録するだけのスクリプト。
+Claude Code 2.1.330 で、`--setting-sources local --settings <一時ファイル>` で hook を渡して試した(本物の `~/.claude/settings.json` も本物の pekoed も使わない)。はじめは pekoe の外の一時ディレクトリで `claude -p` と `script` の pty で、次に `scripts/sandbox.sh` の隔離環境の tmux のペイン(pekoe のエージェントと同じ pty)で本物の `claude` を動かし、プロンプトを `tmux send-keys` で入れた。hook は呼ばれた時刻と入力の JSON を記録し、`MessageDisplay` では同じ入力で `pekoe event MessageDisplay` を呼んで所要時間を測った。
 
 - **ある**: changelog 2.1.152「Added a `MessageDisplay` hook event that lets hooks transform or hide assistant message text as it is displayed」。**最低バージョンは 2.1.152**。`Stop` の `last_assistant_message` は 2.1.47 から(「Added `last_assistant_message` field to Stop and SubagentStop hook inputs」)
-- **入力**: 共通の `session_id`・`prompt_id`・`transcript_path`・`cwd`・`hook_event_name` に、`turn_id`・`message_id`・`index`(0 から)・`final`(真偽)・`delta`(このバッチの文字)。matcher は無い(毎回発火)
-- **発火の単位**: `claude -p` では 1 メッセージに 1 回(`index: 0, final: true`、本文がまるごと)。対話モード(`script` で作った pty)では、行がまとまるごとに 1 回で、段落 5 つの返事で 5 回(`index` 0〜4、1 回 490〜650 文字、約 0.9 秒おき、最後だけ `final: true`)
-- **表示を止めるか**: 止める。hook の中で 1.5 秒眠り、その間に画面の記録(`script` の出力)を読んだ。どのバッチも自分の `delta` は hook が返るまで画面に出ず、前のバッチは前の hook が返った後に出ていた。次のバッチの hook は前の hook を待たずに並行して起動する(表示の順番は保たれる)
-- **`Stop` との順序**: `Stop` は最後のバッチの `MessageDisplay` と同じ時刻に来て、最後のバッチの表示より先に返ることがある(read は `Stop` を「読み終わり」の合図にしない)
-- **pekoe の pty(tmux の中)での体感**は試していない(エージェントの sandbox では tmux のソケットを作れない)。P3 の最初に、`scripts/sandbox.sh` の中で `pekoe event MessageDisplay` 1 回の所要時間(目安 20ms 以下)と体感を確かめる(16 の P3)
+- **入力**: 共通の `session_id`・`prompt_id`・`transcript_path`・`cwd`・`hook_event_name` に、`turn_id`・`message_id`・`index`(0 から)・`final`(真偽)・`delta`(このバッチの文字)。matcher は無い(毎回発火)。**`delta` は描画前の Markdown の生の文字**(`**強調**`・```` ```go ````・`| 表 |` がそのまま来る)
+- **tmux の pty でも届く**: 入力の形は `claude -p`・`script` の pty と同じ
+- **発火の単位**: `claude -p` では 1 メッセージに 1 回(`index: 0, final: true`、本文がまるごと)。pty では**行単位の細かいバッチ**で、最後だけ `final: true`。段落 5 つ+コード+表の返事で 12 回。コードフェンスの開き(```` ```go ```` の 1 行だけ)・中身(2 行ずつ)・閉じが別々のバッチに割れ、表も 1 行ずつ来た。1〜30 の列挙は 30 回(約 0.25 秒おき)。hook を 1.5 秒眠らせるとバッチがまとまり 7 回になった(本文と ```` ```go ```` が同じバッチに入る)。**切れ目は hook の速さで変わり、Markdown の構造とは関係ない**。バッチ 1 つを見てもコードの中かどうかは分からない
+- **表示を止めるか**: 止める(pty でも)。hook の中で 1.5 秒眠り、その間に画面(`script` の記録・tmux の `capture-pane`)を見ると、どのバッチも自分の `delta` は hook が返るまで出ていなかった。次のバッチの hook は前の hook を待たずに並行して起動する(表示の順番は保たれる)
+- **所要時間**: 調査で測った値で、`pekoe event MessageDisplay` 1 回が 17〜28ms(返事を待つ今の `cmdEvent` のまま)。中断の場面で 39〜114ms に跳ねた(負荷の偏りと推測)。3.1 の「返事を待たない」版は測っていないが、返事を待たない分は短くなる見込みで、3.1 の決まりのままでよい
+- **並ぶ順は保証されない**: hook が並行で動くので、受け取る順が `index` の順と入れ替わることがある(同じ時刻に来た `index` 0 と 1 で、1 が先に終わった)。この例はストリーミングされず、`Stop` と同時にまとめて来た(理由は分からない)
+- **tool の出力・thinking は来ない**: 「README を読みます」→ Read → 要約、の返事で、`message_id` が 2 つ来た(前置きの 1 文が `final: true` で 1 回、要約が別の `message_id`)。Read の結果と thinking は来ない。`Stop` の `last_assistant_message` は**最後のメッセージ(要約)だけ**で、前置きは入らない
+- **`Stop` との順序**: `Stop` は最後のバッチの `MessageDisplay` と同じ時刻に来て、最後のバッチの表示より先に返ることがある(read は `Stop` を「読み終わり」の合図にしない)。1〜30 の列挙では、最初の `MessageDisplay` から `Stop` まで約 8 秒
+- **先打ち(返事の途中で入力して Enter)**: `UserPromptSubmit` は**キューに入れた瞬間**に来る。その後も**同じ `turn_id` の `MessageDisplay` が流れ続け**、ターンが普通に終わってから、先打ちの文が新しい `turn_id` で処理される。**その新しいターンの `UserPromptSubmit` は来ない**(先打ちに 1 回だけ)
+- **Esc での中断**: `MessageDisplay` はそこで止まり、**`final: true` も `Stop` も来ない**。hook で中断を知る手段は無い。transcript には途中までの本文と `[Request interrupted by user]` が残り、画面は `Interrupted · What should Claude do instead?` になる
+- **transcript は代わりにならない**: transcript の JSONL の text のブロックは、**ブロックが終わってから 1 行で書かれる**(1〜30 の列挙で `Stop` とほぼ同じ時刻)。ストリーミングの代わりにならず、遅さは `Stop` の方式と変わらない。書式は Claude Code の内部のもので、本文でない行(`api-request-blob` など)も混ざる。そこで 6.1 の代わりの手段に transcript は足さない(中断の検出には使えうるが、使うかは 17 の残る論点)
+- **codex**: 確かめていない(調査の環境に無かった)。推測では、表示ごとの hook は無く、ターンの終わりに最後の返事を渡す `notify` と、rollout の JSONL があるだけ。だとすると codex の read は `Stop` の方式と同じ(ターンの終わりに、最後のメッセージだけ)が上限になる。P3 は Claude Code だけで始める(6.1)
 
-試し方(P3 でやり直すとき): hook は「時刻と入力の JSON をファイルに書き、`MessageDisplay` では 1.5 秒眠ってから `script` の出力に自分と前のバッチの `delta` が出ているかを調べる」シェルスクリプト。`script -q -t 0 <記録> claude --setting-sources local --settings <hook を書いた JSON> "<段落 5 つの返事を頼む文>"` で動かす。初めてのディレクトリでは信頼の確認が出るので、信頼済みの一時ディレクトリで動かす。
+試し方(やり直すとき): hook は「時刻と入力の JSON をファイルに書き、`MessageDisplay` では同じ入力で `pekoe event MessageDisplay` を呼んで時間を測る(表示を止めるかを見る回だけ、1.5 秒眠ってから `capture-pane` で自分の `delta` が画面に出ているかを調べる)」シェルスクリプト。`scripts/sandbox.sh` の中で、sandbox の tmux サーバーにペインを作り、`claude --setting-sources local --settings <hook を書いた JSON>` を起動して `tmux send-keys` でプロンプトを入れる。初めてのディレクトリでは信頼の確認が出るので、信頼済みのディレクトリで動かす。claude を起動する以上、Claude Code 自身の記録(`~/.claude.json`・transcript)は書かれる。
 
 ### 3.3 そのほか(推奨の案で決まった。17)
 
@@ -207,10 +214,13 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 
 ### 6.1 本文の受け取り方
 
-- そのセッションの起動時に `MessageDisplay` hook を入れていれば(3.1)、`delta` をバッチごとに受け取る。`turn_id`・`message_id`・`index`・`final` で並べる
-- 入れていなければ(起動の後で voice を有効にした・`allowManagedHooksOnly`・Claude Code が 2.1.152 より古い)、今の `Stop` hook の `last_assistant_message` を、ターンの終わりにまとめて読む
+- そのセッションの起動時に `MessageDisplay` hook を入れていれば(3.1)、`delta` をバッチごとに受け取り、`message_id` ごとのバッファに `index` の順につなぐ(6.2)
+- 入れていなければ(起動の後で voice を有効にした・`allowManagedHooksOnly`・Claude Code が 2.1.152 より古い)、今の `Stop` hook の `last_assistant_message` を、ターンの終わりにまとめて読む。届くのは最後のメッセージだけで、tool の前置きは入らない(3.2)
 - 同じターンで `MessageDisplay` を 1 回でも受け取っていたら、`Stop` の本文は読まない(同じ文を 2 回読まない)
 - 受け取ったときにそのセッションのモードが `read` でなければ捨てる(後からフォーカスが来ても、さかのぼって読まない)
+- tool の出力・thinking は来ない(3.2)ので、読むのはアシスタントの本文だけ。tool を挟むと前置き(「README を読みます」など)と続きが別の `message_id` になり、1 ターンに複数のメッセージが来る(読む量は 6.2 の上限で抑える)
+- transcript の JSONL は追わない(ブロックが終わってから書かれ、`Stop` と同じくらい遅い。3.2)
+- P3 は Claude Code だけ(`isClaude`)。codex は表示ごとの hook が無いと見ていて(3.2。確かめていない)、読むなら `Stop` の方式と同じく「ターンの終わりに最後の返事」になる。P3 の後に別の段で確かめて決める
 
 ### 6.2 整形(読む範囲)
 
@@ -228,13 +238,37 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 
 文への分け方: ja は `。` `!` `?` `!` `?` と改行、en は `.` `!` `?` の後の空白か行末、どちらも空行で区切る。1 文が 200 文字を超えたら `、` `,` で分ける。分けた後に空の文は捨てる。
 
-1 メッセージ(`message_id`。`Stop` の方式では最後の返事)で読むのは先頭 `max_sentences` 文まで。
+**バッチごとに整形しない**。`MessageDisplay` のバッチの切れ目は hook の速さで変わり、コードフェンスの開き・中身・閉じが別のバッチに割れる(3.2)ので、バッチ 1 つではコードの中かどうかが分からない。そこで:
+
+- **バッファ**: `message_id` ごとに、受け取った `delta` を `index` の順につないだバッファを持つ。整形するのは**改行で終わった(完結した)行だけ**で、最後の改行より後の途中の行はバッファに残し、次のバッチを待つ。`final: true` のバッチまでつながったら、残りの行も整形する
+- **状態**: 整形は行の列に対して状態を持って進める(`ShapeLines` のような、状態を受け取って返す形)。持つのは、コードフェンスの中か(開いたフェンスの記号 ```` ``` ```` / `~~~` と長さ)と、文の途中か(行をまたぐ en の文・空行の区切り)。フェンスの中の行は閉じのフェンスが来るまで読まない。表・URL・パスの判定は行や語の単位なので、生の Markdown のまま上の表のとおりでよい
+- **文が確定したら積む**: 文の区切り(句点・空行など)が来て確定した文から、キューに積む。`max_sentences` と下の 1 ターンの上限は、確定した順に数える
+- **順の入れ替わり**: hook が並行で動くので、`index` の順が入れ替わって届くことがある(3.2)。先の `index` が来たら、欠けている `index` が届くまでバッファの外に取っておき、つながってから整形する。**欠けを待つのは 2 秒まで**(hook の時間切れと同じ。それより遅いものは時間切れで落ちたと見る)。2 秒たっても欠けが埋まらなければ、そのメッセージの続きは読まない(欠けの後はフェンスの状態が信じられず、コードを読み上げる恐れがあるため。ログには残さない。積んでいないので)
+- **バッファを捨てるとき**: ターンが変わった(`turn_id` が変わった)・6.3 で止めた・セッションのモードが `read` でなくなった・セッションが消えた。Esc の中断では `final` が来ない(3.2)ので、`final` を待ち続けない
+
+**読む量の上限**:
+
+- 1 メッセージ(`message_id`。`Stop` の方式では最後の返事)で読むのは先頭 `max_sentences` 文まで(既定 5。17 の D6)
+- **1 ターン(`turn_id`)で読むのは 10 文まで、合わせて 800 文字まで**(どちらか先に達したほう)。tool の多い作業では前置きのメッセージがターンの中にいくつも来て、それぞれが `max_sentences` まで読まれるとうるさい(3.2)。上限に達したら、そのターンの残りは積まない
+  - 10 文の理由: 1 メッセージの上限の 2 つ分。D6 の目安(5 文で ja はおよそ 20〜30 秒)から、1 ターンで 1 分ほどに収まる。前置きは 1 文のことが多いので、前置きがいくつか来ても最後の要約の頭は読める
+  - 800 文字の理由: 1 文は 200 文字まで伸びる(上の分け方)ので、文の数だけでは長さが抑えられない。800 文字は 200 文字の文 4 つ分で、ja でおよそ 1〜2 分
+  - メッセージの数では切らない: 前置きは 1 文ずつで、文の数の上限で抑えられる。メッセージの数で切ると、最後に来る要約(いちばん聞きたいもの)を落としやすい
+  - 設定にするのは文の数だけ(`[voice.read] max_turn_sentences`、1〜100、既定 10)。`max_sentences` より小さくしたら、1 ターンの上限が先に効く(どちらの上限も、達したらそこで積むのをやめる)。文字数は固定(長い文を延々と読む事故よけで、好みで変えるものではない)
+  - 採らなかった案: 前置きを読まず、`Stop` の `last_assistant_message`(最後のメッセージ)だけを読む。前置きの騒がしさは無くなるが、読み始めがターンの終わりまで遅れる(3.2 の例で約 8 秒)ので、「見ているセッションの返事をその場で聞く」という read の目的に合わない。試用でうるさければ見直す(残る論点。17)
 
 ### 6.3 止める
 
 - そのセッションに `UserPromptSubmit` が来たら、そのセッションの read を止めて捨てる(8 の Q8)
-- 新しいターン(`turn_id` が変わった)が来たら、前のターンの残りを捨てる
+- **先打ちの後に流れ続けるバッチを捨てる**: 先打ち(返事の途中の入力)では、`UserPromptSubmit` の後も同じターンのバッチが流れ続け、ターンが普通に終わってから先打ちの文が新しい `turn_id` で処理される(3.2)。そこで、`UserPromptSubmit` が来たときにセッションが `running` なら(判定は、この `UserPromptSubmit` で状態を更新する**前**の hooks の状態)、そのセッションを「**止めている**」にする:
+  - 止めている間に届いたバッチは捨て、その `turn_id` を「止めた」として覚える。`UserPromptSubmit` の時点で最後に受け取っていた `turn_id` も「止めた」に入れる。止めたターンのバッチは、止めている間が終わった後に届いても捨てる(`Stop` が最後のバッチより先に来ることがあるため。3.2)
+  - 止めている間は、次の `Stop` が来たら終わる(それが止めたターンの終わり)。その `Stop` の本文も読まない(`Stop` の方式でも同じ)。`session.interrupt` / `tapi.interrupt` で `idle` になったときも終わる
+  - `turn_id` で覚えるだけでは足りない: 今のターンがまだ本文を出していない間(考え中・本文なしで tool を動かしている間)に先打ちされると、最後に受け取った `turn_id` は前のターンのもので、今のターンの要約を読んでしまう。`Stop` までを止めることで、本文の出ていないターンも止まる
+  - 覚える `turn_id` はセッションごとに直近の数個で足りる
+- **受け入れる誤り**: 人がペインに直接 Esc を押した・`session.keys` の Escape で止めたターンには `Stop` が来ず、hooks の状態は `running` のまま残る(docs/api.md の `session.interrupt`)。その後に普通に次の指示を出すと、`UserPromptSubmit` の時点で `running` に見えて「止めている」になり、次のターンを `Stop` まで読まない(1 ターン分読まないほうに倒れる)。Escape は下のとおり pekoe を通せば止めた時点で分かるので、`session.keys` の Escape でも状態を `idle` に戻すかは P3 の実装で決める(17 の残る論点)
+- 新しいターン(`turn_id` が変わった)が来たら、前のターンの残りを捨てる。先打ちの文で始まるターンには `UserPromptSubmit` が来ない(3.2)ので、「新しいターン = `UserPromptSubmit`」と仮定しない。止めたターンでなければ、新しい `turn_id` のバッチは普通に読む
 - フォーカスが別のセッションに移ったら、read を止めて捨てる(narrate は残す)
+- **Esc での中断**: hook では分からない(`final` も `Stop` も来ない。3.2)。そこで、pekoe を通した中断で止める: ローカル GUI の Interrupt(`session.interrupt` / `tapi.interrupt`)と、pekoe を通して送った Escape(TUI で [4] に打っている間の `esc` など、`session.keys` / `tapi.keys` の `keys` の配列に `Escape` があるもの。`hex` の `1b` はマウスなどの列の頭にも付くので見ない)。そのとき、そのセッションの read を止めて捨て、最後に受け取った `turn_id` を「止めた」として覚える(Escape が届く前に送られたバッチが後から届いても読まない)。`pekoe send` の文は中断ではなく、動いている間なら先打ちになるので、上の `UserPromptSubmit` で止まる
+- 人がエージェントのペインに直接 Esc を押したとき(`tmux -L pekoe attach` などで TUI を通さずにつないでいる)は、pekoe には分からず、止められない。読むのは 6.2 の上限までなので害は限られるが、扱いは決めていない(17 の残る論点)
 
 ## 7. voice policy(モードの決め方)
 
@@ -417,6 +451,7 @@ background_mode = "narrate" # それ以外: read | narrate | mute
 
 [voice.read]
 max_sentences = 5          # 1 メッセージで読む文の数(1〜50)
+max_turn_sentences = 10    # 1 ターンで読む文の数(1〜100)。P3(6.2)
 skip = ["code", "table", "url", "path"]
 
 [voice.phrases]            # 文言の上書き。書かなければ lang に合った既定(5.3)
@@ -565,7 +600,7 @@ P1-3 で `[voice]` の節を足したとき(`TestTipsCoverSections` が節に ti
 | --- | --- | --- |
 | **P1** | narrate(wait / done / error / ask / idle_all)+ 同梱の say + 再生 + 発話キュー + ミュート + CLI + TUI(`^q m`・札・`:voice`・フォーカス) | 下の P1-1〜P1-5 の完了条件。確認待ち・完了・エラーを呼び名付きで、状態が変わってから 1 秒以内(キャッシュ済みの文)に喋ることを、`scripts/sandbox.sh` の中で実際に鳴らし、`voice.log` の待ち時間で確かめる |
 | **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる。**状態**: 約束事と入れ方は README から公開し、外部の backend の例 `pekoe-voice-voicevox` ができた(10.7)。エンジンを止めたときの say への切り替えの実地の確かめが残っている |
-| **P3** | read: `MessageDisplay` の pty での確かめ → 整形・中断・フォーカス連動・`pekoe voice mode` | フォーカス中のセッションの本文を、コードを飛ばして読む。入力すると止まる |
+| **P3** | read: `MessageDisplay` の受け取り(3.1 の hook、`message_id` ごとのバッファと `index` の並べ直し。6.1・6.2)→ 完結した行の単位でフェンスの状態を持つ整形・1 ターンの上限(6.2)→ 止める(先打ちのターンを捨てる・pekoe を通した中断。6.3)・フォーカス連動・`pekoe voice mode`。pty での `MessageDisplay` の確かめは済んだ(3.2) | 下の「P3 の完了条件」。フォーカス中のセッションの本文を、コードを飛ばして読む。入力する・pekoe から中断すると止まり、そのターンの続きを読まない |
 
 ### 試用の判定
 
@@ -647,6 +682,14 @@ P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えて�
 - `/tmp` を直書きしない(CLAUDE.md「テスト」)。偽のデーモンは `internal/testenv` の `Listen` と `client.DialSocket`
 - 最後の確かめは `scripts/sandbox.sh` の隔離環境で、本物のデーモンに触らない
 
+### P3 の完了条件
+
+- 整形(6.2)の表のテスト: 同じ返事を、バッチの切れ目を変えて(1 行ずつ・コードフェンスの開き・中身・閉じが別々・本文とフェンスの開きが同じバッチ・1 回でまるごと)渡しても、読む文の列が同じになる。`index` が入れ替わって届く・欠けが 2 秒で埋まらない(続きを読まない)・`final` が来ない(Esc)場合もある
+- 上限のテスト: 1 メッセージ `max_sentences`・1 ターン 10 文と 800 文字を超えて積まない。前置きのメッセージがいくつか来ても、上限の中で次のメッセージの頭を読む
+- 止めるテスト(6.3): `running` の間の `UserPromptSubmit` の後、次の `Stop` までに届くバッチと、止めた `turn_id` の後から届くバッチを捨て、`UserPromptSubmit` の無い次の `turn_id` は読む。今のターンが本文を出す前(前のターンの `turn_id` しか知らない間)の先打ちでも、今のターンを読まない。`Stop` の方式で、`running` の間の `UserPromptSubmit` の後の `Stop` を読まない。`running` でないときの `UserPromptSubmit` では止めない。`session.interrupt` / `tapi.interrupt`・Escape を含む `session.keys` / `tapi.keys` で止まる。フォーカスの移動で止まる
+- 実地: `scripts/sandbox.sh` の中で本物の `claude` を pekoe のセッションとして動かし、コードと表を含む返事・tool を挟む返事・先打ち・TUI からの中断で、`voice.log`(read の文と結果)が上のとおりになることを確かめる。音が鳴ったかは人の耳で
+- P3 は Claude Code だけ(6.1)。codex は別の段
+
 ## 17. 決めたこと
 
 2026-11-23 に利用者が決めた。どれも推奨の案で、本文はそれに合わせてある。D4 は決めるときに、守りの本体と脅威の整理(15「`config.toml` の守り」)を書き足すことになった。
@@ -662,3 +705,14 @@ P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えて�
 | D7 | error の範囲 | (a) → `failed` だけ (b) Stop の後のテストの失敗(`test` が fail)も (c) PR の CI の失敗も | **(a)**。テストと CI の失敗はトースト・PR の反応で出ていて、done の直後に続けて喋ることになる |
 | D8 | 既定の言語 | (a) `auto`(ロケールから) (b) `en` | **(a)**。チュートリアルと同じ決め方。日本語の環境で英語の定型文が鳴るのを避ける |
 | D9 | VOICEVOX の tapi の声 | (a) pekoe が既定の声を決める (b) backend の設定に任せる | **(b)**。声は backend 側の設定で決める。pekoe は論理的な名前(`tapi` / `reader`)を渡すだけで、特定のキャラクターを既定にも推奨にもしない(10.3・10.7)。どの声が合うかは使う人の好みと環境による |
+
+### 残る論点(P3)
+
+決めていない。P3 の実装か試用で決める。
+
+- **端末で直接押した Esc**: 人が TUI を通さずにエージェントのペインで Esc を押すと、hook では分からず(3.2)、pekoe には止められない(6.3)。案:
+  - (a) 何もしない。読むのは 6.2 の上限(1 ターン 10 文・800 文字)までなので、害は限られる。止めたければ `voice stop`・`^q m`
+  - (b) `MessageDisplay` が途切れたまま一定の時間(たとえば 5 秒)たち、セッションの画面にスピナー行(`esc to interrupt`)が無ければ中断と見て、そのターンを止める(`session.interrupt` が送った後に画面を見るのと同じ判定)。画面を読む手間と、考え中・tool の実行中との見分けの誤りがある
+  - (c) transcript の `[Request interrupted by user]` の行を見て止める。書式は Claude Code の内部のもので(3.2)、書かれるのは中断の後なので、その間に積んだ文は鳴ってしまう
+- **Escape の後の `running`**: `session.keys` の Escape や直接の Esc で止めたターンは `running` のまま残るので、次の指示が先打ちに見えて 1 ターン分読まない(6.3 の受け入れる誤り)。案: (a) 受け入れる (b) `session.keys` の Escape でも `session.interrupt` と同じく画面を見て `idle` にする(hooks の状態を変えるので voice の外にも効く) (c) `UserPromptSubmit` の後、新しい `turn_id` の最初のバッチが `Stop` より先に来たら「止めている」を終える(先打ちでは新しいターンは `Stop` の後に始まるので見分けられる見込み。確かめていない)
+- **1 ターンの上限と前置き**: 6.2 の上限(10 文・800 文字)で、tool の多い作業でもうるさくないかは試用で見る。うるさければ、前置きを読まずに最後のメッセージだけを読む方式(6.2 の採らなかった案)や、メッセージの数の上限を考え直す
