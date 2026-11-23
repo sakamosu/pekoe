@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,6 +115,14 @@ type tapiState struct {
 	// sent Claude Code back to work): a Stop that settles late changes the
 	// state only if none of them came since it
 	gen uint64
+	// hooked: a hook came since tapi's window started (tapiSpawn). Until
+	// then the screen is read for Claude Code's question about a directory
+	// pekoe added (tapiAnswerAddDir); addDirs are the ones it added, lastOut
+	// and checkedAt pace those reads
+	hooked    bool
+	addDirs   []string
+	lastOut   time.Time
+	checkedAt time.Time
 }
 
 // tapiKill is the conversation pekoe killed with tapi's window (reset, or
@@ -261,6 +270,9 @@ func orDash(s string) string {
 // tapiEvent moves tapi's state from a hook. Nothing else runs: no prompt
 // snapshots, diffstat, tests or gatekeeper (those are for sessions).
 func (d *Daemon) tapiEvent(hook string, hp hookPayload) {
+	d.mu.Lock()
+	d.tapi.hooked = true // past the start: tapiAnswerAddDir stops reading the screen
+	d.mu.Unlock()
 	if hook == "PostToolUse" || hook == "Stop" {
 		go d.noteTranscript(TapiSlug, hp.TranscriptPath) // stats.go
 	}
@@ -693,6 +705,9 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	if d.tapiStarted() {
 		d.tapiNoteKilled() // Spawn kills the window it replaces
 	}
+	d.mu.Lock()
+	d.tapi.hooked, d.tapi.addDirs = false, addDirs // before the new window's first hook
+	d.mu.Unlock()
 	if err := d.Eng.Spawn(engine.Spawn{Slug: TapiSlug, Window: engine.WinAgent, Dir: dir, Env: env, Command: full, Width: w, Height: h}); err != nil {
 		return err
 	}
@@ -964,6 +979,7 @@ func (d *Daemon) tapiOutput(o engine.Output) {
 	}
 	d.mu.Lock()
 	d.tapi.outPending = true
+	d.tapi.lastOut = time.Now()
 	d.mu.Unlock()
 	for _, m := range oscRe.FindAllSubmatch(o.Data, -1) {
 		if code, _ := strconv.Atoi(string(m[1])); code == 52 {
@@ -984,4 +1000,88 @@ func (d *Daemon) flushTapiOutput(now time.Time) {
 	if due {
 		d.emit("tapi.output", map[string]any{})
 	}
+}
+
+// addDirRe: Claude Code's question about a directory given with --add-dir
+// that no session has worked in (Claude Code 2.1.331, a new conversation):
+//
+//	Adding a new directory:
+//	/Users/me/worktrees
+//	This session hasn't worked here before. Is this a directory you created or one you trust?
+//	❯ No, exit
+//	  Yes, add it
+var addDirRe = regexp.MustCompile(`(?s)Adding a new directory:?\s*\n(.*?)\n[^\n]*(?:This session hasn't|Is this a directory you created)`)
+
+// tapiAddDirQuiet is how long tapi's screen stays still before it is read.
+const tapiAddDirQuiet = 500 * time.Millisecond
+
+// tapiAnswerAddDir answers "Yes, add it" when Claude Code asks about a
+// directory pekoe itself added to tapi (tapiAddDirs: the worktrees root is
+// one no session ever started in, so it is never trusted). Only between
+// the start and tapi's first hook: after that the words are only words on
+// a screen (a grep result, tapi's own reply). A directory pekoe did not add
+// gets no answer. Claude Code records the answer itself; pekoe does not
+// write ~/.claude.json (Claude Code writes it at the same time).
+func (d *Daemon) tapiAnswerAddDir() {
+	now := time.Now()
+	d.mu.Lock()
+	t := &d.tapi
+	due := !t.hooked && len(t.addDirs) > 0 && t.lastOut.After(t.checkedAt) && now.Sub(t.lastOut) >= tapiAddDirQuiet
+	if due {
+		t.checkedAt = now
+	}
+	dirs := t.addDirs
+	d.mu.Unlock()
+	if !due {
+		return
+	}
+	sc, err := d.Eng.Capture(TapiSlug, engine.WinAgent)
+	if err != nil || sc.Dead {
+		return
+	}
+	full := stripANSI(strings.Join(sc.Lines, "\n"))
+	if !strings.Contains(full, "Yes, add it") {
+		return
+	}
+	m := addDirRe.FindStringSubmatch(full)
+	if m == nil || !tapiAddedDir(addDirShown(m[1]), dirs) {
+		return
+	}
+	d.mu.Lock()
+	hooked := d.tapi.hooked
+	d.mu.Unlock()
+	if hooked {
+		return
+	}
+	// the cursor starts on "No, exit"
+	if err := d.Eng.SendKeys(TapiSlug, engine.WinAgent, "Down", "Enter"); err != nil {
+		log.Printf("tapi: answering the add-dir question: %v", err)
+	}
+}
+
+// addDirShown is the path on the lines between "Adding a new directory"
+// and the question: a long path wraps, and a dialog may draw a border.
+func addDirShown(s string) string {
+	var b strings.Builder
+	for _, l := range strings.Split(s, "\n") {
+		b.WriteString(strings.Trim(l, " \t│|"))
+	}
+	return b.String()
+}
+
+// tapiAddedDir: shown is one of the directories pekoe added (as given, or
+// symlink-resolved, or under ~).
+func tapiAddedDir(shown string, dirs []string) bool {
+	if shown == "" {
+		return false
+	}
+	home, _ := os.UserHomeDir()
+	for _, dir := range dirs {
+		for _, p := range []string{dir, realpath(dir)} {
+			if shown == p || home != "" && strings.HasPrefix(p, home+"/") && shown == "~"+strings.TrimPrefix(p, home) {
+				return true
+			}
+		}
+	}
+	return false
 }
