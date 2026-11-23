@@ -1,0 +1,412 @@
+package voice
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
+
+// What Shape leaves out (6.2). DefaultSkip is [voice.read] skip when unset.
+const (
+	SkipCode  = "code"
+	SkipTable = "table"
+	SkipURL   = "url"
+	SkipPath  = "path"
+)
+
+// DefaultSkip is the skip list when [voice.read] skip is unset.
+var DefaultSkip = []string{SkipCode, SkipTable, SkipURL, SkipPath}
+
+// Sentence lengths (6.2): a sentence longer than MaxSentenceRunes is cut
+// after 、 or , (and hard at MaxSentenceRunes when it has neither); inline
+// code longer than InlineCodeRunes is not read.
+const (
+	MaxSentenceRunes = 200
+	InlineCodeRunes  = 24
+)
+
+// ShapeState is where ShapeLines stopped: inside a code fence or not, and
+// the sentence begun on earlier lines that no terminator has ended yet.
+// The zero value is the start of a message.
+type ShapeState struct {
+	// Fence is the opening fence's character (` or ~) and FenceLen its
+	// length while inside a fenced code block; Fence 0 is outside.
+	Fence    rune
+	FenceLen int
+	// Pending is the unfinished sentence (an en sentence runs on to the
+	// next line).
+	Pending string
+}
+
+// Shape turns a whole Markdown text into the sentences to read (6.2).
+// skip lists what is left out (SkipCode…); nil leaves nothing out, and
+// callers pass DefaultSkip for the default.
+func Shape(text string, skip []string) []string {
+	st, out := ShapeLines(ShapeState{}, strings.Split(text, "\n"), skip)
+	_, rest := st.Flush()
+	return append(out, rest...)
+}
+
+// ShapeLines shapes whole lines (no newline in them) from st on and returns
+// the state after them and the sentences they finished. Feeding the lines
+// of a text in any split gives the same sentences as one call: the read
+// buffer (Reader) feeds only complete lines and Flushes at the end of the
+// message.
+func ShapeLines(st ShapeState, lines []string, skip []string) (ShapeState, []string) {
+	sk := skipSet(skip)
+	var out []string
+	for _, l := range lines {
+		st, out = st.line(strings.TrimSuffix(l, "\r"), sk, out)
+	}
+	return st, out
+}
+
+// Flush ends the message: the pending sentence is finished.
+func (st ShapeState) Flush() (ShapeState, []string) {
+	var out []string
+	st, out = st.flush(out)
+	return ShapeState{}, out
+}
+
+type skips struct{ code, table, url, path bool }
+
+func skipSet(skip []string) skips {
+	var s skips
+	for _, k := range skip {
+		switch k {
+		case SkipCode:
+			s.code = true
+		case SkipTable:
+			s.table = true
+		case SkipURL:
+			s.url = true
+		case SkipPath:
+			s.path = true
+		}
+	}
+	return s
+}
+
+func (st ShapeState) flush(out []string) (ShapeState, []string) {
+	if st.Pending != "" {
+		out = appendSentence(out, st.Pending)
+		st.Pending = ""
+	}
+	return st, out
+}
+
+var (
+	reHeading  = regexp.MustCompile(`^#{1,6}(\s+|$)`)
+	reBullet   = regexp.MustCompile(`^([-*+]|\d{1,9}[.)])(\s+|$)`)
+	reRule     = regexp.MustCompile(`^(\*\s*){3,}$|^(-\s*){3,}$|^(_\s*){3,}$`)
+	reTableSep = regexp.MustCompile(`^\|?[\s:|-]+\|?$`)
+)
+
+// fence reports a fence line: its character and length, and the rest
+// after the run (the info string).
+func fence(l string) (rune, int, string) {
+	t := strings.TrimLeft(l, " ")
+	if len(l)-len(t) > 3 || t == "" {
+		return 0, 0, ""
+	}
+	c := rune(t[0])
+	if c != '`' && c != '~' {
+		return 0, 0, ""
+	}
+	n := 0
+	for n < len(t) && rune(t[n]) == c {
+		n++
+	}
+	if n < 3 {
+		return 0, 0, ""
+	}
+	return c, n, t[n:]
+}
+
+func (st ShapeState) line(l string, sk skips, out []string) (ShapeState, []string) {
+	// Inside a fence: nothing but the closing fence counts.
+	if st.Fence != 0 {
+		if c, n, rest := fence(l); c == st.Fence && n >= st.FenceLen && strings.TrimSpace(rest) == "" {
+			st.Fence, st.FenceLen = 0, 0
+			return st, out
+		}
+		if sk.code {
+			return st, out
+		}
+		st, out = st.flush(out)
+		out = sentences(inline(l, sk), true, out, &st)
+		return st, out
+	}
+	if c, n, rest := fence(l); c != 0 && !(c == '`' && strings.ContainsRune(rest, '`')) {
+		st, out = st.flush(out)
+		st.Fence, st.FenceLen = c, n
+		return st, out
+	}
+	if strings.TrimSpace(l) == "" {
+		return st.flush(out)
+	}
+	// Indented code: four spaces (or a tab) that are not a nested list item.
+	if strings.HasPrefix(l, "    ") || strings.HasPrefix(l, "\t") {
+		if t := strings.TrimSpace(l); !reBullet.MatchString(t) {
+			st, out = st.flush(out)
+			if sk.code {
+				return st, out
+			}
+			out = sentences(inline(t, sk), true, out, &st)
+			return st, out
+		}
+	}
+	t := strings.TrimSpace(l)
+	// Block quotes: the markers go, the text is read.
+	for strings.HasPrefix(t, ">") {
+		t = strings.TrimSpace(t[1:])
+	}
+	if t == "" {
+		return st.flush(out)
+	}
+	if strings.HasPrefix(t, "|") {
+		st, out = st.flush(out)
+		if sk.table || reTableSep.MatchString(t) {
+			return st, out
+		}
+		cells := strings.Split(strings.Trim(t, "|"), "|")
+		for i := range cells {
+			cells[i] = strings.TrimSpace(cells[i])
+		}
+		out = sentences(inline(strings.Join(cells, "、"), sk), true, out, &st)
+		return st, out
+	}
+	if reRule.MatchString(t) {
+		return st.flush(out)
+	}
+	whole := false // the line is a sentence of its own
+	if m := reHeading.FindString(t); m != "" {
+		t, whole = strings.TrimRight(strings.TrimSpace(t[len(m):]), "# "), true
+	} else if m := reBullet.FindString(t); m != "" {
+		t, whole = t[len(m):], true
+		if strings.HasPrefix(t, "[ ] ") || strings.HasPrefix(t, "[x] ") || strings.HasPrefix(t, "[X] ") {
+			t = t[4:]
+		}
+	}
+	if whole {
+		st, out = st.flush(out)
+	}
+	text := inline(t, sk)
+	out = sentences(text, whole, out, &st)
+	return st, out
+}
+
+// sentences splits text (one line, already cleaned) into sentences after
+// st.Pending. endLine: the end of the line ends the sentence too (a
+// heading, a list item, a ja line); otherwise an en sentence runs on.
+func sentences(text string, endLine bool, out []string, st *ShapeState) []string {
+	cur := st.Pending
+	if cur != "" && text != "" {
+		cur += " "
+	}
+	rs := []rune(text)
+	for i, r := range rs {
+		cur += string(r)
+		end := false
+		switch r {
+		case '。', '！', '？':
+			end = true
+		case '.', '!', '?':
+			// en: the mark ends a sentence before a space or the end of the
+			// line; ! and ? also before ja text.
+			if i+1 == len(rs) || unicode.IsSpace(rs[i+1]) {
+				end = true
+			} else if r != '.' && rs[i+1] > unicode.MaxASCII {
+				end = true
+			}
+		}
+		if end {
+			out = appendSentence(out, cur)
+			cur = ""
+		}
+	}
+	if endLine || hasJa(cur) {
+		out = appendSentence(out, cur)
+		cur = ""
+	}
+	st.Pending = strings.TrimSpace(cur)
+	return out
+}
+
+// hasJa: s has kana or kanji (a ja line ends its sentence at the newline).
+func hasJa(s string) bool {
+	for _, r := range s {
+		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Han) {
+			return true
+		}
+	}
+	return false
+}
+
+// appendSentence adds s cut to MaxSentenceRunes, leaving out the empty and
+// the punctuation-only.
+func appendSentence(out []string, s string) []string {
+	s = strings.Join(strings.Fields(s), " ")
+	if !hasWord(s) {
+		return out
+	}
+	for utf8.RuneCountInString(s) > MaxSentenceRunes {
+		rs := []rune(s)
+		cut := -1
+		for i := MaxSentenceRunes - 1; i > 0; i-- {
+			if rs[i] == '、' || rs[i] == ',' {
+				cut = i + 1
+				break
+			}
+		}
+		if cut < 0 {
+			cut = MaxSentenceRunes
+		}
+		if head := strings.TrimSpace(string(rs[:cut])); hasWord(head) {
+			out = append(out, head)
+		}
+		s = strings.TrimSpace(string(rs[cut:]))
+	}
+	if hasWord(s) {
+		out = append(out, s)
+	}
+	return out
+}
+
+func hasWord(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	reInlineCode = regexp.MustCompile("`+")
+	reImage      = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	reLink       = regexp.MustCompile(`\[([^\]]*)\]\(([^)]*)\)`)
+	reAutoLink   = regexp.MustCompile(`<(https?://[^>]*)>`)
+	reTag        = regexp.MustCompile(`</?[A-Za-z][A-Za-z0-9-]*(\s[^<>]*)?/?>`)
+	reURL        = regexp.MustCompile(`https?://[!-~]*`)
+	// a run of characters a path is made of
+	rePathish = regexp.MustCompile(`[A-Za-z0-9_.~/@+\-]+`)
+	reExt     = regexp.MustCompile(`\.[A-Za-z0-9]{1,8}$`)
+	reMarks   = regexp.MustCompile(`\*\*|__|~~|\*`)
+	// a space left before punctuation where a word was taken out
+	reSpacePunct = regexp.MustCompile(`\s+([,.;:!?)]+(?:\s|$)|[、。！？」])`)
+)
+
+// inline cleans one line's inline Markdown (6.2): code spans, images,
+// links, tags, URLs, paths, emphasis and emoji.
+func inline(s string, sk skips) string {
+	s = codeSpans(s, sk.code)
+	s = reImage.ReplaceAllString(s, " ")
+	s = reAutoLink.ReplaceAllString(s, "$1")
+	s = reLink.ReplaceAllString(s, "$1")
+	s = reTag.ReplaceAllString(s, " ")
+	if sk.url {
+		s = reURL.ReplaceAllStringFunc(s, func(u string) string {
+			// trailing punctuation belongs to the sentence
+			return u[len(strings.TrimRight(u, ".,;:!?)")):]
+		})
+	}
+	if sk.path {
+		s = rePathish.ReplaceAllStringFunc(s, func(w string) string {
+			// a trailing . is the sentence's end, not the path's
+			p := strings.TrimRight(w, ".")
+			if isPath(p) {
+				return " " + w[len(p):]
+			}
+			return w
+		})
+	}
+	s = reMarks.ReplaceAllString(s, "")
+	s = strings.Map(func(r rune) rune {
+		if isEmoji(r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	return reSpacePunct.ReplaceAllString(s, "$1")
+}
+
+// codeSpans replaces each `code span` with its content when it is read
+// (skip false, or short and without /) and with a space when it is not.
+// An unclosed run of backticks is left as it is.
+func codeSpans(s string, skip bool) string {
+	var b strings.Builder
+	for {
+		loc := reInlineCode.FindStringIndex(s)
+		if loc == nil {
+			b.WriteString(s)
+			return b.String()
+		}
+		tick := s[loc[0]:loc[1]]
+		rest := s[loc[1]:]
+		end := findRun(rest, tick)
+		if end < 0 {
+			b.WriteString(s[:loc[1]])
+			s = rest
+			continue
+		}
+		b.WriteString(s[:loc[0]])
+		code := strings.TrimSpace(rest[:end])
+		if !skip || (utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/")) {
+			b.WriteString(code)
+		} else {
+			b.WriteString(" ")
+		}
+		s = rest[end+len(tick):]
+	}
+}
+
+// findRun is the index of a run of backticks exactly as long as tick.
+func findRun(s, tick string) int {
+	for i := 0; i < len(s); {
+		j := strings.Index(s[i:], tick)
+		if j < 0 {
+			return -1
+		}
+		at := i + j
+		end := at + len(tick)
+		if end < len(s) && s[end] == '`' {
+			for end < len(s) && s[end] == '`' {
+				end++
+			}
+			i = end
+			continue
+		}
+		return at
+	}
+	return -1
+}
+
+// isPath: a word is a file path (6.2): it starts with ./ ../ ~/ or /, or
+// it has a / and ends with an extension.
+func isPath(w string) bool {
+	w = strings.TrimRight(w, ".")
+	for _, p := range []string{"./", "../", "~/", "/"} {
+		if strings.HasPrefix(w, p) && len(w) > 1 {
+			return true
+		}
+	}
+	return strings.Contains(w, "/") && reExt.MatchString(w)
+}
+
+// isEmoji: pictographs, dingbats and the joiners and selectors that go
+// with them.
+func isEmoji(r rune) bool {
+	switch {
+	case r >= 0x1F000 && r <= 0x1FAFF,
+		r >= 0x2600 && r <= 0x27BF,
+		r >= 0x2B00 && r <= 0x2BFF,
+		r >= 0xFE00 && r <= 0xFE0F,
+		r == 0x200D, r == 0x20E3,
+		r >= 0xE0020 && r <= 0xE007F:
+		return true
+	}
+	return false
+}
