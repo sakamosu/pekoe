@@ -85,7 +85,7 @@ flowchart LR
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
-| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。未実装の仕様。企画書は [docs/voice-proposal.md](docs/voice-proposal.md)) |
+| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。未実装の仕様) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由) |

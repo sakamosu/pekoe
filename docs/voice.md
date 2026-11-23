@@ -1,37 +1,70 @@
 # pekoe voice — 仕様書
 
-状態: 仕様(未実装)。企画書 [voice-proposal.md](voice-proposal.md) を今の pekoe のコードと docs に突き合わせ、言葉と構造を今の pekoe に直したもの。企画書と食い違うところはこの文書が正で、食い違いの一覧は「2. 企画書と今の pekoe のずれ」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: 仕様(未実装)。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
 エージェントの状態が変わったら、tapi が音声で短く知らせる(**narrate**)。今見ているセッションは、アシスタントの本文も読み上げる(**read**)。合成は外部の実行ファイル(**backend**。`config.toml` に絶対パスで書いたものだけを動かす。macOS の `say` を使うものは同梱)に任せ、pekoed は文字を渡して WAV を受け取り、鳴らすだけにする。
 
-- 目的・背景・やらないこと(音声入力・合成エンジンの同梱・LLM での文の生成・iPhone での再生・Linux)は企画書の §1〜§3 のまま
-- 対応 OS は macOS だけ。ほかの OS では `[voice] enable = true` でも何もしない(`pekoe voice` が `unsupported` と言う)
-- 既存の知らせ方(ステータスバーの台詞・トースト・許可モーダル・OS の通知。docs/mascot.md・docs/orchestration.md「知らせ方」)は置き換えない。音声はそれらと並ぶもう 1 つの知らせ方で、画面を見ていないときのためのもの
-
 **言葉の約束**: 今の docs は、ステータスバーの台詞(`▐◕ ◕▌ fix-ci needs you` の右の文)を「声」「バーの声」と呼んでいる(docs/mascot.md・docs/orchestration.md)。この機能はそれと混ざらないよう、**音声**・**発話**と呼ぶ。設定・コマンド・API の名前は `voice`。
 
-## 2. 企画書と今の pekoe のずれ
+### 1.1 なぜ作るか
 
-| 企画書 | 今の pekoe | この仕様での扱い |
+pekoe ではエージェントを並行して動かすので、「どのセッションが確認待ちか」「どれが終わったか」を知るために画面を見に行く回数が増える。画面を見ていなくても様子がわかれば、確認待ちで放っておかれる時間が減り、レビューや別の作業に集中しながら並行のエージェントを回せる。
+
+Claude Code の hook から `say` を呼ぶやり方は前からあるが、セッションが複数あると、声が重なる・どのセッションの話かわからない・見ていないセッションの長文まで読まれてうるさい、という問題が出る。解くには「今どのセッションを見ているか」と「各セッションの state」が要り、それを持っているのは pekoe なので、別の道具ではなく pekoe の機能にする。
+
+目的:
+
+1. **気づける**: 画面を見ていなくても、確認待ち・完了・エラーに気づける
+2. **うるさくない**: 喋る量を、セッションへの注目の度合いで変える(モード。下)
+3. **tapi の役**: セッションを見守る相棒という tapi の役(docs/mascot.md)を、音声でも感じられるようにする
+
+### 1.2 モード
+
+セッションごとに、次の 3 つのどれかで喋る(決め方は 7)。
+
+| モード | すること | 使う場面 |
 | --- | --- | --- |
-| 状態 work / wait / done / error | `internal/state` の状態は 10 個(queued・creating・running・waiting・idle・done・reviewing・approved・landed・failed)。マスコットの表情(work / wait / done / error / idle / sleep)はそこからの写し(`internal/mascot/session.go` の `RowMood`) | narrate のきっかけは pekoed の state の遷移で書く: → `waiting`(wait)・→ `done`(done)・→ `failed`(error)。「動いている」は `running`・`creating`・`queued`(5.4) |
-| error | `failed` は setup の失敗・起動の失敗・デーモン再起動での中断・`--hold` の相手が消えたとき。エージェントのプロセスが落ちても state は変わらない(窓が死んだと TUI が出すだけ) | P1 の error は → `failed` だけ。テスト・CI の失敗まで広げるかは 17 の D7 |
-| 「2番」— TUI に表示している番号 | セッションに番号は無い。TUI の 1〜4 はパネルの番号(docs/ui-guidelines.md) | 呼び名は slug から作る(5.2)。番号を新しく出すかは 17 の D1 |
-| `PEKOE_SESSION_ID` | エージェントの環境にあるのは `PEKOE_SESSION`(slug)・`PEKOE_SOCK`・`PEKOE=1`(`internal/daemon/session_spawn.go`)。pekoed は hook の送り主を `$PEKOE_SESSION` より先に呼び出し元の窓(tmux の pane)で決める(docs/api.md「呼び出し元の識別」、`hEventAs`) | 新しい変数は足さない。hook は今の `pekoe event` を使う。pekoe の外の Claude Code では `PEKOE_SESSION` も pekoed の窓もないので、今と同じく `{"ignored": true}` で終わる |
-| hook の受け口(新設) | もうある: `~/.claude/settings.json` に 7 つ(SessionStart・UserPromptSubmit・Notification・Stop・PreToolUse・PostToolUse・SessionEnd)を `pekoe hooks install` で入れ、すべて `pekoe event <名前>` → `session.event`(`internal/hooks`、`internal/daemon/hooks.go`) | 相乗りする。read が新しく要るのは `MessageDisplay` だけ(3.1) |
-| hook の入れ方 案 A(`--settings`) | もう使っている: Claude Code のエージェントは起動のたびに `~/.local/share/pekoe/agent-settings/<slug>.json` を書いて `--settings` で渡す(sandbox。`internal/daemon/agentsandbox.go`) | 案 A に決めた(3.1) |
-| 状態モデル(既存)から状態遷移を受け取る | 遷移はすべて `Daemon.update` を通り、`evMu` の下で変化の順に `sessionChanges`(`wait.go`)と `session.updated` / `session.waiting` / `session.done` のイベントが出る。tapi chat は別の道(`tapiEvent` → `tapi.updated`) | voice は `update` の同じ場所(`sessionChanges` の隣)で前後の写しを受け取る。tapi は `tapi.updated` を出す場所で受け取る(4.2) |
-| 「今どのセッションを見ているか」(pekoe が持っている) | pekoed は知らない。持っているのは TUI だけ(選択・[4] の表示・端末のフォーカス。`session.seen` は未読の印を消すだけ) | TUI が pekoed に知らせる `voice.focus` を足す(13) |
-| 下部バーの tapi | ステータスバー左端の 1 行の顔。顔は画面に 1 か所だけ(docs/mascot.md「顔は1か所」) | 表情は増やさず、バーに札を出す(14.3。17 の D5) |
-| `[voice] enabled = false` | 既存の真偽の設定は `enable`(`[web] enable`・`[tips] enable` など)で、未設定の既定を持つものは `*bool` | `[voice] enable`(11) |
-| `pekoe voice on\|off` | `config.toml` を書くのは人だけで、pekoed は読むだけ(docs/api.md「config.toml の再読み込み」) | `on` / `off` は CLI が `config.toml` の 1 行を直す(12。17 の D4) |
-| 発話のログを TUI で | — | `~/.local/share/pekoe/voice.log` と `:voice`(14.4) |
+| **narrate** | state の変化だけを tapi が短く喋る | 既定。裏で動いているセッション |
+| **read** | アシスタントの本文を読み上げる(コードなどは読まない)。state の変化も narrate と同じく喋る | 今見ているセッション、`pekoe voice mode` で決めたセッション |
+| **mute** | 喋らない | 集中したいとき、会議中など |
+
+体験の決まり: 喋るのは同時に 1 つだけ(8)。state が変わってから 1 秒以内に喋り始める(先に合成してある文のとき。9)。止める・ミュートするのは 1 つのキー(14.1)。喋っている間はバーに札を出す(14.3)。喋ったことは文字でも見返せる(14.4)。
+
+### 1.3 範囲
+
+- 対応 OS は macOS だけ。ほかの OS では `[voice] enable = true` でも何もしない(`pekoe voice` が `unsupported` と言う)
+- 既存の知らせ方(ステータスバーの台詞・トースト・許可モーダル・OS の通知。docs/mascot.md・docs/orchestration.md「知らせ方」)は置き換えない。音声はそれらと並ぶもう 1 つの知らせ方で、画面を見ていないときのためのもの
+- やらないこと:
+  - 音声入力(マイクは使わない)
+  - 音声合成エンジンを pekoe に組み込むこと(合成は backend。同梱の say も macOS の `say` を呼ぶだけ)
+  - コードブロック・diff・表の読み上げ
+  - 喋る文をモデル(LLM)で作ること(定型文と、本文をそのまま読むことだけ。pekoed はモデルを呼ばない。docs/design.md「非目標」)
+  - Mac 以外の場所で鳴らすこと(iPhone の Web UI・ブラウザ)と、macOS 以外の OS
+
+## 2. 今の pekoe への乗せ方
+
+voice が前提にするものが、今の pekoe ではどうなっていて、この仕様でどう使うか。
+
+| 要るもの | 今の pekoe | この仕様での扱い |
+| --- | --- | --- |
+| state の種類 | `internal/state` の状態は 10 個(queued・creating・running・waiting・idle・done・reviewing・approved・landed・failed)。マスコットの表情(work / wait / done / error / idle / sleep)はそこからの写し(`internal/mascot/session.go` の `RowMood`) | narrate のきっかけは pekoed の state の遷移: → `waiting`(wait)・→ `done`(done)・→ `failed`(error)。「動いている」は `running`・`creating`・`queued`(5.4) |
+| エラー | `failed` は setup の失敗・起動の失敗・デーモン再起動での中断・`--hold` の相手が消えたとき。エージェントのプロセスが落ちても state は変わらない(窓が死んだと TUI が出すだけ) | error は → `failed` だけ(17 の D7) |
+| セッションの呼び方 | セッションに番号は無い。TUI の 1〜4 はパネルの番号(docs/ui-guidelines.md) | 呼び名は slug から作る(5.2。17 の D1) |
+| hook を送ったセッションの特定 | エージェントの環境にあるのは `PEKOE_SESSION`(slug)・`PEKOE_SOCK`・`PEKOE=1`(`internal/daemon/session_spawn.go`)。pekoed は hook の送り主を `$PEKOE_SESSION` より先に呼び出し元の窓(tmux の pane)で決める(docs/api.md「呼び出し元の識別」、`hEventAs`) | 新しい環境変数は足さない。hook は今の `pekoe event` を使う。pekoe の外の Claude Code では `PEKOE_SESSION` も pekoed の窓もないので、今と同じく `{"ignored": true}` で終わる |
+| hook の受け口 | もうある: `~/.claude/settings.json` に 7 つ(SessionStart・UserPromptSubmit・Notification・Stop・PreToolUse・PostToolUse・SessionEnd)を `pekoe hooks install` で入れ、すべて `pekoe event <名前>` → `session.event`(`internal/hooks`、`internal/daemon/hooks.go`) | 相乗りする。read が新しく要るのは `MessageDisplay` だけ(3.1) |
+| hook の渡し方 | Claude Code のエージェントは起動のたびに `~/.local/share/pekoe/agent-settings/<slug>.json` を書いて `--settings` で渡している(sandbox。`internal/daemon/agentsandbox.go`) | `MessageDisplay` はこのファイルに入れる(3.1) |
+| state の遷移の受け取り | 遷移はすべて `Daemon.update` を通り、`evMu` の下で変化の順に `sessionChanges`(`wait.go`)と `session.updated` / `session.waiting` / `session.done` のイベントが出る。tapi chat は別の道(`tapiEvent` → `tapi.updated`) | voice は `update` の同じ場所(`sessionChanges` の隣)で前後の写しを受け取る。tapi は `tapi.updated` を出す場所で受け取る(4.2) |
+| 今どのセッションを見ているか | pekoed は知らない。持っているのは TUI だけ(選択・[4] の表示・端末のフォーカス。`session.seen` は未読の印を消すだけ) | TUI が pekoed に知らせる `voice.focus` を足す(13) |
+| 喋っている間の表示 | ステータスバー左端の 1 行の顔。顔は画面に 1 か所だけ(docs/mascot.md「顔は1か所」) | 表情は増やさず、バーに札を出す(14.3。17 の D5) |
+| 設定の書き方 | 真偽の設定は `enable`(`[web] enable`・`[tips] enable` など)で、未設定の既定を持つものは `*bool` | `[voice] enable`(11) |
+| 有効・無効の切り替え | `config.toml` を書くのは人だけで、pekoed は読むだけ(docs/api.md「config.toml の再読み込み」) | `pekoe voice on` / `off` は CLI が `config.toml` の 1 行を直す(12。17 の D4) |
+| 喋ったことの記録 | — | `~/.local/share/pekoe/voice.log` と `:voice`(14.4) |
 
 ## 3. 調べて決めたこと
 
-### 3.1 hook の入れ方: 案 A(`--settings`)
+### 3.1 hook の入れ方: 起動時の `--settings`
 
 **決定**: read 用の `MessageDisplay` hook は、セッションの起動時に pekoe が書く `--settings` のファイル(`agent-settings/<slug>.json`)に入れる。`~/.claude/settings.json` には足さない。narrate には新しい hook が要らない(state の遷移を使う)。read の代わりの方式(`Stop` の `last_assistant_message`)も、今ある `Stop` hook で足りる。
 
@@ -40,7 +73,7 @@
 - `claude --help`(2.1.330): `--settings <file-or-json>  Settings file or JSON string to load more settings from`
 - 公式の hooks の説明(https://code.claude.com/docs/en/hooks): 「Hook entries merge across settings levels rather than replacing each other」「If you define the same handler in more than one settings file, it runs once.」。settings の説明(https://code.claude.com/docs/en/settings)でも配列は合わさる。`--settings` の hook と `~/.claude/settings.json` の pekoe の hook は両方動く。changelog 2.1.327「Fixed `/hooks` leaving out hooks given by `--settings`」(表示の不具合で、動作は前から)
 - 手元で確かめた: `claude --setting-sources local --settings <一時ファイル>` で渡した `UserPromptSubmit`・`MessageDisplay`・`Stop` が `claude -p` と対話モード(pty)の両方で発火した(3.2)。hook のプロセスは Claude Code の環境を受け継ぐ(渡した `PEKOE_SESSION_TEST=demo` が hook の中で読めた)
-- pekoe はもう `--settings` を全セッション・tapi chat の起動に付けている(`withAgentSandbox`)。案 B(`~/.claude/settings.json` への出し入れ)は、pekoe の外の Claude Code にも hook のプロセスを起こさせ、表示を待たせる(3.2 のとおり `MessageDisplay` は表示を止める)。企画書の「使えるなら A」に当たる
+- pekoe はもう `--settings` を全セッション・tapi chat の起動に付けている(`withAgentSandbox`)。`~/.claude/settings.json` に出し入れする形は、pekoe の外の Claude Code にも hook のプロセスを起こさせ、表示を待たせる(3.2 のとおり `MessageDisplay` は表示を止める)うえ、ユーザーの設定ファイルを書き換える
 
 決まりごと:
 
@@ -68,9 +101,9 @@
 - **呼び名**: slug から種類の接頭辞を外し、`-` `_` を空白にしたもの(5.2)。番号は無いので作らない。理由: 一覧・トースト・バーの台詞がどれも slug で言っているので、耳で聞いた名前と画面の名前が一致する。並びの番号は、セッションが増減・landed で並び替わると同じ番号が別のセッションを指す。17 の D1
 - **表情**: 増やさない。バーに `voice` の札を出す(14.3)。理由: 顔は目の 3 文字だけで状態を表していて、口が無い(docs/mascot.md)。「喋っている」を目で表すと、集約の状態(wait など)が読めなくなる。17 の D5
 - **read の既定**: メッセージの先頭 5 文(`max_sentences = 5`)。段落単位にしない理由: Claude の返事は 1 段落が長いことも 1 行のこともあり、長さがそろわない。17 の D6
-- **言語の既定**: `lang = "auto"`(チュートリアルと同じく `LC_ALL` → `LC_MESSAGES` → `LANG` で `ja` か `en`)。企画書は `en`。17 の D8
+- **言語の既定**: `lang = "auto"`(チュートリアルと同じく `LC_ALL` → `LC_MESSAGES` → `LANG` で `ja` か `en`)。日本語の環境で英語の定型文が鳴るのを避ける。17 の D8
 - **VOICEVOX のキャラクター**: P2 で、同じ定型文(wait / done / error / みんな手が空いた)を 2〜3 人で聞き比べて決める。決める観点は「小さくて静かな相棒」の人物像(docs/mascot.md「tapi の人物像」)に合うこと、短い文で聞き取りやすいこと、規約がクレジット表記だけで済むこと。P1 には影響しない
-- **GUI 版**: 同じ仕組みが使える。発話の判断と再生はすべて pekoed にあり、クライアントが受け持つのは `voice.focus` を送ること(と、札・ログの表示)だけ。GUI(docs/gui.md)が `voice.focus` を送れば read も動く。P1 は TUI だけ
+- **クライアントの受け持ち**: 発話の判断と再生はすべて pekoed にあり、クライアントが受け持つのは `voice.focus` を送ること(と、札・ログの表示)だけ。`voice.focus` を送るのは TUI だけ
 
 ## 4. 構成
 
@@ -240,7 +273,7 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 ## 9. 再生
 
 - `/usr/bin/afplay <WAV のパス>` で鳴らす(絶対パス。`PATH` から探さない。15 の「実行ファイルの探し方」)。止めるときはプロセスに SIGTERM(1 秒で終わらなければ SIGKILL)
-- 再生は `internal/voice/player` の `Player` インターフェース 1 か所にまとめる(Web UI で鳴らす実装を後から足すため。企画書 §14)
+- 再生は `internal/voice/player` の `Player` インターフェース 1 か所にまとめる(テストで偽物に差し替えるため)
 - 音量は持たない(システムの音量に従う)
 - 1 秒以内に鳴り始めるために、合成を先にしておく:
   - voice を有効にしたとき・セッションができたとき・名前が変わったとき、そのセッションの wait / done / error(1 人分の文)と idle_all を、手が空いているときに 1 つずつ合成してキャッシュに入れる
@@ -333,6 +366,18 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 - `check` は `/usr/bin/say` があることと、ja のときは日本語の声が 1 つ以上あることを見る
 - 実装は pekoe 本体の隠しサブコマンド `pekoe voice-backend-say <version|check|voices|synth …>`。pekoed は名前が `say` なら、いつも自分の実行ファイル(`os.Executable` のリンクを辿ったもの。hook に書く pekoe と同じ)をこの形で呼ぶ。`PATH` の `pekoe-voice-say` は見ない。同梱の say も約束事どおりに呼ぶので、約束事のテスト(16 の P1-2)を同じように通す。別の実行ファイルにしないのは、リリース・Homebrew・`pekoe update` の配る物を増やさないため
 
+### 10.7 P2 の外部 backend: pekoe-voice-voicevox
+
+P2 で作る、約束事どおりの外部の backend。pekoe とは別のリポジトリで配る。日本語だけ。
+
+- VOICEVOX のエンジン(`http://localhost:50021`。VOICEVOX のアプリか Docker で用意する)に、`/audio_query` → `/synthesis` の順に投げて合成する。エンジンにつながらなければ `check` が失敗し、pekoe は fallback(say)に落ちる(10.5)
+- 入れ方: 実行ファイルを置き、`config.toml` の `[voice.backends]` に絶対パスで書き、`[voice] backend = "voicevox"`・`fallback = "say"` にする(10.2)。README の入れ方にこの行を載せる
+- キャッシュ: 文・声・合成の値のハッシュをキーに WAV を backend 自身の場所に残す(pekoe のキャッシュ(9)とは別)
+- ユーザー辞書: `pekoe` → ペコー、`tapi` → タピ、`worktree` → ワークツリー などを `/user_dict_word` で登録する。辞書の中身は backend の設定ファイルに出し、人が足せるようにする
+- 合成の値: `speedScale` は 1.2〜1.4 ほど。`prePhonemeLength` / `postPhonemeLength` を短くして、文の前後の無音を詰める
+- 声の割り当て: 論理的な名前(`tapi` / `reader`)を VOICEVOX のキャラクター(スタイル)に割り当てる設定を backend に持つ。tapi の既定の声は P2 の最初に聞き比べて決める(17 の D9)
+- 規約: VOICEVOX の声はキャラクターごとに利用規約がある。backend の README に規約の場所を書き、音声を公開するとき(デモ動画など)は規約どおりにクレジットを書く(例: 「VOICEVOX:<キャラクター名>」の形が多い。正確な書き方はキャラクターごとの規約に従う)
+
 ## 11. 設定
 
 `config.toml`(docs/api.md「config.toml の再読み込み」のとおり、pekoed は 1 秒ごとに読み直す)。`internal/config` の `Global` に `Voice Voice` を足し、`pekoe config show` の説明(`internal/config/docs.go`)と `pekoe config check` の値の確かめに入れる。
@@ -366,7 +411,6 @@ skip = ["code", "table", "url", "path"]
 - read 用の hook(3.1)は、エージェントを次に起動するときから入る・外れる
 - 値が違うとき(`lang = "fr"` など)は既定に戻し、`pekoe config check` が警告する(既存の節と同じ)
 - `[voice.backends]` の確かめ(`pekoe config check`): 名前が英小文字・数字・`-` でない、`say` を書いた、パスが絶対パスでも `~/` でもない、ファイルが無い・実行できない、`backend` / `fallback` の名前が `say` でも `[voice.backends]` にも無い、はどれも警告。パスがホームの下なら注意(10.2)。`check` はパスの確かめだけで、backend を動かさない
-- 時間帯のミュート(`quiet_hours`)は P4
 
 ## 12. CLI
 
@@ -452,7 +496,7 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 - pekoed が `<データディレクトリ>/voice.log`(0600、JSON Lines)に書く。1MB を超えたら `voice.log.1` に回す(1 世代)
 - 1 件: 時刻・slug・種類(wait / done / error / ask / idle_all / read / test)・文・結果(`spoken` `merged` `stale` `old` `muted` `interrupted` `failed`)・理由・積んでから鳴り始めるまでのミリ秒・backend の名前
 - read の文は先頭 80 文字だけ残す(エージェントの出力をまるごと残さない)
-- `:voice` のモーダル: 新しい方から 50 件。`j` `k` で動き、`esc` `q` で閉じる。開いている間も `voice.logged` で増える。試用(企画書 §12)で「どの発話がうるさかったか」をここと `pekoe voice log` で拾う
+- `:voice` のモーダル: 新しい方から 50 件。`j` `k` で動き、`esc` `q` で閉じる。開いている間も `voice.logged` で増える。試用(16)で「どの発話がうるさかったか」をここと `pekoe voice log` で拾う
 
 ### 14.5 TIPS
 
@@ -493,9 +537,13 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 | **P1** | narrate(wait / done / error / ask / idle_all)+ 同梱の say + 再生 + 発話キュー + ミュート + CLI + TUI(`^q m`・札・`:voice`・フォーカス) | 下の P1-1〜P1-5 の完了条件。確認待ち・完了・エラーを呼び名付きで、状態が変わってから 1 秒以内(キャッシュ済みの文)に喋ることを、`scripts/sandbox.sh` の中で実際に鳴らし、`voice.log` の待ち時間で確かめる |
 | **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる |
 | **P3** | read: `MessageDisplay` の pty での確かめ → 整形・中断・フォーカス連動・`pekoe voice mode` | フォーカス中のセッションの本文を、コードを飛ばして読む。入力すると止まる |
-| **P4**(任意) | 長文の要約、`quiet_hours`、まとめ方の改良、PR・CI の反応を喋るか | — |
 
-試用の判定(企画書 §12)は P1 の後。P2 以降は試用が「続ける」になってから。
+### 試用の判定
+
+P1 ができたら、1 週間ふだんの開発で使ってから続けるかを決める。P2 に進むのは「続ける」になってから。
+
+- **続ける**: 1 週間、voice を有効のまま使い続けられた。確認待ちに気づくのが早くなった実感がある
+- **見直す**: 途中で無効にした、またはミュートをよく使った。そのときは `pekoe voice log` と `:voice`(14.4)から、どの発話がうるさかったかを拾い、喋る条件を絞る(仕様を直してから続ける)
 
 ### P1 の PR の分け方
 
@@ -544,19 +592,12 @@ P1 は 5 本に分ける。どれも別のセッションにそのまま頼め�
 
 | | 問い | 選択肢 | 決定と理由 |
 | --- | --- | --- | --- |
-| D1 | セッションの呼び名(企画書の「2番」) | (a) slug から種類の接頭辞を外したもの(`csv export`) (b) ブランチ名そのまま(`feat/csv-export`) (c) TUI の一覧に番号を新しく出し、その番号で呼ぶ (d) (a) に加えて、あだ名を付けられるようにする(`pekoe voice name <slug> <呼び名>`) | **(a)**。画面の名前と一致し、番号のように並び替えで指すものが変わらない。(c) は一覧の列を 1 つ増やし、landed で並びが変わると同じ番号が別のセッションになる。(d) は試用で聞き取りにくい名前が多ければ P4 で |
-| D2 | 見ているセッションの narrate | (a) 喋らない(TUI が [4] に出していて端末にフォーカスがあるとき。トーストと同じ) (b) 喋る(企画書どおり。read でも状態の変化を言う) | **(a)**。目の前にあるものを言うのはうるさく、試用で「見直す」になりやすい。端末から目を離していれば(フォーカスが無ければ)喋る |
-| D3 | narrate の対象に、受信箱の問い(ask)と tapi chat を入れるか | (a) 両方入れる (b) セッションだけ(企画書どおり) | **(a)**。`ask-human --wait` で待つエージェントは state が `running` のままで、wait では気づけない。tapi の許可待ちも統括役の作業を止める(docs/orchestration.md「知らせ方」で同じ理由でエスカレーションに乗せた) |
+| D1 | セッションの呼び名(番号で呼ぶか) | (a) slug から種類の接頭辞を外したもの(`csv export`) (b) ブランチ名そのまま(`feat/csv-export`) (c) TUI の一覧に番号を新しく出し、その番号で呼ぶ (d) (a) に加えて、あだ名を付けられるようにする(`pekoe voice name <slug> <呼び名>`) | **(a)**。画面の名前と一致し、番号のように並び替えで指すものが変わらない。(c) は一覧の列を 1 つ増やし、landed で並びが変わると同じ番号が別のセッションになる。(d) は作らない |
+| D2 | 見ているセッションの narrate | (a) 喋らない(TUI が [4] に出していて端末にフォーカスがあるとき。トーストと同じ) (b) 喋る(read でも状態の変化を言う) | **(a)**。目の前にあるものを言うのはうるさく、試用で「見直す」になりやすい。端末から目を離していれば(フォーカスが無ければ)喋る |
+| D3 | narrate の対象に、受信箱の問い(ask)と tapi chat を入れるか | (a) 両方入れる (b) セッションだけ | **(a)**。`ask-human --wait` で待つエージェントは state が `running` のままで、wait では気づけない。tapi の許可待ちも統括役の作業を止める(docs/orchestration.md「知らせ方」で同じ理由でエスカレーションに乗せた) |
 | D4 | `pekoe voice on\|off` の仕組み | (a) `config.toml` の `[voice] enable` の 1 行を CLI が書き換える (b) pekoed の実行時のスイッチ(state.db に残す)にし、`config.toml` には書かない (c) `on` / `off` は作らず、`pekoe config edit` で書く | **(a)**。設定の正を `config.toml` 1 つにでき、「config.toml を書くのは人だけ・pekoed は読むだけ」を崩さない。(b) は設定ファイルと実際の状態が食い違う |
 | D5 | 「喋っている」の見せ方 | (a) 表情は増やさず、バーに `voice` の札 (b) tapi に新しい表情(例: 目を `◉ ◉` と `∙ ∙` で交互)を足す (c) 何も出さない | **(a)**。顔は目だけで集約の状態を表しているので、喋っている間に wait が読めなくなるのを避ける。札は `zoom` と同じ形で、新しい色も字も要らない |
-| D6 | read で読む範囲の既定 | (a) 先頭 5 文 (b) 最初の段落 (c) 先頭 6 文(企画書) | **(a)**。段落は長さがそろわない。5 文で ja はおよそ 20〜30 秒。6 との差は小さいので好みで |
-| D7 | error の範囲 | (a) → `failed` だけ (b) Stop の後のテストの失敗(`test` が fail)も (c) PR の CI の失敗も | **(a)** で P1 を試す。テストと CI の失敗はトースト・PR の反応で出ていて、done の直後に続けて喋ることになる。試用で欲しければ P4 |
-| D8 | 既定の言語 | (a) `auto`(ロケールから) (b) `en`(企画書) | **(a)**。チュートリアルと同じ決め方。日本語の環境で英語の定型文が鳴るのを避ける |
+| D6 | read で読む範囲の既定 | (a) 先頭 5 文 (b) 最初の段落 (c) 先頭 6 文 | **(a)**。段落は長さがそろわない。5 文で ja はおよそ 20〜30 秒。6 との差は小さいので好みで |
+| D7 | error の範囲 | (a) → `failed` だけ (b) Stop の後のテストの失敗(`test` が fail)も (c) PR の CI の失敗も | **(a)**。テストと CI の失敗はトースト・PR の反応で出ていて、done の直後に続けて喋ることになる |
+| D8 | 既定の言語 | (a) `auto`(ロケールから) (b) `en` | **(a)**。チュートリアルと同じ決め方。日本語の環境で英語の定型文が鳴るのを避ける |
 | D9 | VOICEVOX の tapi の声 | P2 で 2〜3 人を同じ定型文で聞き比べて決める(観点は 3.3) | P2 の最初に聞き比べ用の WAV を作って人が選ぶ。P1 には影響しない |
-
-## 18. 後で検討すること
-
-- 企画書 §14(iPhone の Web UI での再生、Linux)はそのまま
-- GUI(docs/gui.md)からの `voice.focus`。送るだけで read が使える
-- PR・CI の反応(merged・ci_failed など)を喋るか(D7 の (c))
-- 長文の要約(LLM を使わない形があるか)
