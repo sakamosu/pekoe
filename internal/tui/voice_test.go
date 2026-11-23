@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -283,5 +284,103 @@ func TestVoiceFocusTour(t *testing.T) {
 	fs = f.find("voice.focus")
 	if last := fs[len(fs)-1]; last["slug"] != "api-1" {
 		t.Fatalf("after the tour: %v", fs)
+	}
+}
+
+// A tick scheduled during the tutorial, still on its way when the tour
+// ends, must not stand for the first tick after it: that one waits
+// voiceFocusWait like any other.
+func TestVoiceFocusTourStaleTick(t *testing.T) {
+	m, f, _ := voiceModel(t, true)
+	m.focus = pSessions
+	_, cmd := m.Update(key("H"))
+	if m.tour == nil {
+		t.Fatal("H started no tour")
+	}
+	runCmd(m, cmd)
+	m.Update(tickMsg(time.Now())) // the tour schedules voice.focus "": its tick is still on its way
+	inTour := m.voice.gen
+	m.endTour()
+	sent := len(f.find("voice.focus"))
+	if m.voiceFocusSync() == nil { // the real focus again, after voiceFocusWait
+		t.Fatal("no focus scheduled after the tour")
+	}
+	runCmd(m, m.onVoiceFocus(voiceFocusMsg{inTour})) // the tour's tick arrives
+	if n := len(f.find("voice.focus")); n != sent {
+		t.Fatalf("the tour's tick sent the focus before voiceFocusWait: %v", f.find("voice.focus")[sent:])
+	}
+}
+
+// Lines logged while :voice loads come before the read lines; the
+// selection is on the newest once it has loaded, however many came.
+func TestVoiceLogModalSelWhileLoading(t *testing.T) {
+	m, _, _ := voiceModel(t, true)
+	at := time.Date(2026, 11, 23, 15, 4, 5, 0, time.Local)
+	vm := &voiceLogModal{m: m, loading: true}
+	m.modal = vm
+	for i, s := range []string{"a", "b", "c"} {
+		runCmd(m, m.onEvent(voiceEv(t, "voice.logged", voice.LogEntry{Time: at.Add(time.Duration(i) * time.Second), Kind: voice.KindTest, Text: s, Result: voice.ResultSpoken})))
+	}
+	vm.other(voiceLogMsg{log: []voice.LogEntry{{Time: at.Add(-time.Minute), Kind: voice.KindTest, Text: "old", Result: voice.ResultSpoken}}})
+	if len(vm.log) != 4 || vm.log[0].Text != "c" || vm.sel != 0 || vm.top != 0 {
+		t.Fatalf("loaded: sel %d top %d log %+v", vm.sel, vm.top, vm.log)
+	}
+	_ = checkSize(t, m, "loaded")
+}
+
+// voice.logged keeps the selection on its line, the top line too; with
+// voiceLogN lines, the oldest drops, and if it was the one selected, the
+// selection goes to the bottom line (docs/voice.md 14.4).
+func TestVoiceLogModalSelAtTheCap(t *testing.T) {
+	m, _, _ := voiceModel(t, true)
+	at := time.Date(2026, 11, 23, 15, 4, 5, 0, time.Local)
+	entry := func(i int) voice.LogEntry {
+		return voice.LogEntry{Time: at.Add(time.Duration(i) * time.Second), Kind: voice.KindTest, Text: fmt.Sprint(i), Result: voice.ResultSpoken}
+	}
+	vm := &voiceLogModal{m: m, loading: true}
+	m.modal = vm
+	var log []voice.LogEntry
+	for i := voiceLogN - 1; i >= 0; i-- {
+		log = append(log, entry(i))
+	}
+	vm.other(voiceLogMsg{log: log})
+	vm.sel = voiceLogN - 2 // "1"
+	vm.add(entry(100))
+	if len(vm.log) != voiceLogN || vm.log[vm.sel].Text != "1" {
+		t.Fatalf("sel on %q", vm.log[vm.sel].Text)
+	}
+	vm.add(entry(101)) // "1" is the oldest: it drops
+	if len(vm.log) != voiceLogN || vm.sel != voiceLogN-1 || vm.log[vm.sel].Text != "2" {
+		t.Fatalf("dropped: sel %d on %q", vm.sel, vm.log[vm.sel].Text)
+	}
+	vm.sel = 0
+	vm.add(entry(102))
+	if vm.sel != 1 || vm.log[1].Text != "101" {
+		t.Fatalf("top line: sel %d", vm.sel)
+	}
+}
+
+// voice turned off between the status read and voice.mute: pekoed kept
+// the mute, and the message says so as well as that voice is off.
+func TestVoiceMuteTurnedOffMeanwhile(t *testing.T) {
+	m, f, v := voiceModel(t, true)
+	reply := f.reply
+	f.reply = func(method string) any {
+		r := reply(method)
+		if method == "voice.mute" {
+			v.mu.Lock()
+			v.st.Enabled = false
+			r = v.st
+			v.mu.Unlock()
+		}
+		return r
+	}
+	keys(m, key(":"), runes("voice mute"), kEnter)
+	if mu := f.find("voice.mute"); len(mu) != 1 || m.msg != "voice muted · voice is off · pekoe voice on" {
+		t.Fatalf(":voice mute: %v msg %q", mu, m.msg)
+	}
+	keys(m, key(":"), runes("voice unmute"), kEnter)
+	if mu := f.find("voice.mute"); len(mu) != 1 || m.msg != "voice is off · pekoe voice on" {
+		t.Fatalf(":voice unmute while off: %v msg %q", mu, m.msg)
 	}
 }

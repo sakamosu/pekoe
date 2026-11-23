@@ -623,12 +623,12 @@ P1-4 で決めた細部(実装 `cmd/pekoe/voice.go`):
 P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えていない):
 
 - `^q m` は押したときに `voice.status` を読み直してから `voice.mute`(ミュート中なら `{off: true}`)を呼ぶ(別の TUI や CLI が変えていても逆にならないように)。入力中に押したら、レイアウトキー(`z` `<` `>` `=`)と同じく入力に戻る(tapi chat も開き直す)。レイアウトキーと違い、狭い画面(100 桁未満)でも戻る(レイアウトキーは狭い画面では何もしないので戻さない)。メッセージ行の文言は 14.1 のとおり
-- `:voice mute` / `:voice unmute` も `voice.status` を読んでから `voice.mute` を呼ぶ(無効なら `^q m` と同じく `voice is off · pekoe voice on` とだけ出し、ミュートを書かない)。`:voice` にほかの引数を付けたらコマンド行に誤りを出す
+- `:voice mute` / `:voice unmute` も `voice.status` を読んでから `voice.mute` を呼ぶ(無効なら `^q m` と同じく `voice is off · pekoe voice on` とだけ出し、ミュートを書かない)。`voice.status` を読んでから `voice.mute` を呼ぶまでの間に無効になったときは、pekoed はミュート(解除)をそのまま記録する(`pekoe voice mute` と同じく、`voice.mute` は無効の間も受け付ける)ので、`^q m` も `:voice` も `voice muted · voice is off · pekoe voice on`(解除なら `voice unmuted · …`)と記録したことも出す。`:voice` にほかの引数を付けたらコマンド行に誤りを出す
 - TUI は起動時に `voice.status` を読み、`voice.updated` で追う。読めない(古い pekoed・human token が無い)ときは札もフォーカスも出さない
 - 「[4] に出しているもの」: tapi chat が開いていれば `+tapi`、課題(issue)を出していれば・ダッシュボード・セッションを選んでいない・レビュー面・チュートリアルの間は `""`、それ以外は選んでいるセッション(agent・review・dev・run・PR・preview のどの窓でも)。狭い画面・ズーム中も同じ。チュートリアルは model の写しで動くので、その間も `""` を送り、終わったら送った記録を捨てて今のものを送り直す
 - フォーカスは、[4] か端末のフォーカスが変わるたびに 200ms のタイマーを張り直し、最後のものだけを送る。前に送ったものと同じなら送らない。無効から有効になったら(`voice.updated` の `enabled`)、変わっていなくても送り直す(無効の間は送らないので)
 - 札: ミュート中(`muted_until` が `forever` か未来の時刻。過ぎた時刻は出さない)は `muted ^q m`、そうでなく鳴っている間(`speaking` がある)は `voice`。無効の間は出さない。zoom の札の右
-- `:voice` のモーダル: 1 行に時刻(`15:04:05`)・結果(`spoken` `merged` は ok の色、`failed` は err の色、ほかは dim)・種類・文。選んだ行の backend・待ち時間・理由を下に出す。`voice.logged` の行は上に足し、選んでいる行はずらさない(先頭を選んでいても。50 件を超えたら古い方を捨て、選んでいた行が捨てられたら一番下の行を選ぶ)。読み込み中に届いた `voice.logged` も捨てない(読んだログと重なった行は 1 つにする)
+- `:voice` のモーダル: 1 行に時刻(`15:04:05`)・結果(`spoken` `merged` は ok の色、`failed` は err の色、ほかは dim)・種類・文。選んだ行の backend・待ち時間・理由を下に出す。`voice.logged` の行は上に足し、選んでいる行はずらさない(先頭を選んでいても。50 件を超えたら古い方を捨て、選んでいた行が捨てられたら一番下の行を選ぶ)。読み込み中に届いた `voice.logged` も捨てない(読んだログと重なった行は 1 つにする。読み込み中はまだ選んでいる行が無いので、読み終えたら一番新しい行を選ぶ)
 
 ### テストの方針(P1 共通)
 
