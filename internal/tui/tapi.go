@@ -14,8 +14,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"golang.org/x/term"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/daemon"
 	"pekoe/internal/mascot"
 	"pekoe/internal/state"
@@ -52,7 +52,6 @@ type tapiState struct {
 	toasted    map[string]bool
 	notified   map[string]bool
 	splash     bool
-	glyphs     string // what "auto" glyphs measured at start ("" not measured): kept on a reload
 	// PR reactions (tapi_pr.go)
 	prs         map[string]*mascot.PR // the summary tapi saw last, per session
 	prToasted   map[string]time.Time
@@ -78,37 +77,22 @@ func (m *model) newTapi() *tapiState {
 		splash:     m.g.Mascot.SplashOn(),
 	}
 	m.tapi = t
-	m.buildTapi(nil)
+	m.buildTapi()
 	return t
 }
 
-// buildTapi resolves shape / glyphs / palette. With a tty, "auto" glyphs
-// measure the width of ● first (before the TUI takes the terminal).
-func (m *model) buildTapi(tty *os.File) {
+// buildTapi resolves shape / glyphs / palette. "auto" glyphs are ascii
+// with the wide table, which internal/ambiguous decided before the TUI
+// took the terminal.
+func (m *model) buildTapi() {
 	c := m.g.Mascot
-	glyphs := mascot.DetectGlyphs(c.Glyphs, m.ic.Name, tty)
-	switch {
-	case c.Glyphs != "" && c.Glyphs != "auto" || m.ic.Name == "ascii":
-	case tty != nil:
-		m.tapi.glyphs = glyphs
-	case m.tapi.glyphs != "":
-		glyphs = m.tapi.glyphs // a reload cannot measure: the TUI owns the terminal
-	}
 	// the state colors of theme.Look, so tapi and the session list agree
 	m.tapi.r = mascot.New(mascot.Options{
 		Shape:  mascot.DetectShape(c.Shape),
-		Glyphs: glyphs,
+		Glyphs: mascot.DetectGlyphs(c.Glyphs, m.ic.Name, ambiguous.IsWide()),
 		Light:  c.LightPalette(),
 		Colors: c.Colors,
 	}.WithTheme(m.th))
-}
-
-// measureTTY returns stdin when both ends are a terminal.
-func measureTTY() *os.File {
-	if term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd())) {
-		return os.Stdin
-	}
-	return nil
 }
 
 func blinkGap() time.Duration { return 4*time.Second + rand.N(2*time.Second) }
@@ -438,9 +422,9 @@ func creatingSub(steps []daemon.Step) string {
 	for _, st := range steps {
 		if st.Status == "running" {
 			if st.Detail != "" {
-				return st.Detail + " …"
+				return st.Detail + tx(" …")
 			}
-			return st.Label + " …"
+			return st.Label + tx(" …")
 		}
 	}
 	return ""
@@ -462,23 +446,23 @@ func (m *model) toastBlock() []string {
 	if th.Mode == theme.Truecolor {
 		inner = lipgloss.NewStyle().Background(th.Color(theme.Select)).Render(strings.ReplaceAll(inner, "\x1b[0m", "\x1b[0m"+bgSeq(th, theme.Select)))
 	}
-	tl, tr, bl, br := "╭", "╮", "╰", "╯"
+	tl, tr, bl, br := tx("╭"), tx("╮"), tx("╰"), tx("╯")
 	if m.square {
-		tl, tr, bl, br = "┌", "┐", "└", "┘"
+		tl, tr, bl, br = tx("┌"), tx("┐"), tx("└"), tx("┘")
 	}
 	b := func(s string) string { return th.FG(theme.Border, s) }
 	if t.react != nil && t.react.Event == mascot.PRMerged && m.g.AnimateOn() {
 		top, bottom := m.confettiBorders(iw, t)
 		return []string{
 			b(tl) + top + b(tr),
-			b("│") + inner + b("│"),
+			b(tx("│")) + inner + b(tx("│")),
 			b(bl) + bottom + b(br),
 		}
 	}
 	return []string{
-		b(tl + strings.Repeat("─", iw) + tr),
-		b("│") + inner + b("│"),
-		b(bl + strings.Repeat("─", iw) + br),
+		b(tl + strings.Repeat(tx("─"), iw) + tr),
+		b(tx("│")) + inner + b(tx("│")),
+		b(bl + strings.Repeat(tx("─"), iw) + br),
 	}
 }
 

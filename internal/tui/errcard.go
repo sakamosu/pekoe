@@ -40,7 +40,7 @@ func (m *model) onErrorEvent(data json.RawMessage) tea.Cmd {
 		Fresh  bool            `json:"fresh"`
 	}
 	if json.Unmarshal(data, &ev) == nil && ev.Fresh {
-		m.setMsg(fmt.Sprintf("error from %s · %s", errOrigin(ev.Report), ev.Report.Slug), false)
+		m.setMsg(fmt.Sprintf(tx("error from %s · %s"), errOrigin(ev.Report), ev.Report.Slug), false)
 	}
 	return m.loadErrors()
 }
@@ -138,32 +138,32 @@ func (m *model) errorCard(cw int) []row {
 	focused := m.focus == pAgent && !m.typing
 	inner := cw - 4
 	head := th.FG(theme.Secondary, theme.Prefix(m.errSourceIcon(*r))) + th.FG(theme.Err, theme.Prefix(m.ic.Fail)) + th.Bold(theme.Text, "error") + " " +
-		th.FG(theme.Dim, "from "+errOrigin(*r)+" · "+r.Kind+" · "+theme.Ago(time.Since(r.Last))+" ago")
+		th.FG(theme.Dim, "from "+errOrigin(*r)+tx(" · ")+r.Kind+tx(" · ")+theme.Ago(time.Since(r.Last))+" ago")
 	where := ""
 	if loc := r.Loc(); loc != "" {
-		where = th.FG(theme.Dim, "at ") + loc + th.FG(theme.Dim, "  ·  ")
+		where = th.FG(theme.Dim, "at ") + loc + th.FG(theme.Dim, tx("  ·  "))
 	}
-	where += th.FG(theme.Dim, fmt.Sprintf("×%d", r.Count))
+	where += th.FG(theme.Dim, fmt.Sprintf(tx("×%d"), r.Count))
 	keys := [][2]string{{"s", "send"}, {"i", "ignore"}, {"↵", "detail"}}
 	if !focused {
 		keys = [][2]string{{"4", "focus card"}}
 	}
 	lines := []string{head, firstLine(r.Message), where, m.keyHints(keys, inner)}
 	b := func(s string) string { return th.FG(theme.Border, s) }
-	out := []row{{Text: b("╭" + strings.Repeat("─", cw-2) + "╮")}}
+	out := []row{{Text: b(tx("╭") + strings.Repeat(tx("─"), cw-2) + tx("╮"))}}
 	for _, l := range lines {
-		out = append(out, row{Text: b("│") + " " + fit(l, cw-4) + " " + b("│")})
+		out = append(out, row{Text: b(tx("│")) + " " + fit(l, cw-4) + " " + b(tx("│"))})
 	}
-	return append(out, row{Text: b("╰" + strings.Repeat("─", cw-2) + "╯")})
+	return append(out, row{Text: b(tx("╰") + strings.Repeat(tx("─"), cw-2) + tx("╯"))})
 }
 
 // errorRow is an error waiting in the Picks panel.
 func (m *model) errorRow(r errcatch.Report, width int, cur string) string {
 	th := m.th
 	when := theme.Ago(time.Since(r.Last))
-	meta := errOrigin(r) + fmt.Sprintf(" ×%d", r.Count)
+	meta := errOrigin(r) + fmt.Sprintf(tx(" ×%d"), r.Count)
 	if r.Slug != cur {
-		meta += " → " + r.Slug
+		meta += tx(" → ") + r.Slug
 	}
 	msgW := max(width-12-w(meta)-w(when), 8)
 	return th.FG(theme.Secondary, m.ic.Unsent) + " " + th.FG(theme.Err, "err") + "   " + fit(firstLine(r.Message), msgW) + " " + th.FG(theme.Dim, meta) + " " + th.FG(theme.Dim, when)
@@ -210,7 +210,7 @@ func (e *errModal) body() []string {
 		lines = append(lines, th.FG(theme.Text, l))
 	}
 	lines = append(lines,
-		th.FG(theme.Dim, fmt.Sprintf("%s · %s · ×%d · first %s · last %s", errOrigin(r), r.Kind, r.Count, r.First.Format("15:04:05"), r.Last.Format("15:04:05"))),
+		th.FG(theme.Dim, fmt.Sprintf(tx("%s · %s · ×%d · first %s · last %s"), errOrigin(r), r.Kind, r.Count, r.First.Format("15:04:05"), r.Last.Format("15:04:05"))),
 	)
 	if loc := r.Loc(); loc != "" {
 		lines = append(lines, "\x00sunk"+loc)

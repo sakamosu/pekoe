@@ -128,15 +128,15 @@ func (m *model) landNotes(s *state.Session) []confirmNote {
 			if len(files) == 0 {
 				files = o.Files
 			}
-			notes = append(notes, confirmNote{theme.Err, m.ic.Warning, o.Slug, "conflict · " + strings.Join(files, ", ")})
+			notes = append(notes, confirmNote{theme.Err, m.ic.Warning, o.Slug, tx("conflict · ") + strings.Join(files, ", ")})
 		} else {
-			notes = append(notes, confirmNote{theme.Warn, m.ic.Warning, o.Slug, "overlap, auto-merges · " + strings.Join(o.Files, ", ")})
+			notes = append(notes, confirmNote{theme.Warn, m.ic.Warning, o.Slug, tx("overlap, auto-merges · ") + strings.Join(o.Files, ", ")})
 		}
 	}
 	const most = 3
 	if len(notes) > most {
 		rest := len(notes) - (most - 1)
-		notes = append(notes[:most-1], confirmNote{theme.Dim, "", "", fmt.Sprintf("+%d more sessions · pekoe conflicts", rest)})
+		notes = append(notes[:most-1], confirmNote{theme.Dim, "", "", fmt.Sprintf(tx("+%d more sessions · pekoe conflicts"), rest)})
 	}
 	if len(notes) == 0 {
 		open := 0

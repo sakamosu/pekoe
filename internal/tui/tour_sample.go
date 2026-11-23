@@ -455,7 +455,7 @@ func tourInbox(now time.Time) []state.InboxItem {
 		},
 		{
 			ID: 13, Rev: 1, Kind: "approve", From: "pekoed", About: tourReady, Status: state.InboxOpen, CreatedAt: now.Add(-15 * time.Minute),
-			Question: "#131 is ready to merge (fix-cart-total · HEAD 3f9c2e1)",
+			Question: tx("#131 is ready to merge (fix-cart-total · HEAD 3f9c2e1)"),
 			Options:  []string{"merge", "wait", "send back"},
 			Links:    []string{"https://github.com/acme/webapp/pull/131"},
 			Facts: &state.InboxFacts{Slug: tourReady, State: state.Done, Branch: "fix/cart-total", Base: "main",
@@ -524,7 +524,7 @@ func (m *model) tourScreen(slug string) *engine.Screen {
 	sub := func(s string) string { return "  " + th.FG(theme.Dim, "⎿") + "  " + s }
 	add := func(n int, s string) string { return th.FG(theme.Ok, fmt.Sprintf("      %3d + %s", n, s)) }
 	box := func(prompt string) []string {
-		rule := th.FG(theme.Dim, strings.Repeat("─", 48))
+		rule := th.FG(theme.Dim, strings.Repeat(tx("─"), 48))
 		return []string{"", rule, "> " + prompt, rule, "  " + th.FG(theme.Dim, "? for shortcuts")}
 	}
 	var lines []string
@@ -551,8 +551,8 @@ func (m *model) tourScreen(slug string) *engine.Screen {
 			add(41, "const next = safeNext(req.query.next)"),
 			add(42, `return redirect(next ?? "/")`), "",
 			dot(theme.Warn, th.Bold(theme.Text, "Bash")+"(pnpm test src/auth)"),
-			sub(th.FG(theme.Dim, "Running…")), "",
-			th.FG(theme.Primary, "✶") + " Running tests… " + th.FG(theme.Dim, "(8s · esc to interrupt)"),
+			sub(th.FG(theme.Dim, tx("Running…"))), "",
+			th.FG(theme.Primary, "✶") + tx(" Running tests… ") + th.FG(theme.Dim, tx("(8s · esc to interrupt)")),
 		}
 		lines = append(lines, box("")...)
 	}
@@ -567,13 +567,13 @@ func (m *model) tourChatScreen() *engine.Screen {
 	lines := []string{
 		th.FG(theme.Secondary, "> add a CSV export button to the orders page"), "",
 		th.FG(theme.Ok, "⏺") + " Leave it to me, I'll get someone on it.", "",
-		th.FG(theme.Ok, "⏺") + " " + th.Bold(theme.Text, "Bash") + "(pekoe new feat/csv-export --request 7 …)",
+		th.FG(theme.Ok, "⏺") + " " + th.Bold(theme.Text, "Bash") + tx("(pekoe new feat/csv-export --request 7 …)"),
 		"  " + th.FG(theme.Dim, "⎿") + "  started feat-csv-export", "",
 		th.FG(theme.Ok, "⏺") + " Handed request r7 to feat-csv-export.",
 		"  Done when the button downloads the filtered",
 		"  orders, with a test. I'll tell you when it",
 		"  needs you; the rest is on the dashboard.",
-		"", th.FG(theme.Dim, strings.Repeat("─", 48)), "> ", th.FG(theme.Dim, strings.Repeat("─", 48)),
+		"", th.FG(theme.Dim, strings.Repeat(tx("─"), 48)), "> ", th.FG(theme.Dim, strings.Repeat(tx("─"), 48)),
 	}
 	sc := &engine.Screen{Lines: lines, Width: 80, Height: len(lines)}
 	sc.Cursor.Y = len(lines) - 2

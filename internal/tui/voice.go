@@ -131,11 +131,11 @@ func (m *model) onVoiceToggled(msg voiceToggledMsg) {
 	m.setVoice(msg.st)
 	switch {
 	case !msg.st.Enabled:
-		m.setMsg("voice is off · pekoe voice on", false)
+		m.setMsg(tx("voice is off · pekoe voice on"), false)
 	case msg.muted:
-		m.setMsg("voice muted · "+m.prefixLabel()+" "+muteKey, false)
+		m.setMsg(tx("voice muted · ")+m.prefixLabel()+" "+muteKey, false)
 	default:
-		m.setMsg("voice on · "+m.prefixLabel()+" "+muteKey, false)
+		m.setMsg(tx("voice on · ")+m.prefixLabel()+" "+muteKey, false)
 	}
 }
 
@@ -346,9 +346,9 @@ func (vm *voiceLogModal) view() []string {
 	case vm.err != "":
 		lines = append(lines, "", th.FG(theme.Err, vm.err))
 	case vm.loading:
-		lines = append(lines, "", th.FG(theme.Dim, "loading…"))
+		lines = append(lines, "", th.FG(theme.Dim, tx("loading…")))
 	case len(vm.log) == 0:
-		lines = append(lines, "", th.FG(theme.Dim, "nothing said yet · pekoe voice test <text>"))
+		lines = append(lines, "", th.FG(theme.Dim, tx("nothing said yet · pekoe voice test <text>")))
 	default:
 		n := vm.rows()
 		vm.top = clampi(vm.top, max(vm.sel-n+1, 0), vm.sel)
@@ -367,10 +367,10 @@ func (vm *voiceLogModal) view() []string {
 			if e.Reason != "" {
 				d = append(d, e.Reason)
 			}
-			lines = append(lines, "", th.FG(theme.Dim, clip(strings.Join(d, " · "), inner)))
+			lines = append(lines, "", th.FG(theme.Dim, clip(strings.Join(d, tx(" · ")), inner)))
 		}
 	}
-	title := th.Bold(theme.Primary, "Voice") + th.FG(theme.Dim, fmt.Sprintf("  newest %d · pekoe voice log", voiceLogN))
+	title := th.Bold(theme.Primary, "Voice") + th.FG(theme.Dim, fmt.Sprintf(tx("  newest %d · pekoe voice log"), voiceLogN))
 	return m.modalFrame(width, title, lines, vm.hints(), false)
 }
 
@@ -387,7 +387,7 @@ func (vm *voiceLogModal) line(e voice.LogEntry, width int, sel bool) string {
 	head := e.Time.Local().Format("15:04:05") + " " + th.FG(role, fmt.Sprintf("%-11s", e.Result)) + " " + fmt.Sprintf("%-8s", e.Kind) + " "
 	s := head + clip(e.Text, max(width-w(head)-2, 1))
 	if sel {
-		return th.FG(theme.Primary, "▌") + " " + s
+		return th.FG(theme.Primary, tx("▌")) + " " + s
 	}
 	return "  " + s
 }

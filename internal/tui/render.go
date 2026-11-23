@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/state"
 	"pekoe/internal/theme"
 )
@@ -19,7 +20,7 @@ func fit(s string, n int) string {
 		return ""
 	}
 	if w(s) > n {
-		s = ansi.Truncate(s, n, "…")
+		s = ansi.Truncate(s, n, tx("…"))
 	}
 	if d := n - w(s); d > 0 {
 		s += strings.Repeat(" ", d)
@@ -80,9 +81,9 @@ func (m *model) box(width, height int, o boxOpt) []string {
 	}
 	inner := width - 2
 	cw := inner - 2*pad
-	tl, tr, bl, br, hz, vt := "╭", "╮", "╰", "╯", "─", "│"
+	tl, tr, bl, br, hz, vt := tx("╭"), tx("╮"), tx("╰"), tx("╯"), tx("─"), tx("│")
 	if m.square {
-		tl, tr, bl, br = "┌", "┐", "└", "┘"
+		tl, tr, bl, br = tx("┌"), tx("┐"), tx("└"), tx("┘")
 	}
 	b := m.borderPainter(bc, width, height)
 
@@ -255,7 +256,7 @@ func (m *model) spark(vals []int) string {
 		b.WriteRune(sparks[clampi(v, 0, 7)])
 	}
 	last := string(sparks[clampi(vals[len(vals)-1], 0, 7)])
-	return m.th.FG(theme.Dim, b.String()) + m.th.FG(theme.Secondary, last)
+	return m.th.FG(theme.Dim, tx(b.String())) + m.th.FG(theme.Secondary, tx(last))
 }
 
 func clampi(v, lo, hi int) int {
@@ -403,3 +404,10 @@ func overlay(base []string, block []string, width int) []string {
 	}
 	return out
 }
+
+// tx is pekoe's own text as drawn: in the wide table ([theme] ambiguous,
+// internal/ambiguous) its ambiguous-width glyphs (· … → ─ │ ╭ …) become
+// ASCII. Every literal with one goes through it (TestWideLiteralsWrapped).
+// Never on what pekoe shows from elsewhere (an agent's screen, a diff, a
+// report): with the wide table that is counted as two cells instead.
+func tx(s string) string { return ambiguous.Text(s) }

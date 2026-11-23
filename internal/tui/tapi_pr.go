@@ -340,7 +340,7 @@ func (m *model) confettiRun(n int, sparks []spark, e int) string {
 	run := 0
 	flush := func() {
 		if run > 0 {
-			b.WriteString(m.th.FG(theme.Border, strings.Repeat("─", run)))
+			b.WriteString(m.th.FG(theme.Border, strings.Repeat(tx("─"), run)))
 			run = 0
 		}
 	}

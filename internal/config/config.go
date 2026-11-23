@@ -142,16 +142,20 @@ func (a Agent) ModelArgs(model, effort string) []string {
 func (a Agent) SandboxOn() bool { return a.Sandbox == nil || *a.Sandbox }
 
 type Theme struct {
-	Mode   string            `toml:"mode"`  // truecolor | ansi | none | auto
-	Icons  string            `toml:"icons"` // nerd | unicode | ascii
-	Colors map[string]string `toml:"colors"`
-	ANSI   map[string]int    `toml:"ansi"`
+	Mode  string `toml:"mode"`  // truecolor | ansi | none | auto
+	Icons string `toml:"icons"` // nerd | unicode | ascii
+	// Ambiguous is how the terminal counts East Asian Ambiguous glyphs:
+	// auto (measured) | narrow (one cell) | wide (two cells: the wide
+	// table, internal/ambiguous). docs/ambiguous-width.md
+	Ambiguous string            `toml:"ambiguous"`
+	Colors    map[string]string `toml:"colors"`
+	ANSI      map[string]int    `toml:"ansi"`
 }
 
 // Mascot is [mascot]: tapi, the pearl (docs/mascot.md).
 type Mascot struct {
 	Shape   string            `toml:"shape"`   // auto | round | block
-	Glyphs  string            `toml:"glyphs"`  // auto | unicode | narrow | ascii
+	Glyphs  string            `toml:"glyphs"`  // auto | unicode | ascii (narrow: read, no longer needed)
 	Palette string            `toml:"palette"` // dark (D) | light (E)
 	Colors  map[string]string `toml:"colors"`  // hi bd sh eye
 	Splash  *bool             `toml:"splash"`

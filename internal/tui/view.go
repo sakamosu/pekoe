@@ -161,7 +161,7 @@ func (m *model) sessionsTitle(f bool) string {
 	if m.filter != "" || m.filterOn {
 		extra = "filter:" + m.filter
 		if m.filterOn {
-			extra += cursorMark + "▏"
+			extra += cursorMark + tx("▏")
 		}
 	}
 	return m.panelTitle(1, m.ic.Sessions, "Sessions "+pos, extra, f)
@@ -238,7 +238,7 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 	}
 	if waiting > 0 || toReview > 0 || len(parts) > 0 {
 		if waiting > 0 {
-			parts = append(parts, m.th.FG(theme.Warn, m.ic.Wait)+m.th.FG(theme.Dim, fmt.Sprintf(" %d waiting · oldest %s", waiting, theme.Ago(oldest))))
+			parts = append(parts, m.th.FG(theme.Warn, m.ic.Wait)+m.th.FG(theme.Dim, fmt.Sprintf(tx(" %d waiting · oldest %s"), waiting, theme.Ago(oldest))))
 		}
 		if toReview > 0 {
 			parts = append(parts, m.th.FG(theme.Secondary, m.ic.Done)+m.th.FG(theme.Dim, fmt.Sprintf(" %d to review", toReview)))
@@ -249,12 +249,21 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 }
 
 // sessionLine: icon  name  state  age  +add -del  test  (grid columns)
+// truncRunes keeps s within n runes, marking the cut with an ellipsis
+// (three cells, "...", in the wide table: what is kept shrinks by as much).
 func truncRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
 	}
-	return string(r[:n-1]) + "…"
+	if n <= 0 {
+		return ""
+	}
+	el := []rune(tx("…"))
+	if keep := n - len(el); keep > 0 {
+		return string(r[:keep]) + string(el)
+	}
+	return string(el[:n])
 }
 
 // Columns of a session line: the state word is stateW wide, the age ageW.
@@ -396,20 +405,20 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 			if path == "" {
 				path = "/"
 			}
-			rows = append(rows, row{Text: mark + fmt.Sprintf(":%d ", t.Port) + th.FG(theme.Dim, fit(path, max(cw-24, 6))) + " " + th.FG(theme.Dim, "→") + " " + target, Sel: f && i == m.tsel})
+			rows = append(rows, row{Text: mark + fmt.Sprintf(":%d ", t.Port) + th.FG(theme.Dim, fit(path, max(cw-24, 6))) + " " + th.FG(theme.Dim, tx("→")) + " " + target, Sel: f && i == m.tsel})
 			if t.Errors > 0 {
 				errs += t.Errors
 				errPort = t.Port
 			}
 		}
 		if len(rows) == 0 {
-			rows = append(rows, row{Text: th.FG(theme.Dim, "  no localhost tabs · install the extension (pekoe ext)")})
+			rows = append(rows, row{Text: th.FG(theme.Dim, tx("  no localhost tabs · install the extension (pekoe ext)"))})
 		}
 		footer := ""
 		if errs > 0 {
-			footer = "  " + th.FG(theme.Err, fmt.Sprint(errs)) + th.FG(theme.Dim, fmt.Sprintf(" console errors on :%d · ", errPort)) + th.Bold(theme.Secondary, "E") + th.FG(theme.Dim, " send to session")
+			footer = "  " + th.FG(theme.Err, fmt.Sprint(errs)) + th.FG(theme.Dim, fmt.Sprintf(tx(" console errors on :%d · "), errPort)) + th.Bold(theme.Secondary, "E") + th.FG(theme.Dim, " send to session")
 		}
-		title := m.panelTitle(2, m.ic.Browser, "Browser", fmt.Sprintf("· %d tabs linked by port", len(m.tabs)), f)
+		title := m.panelTitle(2, m.ic.Browser, "Browser", fmt.Sprintf(tx("· %d tabs linked by port"), len(m.tabs)), f)
 		return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, footer: footer, focused: f})
 	}
 	var rows []row
@@ -432,7 +441,7 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 			extra = fmt.Sprintf(":%d", wt.Port)
 		}
 		if wt.State == string(state.Creating) {
-			extra += "  creating…"
+			extra += tx("  creating…")
 		}
 		if wt.Main || isCur {
 			extra = fit(extra, 7) + homeTilde(wt.Path)
@@ -443,7 +452,7 @@ func (m *model) secondPanel(width, h int, f bool) []string {
 		rows = append(rows, row{Text: th.FG(theme.Dim, "  no worktrees")})
 	}
 	if len(rows) == 0 && m.curRepo() == nil {
-		rows = append(rows, row{Text: th.FG(theme.Dim, "  no repository · w pick one")})
+		rows = append(rows, row{Text: th.FG(theme.Dim, tx("  no repository · w pick one"))})
 	}
 	title := m.panelTitle(2, m.ic.Worktrees, fmt.Sprintf("Worktrees %d", len(m.worktrees)), m.repoScope(), f)
 	return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
@@ -477,15 +486,16 @@ func clipLeft(s string, n int) string {
 	if w(s) <= n {
 		return s
 	}
-	if n == 1 {
-		return "…"
+	el := tx("…") // "..." in the wide table: the tail kept is that much shorter
+	if n <= w(el) {
+		return clip(el, n)
 	}
 	r := []rune(s)
 	i := len(r)
-	for i > 0 && w(string(r[i-1:])) <= n-1 {
+	for i > 0 && w(string(r[i-1:])) <= n-w(el) {
 		i--
 	}
-	return "…" + string(r[i:])
+	return el + string(r[i:])
 }
 
 func (m *model) thirdPanel(width, h int, f bool) []string {
@@ -517,11 +527,11 @@ func (m *model) thirdPanel(width, h int, f bool) []string {
 			rows = append(rows, row{Text: m.errorRow(r, width-4, curSlug), Sel: f && len(m.picks)+i == m.psel})
 		}
 		if len(rows) == 0 {
-			rows = append(rows, row{Text: th.FG(theme.Dim, "  no picks · ⌘⇧E in Chrome")})
+			rows = append(rows, row{Text: th.FG(theme.Dim, tx("  no picks · ⌘⇧E in Chrome"))})
 		}
-		extra := "· " + curName
+		extra := tx("· ") + curName
 		if len(m.errs) > 0 {
-			extra = fmt.Sprintf("· %d errors ", len(m.errs)) + extra
+			extra = fmt.Sprintf(tx("· %d errors "), len(m.errs)) + extra
 		}
 		title := m.panelTitle(3, m.ic.Picks, fmt.Sprintf("Picks %d", len(m.picks)), extra, f)
 		return m.box(width, h, boxOpt{title: title, right: m.subtabHint(f), rows: rows, focused: f})
@@ -581,7 +591,7 @@ func (m *model) viewAgent(width, height int) []string {
 		return m.viewDash(width, height)
 	}
 	if s == nil {
-		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", "n new session · pekoe new <branch>"), focused: f})
+		return m.box(width, height, boxOpt{title: m.panelTitle(4, m.ic.Agent, "Agent", "", f), rows: m.bigRowsTip(width-4, height-2, m.emptyMood(), "no session selected", tx("n new session · pekoe new <branch>")), focused: f})
 	}
 	if m.window == winPR {
 		return m.viewPR(s, width, height)
@@ -599,36 +609,36 @@ func (m *model) viewAgent(width, height int) []string {
 	case engine.WinRun:
 		winLabel = "Run"
 	}
-	extra := "· " + s.Agent
+	extra := tx("· ") + s.Agent
 	if m.window == engine.WinRun && s.Run != "" {
-		extra = "· $ " + oneLine(s.Run)
+		extra = tx("· $ ") + oneLine(s.Run)
 	}
 	if m.window == engine.WinDev {
-		extra = "· " + devState(s)
+		extra = tx("· ") + devState(s)
 		if !s.Dev && s.DevExit != nil && !s.DevExit.Stopped {
-			extra = "· " + th.FG(theme.Warn, devState(s)) + th.FG(theme.Dim, " · ↵ start again")
+			extra = tx("· ") + th.FG(theme.Warn, devState(s)) + th.FG(theme.Dim, tx(" · ↵ start again"))
 		}
 	}
 	if len(s.Warnings) > 0 && m.window == engine.WinAgent {
-		extra += " · " + th.FG(theme.Warn, fmt.Sprintf("%s %d warning%s at creation", m.ic.Warning, len(s.Warnings), plural(len(s.Warnings))))
+		extra += tx(" · ") + th.FG(theme.Warn, fmt.Sprintf("%s %d warning%s at creation", m.ic.Warning, len(s.Warnings), plural(len(s.Warnings))))
 	}
 	if s.Port > 0 {
-		extra += fmt.Sprintf(" · :%d", s.Port)
+		extra += fmt.Sprintf(tx(" · :%d"), s.Port)
 	}
 	if s.Test.Status == "blocked" {
-		extra += " · " + th.FG(theme.Warn, "test not run: no sandbox")
+		extra += tx(" · ") + th.FG(theme.Warn, "test not run: no sandbox")
 	}
 	if s.Test.Status == "error" {
-		extra += " · " + th.FG(theme.Warn, "test could not run: "+oneLine(s.Test.Summary))
+		extra += tx(" · ") + th.FG(theme.Warn, "test could not run: "+oneLine(s.Test.Summary))
 	}
 	if s.GitBlocked != "" { // its .git was changed (gitx.TamperedError)
-		extra += " · " + th.FG(theme.Warn, ".git changed: git stopped")
+		extra += tx(" · ") + th.FG(theme.Warn, ".git changed: git stopped")
 	}
 	if s.State == state.Creating || s.State == state.Queued {
-		extra = "· not started"
+		extra = tx("· not started")
 	}
 	if m.typing {
-		extra += " · " + th.FG(theme.Secondary, "typing")
+		extra += tx(" · ") + th.FG(theme.Secondary, "typing")
 	}
 	title := m.panelTitle(4, icon, winLabel+" "+s.Branch, extra, f)
 	right := ""
@@ -654,9 +664,9 @@ func (m *model) viewAgent(width, height int) []string {
 		return m.box(width, height, boxOpt{title: title, rows: rows, focused: f, bottom: true})
 	}
 	if m.screen == nil && m.window == engine.WinAgent && (s.Stopped || s.State == state.Landed) {
-		caption := "session ended · ↵ restart (resume)"
+		caption := tx("session ended · ↵ restart (resume)")
 		if s.State == state.Landed {
-			caption = "landed · worktree removed"
+			caption = tx("landed · worktree removed")
 		}
 		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Idle, caption, ""), focused: f})
 	}
@@ -748,7 +758,7 @@ func (in *input) render(th *theme.Theme, focused bool) string {
 	}
 	pre := string(in.text[:in.pos])
 	post := string(in.text[in.pos:])
-	return pre + cursorMark + th.FG(theme.Primary, "▏") + post
+	return pre + cursorMark + th.FG(theme.Primary, tx("▏")) + post
 }
 
 func (m *model) selectedPick() *state.Pick {
@@ -883,7 +893,7 @@ func (m *model) pickCard(cw int) []row {
 	_ = jsonUnmarshal(pk.Styles, &styles)
 	inner := cw - 4
 	lines := []string{
-		th.FG(theme.Secondary, theme.Prefix(m.ic.Browser)) + th.Bold(theme.Text, fmt.Sprintf("Pick #%04d", pk.ID)) + " " + th.FG(theme.Dim, "from Chrome · "+strings.TrimPrefix(strings.TrimPrefix(pk.URL, "http://"), "https://")+" · "+theme.Ago(time.Since(pk.At))+" ago"),
+		th.FG(theme.Secondary, theme.Prefix(m.ic.Browser)) + th.Bold(theme.Text, fmt.Sprintf("Pick #%04d", pk.ID)) + " " + th.FG(theme.Dim, tx("from Chrome · ")+strings.TrimPrefix(strings.TrimPrefix(pk.URL, "http://"), "https://")+tx(" · ")+theme.Ago(time.Since(pk.At))+" ago"),
 		"",
 		th.FG(theme.Dim, "element   ") + pickElement(pk),
 	}
@@ -894,7 +904,7 @@ func (m *model) pickCard(cw int) []row {
 		}
 		via := ""
 		if comp.Via != "" {
-			via = " · via " + comp.Via
+			via = tx(" · via ") + comp.Via
 		}
 		lines = append(lines, th.FG(theme.Dim, "component ")+th.FG(theme.Secondary, "<"+comp.Name+">")+" "+th.FG(theme.Dim, src+via))
 	}
@@ -905,14 +915,14 @@ func (m *model) pickCard(cw int) []row {
 				parts = append(parts, k+" "+v)
 			}
 		}
-		lines = append(lines, th.FG(theme.Dim, "computed  "+strings.Join(parts, " · ")))
+		lines = append(lines, th.FG(theme.Dim, "computed  "+strings.Join(parts, tx(" · "))))
 	}
 	if pk.Image != "" {
 		size := pk.ImageSize
 		if size == "" {
 			size = "?"
 		}
-		attached := th.FG(theme.Dim, "attached as @…/picks/"+filepath.Base(pk.File))
+		attached := th.FG(theme.Dim, tx("attached as @…/picks/")+filepath.Base(pk.File))
 		if m.graphics && m.sentImages[pk.ID] {
 			// Kitty graphics: the screenshot itself replaces the placeholder
 			id := imageID(pk.ID)
@@ -920,7 +930,7 @@ func (m *model) pickCard(cw int) []row {
 				side := ""
 				switch r {
 				case 0:
-					side = th.FG(theme.Dim, "clip "+size+" · png")
+					side = th.FG(theme.Dim, "clip "+size+tx(" · png"))
 				case 1:
 					side = attached
 				}
@@ -928,7 +938,7 @@ func (m *model) pickCard(cw int) []row {
 			}
 		} else {
 			// dashed placeholder: inline images only on terminals that support them
-			lines = append(lines, th.FG(theme.Border, "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"), th.FG(theme.Border, "┆")+th.FG(theme.Dim, fit("  clip "+size+" · png", 22))+th.FG(theme.Border, "┆")+"  "+attached, th.FG(theme.Border, "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄"))
+			lines = append(lines, th.FG(theme.Border, tx("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")), th.FG(theme.Border, tx("┆"))+th.FG(theme.Dim, fit("  clip "+size+tx(" · png"), 22))+th.FG(theme.Border, tx("┆"))+"  "+attached, th.FG(theme.Border, tx("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")))
 		}
 	}
 	lines = append(lines, th.FG(theme.Secondary, "›")+" "+in.render(th, focused))
@@ -945,11 +955,11 @@ func (m *model) pickCard(cw int) []row {
 	lines = append(lines, m.keyHints(keys, inner))
 	// frame (border color; icon secondary; never primary — that is focus)
 	b := func(s string) string { return th.FG(theme.Border, s) }
-	out := []row{{Text: b("╭" + strings.Repeat("─", cw-2) + "╮")}}
+	out := []row{{Text: b(tx("╭") + strings.Repeat(tx("─"), cw-2) + tx("╮"))}}
 	for _, l := range lines {
-		out = append(out, row{Text: b("│") + " " + fit(l, cw-4) + " " + b("│")})
+		out = append(out, row{Text: b(tx("│")) + " " + fit(l, cw-4) + " " + b(tx("│"))})
 	}
-	out = append(out, row{Text: b("╰" + strings.Repeat("─", cw-2) + "╯")})
+	out = append(out, row{Text: b(tx("╰") + strings.Repeat(tx("─"), cw-2) + tx("╯"))})
 	return out
 }
 
@@ -960,7 +970,7 @@ func pickElement(pk *state.Pick) string {
 	}
 	text := ansi.Strip(strings.TrimSpace(stripTags(pk.OuterHTML)))
 	if len([]rune(text)) > 24 {
-		text = string([]rune(text)[:24]) + "…"
+		text = string([]rune(text)[:24]) + tx("…")
 	}
 	if text != "" {
 		h += " \"" + text + "\""
@@ -1271,9 +1281,9 @@ func devState(s *state.Session) string {
 	how += " " + ex.At.Local().Format("15:04")
 	if ex.DevStop != nil {
 		if ex.DevStop.Error != "" {
-			how += " · dev_stop failed"
+			how += tx(" · dev_stop failed")
 		} else {
-			how += " · dev_stop ok"
+			how += tx(" · dev_stop ok")
 		}
 	}
 	return how

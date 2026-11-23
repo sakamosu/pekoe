@@ -197,7 +197,7 @@ func (m *model) runExitLine() string {
 			status = th.FG(theme.Err, fmt.Sprintf("exit %d", sc.ExitStatus))
 		}
 	}
-	return status + th.FG(theme.Dim, " · ") + th.Bold(theme.Secondary, "↵") + th.FG(theme.Dim, " back to the agent  ") + th.Bold(theme.Secondary, "x") + th.FG(theme.Dim, " close")
+	return status + th.FG(theme.Dim, tx(" · ")) + th.Bold(theme.Secondary, "↵") + th.FG(theme.Dim, " back to the agent  ") + th.Bold(theme.Secondary, "x") + th.FG(theme.Dim, " close")
 }
 
 // dropPaneDead removes tmux's "Pane is dead (status N, <date>)" line (and

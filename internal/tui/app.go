@@ -249,7 +249,7 @@ func Run(cl *client.Client, cwd string) error {
 	m.layout, m.layoutPath = LoadLayout(), paths.LayoutFile()
 	m.initTips(paths.TipsFile())
 	m.initTour(paths.TutorialFile())
-	m.buildTapi(measureTTY()) // measures ● before the TUI owns the terminal
+	m.buildTapi()
 	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithReportFocus(),
 		tea.WithOutput(imeWriter{File: os.Stdout, cur: m.ime})}
 	if kittyEnabled() {
@@ -1061,20 +1061,20 @@ func (m *model) sessionAction(key string, s *state.Session) tea.Cmd {
 			return infoMsg("opened " + url)
 		}
 	case "l":
-		m.modal = newConfirmModal(m, "Land", "rebase → test → push → gh pr create", "pekoe land "+s.Slug, false, func() tea.Cmd {
+		m.modal = newConfirmModal(m, "Land", tx("rebase → test → push → gh pr create"), "pekoe land "+s.Slug, false, func() tea.Cmd {
 			return func() tea.Msg {
 				var res map[string]any
 				if err := m.cl.Call("land", map[string]any{"slug": s.Slug}, &res); err != nil {
 					return errMsg{err}
 				}
 				if pr, ok := res["pr"]; ok {
-					return infoMsg(fmt.Sprintf("landing %s · PR #%v · teardown after merge", s.Slug, pr))
+					return infoMsg(fmt.Sprintf(tx("landing %s · PR #%v · teardown after merge"), s.Slug, pr))
 				}
 				return infoMsg("landed " + s.Slug)
 			}
 		}).about(s.Branch).note(m.landNotes(s))
 	case "d":
-		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, "dev server toggled · :"+fmt.Sprint(s.Port))
+		return m.act("dev.toggle", map[string]any{"slug": s.Slug}, tx("dev server toggled · :")+fmt.Sprint(s.Port))
 	case "x":
 		if s.State == state.Running || s.State == state.Waiting {
 			m.modal = newConfirmModal(m, "End session", "the agent is running; end it? (worktree is kept)", "", true, func() tea.Cmd {

@@ -149,7 +149,7 @@ func (m *model) repoSync() tea.Cmd {
 		m.repoTitle = name
 		title := "pekoe"
 		if name != "" {
-			title += " · " + name
+			title += tx(" · ") + name
 		}
 		cmds = append(cmds, tea.SetWindowTitle(title))
 	}
@@ -338,7 +338,7 @@ func (m *model) repoHeading(s *state.Session, cw int) string {
 		name = fit(name, max(cw-4, 1))
 	}
 	head := mark + " " + th.FG(role, name) + " "
-	return head + th.FG(theme.Border, strings.Repeat("─", max(cw-w(head), 0)))
+	return head + th.FG(theme.Border, strings.Repeat(tx("─"), max(cw-w(head), 0)))
 }
 
 // selRow is the index of the selected row (-1 when none is).
@@ -365,7 +365,7 @@ func (m *model) chooseRepo(r daemon.KnownRepo) tea.Cmd {
 	}
 	rr := r
 	m.chosen = &rr
-	return infoMsgCmd("repository " + m.repoName(&r) + " · n new session")
+	return infoMsgCmd("repository " + m.repoName(&r) + tx(" · n new session"))
 }
 
 func infoMsgCmd(s string) tea.Cmd { return func() tea.Msg { return infoMsg(s) } }
@@ -396,7 +396,7 @@ func (m *model) pickableRepos() []daemon.KnownRepo {
 func (m *model) openRepoPicker(then func() tea.Cmd) tea.Cmd {
 	rs := m.pickableRepos()
 	if len(rs) == 0 {
-		m.setMsg(noRepoHint, false)
+		m.setMsg(tx(noRepoHint), false)
 		return m.loadRepos()
 	}
 	p := &repoPicker{m: m, then: then}
@@ -463,7 +463,7 @@ func (p *repoPicker) view() []string {
 		where := homeTilde(r.Dir)
 		nameRole := theme.Text
 		if r.Dir == "" {
-			where, nameRole = "path unknown · run pekoe in it once", theme.Dim
+			where, nameRole = tx("path unknown · run pekoe in it once"), theme.Dim
 		}
 		nameW := clampi(cw/3, 8, 24)
 		countW := 12
@@ -474,7 +474,7 @@ func (p *repoPicker) view() []string {
 		lines = append(lines, l)
 	}
 	if len(rs) == 0 {
-		lines = append(lines, th.FG(theme.Dim, noRepoHint))
+		lines = append(lines, th.FG(theme.Dim, tx(noRepoHint)))
 	}
 	title := theme.Prefix(m.ic.Worktrees) + th.Bold(theme.Primary, "Repository") + " " + th.FG(theme.Dim, fmt.Sprintf("%d", len(rs)))
 	return m.modalFrame(width, title, lines, p.hints(), false)
@@ -494,7 +494,7 @@ func (p *repoPicker) key(k tea.KeyMsg) tea.Cmd {
 		}
 		r := rs[p.sel]
 		if r.Dir == "" {
-			m.setMsg(m.repoName(&r)+": path unknown · run pekoe inside it once", true)
+			m.setMsg(m.repoName(&r)+tx(": path unknown · run pekoe inside it once"), true)
 			return nil
 		}
 		cmd := m.chooseRepo(r)
@@ -513,11 +513,11 @@ func (p *repoPicker) key(k tea.KeyMsg) tea.Cmd {
 func (m *model) sessionsEmptyHint() string {
 	switch {
 	case m.curRepo() != nil:
-		return "no sessions · n new"
+		return tx("no sessions · n new")
 	case len(m.pickableRepos()) > 0:
-		return "not in a git repository · w pick one"
+		return tx("not in a git repository · w pick one")
 	case !m.reposLoaded:
 		return "no sessions"
 	}
-	return noRepoHint
+	return tx(noRepoHint)
 }

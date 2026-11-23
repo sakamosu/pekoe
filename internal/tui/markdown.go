@@ -28,7 +28,7 @@ var (
 func renderMarkdown(th *theme.Theme, ic theme.IconSet, body string, cw int) []string {
 	body = mdComment.ReplaceAllString(sanitize(strings.ReplaceAll(body, "\r\n", "\n")), "")
 	ascii := ic.Name == "ascii"
-	bullet := "•"
+	bullet := tx("•")
 	if ascii {
 		bullet = "-"
 	}
@@ -55,12 +55,12 @@ func renderMarkdown(th *theme.Theme, ic theme.IconSet, body string, cw int) []st
 			}
 			inCode = !inCode
 			if lang := strings.Trim(trim, "`~ "); inCode && lang != "" {
-				out = append(out, th.FG(theme.Border, "│ ")+th.FG(theme.Dim, lang))
+				out = append(out, th.FG(theme.Border, tx("│ "))+th.FG(theme.Dim, lang))
 			}
 			continue
 		}
 		if inCode {
-			out = append(out, th.FG(theme.Border, "│ ")+th.FG(theme.Text, clip(ln, max(cw-2, 1))))
+			out = append(out, th.FG(theme.Border, tx("│ "))+th.FG(theme.Text, clip(ln, max(cw-2, 1))))
 			continue
 		}
 		switch {
@@ -92,11 +92,11 @@ func renderMarkdown(th *theme.Theme, ic theme.IconSet, body string, cw int) []st
 				out = append(out, th.FG(theme.Dim, mark)+l)
 			}
 		case mdRule.MatchString(trim):
-			out = append(out, th.FG(theme.Border, strings.Repeat("─", max(cw, 1))))
+			out = append(out, th.FG(theme.Border, strings.Repeat(tx("─"), max(cw, 1))))
 		case strings.HasPrefix(trim, ">"):
 			text := strings.TrimSpace(strings.TrimPrefix(trim, ">"))
 			for _, l := range wrap(text, theme.Dim, cw-2) {
-				out = append(out, th.FG(theme.Border, "▎ ")+l)
+				out = append(out, th.FG(theme.Border, tx("▎ "))+l)
 			}
 		case mdList.MatchString(ln):
 			g := mdList.FindStringSubmatch(ln)
@@ -228,7 +228,7 @@ func renderTable(th *theme.Theme, rows [][]string, aligns []byte, cw int) []stri
 		}
 		widths[wi]--
 	}
-	sep := th.FG(theme.Border, " │ ")
+	sep := th.FG(theme.Border, tx(" │ "))
 	var out []string
 	for i, r := range cells {
 		parts := make([]string, n)
@@ -243,9 +243,9 @@ func renderTable(th *theme.Theme, rows [][]string, aligns []byte, cw int) []stri
 		if i == 0 {
 			rules := make([]string, n)
 			for j, wd := range widths {
-				rules[j] = strings.Repeat("─", wd)
+				rules[j] = strings.Repeat(tx("─"), wd)
 			}
-			out = append(out, th.FG(theme.Border, clip(strings.Join(rules, "─┼─"), cw)))
+			out = append(out, th.FG(theme.Border, clip(strings.Join(rules, tx("─┼─")), cw)))
 		}
 	}
 	return out
@@ -253,7 +253,7 @@ func renderTable(th *theme.Theme, rows [][]string, aligns []byte, cw int) []stri
 
 func alignCell(s string, width int, align byte) string {
 	if w(s) > width {
-		s = ansi.Truncate(s, width, "…")
+		s = ansi.Truncate(s, width, tx("…"))
 	}
 	d := max(width-w(s), 0)
 	switch align {

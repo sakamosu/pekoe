@@ -514,7 +514,7 @@ func (r *reviewModel) key(k tea.KeyMsg) (tea.Cmd, bool) {
 			if err := r.cl.Call("review.flush", map[string]any{"slug": slug}, &res); err != nil {
 				return errMsg{err}
 			}
-			return infoMsg(fmt.Sprintf("review #%v recorded · %v comments sent", res["review"], res["sent"]))
+			return infoMsg(fmt.Sprintf(tx("review #%v recorded · %v comments sent"), res["review"], res["sent"]))
 		}, false
 	case "R":
 		return r.load(), false
@@ -529,7 +529,7 @@ func (r *reviewModel) view() string {
 	m.width, m.height = r.width, r.height
 	th := r.th
 	if r.rv == nil {
-		return th.FG(theme.Dim, "loading review…")
+		return th.FG(theme.Dim, tx("loading review…"))
 	}
 	lw := clampi(r.width*30/100, 30, 48)
 	rw := r.width - lw - 1
@@ -552,15 +552,15 @@ func (r *reviewModel) view() string {
 	test := ""
 	switch r.rv.Test.Status {
 	case "pass":
-		test = " · " + th.FG(theme.Ok, m.ic.Check) + th.FG(theme.Dim, " test")
+		test = tx(" · ") + th.FG(theme.Ok, m.ic.Check) + th.FG(theme.Dim, " test")
 	case "fail":
-		test = " · " + th.FG(theme.Err, m.ic.Fail) + th.FG(theme.Dim, " test")
+		test = tx(" · ") + th.FG(theme.Err, m.ic.Fail) + th.FG(theme.Dim, " test")
 	case "blocked":
-		test = " · " + th.FG(theme.Warn, m.ic.Warning) + th.FG(theme.Dim, " test not run: no sandbox")
+		test = tx(" · ") + th.FG(theme.Warn, m.ic.Warning) + th.FG(theme.Dim, " test not run: no sandbox")
 	case "error":
-		test = " · " + th.FG(theme.Warn, m.ic.Warning) + th.FG(theme.Dim, " test could not run")
+		test = tx(" · ") + th.FG(theme.Warn, m.ic.Warning) + th.FG(theme.Dim, " test could not run")
 	}
-	footer := th.FG(theme.Dim, "since ") + th.FG(theme.Text, r.rv.BaseLabel) + th.FG(theme.Dim, fmt.Sprintf(" · %d hunks · ", r.rv.Total)) + th.FG(theme.Ok, fmt.Sprint(r.rv.Approved)) + th.FG(theme.Dim, " approved")
+	footer := th.FG(theme.Dim, "since ") + th.FG(theme.Text, r.rv.BaseLabel) + th.FG(theme.Dim, fmt.Sprintf(tx(" · %d hunks · "), r.rv.Total)) + th.FG(theme.Ok, fmt.Sprint(r.rv.Approved)) + th.FG(theme.Dim, " approved")
 	footer2 := th.FG(theme.Ok, fmt.Sprintf("+%d", r.rv.Diffstat.Added)) + " " + th.FG(theme.Err, fmt.Sprintf("-%d", r.rv.Diffstat.Deleted)) + test
 	frows = append(frows, row{}, row{Text: footer2})
 	branch := r.slug
@@ -584,24 +584,24 @@ func (r *reviewModel) view() string {
 		crows = append(crows, row{Text: th.FG(theme.Warn, m.ic.Warning) + " " + where + rk.Text})
 	}
 	if len(crows) == 0 {
-		crows = append(crows, row{Text: th.FG(theme.Dim, "none · c to comment")})
+		crows = append(crows, row{Text: th.FG(theme.Dim, tx("none · c to comment"))})
 	}
 	// [3] Session
 	var srows []row
 	if s := r.sess; s != nil {
 		lk := theme.Look(m.ic, s.State, 0, false)
-		srows = append(srows, row{Text: th.FG(lk.Role, lk.Icon) + " " + lk.Word + th.FG(theme.Dim, fmt.Sprintf(" · %s · %d prompts since %s", theme.Ago(time.Since(s.CreatedAt)), r.rv.Prompts, r.rv.BaseLabel))})
+		srows = append(srows, row{Text: th.FG(lk.Role, lk.Icon) + " " + lk.Word + th.FG(theme.Dim, fmt.Sprintf(tx(" · %s · %d prompts since %s"), theme.Ago(time.Since(s.CreatedAt)), r.rv.Prompts, r.rv.BaseLabel))})
 		if hk := r.curHunk(); hk != nil && hk.Prompt != nil {
-			srows = append(srows, row{Text: th.FG(theme.Dim, fmt.Sprintf("hunk ← prompt #%d ", hk.Prompt.N)) + th.FG(theme.Text, "\""+hk.Prompt.Text+"\"")})
+			srows = append(srows, row{Text: th.FG(theme.Dim, fmt.Sprintf(tx("hunk ← prompt #%d "), hk.Prompt.N)) + th.FG(theme.Text, "\""+hk.Prompt.Text+"\"")})
 		}
 		if s.PRReview {
 			srows = append(srows, row{Text: th.FG(theme.Dim, fmt.Sprintf("comments go to GitHub PR #%d", s.PR))})
 		}
 	}
 	filesH := max(h-(len(crows)+2)-(len(srows)+2), 6)
-	left := m.box(lw, filesH, boxOpt{title: m.panelTitle(1, m.ic.Changes, fmt.Sprintf("Files %d", len(r.rv.Files)), "· "+branch, r.focus == 1), rows: frows, footer: footer, focused: r.focus == 1})
-	left = append(left, m.box(lw, len(crows)+2, boxOpt{title: m.panelTitle(2, m.ic.Comments, fmt.Sprintf("Comments %d", len(r.rv.Comments)), "· unsent", r.focus == 2), rows: crows, focused: r.focus == 2})...)
-	left = append(left, m.box(lw, max(h-len(left), 3), boxOpt{title: m.panelTitle(3, m.ic.Sessions, "Session", "· "+branch, r.focus == 3), rows: srows, focused: r.focus == 3})...)
+	left := m.box(lw, filesH, boxOpt{title: m.panelTitle(1, m.ic.Changes, fmt.Sprintf("Files %d", len(r.rv.Files)), tx("· ")+branch, r.focus == 1), rows: frows, footer: footer, focused: r.focus == 1})
+	left = append(left, m.box(lw, len(crows)+2, boxOpt{title: m.panelTitle(2, m.ic.Comments, fmt.Sprintf("Comments %d", len(r.rv.Comments)), tx("· unsent"), r.focus == 2), rows: crows, focused: r.focus == 2})...)
+	left = append(left, m.box(lw, max(h-len(left), 3), boxOpt{title: m.panelTitle(3, m.ic.Sessions, "Session", tx("· ")+branch, r.focus == 3), rows: srows, focused: r.focus == 3})...)
 	right := r.diffPanel(rw, h)
 	body := joinH(left, right, 1)
 	body = append(body, r.bar())
@@ -631,7 +631,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 	if len(r.rows) > 0 {
 		hi = r.rows[r.cursor].hunk
 	}
-	title := m.panelTitle(4, m.ic.Diff, "Diff "+file.Path, fmt.Sprintf("· hunk %d/%d", hi+1, len(file.Hunks)), f)
+	title := m.panelTitle(4, m.ic.Diff, "Diff "+file.Path, fmt.Sprintf(tx("· hunk %d/%d"), hi+1, len(file.Hunks)), f)
 	right := th.Bold(theme.Secondary, "A") + th.FG(theme.Dim, map[bool]string{true: " hide approved", false: " show approved"}[r.showApprove])
 	cw := width - 4
 	var rows []row
@@ -652,9 +652,9 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 			hdr := strings.TrimSpace(strings.SplitN(h.Header, "@@", 3)[min(1, len(strings.SplitN(h.Header, "@@", 3))-1)])
 			label := th.FG(theme.Dim, "@@ "+hdr+" @@")
 			if h.Approved && !r.showApprove {
-				label += th.FG(theme.Dim, "  approved · hidden (A to show)")
+				label += th.FG(theme.Dim, tx("  approved · hidden (A to show)"))
 			} else if h.Prompt != nil {
-				label += th.FG(theme.Dim, fmt.Sprintf("  ← prompt #%d: ", h.Prompt.N)) + th.FG(theme.Text, h.Prompt.Text)
+				label += th.FG(theme.Dim, fmt.Sprintf(tx("  ← prompt #%d: "), h.Prompt.N)) + th.FG(theme.Text, h.Prompt.Text)
 			}
 			t = mark + " " + label
 		case "line":
@@ -663,10 +663,10 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 			oldN, newN := "", ""
 			switch l.Kind {
 			case "+":
-				gutter, sign, role = th.FG(theme.Ok, "▎"), th.FG(theme.Ok, "+"), theme.Text
+				gutter, sign, role = th.FG(theme.Ok, tx("▎")), th.FG(theme.Ok, "+"), theme.Text
 				newN = fmt.Sprint(l.New)
 			case "-":
-				gutter, sign, role = th.FG(theme.Err, "▎"), th.FG(theme.Err, "-"), theme.Text
+				gutter, sign, role = th.FG(theme.Err, tx("▎")), th.FG(theme.Err, "-"), theme.Text
 				oldN = fmt.Sprint(l.Old)
 			default:
 				oldN, newN = fmt.Sprint(l.Old), fmt.Sprint(l.New)
@@ -677,7 +677,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 			// diff text stays plain (no icons, no decoration)
 			t = gutter + " " + th.FG(theme.Dim, fmt.Sprintf("%4s %4s ", oldN, newN)) + sign + " " + th.FG(role, ansi.Strip(strings.ReplaceAll(l.Text, "\t", "    ")))
 		case "comment":
-			t = strings.Repeat(" ", 13) + th.FG(theme.Secondary, theme.Prefix(m.ic.Comments)+d.text) + th.FG(theme.Dim, " — you, unsent")
+			t = strings.Repeat(" ", 13) + th.FG(theme.Secondary, theme.Prefix(m.ic.Comments)+d.text) + th.FG(theme.Dim, tx(" — you, unsent"))
 		}
 		rows = append(rows, row{Text: t, Sel: i == r.cursor && f})
 	}
@@ -685,12 +685,12 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 	var tail []row
 	if r.input != nil {
 		label := map[string]string{"comment": "comment", "reject": "send back (why?)", "ask": "ask the agent (empty: asks what this is for)"}[r.inputKind]
-		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat("─", cw))}, row{Text: th.FG(theme.Dim, label)}, row{Text: th.FG(theme.Secondary, "› ") + r.input.render(th, true)}, row{Text: m.keyHints([][2]string{{"↵", "save"}, {"esc", "cancel"}}, cw)})
+		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat(tx("─"), cw))}, row{Text: th.FG(theme.Dim, label)}, row{Text: th.FG(theme.Secondary, "› ") + r.input.render(th, true)}, row{Text: m.keyHints([][2]string{{"↵", "save"}, {"esc", "cancel"}}, cw)})
 	} else if r.answer != "" || r.asking {
-		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat("─", cw))})
+		tail = append(tail, row{Text: th.FG(theme.Border, strings.Repeat(tx("─"), cw))})
 		tail = append(tail, row{Text: th.FG(theme.Secondary, theme.Prefix(m.ic.Agent)) + th.FG(theme.Dim, "agent")})
 		if r.asking {
-			tail = append(tail, row{Text: th.FG(theme.Dim, "waiting for the answer…")})
+			tail = append(tail, row{Text: th.FG(theme.Dim, tx("waiting for the answer…"))})
 		}
 		for _, l := range strings.Split(ansi.Wordwrap(r.answer, cw, " "), "\n") {
 			if len(tail) > 10 {
@@ -723,7 +723,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 		thumb = max(track*bodyH/len(rows), 1)
 		pos = (track - thumb) * r.scroll / max(len(rows)-bodyH, 1)
 	}
-	bar := th.FG(theme.Border, strings.Repeat("│", pos)) + th.FG(theme.Dim, strings.Repeat("┃", thumb)) + th.FG(theme.Border, strings.Repeat("│", track-pos-thumb))
+	bar := th.FG(theme.Border, strings.Repeat(tx("│"), pos)) + th.FG(theme.Dim, strings.Repeat(tx("┃"), thumb)) + th.FG(theme.Border, strings.Repeat(tx("│"), track-pos-thumb))
 	unsent := 0
 	if cur != nil {
 		for _, c := range r.rv.Comments {
@@ -732,7 +732,7 @@ func (r *reviewModel) diffPanel(width, height int) []string {
 			}
 		}
 	}
-	footer := bar + th.FG(theme.Dim, fmt.Sprintf("  hunk %d of %d · %d unsent comment on this hunk", hi+1, len(file.Hunks), unsent))
+	footer := bar + th.FG(theme.Dim, fmt.Sprintf(tx("  hunk %d of %d · %d unsent comment on this hunk"), hi+1, len(file.Hunks), unsent))
 	return m.box(width, height, boxOpt{title: title, right: right, rows: vis, footer: footer, focused: f})
 }
 

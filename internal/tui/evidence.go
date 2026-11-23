@@ -388,16 +388,16 @@ func evWhatOn(goos string, it evItem, graphics bool) string {
 			app = evAppName(evMacApp(it.kind))
 		}
 		if graphics && it.inline() {
-			return "↵ shows it here · o opens it in " + app
+			return tx("↵ shows it here · o opens it in ") + app
 		}
 		return "↵ opens it in " + app
 	case evFile:
 		if it.why != "" {
-			return "not opened: " + it.why + " · ↵ shows where it is"
+			return "not opened: " + it.why + tx(" · ↵ shows where it is")
 		}
-		return "not opened (only images, videos, PDFs and text are) · ↵ shows where it is"
+		return tx("not opened (only images, videos, PDFs and text are) · ↵ shows where it is")
 	case evFolder:
-		return "a folder · ↵ shows where it is"
+		return tx("a folder · ↵ shows where it is")
 	}
 	return "nothing to open"
 }
@@ -576,7 +576,7 @@ func (em *evidenceModal) view() []string {
 	cw := width - 6
 	dim := func(s string) string { return th.FG(theme.Dim, s) }
 	title := th.Bold(theme.Primary, "Evidence") + " " + th.FG(theme.Text, clip(inboxText(em.slug), 30)) +
-		dim(fmt.Sprintf(" · %d in %d report%s", len(em.items), len(em.reports), plural(len(em.reports))))
+		dim(fmt.Sprintf(tx(" · %d in %d report%s"), len(em.items), len(em.reports), plural(len(em.reports))))
 
 	// the list: a head for each report, its evidence under it
 	var list []string
@@ -586,9 +586,9 @@ func (em *evidenceModal) view() []string {
 		if it.report != rep {
 			rep = it.report
 			r := em.reports[rep]
-			head := fmt.Sprintf("%s %s · %s", ids.Report(r.id), r.status, theme.Ago(time.Since(r.at)))
+			head := fmt.Sprintf(tx("%s %s · %s"), ids.Report(r.id), r.status, theme.Ago(time.Since(r.at)))
 			if s := firstLine(inboxText(r.summary)); s != "" {
-				head += " · " + s
+				head += tx(" · ") + s
 			}
 			list = append(list, dim(fit(head, cw)))
 		}
@@ -603,7 +603,7 @@ func (em *evidenceModal) view() []string {
 				word = it.why
 			}
 		case it.inline():
-			details = []string{fmt.Sprintf("  png %d×%d · %s", it.imgW, it.imgH, evSize(it.size)), "  " + evSize(it.size), ""}
+			details = []string{fmt.Sprintf(tx("  png %d×%d · %s"), it.imgW, it.imgH, evSize(it.size)), "  " + evSize(it.size), ""}
 		case it.kind != evLink && it.kind != evFolder:
 			details = []string{"  " + evSize(it.size), ""}
 		}
@@ -647,7 +647,7 @@ func (em *evidenceModal) view() []string {
 	lines := []string{""}
 	lines = append(lines, list[em.top:min(em.top+room, len(list))]...)
 	if more := len(list) - em.top - room; more > 0 {
-		lines = append(lines, dim(fmt.Sprintf("  … %d more below", more)))
+		lines = append(lines, dim(fmt.Sprintf(tx("  … %d more below"), more)))
 	}
 
 	// what ↵ opens, sunk; then what happens
@@ -665,9 +665,9 @@ func (em *evidenceModal) view() []string {
 		what := dim(evWhat(it, em.canShow()))
 		switch {
 		case it.kind == evNone:
-			what = th.FG(theme.Err, it.why) + dim(" · nothing to open")
+			what = th.FG(theme.Err, it.why) + dim(tx(" · nothing to open"))
 		case it.kind == evFile && it.why != "": // its name said it would open
-			what = th.FG(theme.Err, "not opened: "+it.why) + dim(" · ↵ shows where it is")
+			what = th.FG(theme.Err, "not opened: "+it.why) + dim(tx(" · ↵ shows where it is"))
 		}
 		lines = append(lines, what)
 	}
@@ -691,7 +691,7 @@ func (em *evidenceModal) viewImage() []string {
 	ch = max(ch, 1)
 	it := em.items[em.sel]
 	title := th.Bold(theme.Primary, "Evidence") + " " + th.FG(theme.Text, clip(inboxText(em.slug), 30)) +
-		th.FG(theme.Dim, " · "+clip(it.name(), 40))
+		th.FG(theme.Dim, tx(" · ")+clip(it.name(), 40))
 	body := make([]string, ch)
 	if k, ok := em.shown(); ok {
 		pad := strings.Repeat(" ", (cw-k.cols)/2)
@@ -702,7 +702,7 @@ func (em *evidenceModal) viewImage() []string {
 			}
 		}
 	} else {
-		body[ch/2] = th.FG(theme.Dim, "no room to draw it here · o opens it in an app")
+		body[ch/2] = th.FG(theme.Dim, tx("no room to draw it here · o opens it in an app"))
 	}
 	n, of := 0, 0
 	for i, x := range em.items {
@@ -714,7 +714,7 @@ func (em *evidenceModal) viewImage() []string {
 		}
 	}
 	r := em.reports[it.report]
-	caption := fmt.Sprintf("png %d×%d · %s · report %s %s · %d/%d", it.imgW, it.imgH, evSize(it.size), ids.Report(r.id), r.status, n, of)
+	caption := fmt.Sprintf(tx("png %d×%d · %s · report %s %s · %d/%d"), it.imgW, it.imgH, evSize(it.size), ids.Report(r.id), r.status, n, of)
 	last := th.FG(theme.Dim, fit(caption, cw))
 	if em.note != "" { // what o did, in the caption's place
 		r := theme.Dim

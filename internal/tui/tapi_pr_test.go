@@ -21,7 +21,7 @@ func tapiPRModel(t *testing.T, color string, mc config.Mascot) *model {
 	m := tapiModel(t, color, mc)
 	m.g.Animate = nil
 	m.ic = theme.Icons("nerd")
-	m.buildTapi(nil)
+	m.buildTapi()
 	return m
 }
 
@@ -181,7 +181,7 @@ func TestPRToastRendering(t *testing.T) {
 	} {
 		m := tapiPRModel(t, c.color, c.mc)
 		m.ic = theme.Icons(c.icons)
-		m.buildTapi(nil)
+		m.buildTapi()
 		for _, e := range mascot.PREvents {
 			tb := reactionToast(m, e)
 			if len(tb) != 3 {
@@ -392,7 +392,7 @@ func TestConfettiTwinkle(t *testing.T) {
 func TestConfettiOnToast(t *testing.T) {
 	m := tapiPRModel(t, "none", config.Mascot{Shape: "round"})
 	m.ic = theme.Icons("unicode")
-	m.buildTapi(nil)
+	m.buildTapi()
 	m.tapi.frame = 7
 	m.showReaction(mascot.Reaction{Event: mascot.PRMerged, Slug: "fix-ci", Name: "fix-ci", PR: mascot.PR{Number: 42, State: "MERGED"}}, time.Now())
 	first := m.toastBlock()

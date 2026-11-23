@@ -280,7 +280,7 @@ func (m *model) viewPR(s *state.Session, width, height int) []string {
 	var extra []string
 	switch {
 	case p.loading:
-		extra = append(extra, "loading…")
+		extra = append(extra, tx("loading…"))
 	case !p.at.IsZero() && p.slug == s.Slug:
 		extra = append(extra, "updated "+theme.Ago(time.Since(p.at))+" ago")
 	}
@@ -289,22 +289,22 @@ func (m *model) viewPR(s *state.Session, width, height int) []string {
 	}
 	ex := ""
 	if len(extra) > 0 {
-		ex = "· " + strings.Join(extra, " · ")
+		ex = tx("· ") + strings.Join(extra, tx(" · "))
 	}
 	title := m.panelTitle(4, m.ic.PR, name+" "+s.Branch, ex, f)
 	cw, ch := width-4, height-2
 	if p.slug != s.Slug || (p.view == nil && !p.none && p.err == "") {
-		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Work, "loading PR…", ""), focused: f})
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Work, tx("loading PR…"), ""), focused: f})
 	}
 	if p.view == nil {
 		if p.err != "" {
-			rows := m.bigRows(cw, ch-4, mascot.Error, "could not load the PR", "R retry · esc back")
+			rows := m.bigRows(cw, ch-4, mascot.Error, "could not load the PR", tx("R retry · esc back"))
 			for _, l := range wrapText(p.err, cw) {
 				rows = append(rows, row{Text: th.FG(theme.Err, l)})
 			}
 			return m.box(width, height, boxOpt{title: title, rows: rows, focused: f})
 		}
-		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Idle, "no PR", "l land opens one · esc back"), focused: f})
+		return m.box(width, height, boxOpt{title: title, rows: m.bigRows(cw, ch, mascot.Idle, "no PR", tx("l land opens one · esc back")), focused: f})
 	}
 	rows, start, end := m.prRows(cw)
 	// keep the selected item (with its expansion) on screen
@@ -348,8 +348,8 @@ func (m *model) prRows(cw int) (rows []row, start, end int) {
 		}
 		parts = append(parts, th.FG(role, strings.ToLower(v.MergeState)))
 	}
-	parts = append(parts, dimw(v.Base+" ← "+v.Head))
-	add(strings.Join(parts, dimw(" · ")))
+	parts = append(parts, dimw(v.Base+tx(" ← ")+v.Head))
+	add(strings.Join(parts, dimw(tx(" · "))))
 	if p.err != "" {
 		add(th.FG(theme.Err, firstLine(p.err)))
 	}
@@ -398,7 +398,7 @@ func (m *model) prRows(cw int) (rows []row, start, end int) {
 				if pass > 0 {
 					sum = append(sum, th.FG(theme.Ok, fmt.Sprintf("%d pass", pass)))
 				}
-				section("Checks", strings.Join(sum, dimw(" · ")))
+				section("Checks", strings.Join(sum, dimw(tx(" · "))))
 			case "review":
 				w, role := decisionWord(v.ReviewDecision)
 				section("Reviews", th.FG(role, w))
@@ -409,7 +409,7 @@ func (m *model) prRows(cw int) (rows []row, start, end int) {
 						un++
 					}
 				}
-				section("Threads", dimw(fmt.Sprintf("%d unresolved · %d resolved", un, len(v.Threads)-un)))
+				section("Threads", dimw(fmt.Sprintf(tx("%d unresolved · %d resolved"), un, len(v.Threads)-un)))
 			case "comment":
 				section("Comments", dimw(fmt.Sprint(len(v.Comments))))
 			}
@@ -551,19 +551,19 @@ func (m *model) prExpansion(it prItem, width int) []string {
 			break
 		}
 		if c.RunID == 0 {
-			out = append(out, dimw("no log here: not a GitHub Actions check · o open"))
+			out = append(out, dimw(tx("no log here: not a GitHub Actions check · o open")))
 			break
 		}
 		lg := m.pr.logs[it.key]
 		switch {
 		case lg == nil || lg.loading:
-			out = append(out, dimw("loading the failed log…"))
+			out = append(out, dimw(tx("loading the failed log…")))
 		case lg.err != "":
 			out = append(out, th.FG(theme.Err, firstLine(lg.err)))
 		default:
 			lines := strings.Split(cleanText(lg.text), "\n")
 			if len(lines) > 40 {
-				out = append(out, dimw(fmt.Sprintf("… %d more lines (s sends the last 200)", len(lines)-40)))
+				out = append(out, dimw(fmt.Sprintf(tx("… %d more lines (s sends the last 200)"), len(lines)-40)))
 				lines = lines[len(lines)-40:]
 			}
 			for _, l := range lines {
@@ -580,7 +580,7 @@ func (m *model) prExpansion(it prItem, width int) []string {
 		t := it.thread
 		out = append(out, dimw(fmt.Sprintf("%s:%d", cleanText(t.Path), threadLine(*t))))
 		for _, c := range t.Comments {
-			out = append(out, dimw(cleanText(c.Author)+" · "+theme.Ago(time.Since(c.At))+" ago"))
+			out = append(out, dimw(cleanText(c.Author)+tx(" · ")+theme.Ago(time.Since(c.At))+" ago"))
 			for _, l := range renderMarkdown(th, m.ic, c.Body, width-2) {
 				out = append(out, "  "+l)
 			}

@@ -45,7 +45,7 @@ func (c *configCmd) Run() error {
 	}
 	err := c.cmd.Run()
 	if err != nil {
-		fmt.Fprintf(c.out, "\npekoe config edit: %v — press Enter to go back to pekoe ", err)
+		fmt.Fprintf(c.out, tx("\npekoe config edit: %v — press Enter to go back to pekoe "), err)
 		if c.cmd.Stdin != nil {
 			bufio.NewReader(c.cmd.Stdin).ReadString('\n')
 		}
@@ -107,7 +107,7 @@ func (m *model) applyConfig(msg configLoadedMsg) tea.Cmd {
 		m.ic = theme.Icons(theme.IconsName(g.Theme.Icons))
 	}
 	if themed || !reflect.DeepEqual(old.Mascot, g.Mascot) {
-		m.buildTapi(nil)
+		m.buildTapi()
 	}
 	if old.TipsOn() != g.TipsOn() {
 		m.initTips(m.tipsPath)
@@ -125,7 +125,7 @@ func (m *model) applyConfig(msg configLoadedMsg) tea.Cmd {
 	}
 	text := "config.toml applied"
 	if len(msg.restart) > 0 {
-		text += " · " + strings.Join(msg.restart, ", ") + " apply after pekoe daemon restart"
+		text += tx(" · ") + strings.Join(msg.restart, ", ") + " apply after pekoe daemon restart"
 	}
 	m.setMsg(text, false)
 	return tea.Batch(cmds...)

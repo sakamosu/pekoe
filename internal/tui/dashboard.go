@@ -415,7 +415,7 @@ func (m *model) stageMark(st int) string {
 	if m.ic.Name == "ascii" {
 		return th.FG(theme.Dim, ".")
 	}
-	return th.FG(theme.Dim, "·")
+	return th.FG(theme.Dim, tx("·"))
 }
 
 // dashStages is a session's 実装 → レビュー → PR → CI → マージ, the order
@@ -577,9 +577,9 @@ func (m *model) stageBar(st [5]int, wide bool) string {
 		n = 2
 	}
 	for _, x := range st {
-		c := strings.Repeat(barFull, n)
+		c := strings.Repeat(tx(barFull), n)
 		if x == stNone {
-			c = strings.Repeat(barEmpty, n)
+			c = strings.Repeat(tx(barEmpty), n)
 		}
 		b.WriteString(m.th.FG(stageRole(x), c))
 	}
@@ -703,12 +703,12 @@ func stageWhy(st [5]int, mc *state.MergeCheck, named string) string {
 
 func (m *model) viewDash(width, height int) []string {
 	f := m.focus == pAgent
-	extra := "· tapi the orchestrator"
+	extra := tx("· tapi the orchestrator")
 	switch {
 	case m.dash.at.IsZero():
-		extra += " · loading…"
+		extra += tx(" · loading…")
 	default:
-		extra += " · updated " + theme.Ago(time.Since(m.dash.at)) + " ago"
+		extra += tx(" · updated ") + theme.Ago(time.Since(m.dash.at)) + " ago"
 	}
 	title := m.panelTitle(4, m.ic.Sessions, "Dashboard", extra, f)
 	cw, ch := width-4, height-2
@@ -743,9 +743,9 @@ func (m *model) viewDash(width, height int) []string {
 }
 
 // dashGlyphs: the dashboard may draw its pictures (the stage bar, emoji).
-// Not with the ascii icon set, nor with [mascot] glyphs = "ascii" (set,
-// or measured: the terminal draws ambiguous glyphs wide), which ask for
-// plain characters.
+// Not with the ascii icon set, nor with [mascot] glyphs = "ascii", which
+// ask for plain characters; the wide table ([theme] ambiguous) makes both
+// ascii.
 func (m *model) dashGlyphs() bool {
 	return m.ic.Name != "ascii" && (m.tapi.r == nil || !m.tapi.r.ASCII())
 }
@@ -790,7 +790,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			h += "  " + summary
 		}
 		if gap := cw - w(h) - 1; gap >= 3 {
-			h += " " + th.FG(theme.Border, strings.Repeat("─", gap))
+			h += " " + th.FG(theme.Border, strings.Repeat(tx("─"), gap))
 		}
 		add(fit(h, cw))
 	}
@@ -833,11 +833,11 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 	sum := dim("0 open")
 	if open > 0 {
-		sum = th.Bold(theme.Warn, fmt.Sprintf("%d open", open)) + dim(" · ↵ answer · o link")
+		sum = th.Bold(theme.Warn, fmt.Sprintf("%d open", open)) + dim(tx(" · ↵ answer · o link"))
 	}
 	section("📬", "Inbox", sum)
 	if open == 0 {
-		none(m.dashEmo("🍵") + "nothing to answer · time for a cup of tea")
+		none(m.dashEmo("🍵") + tx("nothing to answer · time for a cup of tea"))
 	}
 	kindEmoji := map[string]string{"login": "🔑", "approve": "✋", "decision": "🤔", "merge": "🚀"}
 	for _, k := range dashKinds {
@@ -858,7 +858,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		for _, it := range group {
 			who := clip(inboxText(it.From), 16)
 			if it.About != "" && it.About != it.From {
-				who += dim(" · " + clip(inboxText(it.About), 22))
+				who += dim(tx(" · ") + clip(inboxText(it.About), 22))
 			}
 			head := "    " + dim(ids.Question(it.ID)+" ") + who + "  "
 			tail := "  " + dim(fit(ago(it.CreatedAt), 4))
@@ -875,13 +875,13 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			moving += len(g.sessions)
 		}
 	}
-	pipe := fmt.Sprintf("%d moving · ", moving) + strings.Join(stageNames[:], " › ")
+	pipe := fmt.Sprintf(tx("%d moving · "), moving) + strings.Join(stageNames[:], " › ")
 	if len(groups) > 0 {
-		pipe += " · o evidence"
+		pipe += tx(" · o evidence")
 	}
 	section("🚦", "Pipeline", dim(pipe))
 	if len(groups) == 0 {
-		none(m.dashEmo("🌱") + "no sessions yet · ask tapi for something")
+		none(m.dashEmo("🌱") + tx("no sessions yet · ask tapi for something"))
 	}
 	slugW := min(max(cw/3, 8), 30)
 	for _, g := range groups {
@@ -900,7 +900,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 				}
 			}
 			if s.Report != nil {
-				more = append(more, dim("report "+ids.Report(s.Report.ID)+" "+s.Report.Status+" · ")+firstLine(inboxText(s.Report.Summary)))
+				more = append(more, dim("report "+ids.Report(s.Report.ID)+" "+s.Report.Status+tx(" · "))+firstLine(inboxText(s.Report.Summary)))
 			}
 			if len(more) == 0 {
 				more = append(more, dim("nothing more yet"))
@@ -943,7 +943,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	// requests
 	sum = fmt.Sprintf("%d open", len(d.ledger))
 	if n := len(d.auto) + d.autoMore; n > 0 {
-		sum += fmt.Sprintf(" · %d closed by pekoe", n)
+		sum += fmt.Sprintf(tx(" · %d closed by pekoe"), n)
 	}
 	section("📝", "Requests", dim(sum))
 	if len(d.ledger) == 0 {
@@ -969,14 +969,14 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		text := head + fit(firstLine(inboxText(e.Text)), room) + tail
 		item(fmt.Sprintf("req:%d", e.ID), text, nil, more)
 		if slugs := m.requestSessions(e); len(slugs) > 0 && !d.open[fmt.Sprintf("req:%d", e.ID)] {
-			add(fit("      "+dim("→ "+strings.Join(slugs, ", ")), cw))
+			add(fit("      "+dim(tx("→ ")+strings.Join(slugs, ", ")), cw))
 		}
 	}
 
 	// what pekoed closed itself as no request, lately: quiet, apart from
 	// the open ones (a request among them is opened again by tapi)
 	if len(d.auto) > 0 {
-		none("closed by pekoe as no request · 24h · ledger keep <id>")
+		none(tx("closed by pekoe as no request · 24h · ledger keep <id>"))
 	}
 	for i := range d.auto {
 		e := &d.auto[i]
@@ -988,16 +988,16 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 			more = append(more, dim(l))
 		}
 		if e.Cut {
-			more = append(more, dim("(cut · pekoe ledger "+ids.Request(e.ID)+" for the whole text)"))
+			more = append(more, dim(tx("(cut · pekoe ledger ")+ids.Request(e.ID)+" for the whole text)"))
 		}
 		item(fmt.Sprintf("req:%d", e.ID), dim(head+fit(firstLine(inboxText(e.Text)), room)+tail), nil, more)
 	}
 	if d.autoMore > 0 {
-		none(fmt.Sprintf("+%d older · pekoe ledger --all", d.autoMore))
+		none(fmt.Sprintf(tx("+%d older · pekoe ledger --all"), d.autoMore))
 	}
 
 	// sends
-	section("📨", "Sends", dim("newest first · ↵ full text"))
+	section("📨", "Sends", dim(tx("newest first · ↵ full text")))
 	if len(d.sends) == 0 {
 		none("nothing sent yet")
 	}
@@ -1007,7 +1007,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		if wide {
 			toW = 26
 		}
-		head := "  " + dim(fit(ago(r.At), 4)) + " " + dim(clip(inboxText(r.From), 14)+" → ") + clip(inboxText(r.To), toW) + " " + dim(r.Kind) + "  "
+		head := "  " + dim(fit(ago(r.At), 4)) + " " + dim(clip(inboxText(r.From), 14)+tx(" → ")) + clip(inboxText(r.To), toW) + " " + dim(r.Kind) + "  "
 		if !r.OK {
 			head += th.FG(theme.Err, fit(m.ic.Fail, 1)+" failed") + " "
 		}
@@ -1023,7 +1023,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 	}
 
 	// what tapi decided
-	section("💡", "Decided", dim("fyi · what the agents chose themselves"))
+	section("💡", "Decided", dim(tx("fyi · what the agents chose themselves")))
 	if len(d.fyi) == 0 {
 		none("nothing yet")
 	}
@@ -1032,7 +1032,7 @@ func (m *model) dashRows(cw int) (rows []row, keys []string) {
 		head := "  " + dim(ids.Question(it.ID)+" ") + clip(inboxText(it.From), 14) + "  "
 		chose := ""
 		if a := it.Answer; a != nil && a.Choice != nil && *a.Choice >= 0 && *a.Choice < len(it.Options) {
-			chose = dim(" → ") + th.FG(theme.Text, clip(inboxText(it.Options[*a.Choice]), 30))
+			chose = dim(tx(" → ")) + th.FG(theme.Text, clip(inboxText(it.Options[*a.Choice]), 30))
 		}
 		tail := "  " + dim(fit(ago(it.CreatedAt), 4))
 		room := max(cw-w(head)-w(chose)-w(tail), 1)
@@ -1118,7 +1118,7 @@ func (m *model) dashOverview(room int) []string {
 		}
 		return th.FG(r, fmt.Sprint(n)) + " " + th.FG(theme.Dim, word)
 	}
-	sep := th.FG(theme.Dim, " · ")
+	sep := th.FG(theme.Dim, tx(" · "))
 	// the person's turn: loud when there is something, a calm line when not
 	var loud []string
 	if inbox > 0 {
@@ -1129,7 +1129,7 @@ func (m *model) dashOverview(room int) []string {
 	}
 	var parts []string
 	if len(loud) == 0 {
-		parts = append(parts, m.dashEmo("🍵")+th.FG(theme.Ok, "nothing needs you")+th.FG(theme.Dim, " · all quiet"))
+		parts = append(parts, m.dashEmo("🍵")+th.FG(theme.Ok, "nothing needs you")+th.FG(theme.Dim, tx(" · all quiet")))
 	} else {
 		parts = append(parts, strings.Join(loud, "   "))
 	}
@@ -1177,9 +1177,9 @@ func (m *model) dashStatsToday() []string {
 	d := &m.dash
 	switch {
 	case d.statsErr != "":
-		return []string{head + th.FG(theme.Err, "stats unavailable") + dim(" · "+firstLine(inboxText(d.statsErr)))}
+		return []string{head + th.FG(theme.Err, "stats unavailable") + dim(tx(" · ")+firstLine(inboxText(d.statsErr)))}
 	case d.stats == nil:
-		return []string{head + dim("stats loading…")}
+		return []string{head + dim(tx("stats loading…"))}
 	}
 	var merged int
 	var tok state.Usage
@@ -1190,7 +1190,7 @@ func (m *model) dashStatsToday() []string {
 		}
 	}
 	if merged == 0 && tok.Total() == 0 {
-		return []string{head + dim("no merges · no tokens recorded yet")}
+		return []string{head + dim(tx("no merges · no tokens recorded yet"))}
 	}
 	mp := dim("0 merged")
 	if merged > 0 {
@@ -1265,10 +1265,10 @@ func (m *model) dashStatsWeek(room int) string {
 			fill = (n*cells + most - 1) / most // a day with a merge keeps a barFull
 		}
 		if fill > 0 {
-			b.WriteString(th.FG(theme.Ok, strings.Repeat(barFull, fill)))
+			b.WriteString(th.FG(theme.Ok, strings.Repeat(tx(barFull), fill)))
 		}
 		if fill < cells {
-			b.WriteString(dim(strings.Repeat(barEmpty, cells-fill)))
+			b.WriteString(dim(strings.Repeat(tx(barEmpty), cells-fill)))
 		}
 	}
 	return head + b.String() + total
@@ -1283,7 +1283,7 @@ func shortTokens(n int64) string { return state.ShortTokens(n) }
 func (m *model) dashGroupHead(g dashGroup, room int) string {
 	th := m.th
 	if g.merged {
-		return fit(m.dashEmo("🎉")+th.FG(theme.Dim, fmt.Sprintf("merged · %d", len(g.sessions))), room)
+		return fit(m.dashEmo("🎉")+th.FG(theme.Dim, fmt.Sprintf(tx("merged · %d"), len(g.sessions))), room)
 	}
 	who := "from " + inboxText(g.parent)
 	switch g.parent {
@@ -1296,7 +1296,7 @@ func (m *model) dashGroupHead(g dashGroup, room int) string {
 	}
 	head := th.FG(theme.Text, who)
 	if g.request > 0 {
-		req := " · " + ids.Request(g.request)
+		req := tx(" · ") + ids.Request(g.request)
 		if e := m.ledgerEntry(g.request); e != nil {
 			if t := firstLine(inboxText(e.Text)); t != "" {
 				req += " " + fit(t, min(max(room-w(head)-w(req)-1, 1), 32))

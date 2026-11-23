@@ -1,6 +1,6 @@
 //go:build !(darwin || linux || freebsd || netbsd || openbsd)
 
-package mascot
+package ambiguous
 
 import (
 	"errors"
@@ -9,5 +9,5 @@ import (
 )
 
 func rawWithTimeout(*os.File, time.Duration) (func(), error) {
-	return nil, errors.New("mascot: no termios")
+	return nil, errors.New("ambiguous: no termios")
 }

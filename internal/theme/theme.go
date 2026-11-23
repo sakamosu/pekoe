@@ -13,6 +13,7 @@ import (
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/config"
 	"pekoe/internal/state"
 )
@@ -190,17 +191,26 @@ type IconSet struct {
 
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// IconsFromEnv is the icon set for a command outside the TUI: IconsName,
+// and ascii when [theme] ambiguous = "wide" (nothing is measured there).
 func IconsFromEnv() string {
 	g, err := config.LoadGlobal()
 	if err != nil {
 		return IconsName("")
 	}
+	if g.Theme.Ambiguous == ambiguous.Wide {
+		return "ascii"
+	}
 	return IconsName(g.Theme.Icons)
 }
 
-// IconsName is the icon set to use for [theme] icons = cfg: $PEKOE_ICONS
-// first, nerd when neither is set.
+// IconsName is the icon set to use for [theme] icons = cfg: ascii with
+// the wide table (internal/ambiguous: the nerd font's private-use icons are
+// ambiguous-width too), else $PEKOE_ICONS first, nerd when neither is set.
 func IconsName(cfg string) string {
+	if ambiguous.IsWide() {
+		return "ascii"
+	}
 	if v := os.Getenv("PEKOE_ICONS"); v != "" {
 		return v
 	}

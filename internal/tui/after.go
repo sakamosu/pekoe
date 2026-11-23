@@ -77,5 +77,5 @@ func (m *model) afterFooter(s *state.Session) string {
 	if s.Hold {
 		lead = "after (hold) "
 	}
-	return m.th.FG(theme.Dim, lead) + strings.Join(parts, m.th.FG(theme.Dim, " · "))
+	return m.th.FG(theme.Dim, lead) + strings.Join(parts, m.th.FG(theme.Dim, tx(" · ")))
 }

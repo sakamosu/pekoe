@@ -91,8 +91,8 @@ func (m *model) tipRows(width, room int) []row {
 		return nil
 	}
 	p := m.prefixLabel()
-	short := wrapTip(strings.ReplaceAll(t.Short, "^q", p), bw)
-	detail := wrapTip(strings.ReplaceAll(t.Detail, "^q", p), bw)
+	short := wrapTip(tx(strings.ReplaceAll(t.Short, "^q", p)), bw)
+	detail := wrapTip(tx(strings.ReplaceAll(t.Detail, "^q", p)), bw)
 	if len(short) > 2 || room < 2+len(short) {
 		return nil
 	}

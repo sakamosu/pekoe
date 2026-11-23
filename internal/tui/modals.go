@@ -59,12 +59,12 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 		return s
 	}
 	t := clip(title, inner-3)
-	tl, tr, bl, br := "╭", "╮", "╰", "╯"
+	tl, tr, bl, br := tx("╭"), tx("╮"), tx("╰"), tx("╯")
 	if m.square {
-		tl, tr, bl, br = "┌", "┐", "└", "┘"
+		tl, tr, bl, br = tx("┌"), tx("┐"), tx("└"), tx("┘")
 	}
-	out := []string{b(0, 0, tl+"─") + t + " " + b(3+w(t), 0, strings.Repeat("─", max(inner-w(t)-2, 0))+tr)}
-	side := func(s string) string { y := len(out); return b(0, y, "│") + s + b(width-1, y, "│") }
+	out := []string{b(0, 0, tl+tx("─")) + t + " " + b(3+w(t), 0, strings.Repeat(tx("─"), max(inner-w(t)-2, 0))+tr)}
+	side := func(s string) string { y := len(out); return b(0, y, tx("│")) + s + b(width-1, y, tx("│")) }
 	for _, l := range lines {
 		if strings.HasPrefix(l, "\x00sunk") {
 			// the thing that will run, sunk into bg: one full-width row, no colored text
@@ -77,7 +77,7 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 			continue
 		}
 		if l == "\x00rule" {
-			out = append(out, b(0, len(out), "├"+strings.Repeat("─", inner)+"┤"))
+			out = append(out, b(0, len(out), tx("├")+strings.Repeat(tx("─"), inner)+tx("┤")))
 			continue
 		}
 		out = append(out, side(surf(l)))
@@ -86,7 +86,7 @@ func (m *model) modalFrame(width int, title string, lines []string, keys [][2]st
 		out = append(out, side(surf("")))
 		out = append(out, side(surf(m.keyHints(keys, cw))))
 	}
-	out = append(out, b(0, len(out), bl+strings.Repeat("─", inner)+br))
+	out = append(out, b(0, len(out), bl+strings.Repeat(tx("─"), inner)+br))
 	return out
 }
 
@@ -192,11 +192,11 @@ func (p *permissionModal) view() []string {
 	}
 	whose := wt.who
 	if wt.repo != "" {
-		whose = wt.repo + " · " + wt.who
+		whose = wt.repo + tx(" · ") + wt.who
 	}
-	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, "Permission") + " " + th.FG(theme.Dim, "· "+whose+" · waiting "+theme.Ago(time.Since(wt.since)))
+	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, "Permission") + " " + th.FG(theme.Dim, tx("· ")+whose+tx(" · waiting ")+theme.Ago(time.Since(wt.since)))
 	if n := len(m.permWaits()); n > 1 {
-		title += th.FG(theme.Dim, fmt.Sprintf(" · %d waiting", n))
+		title += th.FG(theme.Dim, fmt.Sprintf(tx(" · %d waiting"), n))
 	}
 	tool := "a tool"
 	input := ""
@@ -205,7 +205,7 @@ func (p *permissionModal) view() []string {
 	}
 	lines := []string{"", th.Bold(theme.Text, wt.who) + " wants to run"}
 	if wt.repo != "" {
-		lines = append(lines, th.FG(theme.Dim, "  repo     ")+th.FG(theme.Text, wt.repo)+th.FG(theme.Dim, " · session ")+th.FG(theme.Text, wt.slug))
+		lines = append(lines, th.FG(theme.Dim, "  repo     ")+th.FG(theme.Text, wt.repo)+th.FG(theme.Dim, tx(" · session "))+th.FG(theme.Text, wt.slug))
 	}
 	lines = append(lines, "", sunk(th.Bold(theme.Text, tool)+"  "+input), "")
 	if wt.tool != nil && wt.tool.Touches != "" {
@@ -218,7 +218,7 @@ func (p *permissionModal) view() []string {
 	if wt.last != "" && wt.tool == nil {
 		lines = append(lines, th.FG(theme.Dim, "  "+wt.last))
 	}
-	lines = append(lines, th.FG(theme.Dim, "  rule     ")+th.FG(theme.Text, tool+"(…)")+th.FG(theme.Dim, " not in allowlist · ")+th.Bold(theme.Secondary, "A")+th.FG(theme.Dim, " always allow"))
+	lines = append(lines, th.FG(theme.Dim, "  rule     ")+th.FG(theme.Text, tool+tx("(…)"))+th.FG(theme.Dim, tx(" not in allowlist · "))+th.Bold(theme.Secondary, "A")+th.FG(theme.Dim, " always allow"))
 	keys := [][2]string{{"y", "allow"}, {"n", "deny"}, {"g", "go to " + p.goWord()}, {"A", "always"}, {"esc", "later"}}
 	return m.modalFrame(m.modalWidth(min(m.width*55/100, 96)), title, lines, keys, false)
 }
@@ -366,11 +366,11 @@ func (n *newModal) sess() *state.Session {
 func (n *newModal) view() []string {
 	m := n.m
 	th := m.th
-	repo := "no repository · esc, then w"
+	repo := tx("no repository · esc, then w")
 	if n.repo != nil {
 		repo = m.repoName(n.repo)
 	}
-	title := theme.Prefix(m.ic.Worktrees) + th.Bold(theme.Primary, "New session") + " " + th.FG(theme.Dim, "· "+repo)
+	title := theme.Prefix(m.ic.Worktrees) + th.Bold(theme.Primary, "New session") + " " + th.FG(theme.Dim, tx("· ")+repo)
 	col := func(icon, label, value string) string {
 		return fit(icon, 2) + th.FG(theme.Dim, fit(label, 9)) + value
 	}
@@ -384,7 +384,7 @@ func (n *newModal) view() []string {
 			if len(in.text) == 0 && n.field != i {
 				v = th.FG(theme.Dim, placeholders[i])
 			} else if len(in.text) == 0 {
-				v = cursorMark + th.FG(theme.Primary, "▏") + th.FG(theme.Dim, placeholders[i])
+				v = cursorMark + th.FG(theme.Primary, tx("▏")) + th.FG(theme.Dim, placeholders[i])
 			}
 			lines = append(lines, col("", labels[i], v))
 		}
@@ -431,8 +431,8 @@ func (n *newModal) view() []string {
 			// gauge only for slow steps: ━ value (ok) + ─ rest (border), with the number
 			const gw = 15
 			fill := gw * st.Progress / 100
-			v = th.FG(valRole, truncRunes(st.Detail, 28)) + " " + th.FG(theme.Ok, strings.Repeat("━", fill)) + th.FG(theme.Border, strings.Repeat("─", gw-fill)) +
-				" " + fmt.Sprintf("%d%%", st.Progress) + th.FG(theme.Dim, fmt.Sprintf(" · %.0fs of ~%.0fs", float64(st.Elapsed)/1000, float64(st.Expected)/1000))
+			v = th.FG(valRole, truncRunes(st.Detail, 28)) + " " + th.FG(theme.Ok, strings.Repeat(tx("━"), fill)) + th.FG(theme.Border, strings.Repeat(tx("─"), gw-fill)) +
+				" " + fmt.Sprintf("%d%%", st.Progress) + th.FG(theme.Dim, fmt.Sprintf(tx(" · %.0fs of ~%.0fs"), float64(st.Elapsed)/1000, float64(st.Expected)/1000))
 		}
 		lines = append(lines, col(icon, st.Label, v))
 		for _, w := range st.Warnings {
@@ -823,7 +823,7 @@ func (c *commandModal) view() []string {
 	if c.err != "" {
 		lines = append(lines, "", th.FG(theme.Err, c.err))
 	}
-	lines = append(lines, "", th.FG(theme.Dim, "new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · inbox · voice [mute|unmute] · cleanup · config · ext · tutorial · q"))
+	lines = append(lines, "", th.FG(theme.Dim, tx("new <branch> [prompt] · send <text> · land · rm · dev · undo [n] · review · inbox · voice [mute|unmute] · cleanup · config · ext · tutorial · q")))
 	return c.m.modalFrame(c.m.modalWidth(80), th.Bold(theme.Primary, "Command"), lines, c.hints(), false)
 }
 

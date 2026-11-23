@@ -14,7 +14,7 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 2. **他は点か声** — セッション一覧の行頭は状態アイコン（nerd / unicode / ascii のアイコンセット）、pekoe 自身がユーザーに尋ねるときは1行の顔を文頭に置く
 3. **意味があるときだけ動く** — アニメーションは「進行中」「確認待ち」など状態を伝えるときだけ。Ghostty が非フォーカスなら全停止
 4. **体色はテーマトークン** — 配色を固定せず、highlight / body / shadow / eye の4色をテーマから解決する
-5. **フォントに頼らない** — 輪郭はブロック文字（Ghostty が内蔵描画する）で作り、表情だけをグリフで乗せる
+5. **フォントに頼らない** — 輪郭はブロック文字（主要な端末が内蔵描画する）で作り、表情だけをグリフで乗せる
 
 仕様は検証用のモック（配色・形・状態を切り替えられ、Ghostty で貼れる printf とスプライト JSON を出力できるもの。公開していない）で詰めた。
 
@@ -63,7 +63,7 @@ pekoe と tapi の関係は「家」と「そこにいる相棒」。pekoe は�
 
 wait の目は `◕ ◕`（puppy）。黒目を大きくして「お願い」の顔にする。`◕` はフォントでは左上4分の1が欠けた円として描かれる。
 
-目と1セルの字は、East Asian Width が中立（N）で、[ambiguous-width.md](ambiguous-width.md)「2. 代わりの文字の候補」で測った書体に入っていて1セルに収まるものだけを使う（`internal/mascot` の `TestFaceNotAmbiguous` で固定）。曖昧幅（A）の字は Moralerspace JPDOC のように全角で描くフォントではみ出し、目が大きな半円になって顔が崩れる。以前の work の `● ●`、idle の `• •`、チラ見の `˙ ˙` は曖昧幅だったので、次のように替えた：
+目と1セルの字は、East Asian Width が中立（N）で、[ambiguous-width.md](ambiguous-width.md)「2. 代わりの文字の候補」で測った書体に入っていて1セルに収まるものだけを使う（`internal/mascot` の `TestFaceNotAmbiguous` で固定）。曖昧幅（A）の字は、フォントが全角に作っていればはみ出し（例: Moralerspace JPDOC では目が大きな半円になる）、端末が2セルと数えれば顔ごとずれる。以前の work の `● ●`、idle の `• •`、チラ見の `˙ ˙` は曖昧幅だったので、次のように替えた：
 
 - work の目は `◉ ◉`。`●` の代わりに「どの書体にもあって、大きくて、1セルに収まる黒丸」は無く（`⬤` `🞄` は入っている書体が少なく、`∙` は小さい）、大きさの近い `◉` にした。黒目の周りに輪があるので「じっと見て作業している」目になる。以前は wait の候補として `◉ ◉` を見開きで怖いと避けたが、お願いの顔（wait）でなく作業中の顔なら合う。wait の `◕ ◕` とは形で見分けがつく
 - idle の目は `∙ ∙`。測った10書体すべてに入っていて収まる唯一の N の点。`•` より小さく、work の `◉` と大きさで見分けがつく
@@ -179,7 +179,7 @@ CLOSED は何もしない。MERGED と同時に CI が通っても merged だけ
   - 字：キラキラの種類ごとに大きい字から小さい字への列を持ち（unicode・nerd は `✦ ✧ ⋆ ⋅` / `* ∗ ⁺ ⋅` / `⁺ ∙ ⋅`、ascii は `* + .` / `+ ' .`）、粒ごとにどの段から始まるかを決める。一番上の段（`✦` など）から始まる粒は2割ほどで、小さい字が多い。一番小さい字（`⋅` `.`）から始まる粒はなく、消える直前にだけ出る
   - 瞬き：粒ごとに位相と消えている長さ（1〜3コマ）がずれ、列を一段ずつ下って消え、また始めの段から光る（`✦ → ✧ → ⋆ → ⋅ → 空き → ✦`）。全部が同時に切り替わることはない。出始めの 800ms は全部の粒がふだんより一段大きい字で光っていて、4 割ほどの粒はその後 1.2〜3.6 秒のうちに消えたままになる（はじけて落ち着く）
   - 色：secondary（PR の merged アイコンと同じ役割色）が6割、warn と primary が2割ずつ
-  - 字はどれも1セルで East Asian Width が中立か半角のもの（`theme.Confetti` のテストで固定）。曖昧幅の字は Moralerspace JPDOC などで全角に描かれて枠がずれるので使わない（`☆ ★ · ˚ °`、Nerd Font の星 nf-fa-star も私用領域なので曖昧幅。nerd も unicode と同じ字を使う）。どの字も Moralerspace JPDOC と Menlo に入っていて、フォールバックで大きさが揃わなくなることがない
+  - 字はどれも1セルで East Asian Width が中立か半角のもの（`theme.Confetti` のテストで固定）。曖昧幅の字は、全角に作ったフォント（Moralerspace JPDOC など）や曖昧幅を2セルと数える端末で枠がずれるので使わない（`☆ ★ · ˚ °`、Nerd Font の星 nf-fa-star も私用領域なので曖昧幅。nerd も unicode と同じ字を使う）。どの字も [ambiguous-width.md](ambiguous-width.md) で測った書体（Menlo・Moralerspace JPDOC など）に入っていて、フォールバックで大きさが揃わなくなることがない
   - フォーカス中は 400ms ごとに進み、非フォーカスではその場で止まる
 - ci\_running の目線は 800ms ごとに2コマを往復する
 - `animate = false` のときは紙吹雪を出さず、目も1コマ目で止める（静止の顔とセリフだけ）
@@ -267,9 +267,9 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
 | 条件 | 判定 | 代替 |
 | --- | --- | --- |
 | 六分ブロックの内蔵描画 | `TERM_PROGRAM=ghostty` / kitty / WezTerm / foot なら有効。それ以外は設定 `mascot.shape` に従う | `block`（四分ブロックの長方形） |
-| 端末が曖昧幅を2セルと数える（輪郭の `█ ▌ ▀ ▄` が曖昧幅） | 起動時に `●` を出力して CPR（`ESC[6n`）でカーソル位置を測る。2桁進んだら曖昧幅＝広い環境（`glyphs = "auto"` のとき） | 目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット |
+| 端末が曖昧幅を2セルと数える（輪郭の `█ ▌ ▀ ▄` が曖昧幅） | `[theme] ambiguous`（[ambiguous-width.md](ambiguous-width.md)「段階 4 で決めたこと」）。既定の auto は TUI を開くときに `●` を出力して CPR（`ESC[6n`）でカーソル位置を測り、2桁進んだら wide。`wide` と書けば測らずに wide | wide では `glyphs = "auto"` のとき、目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット（TUI のほかの字も wide の表になる） |
 | tmux 越し | 上と同じ測定で決まる。tmux は六分ブロックを素通しするが、`◕` の幅は tmux 側の設定に依存 | 同上 |
-| 曖昧幅を全角で作ったフォント（Moralerspace JPDOC など） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`unicode` と同じ見た目になる |
+| 曖昧幅を全角で作ったフォント（例: Moralerspace JPDOC） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`auto` と同じになる |
 | 256色端末 | truecolor 非対応なら最近傍の 256 色に落とす | パレットの近似色 |
 
 ci_failed の目 `╥ ╥` は曖昧幅だが罫線（U+2500–257F）の範囲なので替えない。主な端末は罫線を自前で描くのでフォントが全角に作っていても1セルに収まり、端末が曖昧幅を2セルと数える環境では輪郭ごと ascii（`T T`）になる（[ambiguous-width.md](ambiguous-width.md)「段階 3 で決めたこと」）。
@@ -283,7 +283,7 @@ ci_failed の目 `╥ ╥` は曖昧幅だが罫線（U+2500–257F）の範囲�
 
 ## 実装メモ
 
-コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / ascii。narrow は以前の値で unicode と同じ） / `palette` / `splash` / `[mascot.colors]`）。
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / ascii。auto は `[theme] ambiguous` が wide なら ascii。narrow は以前の値で auto と同じ。`pekoe config check` が不要と案内する） / `palette` / `splash` / `[mascot.colors]`）。端末の曖昧幅の判定（CPR）は `internal/ambiguous`。
 
 pekoed のセッション状態との対応：
 

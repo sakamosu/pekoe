@@ -282,7 +282,7 @@ func (m *model) ptyRows(p pty, cw int) []row {
 func (m *model) ptyRowsSrc(p pty, cw int) ([]row, []int) {
 	sc := p.sc
 	if sc == nil {
-		return []row{{Text: m.th.FG(theme.Dim, "…")}}, []int{-1}
+		return []row{{Text: m.th.FG(theme.Dim, tx("…"))}}, []int{-1}
 	}
 	lines := append([]string(nil), sc.Lines...)
 	if m.typing && sc.Cursor.Visible && sc.Cursor.Y < len(lines) {
@@ -302,7 +302,7 @@ func (m *model) ptyRowsSrc(p pty, cw int) ([]row, []int) {
 	}
 	if p.unread >= 0 {
 		if r := p.unread - sc.History + 1; r > 0 && r < len(lines) {
-			mark := m.th.FG(theme.Border, strings.Repeat("─", 3)) + m.th.FG(theme.Dim, " new ") + m.th.FG(theme.Border, strings.Repeat("─", max(cw-8, 0)))
+			mark := m.th.FG(theme.Border, strings.Repeat(tx("─"), 3)) + m.th.FG(theme.Dim, " new ") + m.th.FG(theme.Border, strings.Repeat(tx("─"), max(cw-8, 0)))
 			lines = append(lines[:r], append([]string{mark}, lines[r:]...)...)
 			src = append(src[:r], append([]int{-1}, src[r:]...)...)
 		}
@@ -312,7 +312,7 @@ func (m *model) ptyRowsSrc(p pty, cw int) ([]row, []int) {
 		if p.deadRows != nil {
 			lines = p.deadRows(lines)
 		} else {
-			lines = append(dropPaneDead(lines), m.th.FG(theme.Dim, "exited · ")+m.th.Bold(theme.Secondary, "↵")+m.th.FG(theme.Dim, " restart  ")+m.th.Bold(theme.Secondary, "x")+m.th.FG(theme.Dim, " close"))
+			lines = append(dropPaneDead(lines), m.th.FG(theme.Dim, tx("exited · "))+m.th.Bold(theme.Secondary, "↵")+m.th.FG(theme.Dim, " restart  ")+m.th.Bold(theme.Secondary, "x")+m.th.FG(theme.Dim, " close"))
 		}
 	}
 	rows := make([]row, 0, len(lines))

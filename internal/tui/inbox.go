@@ -59,7 +59,7 @@ func (m *model) onInboxList(its []state.InboxItem) {
 		}
 	}
 	if first && len(m.inbox) > 0 {
-		m.setMsg(fmt.Sprintf("? %d open in the inbox · ]a to answer", len(m.inbox)), false)
+		m.setMsg(fmt.Sprintf(tx("? %d open in the inbox · ]a to answer"), len(m.inbox)), false)
 	}
 }
 
@@ -85,7 +85,7 @@ func (m *model) onInboxEvent(data json.RawMessage) tea.Cmd {
 		if !m.inboxToasted[it.ID] {
 			m.inboxToasted[it.ID] = true
 			m.queueInboxPopup(it)
-			text := "? " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + " · ]a"
+			text := "? " + it.From + " asks: " + clip(inboxText(firstLine(it.Question)), 40) + tx(" · ]a")
 			if inboxHoldsUp(it) && !m.quietNotify() {
 				m.waitToast("", mascot.Wait, text) // an agent waits on it (notify.go)
 			} else {
@@ -137,9 +137,9 @@ func (m *model) toastMerge(it state.InboxItem) {
 	m.mergeToasted[it.ID] = key
 	switch {
 	case key != r.State:
-		m.setMsg(fmt.Sprintf("merging PR #%d (%s) · GitHub is still computing whether it can merge: waiting", r.PR, it.About), false)
+		m.setMsg(fmt.Sprintf(tx("merging PR #%d (%s) · GitHub is still computing whether it can merge: waiting"), r.PR, it.About), false)
 	case r.State == state.MergeRunning:
-		m.setMsg(fmt.Sprintf("merging PR #%d (%s) · checking again first", r.PR, it.About), false)
+		m.setMsg(fmt.Sprintf(tx("merging PR #%d (%s) · checking again first"), r.PR, it.About), false)
 	case r.State == state.MergeMerged:
 		m.setMsg(fmt.Sprintf("✓ pekoed merged PR #%d (%s)", r.PR, it.About), false)
 	case r.State == state.MergeFailed:
@@ -275,7 +275,7 @@ func (im *inboxModal) hints() [][2]string {
 		if im.sel >= 0 {
 			keys = append(keys, [2]string{"n", "note"})
 		}
-		return append(keys, [2]string{"]a", "link · dismiss (after skip)"})
+		return append(keys, [2]string{"]a", tx("link · dismiss (after skip)")})
 	}
 	return append(keys, [][2]string{{"↵", "answer"}, {"n", "note"}, {"o", "open link"}, {"g", "go to session"}, {"x", "dismiss"}, {"esc", "later"}}...)
 }
@@ -285,9 +285,9 @@ func (im *inboxModal) view() []string {
 	width := m.modalWidth(min(m.width*60/100, 100))
 	cw := width - 6
 	title := th.FG(theme.Warn, theme.Prefix(m.ic.Wait)) + th.Bold(theme.Primary, "Inbox "+ids.Question(it.ID)) +
-		th.FG(theme.Dim, " · "+it.Kind+" · from "+it.From)
+		th.FG(theme.Dim, tx(" · ")+it.Kind+tx(" · from ")+it.From)
 	if im.popup {
-		title += th.FG(theme.Warn, " · new")
+		title += th.FG(theme.Warn, tx(" · new"))
 	}
 	if it.Claimed != "" {
 		title += " " + th.FG(theme.Warn, theme.Prefix(m.ic.Warning)+"claims to be "+clip(inboxText(it.Claimed), 20))
@@ -298,21 +298,21 @@ func (im *inboxModal) view() []string {
 		if f.Gone {
 			lines = append(lines, label("session")+th.FG(theme.Warn, f.Slug+" is gone"))
 		} else {
-			lines = append(lines, label("session")+f.Slug+th.FG(theme.Dim, " · "+string(f.State)+" · "+f.Branch))
+			lines = append(lines, label("session")+f.Slug+th.FG(theme.Dim, tx(" · ")+string(f.State)+tx(" · ")+f.Branch))
 			head := "-"
 			if f.Head != "" {
 				head = f.Head[:min(9, len(f.Head))]
 			}
-			lines = append(lines, label("HEAD")+head+th.FG(theme.Dim, fmt.Sprintf(" · +%d −%d · %d files", f.Diffstat.Added, f.Diffstat.Deleted, f.Diffstat.Files)))
+			lines = append(lines, label("HEAD")+head+th.FG(theme.Dim, fmt.Sprintf(tx(" · +%d −%d · %d files"), f.Diffstat.Added, f.Diffstat.Deleted, f.Diffstat.Files)))
 			if f.PR > 0 {
 				pr := fmt.Sprintf("#%d", f.PR)
 				if ps := f.PRStatus; ps != nil {
-					pr += th.FG(theme.Dim, fmt.Sprintf(" · %s · CI %d pass %d fail %d pending", ps.State, ps.Pass, ps.Fail, ps.Pending))
+					pr += th.FG(theme.Dim, fmt.Sprintf(tx(" · %s · CI %d pass %d fail %d pending"), ps.State, ps.Pass, ps.Fail, ps.Pending))
 					if ps.ReviewDecision != "" {
-						pr += th.FG(theme.Dim, " · "+ps.ReviewDecision)
+						pr += th.FG(theme.Dim, tx(" · ")+ps.ReviewDecision)
 					}
 					if ps.MergeState != "" {
-						pr += th.FG(theme.Dim, " · "+ps.MergeState)
+						pr += th.FG(theme.Dim, tx(" · ")+ps.MergeState)
 					}
 				}
 				lines = append(lines, label("PR")+pr)
@@ -320,7 +320,7 @@ func (im *inboxModal) view() []string {
 					lines = append(lines, label("")+webLink(f.PRURL))
 				}
 				if f.PRRepo != "" {
-					lines = append(lines, label("fork")+th.FG(theme.Warn, "PR in "+f.PRRepo)+th.FG(theme.Dim, " · pushed to "+f.PushRepo+" (origin)"))
+					lines = append(lines, label("fork")+th.FG(theme.Warn, "PR in "+f.PRRepo)+th.FG(theme.Dim, tx(" · pushed to ")+f.PushRepo+" (origin)"))
 				}
 			}
 			if f.Test.Status != "" {
@@ -358,7 +358,7 @@ func (im *inboxModal) view() []string {
 		ctx := wrapText(inboxText(it.Context), cw-2)
 		room := max(m.height-len(lines)-len(it.Options)-14, 2)
 		if len(ctx) > room {
-			ctx = append(ctx[:room], "…  (pekoe inbox "+ids.Question(it.ID)+" shows all)")
+			ctx = append(ctx[:room], tx("…  (pekoe inbox ")+ids.Question(it.ID)+" shows all)")
 		}
 		lines = append(lines, "")
 		for _, l := range ctx {
@@ -372,11 +372,11 @@ func (im *inboxModal) view() []string {
 			if im.sel < 0 {
 				mark = th.Bold(theme.Primary, "› ")
 			}
-			lines = append(lines, mark+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, "skip · answer later from the inbox (]a)"))
+			lines = append(lines, mark+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, tx("skip · answer later from the inbox (]a)")))
 		} else if len(it.Options) > 0 && noteOnlyOK(it) {
 			// ]a: with none chosen, the note alone answers (no mark: it is
 			// not a default, as the recommendation is not)
-			lines = append(lines, "  "+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, "none of these · with nothing chosen, the note (n) alone is the answer"))
+			lines = append(lines, "  "+th.Bold(theme.Secondary, "-")+"  "+th.FG(theme.Dim, tx("none of these · with nothing chosen, the note (n) alone is the answer")))
 		}
 		for i, o := range it.Options {
 			mark := "  "
@@ -399,13 +399,13 @@ func (im *inboxModal) view() []string {
 		if f := it.Facts; f != nil && f.PR > 0 {
 			pr = fmt.Sprintf(" PR #%d", f.PR)
 		}
-		lines = append(lines, "", th.Bold(theme.Warn, "  merge"+pr+"? pekoed merges it now: ↵ again to merge · any other key cancels"))
+		lines = append(lines, "", th.Bold(theme.Warn, "  merge"+pr+tx("? pekoed merges it now: ↵ again to merge · any other key cancels")))
 	case im.sending:
-		lines = append(lines, "", th.FG(theme.Dim, "answering…"))
+		lines = append(lines, "", th.FG(theme.Dim, tx("answering…")))
 	case im.err != "":
 		lines = append(lines, "", th.FG(theme.Err, im.err))
 	case im.popup && im.grace(time.Now()):
-		lines = append(lines, "", th.FG(theme.Dim, "a new question · keys wait a moment"))
+		lines = append(lines, "", th.FG(theme.Dim, tx("a new question · keys wait a moment")))
 	}
 	return m.modalFrame(width, title, lines, im.hints(), false)
 }
@@ -579,7 +579,7 @@ func popupKey(key string, options, sel int) bool {
 // and waits again), nothing is answered.
 func (im *inboxModal) unconfirm() {
 	im.confirm, im.sel = false, -1
-	im.err = "merge cancelled · nothing was answered"
+	im.err = tx("merge cancelled · nothing was answered")
 	if im.popup {
 		im.shownAt = time.Now()
 	}
@@ -593,7 +593,7 @@ func (im *inboxModal) grace(now time.Time) bool {
 // skip closes the popup with no answer: the item stays in the inbox for
 // ]a and the bar, and does not come up again.
 func (im *inboxModal) skip() tea.Cmd {
-	im.m.setMsg("skipped inbox "+ids.Question(im.it.ID)+" · it stays in the inbox · ]a", false)
+	im.m.setMsg("skipped inbox "+ids.Question(im.it.ID)+tx(" · it stays in the inbox · ]a"), false)
 	return done(nil)
 }
 

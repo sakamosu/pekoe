@@ -89,7 +89,7 @@ func (c *cleanupModal) view() []string {
 	th := m.th
 	width := m.modalWidth(96)
 	cw := width - 6
-	lines := []string{"", th.FG(theme.Dim, fmt.Sprintf("landed · merged on GitHub · stopped for %s+  —  nothing is removed until you confirm", shortDur(c.list.StaleAfter))), ""}
+	lines := []string{"", th.FG(theme.Dim, fmt.Sprintf(tx("landed · merged on GitHub · stopped for %s+  —  nothing is removed until you confirm"), shortDur(c.list.StaleAfter))), ""}
 	if len(c.list.Items) == 0 {
 		lines = append(lines, th.FG(theme.Dim, "nothing to clean up"))
 	}
@@ -112,7 +112,7 @@ func (c *cleanupModal) view() []string {
 			l += " " + th.FG(theme.Dim, fmt.Sprintf("#%d", it.PR))
 		}
 		if len(it.Warnings) > 0 {
-			l += " " + th.FG(theme.Warn, m.ic.Warning+" "+strings.Join(it.Warnings, " · "))
+			l += " " + th.FG(theme.Warn, m.ic.Warning+" "+strings.Join(it.Warnings, tx(" · ")))
 		}
 		l = fit(l, cw)
 		if i == c.sel {
@@ -184,12 +184,12 @@ func (c *cleanupModal) confirm(its []daemon.CleanupItem) *confirmModal {
 		}
 		detail := it.Kind
 		if it.DeletesWorktree {
-			detail += " · deletes " + homeTilde(it.Path)
+			detail += tx(" · deletes ") + homeTilde(it.Path)
 		}
 		role, icon := theme.Dim, m.ic.Check
 		if len(it.Warnings) > 0 {
 			role, icon = theme.Warn, m.ic.Warning
-			detail += " · " + strings.Join(it.Warnings, " · ")
+			detail += tx(" · ") + strings.Join(it.Warnings, tx(" · "))
 		}
 		notes = append(notes, confirmNote{role, icon, it.Slug, detail})
 	}
@@ -220,7 +220,7 @@ func (c *cleanupModal) confirm(its []daemon.CleanupItem) *confirmModal {
 			}
 			info := fmt.Sprintf("removed %d", len(slugs)-len(failed))
 			if len(failed) > 0 {
-				info += " · not removed: " + strings.Join(failed, "; ")
+				info += tx(" · not removed: ") + strings.Join(failed, "; ")
 			}
 			var l daemon.CleanupList
 			err := m.cl.Call("cleanup.list", map[string]any{}, &l)

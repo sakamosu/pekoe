@@ -86,6 +86,7 @@ func Check(b []byte) []Problem {
 
 	oneOf("theme.mode", g.Theme.Mode, false, "auto", "truecolor", "ansi", "none")
 	oneOf("theme.icons", g.Theme.Icons, false, "nerd", "unicode", "ascii")
+	oneOf("theme.ambiguous", g.Theme.Ambiguous, false, "auto", "narrow", "wide")
 	for _, k := range sortedKeys(g.Theme.Colors) {
 		hexColor(add, "theme.colors."+k, g.Theme.Colors[k])
 	}
@@ -97,6 +98,10 @@ func Check(b []byte) []Problem {
 
 	oneOf("mascot.shape", g.Mascot.Shape, false, "auto", "round", "block")
 	oneOf("mascot.glyphs", g.Mascot.Glyphs, false, "auto", "unicode", "narrow", "ascii")
+	if g.Mascot.Glyphs == "narrow" {
+		// a former setting (● as 🞄): the default glyphs fit every font now
+		add("mascot.glyphs", `"narrow" is no longer needed: the default glyphs fit fonts that draw ambiguous-width glyphs two cells wide; remove it (it now does nothing: the same as auto). If the terminal itself counts them as two cells, set [theme] ambiguous = "wide"`)
+	}
 	oneOf("mascot.palette", g.Mascot.Palette, true, "dark", "light", "D", "E")
 	for _, k := range sortedKeys(g.Mascot.Colors) {
 		if !slices.Contains([]string{"hi", "bd", "sh", "eye"}, k) {

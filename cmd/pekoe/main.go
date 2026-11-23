@@ -37,6 +37,7 @@ import (
 
 	"golang.org/x/term"
 
+	"pekoe/internal/ambiguous"
 	"pekoe/internal/client"
 	"pekoe/internal/config"
 	"pekoe/internal/daemon"
@@ -187,7 +188,7 @@ func helpTapi() string {
 	icons := theme.IconsFromEnv()
 	r := mascot.New(mascot.Options{
 		Shape:  mascot.DetectShape(g.Mascot.Shape),
-		Glyphs: mascot.DetectGlyphs(g.Mascot.Glyphs, icons, nil),
+		Glyphs: mascot.DetectGlyphs(g.Mascot.Glyphs, icons, g.Theme.Ambiguous == ambiguous.Wide),
 		Light:  g.Mascot.LightPalette(),
 		Colors: g.Mascot.Colors,
 	}.WithTheme(theme.Load(&g.Theme)))
