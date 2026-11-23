@@ -43,6 +43,7 @@ import (
 	"pekoe/internal/mascot"
 	"pekoe/internal/mcp"
 	"pekoe/internal/theme"
+	"pekoe/internal/voice/backend"
 )
 
 var jsonOut bool
@@ -143,6 +144,10 @@ func main() {
 		err = cmdTip(args)
 	case "config":
 		err = cmdConfig(args)
+	case "voice-backend-say":
+		// the bundled speech backend (docs/voice.md 10.6), run by pekoed;
+		// not in usage(): a person does not type it
+		os.Exit(backend.SayMain(args, backend.SayOptions{}, os.Stdin, os.Stdout, os.Stderr))
 	case "help", "-h", "--help":
 		usage()
 	case "version", "--version":
