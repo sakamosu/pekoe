@@ -85,7 +85,7 @@ flowchart LR
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
-| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI) |
+| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は実装済み: narrate・CLI の pekoe voice・TUI。P2 の外部の VOICEVOX の backend が動き、backend の約束事を公開した: [音声の backend](#音声の-backendvoicevox)) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由と、曖昧幅を 2 セルで数える端末向けの `[theme] ambiguous = "wide"`) |
@@ -455,6 +455,43 @@ Web UI と Chrome 拡張は、ソケットを通らない人間用の入口な�
 サインイン: pekoed が一度きりのトークン(1 回・60 秒)を `~/.local/share/pekoe/gui/` のページ(0600。エージェントと hooks の sandbox からは読めません)に書き、CLI はそのファイルを開きます。トークンはコマンドラインに載りません。ページはそれをセッションのトークンに替え、タブの `sessionStorage` に置いて `Authorization: Bearer` で送ります(Cookie は使いません。`127.0.0.1` の Cookie は別のポートのエージェントの dev server にも届くため)。新しいタブや pekoed の再起動のあと、`session_ttl` の間あなたが操作しなかったとき(allow・send など。画面の更新は数えません)、サインインから 24 時間(`session_ttl` のほうが長ければその時間)たったときは、もう一度 `pekoe gui` を打ちます。ポートは既定で毎回空いているものです(`[gui] port`)。決まったポートを bind できないときは、`pekoe gui` はブラウザを開きません。
 
 **エージェントに操作させないブラウザ(プロファイル)で開いてください。** そのタブを操作できるもの(Claude in Chrome・Playwright・Chrome DevTools)は、あなたとして許可待ちに答えられます。
+
+### 音声の backend(VOICEVOX)
+
+`pekoe voice`([docs/voice.md](docs/voice.md))は、そのままでは macOS の `say` で喋ります。ほかの音声合成は、外部の **backend**(1 文を WAV ファイルにする実行ファイル)としてつなげます。pekoe が動かすのは `[voice.backends]` に絶対パスで書いた backend だけで、`PATH` からは探しません。
+
+例: [pekoe-voice-voicevox](https://github.com/sakamosu/pekoe-voice-voicevox)(日本語だけ。まだ公開していないので、リンクと下の手順は公開されたら使えます)は、ローカルの VOICEVOX のエンジン(VOICEVOX のアプリか Docker のイメージ。`127.0.0.1:50021` で待ち受けます)を通して [VOICEVOX](https://voicevox.hiroshiba.jp/) の声で喋ります。ビルドして、エージェントが書けない場所に置きます(ホームの下のパスには pekoe が警告を出します):
+
+```sh
+git clone https://github.com/sakamosu/pekoe-voice-voicevox.git
+cd pekoe-voice-voicevox
+go build -o pekoe-voice-voicevox .
+install -m 755 pekoe-voice-voicevox /opt/homebrew/bin/
+```
+
+`config.toml` に書きます(`enable = true` を落とさないこと。無効の間はどの backend も動きません):
+
+```toml
+[voice]
+enable = true
+backend = "voicevox"
+fallback = "say"            # VOICEVOX のエンジンが動いていない間に使う
+
+[voice.backends]
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # 置いた場所の絶対パス
+```
+
+使えているかは `pekoe voice backends`、鳴らしてみるのは `pekoe voice test "テストだよ"` です。声・速さ・読みの辞書は backend 自身の設定ファイルで変えます(backend の README)。
+
+VOICEVOX の声はキャラクターごとに利用規約があります。作った音声を公開するとき(デモ動画・配信など)は、そのキャラクターの規約どおりにクレジットを書いてください。
+
+**外部の backend を書きたい人へ**: 約束事(v1)は [docs/voice.md の 10](docs/voice.md#10-speech-backend-の約束事-v1) です(サブコマンド `version`・`check`・`voices`・`synth`、入出力、時間切れ、動かすときの環境)。backend が約束事どおりかは、このリポジトリの clone で次を回して確かめられます:
+
+```sh
+PEKOE_VOICE_CONTRACT=/絶対パス/your-backend go test ./internal/voice/backend -run TestContractExternal -v
+```
+
+同梱の `say` も同じテストを通しています。
 
 ## 設定
 

@@ -1,6 +1,6 @@
 # pekoe voice — 仕様書
 
-状態: P1(P1-1〜P1-5: `internal/voice`・backend・daemon へのつなぎ・CLI `pekoe voice`・TUI)を実装済みで、1 週間の試用(16「試用の判定」)に入れる。P2(VOICEVOX)・P3(read)は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: P1(P1-1〜P1-5: `internal/voice`・backend・daemon へのつなぎ・CLI `pekoe voice`・TUI)を実装済みで、1 週間の試用(16「試用の判定」)に入れる。P2 は外部の backend の例 `pekoe-voice-voicevox`(別のリポジトリ。10.7)ができ、約束事(10)と入れ方を README から公開した。P2 で残るのは、エンジンを止めたときの say への切り替え(10.5)の実地の確かめ(16)。P3(read)は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
@@ -102,7 +102,7 @@ voice が前提にするものが、今の pekoe ではどうなっていて、�
 - **表情**: 増やさない。バーに `voice` の札を出す(14.3)。理由: 顔は目の 3 文字だけで状態を表していて、口が無い(docs/mascot.md)。「喋っている」を目で表すと、集約の状態(wait など)が読めなくなる。17 の D5
 - **read の既定**: メッセージの先頭 5 文(`max_sentences = 5`)。段落単位にしない理由: Claude の返事は 1 段落が長いことも 1 行のこともあり、長さがそろわない。17 の D6
 - **言語の既定**: `lang = "auto"`(チュートリアルと同じく `LC_ALL` → `LC_MESSAGES` → `LANG` で `ja` か `en`)。日本語の環境で英語の定型文が鳴るのを避ける。17 の D8
-- **VOICEVOX のキャラクター**: P2 で、同じ定型文(wait / done / error / みんな手が空いた)を 2〜3 人で聞き比べて決める。決める観点は「小さくて静かな相棒」の人物像(docs/mascot.md「tapi の人物像」)に合うこと、短い文で聞き取りやすいこと、規約がクレジット表記だけで済むこと。P1 には影響しない
+- **VOICEVOX のキャラクター**: pekoe では決めない。pekoe は論理的な名前(`tapi` / `reader`)を渡すだけで、どの声に割り当てるかは backend の設定で決める(10.3・10.7)。17 の D9
 - **クライアントの受け持ち**: 発話の判断と再生はすべて pekoed にあり、クライアントが受け持つのは `voice.focus` を送ること(と、札・ログの表示)だけ。`voice.focus` を送るのは TUI だけ
 
 ## 4. 構成
@@ -397,10 +397,10 @@ P2 で作る、約束事どおりの外部の backend。pekoe とは別のリポ
 - VOICEVOX のエンジン(`http://localhost:50021`。VOICEVOX のアプリか Docker で用意する)に、`/audio_query` → `/synthesis` の順に投げて合成する。エンジンにつながらなければ `check` が失敗し、pekoe は fallback(say)に落ちる(10.5)
 - 入れ方: 実行ファイルを置き、`config.toml` の `[voice.backends]` に絶対パスで書き、`[voice] backend = "voicevox"`・`fallback = "say"` にする(10.2)。README の入れ方にこの行を載せる
 - キャッシュ: 文・声・合成の値のハッシュをキーに WAV を backend 自身の場所に残す(pekoe のキャッシュ(9)とは別)
-- ユーザー辞書: `pekoe` → ペコー、`tapi` → タピ、`worktree` → ワークツリー などを `/user_dict_word` で登録する。辞書の中身は backend の設定ファイルに出し、人が足せるようにする
-- 合成の値: `speedScale` は 1.2〜1.4 ほど。`prePhonemeLength` / `postPhonemeLength` を短くして、文の前後の無音を詰める
-- 声の割り当て: 論理的な名前(`tapi` / `reader`)を VOICEVOX のキャラクター(スタイル)に割り当てる設定を backend に持つ。tapi の既定の声は P2 の最初に聞き比べて決める(17 の D9)
-- 規約: VOICEVOX の声はキャラクターごとに利用規約がある。backend の README に規約の場所を書き、音声を公開するとき(デモ動画など)は規約どおりにクレジットを書く(例: 「VOICEVOX:<キャラクター名>」の形が多い。正確な書き方はキャラクターごとの規約に従う)
+- 声の割り当て: 論理的な名前(`tapi` / `reader`)を VOICEVOX のキャラクター(スタイル)に割り当てる設定を backend に持つ。どの声にするかは backend の設定で決め、pekoe は特定の声を既定にも推奨にもしない(17 の D9)
+- 合成の値: `speedScale` などは backend の設定で変えられるようにする。`prePhonemeLength` / `postPhonemeLength` を短くして、文の前後の無音を詰める
+- backend 側で工夫する例: 読み違える語をエンジンのユーザー辞書(`/user_dict_word`)に登録する(`pekoe` → ペコー など。中身は backend の設定ファイルに出し、人が足せるようにする)。英字と日本語の間の空白に VOICEVOX が間をあけるので、エンジンに渡す前に取り除く。どちらも backend の中の話で、pekoe は関わらない
+- 規約: VOICEVOX の声はキャラクターごとに利用規約がある。backend の README に規約の場所を書き、音声を公開するとき(デモ動画など)は、使った声の規約どおりにクレジットを書く
 
 ## 11. 設定
 
@@ -564,7 +564,7 @@ P1-3 で `[voice]` の節を足したとき(`TestTipsCoverSections` が節に ti
 | 段階 | 中身 | 終わりの条件 |
 | --- | --- | --- |
 | **P1** | narrate(wait / done / error / ask / idle_all)+ 同梱の say + 再生 + 発話キュー + ミュート + CLI + TUI(`^q m`・札・`:voice`・フォーカス) | 下の P1-1〜P1-5 の完了条件。確認待ち・完了・エラーを呼び名付きで、状態が変わってから 1 秒以内(キャッシュ済みの文)に喋ることを、`scripts/sandbox.sh` の中で実際に鳴らし、`voice.log` の待ち時間で確かめる |
-| **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる |
+| **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる。**状態**: 約束事と入れ方は README から公開し、外部の backend の例 `pekoe-voice-voicevox` ができた(10.7)。エンジンを止めたときの say への切り替えの実地の確かめが残っている |
 | **P3** | read: `MessageDisplay` の pty での確かめ → 整形・中断・フォーカス連動・`pekoe voice mode` | フォーカス中のセッションの本文を、コードを飛ばして読む。入力すると止まる |
 
 ### 試用の判定
@@ -661,4 +661,4 @@ P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えて�
 | D6 | read で読む範囲の既定 | (a) 先頭 5 文 (b) 最初の段落 (c) 先頭 6 文 | **(a)**。段落は長さがそろわない。5 文で ja はおよそ 20〜30 秒。6 との差は小さいので好みで |
 | D7 | error の範囲 | (a) → `failed` だけ (b) Stop の後のテストの失敗(`test` が fail)も (c) PR の CI の失敗も | **(a)**。テストと CI の失敗はトースト・PR の反応で出ていて、done の直後に続けて喋ることになる |
 | D8 | 既定の言語 | (a) `auto`(ロケールから) (b) `en` | **(a)**。チュートリアルと同じ決め方。日本語の環境で英語の定型文が鳴るのを避ける |
-| D9 | VOICEVOX の tapi の声 | P2 で 2〜3 人を同じ定型文で聞き比べて決める(観点は 3.3) | P2 の最初に聞き比べ用の WAV を作って人が選ぶ。P1 には影響しない |
+| D9 | VOICEVOX の tapi の声 | (a) pekoe が既定の声を決める (b) backend の設定に任せる | **(b)**。声は backend 側の設定で決める。pekoe は論理的な名前(`tapi` / `reader`)を渡すだけで、特定のキャラクターを既定にも推奨にもしない(10.3・10.7)。どの声が合うかは使う人の好みと環境による |
