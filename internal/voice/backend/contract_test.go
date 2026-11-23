@@ -14,9 +14,13 @@ package backend
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -133,17 +137,8 @@ func TestContractBundledSay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A Mac without a working speech service (a headless CI runner) never
-	// finishes a sentence: try one with time to spare (and warm say up)
-	// before holding it to the protocol's 3 seconds.
-	probe := *b
-	probe.Timeouts.Synth = 20 * time.Second
-	if err := probe.Synth(context.Background(), Request{Text: "test", Voice: "tapi", Lang: "en"}, filepath.Join(t.TempDir(), "out.wav")); err != nil {
-		var e *Error
-		if errors.As(err, &e) && e.Timeout {
-			t.Skip("say did not finish one sentence in 20s here (no working speech service?): " + err.Error())
-		}
-		t.Fatal(err)
+	if why := slowSay(t); why != "" {
+		t.Skip(why)
 	}
 	contract(t, b)
 }
@@ -159,4 +154,36 @@ func TestContractExternal(t *testing.T) {
 		t.Fatal(err)
 	}
 	contract(t, b)
+}
+
+// slowSay measures this Mac's say itself, not the bundled backend (a hang
+// in the backend must still fail): one sentence to warm it up, then one
+// timed. Where say cannot finish a sentence well inside the protocol's 3
+// seconds even warm (GitHub's macOS runners take about 10 seconds), the
+// contract cannot be held to it here; the reason says so. "" when say is
+// fast enough.
+func slowSay(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(i int) (time.Duration, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, SayBin, "--file-format=WAVE", "--data-format=LEI16@24000", "-o", filepath.Join(dir, strconv.Itoa(i)+".wav"), "-f", "-")
+		cmd.Stdin = strings.NewReader("test")
+		start := time.Now()
+		err := cmd.Run()
+		return time.Since(start), err
+	}
+	if d, err := run(0); err != nil {
+		return fmt.Sprintf("%s cannot write a sentence here (%v after %s)", SayBin, err, d.Round(time.Millisecond))
+	}
+	d, err := run(1)
+	if err != nil {
+		return fmt.Sprintf("%s cannot write a sentence here (%v after %s)", SayBin, err, d.Round(time.Millisecond))
+	}
+	if limit := DefaultTimeouts.Synth / 2; d > limit {
+		return fmt.Sprintf("%s takes %s for one sentence here even warmed up, too close to the protocol's %s to check the bundled say against it (limit %s)", SayBin, d.Round(time.Millisecond), DefaultTimeouts.Synth, limit)
+	}
+	t.Logf("%s: %s for one sentence", SayBin, d.Round(time.Millisecond))
+	return ""
 }
