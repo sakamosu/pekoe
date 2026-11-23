@@ -269,7 +269,7 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
 | 六分ブロックの内蔵描画 | `TERM_PROGRAM=ghostty` / kitty / WezTerm / foot なら有効。それ以外は設定 `mascot.shape` に従う | `block`（四分ブロックの長方形） |
 | 端末が曖昧幅を2セルと数える（輪郭の `█ ▌ ▀ ▄` が曖昧幅） | `[theme] ambiguous`（[ambiguous-width.md](ambiguous-width.md)「段階 4 で決めたこと」）。既定の auto は TUI を開くときに `●` を出力して CPR（`ESC[6n`）でカーソル位置を測り、2桁進んだら wide。`wide` と書けば測らずに wide | wide では `glyphs = "auto"` のとき、目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット（TUI のほかの字も wide の表になる） |
 | tmux 越し | 上と同じ測定で決まる。tmux は六分ブロックを素通しするが、`◕` の幅は tmux 側の設定に依存 | 同上 |
-| 曖昧幅を全角で作ったフォント（例: Moralerspace JPDOC） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`unicode` と同じ見た目になる |
+| 曖昧幅を全角で作ったフォント（例: Moralerspace JPDOC） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`auto` と同じになる |
 | 256色端末 | truecolor 非対応なら最近傍の 256 色に落とす | パレットの近似色 |
 
 ci_failed の目 `╥ ╥` は曖昧幅だが罫線（U+2500–257F）の範囲なので替えない。主な端末は罫線を自前で描くのでフォントが全角に作っていても1セルに収まり、端末が曖昧幅を2セルと数える環境では輪郭ごと ascii（`T T`）になる（[ambiguous-width.md](ambiguous-width.md)「段階 3 で決めたこと」）。
@@ -283,7 +283,7 @@ ci_failed の目 `╥ ╥` は曖昧幅だが罫線（U+2500–257F）の範囲�
 
 ## 実装メモ
 
-コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / ascii。auto は `[theme] ambiguous` が wide なら ascii。narrow は以前の値で unicode と同じ。`pekoe config check` が不要と案内する） / `palette` / `splash` / `[mascot.colors]`）。端末の曖昧幅の判定（CPR）は `internal/ambiguous`。
+コードは `internal/mascot`（スプライト JSON の埋め込み・描画・集約・台詞・端末判定。PR の反応は `pr.go`）と `internal/tui/tapi.go`（タイマー・トースト・バー・空ペイン・スプラッシュ。PR の反応のトーストと待ち行列・デモは `tapi_pr.go`）。紙吹雪の字は `theme.Confetti`。設定は `config.toml` の `[mascot]`（`shape` / `glyphs`（auto / unicode / ascii。auto は `[theme] ambiguous` が wide なら ascii。narrow は以前の値で auto と同じ。`pekoe config check` が不要と案内する） / `palette` / `splash` / `[mascot.colors]`）。端末の曖昧幅の判定（CPR）は `internal/ambiguous`。
 
 pekoed のセッション状態との対応：
 

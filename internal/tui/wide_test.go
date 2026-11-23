@@ -208,3 +208,33 @@ func TestWideLiteralsWrapped(t *testing.T) {
 		}
 	}
 }
+
+// What cuts to n cells with an ellipsis stays within n cells when the
+// ellipsis is three ("..."): the status bar's path (clipLeft) and the
+// progress / last-tool texts (truncRunes) count it.
+func TestWideCutsKeepWidth(t *testing.T) {
+	long := "~/worktrees/pekoe/feat-ambiguous-width-setting"
+	for _, wide := range []bool{false, true} {
+		was := ambiguous.IsWide()
+		ambiguous.SetWide(wide)
+		for n := 0; n <= 12; n++ {
+			if got := clipLeft(long, n); w(got) > n {
+				t.Errorf("wide=%v clipLeft(%d) = %q, %d cells", wide, n, got, w(got))
+			}
+			if got := truncRunes(long, n); len([]rune(got)) > n {
+				t.Errorf("wide=%v truncRunes(%d) = %q, %d runes", wide, n, got, len([]rune(got)))
+			}
+		}
+		if got := clipLeft(long, 10); !strings.HasSuffix(got, "setting") || w(got) != 10 {
+			t.Errorf("wide=%v clipLeft keeps the tail: %q", wide, got)
+		}
+		ambiguous.SetWide(was)
+	}
+	if got := truncRunes("abcdefghijklmnop", 8); got != "abcdefg…" {
+		t.Errorf("default table: %q", got)
+	}
+	wideTable(t)
+	if got := truncRunes("abcdefghijklmnop", 8); got != "abcde..." {
+		t.Errorf("wide table: %q", got)
+	}
+}

@@ -276,7 +276,7 @@ ambiguous = "auto"   # auto | narrow | wide
 | ci_failed の目 | `╥ ╥` | 替えない | 罫線の範囲で、B では端末が自前で描く。A の端末では段階 4 の `wide` の表(マスコットは ascii の `T T`)で扱う |
 | 作業中の顔の吹き出しの泡(`workBubbles`) | `· ° °` | 替えない(例外) | 曖昧幅だが、表示が崩れたという報告が無いので残す。B(JPDOC)では収まり、A の端末では `auto` がマスコットを ascii(`. o O`)にする。`internal/tui/ambiguous_test.go` の既知の違反に、例外として残したことを書いて入れたまま |
 
-- `narrowGlyph` をなくした。`mascot.glyphs = "narrow"` は読み続け(`pekoe config check` も通る)、`DetectGlyphs` で `unicode` として扱う。`auto`(CPR で広いと測れば ascii)と `ascii` の動きは変えていない。`config check` で「不要になった」と出すのは段階 4(済み)
+- `narrowGlyph` をなくした。`mascot.glyphs = "narrow"` は読み続け(`pekoe config check` も通る)、`DetectGlyphs` で `unicode` として扱う(段階 4 で `auto` と同じにした)。`auto`(CPR で広いと測れば ascii)と `ascii` の動きは変えていない。`config check` で「不要になった」と出すのは段階 4(済み)
 - チュートリアルのカードの顔を、ステップごとの表情(`tourStep.mood`)に戻した。`^ ^` に固定していたのは、`●` `•` が B で崩れたため
 - 残り: `internal/tips/tips.toml` の `mascot-glyphs` と README の `[mascot] glyphs` の説明はまだ narrow を「● を 🞄 に替える」と書いている(段階 4 で直した)。Web UI の tapi chat の顔(`internal/daemon/webui/app.js`)はブラウザが描くので対象外で、`● ●` `• •` のまま
 
@@ -323,7 +323,7 @@ ambiguous = "auto"   # auto | narrow | wide
 - `internal/theme` の `TestIconsWide`、`internal/mascot` の `TestFaceWide`: アイコンと tapi が wide の表で曖昧幅の字を使わないこと
 - `internal/config`: `theme.ambiguous` の値の確かめと、`mascot.glyphs = "narrow"` の案内
 
-**`mascot.glyphs = "narrow"`**: 読み続けて unicode と同じに描く。`pekoe config check` が「no longer needed」と出し、端末が 2 セルで数えるなら `[theme] ambiguous = "wide"` と案内する。tips の `mascot-glyphs` を書き直し、`theme-ambiguous` を足した(`[theme]` は tip を持ったので `NoTip` から外した)。
+**`mascot.glyphs = "narrow"`**: 読み続けて何もしない(auto と同じ。段階 3 では unicode に固定していたが、それだと wide の表で tapi が曖昧幅の輪郭のまま描かれるので auto にした)。`pekoe config check` が「no longer needed」と出し、端末が 2 セルで数えるなら `[theme] ambiguous = "wide"` と案内する。tips の `mascot-glyphs` を書き直し、`theme-ambiguous` を足した(`[theme]` は tip を持ったので `NoTip` から外した)。
 
 ## 付録: 調べ方
 

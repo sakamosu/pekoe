@@ -528,7 +528,7 @@ ambiguous = "auto"          # how the terminal counts ambiguous-width glyphs (â—
 primary = "#ff87da"
 [mascot]                    # the mascot tapi (docs/mascot.md)
 shape   = "auto"            # auto | round (sextant blocks) | block (quadrant blocks)
-glyphs  = "auto"            # auto (ascii when [theme] ambiguous is wide) | unicode | ascii (narrow, a former value, is no longer needed: it draws as unicode)
+glyphs  = "auto"            # auto (ascii when [theme] ambiguous is wide) | unicode | ascii (narrow, a former value, is no longer needed: it reads as auto)
 palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
 splash  = true              # splash screen at startup
 sleep_after = "3m"          # tapi falls asleep when every session is idle and no key was pressed for this long (at least 10s)

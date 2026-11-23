@@ -312,12 +312,13 @@ func TestWithTheme(t *testing.T) {
 	}
 }
 
-// mascot.glyphs = "narrow" is still read (no error) and draws as unicode;
-// ascii and auto keep what they did
+// mascot.glyphs = "narrow" is still read (no error) and does nothing: it
+// is auto (docs/ambiguous-width.md「設定の形と移行」); ascii and auto keep
+// what they did
 func TestDetectGlyphs(t *testing.T) {
 	for _, c := range []struct{ cfg, icons, want string }{
 		{"narrow", "unicode", "unicode"},
-		{"narrow", "ascii", "unicode"},
+		{"narrow", "ascii", "ascii"},
 		{"unicode", "ascii", "unicode"},
 		{"ascii", "nerd", "ascii"},
 		{"auto", "ascii", "ascii"},
@@ -328,10 +329,10 @@ func TestDetectGlyphs(t *testing.T) {
 			t.Errorf("DetectGlyphs(%q, %q) = %q, want %q", c.cfg, c.icons, got, c.want)
 		}
 	}
-	// the wide table ([theme] ambiguous): auto falls to ascii, an explicit
-	// choice stays
+	// the wide table ([theme] ambiguous): auto (and narrow, read as auto)
+	// falls to ascii, an explicit choice stays
 	for _, c := range []struct{ cfg, want string }{
-		{"auto", "ascii"}, {"", "ascii"}, {"narrow", "unicode"}, {"unicode", "unicode"}, {"ascii", "ascii"},
+		{"auto", "ascii"}, {"", "ascii"}, {"narrow", "ascii"}, {"unicode", "unicode"}, {"ascii", "ascii"},
 	} {
 		if got := DetectGlyphs(c.cfg, "nerd", true); got != c.want {
 			t.Errorf("DetectGlyphs(%q, nerd, wide) = %q, want %q", c.cfg, got, c.want)

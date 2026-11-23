@@ -249,12 +249,21 @@ func (m *model) sessionRowsSel(cw int) ([]row, []int, string) {
 }
 
 // sessionLine: icon  name  state  age  +add -del  test  (grid columns)
+// truncRunes keeps s within n runes, marking the cut with an ellipsis
+// (three cells, "...", in the wide table: what is kept shrinks by as much).
 func truncRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
 	}
-	return string(r[:n-1]) + tx("…")
+	if n <= 0 {
+		return ""
+	}
+	el := []rune(tx("…"))
+	if keep := n - len(el); keep > 0 {
+		return string(r[:keep]) + string(el)
+	}
+	return string(el[:n])
 }
 
 // Columns of a session line: the state word is stateW wide, the age ageW.
@@ -477,15 +486,16 @@ func clipLeft(s string, n int) string {
 	if w(s) <= n {
 		return s
 	}
-	if n == 1 {
-		return tx("…")
+	el := tx("…") // "..." in the wide table: the tail kept is that much shorter
+	if n <= w(el) {
+		return clip(el, n)
 	}
 	r := []rune(s)
 	i := len(r)
-	for i > 0 && w(string(r[i-1:])) <= n-1 {
+	for i > 0 && w(string(r[i-1:])) <= n-w(el) {
 		i--
 	}
-	return tx("…") + string(r[i:])
+	return el + string(r[i:])
 }
 
 func (m *model) thirdPanel(width, h int, f bool) []string {

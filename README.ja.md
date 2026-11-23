@@ -525,7 +525,7 @@ ambiguous = "auto"          # 端末が曖昧幅の字(● · ─)を何セル�
 primary = "#ff87da"
 [mascot]                    # マスコット tapi(docs/mascot.md)
 shape   = "auto"            # auto | round(六分ブロック) | block(四分ブロック)
-glyphs  = "auto"            # auto([theme] ambiguous が wide なら ascii) | unicode | ascii(narrow は以前の値で、もう要らない。unicode と同じ)
+glyphs  = "auto"            # auto([theme] ambiguous が wide なら ascii) | unicode | ascii(narrow は以前の値で、もう要らない。auto と同じ)
 palette = "dark"            # dark(ミルキーな粒。暗い背景向け) | light(キャラメル色の粒。明るい背景向け)
 splash  = true              # 起動時のスプラッシュ
 sleep_after = "3m"          # 全セッションが idle でキー入力もなくこれだけ経つと tapi が眠る(下限 10s)

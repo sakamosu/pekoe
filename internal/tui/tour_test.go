@@ -619,7 +619,7 @@ func TestTourDimsOutside(t *testing.T) {
 }
 
 // the card's face is the step's mood in every glyph setting (narrow, a
-// former setting, draws as unicode), the moods vary over the tour, and the
+// former setting, reads as auto), the moods vary over the tour, and the
 // face line has no glyph a font may draw two cells wide
 func TestTourFaceByStep(t *testing.T) {
 	moods := map[mascot.Mood]bool{}
