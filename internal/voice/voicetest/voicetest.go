@@ -148,6 +148,9 @@ func (s *Synth) Synth(ctx context.Context, text, voice, lang string) (string, er
 	}
 }
 
+// Pending is how many calls came that Next has not taken.
+func (s *Synth) Pending() int { return len(s.calls) }
+
 // Next is the next call; the test fails if none comes within Wait.
 func (s *Synth) Next(t testing.TB) *SynthCall {
 	t.Helper()

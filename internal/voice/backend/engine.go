@@ -71,6 +71,10 @@ type Engine struct {
 	onFallback bool
 	switchedAt time.Time
 	errText    string
+	// the fallback checked for retries (FallbackFor) while the configured
+	// backend is in use; nil until needed, and after it failed
+	retryFB    *Backend
+	retryFBVer string
 }
 
 // New makes an Engine. Nothing runs until Select (or the first Synth).
@@ -288,6 +292,12 @@ func (e *Engine) Synth(ctx context.Context, text, voice, lang string) (string, e
 			return "", fmt.Errorf("%w: %s", ErrUnavailable, reason)
 		}
 	}
+	return e.synthWith(ctx, b, ver, text, voice, lang)
+}
+
+// synthWith synthesizes text (already cleaned) with b, whose version
+// printed ver, through the cache.
+func (e *Engine) synthWith(ctx context.Context, b *Backend, ver, text, voice, lang string) (string, error) {
 	keep := voice != ReaderVoice
 	if b.Name == Builtin && e.o.Variant != "" {
 		ver += "\x00" + e.o.Variant
@@ -322,6 +332,61 @@ func (e *Engine) Synth(ctx context.Context, text, voice, lang string) (string, e
 		return "", err
 	}
 	return p, nil
+}
+
+// FallbackFor is what the speech queue tries after Synth failed with err
+// (docs/voice.md 10.5): when the configured backend failed and a fallback
+// is configured, the backend that failed, the fallback's name and a synth
+// with the fallback, for the same sentence once more. synth is nil when
+// there is nothing to try: the failure was not the configured backend's
+// (it was the fallback's own, or no backend's), there is no fallback, or
+// nothing can be used (Select found neither usable: the fallback was just
+// checked and failed).
+// It runs nothing; synth checks the fallback (path, version, check) the
+// first time it is needed and keeps it while it works.
+func (e *Engine) FallbackFor(err error) (failed, name string, synth func(ctx context.Context, text, voice, lang string) (string, error)) {
+	var be *Error
+	if !errors.As(err, &be) || be.Backend != e.o.Backend || e.o.Fallback == "" || e.o.Fallback == e.o.Backend {
+		return "", "", nil
+	}
+	e.mu.Lock()
+	none := e.using == nil
+	e.mu.Unlock()
+	if none {
+		return "", "", nil
+	}
+	return be.Backend, e.o.Fallback, e.synthFallback
+}
+
+func (e *Engine) synthFallback(ctx context.Context, text, voice, lang string) (string, error) {
+	text = CleanText(text)
+	if text == "" {
+		return "", errors.New("no text to say")
+	}
+	e.mu.Lock()
+	b, ver := e.retryFB, e.retryFBVer
+	if e.onFallback && e.using != nil {
+		b, ver = e.using, e.usingVer // switched meanwhile: the same thing
+	}
+	e.mu.Unlock()
+	if b == nil {
+		var err error
+		if b, ver, err = e.prepare(ctx, e.o.Fallback); err != nil {
+			return "", err
+		}
+		e.mu.Lock()
+		e.retryFB, e.retryFBVer = b, ver
+		e.mu.Unlock()
+	}
+	p, err := e.synthWith(ctx, b, ver, text, voice, lang)
+	if err != nil {
+		e.mu.Lock()
+		if e.retryFB == b {
+			e.retryFB, e.retryFBVer = nil, "" // checked again next time
+		}
+		e.mu.Unlock()
+	}
+	return p, err
 }
 
 // tmpDir is a new empty directory under <data>/voice/tmp for one synth.

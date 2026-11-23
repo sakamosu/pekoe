@@ -85,6 +85,13 @@ type Config struct {
 	// failures in a row and reports whether it did; false (or nil) pauses
 	// synthesis for PauseAfterFail (Q11, 10.5).
 	Failover func() bool
+	// Fallback is asked after a synth failed with err (10.5): when the
+	// backend that failed is not the fallback, it returns that backend's
+	// name, the fallback's name and a Synth with the fallback, and the
+	// utterance is synthesized once more with it. s nil (no fallback, or
+	// the failure was the fallback's own) drops the utterance as before.
+	// Called without the lock; it must return quickly (no exec).
+	Fallback func(err error) (failed, name string, s Synth)
 	// Release is told when the queue is done with a wav Synth returned
 	// (played, or dropped unplayed), on its own goroutine; nil is nothing.
 	Release func(wav string)
@@ -128,6 +135,9 @@ type utt struct {
 	cancel   context.CancelFunc
 	timedOut bool // the synth call hit SynthTimeout
 	stopping bool // the player was told to stop
+	// retry is why the backend in use failed, while (and after) the
+	// fallback via synthesizes the utterance once more (10.5)
+	retry, via string
 }
 
 func (u *utt) slug() string { return u.items[0].Slug }
@@ -351,6 +361,11 @@ func (q *Queue) updateLocked() {
 
 // logLocked logs one item; text "" is the item's own sentence.
 func (q *Queue) logLocked(it *qitem, text string, r Result, reason string, now time.Time) {
+	q.logAsLocked(it, text, r, reason, "", now)
+}
+
+// logAsLocked is logLocked naming the backend ("" is the one in use).
+func (q *Queue) logAsLocked(it *qitem, text string, r Result, reason, backend string, now time.Time) {
 	if q.cfg.Log == nil {
 		return
 	}
@@ -364,7 +379,7 @@ func (q *Queue) logLocked(it *qitem, text string, r Result, reason string, now t
 	if r == ResultSpoken || r == ResultMerged {
 		e.LatencyMS = now.Sub(it.pushed).Milliseconds()
 	}
-	if q.cfg.Backend != nil {
+	if e.Backend = backend; e.Backend == "" && q.cfg.Backend != nil {
 		e.Backend = q.cfg.Backend()
 	}
 	q.cfg.Log(e)
@@ -437,6 +452,7 @@ func (q *Queue) abandonLocked(u *utt) {
 	q.releaseLocked(u.wav)
 	u.wav = ""
 	u.timedOut = false
+	u.retry, u.via = "", ""
 }
 
 func (q *Queue) stopPlayingLocked(match func(*utt) bool) {
@@ -497,7 +513,7 @@ func (q *Queue) pumpLocked() {
 			if q.inflight >= MaxSynth || q.failingOver {
 				break
 			}
-			q.synthLocked(u)
+			q.synthLocked(u, q.cfg.Synth)
 			break
 		}
 		if u.state == uttReady && q.playing == nil && !q.holdLocked(u, now) {
@@ -667,7 +683,7 @@ func (q *Queue) selectLocked(now time.Time) *utt {
 	return nil
 }
 
-func (q *Queue) synthLocked(u *utt) {
+func (q *Queue) synthLocked(u *utt, s Synth) {
 	q.gen++
 	gen := q.gen
 	ctx, cancel := context.WithCancel(context.Background())
@@ -683,13 +699,20 @@ func (q *Queue) synthLocked(u *utt) {
 	})
 	text, voice, lang := u.text, u.voice, u.lang
 	go func() {
-		wav, err := q.cfg.Synth.Synth(ctx, text, voice, lang)
+		wav, err := s.Synth(ctx, text, voice, lang)
 		timeout.Stop()
 		q.synthDone(u, gen, wav, err)
 	}()
 }
 
 func (q *Queue) synthDone(u *utt, gen uint64, wav string, err error) {
+	// what the fallback could do about a failure (10.5): asked before the
+	// lock, so that the queue never waits on the backend side
+	var failed, fbName string
+	var fb Synth
+	if err != nil && q.cfg.Fallback != nil {
+		failed, fbName, fb = q.cfg.Fallback(err)
+	}
 	q.mu.Lock()
 	q.inflight--
 	if q.closed || u.gen != gen || q.next != u {
@@ -705,8 +728,12 @@ func (q *Queue) synthDone(u *utt, gen uint64, wav string, err error) {
 	}
 	now := q.cfg.Clock.Now()
 	if err == nil {
-		q.fails = 0
-		q.errText = ""
+		if u.retry == "" {
+			// the backend in use works (the fallback's success on a retry
+			// says nothing about it)
+			q.fails = 0
+			q.errText = ""
+		}
 		u.cancel = nil
 		u.state, u.wav = uttReady, wav
 		q.pumpLocked()
@@ -720,21 +747,35 @@ func (q *Queue) synthDone(u *utt, gen uint64, wav string, err error) {
 	}
 	if u.cancel != nil {
 		u.cancel()
+		u.cancel = nil
 	}
-	for _, x := range u.items {
-		q.logLocked(x, u.text, ResultFailed, reason, now)
-	}
-	q.next = nil
-	q.fails++
-	if q.fails < FailLimit {
+	if u.retry != "" {
+		// the fallback failed too: the utterance is lost, counted once
+		why := u.retry + "; " + u.via + " failed: " + reason
+		for _, x := range u.items {
+			q.logAsLocked(x, u.text, ResultFailed, why, u.via, now)
+		}
+		q.next = nil
 		q.pumpLocked()
 		q.updateLocked()
 		q.mu.Unlock()
 		return
 	}
+	if failed != "" {
+		reason = failed + " failed: " + reason
+	}
+	q.fails++
+	if q.fails < FailLimit {
+		// shown before the switch too: the backend in use is failing
+		q.errText = fmt.Sprintf("synth failed (%d in a row): %s", q.fails, reason)
+		q.retryLocked(u, reason, fbName, fb, now)
+		q.mu.Unlock()
+		return
+	}
 	q.fails = 0
 	// Failover may take seconds (it checks the fallback backend): call it
-	// without the lock, starting no synth meanwhile.
+	// without the lock, starting no synth meanwhile. The utterance stays
+	// planned, to be tried with the fallback after.
 	q.failingOver = true
 	q.updateLocked()
 	q.mu.Unlock()
@@ -742,14 +783,38 @@ func (q *Queue) synthDone(u *utt, gen uint64, wav string, err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.failingOver = false
+	now = q.cfg.Clock.Now()
 	if switched {
 		q.errText = ""
 	} else {
-		now = q.cfg.Clock.Now()
 		q.pausedUntil = now.Add(PauseAfterFail)
 		q.errText = fmt.Sprintf("synth failed %d times in a row (%s); paused until %s", FailLimit, reason, q.pausedUntil.Format(time.RFC3339))
+		fb = nil // the fallback cannot be used either (or there is none)
 	}
-	q.pumpLocked()
+	if q.closed || u.gen != gen || q.next != u {
+		// it changed or left the queue meanwhile: what is left of it is
+		// planned again (the pause drops it)
+		q.pumpLocked()
+		q.updateLocked()
+		return
+	}
+	q.retryLocked(u, reason, fbName, fb, now)
+}
+
+// retryLocked synthesizes the failed utterance once more with the fallback
+// fb (10.5); with none, it is dropped as failed.
+func (q *Queue) retryLocked(u *utt, reason, fbName string, fb Synth, now time.Time) {
+	if fb == nil {
+		for _, x := range u.items {
+			q.logLocked(x, u.text, ResultFailed, reason, now)
+		}
+		q.next = nil
+		q.pumpLocked()
+		q.updateLocked()
+		return
+	}
+	u.retry, u.via = reason, fbName
+	q.synthLocked(u, fb)
 	q.updateLocked()
 }
 
@@ -768,7 +833,7 @@ func (q *Queue) playLocked(u *utt, now time.Time) {
 		if i > 0 {
 			r = ResultMerged
 		}
-		q.logLocked(x, u.text, r, "", now)
+		q.logAsLocked(x, u.text, r, u.retry, u.via, now)
 		if x.Kind.Narrate() {
 			q.spoken[x.Slug+"|"+string(x.Kind)] = now
 		}

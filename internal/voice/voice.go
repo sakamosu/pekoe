@@ -80,6 +80,13 @@ type Synth interface {
 	Synth(ctx context.Context, text, voice, lang string) (wavPath string, err error)
 }
 
+// SynthFunc is a function that is a Synth.
+type SynthFunc func(ctx context.Context, text, voice, lang string) (string, error)
+
+func (f SynthFunc) Synth(ctx context.Context, text, voice, lang string) (string, error) {
+	return f(ctx, text, voice, lang)
+}
+
 // Player plays a WAV file. It blocks until the sound ends; cancelling ctx
 // stops it. internal/voice/player implements it (9).
 type Player interface {
