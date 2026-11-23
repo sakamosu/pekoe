@@ -141,6 +141,8 @@ func dispatch(args ...string) error {
 		return cmdTip(rest)
 	case "gui":
 		return cmdGUI(rest)
+	case "voice":
+		return cmdVoice(rest)
 	case "web":
 		if _, _, err := parseCmd("web", rest); err != nil {
 			return err
@@ -187,6 +189,13 @@ func TestHelpDoesNothing(t *testing.T) {
 		{"gui", "--help"},
 		{"gui", "--stop", "-h"},
 		{"tip", "--help"},
+		{"voice", "--help"},
+		{"voice", "on", "--help"},
+		{"voice", "off", "-h"},
+		{"voice", "mute", "--for", "1m", "--help"},
+		{"voice", "stop", "--help"},
+		{"voice", "test", "hello", "--help"},
+		{"voice", "log", "-n", "5", "-h"},
 	} {
 		fd.reset()
 		err := dispatch(args...)
@@ -304,7 +313,7 @@ func TestSplitGlobal(t *testing.T) {
 
 // Every subcommand main dispatches has a declared spec.
 func TestEverySubcommandHasSpec(t *testing.T) {
-	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "cleanup", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "gui", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss", "ledger", "ledger done", "ledger drop", "ledger close", "ledger link", "ledger keep", "ledger reopen", "ledger rm", "stats", "repo", "repo forget", "config", "config edit", "config check", "config show", "config path", "voice-backend-say"} {
+	for _, name := range []string{"init", "new", "open", "adopt", "ls", "issues", "conflicts", "cleanup", "send", "event", "review", "land", "rm", "dev", "undo", "answer", "attach", "hooks", "ext", "web", "gui", "mcp", "daemon", "daemon start", "daemon stop", "daemon restart", "daemon status", "daemon run", "tapi", "tapi reset", "tip", "skills", "report", "reports", "wait", "ask-human", "inbox", "inbox answer", "inbox withdraw", "inbox dismiss", "ledger", "ledger done", "ledger drop", "ledger close", "ledger link", "ledger keep", "ledger reopen", "ledger rm", "stats", "repo", "repo forget", "config", "config edit", "config check", "config show", "config path", "voice", "voice status", "voice on", "voice off", "voice mute", "voice unmute", "voice stop", "voice test", "voice backends", "voice log", "voice-backend-say"} {
 		if _, ok := specs[name]; !ok {
 			t.Errorf("no spec for %q", name)
 		}

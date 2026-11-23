@@ -85,7 +85,7 @@ flowchart LR
 | [docs/mascot.md](docs/mascot.md) | マスコット tapi の形・状態・表情 |
 | [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat(TUI の `t` で話しかける統括役のエージェント)の設計 |
 | [docs/orchestration.md](docs/orchestration.md) | 統括役(tapi)を中心にした「セッションを人が管理しない」使い方の設計(大半は実装済み。状態は冒頭) |
-| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。未実装の仕様) |
+| [docs/voice.md](docs/voice.md) | 設計: pekoe voice(状態の変化を tapi が音声で知らせる・本文の読み上げ。P1 は一部実装済み: CLI の pekoe voice) |
 | [docs/project-layer.md](docs/project-layer.md) | セッションの上にプロジェクトの層を作るかどうかの設計記録(作らないと決めた。比較した案) |
 | [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI のデザイン原則(配色トークン・レイアウト・アイコン) |
 | [docs/ambiguous-width.md](docs/ambiguous-width.md) | 曖昧幅の文字の扱い(状態アイコンと tapi の目に曖昧幅の文字を使わない理由) |
@@ -230,11 +230,13 @@ pekoe                                                 # TUI
 | `pekoe tapi [status\|reset [--yes]]` | tapi chat の状態(依頼と受信箱の残り件数も)を表示します / tapi chat を終了して会話を忘れさせます(TUI の `T` と同じです。依頼と受信箱は残ります) |
 | `pekoe tip [<id>] [--list] [--doc PATH]` | pekoe の機能を 1 つ紹介します(まだ見せていない tip。[TIPS](#tips))。`<id>` はその tip、`--list` は一覧、`--doc` は tip が指す docs を表示します(バイナリに同梱) |
 | `pekoe config edit\|check\|show\|path` | `config.toml` を扱う入口です。`edit` は `$EDITOR`(なければ `vi`)で開き、閉じたら内容を検査します。誤りがあれば、開き直す・そのまま保存する・保存せずにやめる、のどれにするかを尋ねます(visudo と同じ形式)。ファイルがなければ作ります。`check` は、構文エラー・知らないキー・受け付けない値を表示します(あれば終了コード 1)。`show` は、既定値を含めた現在の設定を表示します(`[web] auth_key` は伏せます)。`path` は、ファイルの場所を表示します。どれも pekoed を通さず、自分でファイルを読み書きします(TUI では `^q ,`) |
+| `pekoe voice [on\|off\|mute [--for 30m]\|unmute\|stop\|backends\|log [-n 50]]` | 状態が変わったら tapi が喋ります(macOS だけ。[docs/voice.md](docs/voice.md))。サブコマンドなしは状態です: 有効か、使っている backend(設定の backend を使っていない理由、何も喋れない理由。失敗が続いて合成をしばらく止めているときは残りの秒数も)、ミュート、フォーカス中のセッション、キュー、鳴っている文。`on` / `off` は `config.toml` の `[voice] enable` を、`pekoe config edit` と同じく pekoed を通さずに自分で書き換えます(変えるのはその 1 行だけで、`[voice]` の表が無ければ足します。読めなくなる変更は保存しません)。エージェントの窓(`$PEKOE_SESSION`)では断ります。`mute`(`unmute` まで、または `--for`)は鳴っているものを止めてキューを空にし、`stop` は今の文だけを止めます。`backends` は同梱の say と `[voice.backends]` のパス・`version`・`check`・声(無効の間はどれも動かしません)と、pekoed の `PATH` にある `pekoe-voice-*` を、書く行の例を添えた候補として表示します(候補は一度も動かしません)。`log` は喋ったもの・喋らなかったものと理由を新しい順に表示します。人間だけの操作です |
+| `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま鳴らします。ミュート中も鳴らします(無効の間は断ります)。鳴るまで待ち、backend と待ち時間、鳴らなかったときはその理由を表示します |
 | `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]` | GitHub の最新リリースに入れ替えます([更新](#更新))。`--check` は、新しいバージョンがあるかどうかを確認するだけです。人間だけの操作です |
 | `pekoe version` | バージョンを表示します |
 
 - `R` には、repo-id、短い名前(`~/worktrees/<name>` の name)、パスのどれでも指定できます。slug を取るコマンドは、`<repo>/<slug>` の形でも指定できます
-- `--json` を付けると、機械可読な形式で出力します(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check`)。サブコマンドの前後どちらにも書けます
+- `--json` を付けると、機械可読な形式で出力します(`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check` `voice`)。サブコマンドの前後どちらにも書けます
 - `--help` / `-h` は使い方を表示するだけで、何も実行しません(終了コード 0)。知らないフラグや、値のない `--repo` はエラーになります(終了コード 2)。`-` で始まる文字列を位置引数として渡すときは、`--` の後に書きます(例: `pekoe send <slug> -- --verbose を外して`)
 - `pekoe event <Hook>` は、hooks から呼ばれる内部用のコマンドです。失敗しても、常に終了コード 0 で終わります
 - セッションが消えるとき(`pekoe rm`、PR のマージを見た後片付け)、pekoed はその窓を閉じてから、窓がバックグラウンドに放って残したプロセス(エージェントが `&` で起動した busy loop やサーバーで、launchd の子になったもの)を止めます。SIGTERM を送り、2 秒たっても残っていれば SIGKILL で止め、止めた数とコマンドの先頭を pekoed のログに残します。見分けるのは、セッションの窓の中のプロセスが受け継ぐ環境変数(pekoe の tmux サーバーの `$TMUX` と `$PEKOE_SESSION=<slug>`)で、`setsid` や `nohup` で切り離したものも見つかります。macOS は、システムのバイナリ(`/bin/sh`・`/bin/zsh`・`/bin/sleep` など)を動かしているプロセスの環境変数を見せないので、そういうものは、そのセッション自身の worktree の中で動いていて、セッションを作った後に起動し、属するセッション(setsid)のリーダーがもういない(エージェントのシェルが終わった)ときに止めます。pekoed とその hook、tmux サーバー、今ある窓、ほかのセッション、別の pekoed のセッション、tmux の外のプロセス(TUI から開いた nvim など)、人のシェルやエディタが起動したもの(そのシェルやエディタが動いている間)は止めません。窓が別の tmux サーバー(`tmux -L x new -d …`)を起動して残したときは、そのサーバーが起動と同時に開いたペインだけを止め、後から開いたペイン(人が `tmux -L x new` したものなど)があれば、そのペインとサーバーは止めません。セッションを止めた(`x`)・再起動したときも止めません。見つからないもの: 環境変数を消した・書き換えたもの(`env -i` など)、macOS でシステムのバイナリを動かしていて worktree の外に出たものや、セッションのリーダーがまだ動いているもの、ほかのサーバー(launchd・Docker・別の tmux)に頼んで起動したもの

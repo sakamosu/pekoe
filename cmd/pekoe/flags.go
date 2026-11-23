@@ -211,6 +211,16 @@ var specs = map[string]spec{
 
 	"tip": {use: "pekoe tip [<id>] [--list] [--doc PATH] [--json]   a tip about pekoe (the next one not shown yet)", bools: []string{"list"}, vals: []string{"doc"}},
 
+	"voice":             {use: "pekoe voice [on|off|mute|unmute|stop|test|backends|log] [--json]   tapi says state changes aloud (macOS): whether it is on, the backend, mute, the queue"},
+	"voice status":      {use: "pekoe voice [status] [--json]   whether voice is on, the backend, mute (till when), the focused session, the queue, what is being said"},
+	"voice on":          {use: "pekoe voice on   set [voice] enable = true in config.toml (a person only; not in an agent's window)"},
+	"voice off":         {use: "pekoe voice off   set [voice] enable = false in config.toml (a person only; not in an agent's window)"},
+	"voice mute":        {use: "pekoe voice mute [--for 30m] [--json]   mute voice (until pekoe voice unmute without --for); stops what is said and empties the queue", vals: []string{"for"}},
+	"voice unmute":      {use: "pekoe voice unmute [--json]   end the mute"},
+	"voice stop":        {use: "pekoe voice stop   stop the sentence being said (the queue is kept)"},
+	"voice test":        {use: "pekoe voice test \"<sentence>\" [--voice tapi|reader] [--lang ja|en] [--json]   say a sentence as it is, even while muted (not while voice is off); waits until it is said or fails", vals: []string{"voice", "lang"}},
+	"voice backends":    {use: "pekoe voice backends [--json]   the bundled say and [voice.backends]: path, version, check, voices; pekoe-voice-* in pekoed's PATH as candidates (never run)"},
+	"voice log":         {use: "pekoe voice log [-n 50] [--json]   what voice said (or did not, and why), newest first", vals: []string{"n"}},
 	"voice-backend-say": {use: "pekoe voice-backend-say version|check|voices|synth --voice NAME --lang ja|en --out PATH   (the bundled speech backend, run by pekoed; text on stdin)", vals: []string{"voice", "lang", "out"}},
 
 	"update": {use: "pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]   replace pekoe with a GitHub release (--check: only look)", bools: []string{"check", "yes", "force", "no-web", "allow-unverified"}, vals: []string{"version"}},

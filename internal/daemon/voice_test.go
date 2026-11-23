@@ -340,6 +340,42 @@ func TestVoiceOffRunsNothing(t *testing.T) {
 	}
 }
 
+// voice.backends (pekoe voice backends) lists the pekoe-voice-* in
+// pekoed's PATH as candidates, with the line to write, and never starts
+// them; while off the [voice.backends] entries are not run either.
+func TestVoiceBackendsListsPathCandidates(t *testing.T) {
+	d, _, _ := setup(t)
+	h := d.voice
+	h.supported = true
+	t.Cleanup(h.close)
+	bin, marks := t.TempDir(), t.TempDir()
+	for _, n := range []string{"pekoe-voice-say", "pekoe-voice-voicevox"} {
+		script := "#!/bin/sh\necho ran > '" + filepath.Join(marks, n) + "'\n"
+		if err := os.WriteFile(filepath.Join(bin, n), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	os.MkdirAll(filepath.Dir(paths.GlobalConfig()), 0o700)
+	os.WriteFile(paths.GlobalConfig(), []byte("[voice.backends]\nmine = \""+filepath.Join(bin, "pekoe-voice-voicevox")+"\"\n"), 0o600)
+	d.reloadConfig()
+	bs := call[VoiceBackends](t, d, "voice.backends", nil)
+	got := map[string]backend.Candidate{}
+	for _, c := range bs.Candidates {
+		got[c.Name] = c
+	}
+	vv := filepath.Join(bin, "pekoe-voice-voicevox")
+	if got["voicevox"].Path != vv || got["voicevox"].Line != `voicevox = "`+vv+`"` || got["say"].Path != filepath.Join(bin, "pekoe-voice-say") {
+		t.Fatalf("candidates: %+v", bs.Candidates)
+	}
+	if len(bs.Backends) != 2 || bs.Backends[1].Name != "mine" || bs.Backends[1].Path != vv || bs.Backends[1].Version != "" {
+		t.Fatalf("backends: %+v", bs.Backends)
+	}
+	if ents, _ := os.ReadDir(marks); len(ents) > 0 {
+		t.Fatalf("voice.backends ran %d of them", len(ents))
+	}
+}
+
 // Off another OS: enable = true does nothing either.
 func TestVoiceUnsupportedRunsNothing(t *testing.T) {
 	w := newVoiceWorld(t)

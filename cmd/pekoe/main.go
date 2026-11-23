@@ -144,6 +144,8 @@ func main() {
 		err = cmdTip(args)
 	case "config":
 		err = cmdConfig(args)
+	case "voice":
+		err = cmdVoice(args)
 	case "voice-backend-say":
 		// the bundled speech backend (docs/voice.md 10.6), run by pekoed;
 		// not in usage(): a person does not type it
@@ -254,6 +256,9 @@ func usage() {
                                the conversation
   pekoe tip [<id>] [--list] [--doc PATH]
                                a tip about pekoe, one not shown yet ([tips])
+  pekoe voice [on|off]          tapi says state changes aloud (macOS; [voice]): its state,
+                               or turn it on / off in config.toml
+  pekoe voice mute [--for 30m] | unmute | stop | test "<sentence>" | backends | log [-n 50]
   pekoe config edit|check|show|path
                                config.toml: open it in $EDITOR (checked on save),
                                check it, the settings in use, its path
