@@ -284,12 +284,17 @@ func (q *Queue) Stop() {
 
 // UserPrompt: the person typed into the session slug. Its read stops and
 // leaves the queue; its narrate stays (Q8).
-func (q *Queue) UserPrompt(slug string) {
+func (q *Queue) UserPrompt(slug string) { q.StopRead(slug, "user prompt") }
+
+// StopRead stops the read of the session slug and drops it from the
+// queue, logged as interrupted with reason; its narrate stays (Q8, 6.3:
+// an interrupt through pekoe).
+func (q *Queue) StopRead(slug, reason string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	isRead := func(k Kind, s string) bool { return k == KindRead && s == slug }
 	q.stopPlayingLocked(func(u *utt) bool { return isRead(u.kind, u.slug()) })
-	q.dropLocked(func(x *qitem) bool { return isRead(x.Kind, x.Slug) }, ResultInterrupted, "user prompt", q.cfg.Clock.Now())
+	q.dropLocked(func(x *qitem) bool { return isRead(x.Kind, x.Slug) }, ResultInterrupted, reason, q.cfg.Clock.Now())
 	q.pumpLocked()
 	q.updateLocked()
 }

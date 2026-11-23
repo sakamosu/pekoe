@@ -123,6 +123,7 @@ stateDiagram-v2
 | Notification | waiting。入力 JSON の `notification_type` で判別する(`permission_prompt` → 許可待ち、`elicitation_dialog` → 質問、`idle_prompt` → idle)。AskUserQuestion の PreToolUse の直後の許可待ちは質問として扱う |
 | Stop | done。`test` を自動実行して結果を左ペインに。`last_assistant_message` が無いと transcript を最大 2 秒待つので、その間に次のターンが始まった・続いた(UserPromptSubmit・PreToolUse が来た)ら、状態は変えず test も門番も走らせない(`last_message` だけ記録する) |
 | PreToolUse(任意) | 直近のツール名を左ペインに表示(「今何をしているか」) |
+| MessageDisplay(`[voice]` の read のときだけ。`~/.claude/settings.json` ではなく起動時の `--settings` で入れる) | 状態は変えない。返事の本文を音声の read に渡す(docs/voice.md 6・docs/api.md「音声(voice)」)。UserPromptSubmit・Stop も read を止める・`Stop` の本文を読むのに使う |
 | OSC 9 / 99 / 777、タイトル変更 | hooks のないエージェント用のフォールバック。VT エンジンがイベントとして出す |
 | 仮想画面の `[y/n]` 検知 | 最終フォールバック |
 

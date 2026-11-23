@@ -24,6 +24,7 @@ import (
 	"pekoe/internal/gitx"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
+	"pekoe/internal/voice"
 )
 
 // Hook payloads come from Claude Code on stdin of `pekoe event` (session_id,
@@ -301,16 +302,33 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 		hook = hp.HookEventName
 	}
 	if hook == "MessageDisplay" {
-		// read's text (docs/voice.md 6.1, P3): taken and dropped for now.
-		// The hook does not wait for an answer
+		// read's text (docs/voice.md 6.1): nothing else follows it. The
+		// hook does not wait for an answer
+		if d.voice == nil || !d.voice.isOn() {
+			return nil, nil
+		}
+		if slug := d.resolveSession(p.Session, hp.Cwd); slug != "" && d.readsAgent(slug) {
+			var mp messageDisplayP
+			if json.Unmarshal(p.Payload, &mp) == nil {
+				d.voice.display(slug, voice.Display{Turn: mp.TurnID, Message: mp.MessageID, Index: mp.Index, Final: mp.Final, Delta: mp.Delta})
+			}
+		}
 		return nil, nil
 	}
 	slug := d.resolveSession(p.Session, hp.Cwd)
 	if slug == "" {
 		return map[string]any{"ignored": true}, nil // not a pekoe session
 	}
-	if hook == "UserPromptSubmit" {
-		d.voice.userPrompt(slug) // the session's read stops (Q8)
+	if d.voice != nil && d.voice.isOn() && d.readsAgent(slug) {
+		switch hook {
+		case "UserPromptSubmit":
+			// the session's read stops (Q8); typed ahead while running, the
+			// turn goes unread up to its Stop (6.3). Running as the hooks
+			// say before this prompt updates it
+			d.voice.userPrompt(slug, d.readRunning(slug))
+		case "Stop":
+			d.voice.stopHook(slug, hp.LastAssistant) // 6.1, the Stop way
+		}
 	}
 	if slug == TapiSlug {
 		d.tapiEvent(hook, hp)

@@ -470,3 +470,18 @@ func TestReadSessionsApart(t *testing.T) {
 		t.Errorf("after Removed: %q", got)
 	}
 }
+
+// DiscardAll drops every session's buffers (the focus moved, a mute).
+func TestRule6_3ReadDiscardAll(t *testing.T) {
+	rr := newReadRig(t, unlimited)
+	rr.send("a", "t", "m", 0, false, "a1。\n途中")
+	rr.send("b", "t", "m", 0, false, "b1。\n途中")
+	rr.r.DiscardAll()
+	var got []string
+	got = append(got, rr.send("a", "t", "m", 1, true, "の文。")...)
+	got = append(got, rr.send("b", "t", "m", 1, true, "の文。")...)
+	got = append(got, rr.batches("a", "t", "m2", []string{"新しい。"})...)
+	if want := []string{"新しい。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+}

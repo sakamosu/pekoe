@@ -678,6 +678,13 @@ keys = ["pekoe voice"]
 docs = ["docs/voice.md"]
 
 [[tip]]
+id = "voice-read"
+short = "pekoe voice on なら見ているセッションの返事を読み上げる"
+detail = "Claude Code の返事を、コード・表・URL を飛ばして 1 ターン 10 文まで読む([voice.read])。入力する・[4] で esc を押す・フォーカスを移すと止まる。"
+keys = ["[voice]"]
+docs = ["docs/voice.md"]
+
+[[tip]]
 id = "voice-mute"
 short = "^q m で音声をすぐ止めてミュート"
 detail = "入力中でも、どのパネルからでも効く。鳴っているものもキューも止まり、もう一度押すと戻る。ミュート中は最下行に muted ^q m と出る。:voice で喋ったことを新しい方から見返す。"

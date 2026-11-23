@@ -332,6 +332,15 @@ func (r *Reader) Discard(slug string) {
 	}
 }
 
+// DiscardAll is Discard of every session (the focus moved, a mute).
+func (r *Reader) DiscardAll() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, s := range r.sessions {
+		s.drop()
+	}
+}
+
 // Removed forgets the session.
 func (r *Reader) Removed(slug string) {
 	r.mu.Lock()

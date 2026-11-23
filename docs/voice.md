@@ -1,6 +1,6 @@
 # pekoe voice — 仕様書
 
-状態: P1(P1-1〜P1-5: `internal/voice`・backend・daemon へのつなぎ・CLI `pekoe voice`・TUI)を実装済みで、1 週間の試用(16「試用の判定」)に入れる。P2 は外部の backend の例 `pekoe-voice-voicevox`(別のリポジトリ。10.7)ができ、約束事(10)と入れ方を README から公開した。P2 で残るのは、エンジンを止めたときの say への切り替え(10.5)の実地の確かめ(16)。P3(read)は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: P1(P1-1〜P1-5: `internal/voice`・backend・daemon へのつなぎ・CLI `pekoe voice`・TUI)を実装済みで、1 週間の試用(16「試用の判定」)に入れる。P2 は外部の backend の例 `pekoe-voice-voicevox`(別のリポジトリ。10.7)ができ、約束事(10)と入れ方を README から公開した。P2 で残るのは、エンジンを止めたときの say への切り替え(10.5)の実地の確かめ(16)。P3(read)は実装済み(`internal/voice` の整形・バッファ・上限・止める論理、`MessageDisplay` hook の入れ方、`pekoe voice mode`、daemon へのつなぎ。16「P3 の完了条件」)で、耳での確かめと試用(17「残る論点(P3)」の 1 ターンの上限)が残っている。決まったことは docs/api.md「音声(voice)」・docs/design.md の hooks の表・README の設定の節に移した。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
@@ -97,6 +97,7 @@ Claude Code 2.1.330 で、`--setting-sources local --settings <一時ファイ�
 - **tool の出力・thinking は来ない**: 「README を読みます」→ Read → 要約、の返事で、`message_id` が 2 つ来た(前置きの 1 文が `final: true` で 1 回、要約が別の `message_id`)。Read の結果と thinking は来ない。`Stop` の `last_assistant_message` は**最後のメッセージ(要約)だけ**で、前置きは入らない
 - **`Stop` との順序**: `Stop` は最後のバッチの `MessageDisplay` と同じ時刻に来て、最後のバッチの表示より先に返ることがある(read は `Stop` を「読み終わり」の合図にしない)。1〜30 の列挙では、最初の `MessageDisplay` から `Stop` まで約 8 秒
 - **先打ち(返事の途中で入力して Enter)**: `UserPromptSubmit` は**キューに入れた瞬間**に来る。その後も**同じ `turn_id` の `MessageDisplay` が流れ続け**、ターンが普通に終わってから、先打ちの文が新しい `turn_id` で処理される。**その新しいターンの `UserPromptSubmit` は来ない**(先打ちに 1 回だけ)
+- **tool の途中の先打ち**(2.1.331。P3 のつなぎの実地の確かめで見た): tool(`sleep 15`)の実行中に先打ちすると、ターンの終わりを待たず、tool の結果の後に先打ちの文が**同じ `turn_id` のまま**差し込まれ、モデルはそれに返事した(新しい `turn_id` は来ず、`Stop` はターンの終わりに 1 回だけ)。tool の前の前置きの 1 文の `MessageDisplay` は、tool の行が画面に出た後、先打ちの `UserPromptSubmit` と同じ時刻に来た。tool の無いストリーミングの途中の先打ちは、上のとおり新しい `turn_id` になった
 - **Esc での中断**: `MessageDisplay` はそこで止まり、**`final: true` も `Stop` も来ない**。hook で中断を知る手段は無い。transcript には途中までの本文と `[Request interrupted by user]` が残り、画面は `Interrupted · What should Claude do instead?` になる
 - **transcript は代わりにならない**: transcript の JSONL の text のブロックは、**ブロックが終わってから 1 行で書かれる**(1〜30 の列挙で `Stop` とほぼ同じ時刻)。ストリーミングの代わりにならず、遅さは `Stop` の方式と変わらない。書式は Claude Code の内部のもので、本文でない行(`api-request-blob` など)も混ざる。そこで 6.1 の代わりの手段に transcript は足さない(中断の検出には使えうるが、使うかは 17 の残る論点)
 - **codex**: 確かめていない(調査の環境に無かった)。推測では、表示ごとの hook は無く、ターンの終わりに最後の返事を渡す `notify` と、rollout の JSONL があるだけ。だとすると codex の read は `Stop` の方式と同じ(ターンの終わりに、最後のメッセージだけ)が上限になる。P3 は Claude Code だけで始める(6.1)
@@ -210,7 +211,7 @@ flowchart LR
 
 ## 6. read
 
-P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
+P3 で作った(実装は `internal/voice/read.go`・`shape.go` と `internal/daemon/voice.go`。pekoed の中の動きは docs/api.md「音声(voice)」)。
 
 ### 6.1 本文の受け取り方
 
@@ -264,11 +265,12 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
   - 止めている間は、次の `Stop` が来たら終わる(それが止めたターンの終わり)。その `Stop` の本文も読まない(`Stop` の方式でも同じ)。`session.interrupt` / `tapi.interrupt` で `idle` になったときも終わる
   - `turn_id` で覚えるだけでは足りない: 今のターンがまだ本文を出していない間(考え中・本文なしで tool を動かしている間)に先打ちされると、最後に受け取った `turn_id` は前のターンのもので、今のターンの要約を読んでしまう。`Stop` までを止めることで、本文の出ていないターンも止まる
   - 覚える `turn_id` はセッションごとに直近の数個で足りる
-- **受け入れる誤り**: 人がペインに直接 Esc を押した・`session.keys` の Escape で止めたターンには `Stop` が来ず、hooks の状態は `running` のまま残る(docs/api.md の `session.interrupt`)。その後に普通に次の指示を出すと、`UserPromptSubmit` の時点で `running` に見えて「止めている」になり、次のターンを `Stop` まで読まない(1 ターン分読まないほうに倒れる)。Escape は下のとおり pekoe を通せば止めた時点で分かるので、`session.keys` の Escape でも状態を `idle` に戻すかは P3 の実装で決める(17 の残る論点)
+  - tool の途中の先打ちでは、先打ちへの返事が同じターンの中に来る(3.2)ので、それも `Stop` まで読まない(読まないほうに倒れる。17 の残る論点)
+- **受け入れる誤り**: 人がペインに直接 Esc を押した・`session.keys` の Escape で止めたターンには `Stop` が来ず、hooks の状態は `running` のまま残る(docs/api.md の `session.interrupt`)。その後に普通に次の指示を出すと、`UserPromptSubmit` の時点で `running` に見えて「止めている」になり、次のターンを `Stop` まで読まない(1 ターン分読まないほうに倒れる)。P3 の実装では受け入れた(hooks の状態を voice のために変えない。17 の残る論点 (a))。`session.interrupt` / `tapi.interrupt` は送った後に画面を見て `idle` にするので、この誤りは起きない
 - 新しいターン(`turn_id` が変わった)が来たら、前のターンの残りを捨てる。先打ちの文で始まるターンには `UserPromptSubmit` が来ない(3.2)ので、「新しいターン = `UserPromptSubmit`」と仮定しない。止めたターンでなければ、新しい `turn_id` のバッチは普通に読む
 - フォーカスが別のセッションに移ったら、read を止めて捨てる(narrate は残す)
 - **Esc での中断**: hook では分からない(`final` も `Stop` も来ない。3.2)。そこで、pekoe を通した中断で止める: ローカル GUI の Interrupt(`session.interrupt` / `tapi.interrupt`)と、pekoe を通して送った Escape(TUI で [4] に打っている間の `esc` など、`session.keys` / `tapi.keys` の `keys` の配列に `Escape` があるもの。`hex` の `1b` はマウスなどの列の頭にも付くので見ない)。そのとき、そのセッションの read を止めて捨て、最後に受け取った `turn_id` を「止めた」として覚える(Escape が届く前に送られたバッチが後から届いても読まない)。`pekoe send` の文は中断ではなく、動いている間なら先打ちになるので、上の `UserPromptSubmit` で止まる
-- 人がエージェントのペインに直接 Esc を押したとき(`tmux -L pekoe attach` などで TUI を通さずにつないでいる)は、pekoe には分からず、止められない。読むのは 6.2 の上限までなので害は限られるが、扱いは決めていない(17 の残る論点)
+- 人がエージェントのペインに直接 Esc を押したとき(`tmux -L pekoe attach` などで TUI を通さずにつないでいる)は、pekoe には分からず、止められない。読むのは 6.2 の上限までなので害は限られ、止めたければ `pekoe voice stop`・`^q m`。P3 の実装では何もしない(17 の残る論点 (a))
 
 ## 7. voice policy(モードの決め方)
 
@@ -600,7 +602,7 @@ P1-3 で `[voice]` の節を足したとき(`TestTipsCoverSections` が節に ti
 | --- | --- | --- |
 | **P1** | narrate(wait / done / error / ask / idle_all)+ 同梱の say + 再生 + 発話キュー + ミュート + CLI + TUI(`^q m`・札・`:voice`・フォーカス) | 下の P1-1〜P1-5 の完了条件。確認待ち・完了・エラーを呼び名付きで、状態が変わってから 1 秒以内(キャッシュ済みの文)に喋ることを、`scripts/sandbox.sh` の中で実際に鳴らし、`voice.log` の待ち時間で確かめる |
 | **P2** | backend の約束事を README から公開、`pekoe-voice-voicevox`(別のリポジトリ。入れ方の説明に `[voice.backends]` に書く行を載せる)、キャッシュとフォールバックの実地の確かめ | VOICEVOX の tapi の声で narrate が動く。エンジンを止めると say に切り替わる。**状態**: 約束事と入れ方は README から公開し、外部の backend の例 `pekoe-voice-voicevox` ができた(10.7)。エンジンを止めたときの say への切り替えの実地の確かめが残っている |
-| **P3** | read: `MessageDisplay` の受け取り(3.1 の hook、`message_id` ごとのバッファと `index` の並べ直し。6.1・6.2)→ 完結した行の単位でフェンスの状態を持つ整形・1 ターンの上限(6.2)→ 止める(先打ちのターンを捨てる・pekoe を通した中断。6.3)・フォーカス連動・`pekoe voice mode`。pty での `MessageDisplay` の確かめは済んだ(3.2) | 下の「P3 の完了条件」。フォーカス中のセッションの本文を、コードを飛ばして読む。入力する・pekoe から中断すると止まり、そのターンの続きを読まない |
+| **P3** | read: `MessageDisplay` の受け取り(3.1 の hook、`message_id` ごとのバッファと `index` の並べ直し。6.1・6.2)→ 完結した行の単位でフェンスの状態を持つ整形・1 ターンの上限(6.2)→ 止める(先打ちのターンを捨てる・pekoe を通した中断。6.3)・フォーカス連動・`pekoe voice mode`。pty での `MessageDisplay` の確かめは済んだ(3.2) | 下の「P3 の完了条件」。フォーカス中のセッションの本文を、コードを飛ばして読む。入力する・pekoe から中断すると止まり、そのターンの続きを読まない。**状態**: 4 本の PR(read の論理 `internal/voice`・hook の入れ方・`pekoe voice mode`・daemon へのつなぎ)で実装し、`scripts/sandbox.sh` の中の本物の `claude` で `voice.log` を確かめた。音が鳴ったかの耳での確かめと、試用(17 の残る論点の 1 ターンの上限)が残っている |
 
 ### 試用の判定
 
@@ -690,6 +692,14 @@ P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えて�
 - 実地: `scripts/sandbox.sh` の中で本物の `claude` を pekoe のセッションとして動かし、コードと表を含む返事・tool を挟む返事・先打ち・TUI からの中断で、`voice.log`(read の文と結果)が上のとおりになることを確かめる。音が鳴ったかは人の耳で
 - P3 は Claude Code だけ(6.1)。codex は別の段
 
+P3 のつなぎ(`internal/daemon/voice.go`)で決めた細部:
+
+- read の hook(`MessageDisplay`・`Stop`・`UserPromptSubmit`)と中断は、voice が有効で、エージェントが Claude Code のとき(`isClaude`。セッションは `[agents.*]` の `command`、tapi chat は `[tapi] agent`)だけ `Reader` に渡す。どれも narrate と同じ 1 本の goroutine(`in`)に順に渡し、hook にはすぐ返す
+- `UserPromptSubmit` の `running` は、その hook が状態を変える前の `Session.State`(tapi chat は tapi の state)。`Stop` は turn_id を持たないので `Reader.Stop` に `""` で渡す
+- `session.interrupt` / `tapi.interrupt` は Escape を送れたときだけ止める(断ったときは何も送っていない)。`session.keys` / `tapi.keys` は送れた後、agent の窓への `keys` に `Escape` があるときだけ
+- 止めた・捨てた read は、キューでは `interrupted`(理由 `user prompt`・`interrupted`・`focus moved`)。フォーカスの移動とミュートは全セッションの読みかけを捨て(キューの `FocusMoved` / `Mute` と合わせる)、`voice.mode` はそのセッションの読みかけを捨てる。`session.removed` はそのセッションを忘れる
+- `[voice.read] skip` が空なら既定(`code` `table` `url` `path`)
+
 ## 17. 決めたこと
 
 2026-11-23 に利用者が決めた。どれも推奨の案で、本文はそれに合わせてある。D4 は決めるときに、守りの本体と脅威の整理(15「`config.toml` の守り」)を書き足すことになった。
@@ -708,11 +718,14 @@ P1-5 で決めた細部(実装 `internal/tui/voice.go`。daemon 側は変えて�
 
 ### 残る論点(P3)
 
-決めていない。P3 の実装か試用で決める。
+はじめの 2 つは P3 の実装で (a) にした(2026-11-24。統括役が決めた)。試用で見直す。3 つ目は試用で決める。
 
 - **端末で直接押した Esc**: 人が TUI を通さずにエージェントのペインで Esc を押すと、hook では分からず(3.2)、pekoe には止められない(6.3)。案:
   - (a) 何もしない。読むのは 6.2 の上限(1 ターン 10 文・800 文字)までなので、害は限られる。止めたければ `voice stop`・`^q m`
   - (b) `MessageDisplay` が途切れたまま一定の時間(たとえば 5 秒)たち、セッションの画面にスピナー行(`esc to interrupt`)が無ければ中断と見て、そのターンを止める(`session.interrupt` が送った後に画面を見るのと同じ判定)。画面を読む手間と、考え中・tool の実行中との見分けの誤りがある
   - (c) transcript の `[Request interrupted by user]` の行を見て止める。書式は Claude Code の内部のもので(3.2)、書かれるのは中断の後なので、その間に積んだ文は鳴ってしまう
+  - **P3 の実装で (a) にした。試用で見直す**。(b) は画面の見分けの誤りで読むべきターンを止めることがあり、(c) は止めるのが遅い
 - **Escape の後の `running`**: `session.keys` の Escape や直接の Esc で止めたターンは `running` のまま残るので、次の指示が先打ちに見えて 1 ターン分読まない(6.3 の受け入れる誤り)。案: (a) 受け入れる (b) `session.keys` の Escape でも `session.interrupt` と同じく画面を見て `idle` にする(hooks の状態を変えるので voice の外にも効く) (c) `UserPromptSubmit` の後、新しい `turn_id` の最初のバッチが `Stop` より先に来たら「止めている」を終える(先打ちでは新しいターンは `Stop` の後に始まるので見分けられる見込み。確かめていない)
+  - **P3 の実装で (a) にした。試用で見直す**。hooks の状態を voice のために変えない((b) は配送・`max_running` などにも効く)。誤りは 1 ターン分読まないほうに倒れ、`session.interrupt` / `tapi.interrupt` では起きない(画面を見て `idle` にする)
+- **tool の途中の先打ち**: 2.1.331 は先打ちを同じターンの tool の後に差し込む(3.2)ので、先打ちへの返事を読まない。止めるのを「次の `Stop` まで」から「先打ちの後に来た最初の新しい `message_id` の前まで」に変える案があるが、tool の無い先打ちでは前のターンの続きのメッセージと見分けられない。試用で困るかを見る
 - **1 ターンの上限と前置き**: 6.2 の上限(10 文・800 文字)で、tool の多い作業でもうるさくないかは試用で見る。うるさければ、前置きを読まずに最後のメッセージだけを読む方式(6.2 の採らなかった案)や、メッセージの数の上限を考え直す

@@ -207,6 +207,9 @@ func (p *Player) Play(ctx context.Context, wav string) error {
 	}
 }
 
+// Pending is how many calls came that Next has not taken.
+func (p *Player) Pending() int { return len(p.calls) }
+
 // Next is the next call; the test fails if none comes within Wait.
 func (p *Player) Next(t testing.TB) *PlayCall {
 	t.Helper()

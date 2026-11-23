@@ -109,7 +109,7 @@ var KeyDocs = map[string]string{
 	"voice.fallback":        "used when backend cannot be: \"say\" or a name in [voice.backends]; \"\" for none",
 	"voice.focus_mode":      "the session shown in the TUI: read | narrate | mute (read speaks as narrate until it is built)",
 	"voice.background_mode": "the other sessions: read | narrate | mute",
-	"voice.read":            "max_sentences (1-50) of a message read aloud, and skip (code | table | url | path)",
+	"voice.read":            "max_sentences (1-50) of a message and max_turn_sentences (1-100) of a turn read aloud, and skip (code | table | url | path)",
 	"voice.phrases":         "override what tapi says (wait, done, error, ask, idle_all and their _many); {name} / {names}",
 	"voice.backends":        "external backends: name = absolute (or ~/) path; only these are run",
 	"voice.say":             "the bundled say backend's voice: ja / en (\"\": Kyoko or the first ja_JP voice / the system's voice)",

@@ -15,15 +15,15 @@ func TestVoiceDefaults(t *testing.T) {
 	}
 	v := g.Voice
 	if v.Enable || v.BackendName() != "say" || v.FallbackName() != "say" || v.LangSetting() != "auto" ||
-		v.Focus() != "read" || v.Background() != "narrate" || v.MaxSentences() != 5 {
+		v.Focus() != "read" || v.Background() != "narrate" || v.MaxSentences() != 5 || v.MaxTurnSentences() != 10 {
 		t.Fatalf("defaults: %+v", v)
 	}
-	g, _ = ParseGlobal([]byte("[voice]\nfallback = \"\"\nlang = \"fr\"\nfocus_mode = \"loud\"\n[voice.read]\nmax_sentences = 99\n"))
-	if g.Voice.FallbackName() != "" || g.Voice.LangSetting() != "auto" || g.Voice.Focus() != "read" || g.Voice.MaxSentences() != 5 {
+	g, _ = ParseGlobal([]byte("[voice]\nfallback = \"\"\nlang = \"fr\"\nfocus_mode = \"loud\"\n[voice.read]\nmax_sentences = 99\nmax_turn_sentences = 101\n"))
+	if g.Voice.FallbackName() != "" || g.Voice.LangSetting() != "auto" || g.Voice.Focus() != "read" || g.Voice.MaxSentences() != 5 || g.Voice.MaxTurnSentences() != 10 {
 		t.Fatalf("fallback \"\" is none, bad values the defaults: %+v", g.Voice)
 	}
 	e := Effective(g).Voice
-	if e.Fallback == nil || *e.Fallback != "" || e.Backend != "say" || e.Lang != "auto" || e.Read.MaxSentences != 5 || len(e.Read.Skip) != 4 {
+	if e.Fallback == nil || *e.Fallback != "" || e.Backend != "say" || e.Lang != "auto" || e.Read.MaxSentences != 5 || e.Read.MaxTurnSentences != 10 || len(e.Read.Skip) != 4 {
 		t.Fatalf("effective: %+v", e)
 	}
 }
@@ -59,6 +59,7 @@ focus_mode = "narrate"
 background_mode = "mute"
 [voice.read]
 max_sentences = 10
+max_turn_sentences = 100
 skip = ["code", "url"]
 [voice.phrases]
 wait = "{name} が待ってる"
@@ -95,6 +96,7 @@ focus_mode = "loud"
 background_mode = "x"
 [voice.read]
 max_sentences = 0
+max_turn_sentences = 0
 skip = ["code", "emoji"]
 [voice.phrases]
 wait = "no placeholder"
@@ -116,6 +118,7 @@ empty = ""
 		`voice.focus_mode: "loud" is not one of read | narrate | mute`,
 		`voice.background_mode: "x" is not one of`,
 		`voice.read.max_sentences: 0 is not between 1 and 50`,
+		`voice.read.max_turn_sentences: 0 is not between 1 and 100`,
 		`voice.read.skip: "emoji" is not one of code | table | url | path`,
 		`voice.phrases.wait: has no {name}`,
 		`voice.phrases.done_many: has no {names}`,
@@ -137,6 +140,9 @@ empty = ""
 	}
 	if ps := problems(Check([]byte("[voice.read]\nmax_sentences = 51\n"))); !strings.Contains(ps, "51 is not between 1 and 50") {
 		t.Errorf("51: %s", ps)
+	}
+	if ps := problems(Check([]byte("[voice.read]\nmax_turn_sentences = 101\n"))); !strings.Contains(ps, "101 is not between 1 and 100") {
+		t.Errorf("101: %s", ps)
 	}
 	// the backend is in [voice.backends] but unusable: the entry says why,
 	// the name is not reported twice
