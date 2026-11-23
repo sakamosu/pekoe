@@ -483,7 +483,7 @@ voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # 置いた場所の絶対
 
 使えているかは `pekoe voice backends`、鳴らしてみるのは `pekoe voice test "テストだよ"` です。声・速さ・読みの辞書は backend 自身の設定ファイルで変えます(backend の README)。
 
-VOICEVOX の声はキャラクターごとに利用規約があります。作った音声を公開するとき(デモ動画・配信など)は、そのキャラクターの規約どおりにクレジットを書いてください(既定の声なら `VOICEVOX:もち子(cv 明日葉よもぎ)`)。
+VOICEVOX の声はキャラクターごとに利用規約があります。作った音声を公開するとき(デモ動画・配信など)は、そのキャラクターの規約どおりにクレジットを書いてください。
 
 **外部の backend を書きたい人へ**: 約束事(v1)は [docs/voice.md の 10](docs/voice.md#10-speech-backend-の約束事-v1) です(サブコマンド `version`・`check`・`voices`・`synth`、入出力、時間切れ、動かすときの環境)。backend が約束事どおりかは、このリポジトリの clone で次を回して確かめられます:
 

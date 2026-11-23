@@ -486,7 +486,7 @@ voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # the absolute path you in
 
 `pekoe voice backends` shows whether it is used, and `pekoe voice test "テストだよ"` says a sentence with it. Its voice, speed and reading dictionary are set in its own config file (its README).
 
-Each VOICEVOX voice has its own terms of use: if you publish audio made with it (a demo video, a stream), credit it the way that character's terms say (for the default voice: `VOICEVOX:もち子(cv 明日葉よもぎ)`).
+Each VOICEVOX voice has its own terms of use: if you publish audio made with it (a demo video, a stream), credit it the way that character's terms say.
 
 **Writing a backend of your own**: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1): the subcommands `version`, `check`, `voices` and `synth`, what goes in and out, the time limits and the environment it runs in. To check a backend against it, run in a clone of this repository:
 
