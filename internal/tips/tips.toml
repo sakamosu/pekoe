@@ -665,9 +665,9 @@ docs = ["README.ja.md#設定"]
 
 [[tip]]
 id = "voice"
-short = "[voice] enable = true で状態の変化を tapi が喋る"
-detail = "macOS だけ。確認待ち・終わった・エラー・受信箱の質問を、セッションの呼び名付きで短く読み上げる。既定はオフで、オフの間は何も鳴らさない。声は同梱の say([voice.say] で変えられる)。"
-keys = ["[voice]"]
+short = "pekoe voice on で状態の変化を tapi が喋る"
+detail = "macOS だけ。確認待ち・終わった・エラー・受信箱の質問を呼び名付きで短く言う。on / off は config.toml の [voice] enable を書き換える(既定はオフ)。pekoe voice test で試し、mute で黙らせ、log で見返す。"
+keys = ["pekoe voice", "[voice]"]
 docs = ["docs/voice.md", "README.ja.md#設定"]
 
 [[tip]]

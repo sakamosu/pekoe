@@ -1,6 +1,6 @@
 # pekoe voice — 仕様書
 
-状態: P1-1〜P1-3(`internal/voice`・backend・daemon へのつなぎ)を実装済み。CLI・TUI・read は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
+状態: P1-1〜P1-4(`internal/voice`・backend・daemon へのつなぎ・CLI `pekoe voice`)を実装済み。TUI・read は未実装。今の pekoe のどこに乗せるかは「2. 今の pekoe への乗せ方」、調べて決めたことは「3」にある。「17. 決めたこと」の D1〜D9 は 2026-11-23 に利用者が決めた(どれも推奨の案。本文はそれに合わせてある)。実装したら、決まったことを docs/api.md・docs/design.md・README に移し、ここには決めた理由と残る論点を残す(docs/orchestration.md と同じやり方)。
 
 ## 1. 何を作るか
 
@@ -438,7 +438,7 @@ skip = ["code", "table", "url", "path"]
 | `pekoe voice on` / `off` | `config.toml` の `[voice] enable` を `true` / `false` に書き換える(下) |
 | `pekoe voice mute [--for 30m]` / `unmute` | 全体のミュート。`--for` を付けなければ `unmute` まで。鳴っているものを止め、キューを空にする |
 | `pekoe voice stop` | 今の発話を止める(キューは残す) |
-| `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま合成して鳴らす。ミュート中も鳴らす(試すためのもの)。無効(`enable = false`)のときは断る(15: 無効の間は何も動かさない。先に `pekoe voice on`)。キューの先頭に積み、鳴っているものの後に鳴らす |
+| `pekoe voice test "<文>" [--voice tapi\|reader] [--lang ja\|en]` | 文をそのまま合成して鳴らす。ミュート中も鳴らす(試すためのもの)。無効(`enable = false`)のときは断る(15: 無効の間は何も動かさない。先に `pekoe voice on`)。キューの先頭に積み、鳴っているものの後に鳴らす。鳴り始めるか失敗するまで(30 秒まで)`voice.log` を見て、backend と待ち時間、鳴らなかった理由(Q11 で合成を止めているなら、あと何秒と最後の失敗)を出す |
 | `pekoe voice backends` | 設定済みの backend(同梱の say と `[voice.backends]`)の一覧と、それぞれのパス・`version`・`check`・`voices`。使っているもの・fallback に印。無効の間は backend を動かさず、パスの確かめだけを出す(15)。その下に、pekoed の `PATH` にある `pekoe-voice-*` を「候補」として出す(動かさない。`version` も `check` も呼ばない)。候補には `config.toml` に書く行の例(`[voice.backends]` の `voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"`)を添える。`--json` |
 | `pekoe voice log [-n 50]` | 発話のログ(14.4)の新しい方から。`--json` |
 | `pekoe voice mode <slug> read\|narrate\|mute\|auto` | セッションのモード(7)。P3 |
@@ -605,6 +605,14 @@ P1-3 で決めた細部(実装 `internal/daemon/voice.go`):
 - 作るもの: 12 のコマンド(`mode` を除く)、`on` / `off` の `config.toml` の 1 行の書き換え、`flags.go` の宣言
 - 完了条件: `on` / `off` の書き換えのテスト(表が無い・`enable` が無い・コメントがある・ほかの節が後ろにある・書いた後に読めない場合)。`$PEKOE_SESSION` があると `on` / `off` を断るテスト。`pekoe voice backends` が、テスト用の `PATH` に置いた `pekoe-voice-*`(呼ばれたら印を書くもの)を候補として出し、書く行の例を添え、一度も起動しないテスト。`scripts/sandbox.sh sh -c 'pekoe voice on; pekoe voice test "テスト"; pekoe voice backends; pekoe voice log'` の出力を証拠に付ける(音が鳴ったかは人の耳で。鳴らせない環境なら報告にそう書く)。`cmd/pekoe/tipcover_test.go` が通るよう tip を足す
 - やらないこと: TUI
+
+P1-4 で決めた細部(実装 `cmd/pekoe/voice.go`):
+
+- `pekoe voice status` は `pekoe voice` と同じ(`pekoe tapi status` に合わせた別名)
+- `on` / `off`: 書く前に、書き換えた中身を `config.ParseGlobal` で読み、`enable` が望みの値になることを確かめる(なければ書かずに失敗。今の `config.toml` が読めない・`[voice]` がインラインの表やドット付きのキーで書いてあり 1 行の書き換えで届かない、のとき。`pekoe config edit` を案内する)。rename の後にもう一度読み直し、読めなければ元の中身に戻す(ファイルが無かったときは消す)。既に望みの値なら書かない。`config.toml` が無いときの `on` は `[voice]` と `enable = true` の 2 行だけのファイルを作る(`config edit` の雛形は使わない)。シンボリックリンクはリンク先を書き換え、ファイルの権限を保つ
+- `mute` / `unmute` / `stop` / `log` / `backends` は 13 の RPC をそのまま呼ぶ。`--for` は送る前に `time.ParseDuration` で確かめる。`log` の `-n` は、ほかのフラグと同じ解析に乗せるため `--n` に読み替える(1〜1000)
+- `backends` は候補の下に `[voice.backends]` と各候補の行の例を並べ、15「外に出るもの」の一文(backend には文が渡る。オンラインのサービスを呼ぶ backend は文を外に送る)を出す
+- `test` の待ち: `voice.say` の返り値に `paused_until` があればすぐ失敗にし、残りの秒数と `error`(最後の失敗)を出す。無ければ `voice.log` を 200ms ごとに読み、種類が `test`・文が同じ・頼んだ時刻以降の 1 件の結果を待つ(`spoken` / `merged` なら成功、それ以外は失敗で理由。失敗のときは `voice.status` の止めている残りも添える)。30 秒で来なければ「積んだ」とだけ言って 0 で終わる
 
 #### P1-5 TUI
 
