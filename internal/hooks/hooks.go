@@ -25,7 +25,8 @@ func SettingsPath() string {
 	return filepath.Join(h, ".claude", "settings.json")
 }
 
-func command(bin, ev string) string {
+// Command is the hook command that runs bin (pekoe) for event ev.
+func Command(bin, ev string) string {
 	return fmt.Sprintf("%s event %s", shq(bin), ev)
 }
 
@@ -42,7 +43,7 @@ func isOurs(h map[string]any) bool {
 	return ok
 }
 
-// ourEvent reads a command written by command(): `<bin> event <ev>`, where
+// ourEvent reads a command written by Command(): `<bin> event <ev>`, where
 // bin (possibly shq-quoted) is named pekoe. It returns the event.
 func ourEvent(c string) (string, bool) {
 	w := shWords(c)
@@ -53,7 +54,7 @@ func ourEvent(c string) (string, bool) {
 }
 
 // shWords splits c on blanks, undoing shq's single quotes and backslash
-// escapes (all command() produces).
+// escapes (all Command() produces).
 func shWords(c string) []string {
 	var words []string
 	var cur strings.Builder
@@ -133,7 +134,7 @@ func Plan(bin string, remove bool) (path string, before, after []byte, changed b
 			kept = append(kept, gm)
 		}
 		if !remove {
-			entry := map[string]any{"type": "command", "command": command(bin, ev), "timeout": 10}
+			entry := map[string]any{"type": "command", "command": Command(bin, ev), "timeout": 10}
 			group := map[string]any{"hooks": []any{entry}}
 			if ev == "PreToolUse" || ev == "PostToolUse" {
 				group["matcher"] = "*"

@@ -385,6 +385,7 @@ pekoe は、機能を「こう使うと便利」という形で 1 つずつ紹�
    - `filesystem.denyWrite` と `Edit(...)`: リポジトリの `.git/config`・`.git/config.worktree`・`.git/hooks` と、サブモジュールの git ディレクトリ(`.git/modules/…`。エージェントの起動時に存在するもの)の中の同じファイル(commit はできます。あなたが自分で実行する git が従う設定は、書き換えられません)
    - tapi chat だけ: `filesystem.denyWrite` と `Edit(...)` に、`--add-dir` で読ませている各リポジトリと `~/worktrees`(シンボリックリンクを解決したパスも)を加えます。統括役は自分では作業せず、セッションに任せるので、Bash でも Edit / Write でも書き込めないようにしています。稼働ディレクトリ(`tapi/`)には書き込めます。`[agents.<tapi の agent>] sandbox = false` にすると、この制限も外れます
    - `network.allowUnixSockets`: pekoed のソケット(`pekoe ls`・`new`・`send` のため)。hooks は sandbox の外で動くので、`pekoe event` はもともと影響を受けません
+   - `hooks.MessageDisplay`: 起動の時点で `[voice] enable = true` で、`focus_mode` か `background_mode` が `read` のときだけ。`<pekoe の絶対パス> event MessageDisplay`(timeout 2 秒)で、返事の本文を表示と同時に pekoed に渡します([docs/voice.md](docs/voice.md) の 3.1)。`~/.claude/settings.json` の hook と合わさって両方動きます。`sandbox = false` のエージェントにも、この hook だけを書いたファイルを渡します
 
    **対象は claude だけです。** codex・opencode など、ほかのエージェントには何も渡しません。使う場合は、そのエージェント自身の sandbox で、同じパスを読めないようにしておいてください。`config.toml` の `[agents.claude] sandbox = false` で外せます(`[agents.claude-ask]` のような別名の定義ごとに指定します)。
 

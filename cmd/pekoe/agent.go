@@ -49,6 +49,10 @@ func cmdEvent(args []string) {
 	if !json.Valid(b) {
 		return
 	}
+	if hook == "MessageDisplay" {
+		sendEventNoWait(hook, b)
+		return
+	}
 	cl, err := client.Dial()
 	if err != nil {
 		return
@@ -57,6 +61,47 @@ func cmdEvent(args []string) {
 	_ = cl.CallTimeout("session.event", map[string]any{
 		"hook": hook, "session": os.Getenv("PEKOE_SESSION"), "payload": json.RawMessage(b),
 	}, nil, 8*time.Second)
+}
+
+// noWaitTimeout bounds how long `pekoe event MessageDisplay` may take to
+// connect and write, all told; Claude Code gives the hook 2 seconds (docs/voice.md
+// 3.1).
+const noWaitTimeout = time.Second
+
+// sendEventNoWait sends session.event as one line and closes the
+// connection without waiting for the answer: Claude Code holds the
+// message's text back from the screen until a MessageDisplay hook returns,
+// and takes anything the hook writes to stdout as the text to show instead
+// (docs/voice.md 3.1, 3.2). So it writes nothing to stdout, and a pekoed
+// that is absent or stuck costs no more than noWaitTimeout. The human
+// token is not sent: session.event does not need it.
+func sendEventNoWait(hook string, payload []byte) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c, err := client.DialSocket(paths.Socket())
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		req := map[string]any{"id": 1, "method": "session.event", "params": map[string]any{
+			"hook": hook, "session": os.Getenv("PEKOE_SESSION"), "payload": json.RawMessage(payload),
+		}}
+		if who := os.Getenv("PEKOE_SESSION"); who != "" {
+			req["session"] = who // as client.CallTimeout does
+		}
+		line, err := json.Marshal(req)
+		if err != nil {
+			return
+		}
+		_ = c.SetWriteDeadline(time.Now().Add(noWaitTimeout))
+		_, _ = c.Write(append(line, '\n'))
+	}()
+	// the dial too: a pekoed that does not accept must not hold the screen
+	select {
+	case <-done:
+	case <-time.After(noWaitTimeout):
+	}
 }
 
 func cmdUndo(args []string) error {
