@@ -886,3 +886,165 @@ func TestQueueReleasesWav(t *testing.T) {
 		t.Errorf("released %q, want %q", got, want)
 	}
 }
+
+// fallbackRig is a rig whose backend in use is "vv" with the fallback
+// "say" on a second fake synth (10.5): Fallback offers it for a failure of
+// "vv" only. none: no fallback to offer at all.
+func fallbackRig(t *testing.T, none bool) (*rig, *voicetest.Synth) {
+	fb := voicetest.NewSynth()
+	using := "vv"
+	var mu sync.Mutex
+	r := newRig(t, func(c *Config) {
+		c.Backend = func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			return using
+		}
+		inner := c.Failover
+		c.Failover = func() bool {
+			ok := inner()
+			if ok {
+				mu.Lock()
+				using = "say"
+				mu.Unlock()
+			}
+			return ok
+		}
+		c.Fallback = func(err error) (string, string, Synth) {
+			if none || strings.HasPrefix(err.Error(), "say:") {
+				return "", "", nil
+			}
+			return "vv", "say", fb
+		}
+	})
+	return r, fb
+}
+
+// Q11 and 10.5: a failed synth of the backend in use is tried once more
+// with the fallback, and the same utterance sounds; the log says which
+// backend made it and why. The failure still counts: the third in a row
+// switches to the fallback as before.
+func TestRuleQ11RetryWithFallback(t *testing.T) {
+	r, fb := fallbackRig(t, false)
+	r.failover = []bool{true}
+	for i, slug := range []string{"fix-a", "fix-b", "fix-c"} {
+		r.narrate(KindWait, slug)
+		r.clk.Advance(GatherDelay)
+		c := r.syn.Next(t)
+		c.Fail(errors.New("vv: connection refused\ndetail"))
+		f := fb.Next(t)
+		if f.Text != c.Text || f.Voice != c.Voice || f.Lang != c.Lang {
+			t.Fatalf("fallback synth %+v, want the same utterance %+v", f, c)
+		}
+		if i == 0 {
+			if e := r.q.Status().Error; !strings.Contains(e, "connection refused") {
+				t.Errorf("status error %q after the first failure", e)
+			}
+		}
+		f.OK("/data/voice/" + f.Text + ".wav")
+		p := r.play(f.Text)
+		p.Finish()
+		r.waitSilent()
+		r.waitIdle()
+	}
+	r.wantResults("fix-a:spoken", "fix-b:spoken", "fix-c:spoken")
+	r.mu.Lock()
+	failN := r.failN
+	e := r.logs[0]
+	r.mu.Unlock()
+	if failN != 1 {
+		t.Fatalf("failover %d times, want 1", failN)
+	}
+	if e.Backend != "say" || e.Reason != "vv failed: vv: connection refused" {
+		t.Errorf("log entry %+v", e)
+	}
+	if st := r.q.Status(); st.Error != "" {
+		t.Errorf("status error %q after the switch", st.Error)
+	}
+	// switched: the backend in use (the fake's "say") failing is not tried
+	// again, and a success of the backend in use is logged plainly
+	r.narrate(KindDone, "fix-d")
+	r.clk.Advance(GatherDelay)
+	r.say("d is done")
+	r.mu.Lock()
+	e = r.logs[len(r.logs)-1]
+	r.mu.Unlock()
+	if e.Backend != "say" || e.Reason != "" {
+		t.Errorf("log entry %+v", e)
+	}
+}
+
+// Q11: the fallback failing too leaves the utterance failed with both
+// reasons; the failure is counted once.
+func TestRuleQ11RetryFails(t *testing.T) {
+	r, fb := fallbackRig(t, false)
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	r.syn.Next(t).Fail(errors.New("vv: down"))
+	fb.Next(t).Fail(errors.New("say: no voice"))
+	r.waitIdle()
+	r.wantResults("fix-a:failed")
+	r.mu.Lock()
+	e := r.logs[0]
+	r.mu.Unlock()
+	if e.Reason != "vv failed: vv: down; say failed: say: no voice" {
+		t.Errorf("reason %q", e.Reason)
+	}
+	// counted once: two more failures switch
+	r.failover = []bool{true}
+	for _, slug := range []string{"fix-b", "fix-c"} {
+		r.narrate(KindWait, slug)
+		r.clk.Advance(GatherDelay)
+		r.syn.Next(t).Fail(errors.New("vv: down"))
+		fb.Next(t).Fail(errors.New("say: no voice"))
+		r.waitIdle()
+	}
+	r.mu.Lock()
+	failN := r.failN
+	r.mu.Unlock()
+	if failN != 1 {
+		t.Fatalf("failover %d times, want 1", failN)
+	}
+}
+
+// Q11: a time-out of the backend in use is tried with the fallback too,
+// with its own time-out.
+func TestRuleQ11RetryAfterTimeout(t *testing.T) {
+	r, fb := fallbackRig(t, false)
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	c := r.syn.Next(t)
+	r.clk.Advance(SynthTimeout)
+	f := fb.Next(t)
+	if !c.Cancelled() || f.Cancelled() {
+		t.Fatal("the first call was not cancelled, or the retry was")
+	}
+	r.clk.Advance(SynthTimeout - time.Millisecond)
+	if f.Cancelled() {
+		t.Fatal("the retry got less than its own time-out")
+	}
+	f.OK("/data/voice/a needs you.wav")
+	r.play("a needs you").Finish()
+	r.waitSilent()
+	r.wantResults("fix-a:spoken")
+}
+
+// Q11: with no fallback to offer (none configured, or the failure was the
+// fallback's own), the utterance fails as before.
+func TestRuleQ11NoRetry(t *testing.T) {
+	r, fb := fallbackRig(t, true)
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	r.syn.Next(t).Fail(errors.New("vv: down"))
+	r.waitIdle()
+	r.wantResults("fix-a:failed")
+	if n := fb.Pending(); n != 0 {
+		t.Fatalf("the fallback was called %d times", n)
+	}
+	r.mu.Lock()
+	reason := r.logs[0].Reason
+	r.mu.Unlock()
+	if reason != "vv: down" {
+		t.Errorf("reason %q", reason)
+	}
+}

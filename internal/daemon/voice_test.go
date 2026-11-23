@@ -22,6 +22,8 @@ import (
 // fake, nothing is run. It counts what pekoed asked of it.
 type fakeVoiceEngine struct {
 	syn *voicetest.Synth
+	// fb, when set, is the fallback FallbackFor offers ("vv" failed, "say")
+	fb *voicetest.Synth
 
 	mu         sync.Mutex
 	opts       backend.Options
@@ -53,6 +55,13 @@ func (f *fakeVoiceEngine) Failover() bool {
 	defer f.mu.Unlock()
 	f.failovers++
 	return f.failoverOK
+}
+
+func (f *fakeVoiceEngine) FallbackFor(error) (string, string, func(context.Context, string, string, string) (string, error)) {
+	if f.fb == nil {
+		return "", "", nil
+	}
+	return "vv", "say", f.fb.Synth
 }
 
 func (f *fakeVoiceEngine) Release(p string) {
@@ -107,7 +116,8 @@ type voiceWorld struct {
 	syn     *voicetest.Synth
 	pl      *voicetest.Player
 	eng     *fakeVoiceEngine
-	engines int // engines made
+	engines int              // engines made
+	fb      *voicetest.Synth // the fallback the engines offer (nil: none)
 }
 
 func newVoiceWorld(t *testing.T) *voiceWorld {
@@ -119,7 +129,7 @@ func newVoiceWorld(t *testing.T) *voiceWorld {
 	h.getenv = func(string) string { return "" }
 	h.newEngine = func(o backend.Options) voiceEngine {
 		w.engines++
-		w.eng = &fakeVoiceEngine{syn: w.syn, opts: o}
+		w.eng = &fakeVoiceEngine{syn: w.syn, fb: w.fb, opts: o}
 		return w.eng
 	}
 	t.Cleanup(h.close)
@@ -574,6 +584,40 @@ func TestVoiceFailoverAndPause(t *testing.T) {
 	}
 	if e := w.logs()[0]; e.Reason != "engine down" || e.Backend != "say" {
 		t.Fatalf("log keeps %+v", e)
+	}
+}
+
+// A failed synth is tried once more with the fallback the engine offers
+// (10.5): the utterance sounds, voice.log names the fallback and why, and
+// voice.status shows the failure before any switch.
+func TestVoiceRetryWithFallback(t *testing.T) {
+	w := newVoiceWorld(t)
+	w.fb = voicetest.NewSynth()
+	w.add("feat-a", state.Running)
+	w.config(voiceOn)
+	w.set("feat-a", state.Failed)
+	w.advance(300 * time.Millisecond)
+	c := w.syn.Next(t)
+	c.Fail(errors.New("connection refused\nmore"))
+	f := w.fb.Next(t)
+	if f.Text != c.Text {
+		t.Fatalf("fallback synth %q, want %q", f.Text, c.Text)
+	}
+	if st := w.status(); !strings.Contains(st.Error, "vv failed: connection refused") || st.PausedUntil != "" {
+		t.Fatalf("status after the first failure: %+v", st)
+	}
+	f.OK("/fake/a.wav")
+	p := w.pl.Next(t)
+	if p.Wav != "/fake/a.wav" {
+		t.Fatalf("played %q", p.Wav)
+	}
+	p.Finish()
+	w.waitLog("feat-a error spoken")
+	if e := w.logs()[0]; e.Backend != "say" || e.Reason != "vv failed: connection refused" {
+		t.Fatalf("log keeps %+v", e)
+	}
+	if _, _, fo, _, _ := w.eng.count(); fo != 0 {
+		t.Fatalf("Failover after one failure: %d", fo)
 	}
 }
 

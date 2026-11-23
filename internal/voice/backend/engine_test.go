@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -252,8 +253,13 @@ func TestBothUnusable(t *testing.T) {
 	if st.Using != "" || !strings.Contains(st.Error, `speaks protocol "2"`) || !strings.Contains(st.Error, `fallback: voice backend other path: "other" is not in [voice.backends]`) {
 		t.Fatalf("%+v", st)
 	}
-	if _, err := e.Synth(context.Background(), "x", "tapi", "ja"); err == nil {
+	_, err := e.Synth(context.Background(), "x", "tapi", "ja")
+	if err == nil {
 		t.Fatal("synth without a backend")
+	}
+	// the fallback was just checked and failed: nothing to try again
+	if _, _, s := e.FallbackFor(err); s != nil {
+		t.Fatal("offered the fallback with neither usable")
 	}
 	// no fallback configured
 	e = New(w.opts("voicevox", "", nil))
@@ -312,6 +318,75 @@ func TestFailoverAndRecheck(t *testing.T) {
 	}
 	if st := e.Status(); st.Using != "vv" || st.Error != "" {
 		t.Fatalf("did not go back: %+v", st)
+	}
+	w.noPathRun(t)
+}
+
+// FallbackFor (10.5): a failure of the configured backend is offered to
+// the fallback for the same sentence; a failure of the fallback itself, or
+// with no fallback, is not. After Failover the configured backend is not
+// run for synth.
+func TestFallbackFor(t *testing.T) {
+	w := newPathWorld(t)
+	flaky := fakeBackend(t, t.TempDir(), "fake-flaky")
+	e := New(w.opts("vv", "say", map[string]string{"vv": flaky}))
+	ctx := context.Background()
+	if err := e.Select(ctx); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(flaky+".broken", nil, 0o600)
+	_, err := e.Synth(ctx, "x", "tapi", "ja")
+	if err == nil {
+		t.Fatal("no error")
+	}
+	failed, name, synth := e.FallbackFor(err)
+	if failed != "vv" || name != "say" || synth == nil {
+		t.Fatalf("FallbackFor = %q %q %v", failed, name, synth != nil)
+	}
+	before := marked(w.self)
+	p, err := synth(ctx, "x", "tapi", "ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
+		t.Fatalf("no wav at %s: %v", p, err)
+	}
+	if got := strings.TrimPrefix(marked(w.self), before); !strings.Contains(got, BuiltinCommand+" check") || !strings.Contains(got, BuiltinCommand+" synth --voice tapi --lang ja") {
+		t.Fatalf("the fallback was not checked and run: %q", got)
+	}
+	// kept: a second retry does not check it again
+	before = marked(w.self)
+	if _, err := synth(ctx, "y", "tapi", "ja"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimPrefix(marked(w.self), before); strings.Contains(got, "check") || !strings.Contains(got, "synth") {
+		t.Fatalf("second retry ran %q", got)
+	}
+	if st := e.Status(); st.Using != "vv" {
+		t.Fatalf("a retry switched the backend: %+v", st)
+	}
+	// not offered: an error that is no backend's, the fallback's own
+	if _, _, s := e.FallbackFor(errors.New("other")); s != nil {
+		t.Error("offered for a plain error")
+	}
+	if _, _, s := e.FallbackFor(&Error{Backend: "say", Op: "synth", Reason: "x"}); s != nil {
+		t.Error("offered for the fallback's own failure")
+	}
+	// switched: synth runs only the fallback
+	if !e.Failover() {
+		t.Fatal("did not switch")
+	}
+	before = marked(flaky)
+	if _, err := e.Synth(ctx, "z", "tapi", "ja"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimPrefix(marked(flaky), before); got != "" {
+		t.Fatalf("the configured backend ran after the switch: %q", got)
+	}
+	// no fallback configured: nothing to offer
+	e = New(w.opts("vv", "", map[string]string{"vv": flaky}))
+	if _, _, s := e.FallbackFor(&Error{Backend: "vv", Op: "synth", Reason: "x"}); s != nil {
+		t.Error("offered with no fallback")
 	}
 	w.noPathRun(t)
 }

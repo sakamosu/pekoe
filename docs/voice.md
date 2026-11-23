@@ -267,7 +267,7 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
   - `pekoe voice` の「今の発話を止める」(`voice.stop`)→ 鳴っているものを止める。キューは残す
 - **Q9 read の積み残し**: 新しいターンが始まったら前のターンの read を捨てる。1 メッセージで積むのは `max_sentences` 文まで
 - **Q10 先読み**: 鳴っている間に、次に鳴らす予定の 1 つを合成しておく(`synth` の同時実行は 2 まで)。先読みしたものも鳴らす直前に Q5 を確かめる
-- **Q11 失敗**: `synth` が失敗・時間切れ(3 秒)になったら、その発話は捨て、ログに理由(backend の標準エラーの 1 行)を残す。backend が 3 回続けて失敗したら fallback に切り替え(10.5)、fallback も失敗したら 60 秒は合成を試さない(`voice.updated` の `error` に出す)
+- **Q11 失敗**: `synth` が失敗・時間切れ(3 秒)になったら、使っている backend が fallback でなければ、その発話を fallback でもう一度合成して鳴らす(10.5)。fallback も失敗した・fallback が無い・失敗したのが fallback 自身なら、その発話は捨て、ログに理由(backend の標準エラーの 1 行)を残す。backend が 3 回続けて失敗したら fallback に切り替え(10.5)、fallback も失敗したら 60 秒は合成を試さない(`voice.updated` の `error` に出す)
 
 実装(P1-1)で決めた細部:
 
@@ -277,6 +277,11 @@ P3 で作る。P1 では `read` のモードは `narrate` と同じに動く。
 - モード(7): 積むときに mute なら、narrate はログに `muted` と残して積まない。read はモードが `read` でなければ黙って捨てる(6.1)
 - Q8: 止めた発話は、プロセスが本当に終わってから次を鳴らす(Q1 を崩さない)。Q9 で捨てた read は `interrupted`
 - Q10: 取り消した合成も、戻ってくるまでは同時実行の 2 に数える
+- Q11 の合成し直し: キューは失敗のたびに `Fallback(err)`(daemon が `Engine.FallbackFor` につなぐ)に聞く。失敗したのが設定の backend で、fallback が設定にあれば、失敗した backend の名前・fallback の名前・fallback で合成する `Synth` が返り、同じ文・声・言語で 1 回だけ合成し直す(時間切れも 3 秒をもう一度数える)。`Fallback` は何も動かさない(fallback の `version` と `check` は、最初に合成し直すときに 1 度だけ呼び、使えている間は覚えておく)。合成し直した分は fallback の合成の時間だけ遅れる(`say` で 0.5〜1 秒ほど。初回は `check` の分も)
+  - 数え方は変えない: 合成し直しても、設定の backend の失敗は 1 回と数える(fallback の成功では数え直さない。数え直すのは設定の backend が成功したとき)。fallback の失敗は数えない。3 回目は先に `Failover` を呼び、切り替えたらその発話も fallback で合成し直す。切り替えられなければ(60 秒止める)合成し直さない
+  - 切り替えた後は合成が fallback で動くので、設定の backend は 5 分後の確かめ直しまで呼ばない。そのとき失敗するのは fallback 自身なので、合成し直さない
+  - 先読み(Q10)の発話も同じように合成し直す(合成し直しは失敗した 1 本の代わりに動くので、同時実行の 2 は増えない)。先の合成(9)は今までどおり失敗を数えず、合成し直さない
+  - 3 回に達する前でも、失敗したら `voice.updated` の `error` に直近の失敗(`synth failed (1 in a row): voicevox failed: …`)を出す。設定の backend が成功するか、fallback に切り替えたら消す
 - Q11: 続けての失敗は `FailLimit`(3)回ごとに数え直す。3 回目で `Failover`(daemon が backend の切り替えにつなぐ)を呼び、切り替えられなければ 60 秒止める。`Failover` は fallback の `check` を待つので数秒かかりうる: キューのロックの外で呼び、その間は新しい合成を始めない(`Push` や `Status` は止まらない)。止めている間に鳴らす番が来た発話は、待たせずに `failed`(理由 `synth paused after repeated failures`)で捨てる。取り消した合成の失敗は数えない
 - ログの `spoken` は鳴らし始めたときに書く(待ち時間はそこまで)
 - wav の後始末: キューは使い終えた wav(鳴らし終えた・合成した後に捨てた)を `Release` で知らせる(reader の声の一時ファイルを backend が消すため)
@@ -372,6 +377,7 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 ### 10.5 フォールバック
 
 - pekoed は voice を有効にしたとき・設定が変わったとき・`pekoe voice backends` のときに、`backend` のパスを確かめて(10.2)`version` と `check` を呼ぶ。パスが使えない・失敗したら `fallback` を同じように確かめて使う。`fallback` も同梱の say か `[voice.backends]` の名前で、`PATH` からは探さない
+- 使っている backend が `synth` に失敗したら、その発話は fallback で合成し直して鳴らす(1 回目の失敗から。切り替えるまでの発話を落とさないため。細部は 8 の Q11)。使っているのが fallback のとき・fallback が無いときは合成し直さない
 - 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `version` と `check` をもう一度呼ぶ。通れば元に戻す。失敗を数えるのは発話キュー(8 の Q11)で、3 回目にキューが backend 側の `Failover()` を呼ぶ(切り替えたら true。fallback に居る・fallback が無い・使えないなら false で、キューが 60 秒合成を止める)。5 分後の確かめ直しは backend 側が次の合成のときにする
 - どちらも使えなければ何も鳴らさず、`pekoe voice` と `voice.updated` の `error` に理由を出す
 
@@ -515,6 +521,7 @@ docs/api.md に足すもの。`voice.*` はすべて token が要る。
 
 - pekoed が `<データディレクトリ>/voice.log`(0600、JSON Lines)に書く。1MB を超えたら `voice.log.1` に回す(1 世代)
 - 1 件: 時刻・slug・種類(wait / done / error / ask / idle_all / read / test)・文・結果(`spoken` `merged` `stale` `old` `muted` `interrupted` `failed`)・理由・積んでから鳴り始めるまでのミリ秒・backend の名前
+- fallback で合成し直した発話(8 の Q11): 鳴れば結果 `spoken`(`merged`)・backend は fallback の名前・理由は使っている backend の失敗(`voicevox failed: voice backend voicevox synth: <標準エラーの 1 行>`)。fallback も失敗すれば結果 `failed`・backend は fallback の名前・理由は両方(`voicevox failed: …; say failed: …`)
 - read の文は先頭 80 文字だけ残す(エージェントの出力をまるごと残さない)
 - `:voice` のモーダル: 新しい方から 50 件。`j` `k` で動き、`esc` `q` で閉じる。開いている間も `voice.logged` で増える。試用(16)で「どの発話がうるさかったか」をここと `pekoe voice log` で拾う
 

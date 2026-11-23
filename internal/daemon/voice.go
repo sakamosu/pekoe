@@ -57,6 +57,9 @@ type voiceEngine interface {
 	Synth(ctx context.Context, text, voice, lang string) (string, error)
 	Select(ctx context.Context) error
 	Failover() bool
+	// FallbackFor offers the fallback for one more try of a failed synth
+	// (backend.Engine.FallbackFor); synth nil is nothing to try.
+	FallbackFor(err error) (failed, name string, synth func(ctx context.Context, text, voice, lang string) (string, error))
 	Release(path string)
 	Status() backend.Status
 	List(ctx context.Context, pathEnv string) ([]backend.Info, []backend.Candidate)
@@ -259,9 +262,16 @@ func (h *voiceHub) start(v config.Voice, key string) {
 	var tr *voice.Tracker
 	q := voice.NewQueue(voice.Config{
 		Clock: h.clock, Synth: eng, Player: h.player, Phrases: phrases,
-		Mode:         h.modeFor,
-		Fresh:        func(it voice.Item) bool { return tr.Fresh(it) },
-		Failover:     eng.Failover,
+		Mode:     h.modeFor,
+		Fresh:    func(it voice.Item) bool { return tr.Fresh(it) },
+		Failover: eng.Failover,
+		Fallback: func(err error) (string, string, voice.Synth) {
+			failed, name, f := eng.FallbackFor(err)
+			if f == nil {
+				return "", "", nil
+			}
+			return failed, name, voice.SynthFunc(f)
+		},
 		Release:      eng.Release,
 		Backend:      func() string { return eng.Status().Using },
 		MaxSentences: v.MaxSentences(),
