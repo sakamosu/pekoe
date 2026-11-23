@@ -1,7 +1,8 @@
 // Package voice is the pure logic of pekoe voice (docs/voice.md): which
 // mode a session speaks in (policy, 7), what tapi calls a session and what
 // it says (names and phrases, 5.2 and 5.3), when a state change is worth
-// saying (5.1 and 5.4) and the speech queue (8).
+// saying (5.1 and 5.4), the speech queue (8) and what of the assistant's
+// text is read (shape and Reader, 6.2 and 6.3).
 //
 // It runs no programs, touches no files and opens no sockets. The clock,
 // the synthesizer and the player come in as interfaces so that the rules
@@ -9,7 +10,9 @@
 //
 // Wiring (internal/daemon/voice.go): a Tracker watches state changes and
 // pushes narrate items into a Queue; the Queue asks the Tracker whether an
-// item is still fresh (Q5) right before it synthesizes and plays it.
+// item is still fresh (Q5) right before it synthesizes and plays it. A
+// Reader takes the read hooks (MessageDisplay, Stop, UserPromptSubmit) and
+// interrupts and returns the read items to push.
 package voice
 
 import (
