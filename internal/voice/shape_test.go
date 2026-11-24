@@ -45,6 +45,10 @@ func TestRule6_2Shape(t *testing.T) {
 		{"inline code with slash", "`a/b` を見た", []string{"b を見た"}},
 		{"inline code with slash, not a path", "`x := a / b` を見た", []string{"コード を見た"}},
 		{"inline code url", "`https://example.com/x` を開く", []string{"リンク を開く"}},
+		{"inline code url of a host", "詳細は `https://example.com` を見て", []string{"詳細は リンク を見て"}},
+		{"inline code url with a file", "`https://example.com/docs/guide.html` を開く", []string{"リンク を開く"}},
+		{"inline code url without an extension", "`https://github.com/sakamosu/pekoe/pull/315` を開く", []string{"リンク を開く"}},
+		{"inline code http url with a slash", "`http://localhost:8080/` を開く", []string{"リンク を開く"}},
 		{"inline code up only", "`../` に戻る", []string{"に戻る"}},
 		{"table", "表です。\n| a | b |\n|---|---|\n| 1 | 2 |\n後", []string{"表です。", "後"}},
 		{"url", "詳しくは https://example.com/x を見て。", []string{"詳しくは リンク を見て。"}},
@@ -92,6 +96,7 @@ func TestRule6_2ShapeEn(t *testing.T) {
 		{"link text only", "Read [the docs](https://x.y/z).", []string{"Read the docs."}},
 		{"inline code long", "Run `go test ./internal/voice/ -run Shape` again.", []string{"Run code again."}},
 		{"inline code path", "The code is in `internal/voice/narrate.go`.", []string{"The code is in narrate."}},
+		{"inline code url", "See `https://example.com/guide.html` first.", []string{"See a link first."}},
 		{"path at the end of a sentence", "I changed internal/voice/read.go. Then ran tests.", []string{"I changed read.", "Then ran tests."}},
 		{"slash without extension", "and/or is fine", []string{"and/or is fine"}},
 	}
@@ -141,6 +146,10 @@ func TestRule6_2ShapeNoSkip(t *testing.T) {
 		if got := Shape(text, c.skip, LangJa); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("Shape(%q) = %q, want %q", c.skip, got, c.want)
 		}
+	}
+	// a URL in inline code is not a path even when only path is skipped
+	if got, want := Shape("`https://example.com/guide.html` を開く", []string{SkipCode, SkipPath}, LangJa), []string{"https://example.com/guide.html を開く"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Shape(code, path) = %q, want %q", got, want)
 	}
 	// a URL read as it is keeps its path
 	if got, want := Shape("see https://x.y/a/b.md now", []string{SkipPath}, LangEn), []string{"see https://x.y/a/b.md now"}; !reflect.DeepEqual(got, want) {
