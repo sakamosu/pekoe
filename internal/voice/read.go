@@ -46,7 +46,44 @@ type ReadConfig struct {
 	// (6.1). Called with the Reader's lock held; it must not call the
 	// Reader.
 	Mode func(slug string) Mode
+	// Unread, when set, is told why assistant text of the read hooks is
+	// not read (Unread*), once per session, turn and reason (per message
+	// for UnreadGap and UnreadDropped), so that a reply that goes unheard
+	// leaves a trace (the daemon writes it to pekoed.log). The limits of
+	// one message (max_sentences) are not told: they are the usual case.
+	// Called with the Reader's lock held; it must not call the Reader.
+	Unread func(Unread)
 }
+
+// Unread is one reason some assistant text was not read.
+type Unread struct {
+	Slug    string
+	Turn    string // turn_id ("" for a Stop)
+	Message string // message_id ("" when the reason is the turn's)
+	Why     string // one of the Unread* reasons, the mode's with its name
+}
+
+// Why some text is not read.
+const (
+	// UnreadMode: the session's mode was not read ("mode narrate").
+	UnreadMode = "mode"
+	// UnreadTypedAhead: a prompt was typed ahead; up to the next Stop
+	// nothing is read (6.3).
+	UnreadTypedAhead = "typed ahead"
+	// UnreadStopped: a batch of a turn stopped by a prompt or an
+	// interrupt (6.3).
+	UnreadStopped = "turn stopped"
+	// UnreadPast: a batch of a turn left for a newer one (6.3).
+	UnreadPast = "turn left"
+	// UnreadGap: a missing index was waited for GapWait (6.2); the rest of
+	// the message is not read.
+	UnreadGap = "missing batch"
+	// UnreadDropped: the message was given up while being read (a
+	// prompt, an interrupt, the focus, mode or mute changed: 6.2, 6.3).
+	UnreadDropped = "dropped"
+	// UnreadFull: the turn reached max_turn_sentences or MaxTurnRunes.
+	UnreadFull = "turn limit"
+)
 
 // Reader turns the assistant text of the read hooks (MessageDisplay,
 // Stop) into the read items to push, and stops reading where 6.3 says.
@@ -81,6 +118,8 @@ type readSession struct {
 	stopped []string // turns not to read (6.3)
 	ended   []string // turns a Stop ended (their late batches still read)
 	past    []string // turns left for a newer one (their late batches go)
+
+	told map[string]bool // Unread reasons told (turn|message|why)
 }
 
 // readMsg is one message's buffer (6.2).
@@ -90,8 +129,9 @@ type readMsg struct {
 	gapSince time.Time       // when the missing index was first waited for
 	partial  string          // the text after the last newline
 	shape    ShapeState
-	sent     int  // sentences taken from this message
-	done     bool // final shaped, or given up
+	sent     int    // sentences taken from this message
+	done     bool   // final shaped, or given up
+	why      string // why it was given up (an Unread reason; "" when read to the end)
 }
 
 // NewReader returns a Reader.
@@ -116,6 +156,35 @@ func (r *Reader) session(slug string) *readSession {
 
 func (r *Reader) reads(slug string) bool {
 	return r.cfg.Mode == nil || r.cfg.Mode(slug) == ModeRead
+}
+
+// modeWhy is UnreadMode with the session's mode now.
+func (r *Reader) modeWhy(slug string) string {
+	if r.cfg.Mode == nil {
+		return UnreadMode
+	}
+	return UnreadMode + " " + string(r.cfg.Mode(slug))
+}
+
+// maxTold bounds a session's told; past it the record starts over (a
+// reason may then be told again).
+const maxTold = 64
+
+// tell passes one reason to cfg.Unread, once per session, turn, message
+// and reason.
+func (r *Reader) tell(s *readSession, slug, turn, msg, why string) {
+	if r.cfg.Unread == nil || why == "" {
+		return
+	}
+	k := turn + "|" + msg + "|" + why
+	if s.told[k] {
+		return
+	}
+	if s.told == nil || len(s.told) >= maxTold {
+		s.told = map[string]bool{}
+	}
+	s.told[k] = true
+	r.cfg.Unread(Unread{Slug: slug, Turn: turn, Message: msg, Why: why})
 }
 
 func remember(list []string, turn string) []string {
@@ -151,6 +220,9 @@ func (s *readSession) newTurn(turn string) {
 // read (their fence state is lost).
 func (s *readSession) drop() {
 	for _, m := range s.msgs {
+		if !m.done {
+			m.why = UnreadDropped
+		}
 		m.done, m.held, m.partial = true, nil, ""
 	}
 }
@@ -166,9 +238,15 @@ func (r *Reader) Display(slug string, d Display) []Item {
 	}
 	if s.stopping {
 		s.stopped = remember(s.stopped, d.Turn)
+		r.tell(s, slug, d.Turn, "", UnreadTypedAhead)
 		return nil
 	}
-	if has(s.stopped, d.Turn) || has(s.past, d.Turn) {
+	if has(s.stopped, d.Turn) {
+		r.tell(s, slug, d.Turn, "", UnreadStopped)
+		return nil
+	}
+	if has(s.past, d.Turn) {
+		r.tell(s, slug, d.Turn, "", UnreadPast)
 		return nil
 	}
 	if d.Turn != s.turn {
@@ -180,15 +258,30 @@ func (r *Reader) Display(slug string, d Display) []Item {
 		s.msgs[d.Message] = m
 	}
 	if !r.reads(slug) {
+		if !m.done {
+			m.why = r.modeWhy(slug)
+		}
 		m.done, m.held, m.partial = true, nil, ""
+		r.tell(s, slug, d.Turn, "", r.modeWhy(slug))
 		return nil
 	}
-	if m.done || d.Index < m.next {
+	if m.done {
+		switch m.why {
+		case "":
+		case UnreadGap, UnreadDropped:
+			r.tell(s, slug, d.Turn, d.Message, m.why)
+		default: // the mode's: told per turn
+			r.tell(s, slug, d.Turn, "", m.why)
+		}
+		return nil
+	}
+	if d.Index < m.next {
 		return nil
 	}
 	now := r.cfg.Clock.Now()
 	if !m.gapSince.IsZero() && now.Sub(m.gapSince) >= GapWait {
-		m.done, m.held, m.partial = true, nil, ""
+		m.done, m.held, m.partial, m.why = true, nil, "", UnreadGap
+		r.tell(s, slug, d.Turn, d.Message, UnreadGap)
 		return nil
 	}
 	if m.held == nil {
@@ -238,15 +331,17 @@ func (r *Reader) Display(slug string, d Display) []Item {
 func (r *Reader) take(slug string, s *readSession, m *readMsg, turn, msg string, sents []string) []Item {
 	var out []Item
 	for _, t := range sents {
-		if s.full {
+		if m.sent >= r.cfg.MaxSentences {
 			break
 		}
-		if m.sent >= r.cfg.MaxSentences {
+		if s.full {
+			r.tell(s, slug, turn, "", UnreadFull)
 			break
 		}
 		n := utf8.RuneCountInString(t)
 		if s.sent >= r.cfg.MaxTurnSentences || s.runes+n > MaxTurnRunes {
 			s.full = true
+			r.tell(s, slug, turn, "", UnreadFull)
 			break
 		}
 		m.sent++
@@ -274,7 +369,11 @@ func (r *Reader) Stop(slug, turn, text string) []Item {
 		s.stopped = remember(s.stopped, turn)
 		return nil
 	}
-	if displayed || text == "" || (turn != "" && has(s.stopped, turn)) || !r.reads(slug) {
+	if displayed || text == "" || (turn != "" && has(s.stopped, turn)) {
+		return nil
+	}
+	if !r.reads(slug) {
+		r.tell(s, slug, turn, "", r.modeWhy(slug))
 		return nil
 	}
 	if turn == "" {

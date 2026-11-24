@@ -294,7 +294,7 @@ func (h *voiceHub) start(v config.Voice, key string) {
 		skip = voice.DefaultSkip
 	}
 	rd := voice.NewReader(voice.ReadConfig{
-		Clock: h.clock, Skip: skip, Mode: h.modeFor,
+		Clock: h.clock, Skip: skip, Mode: h.modeFor, Unread: h.logUnread,
 		MaxSentences: v.MaxSentences(), MaxTurnSentences: v.MaxTurnSentences(),
 	})
 	stop := make(chan struct{})
@@ -529,6 +529,36 @@ func pushAll(q *voice.Queue, items []voice.Item) {
 	for _, it := range items {
 		q.Push(it)
 	}
+}
+
+// logUnread writes to pekoed.log why some of a session's reply was not
+// read (voice.ReadConfig.Unread): a reply that goes unheard is otherwise
+// in no log, since nothing of it reached the queue. A mode is told with
+// the focus it came from.
+func (h *voiceHub) logUnread(u voice.Unread) {
+	why := u.Why
+	if strings.HasPrefix(why, voice.UnreadMode) {
+		h.polMu.Lock()
+		f := h.focusLocked()
+		h.polMu.Unlock()
+		why += fmt.Sprintf(" (focus %q)", f.slug)
+	}
+	where := ""
+	if u.Turn != "" {
+		where = " in turn " + shortID(u.Turn)
+	}
+	if u.Message != "" {
+		where += " message " + shortID(u.Message)
+	}
+	log.Printf("voice: read of %s: not read%s: %s", u.Slug, where, why)
+}
+
+// shortID is an id's first 8 characters (Claude Code's ids are UUIDs).
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // display: one MessageDisplay batch of the session (6.1, 6.2).

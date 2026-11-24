@@ -884,6 +884,7 @@ read(フォーカス中のセッションの返事を読む。docs/voice.md 6)�
 - 止める: `UserPromptSubmit` でそのセッションの read を止めてキューから消す。そのとき hooks の状態(この `UserPromptSubmit` で変える前)が `running` なら先打ちとみて、次の `Stop` までに届く本文と、止めたターンの後から届くバッチを読まず、その `Stop` の本文も読まない。`session.interrupt` / `tapi.interrupt` が Escape を送ったとき、`session.keys` / `tapi.keys` の agent の窓への `keys` に `Escape` があるとき(`hex` の `1b` は見ない)も、read を止め、最後に受け取ったターンを読まない。人がペインに直接押した Esc は分からない(止めない)。Escape で止めたターンは hooks の状態が `running` のまま残ることがあり(`session.interrupt` は画面を見て `idle` にする)、その後の指示は先打ちに見えて、そのターンを `Stop` まで読まない
 - フォーカスの移動(`voice.focus` の slug が変わった・接続が切れた)・ミュートで、全セッションの読みかけを捨てる。`voice.mode` で決め直したセッションと `session.removed` のセッションも捨てる。新しいメッセージからはまた読む
 - `voice.log` には read の文の先頭 80 文字と結果(`spoken`、止めたものは `interrupted` と理由 `user prompt` / `interrupted` / `focus moved` / `new turn`)が残る
+- 積む前に捨てた本文(モードが `read` でない・先打ち・止めたターン・古いターン・欠けた `index`・読みかけを捨てた後・1 ターンの上限)は voice.log に出ないので、理由を `pekoed.log` に `voice: read of <slug>: not read in turn <id> [message <id>]: <理由>` の 1 行で残す(同じターン・理由は 1 回。モードの理由にはそのときのフォーカスを添える。docs/voice.md 6.4)
 
 ### config.toml の再読み込み
 
