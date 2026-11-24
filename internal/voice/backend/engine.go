@@ -271,7 +271,9 @@ var ErrUnavailable = errors.New("no voice backend can be used")
 // Synth turns one sentence into a WAV file and returns its path. Sentences
 // of the tapi voice are kept in the cache (the path is the cache's: do not
 // remove it); sentences of the reader voice are not (the path is a
-// temporary file: Release it once played). ctx ending stops the backend.
+// temporary file: Release it once played), nor tapi sentences of an
+// external backend whose `cache-key` failed. Release every path once
+// played: it leaves the cache's alone. ctx ending stops the backend.
 func (e *Engine) Synth(ctx context.Context, text, voice, lang string) (string, error) {
 	text = CleanText(text)
 	if text == "" {
@@ -301,6 +303,21 @@ func (e *Engine) synthWith(ctx context.Context, b *Backend, ver, text, voice, la
 	keep := voice != ReaderVoice
 	if b.Name == Builtin && e.o.Variant != "" {
 		ver += "\x00" + e.o.Variant
+	}
+	if keep && b.Name != Builtin {
+		// asked every time: the backend's settings may change at any moment
+		// and the next sentence must sound like them (docs/voice.md 10.3)
+		fp, err := b.CacheKey(ctx)
+		switch {
+		case err != nil:
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			e.o.Logf("voice: not using the cache for this sentence: %v", err)
+			keep = false
+		case fp != "":
+			ver += "\x00cache-key\x00" + fp
+		}
 	}
 	key := Key(b.Name, ver, voice, lang, text)
 	if keep {

@@ -41,6 +41,17 @@ func contract(t *testing.T, b *Backend) {
 			t.Fatal("an unknown subcommand exited 0")
 		}
 	})
+	if b.Name != Builtin { // pekoe does not ask the bundled say (its key is [voice.say])
+		t.Run("cache-key is exit 2 or a stable line", func(t *testing.T) {
+			fp, err := b.CacheKey(ctx)
+			if err != nil {
+				t.Fatalf("cache-key must exit 2 (not known) or print one line of printable ASCII: %v", err)
+			}
+			if again, err := b.CacheKey(ctx); err != nil || again != fp {
+				t.Fatalf("cache-key changed without the settings changing: %q, then %q %v", fp, again, err)
+			}
+		})
+	}
 	if err := b.CheckUsable(ctx); err != nil {
 		t.Skipf("check fails here, so the rest cannot be checked: %v", err)
 	}
