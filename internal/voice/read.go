@@ -34,8 +34,10 @@ type Display struct {
 // ReadConfig is what a Reader runs on. Clock is required.
 type ReadConfig struct {
 	Clock Clock
-	// Skip is what Shape leaves out (DefaultSkip for the default).
+	// Skip is what Shape does not read as it is (DefaultSkip for the
+	// default); Lang (ja or en) the words it reads in their place.
 	Skip []string
+	Lang string
 	// MaxSentences is [voice.read] max_sentences (0 is
 	// DefaultMaxSentences); MaxTurnSentences is max_turn_sentences (0 is
 	// DefaultMaxTurnSentences).
@@ -311,7 +313,7 @@ func (r *Reader) Display(slug string, d Display) []Item {
 		m.partial = m.partial[i+1:]
 	}
 	var sents []string
-	m.shape, sents = ShapeLines(m.shape, lines, r.cfg.Skip)
+	m.shape, sents = ShapeLines(m.shape, lines, r.cfg.Skip, r.cfg.Lang)
 	if final {
 		var rest []string
 		m.shape, rest = m.shape.Flush()
@@ -384,7 +386,7 @@ func (r *Reader) Stop(slug, turn, text string) []Item {
 	// The Stop text is a turn of its own for the limits.
 	sent, runes, full := s.sent, s.runes, s.full
 	s.sent, s.runes, s.full = 0, 0, false
-	out := r.take(slug, s, m, turn, turn, Shape(text, r.cfg.Skip))
+	out := r.take(slug, s, m, turn, turn, Shape(text, r.cfg.Skip, r.cfg.Lang))
 	s.sent, s.runes, s.full = sent, runes, full
 	return out
 }

@@ -86,10 +86,11 @@ type Tracker struct {
 	focus    string
 	termFoc  bool
 
-	wasActive bool   // something ran since idle_all was last armed
-	idleTimer Timer  // pending idle_all check
-	idleGen   uint64 // which arming idleTimer belongs to
-	idleSaid  bool   // idle_all was said; quiet until something runs
+	wasActive  bool   // something ran since idle_all was last armed
+	sessionRan bool   // a session other than tapi chat ran since idle_all was last said
+	idleTimer  Timer  // pending idle_all check
+	idleGen    uint64 // which arming idleTimer belongs to
+	idleSaid   bool   // idle_all was said; quiet until something runs
 }
 
 // NewTracker reports the items worth saying to push (the Queue's Push).
@@ -116,7 +117,9 @@ func (t *Tracker) Baseline(sessions []state.Session, inbox []state.InboxItem) {
 		t.idleTimer.Stop()
 		t.idleTimer = nil
 	}
-	t.wasActive = t.activeLocked() > 0
+	n, ran := t.activeLocked()
+	t.wasActive = n > 0
+	t.sessionRan = ran
 	t.idleSaid = false
 	t.mu.Unlock()
 }
@@ -199,14 +202,18 @@ func (t *Tracker) Fresh(it Item) bool {
 	return true
 }
 
-func (t *Tracker) activeLocked() int {
-	n := 0
-	for _, s := range t.sessions {
+// activeLocked: how many run (tapi chat included) and whether a session
+// other than tapi chat is among them.
+func (t *Tracker) activeLocked() (n int, sessions bool) {
+	for slug, s := range t.sessions {
 		if Active(s.state) {
 			n++
+			if slug != TapiSlug {
+				sessions = true
+			}
 		}
 	}
-	return n
+	return n, sessions
 }
 
 // idleHoldsLocked: nothing runs and nothing waits on the person (no
@@ -224,9 +231,15 @@ func (t *Tracker) idleHoldsLocked() bool {
 }
 
 // activityLocked arms idle_all when the running count drops from 1 or
-// more to 0 and disarms it when something runs again (5.4).
+// more to 0 and disarms it when something runs again (5.4). Running tapi
+// chat counts as running, but it is not armed unless a session other than
+// tapi chat ran since idle_all was last said: tapi chat answering alone
+// says nothing.
 func (t *Tracker) activityLocked() {
-	if t.activeLocked() > 0 {
+	if n, sessions := t.activeLocked(); n > 0 {
+		if sessions {
+			t.sessionRan = true
+		}
 		t.wasActive = true
 		t.idleSaid = false
 		if t.idleTimer != nil {
@@ -239,6 +252,9 @@ func (t *Tracker) activityLocked() {
 		return
 	}
 	t.wasActive = false
+	if !t.sessionRan {
+		return
+	}
 	if t.idleTimer != nil {
 		t.idleTimer.Stop()
 	}
@@ -257,6 +273,7 @@ func (t *Tracker) idleFire(gen uint64) {
 	say := !t.idleSaid && t.idleHoldsLocked()
 	if say {
 		t.idleSaid = true
+		t.sessionRan = false
 	}
 	t.mu.Unlock()
 	if say {
