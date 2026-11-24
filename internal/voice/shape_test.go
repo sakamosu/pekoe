@@ -29,7 +29,13 @@ func TestRule6_2Shape(t *testing.T) {
 		{"nested list is not code", "- a\n    - b", []string{"a", "b"}},
 		{"inline code short", "`Shape` を足した", []string{"Shape を足した"}},
 		{"inline code of 24 is read", "`aaaaaaaaaaaaaaaaaaaaaaaa` を足した", []string{"aaaaaaaaaaaaaaaaaaaaaaaa を足した"}},
-		{"inline code long is code", "`aaaaaaaaaaaaaaaaaaaaaaaaa` を足した", []string{"コード を足した"}},
+		{"inline code of 24 with marks is read", "`aaaaaaaaaaaaaaaaaaaaaa()` を足した", []string{"aaaaaaaaaaaaaaaaaaaaaa() を足した"}},
+		{"inline code longer than 24 is code", "`aaaaaaaaaaaaaaaaaaaaaaa()` を足した", []string{"コード を足した"}},
+		{"inline code one long word is read", "`fix-idle-all-not-for-tapi` の再レビューも合格したよ", []string{"fix idle all not for tapi の再レビューも合格したよ"}},
+		{"inline code long word with _", "`max_turn_sentences_for_voice` を足した", []string{"max turn sentences for voice を足した"}},
+		{"inline code short word with - and _", "`max_sentences` と `feat-csv` を見た", []string{"max sentences と feat csv を見た"}},
+		{"inline code command of 24 is read", "`pekoe --json wait --mine` で待つ", []string{"pekoe --json wait --mine で待つ"}},
+		{"inline code long command is code", "`pekoe --json wait --mine --since 3` で待つ", []string{"コード で待つ"}},
 		{"inline code long with spaces is code", "`go test ./internal/voice/ -run Shape` を回した", []string{"コード を回した"}},
 		{"inline code path", "実装は `internal/voice/narrate.go` の activityLocked と idleFire。", []string{"実装は narrate の activityLocked と idleFire。"}},
 		{"inline code path without extension", "`internal/voice` を見た", []string{"voice を見た"}},
@@ -120,17 +126,17 @@ func TestRule6_2PathName(t *testing.T) {
 
 // Rule 6.2: what is not in skip is read.
 func TestRule6_2ShapeNoSkip(t *testing.T) {
-	text := "```\nfunc main()\n```\n| a | b |\n|---|---|\n`internal/x.go` と https://x.y と ./a.go と `https://x.y/z` と `aaaaaaaaaaaaaaaaaaaaaaaaa`"
+	text := "```\nfunc main()\n```\n| a | b |\n|---|---|\n`internal/x.go` と https://x.y と ./a.go と `https://x.y/z` と `aaaaaaaaaaaaaaaaaaaaaaa()`"
 	for _, c := range []struct {
 		skip []string
 		want []string
 	}{
-		{nil, []string{"func main()", "a、b", "internal/x.go と https://x.y と ./a.go と https://x.y/z と aaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		{nil, []string{"func main()", "a、b", "internal/x.go と https://x.y と ./a.go と https://x.y/z と aaaaaaaaaaaaaaaaaaaaaaa()"}},
 		// code only: a path or a URL in inline code is read as it is
 		{[]string{SkipCode}, []string{"a、b", "internal/x.go と https://x.y と ./a.go と https://x.y/z と コード"}},
 		{[]string{SkipCode, SkipPath}, []string{"a、b", "x と https://x.y と a と https://x.y/z と コード"}},
 		{[]string{SkipCode, SkipURL}, []string{"a、b", "internal/x.go と リンク と ./a.go と リンク と コード"}},
-		{[]string{SkipURL, SkipPath}, []string{"func main()", "a、b", "x と リンク と a と リンク と aaaaaaaaaaaaaaaaaaaaaaaaa"}},
+		{[]string{SkipURL, SkipPath}, []string{"func main()", "a、b", "x と リンク と a と リンク と aaaaaaaaaaaaaaaaaaaaaaa()"}},
 	} {
 		if got := Shape(text, c.skip, LangJa); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("Shape(%q) = %q, want %q", c.skip, got, c.want)

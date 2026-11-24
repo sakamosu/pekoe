@@ -310,7 +310,9 @@ var (
 	// a run of characters a path is made of
 	rePathish = regexp.MustCompile(`[A-Za-z0-9_.~/@+\-]+`)
 	reExt     = regexp.MustCompile(`\.[A-Za-z0-9]{1,8}$`)
-	reMarks   = regexp.MustCompile(`\*\*|__|~~|\*`)
+	// inline code that is one word: letters, digits, - and _
+	reCodeWord = regexp.MustCompile(`^[A-Za-z0-9_-]*[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	reMarks    = regexp.MustCompile(`\*\*|__|~~|\*`)
 	// a space left before punctuation where a word was taken out
 	reSpacePunct = regexp.MustCompile(`\s+([,.;:!?)]+(?:\s|$)|[、。！？」])`)
 )
@@ -401,7 +403,15 @@ func codeSpans(s string, sk skips) string {
 }
 
 func codeSpan(code string, sk skips) string {
-	if !sk.code || (utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/")) {
+	if !sk.code {
+		return code
+	}
+	if reCodeWord.MatchString(code) {
+		// one word (a slug, a branch, a name) is read at any length, its
+		// - and _ as spaces: fix-idle-all → fix idle all
+		return strings.Join(strings.FieldsFunc(code, func(r rune) bool { return r == '-' || r == '_' }), " ")
+	}
+	if utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/") {
 		return code
 	}
 	if isCodePath(code) {
