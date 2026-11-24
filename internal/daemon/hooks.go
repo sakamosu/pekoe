@@ -336,7 +336,7 @@ func (d *Daemon) hEvent(p eventP) (any, error) {
 			// say before this prompt updates it
 			d.voice.userPrompt(slug, d.readRunning(slug))
 		case "Stop":
-			d.voice.stopHook(slug, hp.LastAssistant) // 6.1, the Stop way
+			d.voice.stopHook(slug, hp.LastAssistant, hp.StopHookActive) // 6.1, the Stop way
 		}
 	}
 	if slug == TapiSlug {
