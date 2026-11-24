@@ -689,7 +689,7 @@ tapi chat(TUI の `t`、docs/tapi-chat.md)。統括役のエージェントで�
     "last_at": "…",                        // 最後に打った時刻
     "last_error": ""                       // 最後に打てなかった理由
   },
-  "outside": {                             // tapi の会話が tapi の窓の外で動いている(tapi を起動し直すまで。無ければ省く)
+  "outside": {                             // tapi の会話が tapi の窓の外で動いている(tapi を起動し直すか、その会話の hook が tapi の窓から届くまで。MessageDisplay では付かない。無ければ省く)
     "claude_session_id": "…", "window": "", // window: 動いている pekoe の窓(空なら窓の外)
     "claimed": "pekoe-theme", "since": "…"  // claimed: その hooks の $PEKOE_SESSION
   }

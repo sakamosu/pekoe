@@ -255,10 +255,23 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 		// running outside its window, and nothing for tapi's state
 		return map[string]any{"ignored": true}, nil
 	}
-	if pane != TapiSlug && tapiTranscriptOK(hp.TranscriptPath) {
+	hook := p.Hook
+	if hook == "" {
+		hook = hp.HookEventName
+	}
+	switch {
+	case hook == "MessageDisplay":
+		// read's text only, which needs no window (claimOutside below
+		// finds tapi by the conversation). `pekoe event MessageDisplay`
+		// writes and closes without waiting, so pekoed often finds no
+		// caller left to look up: no window is no sign of running outside
+	case pane != TapiSlug && tapiTranscriptOK(hp.TranscriptPath):
 		// tapi's conversation, running outside tapi's window: pekoe cannot
 		// tell it is tapi (the ledger refuses it), so say so
 		d.tapiNoteOutside(hp.SessionID, pane, p.Session)
+	case pane == TapiSlug:
+		// the conversation noted outside is back in tapi's window
+		d.tapiClearOutside(hp.SessionID)
 	}
 	if pane != "" {
 		p.Session = pane
@@ -270,10 +283,6 @@ func (d *Daemon) hEventAs(who *Caller, p eventP) (any, error) {
 		// a person's request to tapi and the end of tapi's turn
 		// (ledger.go): only from tapi's own window, never from a caller
 		// that just names it
-		hook := p.Hook
-		if hook == "" {
-			hook = hp.HookEventName
-		}
 		switch hook {
 		case "UserPromptSubmit":
 			d.tapiPrompt(hp.Prompt)
