@@ -136,12 +136,14 @@ func TestRule5_1Ask(t *testing.T) {
 	}
 }
 
-// Rule 5.4: idle_all once, 5 seconds after the running count drops to 0.
+// Rule 5.4: idle_all once, 5 seconds after the running count drops to 0,
+// and only when a session other than tapi chat ran since it was last said.
 func TestRule5_4IdleAll(t *testing.T) {
 	t0 := voicetest.NewClock().Now()
 	run := func(slug string) *state.Session { return sess(slug, state.Running, t0) }
 	done := func(slug string) *state.Session { return sess(slug, state.Done, t0) }
 	wait := func(slug string) *state.Session { return sess(slug, state.Waiting, t0) }
+	tapiRun, tapiIdle := sess(TapiSlug, state.Running, t0), sess(TapiSlug, state.Idle, t0)
 
 	type step struct {
 		before, after *state.Session
@@ -183,10 +185,30 @@ func TestRule5_4IdleAll(t *testing.T) {
 		{"5.4 never ran: no", []step{
 			{nil, done("a"), nil, 10 * time.Second},
 		}, 0},
-		{"5.4 running tapi chat counts", []step{
-			{nil, sess(TapiSlug, state.Running, t0), nil, 0}, {nil, done("a"), nil, 10 * time.Second},
-			{sess(TapiSlug, state.Running, t0), sess(TapiSlug, state.Idle, t0), nil, 5 * time.Second},
+		{"5.4 tapi chat alone, turn after turn: no", []step{
+			{nil, tapiRun, nil, 0}, {tapiRun, tapiIdle, nil, 35 * time.Second},
+			{tapiIdle, tapiRun, nil, 0}, {tapiRun, tapiIdle, nil, 35 * time.Second},
+			{tapiIdle, tapiRun, nil, 0}, {tapiRun, tapiIdle, nil, 35 * time.Second},
+		}, 0},
+		{"5.4 a session runs then idles: once after 5s", []step{
+			{nil, run("a"), nil, 0}, {run("a"), sess("a", state.Idle, t0), nil, 5 * time.Second},
 		}, 1},
+		{"5.4 running tapi chat holds it until tapi idles too", []step{
+			{nil, tapiRun, nil, 0}, {nil, run("a"), nil, 0},
+			{run("a"), done("a"), nil, 10 * time.Second}, // tapi still runs: no
+			{tapiRun, tapiIdle, nil, 5 * time.Second},
+		}, 1},
+		{"5.4 tapi chat starts within 5s of the session ending: waits for tapi", []step{
+			{nil, run("a"), nil, 0}, {run("a"), done("a"), nil, 3 * time.Second},
+			{nil, tapiRun, nil, 10 * time.Second},
+			{tapiRun, tapiIdle, nil, 5 * time.Second},
+		}, 1},
+		{"5.4 once said, tapi chat alone does not say it again", []step{
+			{nil, run("a"), nil, 0}, {run("a"), done("a"), nil, 6 * time.Second},
+			{nil, tapiRun, nil, 0}, {tapiRun, tapiIdle, nil, 6 * time.Second},
+			{tapiIdle, tapiRun, nil, 0}, {tapiRun, tapiIdle, nil, 6 * time.Second},
+			{nil, run("b"), nil, 0}, {run("b"), done("b"), nil, 6 * time.Second},
+		}, 2},
 	}
 	for _, c := range cases {
 		tr, clk, p := newTracker()
