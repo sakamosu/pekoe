@@ -34,6 +34,10 @@ type ShapeState struct {
 	// length while inside a fenced code block; Fence 0 is outside.
 	Fence    rune
 	FenceLen int
+	// FenceQuote is how many block quote markers (>) the opening fence
+	// was in: the fence's lines carry as many, and a line with fewer
+	// ends the quote and so the fence.
+	FenceQuote int
 	// Pending is the unfinished sentence (an en sentence runs on to the
 	// next line).
 	Pending string
@@ -141,23 +145,47 @@ func fence(l string) (rune, int, string) {
 	return c, n, t[n:]
 }
 
-func (st ShapeState) line(l string, sk skips, out []string) (ShapeState, []string) {
-	// Inside a fence: nothing but the closing fence counts.
-	if st.Fence != 0 {
-		if c, n, rest := fence(l); c == st.Fence && n >= st.FenceLen && strings.TrimSpace(rest) == "" {
-			st.Fence, st.FenceLen = 0, 0
-			return st, out
+// unquote takes up to max block quote markers (each with up to three
+// spaces before it and one after) off l; max < 0 takes them all. It
+// returns how many it took and the rest.
+func unquote(l string, max int) (int, string) {
+	d := 0
+	for max < 0 || d < max {
+		t := strings.TrimLeft(l, " ")
+		if len(l)-len(t) > 3 || !strings.HasPrefix(t, ">") {
+			break
 		}
-		if sk.code {
-			return st, out
-		}
-		st, out = st.flush(out)
-		out = sentences(inline(l, sk), true, out, &st)
-		return st, out
+		l = strings.TrimPrefix(t[1:], " ")
+		d++
 	}
-	if c, n, rest := fence(l); c != 0 && !(c == '`' && strings.ContainsRune(rest, '`')) {
+	return d, l
+}
+
+func (st ShapeState) line(l string, sk skips, out []string) (ShapeState, []string) {
+	// Inside a fence: nothing but the closing fence counts, or the end of
+	// the block quote the fence is in.
+	if st.Fence != 0 {
+		d, q := unquote(l, st.FenceQuote)
+		if d < st.FenceQuote {
+			st.Fence, st.FenceLen, st.FenceQuote = 0, 0, 0
+		} else {
+			if c, n, rest := fence(q); c == st.Fence && n >= st.FenceLen && strings.TrimSpace(rest) == "" {
+				st.Fence, st.FenceLen, st.FenceQuote = 0, 0, 0
+				return st, out
+			}
+			if sk.code {
+				return st, out
+			}
+			st, out = st.flush(out)
+			out = sentences(inline(q, sk), true, out, &st)
+			return st, out
+		}
+	}
+	// A fence opens in a block quote too (> ```).
+	d, q := unquote(l, -1)
+	if c, n, rest := fence(q); c != 0 && !(c == '`' && strings.ContainsRune(rest, '`')) {
 		st, out = st.flush(out)
-		st.Fence, st.FenceLen = c, n
+		st.Fence, st.FenceLen, st.FenceQuote = c, n, d
 		return st, out
 	}
 	if strings.TrimSpace(l) == "" {
@@ -321,11 +349,27 @@ var (
 // links, tags, URLs, paths, emphasis and emoji. A URL is read as a link
 // word and a path as its last element.
 func inline(s string, sk skips) string {
-	s = codeSpans(s, sk)
+	s, kept := codeSpans(s, sk)
 	s = reImage.ReplaceAllString(s, " ")
 	s = reAutoLink.ReplaceAllString(s, "$1")
 	s = reLink.ReplaceAllString(s, "$1")
 	s = reTag.ReplaceAllString(s, " ")
+	s = urlsPaths(s, sk)
+	s = reMarks.ReplaceAllString(s, "")
+	s = restoreCode(s, kept)
+	s = strings.Map(func(r rune) rune {
+		if isEmoji(r) {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.Join(strings.Fields(s), " ")
+	return reSpacePunct.ReplaceAllString(s, "$1")
+}
+
+// urlsPaths reads the URLs in s as the link word (url skipped) and the
+// paths as their last element (path skipped).
+func urlsPaths(s string, sk skips) string {
 	if sk.url {
 		s = reURL.ReplaceAllStringFunc(s, func(u string) string {
 			// trailing punctuation belongs to the sentence
@@ -344,15 +388,7 @@ func inline(s string, sk skips) string {
 			})
 		})
 	}
-	s = reMarks.ReplaceAllString(s, "")
-	s = strings.Map(func(r rune) rune {
-		if isEmoji(r) {
-			return -1
-		}
-		return r
-	}, s)
-	s = strings.Join(strings.Fields(s), " ")
-	return reSpacePunct.ReplaceAllString(s, "$1")
+	return s
 }
 
 // outsideURLs applies f to the parts of s that are not URLs (a URL read
@@ -374,13 +410,33 @@ func outsideURLs(s string, f func(string) string) string {
 // link word for a URL (url skipped; as it is when not), a path's last
 // element (path skipped; as it is when not) and the code word for the rest.
 // An unclosed run of backticks is left as it is.
-func codeSpans(s string, sk skips) string {
+//
+// What is read for a span stands in the result as one placeholder rune
+// (codeMark+i for kept[i]), so that the tags and emphasis marks taken
+// out of the text afterwards are not taken out of the code (`<br>`,
+// `Vec<T>`, `**kwargs`); restoreCode puts kept back.
+func codeSpans(s string, sk skips) (string, []string) {
+	s = strings.Map(func(r rune) rune {
+		if isCodeMark(r) {
+			return -1
+		}
+		return r
+	}, s)
 	var b strings.Builder
+	var kept []string
+	keep := func(r string) {
+		if r == "" || len(kept) > codeMarkMax-codeMark {
+			b.WriteString(r)
+			return
+		}
+		b.WriteRune(rune(codeMark + len(kept)))
+		kept = append(kept, r)
+	}
 	for {
 		loc := reInlineCode.FindStringIndex(s)
 		if loc == nil {
 			b.WriteString(s)
-			return b.String()
+			return b.String(), kept
 		}
 		tick := s[loc[0]:loc[1]]
 		rest := s[loc[1]:]
@@ -392,14 +448,45 @@ func codeSpans(s string, sk skips) string {
 		}
 		b.WriteString(s[:loc[0]])
 		code := strings.TrimSpace(rest[:end])
-		if r := codeSpan(code, sk); r == code {
-			b.WriteString(code)
+		if !sk.code {
+			// code read as it is: its URLs and paths as in the text
+			// (url, path), its tags and marks kept
+			keep(urlsPaths(code, sk))
+		} else if r := codeSpan(code, sk); r == code {
+			keep(code)
 		} else {
 			// a word in place of the code stands apart from the text
-			b.WriteString(" " + r + " ")
+			b.WriteString(" ")
+			keep(r)
+			b.WriteString(" ")
 		}
 		s = rest[end+len(tick):]
 	}
+}
+
+// The placeholders of codeSpans: runes of the supplementary private use
+// area A, which no text read aloud has.
+const (
+	codeMark    = 0xF0000
+	codeMarkMax = 0xFFFFD
+)
+
+func isCodeMark(r rune) bool { return r >= codeMark && r <= codeMarkMax }
+
+// restoreCode puts the code spans kept by codeSpans back in s.
+func restoreCode(s string, kept []string) string {
+	if len(kept) == 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isCodeMark(r) && int(r)-codeMark < len(kept) {
+			b.WriteString(kept[int(r)-codeMark])
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func codeSpan(code string, sk skips) string {

@@ -68,6 +68,14 @@ func TestRule6_2Shape(t *testing.T) {
 		{"task list", "- [x] done item", []string{"done item"}},
 		{"emphasis and strike", "**太字**と*斜体*と~~消し~~と__下線__", []string{"太字と斜体と消しと下線"}},
 		{"quote", "> 引用です\n>> 二重", []string{"引用です", "二重"}},
+		{"fence in a quote", "> 前。\n> ```go\n> x := 1\n> ```\n> 後。", []string{"前。", "後。"}},
+		{"fence in a nested quote", ">> ~~~\n>> code.\n>> ~~~\n後", []string{"後"}},
+		{"fence in a quote ends with the quote", "> ```\n> x := 1\n\n後。", []string{"後。"}},
+		{"quoted fence line inside a fence is code", "```\n> ```\nnot read.\n```\n後", []string{"後"}},
+		{"inline code tag is read", "`<br>` タグを使う", []string{"<br> タグを使う"}},
+		{"inline code generics is read", "`Vec<T>` を返す", []string{"Vec<T> を返す"}},
+		{"inline code stars are read", "`**kwargs` と `a*b*c` を見た", []string{"**kwargs と a*b*c を見た"}},
+		{"inline code marks next to text", "x`a*b`y", []string{"xa*by"}},
 		{"html tags", "a<br>b <span class=\"x\">c</span>", []string{"a b c"}},
 		{"emoji", "できた🎉✨ 👍🏽", []string{"できた"}},
 		{"rule", "前\n---\n後", []string{"前", "後"}},
@@ -150,6 +158,14 @@ func TestRule6_2ShapeNoSkip(t *testing.T) {
 	// a URL in inline code is not a path even when only path is skipped
 	if got, want := Shape("`https://example.com/guide.html` を開く", []string{SkipCode, SkipPath}, LangJa), []string{"https://example.com/guide.html を開く"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Shape(code, path) = %q, want %q", got, want)
+	}
+	// inline code read as it is keeps its tags and marks
+	if got, want := Shape("`<br>` と `**a**` を見た", nil, LangJa), []string{"<br> と **a** を見た"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Shape(nil) = %q, want %q", got, want)
+	}
+	// a fence in a block quote is code too
+	if got, want := Shape("> ```\n> func main()\n> ```", nil, LangJa), []string{"func main()"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Shape(nil) = %q, want %q", got, want)
 	}
 	// a URL read as it is keeps its path
 	if got, want := Shape("see https://x.y/a/b.md now", []string{SkipPath}, LangEn), []string{"see https://x.y/a/b.md now"}; !reflect.DeepEqual(got, want) {
