@@ -5,7 +5,12 @@ package daemon
 // interrupt through pekoe, the focus moving and pekoe voice mode stop it.
 
 import (
+	"bytes"
+	"log"
+	"os"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -309,4 +314,56 @@ func TestVoiceReadFocusMoves(t *testing.T) {
 	w.message("feat-a", "t1", "m2", "New message.")
 	wantRead(t, "back in front", w.read(), "New message.")
 
+}
+
+// lockedBuf is a bytes.Buffer for log output written from many goroutines.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// tapi chat's reply while the TUI shows something else is not read, and
+// pekoed.log says why, with the focus (a reply that goes unheard is in no
+// other log: nothing of it reaches the queue, so voice.log has no line).
+// The MessageDisplay comes as pekoe event MessageDisplay sends it: from a
+// connection that is gone before pekoed looks at its window (no caller
+// window), naming +tapi. Back in front, tapi's next turn is read.
+func TestVoiceReadUnreadLogged(t *testing.T) {
+	var buf lockedBuf
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	w := newVoiceWorld(t)
+	call[Tapi](t, w.d, "tapi.open", nil)
+	w.config(voiceOn)
+	w.focus("feat-other")
+	w.hook("UserPromptSubmit", TapiSlug, map[string]any{"prompt": "hi"})
+	w.message(TapiSlug, "turn-one-0000", "msg-one-0000", "おはよ。\n", "今日はなにからやろっか。")
+	w.message(TapiSlug, "turn-one-0000", "msg-two-0000", "もう一つ。")
+	w.hook("Stop", TapiSlug, map[string]any{"last_assistant_message": "もう一つ。"})
+	wantRead(t, "tapi not in front", w.read())
+	line := `voice: read of +tapi: not read in turn turn-one: mode narrate (focus "feat-other")`
+	eventually(t, "the reason in pekoed.log", func() bool { return strings.Contains(buf.String(), line) })
+	if n := strings.Count(buf.String(), "voice: read of +tapi"); n != 1 {
+		t.Errorf("%d lines for the turn, want 1:\n%s", n, buf.String())
+	}
+
+	w.focus(TapiSlug)
+	w.hook("UserPromptSubmit", TapiSlug, map[string]any{"prompt": "again"})
+	w.message(TapiSlug, "turn-two-0000", "msg-1", "聞こえる。")
+	wantRead(t, "tapi in front", w.read(), "聞こえる。")
+	if n := strings.Count(buf.String(), "voice: read of +tapi"); n != 1 {
+		t.Errorf("a line for a turn that was read:\n%s", buf.String())
+	}
 }

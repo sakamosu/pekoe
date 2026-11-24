@@ -485,3 +485,78 @@ func TestRule6_3ReadDiscardAll(t *testing.T) {
 		t.Errorf("read %q, want %q", got, want)
 	}
 }
+
+// unreadRig is a readRig that keeps what Unread was told.
+func unreadRig(t *testing.T, edit ...func(*ReadConfig)) (*readRig, *[]string) {
+	var told []string
+	edit = append(edit, func(c *ReadConfig) {
+		c.Unread = func(u Unread) { told = append(told, u.Slug+" "+u.Turn+" "+u.Message+" "+u.Why) }
+	})
+	return newReadRig(t, edit...), &told
+}
+
+func wantTold(t *testing.T, what string, got *[]string, want ...string) {
+	t.Helper()
+	if len(want) == 0 {
+		want = nil
+	}
+	if !reflect.DeepEqual(*got, want) {
+		t.Errorf("%s: told %q, want %q", what, *got, want)
+	}
+	*got = nil
+}
+
+// Text that is not read leaves its reason (Unread), once per turn (per
+// message for a missing batch and a message given up), and text that is
+// read, or cut by max_sentences, leaves none: a reply that goes unheard
+// is otherwise in no log (nothing of it reaches the queue).
+func TestReadUnreadTold(t *testing.T) {
+	rr, told := unreadRig(t)
+	rr.batches("s", "t1", "m1", []string{"一。\n", "二。"})
+	rr.batches("s", "t1", "m2", []string{"一。二。三。四。五。六。"}) // max_sentences: not told
+	wantTold(t, "read", told)
+
+	// the mode: once per turn, with the mode's name; the Stop way too
+	rr.modes["s"] = ModeNarrate
+	rr.batches("s", "t2", "m1", []string{"見ていない。\n", "まだ。"})
+	rr.batches("s", "t2", "m2", []string{"次も。"})
+	wantTold(t, "narrate", told, "s t2  mode narrate")
+	rr.r.Stop("s", "", "") // ends t2's displayed
+	rr.r.Stop("s", "", "Stop の本文。")
+	wantTold(t, "the Stop way", told, "s   mode narrate")
+	rr.modes["s"] = ModeRead
+
+	// a missing batch: the rest of the message, once
+	rr.send("s", "t3", "m1", 0, false, "読む。\n")
+	rr.send("s", "t3", "m1", 2, false, "後。\n")
+	rr.clk.Advance(GapWait)
+	rr.send("s", "t3", "m1", 1, false, "欠け。\n")
+	rr.send("s", "t3", "m1", 3, true, "最後。")
+	wantTold(t, "gap", told, "s t3 m1 missing batch")
+
+	// dropped (the focus moved): the message begun, once
+	rr.send("s", "t3", "m2", 0, false, "一。\n")
+	rr.r.Discard("s")
+	rr.send("s", "t3", "m2", 1, false, "二。\n")
+	rr.send("s", "t3", "m2", 2, true, "三。")
+	wantTold(t, "dropped", told, "s t3 m2 dropped")
+
+	// typed ahead, then the turn stopped, then a turn left behind
+	rr.r.UserPrompt("s", true)
+	rr.batches("s", "t3", "m3", []string{"先打ちの後。"})
+	wantTold(t, "typed ahead", told, "s t3  typed ahead")
+	rr.r.Stop("s", "", "")
+	rr.batches("s", "t3", "m4", []string{"Stop の後の遅れ。"})
+	wantTold(t, "stopped", told, "s t3  turn stopped")
+	rr.batches("s", "t4", "m1", []string{"新しいターン。"})
+	rr.batches("s", "t5", "m1", []string{"もう一つ。"})
+	*told = nil
+	rr.batches("s", "t4", "m2", []string{"古いターンの遅れ。"})
+	wantTold(t, "past", told, "s t4  turn left")
+
+	// the turn limit, once per turn
+	rr, told = unreadRig(t, func(c *ReadConfig) { c.MaxTurnSentences = 2 })
+	rr.batches("s", "t", "m1", []string{"一。二。三。"})
+	rr.batches("s", "t", "m2", []string{"四。"})
+	wantTold(t, "turn limit", told, "s t  turn limit")
+}
