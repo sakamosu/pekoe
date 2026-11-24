@@ -57,21 +57,22 @@ const maxStdout = 1 << 20
 // Timeouts are how long each command may run (docs/voice.md 10.3), and how
 // long a process group gets between SIGTERM and SIGKILL.
 type Timeouts struct {
-	Version, Check, Voices, Synth, Grace time.Duration
+	Version, Check, Voices, Synth, CacheKey, Grace time.Duration
 }
 
 // DefaultTimeouts are the protocol's.
 var DefaultTimeouts = Timeouts{
-	Version: 2 * time.Second,
-	Check:   5 * time.Second,
-	Voices:  5 * time.Second,
-	Synth:   3 * time.Second,
-	Grace:   time.Second,
+	Version:  2 * time.Second,
+	Check:    5 * time.Second,
+	Voices:   5 * time.Second,
+	Synth:    3 * time.Second,
+	CacheKey: time.Second,
+	Grace:    time.Second,
 }
 
 func (t Timeouts) orDefault() Timeouts {
 	d := DefaultTimeouts
-	for _, p := range []struct{ v, def *time.Duration }{{&t.Version, &d.Version}, {&t.Check, &d.Check}, {&t.Voices, &d.Voices}, {&t.Synth, &d.Synth}, {&t.Grace, &d.Grace}} {
+	for _, p := range []struct{ v, def *time.Duration }{{&t.Version, &d.Version}, {&t.Check, &d.Check}, {&t.Voices, &d.Voices}, {&t.Synth, &d.Synth}, {&t.CacheKey, &d.CacheKey}, {&t.Grace, &d.Grace}} {
 		if *p.v <= 0 {
 			*p.v = *p.def
 		}
@@ -94,9 +95,10 @@ type Backend struct {
 // Error is a backend that could not be used or a call that failed.
 type Error struct {
 	Backend string
-	Op      string // "path", "version", "check", "voices", "synth"
+	Op      string // "path", "version", "check", "voices", "synth", "cache-key"
 	Reason  string // one line: the backend's stderr, or what pekoe saw
 	Timeout bool
+	Exit    int // the exit code when the backend exited non-zero (0 otherwise)
 }
 
 func (e *Error) Error() string {
@@ -239,7 +241,12 @@ func (b *Backend) run(ctx context.Context, op string, timeout time.Duration, std
 		if reason == "" {
 			reason = werr.Error()
 		}
-		return nil, &Error{Backend: b.Name, Op: op, Reason: reason}
+		code := 0
+		var xe *exec.ExitError
+		if errors.As(werr, &xe) {
+			code = xe.ExitCode()
+		}
+		return nil, &Error{Backend: b.Name, Op: op, Reason: reason, Exit: code}
 	}
 	if stdout.over {
 		return nil, &Error{Backend: b.Name, Op: op, Reason: fmt.Sprintf("printed more than %d bytes", maxStdout)}
@@ -313,6 +320,41 @@ func (b *Backend) Version(ctx context.Context) (string, error) {
 func (b *Backend) CheckUsable(ctx context.Context) error {
 	_, err := b.run(ctx, "check", b.Timeouts.orDefault().Check, nil, "check")
 	return err
+}
+
+// MaxCacheKey is the most bytes `cache-key` may print (its one line).
+const MaxCacheKey = 256
+
+// CacheKey runs `cache-key` (docs/voice.md 10.3): the fingerprint of
+// everything in the backend's settings that changes the sound of a
+// sentence, voice and language. A backend that does not know the command
+// (exit 2: older backends) has none: "" and no error. A failure (exit 1 or
+// any other), a timeout or output that is not one line of at most
+// MaxCacheKey printable ASCII bytes is an error: the caller must not use
+// the cache then.
+func (b *Backend) CacheKey(ctx context.Context) (string, error) {
+	out, err := b.run(ctx, "cache-key", b.Timeouts.orDefault().CacheKey, nil, "cache-key")
+	if err != nil {
+		var be *Error
+		if errors.As(err, &be) && be.Exit == 2 && !be.Timeout {
+			return "", nil
+		}
+		return "", err
+	}
+	s := strings.TrimSuffix(string(out), "\n")
+	bad := func(why string) error { return &Error{Backend: b.Name, Op: "cache-key", Reason: why} }
+	switch {
+	case s == "":
+		return "", bad("printed nothing")
+	case len(s) > MaxCacheKey:
+		return "", bad(fmt.Sprintf("printed more than %d bytes", MaxCacheKey))
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x20 || c > 0x7e {
+			return "", bad("printed something other than one line of printable ASCII")
+		}
+	}
+	return s, nil
 }
 
 // Voice is one entry of `voices`.

@@ -486,11 +486,11 @@ fallback = "say"            # used while the VOICEVOX engine isn't running
 voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # the absolute path you installed it to
 ```
 
-`pekoe voice backends` shows whether it is used, and `pekoe voice test "テストだよ"` says a sentence with it. Its voice, speed and reading dictionary are set in its own config file (its README).
+`pekoe voice backends` shows whether it is used, and `pekoe voice test "テストだよ"` says a sentence with it. Its voice, speed and reading dictionary are set in its own config file (its README). pekoe keeps the WAV of each fixed sentence (`voice/cache/`); before using it, pekoe asks the backend `cache-key` for a fingerprint of those settings, so a changed voice is heard from the next sentence on, not the old WAV.
 
 Each VOICEVOX voice has its own terms of use: if you publish audio made with it (a demo video, a stream), credit it the way that character's terms say.
 
-**Writing a backend of your own**: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1): the subcommands `version`, `check`, `voices` and `synth`, what goes in and out, the time limits and the environment it runs in. To check a backend against it, run in a clone of this repository:
+**Writing a backend of your own**: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1): the subcommands `version`, `check`, `voices` and `synth` (and the optional `cache-key`: one line that changes whenever your settings change the sound; a backend without it exits 2 and keeps working), what goes in and out, the time limits and the environment it runs in. To check a backend against it, run in a clone of this repository:
 
 ```sh
 PEKOE_VOICE_CONTRACT=/absolute/path/to/your-backend go test ./internal/voice/backend -run TestContractExternal -v

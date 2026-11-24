@@ -950,8 +950,10 @@ func (h *voiceHub) warmLoop(stop <-chan struct{}, eng voiceEngine) {
 			case <-ctx.Done():
 			}
 		}()
-		if _, err := eng.Synth(ctx, text, voice.VoiceTapi, lang); err != nil && ctx.Err() == nil {
+		if p, err := eng.Synth(ctx, text, voice.VoiceTapi, lang); err != nil && ctx.Err() == nil {
 			log.Printf("voice: synthesizing ahead %q: %v", text, err)
+		} else if err == nil {
+			eng.Release(p) // not kept (cache-key failed): nothing to play it
 		}
 		cancel()
 	}

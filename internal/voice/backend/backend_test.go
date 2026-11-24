@@ -297,3 +297,47 @@ func TestValidName(t *testing.T) {
 		}
 	}
 }
+
+// cache-key: one line of printable ASCII is the fingerprint; exit 2 (a
+// backend that does not know it) is none; anything else is an error.
+func TestCacheKey(t *testing.T) {
+	ctx := context.Background()
+	if b, _ := newFake(t, "ok"); true {
+		if fp, err := b.CacheKey(ctx); err != nil || fp != "" {
+			t.Fatalf("an older backend (exit 2): %q %v", fp, err)
+		}
+	}
+	for _, c := range []struct {
+		out, want, reason string
+	}{
+		{"abc123\n", "abc123", ""},
+		{"engine=aivis speaker=mao", "engine=aivis speaker=mao", ""},
+		{strings.Repeat("x", MaxCacheKey) + "\n", strings.Repeat("x", MaxCacheKey), ""},
+		{"exit2", "", ""},
+		{"exit1", "", "ckey: cannot read the settings"},
+		{"\n", "", "printed nothing"},
+		{strings.Repeat("x", MaxCacheKey+1), "", "more than 256 bytes"},
+		{"a\nb\n", "", "printable ASCII"},
+		{"まお\n", "", "printable ASCII"},
+		{"a\tb\n", "", "printable ASCII"},
+	} {
+		b, _ := newFake(t, "ckey")
+		if err := os.WriteFile(b.Path+".ckey", []byte(c.out), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fp, err := b.CacheKey(ctx)
+		if c.reason != "" {
+			wantErr(t, err, "cache-key", c.reason)
+			continue
+		}
+		if err != nil || fp != c.want {
+			t.Errorf("%q: %q %v", c.out, fp, err)
+		}
+	}
+	b, _ := newFake(t, "ckey")
+	b.Timeouts.CacheKey = 200 * time.Millisecond
+	os.WriteFile(b.Path+".ckey", []byte("hang"), 0o600)
+	if e := wantErr(t, func() error { _, err := b.CacheKey(ctx); return err }(), "cache-key", "timed out"); !e.Timeout {
+		t.Fatal("not a timeout")
+	}
+}

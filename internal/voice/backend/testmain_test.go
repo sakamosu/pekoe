@@ -88,6 +88,9 @@ func tinyWAV() []byte {
 //	fake-env                synth also records its environment, cwd and stdin
 //	fake-pair               synth waits until another synth has started
 //	fake-flaky              check and synth fail while <self>.broken exists
+//	fake-ckey               follows the protocol and knows cache-key: it
+//	                        prints <self>.ckey as it is; "exit1", "exit2" or
+//	                        "hang" in it do that instead; no file is exit 2
 //	fake-pekoe              pekoe itself: "voice-backend-say …" is fake-ok
 //	fake-pekoe-say          pekoe itself with the real SayMain
 //
@@ -135,6 +138,25 @@ func fakeMain(name string, args []string) int {
 		return 0
 	case "voices":
 		json.NewEncoder(os.Stdout).Encode([]Voice{{"tapi", "ja", "Fake"}, {"tapi", "en", "Fake"}})
+		return 0
+	case "cache-key":
+		if mode != "ckey" {
+			fmt.Fprintln(os.Stderr, "unknown command", args[0])
+			return 2
+		}
+		b, err := os.ReadFile(self + ".ckey")
+		switch {
+		case err != nil || string(b) == "exit2":
+			fmt.Fprintln(os.Stderr, "unknown command", args[0])
+			return 2
+		case string(b) == "exit1":
+			fmt.Fprintln(os.Stderr, "ckey: cannot read the settings")
+			return 1
+		case string(b) == "hang":
+			time.Sleep(60 * time.Second)
+			return 0
+		}
+		os.Stdout.Write(b)
 		return 0
 	case "synth":
 	default:

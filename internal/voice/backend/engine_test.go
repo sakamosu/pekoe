@@ -523,3 +523,104 @@ var _ interface {
 	Synth(ctx context.Context, text, voice, lang string) (wavPath string, err error)
 	Failover() bool
 } = (*Engine)(nil)
+
+// An external backend's cache-key is part of the cache key: changing its
+// settings synthesizes the same sentence again, the same settings are
+// served from the cache. exit 2 keeps the key of before; a failure, a
+// timeout or bad output skips the cache (and logs why).
+func TestSynthCacheKeyOfBackend(t *testing.T) {
+	w := newPathWorld(t)
+	fake := fakeBackend(t, t.TempDir(), "fake-ckey")
+	o := w.opts("vv", "", map[string]string{"vv": fake})
+	o.Timeouts.CacheKey = 300 * time.Millisecond
+	e := New(o)
+	ctx := context.Background()
+	const text = "みんな手が空いたよ"
+	setKey := func(s string) {
+		t.Helper()
+		if err := os.WriteFile(fake+".ckey", []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	synths := func() int { return strings.Count("\n"+marked(fake), "\nsynth ") }
+	say := func() string {
+		t.Helper()
+		p, err := e.Synth(ctx, text, "tapi", "ja")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	cacheDir := filepath.Join(w.data, "voice", "cache")
+
+	setKey("voicevox-zundamon\n")
+	p1 := say()
+	if filepath.Dir(p1) != cacheDir || synths() != 1 {
+		t.Fatalf("not cached: %s, %d synths", p1, synths())
+	}
+	if p := say(); p != p1 || synths() != 1 {
+		t.Fatalf("the same cache-key was not served from the cache: %s, %d synths", p, synths())
+	}
+	setKey("aivis-mao\n") // the settings changed: same backend name, path and version
+	p2 := say()
+	if p2 == p1 || filepath.Dir(p2) != cacheDir || synths() != 2 {
+		t.Fatalf("a new cache-key was served the old WAV: %s, %d synths", p2, synths())
+	}
+	setKey("voicevox-zundamon\n")
+	if p := say(); p != p1 || synths() != 2 {
+		t.Fatalf("back to the first settings: %s, %d synths", p, synths())
+	}
+
+	// exit 2: the key of a backend without cache-key, as before
+	setKey("exit2")
+	p3 := say()
+	if want := filepath.Join(cacheDir, Key("vv", "1", "tapi", "ja", text)+".wav"); p3 != want {
+		t.Fatalf("exit 2 changed the key: %s, want %s", p3, want)
+	}
+	if p := say(); p != p3 || synths() != 3 {
+		t.Fatalf("exit 2 not served from the cache: %d synths", synths())
+	}
+
+	// failures: synthesized every time, not into the cache, the reason logged
+	before, _ := os.ReadDir(cacheDir)
+	for i, bad := range []string{"exit1", "hang", "two\nlines\n", ""} {
+		setKey(bad)
+		p := say()
+		if !strings.HasPrefix(p, filepath.Join(w.data, "voice", "tmp")+string(filepath.Separator)) {
+			t.Fatalf("%q: served %s (the cache must not be used)", bad, p)
+		}
+		if synths() != 4+i {
+			t.Fatalf("%q: %d synths", bad, synths())
+		}
+		e.Release(p)
+	}
+	after, _ := os.ReadDir(cacheDir)
+	if len(after) != len(before) {
+		t.Fatalf("a sentence was put in the cache while cache-key failed: %d → %d files", len(before), len(after))
+	}
+	w.mu.Lock()
+	n := 0
+	for _, l := range w.logs {
+		if strings.Contains(l, "not using the cache") && strings.Contains(l, "cache-key") {
+			n++
+		}
+	}
+	w.mu.Unlock()
+	if n != 4 {
+		t.Fatalf("%d log lines for 4 failures: %q", n, w.logs)
+	}
+	if ents, _ := os.ReadDir(filepath.Join(w.data, "voice", "tmp")); len(ents) != 0 {
+		t.Fatalf("voice/tmp: %v", ents)
+	}
+}
+
+// The bundled say is not asked cache-key: [voice.say] (Variant) is its key.
+func TestSynthCacheKeyNotAskedOfSay(t *testing.T) {
+	w := newPathWorld(t)
+	if _, err := New(w.opts("say", "", nil)).Synth(context.Background(), "ci、終わったよ", "tapi", "ja"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(marked(w.self), "cache-key") {
+		t.Fatalf("say was asked cache-key: %q", marked(w.self))
+	}
+}
