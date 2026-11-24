@@ -302,6 +302,7 @@ func TestFailoverAndRecheck(t *testing.T) {
 	// still broken after 5 minutes: stays on the fallback
 	now = now.Add(RecheckAfter)
 	e.Synth(ctx, "z", "tapi", "ja")
+	e.wait()
 	if e.Status().Using != "say" {
 		t.Fatal("went back to a broken backend")
 	}
@@ -309,6 +310,7 @@ func TestFailoverAndRecheck(t *testing.T) {
 	os.Remove(flaky + ".broken")
 	now = now.Add(4 * time.Minute)
 	e.Synth(ctx, "a", "tapi", "ja")
+	e.wait()
 	if e.Status().Using != "say" {
 		t.Fatal("asked again too soon")
 	}
@@ -316,10 +318,88 @@ func TestFailoverAndRecheck(t *testing.T) {
 	if _, err := e.Synth(ctx, "b", "tapi", "ja"); err != nil {
 		t.Fatal(err)
 	}
+	e.wait() // the recheck runs on its own; "b" was the fallback's
 	if st := e.Status(); st.Using != "vv" || st.Error != "" {
 		t.Fatalf("did not go back: %+v", st)
 	}
 	w.noPathRun(t)
+}
+
+// onFallbackSlow is an engine on the fallback (say) whose configured
+// backend passes again but takes slow to check, RecheckAfter after the
+// switch.
+func onFallbackSlow(t *testing.T, slow time.Duration) (*Engine, *pathWorld) {
+	t.Helper()
+	w := newPathWorld(t)
+	vv := fakeBackend(t, t.TempDir(), "fake-slowcheck")
+	now := time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	o := w.opts("vv", "say", map[string]string{"vv": vv})
+	o.Now = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	e := New(o)
+	if err := e.Select(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !e.Failover() || e.Status().Using != "say" {
+		t.Fatalf("did not switch: %+v", e.Status())
+	}
+	os.WriteFile(vv+".slow", []byte(slow.String()), 0o600)
+	mu.Lock()
+	now = now.Add(RecheckAfter)
+	mu.Unlock()
+	return e, w
+}
+
+// bughunt4 M1 (a): the recheck has its own time (Version+Check), not the
+// sentence's synth time: a backend that takes longer to check than one
+// synth may take still goes back.
+func TestRecheckOutsideSynthTime(t *testing.T) {
+	e, w := onFallbackSlow(t, 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	e.Synth(ctx, "x", "tapi", "ja")
+	e.wait()
+	if st := e.Status(); st.Using != "vv" || st.Error != "" {
+		t.Fatalf("did not go back: %+v (log %q)", st, w.logs)
+	}
+}
+
+// bughunt4 M1 (b): the sentence that starts the recheck is synthesized
+// with the fallback in its own time, not dropped for the recheck's.
+func TestRecheckKeepsTheSentence(t *testing.T) {
+	e, _ := onFallbackSlow(t, 3*time.Second)
+	defer e.wait()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	p, err := e.Synth(ctx, "x", "tapi", "ja")
+	if err != nil {
+		t.Fatalf("the sentence was lost to the recheck: %v", err)
+	}
+	if fi, err := os.Stat(p); err != nil || fi.Size() == 0 {
+		t.Fatalf("no wav at %s: %v", p, err)
+	}
+	// one recheck at a time: the next sentence does not start another
+	if _, err := e.Synth(context.Background(), "y", "tapi", "ja"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Synth with nothing in use selects on the select's own time: a sentence
+// whose time runs out first does not make the backend look unusable.
+func TestSynthSelectOutsideSynthTime(t *testing.T) {
+	w := newPathWorld(t)
+	vv := fakeBackend(t, t.TempDir(), "fake-slowcheck")
+	os.WriteFile(vv+".slow", []byte("1s"), 0o600)
+	e := New(w.opts("vv", "say", map[string]string{"vv": vv}))
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if _, err := e.Synth(ctx, "x", "tapi", "ja"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want the sentence's timeout, got %v", err)
+	}
+	e.wait()
+	if st := e.Status(); st.Using != "vv" || st.Error != "" {
+		t.Fatalf("%+v", st)
+	}
 }
 
 // FallbackFor (10.5): a failure of the configured backend is offered to
