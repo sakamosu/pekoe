@@ -88,6 +88,8 @@ func tinyWAV() []byte {
 //	fake-env                synth also records its environment, cwd and stdin
 //	fake-pair               synth waits until another synth has started
 //	fake-flaky              check and synth fail while <self>.broken exists
+//	fake-slowcheck          check sleeps for the duration in <self>.slow
+//	                        (when it exists) before passing
 //	fake-ckey               follows the protocol and knows cache-key: it
 //	                        prints <self>.ckey as it is; "exit1", "exit2" or
 //	                        "hang" in it do that instead; no file is exit 2
@@ -134,6 +136,10 @@ func fakeMain(name string, args []string) int {
 		if _, err := os.Stat(self + ".broken"); err == nil && mode == "flaky" {
 			fmt.Fprintln(os.Stderr, "flaky: broken")
 			return 1
+		}
+		if b, err := os.ReadFile(self + ".slow"); err == nil && mode == "slowcheck" {
+			d, _ := time.ParseDuration(strings.TrimSpace(string(b)))
+			time.Sleep(d)
 		}
 		return 0
 	case "voices":

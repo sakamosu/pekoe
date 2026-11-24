@@ -75,6 +75,12 @@ type Engine struct {
 	// backend is in use; nil until needed, and after it failed
 	retryFB    *Backend
 	retryFBVer string
+	// rechecking: a recheck of the configured backend is running (one at
+	// a time); selecting: a Select started by Synth is running, closed
+	// when it ends (the Synths that came meanwhile wait for it)
+	rechecking bool
+	selecting  chan struct{}
+	bg         sync.WaitGroup // the recheck and Select running on their own
 }
 
 // New makes an Engine. Nothing runs until Select (or the first Synth).
@@ -232,27 +238,84 @@ func (e *Engine) Failover() bool {
 }
 
 // recheck: on the fallback for RecheckAfter, ask the configured backend
-// again and go back to it when it passes.
-func (e *Engine) recheck(ctx context.Context) {
+// again and go back to it when it passes. It does not wait: the check runs
+// on its own with its own time (Version+Check), not in the sentence's
+// synth, whose few seconds it would use up (and then fail, and the
+// sentence with it). The sentence that started it is synthesized with the
+// fallback; the next ones with the configured backend once it passed.
+func (e *Engine) recheck() {
 	e.mu.Lock()
-	due := e.onFallback && !e.o.Now().Before(e.switchedAt.Add(RecheckAfter))
+	due := e.onFallback && !e.rechecking && !e.o.Now().Before(e.switchedAt.Add(RecheckAfter))
 	if due {
+		e.rechecking = true
 		e.switchedAt = e.o.Now() // the next try is RecheckAfter from now
 	}
 	e.mu.Unlock()
 	if !due {
 		return
 	}
-	b, v, err := e.prepare(ctx, e.o.Backend)
-	if err != nil {
-		e.o.Logf("voice: %s still cannot be used: %v", e.o.Backend, err)
-		return
-	}
-	e.o.Logf("voice: back to %s", e.o.Backend)
-	e.mu.Lock()
-	e.using, e.usingVer, e.onFallback, e.errText = b, v, false, ""
-	e.mu.Unlock()
+	e.bg.Add(1)
+	go func() {
+		defer e.bg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), e.o.Timeouts.Version+e.o.Timeouts.Check)
+		defer cancel()
+		b, v, err := e.prepare(ctx, e.o.Backend)
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.rechecking = false
+		if err != nil {
+			e.o.Logf("voice: %s still cannot be used: %v", e.o.Backend, err)
+			return
+		}
+		if !e.onFallback {
+			return // Select ran meanwhile and decided
+		}
+		e.o.Logf("voice: back to %s", e.o.Backend)
+		e.using, e.usingVer, e.onFallback, e.errText = b, v, false, ""
+	}()
 }
+
+// selectForSynth runs Select for Synth when nothing is in use, on its own
+// time (both backends' Version+Check), not the sentence's: a Select cut
+// short by the sentence's few seconds would record a reason that is only
+// the sentence's timeout. ctx ending stops the waiting, not the Select
+// (its result is kept for the next sentence). Synths that come while it
+// runs wait for the same one.
+func (e *Engine) selectForSynth(ctx context.Context) error {
+	e.mu.Lock()
+	done := e.selecting
+	var errp *error
+	if done == nil {
+		done = make(chan struct{})
+		e.selecting = done
+		errp = new(error)
+		e.bg.Add(1)
+		go func() {
+			defer e.bg.Done()
+			t := e.o.Timeouts
+			sctx, cancel := context.WithTimeout(context.Background(), 2*(t.Version+t.Check))
+			defer cancel()
+			*errp = e.Select(sctx)
+			e.mu.Lock()
+			e.selecting = nil
+			e.mu.Unlock()
+			close(done)
+		}()
+	}
+	e.mu.Unlock()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if errp != nil && *errp != nil {
+		return *errp
+	}
+	return nil
+}
+
+// wait waits for the recheck and Select running on their own (tests).
+func (e *Engine) wait() { e.bg.Wait() }
 
 // Status is the configured backend, the one in use and why not the other.
 func (e *Engine) Status() Status {
@@ -279,12 +342,12 @@ func (e *Engine) Synth(ctx context.Context, text, voice, lang string) (string, e
 	if text == "" {
 		return "", errors.New("no text to say")
 	}
-	e.recheck(ctx)
+	e.recheck()
 	e.mu.Lock()
 	b, ver, reason := e.using, e.usingVer, e.errText
 	e.mu.Unlock()
 	if b == nil {
-		if err := e.Select(ctx); err != nil {
+		if err := e.selectForSynth(ctx); err != nil {
 			return "", err
 		}
 		e.mu.Lock()

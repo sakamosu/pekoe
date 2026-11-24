@@ -442,7 +442,8 @@ pekoe は backend を、10.2 で決めたパスで、シェルを通さずに起
 
 - pekoed は voice を有効にしたとき・設定が変わったとき・`pekoe voice backends` のときに、`backend` のパスを確かめて(10.2)`version` と `check` を呼ぶ。パスが使えない・失敗したら `fallback` を同じように確かめて使う。`fallback` も同梱の say か `[voice.backends]` の名前で、`PATH` からは探さない
 - 使っている backend が `synth` に失敗したら、その発話は fallback で合成し直して鳴らす(1 回目の失敗から。切り替えるまでの発話を落とさないため。細部は 8 の Q11)。使っているのが fallback のとき・fallback が無いときは合成し直さない
-- 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `version` と `check` をもう一度呼ぶ。通れば元に戻す。失敗を数えるのは発話キュー(8 の Q11)で、3 回目にキューが backend 側の `Failover()` を呼ぶ(切り替えたら true。fallback に居る・fallback が無い・使えないなら false で、キューが 60 秒合成を止める)。5 分後の確かめ直しは backend 側が次の合成のときにする
+- 使っている backend が `synth` に 3 回続けて失敗したら fallback に切り替え、5 分後に元の backend の `version` と `check` をもう一度呼ぶ。通れば元に戻す。失敗を数えるのは発話キュー(8 の Q11)で、3 回目にキューが backend 側の `Failover()` を呼ぶ(切り替えたら true。fallback に居る・fallback が無い・使えないなら false で、キューが 60 秒合成を止める)。5 分後の確かめ直しは backend 側が次の合成のときに始める。確かめ直しは発話の合成(3 秒)とは切り離して裏で回し、`version` と `check` の時間(合わせて 7 秒)を持つ。始めた発話は待たずに fallback で合成し、通れば次の発話から元の backend に戻す。確かめ直しは同時に 1 つだけ
+- どれも使えない(Select で両方とも失敗した)まま合成が来たら、合成の中で選び直す。これも発話の 3 秒とは切り離して回し(同時に 1 つだけ)、発話の時間が先に尽きたらその発話は落とすが、選び直した結果は次の発話に使う
 - どちらも使えなければ何も鳴らさず、`pekoe voice` と `voice.updated` の `error` に理由を出す
 
 ### 10.6 同梱の backend: say
