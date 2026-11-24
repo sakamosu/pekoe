@@ -17,6 +17,7 @@ type readRig struct {
 	clk   *voicetest.Clock
 	r     *Reader
 	modes map[string]Mode
+	due   []Item // what ReadConfig.Due's Reader.Due returned
 }
 
 func newReadRig(t *testing.T, edit ...func(*ReadConfig)) *readRig {
@@ -29,13 +30,23 @@ func newReadRig(t *testing.T, edit ...func(*ReadConfig)) *readRig {
 				return m
 			}
 			return ModeRead
-		},
+		}, Due: func(slug string) { rr.due = append(rr.due, rr.r.Due(slug)...) },
 	}
 	for _, e := range edit {
 		e(&cfg)
 	}
 	rr.r = NewReader(cfg)
 	return rr
+}
+
+// stop sends a Stop with no turn (as Claude Code's) and returns what is
+// read of it, now and when its text is due (GapWait later).
+func (rr *readRig) stop(slug, text string, again bool) []Item {
+	out := rr.r.Stop(slug, "", text, again)
+	rr.clk.Advance(GapWait)
+	out = append(out, rr.due...)
+	rr.due = nil
+	return out
 }
 
 // unlimited lifts the limits for the tests that compare the whole text.
@@ -315,7 +326,7 @@ func TestRule6_3ReadTypeAhead(t *testing.T) {
 	rr.r.UserPrompt("s", true)
 	got = append(got, rr.send("s", "t1", "m", 1, false, "読まない。\n")...)
 	got = append(got, rr.batches("s", "t1", "m2", []string{"これも読まない。"})...)
-	got = append(got, texts(rr.r.Stop("s", "", "Stop の本文。"))...)
+	got = append(got, texts(rr.stop("s", "Stop の本文。", false))...)
 	// The last batch of the stopped turn comes after Stop.
 	got = append(got, rr.send("s", "t1", "m", 2, true, "遅れた。")...)
 	// The typed-ahead prompt's turn has no UserPromptSubmit.
@@ -330,11 +341,11 @@ func TestRule6_3ReadTypeAhead(t *testing.T) {
 func TestRule6_3ReadTypeAheadBeforeText(t *testing.T) {
 	rr := newReadRig(t)
 	got := rr.batches("s", "t1", "m", []string{"前のターン。"})
-	rr.r.Stop("s", "", "前のターン。")
+	rr.stop("s", "前のターン。", false)
 	rr.r.UserPrompt("s", false) // the person starts t2
 	rr.r.UserPrompt("s", true)  // and types ahead while it thinks
 	got = append(got, rr.batches("s", "t2", "m", []string{"今のターンの要約。"})...)
-	got = append(got, texts(rr.r.Stop("s", "", "今のターンの要約。"))...)
+	got = append(got, texts(rr.stop("s", "今のターンの要約。", false))...)
 	got = append(got, rr.batches("s", "t3", "m", []string{"先打ちの返事。"})...)
 	if want := []string{"前のターン。", "先打ちの返事。"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("read %q, want %q", got, want)
@@ -346,7 +357,7 @@ func TestRule6_3ReadTypeAheadBeforeText(t *testing.T) {
 func TestRule6_3ReadPromptNotRunning(t *testing.T) {
 	rr := newReadRig(t)
 	rr.batches("s", "t1", "m", []string{"一。"})
-	rr.r.Stop("s", "", "一。")
+	rr.stop("s", "一。", false)
 	rr.r.UserPrompt("s", false)
 	if got := rr.batches("s", "t2", "m", []string{"二。"}); !reflect.DeepEqual(got, []string{"二。"}) {
 		t.Errorf("read %q", got)
@@ -354,7 +365,7 @@ func TestRule6_3ReadPromptNotRunning(t *testing.T) {
 	// The Stop way too.
 	rr = newReadRig(t)
 	rr.r.UserPrompt("s", false)
-	if got := texts(rr.r.Stop("s", "", "返事。")); !reflect.DeepEqual(got, []string{"返事。"}) {
+	if got := texts(rr.stop("s", "返事。", false)); !reflect.DeepEqual(got, []string{"返事。"}) {
 		t.Errorf("Stop way: read %q", got)
 	}
 }
@@ -364,15 +375,15 @@ func TestRule6_3ReadPromptNotRunning(t *testing.T) {
 // UserPromptSubmit while running.
 func TestRule6_1ReadStopWay(t *testing.T) {
 	rr := newReadRig(t)
-	got := texts(rr.r.Stop("s", "", "1。2。3。4。5。6。\n```\ncode\n```"))
+	got := texts(rr.stop("s", "1。2。3。4。5。6。\n```\ncode\n```", false))
 	if want := []string{"1。", "2。", "3。", "4。", "5。"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("read %q, want %q", got, want)
 	}
-	items := rr.r.Stop("s", "turn-x", "a.")
+	items := rr.r.Stop("s", "turn-x", "a.", false)
 	if len(items) != 1 || items[0].Turn != "turn-x" || items[0].Message != "turn-x" {
 		t.Errorf("turn given: %+v", items)
 	}
-	items = rr.r.Stop("s", "", "a.")
+	items = rr.stop("s", "a.", false)
 	if len(items) != 1 || items[0].Turn == "" || items[0].Turn == "turn-x" {
 		t.Errorf("no turn: %+v", items)
 	}
@@ -380,23 +391,23 @@ func TestRule6_1ReadStopWay(t *testing.T) {
 	// A MessageDisplay came in the turn: the Stop text is not read again.
 	rr = newReadRig(t)
 	rr.batches("s", "t1", "m", []string{"表示した。"})
-	if got := rr.r.Stop("s", "", "表示した。"); got != nil {
+	if got := rr.stop("s", "表示した。", false); got != nil {
 		t.Errorf("Stop after display: %q", texts(got))
 	}
 	// The display flag is per turn: the next turn's Stop with no display
 	// is read, even when a late batch of t1 came after its Stop.
 	rr.send("s", "t1", "m2", 0, true, "遅れた。")
-	if got := texts(rr.r.Stop("s", "", "次。")); !reflect.DeepEqual(got, []string{"次。"}) {
+	if got := texts(rr.stop("s", "次。", false)); !reflect.DeepEqual(got, []string{"次。"}) {
 		t.Errorf("next Stop: %q", got)
 	}
 
 	// Typed ahead: the Stop that ends stopping is not read; the next is.
 	rr = newReadRig(t)
 	rr.r.UserPrompt("s", true)
-	if got := rr.r.Stop("s", "", "読まない。"); got != nil {
+	if got := rr.stop("s", "読まない。", false); got != nil {
 		t.Errorf("stopped Stop: %q", texts(got))
 	}
-	if got := texts(rr.r.Stop("s", "", "読む。")); !reflect.DeepEqual(got, []string{"読む。"}) {
+	if got := texts(rr.stop("s", "読む。", false)); !reflect.DeepEqual(got, []string{"読む。"}) {
 		t.Errorf("next Stop: %q", got)
 	}
 }
@@ -448,7 +459,7 @@ func TestRule6_3ReadDiscard(t *testing.T) {
 	}
 	// The Stop way: not read when the mode is not read.
 	rr.modes["s"] = ModeMute
-	if got := rr.r.Stop("s", "", "ミュート。"); got != nil {
+	if got := rr.stop("s", "ミュート。", false); got != nil {
 		t.Errorf("muted Stop: %q", texts(got))
 	}
 }
@@ -521,8 +532,8 @@ func TestReadUnreadTold(t *testing.T) {
 	rr.batches("s", "t2", "m1", []string{"見ていない。\n", "まだ。"})
 	rr.batches("s", "t2", "m2", []string{"次も。"})
 	wantTold(t, "narrate", told, "s t2  mode narrate")
-	rr.r.Stop("s", "", "") // ends t2's displayed
-	rr.r.Stop("s", "", "Stop の本文。")
+	rr.stop("s", "", false) // ends t2's displayed
+	rr.stop("s", "Stop の本文。", false)
 	wantTold(t, "the Stop way", told, "s   mode narrate")
 	rr.modes["s"] = ModeRead
 
@@ -545,7 +556,7 @@ func TestReadUnreadTold(t *testing.T) {
 	rr.r.UserPrompt("s", true)
 	rr.batches("s", "t3", "m3", []string{"先打ちの後。"})
 	wantTold(t, "typed ahead", told, "s t3  typed ahead")
-	rr.r.Stop("s", "", "")
+	rr.stop("s", "", false)
 	rr.batches("s", "t3", "m4", []string{"Stop の後の遅れ。"})
 	wantTold(t, "stopped", told, "s t3  turn stopped")
 	rr.batches("s", "t4", "m1", []string{"新しいターン。"})
@@ -559,4 +570,117 @@ func TestReadUnreadTold(t *testing.T) {
 	rr.batches("s", "t", "m1", []string{"一。二。三。"})
 	rr.batches("s", "t", "m2", []string{"四。"})
 	wantTold(t, "turn limit", told, "s t  turn limit")
+}
+
+// Rule 6.1: a Stop handled before the MessageDisplay of its turn (the
+// hooks run side by side, 3.2) does not read the reply twice: the Stop's
+// text waits GapWait and is not read when a batch of the turn comes
+// meanwhile. With no batch it is read (the Stop way).
+func TestRule6_1ReadStopBeforeDisplay(t *testing.T) {
+	rr := newReadRig(t)
+	rr.r.UserPrompt("s", false)
+	got := texts(rr.r.Stop("s", "", "了解。", false))
+	got = append(got, rr.batches("s", "t1", "m", []string{"了解。"})...)
+	rr.clk.Advance(GapWait)
+	got = append(got, texts(rr.due)...)
+	if want := []string{"了解。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+	// the batch's turn is the Stop's: the next turn's Stop with no batch
+	// is read (displayed is not left set by the late batch)
+	rr.due = nil
+	rr.r.UserPrompt("s", false)
+	if got := texts(rr.stop("s", "次。", false)); !reflect.DeepEqual(got, []string{"次。"}) {
+		t.Errorf("next Stop: %q", got)
+	}
+
+	// the window is GapWait: a batch after it is another turn's
+	rr = newReadRig(t)
+	got = texts(rr.r.Stop("s", "", "一。", false))
+	if got != nil {
+		t.Errorf("Stop read before its window: %q", got)
+	}
+	rr.clk.Advance(GapWait)
+	got = append(got, texts(rr.due)...)
+	got = append(got, rr.batches("s", "t2", "m", []string{"二。"})...)
+	if want := []string{"一。", "二。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("after the window: read %q, want %q", got, want)
+	}
+
+	// with no Due set, the waiting text is read at the next hook
+	rr = newReadRig(t, func(c *ReadConfig) { c.Due = nil })
+	rr.r.Stop("s", "", "一。", false)
+	rr.clk.Advance(GapWait)
+	if got := texts(rr.r.Stop("s", "", "", false)); !reflect.DeepEqual(got, []string{"一。"}) {
+		t.Errorf("no Due: %q", got)
+	}
+
+	// a prompt or an interrupt in the window: the waiting text is not read
+	// (Q8, 6.3); nor when the read is discarded (the focus moved)
+	for name, f := range map[string]func(*Reader){
+		"prompt":    func(r *Reader) { r.UserPrompt("s", false) },
+		"interrupt": func(r *Reader) { r.Interrupt("s") },
+		"discard":   func(r *Reader) { r.Discard("s") },
+	} {
+		rr = newReadRig(t)
+		rr.r.Stop("s", "", "読まない。", false)
+		f(rr.r)
+		rr.clk.Advance(GapWait)
+		if rr.due != nil {
+			t.Errorf("%s: read %q", name, texts(rr.due))
+		}
+	}
+}
+
+// Rule 6.3: typed ahead while the turn shows no text yet, and its Stop
+// handled before its batch: the batch is still the stopped turn's and is
+// not read; the typed-ahead turn after it is.
+func TestRule6_3ReadTypeAheadStopBeforeDisplay(t *testing.T) {
+	rr := newReadRig(t)
+	got := rr.batches("s", "t0", "m", []string{"前。"})
+	rr.r.Stop("s", "", "前。", false)
+	rr.r.UserPrompt("s", false)
+	rr.r.UserPrompt("s", true)
+	got = append(got, texts(rr.r.Stop("s", "", "了解。", false))...)
+	got = append(got, rr.batches("s", "t1", "m", []string{"了解。"})...)
+	rr.clk.Advance(GapWait)
+	got = append(got, texts(rr.due)...)
+	got = append(got, rr.batches("s", "t2", "m", []string{"先打ちの返事。"})...)
+	if want := []string{"前。", "先打ちの返事。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+}
+
+// Rule 6.1: a Stop hook that blocks the Stop (stop_hook_active on the
+// next) goes on in the same turn: the next Stop's text came by
+// MessageDisplay and is not read again, whichever comes first.
+func TestRule6_1ReadStopHookActive(t *testing.T) {
+	rr := newReadRig(t)
+	got := rr.batches("s", "t1", "m1", []string{"直す。"})
+	got = append(got, texts(rr.stop("s", "直す。", false))...)
+	got = append(got, rr.batches("s", "t1", "m2", []string{"直した。"})...)
+	got = append(got, texts(rr.stop("s", "直した。", true))...)
+	if want := []string{"直す。", "直した。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("read %q, want %q", got, want)
+	}
+
+	// the blocked turn's Stop before its batch
+	rr = newReadRig(t)
+	got = rr.batches("s", "t1", "m1", []string{"直す。"})
+	got = append(got, texts(rr.stop("s", "直す。", false))...)
+	got = append(got, texts(rr.r.Stop("s", "", "直した。", true))...)
+	got = append(got, rr.batches("s", "t1", "m2", []string{"直した。"})...)
+	rr.clk.Advance(GapWait)
+	got = append(got, texts(rr.due)...)
+	if want := []string{"直す。", "直した。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Stop first: read %q, want %q", got, want)
+	}
+
+	// the Stop way (no MessageDisplay): each Stop's text is read
+	rr = newReadRig(t)
+	got = texts(rr.stop("s", "直す。", false))
+	got = append(got, texts(rr.stop("s", "直した。", true))...)
+	if want := []string{"直す。", "直した。"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("the Stop way: read %q, want %q", got, want)
+	}
 }

@@ -55,6 +55,12 @@ type ReadConfig struct {
 	// one message (max_sentences) are not told: they are the usual case.
 	// Called with the Reader's lock held; it must not call the Reader.
 	Unread func(Unread)
+	// Due, when set, is called (on a timer of Clock, with no lock of the
+	// Reader's held) GapWait after a Stop whose text waits to be read
+	// (Stop); the caller then calls Reader.Due in its order and pushes
+	// what it returns. Without it the text is read at the session's next
+	// Display or Stop.
+	Due func(slug string)
 }
 
 // Unread is one reason some assistant text was not read.
@@ -117,11 +123,32 @@ type readSession struct {
 	// next Stop is dropped (6.3).
 	stopping bool
 
+	// shown: a MessageDisplay of any turn came since the last Stop.
+	shown bool
+	// after: the last Stop did not know the turn it ended (6.1); its
+	// window waits for that turn's first batch.
+	after *afterStop
+
 	stopped []string // turns not to read (6.3)
 	ended   []string // turns a Stop ended (their late batches still read)
 	past    []string // turns left for a newer one (their late batches go)
 
 	told map[string]bool // Unread reasons told (turn|message|why)
+}
+
+// afterStop is a Stop whose turn is not known: Stop has no turn_id, and no
+// MessageDisplay came since the Stop before. The hooks run side by side,
+// so the turn's batches may still come after it (3.2): for GapWait the
+// first batch of a turn not ended (of the turn the Stop ended again, after
+// a Stop hook blocked it) is taken as the Stop's turn. It is then ended (and
+// stopped, when the Stop ended stopping), and the Stop's text, which waits
+// for the window to close, is not read (it came by MessageDisplay).
+type afterStop struct {
+	at      time.Time
+	again   bool   // stop_hook_active: the Stop ends the turn the last one did
+	stopped bool   // the Stop ended stopping: its turn is stopped
+	text    string // the Stop's text to read when no batch came; "" for none
+	turn    string // the turn id its items carry
 }
 
 // readMsg is one message's buffer (6.2).
@@ -221,6 +248,9 @@ func (s *readSession) newTurn(turn string) {
 // drop gives up the messages being read: their later batches are not
 // read (their fence state is lost).
 func (s *readSession) drop() {
+	if s.after != nil {
+		s.after.text = "" // the Stop's text waiting is not read either
+	}
 	for _, m := range s.msgs {
 		if !m.done {
 			m.why = UnreadDropped
@@ -235,9 +265,24 @@ func (r *Reader) Display(slug string, d Display) []Item {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := r.session(slug)
+	out := r.due(s, slug, false)
+	if a := s.after; a != nil && (!has(s.ended, d.Turn) || (a.again && d.Turn == s.turn)) {
+		// the turn the Stop ended (6.1): its text came by MessageDisplay
+		s.after = nil
+		s.ended = remember(s.ended, d.Turn)
+		if a.stopped {
+			s.stopped = remember(s.stopped, d.Turn)
+		}
+	}
+	s.shown = true
 	if !has(s.ended, d.Turn) {
 		s.displayed = true
 	}
+	return append(out, r.display(s, slug, d)...)
+}
+
+// display is Display past the Stop's window.
+func (r *Reader) display(s *readSession, slug string, d Display) []Item {
 	if s.stopping {
 		s.stopped = remember(s.stopped, d.Turn)
 		r.tell(s, slug, d.Turn, "", UnreadTypedAhead)
@@ -354,34 +399,82 @@ func (r *Reader) take(slug string, s *readSession, m *readMsg, turn, msg string,
 	return out
 }
 
-// Stop takes the session's Stop hook: text is last_assistant_message and
-// turn the turn it ends, if the caller knows it ("" when not). Its text is
-// read (6.1, the Stop way) unless a MessageDisplay of the turn came, or the
-// turn was stopped (6.3: the Stop that ends stopping is not read either).
-func (r *Reader) Stop(slug, turn, text string) []Item {
+// Stop takes the session's Stop hook: text is last_assistant_message, turn
+// the turn it ends if the caller knows it ("" when not; Claude Code's Stop
+// has no turn_id), and again stop_hook_active (the turn goes on after a
+// Stop hook blocked the last Stop: this Stop ends the same turn). Its text
+// is read (6.1, the Stop way) unless a MessageDisplay of the turn came, or
+// the turn was stopped (6.3: the Stop that ends stopping is not read
+// either).
+//
+// When turn is "" and no MessageDisplay came since the last Stop, the
+// turn's batches may yet come (the hooks run side by side, 3.2): the text
+// waits GapWait (ReadConfig.Due, Reader.Due) and is not read if a batch of
+// the turn comes meanwhile; that batch's turn is the one this Stop ended
+// (and stopped, when it ends stopping).
+func (r *Reader) Stop(slug, turn, text string, again bool) []Item {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := r.session(slug)
+	out := r.due(s, slug, true)
 	s.ended = remember(s.ended, s.turn)
 	s.ended = remember(s.ended, turn)
-	displayed := s.displayed
-	s.displayed = false
+	displayed := s.displayed || (again && s.shown)
+	s.displayed, s.shown = false, false
+	if turn == "" && !displayed && text != "" {
+		s.after = &afterStop{at: r.cfg.Clock.Now(), again: again, stopped: s.stopping}
+	}
 	if s.stopping {
 		s.stopping = false
 		s.stopped = remember(s.stopped, turn)
-		return nil
+		return out
 	}
 	if displayed || text == "" || (turn != "" && has(s.stopped, turn)) {
-		return nil
+		return out
 	}
 	if !r.reads(slug) {
 		r.tell(s, slug, turn, "", r.modeWhy(slug))
-		return nil
+		return out
 	}
 	if turn == "" {
 		r.seq++
-		turn = "stop-" + strconv.Itoa(r.seq)
+		s.after.text, s.after.turn = text, "stop-"+strconv.Itoa(r.seq)
+		if r.cfg.Due != nil {
+			r.cfg.Clock.AfterFunc(GapWait, func() { r.cfg.Due(slug) })
+		}
+		return out
 	}
+	return append(out, r.stopText(s, slug, turn, text)...)
+}
+
+// Due returns the text of the session's last Stop once its window is over
+// with no batch of its turn (Stop, ReadConfig.Due).
+func (r *Reader) Due(slug string) []Item {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s := r.sessions[slug]
+	if s == nil {
+		return nil
+	}
+	return r.due(s, slug, false)
+}
+
+// due ends the Stop's window when it is over (or now, when force) and
+// returns its text's items.
+func (r *Reader) due(s *readSession, slug string, force bool) []Item {
+	a := s.after
+	if a == nil || (!force && r.cfg.Clock.Now().Sub(a.at) < GapWait) {
+		return nil
+	}
+	s.after = nil
+	if a.text == "" {
+		return nil
+	}
+	return r.stopText(s, slug, a.turn, a.text)
+}
+
+// stopText reads a Stop's text: a turn of its own for the limits.
+func (r *Reader) stopText(s *readSession, slug, turn, text string) []Item {
 	m := &readMsg{done: true}
 	// The Stop text is a turn of its own for the limits.
 	sent, runes, full := s.sent, s.runes, s.full
@@ -402,7 +495,7 @@ func (r *Reader) UserPrompt(slug string, running bool) {
 	s := r.session(slug)
 	s.drop()
 	s.stopped = remember(s.stopped, s.turn)
-	s.displayed = false
+	s.displayed, s.shown, s.after = false, false, nil
 	if running {
 		s.stopping = true
 	}
@@ -419,7 +512,7 @@ func (r *Reader) Interrupt(slug string) {
 	s.drop()
 	s.stopped = remember(s.stopped, s.turn)
 	s.stopping = false
-	s.displayed = false
+	s.displayed, s.shown, s.after = false, false, nil
 }
 
 // Discard drops what is being read of the session (the focus moved away,

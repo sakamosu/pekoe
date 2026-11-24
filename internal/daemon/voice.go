@@ -294,7 +294,7 @@ func (h *voiceHub) start(v config.Voice, key string) {
 		skip = voice.DefaultSkip
 	}
 	rd := voice.NewReader(voice.ReadConfig{
-		Clock: h.clock, Skip: skip, Lang: lang, Mode: h.modeFor, Unread: h.logUnread,
+		Clock: h.clock, Skip: skip, Lang: lang, Mode: h.modeFor, Unread: h.logUnread, Due: h.readDue,
 		MaxSentences: v.MaxSentences(), MaxTurnSentences: v.MaxTurnSentences(),
 	})
 	stop := make(chan struct{})
@@ -567,9 +567,16 @@ func (h *voiceHub) display(slug string, d voice.Display) {
 }
 
 // stopHook: the session's Stop, with last_assistant_message (6.1: read
-// when no MessageDisplay of the turn came).
-func (h *voiceHub) stopHook(slug, text string) {
-	h.readIn(func(rd *voice.Reader, q *voice.Queue) { pushAll(q, rd.Stop(slug, "", text)) })
+// when no MessageDisplay of the turn came) and stop_hook_active (again: a
+// Stop hook blocked the last Stop and the turn went on). The text may wait
+// GapWait for the turn's batches (readDue).
+func (h *voiceHub) stopHook(slug, text string, again bool) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) { pushAll(q, rd.Stop(slug, "", text, again)) })
+}
+
+// readDue: a Stop's text has waited GapWait (voice.ReadConfig.Due).
+func (h *voiceHub) readDue(slug string) {
+	h.readIn(func(rd *voice.Reader, q *voice.Queue) { pushAll(q, rd.Due(slug)) })
 }
 
 // userPrompt: the person typed into the session (Q8: its read stops).

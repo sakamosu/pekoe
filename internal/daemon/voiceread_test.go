@@ -132,7 +132,30 @@ func TestVoiceReadMessageDisplay(t *testing.T) {
 	// last_assistant_message is read at the end of the turn.
 	w.hook("UserPromptSubmit", "feat-a", map[string]any{"prompt": "and?"})
 	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "All good.\n```\nrm -rf x\n```\nBye."})
+	w.advance(voice.GapWait) // it waits for a batch of the turn (6.1)
 	wantRead(t, "the Stop way", w.read(), "All good.", "Bye.")
+}
+
+// A Stop handled before the batch of its turn does not read the reply
+// twice, and a Stop after another Stop hook blocked the last one
+// (stop_hook_active) does not read again what came by MessageDisplay (6.1).
+func TestVoiceReadStopRace(t *testing.T) {
+	w := newReadWorld(t, "feat-a", "claude")
+	w.hook("UserPromptSubmit", "feat-a", map[string]any{"prompt": "ok?"})
+	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "Sure."})
+	w.message("feat-a", "t1", "m1", "Sure.")
+	wantRead(t, "Stop before its batch", w.read(), "Sure.")
+	w.advance(voice.GapWait) // past the Stop's wait: its text is not read
+	wantRead(t, "the Stop's text", w.read())
+
+	w.hook("UserPromptSubmit", "feat-a", map[string]any{"prompt": "fix"})
+	w.message("feat-a", "t2", "m1", "Fixing.")
+	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "Fixing."})
+	w.message("feat-a", "t2", "m2", "Fixed.")
+	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "Fixed.", "stop_hook_active": true})
+	wantRead(t, "a blocked Stop's turn", w.read(), "Fixing.", "Fixed.")
+	w.advance(voice.GapWait)
+	wantRead(t, "after a blocked Stop", w.read())
 }
 
 // read follows Claude Code only (P3, isClaude) and the session in front
@@ -195,6 +218,7 @@ func TestVoiceReadTypedAhead(t *testing.T) {
 	w.hook("UserPromptSubmit", "feat-a", map[string]any{"prompt": "p2"})
 	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "The typed-over reply."})
 	w.hook("Stop", "feat-a", map[string]any{"last_assistant_message": "The p2 reply."})
+	w.advance(voice.GapWait)
 	wantRead(t, "the Stop way, typed ahead", w.read(), "The p2 reply.")
 }
 
