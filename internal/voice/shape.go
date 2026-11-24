@@ -370,9 +370,9 @@ func outsideURLs(s string, f func(string) string) string {
 }
 
 // codeSpans replaces each `code span` with what is read for it (6.2): its
-// content when code is not skipped or it is short and without /; else a
-// path's last element (path skipped; as it is when not), the link word for
-// a URL (url skipped; as it is when not) and the code word for the rest.
+// content when code is not skipped or it is short and without /; else the
+// link word for a URL (url skipped; as it is when not), a path's last
+// element (path skipped; as it is when not) and the code word for the rest.
 // An unclosed run of backticks is left as it is.
 func codeSpans(s string, sk skips) string {
 	var b strings.Builder
@@ -414,6 +414,13 @@ func codeSpan(code string, sk skips) string {
 	if utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/") {
 		return code
 	}
+	// a URL before the paths: its host's .com is not an extension
+	if u := reURL.FindString(code); u != "" && u == code {
+		if !sk.url {
+			return code
+		}
+		return sk.link
+	}
 	if isCodePath(code) {
 		if !sk.path {
 			return code
@@ -426,12 +433,6 @@ func codeSpan(code string, sk skips) string {
 		}
 		// a path with nothing to read (../), as in the text
 		return ""
-	}
-	if u := reURL.FindString(code); u != "" && u == code {
-		if !sk.url {
-			return code
-		}
-		return sk.link
 	}
 	return sk.codeWord
 }
