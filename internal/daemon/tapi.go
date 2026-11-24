@@ -234,6 +234,23 @@ func (d *Daemon) tapiNoteOutside(sessionID, window, claimed string) {
 	d.emit("tapi.updated", d.tapiView())
 }
 
+// tapiClearOutside forgets the conversation noted outside tapi's window
+// when a hook of it comes from tapi's own window (hEventAs): it is back,
+// or it never left. Another conversation in the window does not clear it:
+// the one outside may still run there, and is told again on its next hook.
+func (d *Daemon) tapiClearOutside(sessionID string) {
+	d.mu.Lock()
+	o := d.tapi.outside
+	if o == nil || sessionID == "" || (o.ClaudeSessionID != "" && o.ClaudeSessionID != sessionID) {
+		d.mu.Unlock()
+		return
+	}
+	d.tapi.outside = nil
+	d.mu.Unlock()
+	log.Printf("tapi: its conversation %s is in tapi's window again", orDash(sessionID))
+	d.emit("tapi.updated", d.tapiView())
+}
+
 func orDash(s string) string {
 	if s == "" {
 		return "-"

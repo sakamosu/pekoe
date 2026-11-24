@@ -3,6 +3,7 @@ package daemon
 import (
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -202,5 +203,91 @@ func TestTapiKilledLongAgo(t *testing.T) {
 	eventAs(t, d, nil, "PreToolUse", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv, "tool_name": "Bash"})
 	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil {
 		t.Fatal("outside not told")
+	}
+}
+
+// `pekoe event MessageDisplay` writes its line and closes without waiting
+// (read must not hold the display up), so pekoed often finds no caller
+// left to look up: the hook comes from no window. That is no sign of tapi's
+// conversation running outside its window (p1353: outside came with the
+// first MessageDisplay of every conversation and stayed until a restart).
+func TestTapiMessageDisplayIsNotOutside(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	const sid = "c6270ea4-8ca2-41a2-8b1b-2addbec46356"
+	conv := filepath.Join(tapiProjectDirs()[0], sid+".jsonl")
+	eventAs(t, d, agentAs(TapiSlug), "SessionStart", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv})
+
+	eventAs(t, d, nil, "MessageDisplay", TapiSlug, map[string]any{
+		"session_id": sid, "transcript_path": conv, "turn_id": "t1", "message_id": "m1", "index": 0, "final": true, "delta": "hi",
+	})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside != nil {
+		t.Fatalf("MessageDisplay with no caller taken for outside: %+v", v.Outside)
+	}
+	// from another session's window as well: read needs no window
+	eventAs(t, d, agentAs("main"), "MessageDisplay", "main", map[string]any{
+		"session_id": sid, "transcript_path": conv, "turn_id": "t1", "message_id": "m1", "index": 1, "final": true, "delta": "hi",
+	})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside != nil {
+		t.Fatalf("MessageDisplay from another window taken for outside: %+v", v.Outside)
+	}
+
+	// any other hook of tapi's conversation from no window is still told
+	for _, hook := range []string{"UserPromptSubmit", "Stop"} {
+		call[Tapi](t, d, "tapi.restart", nil)
+		d.mu.Lock()
+		d.tapiKilled.at = time.Now().Add(-tapiKillGrace) // not the agent pekoe killed
+		d.mu.Unlock()
+		eventAs(t, d, nil, hook, TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv, "prompt": "x"})
+		if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil || v.Outside.ClaudeSessionID != sid {
+			t.Fatalf("%s outside tapi's window not told: %+v", hook, v.Outside)
+		}
+	}
+}
+
+// A hook of the conversation noted outside that comes from tapi's own
+// window clears it (it is back, or the note was stale) and says so; one of
+// another conversation does not (the one outside may still run there).
+func TestTapiOutsideClearedFromWindow(t *testing.T) {
+	d, _, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	const sid = "c6270ea4-8ca2-41a2-8b1b-2addbec46356"
+	const other = "c6270ea4-8ca2-41a2-8b1b-2addbec46357"
+	conv := filepath.Join(tapiProjectDirs()[0], sid+".jsonl")
+	eventAs(t, d, nil, "PreToolUse", "main", map[string]any{"session_id": sid, "transcript_path": conv, "tool_name": "Bash"})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil {
+		t.Fatal("outside not told")
+	}
+
+	var mu sync.Mutex
+	var told []*Tapi
+	d.testHook = func(ev string, data any) {
+		if v, ok := data.(*Tapi); ok && ev == "tapi.updated" {
+			mu.Lock()
+			told = append(told, v)
+			mu.Unlock()
+		}
+	}
+	eventAs(t, d, agentAs(TapiSlug), "PreToolUse", TapiSlug, map[string]any{
+		"session_id": other, "transcript_path": filepath.Join(tapiProjectDirs()[0], other+".jsonl"), "tool_name": "Bash",
+	})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside == nil {
+		t.Fatal("another conversation in tapi's window cleared outside")
+	}
+	// a hook tapi's state does not follow (no tapi.updated of its own)
+	eventAs(t, d, agentAs(TapiSlug), "PreCompact", TapiSlug, map[string]any{"session_id": sid, "transcript_path": conv})
+	if v := call[Tapi](t, d, "tapi.get", nil); v.Outside != nil {
+		t.Fatalf("outside kept after a hook from tapi's window: %+v", v.Outside)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	cleared := false
+	for _, v := range told {
+		if v.Outside == nil {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("tapi.updated without outside not sent")
 	}
 }
