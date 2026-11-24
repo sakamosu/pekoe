@@ -410,6 +410,13 @@ func codeSpan(code string, sk skips) string {
 		}
 		return pathName(code)
 	}
+	if isPath(code) {
+		if !sk.path {
+			return code
+		}
+		// a path with nothing to read (../), as in the text
+		return ""
+	}
 	if u := reURL.FindString(code); u != "" && u == code {
 		if !sk.url {
 			return code
@@ -436,7 +443,7 @@ func isCodePath(code string) bool {
 func pathName(p string) string {
 	p = strings.TrimRight(p, "/")
 	name := p[strings.LastIndex(p, "/")+1:]
-	if n := reExt.ReplaceAllString(name, ""); strings.TrimLeft(n, ".") != "" {
+	if n := reExt.ReplaceAllString(name, ""); hasExt(name) && strings.TrimLeft(n, ".") != "" {
 		name = n
 	}
 	name = strings.TrimLeft(name, ".")
@@ -476,7 +483,13 @@ func isPath(w string) bool {
 			return true
 		}
 	}
-	return strings.Contains(w, "/") && (reExt.MatchString(w) || (strings.HasSuffix(w, "/") && len(strings.Trim(w, "/")) > 0))
+	return strings.Contains(w, "/") && (hasExt(w) || (strings.HasSuffix(w, "/") && len(strings.Trim(w, "/")) > 0))
+}
+
+// hasExt: w ends with an extension that has a letter (1/2.5 and
+// v1.2/v1.3 are numbers, not paths).
+func hasExt(w string) bool {
+	return strings.ContainsFunc(reExt.FindString(w), unicode.IsLetter)
 }
 
 // isEmoji: pictographs, dingbats and the joiners and selectors that go

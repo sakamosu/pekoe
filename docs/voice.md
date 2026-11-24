@@ -234,7 +234,7 @@ P3 で作った(実装は `internal/voice/read.go`・`shape.go` と `internal/da
 | インラインコード | 中身が 24 文字以下で `/` を含まなければ中身を読む。それ以外(`code`)は: パスに当たるもの(下のファイルパスか、`/` を含みパスの文字だけでできた語。`internal/voice` など)はパスと同じく最後の要素を読む(`path`。`path` が無ければ中身をそのまま)、URL だけのものは「リンク」/「a link」(`url`。`url` が無ければそのまま)、それ以外は「コード」/「code」と読む |
 | 表(`\|` で始まる行) | 読まない(`table`) |
 | URL(`http://` `https://` で始まる語) | ja は「リンク」、en は「a link」と読む(`url`)。リンク `[文字](URL)` は文字だけ読む |
-| ファイルパス(`/` を含み拡張子か `/` で終わる語、`./` `../` `~/` `/` で始まる語) | 最後の要素から拡張子(と先頭の `.`)を外したものを読む。末尾が `/` なら、その前の要素(`path`)。例: `internal/voice/narrate.go` → narrate、`docs/voice.md` → voice、`internal/voice/` → voice、`~/.config/pekoe/config.toml` → config。読める字が残らないもの(`../`)は読まない |
+| ファイルパス(`/` を含み拡張子(英字を含むもの。`1/2.5` は数)か `/` で終わる語、`./` `../` `~/` `/` で始まる語) | 最後の要素から拡張子(と先頭の `.`)を外したものを読む。末尾が `/` なら、その前の要素(`path`)。例: `internal/voice/narrate.go` → narrate、`docs/voice.md` → voice、`internal/voice/` → voice、`~/.config/pekoe/config.toml` → config。読める字が残らないもの(`../`)は読まない |
 | 見出し・リストの項目 | 記号を外し、それぞれ 1 文として読む |
 | 強調・取り消し線・引用の記号、画像、HTML のタグ、絵文字 | 記号・画像・タグ・絵文字を外す |
 
