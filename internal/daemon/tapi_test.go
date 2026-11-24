@@ -229,7 +229,7 @@ func TestTapiInputRestartReset(t *testing.T) {
 	other := claudeProjectDir(filepath.Join(paths.DataDir(), "other"))
 	for _, p := range []string{proj, other} {
 		os.MkdirAll(p, 0o755)
-		os.WriteFile(filepath.Join(p, "c1.jsonl"), []byte("{}\n"), 0o644)
+		os.WriteFile(filepath.Join(p, "c1.jsonl"), []byte(convLine), 0o644)
 	}
 	call[Tapi](t, d, "tapi.open", nil)
 	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; !strings.Contains(c, "claude --continue") {
@@ -373,7 +373,7 @@ func TestTapiProjectDirEncoding(t *testing.T) {
 		return '-'
 	}, paths.TapiDir()))
 	os.MkdirAll(proj, 0o755)
-	os.WriteFile(filepath.Join(proj, "c6270ea4-8ca2-41a2-8b1b-2addbec46356.jsonl"), []byte("{}\n"), 0o644)
+	os.WriteFile(filepath.Join(proj, "c6270ea4-8ca2-41a2-8b1b-2addbec46356.jsonl"), []byte(convLine), 0o644)
 
 	call[Tapi](t, d, "tapi.open", nil)
 	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; !strings.Contains(c, "--continue") {

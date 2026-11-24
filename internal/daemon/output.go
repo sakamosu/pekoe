@@ -87,7 +87,7 @@ func (d *Daemon) activityLocked(slug string) []int {
 
 var (
 	oscRe   = regexp.MustCompile(`\x1b\]([0-9]+);([^\x07\x1b]*)(?:\x07|\x1b\\)`)
-	trustRe = regexp.MustCompile(`(?i)trust this folder|do you trust the files`)
+	trustRe = regexp.MustCompile(`(?i)trust this folder|do you trust the files|is this a directory you created or one you trust`)
 	// busyRe: Claude Code's screen while a turn is going on (its spinner
 	// line) or a menu waits for an answer (AskUserQuestion: menuRe)
 	busyRe  = regexp.MustCompile(`(?i)esc to (interrupt|cancel)|enter to select`)
@@ -265,6 +265,7 @@ func (d *Daemon) tickLoop() {
 }
 
 func (d *Daemon) fallbackDetect() {
+	d.tapiAnswerAddDir()
 	now := time.Now()
 	d.mu.Lock()
 	var check []string

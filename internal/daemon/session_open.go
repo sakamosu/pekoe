@@ -1,6 +1,9 @@
 package daemon
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -85,6 +88,38 @@ func claudeConversationExists(path, id string) bool {
 	return err == nil
 }
 
+// claudeHasMessages: a Claude Code transcript holds a conversation (a user
+// or assistant message). Claude Code also writes files with no message at
+// all: a background task's result that arrives after its conversation was
+// killed leaves only queue-operation lines, and --continue on such a file
+// fails ("No conversation found to continue"). Reads from the top only as
+// far as the first message.
+func claudeHasMessages(file string) bool {
+	f, err := os.Open(file)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	for {
+		line, err := r.ReadBytes('\n')
+		if bytes.Contains(line, []byte(`"user"`)) || bytes.Contains(line, []byte(`"assistant"`)) {
+			var v struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(line, &v) == nil && (v.Type == "user" || v.Type == "assistant") {
+				return true
+			}
+		}
+		if err != nil {
+			return false
+		}
+	}
+}
+
+// pastClaudeSessions are the conversations Claude Code keeps for path,
+// newest first. Transcripts without a message are left out: there is
+// nothing to continue or resume in them.
 func pastClaudeSessions(path string) []pastSession {
 	ents, err := os.ReadDir(claudeProjectDir(path))
 	if err != nil {
@@ -96,7 +131,7 @@ func pastClaudeSessions(path string) []pastSession {
 			continue
 		}
 		fi, err := e.Info()
-		if err != nil {
+		if err != nil || !claudeHasMessages(filepath.Join(claudeProjectDir(path), e.Name())) {
 			continue
 		}
 		out = append(out, pastSession{ID: strings.TrimSuffix(e.Name(), ".jsonl"), Modified: fi.ModTime()})
