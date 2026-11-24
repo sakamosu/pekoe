@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -487,5 +488,45 @@ func TestKillLeftoversOtherTmuxServer(t *testing.T) {
 	}
 	if !alive(otherServer) {
 		t.Errorf("the other server %d (the person's pane is in it) was stopped", otherServer)
+	}
+}
+
+// waitGroupGone returns once the group has exited, and SIGKILLs a group
+// that outlives the grace (one that ignores SIGHUP, as an agent writing
+// its transcript on the way out would).
+func TestWaitGroupGone(t *testing.T) {
+	start := func(script string) *exec.Cmd {
+		c := exec.Command("sh", "-c", script)
+		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := c.Start(); err != nil {
+			t.Skipf("cannot start a process: %v", err)
+		}
+		go c.Wait() // reap: a zombie still counts in its group
+		return c
+	}
+	gone := func(pgid int) bool { return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) }
+
+	quick := start("sleep 0.2")
+	at := time.Now()
+	waitGroupGone(quick.Process.Pid, 5*time.Second)
+	if !gone(quick.Process.Pid) || time.Since(at) > 3*time.Second {
+		t.Fatalf("quick group: gone=%v after %v", gone(quick.Process.Pid), time.Since(at))
+	}
+
+	stubborn := start(`trap "" HUP TERM; sleep 30 & wait`)
+	time.Sleep(100 * time.Millisecond) // the trap is set
+	_ = syscall.Kill(-stubborn.Process.Pid, syscall.SIGHUP)
+	time.Sleep(50 * time.Millisecond)
+	if gone(stubborn.Process.Pid) {
+		t.Fatal("the group did not outlive SIGHUP: nothing to test")
+	}
+	at = time.Now()
+	waitGroupGone(stubborn.Process.Pid, 200*time.Millisecond)
+	if !gone(stubborn.Process.Pid) {
+		_ = syscall.Kill(-stubborn.Process.Pid, syscall.SIGKILL)
+		t.Fatal("stubborn group still there")
+	}
+	if time.Since(at) > 3*time.Second {
+		t.Fatalf("took %v", time.Since(at))
 	}
 }

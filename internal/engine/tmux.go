@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -474,6 +475,46 @@ func (t *Tmux) Resize(slug, window string, w, h int) error {
 func (t *Tmux) Kill(slug, window string) error {
 	_, err := t.run("kill-window", "-t", t.target(slug, window))
 	return err
+}
+
+func (t *Tmux) KillWait(slug, window string, grace time.Duration) error {
+	pid := 0
+	if ps, err := t.Panes(); err == nil {
+		for _, p := range ps {
+			if p.Slug == slug && p.Window == window {
+				pid = p.PID
+			}
+		}
+	}
+	if err := t.Kill(slug, window); err != nil {
+		return err
+	}
+	if pid > 1 {
+		waitGroupGone(pid, grace)
+	}
+	return nil
+}
+
+// waitGroupGone waits until process group pgid (a pane's: tmux makes the
+// pane's process a session and group leader, and the agent it runs stays
+// in that group) has no process left, SIGKILLs the group after grace and
+// then waits up to a second more.
+func waitGroupGone(pgid int, grace time.Duration) {
+	gone := func(d time.Duration) bool {
+		for end := time.Now().Add(d); ; time.Sleep(20 * time.Millisecond) {
+			if errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) {
+				return true
+			}
+			if time.Now().After(end) {
+				return false
+			}
+		}
+	}
+	if gone(grace) {
+		return
+	}
+	_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	gone(time.Second)
 }
 
 func (t *Tmux) KillSession(slug string) error {

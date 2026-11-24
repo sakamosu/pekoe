@@ -34,6 +34,10 @@ type fakeEngine struct {
 	delay  time.Duration     // Spawn takes this long (races)
 	spawn  map[string]engine.Spawn
 	panes  map[string]int // window -> its root process (Panes)
+	// onKillWait is called by KillWait after the window is gone, as its
+	// processes would still run then (tests that write a late transcript)
+	onKillWait func(slug, w string)
+	killWaits  []string // slug~window per KillWait
 }
 
 func newFake() *fakeEngine {
@@ -122,6 +126,17 @@ func (f *fakeEngine) Kill(slug, w string) error {
 	delete(f.wins, slug+"~"+w)
 	delete(f.dead, slug+"~"+w)
 	f.mu.Unlock()
+	return nil
+}
+func (f *fakeEngine) KillWait(slug, w string, grace time.Duration) error {
+	_ = f.Kill(slug, w)
+	f.mu.Lock()
+	f.killWaits = append(f.killWaits, slug+"~"+w)
+	hook := f.onKillWait
+	f.mu.Unlock()
+	if hook != nil {
+		hook(slug, w)
+	}
 	return nil
 }
 func (f *fakeEngine) KillSession(slug string) error {

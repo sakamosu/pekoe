@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -206,5 +208,57 @@ func TestSendLiteralSemicolon(t *testing.T) {
 	}
 	if want := `;b;c;d;ef\;Z`; string(got) != want {
 		t.Fatalf("pane got %q, want %q", got, want)
+	}
+}
+
+// KillWait returns only after the window's processes have exited: one
+// that outlives SIGHUP for a while (an agent writing its transcript on the
+// way out) is waited for, one that does not end within grace is killed.
+func TestTmuxKillWait(t *testing.T) {
+	testenv.NeedTmux(t)
+	t.Setenv("TMUX_TMPDIR", testenv.ShortDir(t, "bt"))
+	tm := &Tmux{Socket: "pekoe-test-killwait", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", "_keeper", "sleep 60"); err != nil {
+		t.Fatal(err)
+	}
+	tm.recordPid()
+	t.Cleanup(func() { tm.KillServer() })
+	late := filepath.Join(t.TempDir(), "late")
+	open := func(name, cmd string) {
+		if _, err := tm.run("new-window", "-d", "-t", "=t:", "-n", winName(name, WinAgent), cmd); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(300 * time.Millisecond) // the trap is set
+	}
+
+	open("slow", `trap 'sleep 0.5; echo bye > `+late+`; exit 0' HUP; while :; do sleep 0.1; done`)
+	if err := tm.KillWait("slow", WinAgent, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(late); err != nil || strings.TrimSpace(string(b)) != "bye" {
+		t.Fatalf("returned before the window's process wrote on its way out: %q %v", b, err)
+	}
+
+	open("stubborn", `trap '' HUP TERM; while :; do sleep 0.1; done`)
+	ps, _ := tm.Panes()
+	pid := 0
+	for _, p := range ps {
+		if p.Slug == "stubborn" {
+			pid = p.PID
+		}
+	}
+	if pid == 0 {
+		t.Fatal("no pane for stubborn")
+	}
+	at := time.Now()
+	if err := tm.KillWait("stubborn", WinAgent, 300*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(syscall.Kill(-pid, 0), syscall.ESRCH) {
+		syscall.Kill(-pid, syscall.SIGKILL)
+		t.Fatal("stubborn window's processes still running")
+	}
+	if time.Since(at) > 3*time.Second {
+		t.Fatalf("took %v", time.Since(at))
 	}
 }
