@@ -683,6 +683,7 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 			return err
 		}
 	}
+	tapiDropEmptyTranscripts()
 	cmd := tapiCommand(ag.Command, addDirs, isClaude(ag.Command) && tapiConversationLeft(dir))
 	cmd = withModel(cmd, ag, "", "")
 	var repoDirs []string
@@ -752,6 +753,26 @@ func tapiProjectDirs() []string {
 	return []string{a, b}
 }
 
+// tapiResetGrace is how long reset waits for tapi's agent to exit after
+// its window closed (SIGHUP) before it SIGKILLs what is left.
+const tapiResetGrace = 3 * time.Second
+
+// tapiDropEmptyTranscripts removes the transcripts in tapi's project
+// directories with no message (claudeHasMessages): what a background
+// task's result leaves when it arrives after reset. There is nothing in
+// them to continue, and tapi chat would show the newest as its conversation.
+func tapiDropEmptyTranscripts() {
+	for _, dir := range tapiProjectDirs() {
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			p := filepath.Join(dir, e.Name())
+			if e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl") && !claudeHasMessages(p) {
+				_ = os.Remove(p)
+			}
+		}
+	}
+}
+
 // hTapiReset ends the agent and forgets the conversation: its window and
 // Claude Code's record of tapi's directory. The next open starts afresh.
 func (d *Daemon) hTapiReset(struct{}) (any, error) {
@@ -759,7 +780,10 @@ func (d *Daemon) hTapiReset(struct{}) (any, error) {
 	defer d.tapiMu.Unlock()
 	if d.tapiStarted() {
 		d.tapiNoteKilled()
-		if err := d.Eng.Kill(TapiSlug, engine.WinAgent); err != nil {
+		// until Claude Code has exited: on its way out it still writes the
+		// transcript (a background task's result, even its last message),
+		// which would bring the record back after RemoveAll
+		if err := d.Eng.KillWait(TapiSlug, engine.WinAgent, tapiResetGrace); err != nil {
 			return nil, err
 		}
 	}

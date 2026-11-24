@@ -163,3 +163,60 @@ func TestSessionAddDirQuestionWaits(t *testing.T) {
 		t.Fatalf("allow sent %v, want Down Enter", got)
 	}
 }
+
+// reset waits for tapi's agent to exit before it forgets the record: what
+// Claude Code writes on its way out (a background task's result, even its
+// last message) is gone too, and the next open starts afresh.
+func TestTapiResetWaitsForTheAgent(t *testing.T) {
+	d, fe, _ := setup(t)
+	call[Tapi](t, d, "tapi.open", nil)
+	proj := claudeProjectDir(paths.TapiDir())
+	os.MkdirAll(proj, 0o755)
+	os.WriteFile(filepath.Join(proj, "old.jsonl"), []byte(convLine), 0o644)
+	fe.onKillWait = func(slug, w string) { // still exiting: it writes once more
+		os.MkdirAll(proj, 0o755)
+		os.WriteFile(filepath.Join(proj, "old.jsonl"), []byte(convLine+`{"type":"assistant","message":{"role":"assistant","content":"bye"}}`+"\n"), 0o644)
+		os.WriteFile(filepath.Join(proj, "late.jsonl"), []byte(queueOnly), 0o644)
+	}
+	call[Tapi](t, d, "tapi.reset", nil)
+	if strings.Join(fe.killWaits, ",") != TapiSlug+"~"+engine.WinAgent {
+		t.Fatalf("killWaits = %v", fe.killWaits)
+	}
+	if _, err := os.Stat(proj); !os.IsNotExist(err) {
+		t.Fatalf("record left after reset: %v", err)
+	}
+	call[Tapi](t, d, "tapi.open", nil)
+	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; strings.Contains(c, "--continue") {
+		t.Fatalf("continued after reset: %s", c)
+	}
+}
+
+// A transcript with no message that came after reset anyway (the agent
+// outlived the wait) is removed when tapi starts; conversations stay.
+func TestTapiSpawnDropsEmptyTranscripts(t *testing.T) {
+	d, fe, _ := setup(t)
+	proj := claudeProjectDir(paths.TapiDir())
+	os.MkdirAll(proj, 0o755)
+	empty := filepath.Join(proj, "late.jsonl")
+	os.WriteFile(empty, []byte(queueOnly), 0o644)
+	call[Tapi](t, d, "tapi.open", nil)
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("empty transcript left: %v", err)
+	}
+	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; strings.Contains(c, "--continue") {
+		t.Fatalf("continued with no conversation: %s", c)
+	}
+	conv := filepath.Join(proj, "conv.jsonl")
+	os.WriteFile(conv, []byte(queueOnly+convLine), 0o644)
+	os.WriteFile(empty, []byte(queueOnly), 0o644)
+	call[Tapi](t, d, "tapi.restart", nil)
+	if _, err := os.Stat(conv); err != nil {
+		t.Fatalf("conversation removed: %v", err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Fatalf("empty transcript left: %v", err)
+	}
+	if c := fe.spawned(TapiSlug, engine.WinAgent).Command; !strings.Contains(c, "--continue") {
+		t.Fatalf("conversation left, but not continued: %s", c)
+	}
+}

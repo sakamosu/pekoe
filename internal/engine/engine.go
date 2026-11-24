@@ -79,6 +79,11 @@ type Engine interface {
 	Capture(slug, window string) (*Screen, error)
 	Resize(slug, window string, w, h int) error
 	Kill(slug, window string) error
+	// KillWait kills the window and waits until the processes in its
+	// pane's process group have exited: after grace, what is left gets
+	// SIGKILL (then a short wait more). Closing a window only sends SIGHUP,
+	// and an agent keeps writing (its transcript) for a while after it.
+	KillWait(slug, window string, grace time.Duration) error
 	KillSession(slug string) error
 	// KillLeftovers stops what a session's windows started and left
 	// running after KillSession closed them (a background job reparented
