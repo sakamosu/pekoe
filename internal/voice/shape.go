@@ -40,10 +40,11 @@ type ShapeState struct {
 }
 
 // Shape turns a whole Markdown text into the sentences to read (6.2).
-// skip lists what is left out (SkipCode…); nil leaves nothing out, and
-// callers pass DefaultSkip for the default.
-func Shape(text string, skip []string) []string {
-	st, out := ShapeLines(ShapeState{}, strings.Split(text, "\n"), skip)
+// skip lists what is not read as it is (SkipCode…); nil reads everything,
+// and callers pass DefaultSkip for the default. lang (ja or en) picks the
+// words a URL or long inline code is read as.
+func Shape(text string, skip []string, lang string) []string {
+	st, out := ShapeLines(ShapeState{}, strings.Split(text, "\n"), skip, lang)
 	_, rest := st.Flush()
 	return append(out, rest...)
 }
@@ -53,8 +54,8 @@ func Shape(text string, skip []string) []string {
 // of a text in any split gives the same sentences as one call: the read
 // buffer (Reader) feeds only complete lines and Flushes at the end of the
 // message.
-func ShapeLines(st ShapeState, lines []string, skip []string) (ShapeState, []string) {
-	sk := skipSet(skip)
+func ShapeLines(st ShapeState, lines []string, skip []string, lang string) (ShapeState, []string) {
+	sk := skipSet(skip, lang)
 	var out []string
 	for _, l := range lines {
 		st, out = st.line(strings.TrimSuffix(l, "\r"), sk, out)
@@ -69,10 +70,26 @@ func (st ShapeState) Flush() (ShapeState, []string) {
 	return ShapeState{}, out
 }
 
-type skips struct{ code, table, url, path bool }
+// skips is what is not read as it is, and the words read in place of a
+// URL (link) and of long inline code (code).
+type skips struct {
+	code, table, url, path bool
+	link, codeWord         string
+}
 
-func skipSet(skip []string) skips {
-	var s skips
+// The words a URL and long inline code are read as (6.2).
+const (
+	linkJa = "リンク"
+	linkEn = "a link"
+	codeJa = "コード"
+	codeEn = "code"
+)
+
+func skipSet(skip []string, lang string) skips {
+	s := skips{link: linkEn, codeWord: codeEn}
+	if lang == LangJa {
+		s.link, s.codeWord = linkJa, codeJa
+	}
 	for _, k := range skip {
 		switch k {
 		case SkipCode:
@@ -299,9 +316,10 @@ var (
 )
 
 // inline cleans one line's inline Markdown (6.2): code spans, images,
-// links, tags, URLs, paths, emphasis and emoji.
+// links, tags, URLs, paths, emphasis and emoji. A URL is read as a link
+// word and a path as its last element.
 func inline(s string, sk skips) string {
-	s = codeSpans(s, sk.code)
+	s = codeSpans(s, sk)
 	s = reImage.ReplaceAllString(s, " ")
 	s = reAutoLink.ReplaceAllString(s, "$1")
 	s = reLink.ReplaceAllString(s, "$1")
@@ -309,17 +327,19 @@ func inline(s string, sk skips) string {
 	if sk.url {
 		s = reURL.ReplaceAllStringFunc(s, func(u string) string {
 			// trailing punctuation belongs to the sentence
-			return u[len(strings.TrimRight(u, ".,;:!?)")):]
+			return " " + sk.link + " " + u[len(strings.TrimRight(u, ".,;:!?)")):]
 		})
 	}
 	if sk.path {
-		s = rePathish.ReplaceAllStringFunc(s, func(w string) string {
-			// a trailing . is the sentence's end, not the path's
-			p := strings.TrimRight(w, ".")
-			if isPath(p) {
-				return " " + w[len(p):]
-			}
-			return w
+		s = outsideURLs(s, func(part string) string {
+			return rePathish.ReplaceAllStringFunc(part, func(w string) string {
+				// a trailing . is the sentence's end, not the path's
+				p := strings.TrimRight(w, ".")
+				if isPath(p) {
+					return " " + pathName(p) + " " + w[len(p):]
+				}
+				return w
+			})
 		})
 	}
 	s = reMarks.ReplaceAllString(s, "")
@@ -333,10 +353,26 @@ func inline(s string, sk skips) string {
 	return reSpacePunct.ReplaceAllString(s, "$1")
 }
 
-// codeSpans replaces each `code span` with its content when it is read
-// (skip false, or short and without /) and with a space when it is not.
+// outsideURLs applies f to the parts of s that are not URLs (a URL read
+// as it is keeps its path).
+func outsideURLs(s string, f func(string) string) string {
+	var b strings.Builder
+	at := 0
+	for _, loc := range reURL.FindAllStringIndex(s, -1) {
+		b.WriteString(f(s[at:loc[0]]))
+		b.WriteString(s[loc[0]:loc[1]])
+		at = loc[1]
+	}
+	b.WriteString(f(s[at:]))
+	return b.String()
+}
+
+// codeSpans replaces each `code span` with what is read for it (6.2): its
+// content when code is not skipped or it is short and without /; else a
+// path's last element (path skipped; as it is when not), the link word for
+// a URL (url skipped; as it is when not) and the code word for the rest.
 // An unclosed run of backticks is left as it is.
-func codeSpans(s string, skip bool) string {
+func codeSpans(s string, sk skips) string {
 	var b strings.Builder
 	for {
 		loc := reInlineCode.FindStringIndex(s)
@@ -354,13 +390,60 @@ func codeSpans(s string, skip bool) string {
 		}
 		b.WriteString(s[:loc[0]])
 		code := strings.TrimSpace(rest[:end])
-		if !skip || (utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/")) {
+		if r := codeSpan(code, sk); r == code {
 			b.WriteString(code)
 		} else {
-			b.WriteString(" ")
+			// a word in place of the code stands apart from the text
+			b.WriteString(" " + r + " ")
 		}
 		s = rest[end+len(tick):]
 	}
+}
+
+func codeSpan(code string, sk skips) string {
+	if !sk.code || (utf8.RuneCountInString(code) <= InlineCodeRunes && !strings.Contains(code, "/")) {
+		return code
+	}
+	if isCodePath(code) {
+		if !sk.path {
+			return code
+		}
+		return pathName(code)
+	}
+	if u := reURL.FindString(code); u != "" && u == code {
+		if !sk.url {
+			return code
+		}
+		return sk.link
+	}
+	return sk.codeWord
+}
+
+// isCodePath: inline code that is a path: a path in text (isPath), or a
+// word of path characters with a / in it (internal/voice) whose last
+// element has a letter or digit.
+func isCodePath(code string) bool {
+	if pathName(code) == "" {
+		return false
+	}
+	return isPath(code) || (strings.Contains(code, "/") && rePathish.FindString(code) == code)
+}
+
+// pathName is what a path is read as (6.2): its last element (the one
+// before a trailing /) without the extension or a leading dot;
+// internal/voice/narrate.go → narrate, ~/.config/ → config. "" when that
+// has no letter or digit (../).
+func pathName(p string) string {
+	p = strings.TrimRight(p, "/")
+	name := p[strings.LastIndex(p, "/")+1:]
+	if n := reExt.ReplaceAllString(name, ""); strings.TrimLeft(n, ".") != "" {
+		name = n
+	}
+	name = strings.TrimLeft(name, ".")
+	if !hasWord(name) {
+		return ""
+	}
+	return name
 }
 
 // findRun is the index of a run of backticks exactly as long as tick.
@@ -385,7 +468,7 @@ func findRun(s, tick string) int {
 }
 
 // isPath: a word is a file path (6.2): it starts with ./ ../ ~/ or /, or
-// it has a / and ends with an extension.
+// it has a / and ends with an extension or a / (a directory).
 func isPath(w string) bool {
 	w = strings.TrimRight(w, ".")
 	for _, p := range []string{"./", "../", "~/", "/"} {
@@ -393,7 +476,7 @@ func isPath(w string) bool {
 			return true
 		}
 	}
-	return strings.Contains(w, "/") && reExt.MatchString(w)
+	return strings.Contains(w, "/") && (reExt.MatchString(w) || (strings.HasSuffix(w, "/") && len(strings.Trim(w, "/")) > 0))
 }
 
 // isEmoji: pictographs, dingbats and the joiners and selectors that go

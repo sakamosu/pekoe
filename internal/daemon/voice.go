@@ -294,7 +294,7 @@ func (h *voiceHub) start(v config.Voice, key string) {
 		skip = voice.DefaultSkip
 	}
 	rd := voice.NewReader(voice.ReadConfig{
-		Clock: h.clock, Skip: skip, Mode: h.modeFor, Unread: h.logUnread,
+		Clock: h.clock, Skip: skip, Lang: lang, Mode: h.modeFor, Unread: h.logUnread,
 		MaxSentences: v.MaxSentences(), MaxTurnSentences: v.MaxTurnSentences(),
 	})
 	stop := make(chan struct{})
