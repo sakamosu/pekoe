@@ -506,9 +506,9 @@ func voiceOnOff(path string, on bool, session string, out io.Writer) error {
 	if session != "" {
 		return fmt.Errorf("pekoe voice %s is for a person: run it from your own terminal, not in session %s's window", word, session)
 	}
-	target := path
-	if t, err := filepath.EvalSymlinks(path); err == nil {
-		target = t // a config.toml linked from dotfiles stays a link
+	target, err := linkTarget(path) // a config.toml linked from dotfiles stays a link
+	if err != nil {
+		return err
 	}
 	orig, err := os.ReadFile(target)
 	exists := err == nil
@@ -609,6 +609,32 @@ func setVoiceEnable(b []byte, on bool) []byte {
 		text += "\n"
 	}
 	return []byte(text + "[voice]\nenable = " + val + "\n")
+}
+
+// linkTarget is the file a write to path lands in: path itself, or, when
+// path is a symlink, what the link points to — also when that does not
+// exist yet (a dotfiles link made before its file), so the file is made
+// there and the link stays. A loop of links is an error.
+func linkTarget(path string) (string, error) {
+	if t, err := filepath.EvalSymlinks(path); err == nil {
+		return t, nil
+	}
+	p := path
+	for range 40 {
+		fi, err := os.Lstat(p)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			return p, nil // missing (made by the write) or a plain file
+		}
+		to, err := os.Readlink(p)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(to) {
+			to = filepath.Join(filepath.Dir(p), to)
+		}
+		p = to
+	}
+	return "", fmt.Errorf("%s: too many links (a loop?): nothing was changed", path)
 }
 
 // replaceConfig writes the changed config.toml (a test swaps it).
