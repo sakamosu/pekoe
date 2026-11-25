@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -12,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -94,15 +97,27 @@ func claudeConversationExists(path, id string) bool {
 // killed leaves only queue-operation lines, and --continue on such a file
 // fails ("No conversation found to continue"). Reads from the top only as
 // far as the first message.
+//
+// ~/.claude/projects is writable from the hooks' sandbox (the gatekeeper's
+// claude -p), so what is there is not trusted, as with tailFile: only a
+// regular file is read (a symlink to /dev/zero would never end, a FIFO
+// would block the open, hence O_NONBLOCK), at most transcriptScanMax bytes
+// and lines of at most transcriptLineMax. What is cut off there counts as
+// a conversation: tapiDropEmptyTranscripts removes only what has none.
 func claudeHasMessages(file string) bool {
-	f, err := os.Open(file)
+	f, err := os.OpenFile(file, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return false
 	}
 	defer f.Close()
-	r := bufio.NewReader(f)
-	for {
-		line, err := r.ReadBytes('\n')
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	lr := &io.LimitedReader{R: f, N: transcriptScanMax}
+	sc := bufio.NewScanner(lr)
+	sc.Buffer(make([]byte, 64*1024), transcriptLineMax)
+	for sc.Scan() {
+		line := sc.Bytes()
 		if bytes.Contains(line, []byte(`"user"`)) || bytes.Contains(line, []byte(`"assistant"`)) {
 			var v struct {
 				Type string `json:"type"`
@@ -111,11 +126,20 @@ func claudeHasMessages(file string) bool {
 				return true
 			}
 		}
-		if err != nil {
-			return false
-		}
 	}
+	if errors.Is(sc.Err(), bufio.ErrTooLong) {
+		return true // a line too long to look into (a pasted image, say)
+	}
+	return lr.N <= 0 // stopped at the cap, not at the end
 }
+
+// How far claudeHasMessages reads a transcript. The first message comes
+// near the top; a file with only queue-operation lines is a few hundred
+// bytes.
+const (
+	transcriptScanMax = 8 << 20
+	transcriptLineMax = 1 << 20
+)
 
 // pastClaudeSessions are the conversations Claude Code keeps for path,
 // newest first. Transcripts without a message are left out: there is
@@ -127,7 +151,9 @@ func pastClaudeSessions(path string) []pastSession {
 	}
 	var out []pastSession
 	for _, e := range ents {
-		if !strings.HasSuffix(e.Name(), ".jsonl") {
+		// a regular file only: a symlink is not followed (claudeHasMessages
+		// checks the file it opens as well)
+		if !e.Type().IsRegular() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
 		fi, err := e.Info()
