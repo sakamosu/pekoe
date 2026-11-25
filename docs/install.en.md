@@ -14,6 +14,8 @@ pekoe skills install    # optional: link pekoe's skills from ~/.claude/skills (a
 make install-launchd    # optional: start pekoed at login
 ```
 
+The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`. The project's own `.claude/` is never touched. Check with `pekoe hooks status`; remove only pekoe's hooks with `pekoe hooks uninstall`.
+
 ### With Homebrew
 
 From v0.4.0 on, macOS and Linux (arm64 / amd64) can install the default build (no Web UI) from the tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap). tmux and git come along as dependencies:
@@ -82,8 +84,6 @@ pekoe update --allow-unverified         # go on even if the build provenance can
 - At the end it prints the old and new versions and, if pekoed is running, asks whether to `pekoe daemon restart`. If the Chrome extension was replaced, reload it in `chrome://extensions`
 - It sends a GitHub token if it finds one: `$GITHUB_TOKEN` / `$GH_TOKEN`, or else `gh auth token`. No token is needed; one only raises the GitHub API rate limit (without a token, 60 requests per hour; if you hit it, wait a while or `gh auth login`). For a private copy of the repository, a token that can read it is required; without one GitHub answers HTTP 404 and `pekoe update` tells you to `gh auth login`
 - Replacing is for humans only. Inside an agent's session (`$PEKOE_SESSION` is set) or where `human-token` can't be read, it refuses with `only a person can do this`. `--check` works for anyone
-
-The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`. The project's own `.claude/` is never touched. Check with `pekoe hooks status`; remove only pekoe's hooks with `pekoe hooks uninstall`.
 
 ## Installing the Claude Code skills
 

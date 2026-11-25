@@ -287,7 +287,7 @@ Press `t` from any panel and [4] switches to a conversation with the mascot tapi
 - While the tapi row at the top of Sessions is selected, [4] is the **dashboard**: what needs you, the inbox, a pipeline per session (`impl → review → PR → CI → merge` and what's missing for the merge), requests, and today's and the last 7 days' numbers (`pekoe stats`), on one screen with no model tokens spent. `↵` answers the inbox, `o` opens a report's evidence (screenshots, logs, PRs). `^q` `o` gets you there from anywhere
 - When tapi waits for permission or an answer, you're told like a waiting session (toast → blinking bottom line → OS notification; `[orchestrator] notify = "quiet"` tones it down)
 - What you type to tapi is recorded as a request (`pekoe ledger`) and closed when done. `T` (or `pekoe tapi reset`) makes it forget the conversation; the ledger and the inbox stay
-- You can also talk to tapi from the Web UI's tapi tab (iPhone). Change its agent with `[tapi] agent`
+- You can also talk to tapi from the Web UI's tapi tab (iPhone). Sending needs `[web] allow_devices` set to narrow the devices, and by default a confirmation sheet shows the recipient and the full text before it goes ([docs/web.md](docs/web.md#tapi-chat-の扱い)). Change its agent with `[tapi] agent`
 
 More in [docs/tui.en.md](docs/tui.en.md#tapi-chat), [docs/tapi-chat.md](docs/tapi-chat.md) and [docs/orchestration.md](docs/orchestration.md).
 

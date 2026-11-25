@@ -287,7 +287,7 @@ pekoe                                                 # TUI
 - Sessions の一番上の tapi の行を選んでいる間、[4] は**ダッシュボード**になります。人の対応が必要なもの、受信箱、セッションごとの工程表(`impl → review → PR → CI → merge` と、マージに足りない条件)、依頼、今日と直近 7 日の数(`pekoe stats`)を、モデルのトークンを使わずに 1 画面にまとめます。`↵` で受信箱に答え、`o` で報告の evidence(スクリーンショット・ログ・PR)を開きます。どこからでも `^q` `o` で入れます
 - tapi が許可待ち・質問待ちになると、セッションの wait と同じように知らせます(トースト → 最下行の点滅 → OS の通知。`[orchestrator] notify = "quiet"` で控えめに)
 - tapi に打った文は依頼(`pekoe ledger`)として記録され、済んだら閉じられます。`T`(または `pekoe tapi reset`)で会話を忘れさせても、依頼と受信箱は残ります
-- Web UI(iPhone)の tapi タブからも話しかけられます。エージェントは `[tapi] agent` で変えられます
+- Web UI(iPhone)の tapi タブからも話しかけられます。送るには `[web] allow_devices` で端末を絞っておく必要があり、送る前には既定で宛先と全文の確認シートが出ます([docs/web.md](docs/web.md#tapi-chat-の扱い))。エージェントは `[tapi] agent` で変えられます
 
 詳しくは [docs/tui.md](docs/tui.md#tapi-chat)・[docs/tapi-chat.md](docs/tapi-chat.md)・[docs/orchestration.md](docs/orchestration.md)。
 
