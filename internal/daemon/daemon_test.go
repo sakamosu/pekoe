@@ -224,8 +224,24 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	// a merge on a person's answer goes on after it says merged (it reads
 	// the PR once more): waited for, or that read runs the next test's gh
 	// (PATH is per test) and writes to a closed DB
-	t.Cleanup(func() { waitCreations(t, d); d.merging.Wait(); d.DB.Close(); d.releaseLock() })
+	t.Cleanup(func() { waitHooksDone(t, d); waitCreations(t, d); d.merging.Wait(); d.DB.Close(); d.releaseLock() })
 	return d, fe, repo
+}
+
+// waitHooksDone waits for the hooks still being handled when a test
+// returns, as shutdown does (waitHooks): a Stop is settled in the
+// background (onStop), and its refreshDiffstat runs git add / write-tree
+// in the session's worktree, which would otherwise go on writing
+// .git/objects while the cleanup removes the temp dirs ("directory not
+// empty").
+func waitHooksDone(t *testing.T, d *Daemon) {
+	t.Helper()
+	for end := time.Now().Add(30 * time.Second); d.hooking.Load() > 0 || d.stopping.Load() > 0; sleep10ms() {
+		if time.Now().After(end) {
+			t.Errorf("hooks still being handled after the test (%d hooks, %d Stops)", d.hooking.Load(), d.stopping.Load())
+			return
+		}
+	}
 }
 
 // waitCreations ends the sessions still being made when a test returns:
