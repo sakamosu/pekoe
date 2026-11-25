@@ -502,6 +502,13 @@ func (h *voiceHub) tapi(st state.State, since time.Time) {
 		}
 		h.mu.Lock()
 		prev, prevAt := h.tapiSt, h.tapiAt
+		if since.Before(prevAt) {
+			// a view made before the one taken, sent after it:
+			// tapi.updated has no order among its senders, and
+			// StateSince only moves on
+			h.mu.Unlock()
+			return
+		}
 		h.tapiSt, h.tapiAt = st, since
 		h.mu.Unlock()
 		if prev == st {
