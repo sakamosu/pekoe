@@ -439,10 +439,11 @@ func (v Voice) LangSetting() string {
 
 // BackendName is backend as used ("say" when unset).
 func (v Voice) BackendName() string {
-	if strings.TrimSpace(v.Backend) == "" {
-		return DefaultVoiceBackend
+	// trimmed as pekoe config check trims it (and FallbackName)
+	if b := strings.TrimSpace(v.Backend); b != "" {
+		return b
 	}
-	return v.Backend
+	return DefaultVoiceBackend
 }
 
 // FallbackName is fallback as used: "say" when unset, "" for none.

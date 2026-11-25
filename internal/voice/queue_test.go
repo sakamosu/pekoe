@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -672,6 +673,33 @@ func TestRuleQ11Timeout(t *testing.T) {
 	}
 }
 
+// Q11: SynthExtra (an external backend's cache-key, 10.3) is added to the
+// 3 seconds, and the time-out names the whole limit.
+func TestRuleQ11TimeoutExtra(t *testing.T) {
+	r := newRig(t, func(c *Config) {
+		c.SynthExtra = func() time.Duration { return time.Second }
+	})
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	c := r.syn.Next(t)
+	r.clk.Advance(SynthTimeout + time.Second - time.Millisecond)
+	if c.Cancelled() {
+		t.Fatal("cancelled within the cache-key's extra second")
+	}
+	r.clk.Advance(time.Millisecond)
+	r.waitIdle()
+	if !c.Cancelled() {
+		t.Fatal("not cancelled at the time-out")
+	}
+	r.wantResults("fix-a:failed")
+	r.mu.Lock()
+	reason := r.logs[0].Reason
+	r.mu.Unlock()
+	if !strings.Contains(reason, "timed out after 4s") {
+		t.Errorf("reason %q", reason)
+	}
+}
+
 // Q11: three failures in a row switch to the fallback; when there is none
 // to switch to, synthesis pauses for 60 seconds and the status says why.
 func TestRuleQ11Fallback(t *testing.T) {
@@ -1046,5 +1074,74 @@ func TestRuleQ11NoRetry(t *testing.T) {
 	r.mu.Unlock()
 	if reason != "vv: down" {
 		t.Errorf("reason %q", reason)
+	}
+}
+
+// A player that fails is not left as said: voice.log gets a failed line
+// after the spoken one, the status and pekoed.log say why, and the same
+// news may be said again at once (Q7 counts sounds, not attempts).
+func TestPlayFailure(t *testing.T) {
+	var logged []string
+	var lmu sync.Mutex
+	r := newRig(t, func(c *Config) {
+		c.Logf = func(format string, args ...any) {
+			lmu.Lock()
+			logged = append(logged, fmt.Sprintf(format, args...))
+			lmu.Unlock()
+		}
+	})
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	r.synthOK("a needs you")
+	r.play("a needs you").Fail(errors.New("afplay: AudioQueueStart failed\nmore"))
+	r.waitFor("the play's end", func(s Status) bool { return s.Speaking == nil && s.Error != "" })
+	r.wantResults("fix-a:spoken", "fix-a:failed")
+	r.mu.Lock()
+	e := r.logs[1]
+	r.mu.Unlock()
+	if e.Reason != "play failed: afplay: AudioQueueStart failed" || e.Kind != KindWait || e.Text != "a needs you" {
+		t.Errorf("failed line %+v", e)
+	}
+	if s := r.q.Status(); s.Error != e.Reason {
+		t.Errorf("status error %q", s.Error)
+	}
+	lmu.Lock()
+	if len(logged) != 1 || !strings.Contains(logged[0], "AudioQueueStart failed") {
+		t.Errorf("pekoed.log %q", logged)
+	}
+	lmu.Unlock()
+	// not said: Q7 does not hold the same news back
+	r.clk.Advance(time.Second)
+	if !r.narrate(KindWait, "fix-a") {
+		t.Fatal("the same news was held back after a failed play")
+	}
+	r.clk.Advance(GatherDelay)
+	r.say("a needs you")
+	if s := r.q.Status(); s.Error != "" {
+		t.Errorf("status error %q after a play that worked", s.Error)
+	}
+}
+
+// Stopping the sound is not a play failure.
+func TestPlayStoppedIsNotFailure(t *testing.T) {
+	var logged atomic.Int32
+	r := newRig(t, func(c *Config) {
+		c.Logf = func(string, ...any) { logged.Add(1) }
+	})
+	r.narrate(KindWait, "fix-a")
+	r.clk.Advance(GatherDelay)
+	r.synthOK("a needs you")
+	p := r.play("a needs you")
+	r.waitSpeaking("a needs you")
+	r.q.Mute()
+	p.WaitStopped(t)
+	r.waitSilent()
+	for _, x := range r.results() {
+		if strings.HasSuffix(x, ":failed") {
+			t.Fatalf("log %q", r.results())
+		}
+	}
+	if s := r.q.Status(); s.Error != "" || logged.Load() != 0 {
+		t.Errorf("status error %q, logged %d", s.Error, logged.Load())
 	}
 }

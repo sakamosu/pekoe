@@ -351,7 +351,10 @@ var _ voiceCaller = (*client.Client)(nil)
 
 // voiceTest queues the sentence (voice.say), then follows voice.log until
 // it was said or failed, up to wait: when synthesis is paused (Q11) or the
-// backend fails, the reason is shown, not only "queued".
+// backend fails, the reason is shown, not only "queued". A spoken line is
+// written as the sound starts, and a player that fails adds a failed line
+// after it: "said" waits until the sound is over (and one look more at the
+// log, written on its own goroutine), or up to wait.
 func voiceTest(cl voiceCaller, text, v, lang string, wait time.Duration, out io.Writer) error {
 	start := time.Now()
 	var st daemon.VoiceStatus
@@ -370,25 +373,42 @@ func voiceTest(cl voiceCaller, text, v, lang string, wait time.Duration, out io.
 	}
 	clean := backend.CleanText(text)
 	deadline := start.Add(wait)
+	ended := false // the sound of the spoken line is over: one look more
 	for {
 		var es []voice.LogEntry
 		if err := cl.Call("voice.log", map[string]any{"n": 50}, &es); err != nil {
 			return err
 		}
-		for _, e := range es {
-			if e.Kind != voice.KindTest || e.Text != clean || e.Time.Before(start.Add(-time.Second)) {
-				continue
+		var e *voice.LogEntry // the newest line of this test
+		for i := range es {
+			if x := &es[i]; x.Kind == voice.KindTest && x.Text == clean && !x.Time.Before(start.Add(-time.Second)) {
+				e = x
+				break
 			}
-			if jsonOut {
-				printJSON(e)
-			}
+		}
+		if e != nil {
 			switch e.Result {
 			case voice.ResultSpoken, voice.ResultMerged:
-				if !jsonOut {
+				if !ended && time.Now().Before(deadline) {
+					var now daemon.VoiceStatus
+					if err := cl.Call("voice.status", nil, &now); err != nil {
+						return err
+					}
+					if sp := now.Speaking; sp == nil || sp.Kind != voice.KindTest || sp.Text != clean {
+						ended = true
+					}
+					break // look at the log again: did the player fail?
+				}
+				if jsonOut {
+					printJSON(e)
+				} else {
 					fmt.Fprintf(out, "said (%s, %dms from the request to the sound)\n", e.Backend, e.LatencyMS)
 				}
 				return nil
 			default:
+				if jsonOut {
+					printJSON(e)
+				}
 				why := string(e.Result)
 				if e.Reason != "" {
 					why += ": " + e.Reason

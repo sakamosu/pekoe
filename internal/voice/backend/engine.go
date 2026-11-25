@@ -374,7 +374,14 @@ func (e *Engine) synthWith(ctx context.Context, b *Backend, ver, text, voice, la
 		switch {
 		case err != nil:
 			if ctx.Err() != nil {
-				return "", ctx.Err()
+				// the caller's time ran out (or it gave up) in cache-key:
+				// this backend's failure all the same, so that the queue
+				// counts it and tries the fallback (10.5)
+				var be *Error
+				if !errors.As(err, &be) {
+					be = &Error{Backend: b.Name, Op: "cache-key", Reason: ctx.Err().Error(), Timeout: true}
+				}
+				return "", be
 			}
 			e.o.Logf("voice: not using the cache for this sentence: %v", err)
 			keep = false
@@ -412,6 +419,19 @@ func (e *Engine) synthWith(ctx context.Context, b *Backend, ver, text, voice, la
 		return "", err
 	}
 	return p, nil
+}
+
+// CacheKeyTime is how much longer than its synth one Synth may take: an
+// external backend runs cache-key before synth (10.3) within the caller's
+// time. It is the cache-key's time-out when the configured backend or the
+// fallback is external (either may synthesize the next sentence), else 0.
+func (e *Engine) CacheKeyTime() time.Duration {
+	for _, n := range []string{e.o.Backend, e.o.Fallback} {
+		if n != "" && n != Builtin {
+			return e.o.Timeouts.CacheKey
+		}
+	}
+	return 0
 }
 
 // FallbackFor is what the speech queue tries after Synth failed with err
