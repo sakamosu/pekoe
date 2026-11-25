@@ -14,6 +14,8 @@ pekoe skills install    # 任意: pekoe のスキルを ~/.claude/skills にリ�
 make install-launchd    # 任意: ログイン時に pekoed を起動
 ```
 
+hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけです。プロジェクト側の `.claude/` には触れません。`pekoe hooks status` で確認でき、`pekoe hooks uninstall` で pekoe の分だけ外せます。
+
 ### Homebrew で
 
 v0.4.0 以降、macOS と Linux(arm64 / amd64)では、tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap) から既定のビルド(Web UI なし)をインストールできます。tmux と git も依存としてインストールされます:
@@ -82,8 +84,6 @@ pekoe update --allow-unverified         # 来歴を確かめられなくても�
 - 終わると新旧のバージョンを表示し、pekoed が動いていれば `pekoe daemon restart` するかどうかを尋ねます。Chrome 拡張を入れ替えた場合は、`chrome://extensions` で再読み込みしてください
 - GitHub のトークンが見つかれば、付けて呼び出します: `$GITHUB_TOKEN` / `$GH_TOKEN`、なければ `gh auth token`。トークンは必須ではなく、付けると GitHub API のレート制限が緩くなるだけです(トークンなしでは 1 時間に 60 回までです。超えたら、しばらく待つか `gh auth login` してください)。private の複製から取得するときは、リポジトリを読めるトークンが必要です。ないと GitHub が HTTP 404 を返し、`pekoe update` は `gh auth login` するよう案内します
 - 入れ替えは人間だけの操作です。エージェントのセッションの中(`$PEKOE_SESSION` がある)や、`human-token` を読めない場所からは、`only a person can do this` で拒否します。`--check` は誰でも使えます
-
-hooks は `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd` で `pekoe event` を呼ぶだけです。プロジェクト側の `.claude/` には触れません。`pekoe hooks status` で確認でき、`pekoe hooks uninstall` で pekoe の分だけ外せます。
 
 ## Claude Code スキルのインストール
 
