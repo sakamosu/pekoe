@@ -113,7 +113,7 @@ type Pane struct {
 	Window string
 	PID    int
 	// Dead: the pane's process has exited (tmux's #{pane_dead}); PID is
-	// then only the pid it had.
+	// then only the pid it had (tmux 3.5), or 0 (tmux 3.8 reports none).
 	Dead bool
 	// Server is the pid of the terminal server that started the pane's
 	// process, its parent while it runs (0: not known).

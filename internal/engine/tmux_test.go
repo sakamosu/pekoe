@@ -263,10 +263,11 @@ func TestTmuxKillWait(t *testing.T) {
 	}
 }
 
-// A dead pane (remain-on-exit) still reports its old pid: Panes marks it
-// dead, it is not live, and KillWait closes its window without waiting for
-// (or killing) the group of whatever now has that pid. A running pane is
-// the server's child and leads its group.
+// A dead pane (remain-on-exit) still reports its old pid (tmux 3.5; tmux
+// 3.8 reports none): Panes lists it dead, it is not live, and KillWait
+// closes its window without waiting for (or killing) the group of whatever
+// now has that pid. A running pane is the server's child and leads its
+// group.
 func TestTmuxPanesDead(t *testing.T) {
 	testenv.NeedTmux(t)
 	t.Setenv("TMUX_TMPDIR", testenv.ShortDir(t, "bt"))
@@ -284,16 +285,26 @@ func TestTmuxPanesDead(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(300 * time.Millisecond)
-	ps, err := tm.Panes()
-	if err != nil {
-		t.Fatal(err)
+	// "exit 0" ends on its own: wait (bounded) until tmux has seen it die
+	var live, gone Pane
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		ps, err := tm.Panes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		live, gone = Pane{}, Pane{}
+		for _, p := range ps {
+			switch p.Slug {
+			case "live":
+				live = p
+			case "gone":
+				gone = p
+			}
+		}
+		if gone.Dead || time.Now().After(end) {
+			break
+		}
 	}
-	got := map[string]Pane{}
-	for _, p := range ps {
-		got[p.Slug] = p
-	}
-	live, gone := got["live"], got["gone"]
 	if live.Dead || !live.Live() || groupToWait(live) != live.PID || live.Server != tm.serverPid() {
 		t.Fatalf("running pane: %+v (server %d)", live, tm.serverPid())
 	}

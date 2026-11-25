@@ -36,13 +36,14 @@ func TestCleanText(t *testing.T) {
 }
 
 func TestParsePanes(t *testing.T) {
-	out := "_keeper\t100\t0\t9\nfeat-x~agent\t200\t0\t9\nfeat-x~dev\t201\t1\t9\n+tapi~agent\t300\t0\tx\nodd~agent\tx\t0\t9\nbad~agent\t1\t0\t9\nold~agent\t400\n"
+	out := "_keeper\t100\t0\t9\nfeat-x~agent\t200\t0\t9\nfeat-x~dev\t201\t1\t9\n+tapi~agent\t300\t0\tx\nodd~agent\tx\t0\t9\nbad~agent\t1\t0\t9\nold~agent\t400\ngone~agent\t\t1\t9\nlost~agent\t\t0\t9\n"
 	got := parsePanes(out)
 	want := []Pane{
 		{Slug: "feat-x", Window: "agent", PID: 200, Server: 9},
 		{Slug: "feat-x", Window: "dev", PID: 201, Dead: true, Server: 9},
 		{Slug: "+tapi", Window: "agent", PID: 300},
 		{Slug: "old", Window: "agent", PID: 400},
+		{Slug: "gone", Window: "agent", Dead: true, Server: 9}, // tmux 3.8: a dead pane has no pid
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %+v", got)

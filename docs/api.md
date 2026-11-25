@@ -82,7 +82,7 @@
 報告・送信の記録・`wait` の `mine`・受信箱は「誰が」呼んだかを使う。`$PEKOE_SESSION` や cwd はエージェントが偽れるので、pekoed はソケットの相手のプロセスから決める(`internal/daemon/caller.go`)。
 
 1. 接続を受けたら相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`。`peer_*.go`)
-2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元。根に数えるのは、動いているペイン(`#{pane_dead}` が 0)の pid で、そのプロセスの親が tmux サーバー(`#{pid}`)のものだけ。tmux は remain-on-exit で終わった窓を残し、そのペインは終わったプロセスの pid を返し続ける。OS がその pid を別のプロセスに配り直すと、それが窓の根に見えてしまうため(token なしで tapi や別のセッションに化けられる)
+2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元。根に数えるのは、動いているペイン(`#{pane_dead}` が 0)の pid で、そのプロセスの親が tmux サーバー(`#{pid}`)のものだけ。tmux は remain-on-exit で終わった窓を残し、そのペインは終わったプロセスの pid を返し続ける(tmux 3.5。3.8 は空を返す)。OS がその pid を別のプロセスに配り直すと、それが窓の根に見えてしまうため(token なしで tapi や別のセッションに化けられる)
 3. token つきのリクエストは、セッションのエージェントの窓(`<slug>~agent`。tapi chat の `+tapi~agent` を含む)に当たればその slug、それ以外(窓に当たらない、同じセッションでも run 窓・review 窓・dev 窓)は `human`。token なしで窓に当たらなければ `unknown`
 
 sandbox なし(`[agents.<name>] sandbox = false`)のエージェントや tapi は `human-token` を読めるので、`pekoe` CLI は token を付けて送る。それでもエージェントの窓から来たものはそのエージェントのしたこととして記録する(`session.new` の `parent`、送信の記録の `from`、`wait` の `mine` と受信箱の答えの宛先、`send.log` の絞り込みの相手)。人のセッションと tapi が任せたセッションを取り違えないため。変わるのは記録と所有の判定だけで、token で human-only のメソッドを呼べること(認可)は変わらない(token を読める以上そこは守れない)。人が TUI の `!` で打つ run 窓と review の nvim は人の操作なので `human` のまま。TUI や素の端末は pekoe の窓の外なので `human`。dev 窓は hooks の sandbox で動き token を読めない

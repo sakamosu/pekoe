@@ -565,8 +565,10 @@ func (t *Tmux) Panes() ([]Pane, error) {
 }
 
 // parsePanes reads list-panes' "name<TAB>pid<TAB>dead<TAB>server pid"
-// lines; windows that are not pekoe's (no "~", the keeper) and bad pids
-// are left out. A missing or bad server pid is 0 (Pane.Live: not live).
+// lines; windows that are not pekoe's (no "~", the keeper) are left out,
+// and so are running panes with a bad pid. A dead pane stays: tmux 3.5
+// still reports the pid its process had, tmux 3.8 reports none (PID 0).
+// A missing or bad server pid is 0 (Pane.Live: not live).
 func parsePanes(out string) []Pane {
 	var ps []Pane
 	for _, l := range strings.Split(out, "\n") {
@@ -575,16 +577,22 @@ func parsePanes(out string) []Pane {
 			continue
 		}
 		slug, w, ok := strings.Cut(f[0], "~")
-		n, err := strconv.Atoi(strings.TrimSpace(f[1]))
-		if !ok || err != nil || n <= 1 {
+		if !ok {
 			continue
 		}
-		p := Pane{Slug: slug, Window: w, PID: n}
+		p := Pane{Slug: slug, Window: w}
 		if len(f) > 2 {
 			p.Dead = strings.TrimSpace(f[2]) == "1"
 		}
 		if len(f) > 3 {
 			p.Server, _ = strconv.Atoi(strings.TrimSpace(f[3]))
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(f[1]))
+		switch {
+		case err == nil && n > 1:
+			p.PID = n
+		case !p.Dead:
+			continue
 		}
 		ps = append(ps, p)
 	}
