@@ -267,17 +267,17 @@ console.log(JSON.stringify(res));
 	}
 }
 
-// The Pipeline as a tree (docs/gui-design.md「Pipeline」): a request's
-// branches under its box with one trunk (a straight line for the first
-// branch, a corner for the others), the newest request on top, a branch no
-// request made on its own row after them; a later request as a badge (◉
+// The Pipeline by request (docs/gui-design.md「Pipeline」): a request's
+// heading line (rN, its words from /api/overview's requests, "tapi · N
+// branches · status") over its branches, the newest request on top, the
+// branches no request made in one "no request" group after them; a later request as a badge (◉
 // while it is at work, + once done) and "reopened by" when it sent the
 // branch back to impl; the step boxes in their looks (CI as passed/all,
 // the person's merge as you); waits written dim in one line, never as ✗;
 // inside a request, the rows in the overview's order of states.
 func TestGUIPipelineRender(t *testing.T) {
 	out := runWebModule(t, fakeDOM+`
-import { renderPipeline, pipelineModel, statusNote, stepLook, PIPE_ROWS } from "gui/dash.js";
+import { renderPipeline, pipelineModel, pastRequest, statusNote, stepLook, PIPE_ROWS } from "gui/dash.js";
 const at = new Date(Date.now() - 120000).toISOString();
 const steps = (...st) => ["impl", "review", "pr", "ci", "merge"].map((name, i) => ({ name, status: st[i] || "todo" }));
 const look = { icon: "◉", role: "ok", word: "run" };
@@ -306,11 +306,13 @@ const groups = [
 ];
 const box = el0("div");
 const opened = [];
-const res = { moving: renderPipeline(box, groups, (s) => opened.push(s), {}) };
+const requests = [{ id: 961, text: "CSV を直して <b>x</b>", status: "open" }, { id: 962, text: "", status: "done" }];
+const res = { moving: renderPipeline(box, groups, (s) => opened.push(s), {}, requests) };
 const cls = (n) => n.className;
 const rowsOf = (n) => find(n, (x) => /\bpl-row\b/.test(x.className) && !/pl-head/.test(x.className));
 res.order = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-bname")[0].textContent);
-res.groups = box.children.filter((c) => c.className === "pl-group").map((g) => [g.children.filter((c) => c.className === "pl-trunk").length, rowsOf(g).length]);
+const heads = (n) => find(n, (x) => x.className === "pl-rhead").map((h) => h.children[0].children.map((c) => c.className + ":" + c.textContent + (c.title ? "|" + c.title : "")).join(" "));
+res.groups = box.children.filter((c) => /\bpl-group\b/.test(c.className)).map((g) => [g.className, rowsOf(g).length]);
 // the Branch box: "<repo> · <branch>" (repo dim), then the badges; the title keeps the whole
 const label = (n) => find(n, (x) => x.className === "pl-label")[0].children.map((c) => c.className + ":" + c.textContent).join(" ");
 // two badges or more: the full ones (pl-full) and one folded badge (pl-compact) gui.css shows when the box is narrow
@@ -320,8 +322,8 @@ res.title = rowsOf(box).map((r) => find(r, (x) => x.className === "pl-branch")[0
 const nr = el0("div");
 renderPipeline(nr, [{ rows: [{ slug: "n", branch: "n", state: "running", look, steps: steps("now") }] }], () => {});
 res.label.push(label(find(nr, (x) => x.className === "pl-branch")[0]));
-res.req = rowsOf(box).map((r) => r.children[0].textContent);
-res.tree = rowsOf(box).map((r) => r.children[1].children.map(cls).join(""));
+res.req = heads(box);
+res.colspan = find(box, (x) => x.className === "pl-rcell").map((c) => c.attrs.role + ":" + c.attrs["aria-colspan"]);
 res.boxes = rowsOf(box).map((r) => find(r, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "));
 res.links = rowsOf(box).map((r) => find(r, (x) => /\bpl-link\b/.test(x.className)).map((l) => (/todo/.test(l.className) ? "-" : "=")).join(""));
 res.badges = rowsOf(box).map((r) => find(r, (x) => /\bpl-badge\b/.test(x.className) && !/pl-compact/.test(x.className)).map((b) => b.textContent + (/now/.test(b.className) ? "*" : "")).join(","));
@@ -339,17 +341,17 @@ res.toggled = toggled;
 renderPipeline(mb, many, () => {}, { expanded: true });
 res.all = [rowsOf(mb).length, find(mb, (x) => x.className === "pl-more")[0].textContent];
 renderPipeline(mb, many, () => {}, {});
-res.reqCut = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
+res.reqCut = heads(mb);
 const two = [
   { parent: "+tapi", rows: Array.from({ length: PIPE_ROWS - 1 }, (_, i) => ({ slug: "p" + i, branch: "p" + i, state: "running", look, origin: 2, steps: steps("now") })) },
   { parent: "+tapi", rows: Array.from({ length: 4 }, (_, i) => ({ slug: "q" + i, branch: "q" + i, state: "running", look, origin: 1, steps: steps("now") })) },
 ];
 renderPipeline(mb, two, () => {}, {});
-res.reqOne = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
+res.reqOne = heads(mb);
 renderPipeline(mb, many, () => {}, { expanded: true });
-res.reqAll = rowsOf(mb).map((r) => r.children[0].textContent).filter(Boolean);
-// the header has as many columns (columnheader) as a body row has cells;
-// the tree's column is hidden in both
+res.reqAll = heads(mb);
+// the header has as many columns (columnheader) as a body row has cells,
+// and a request's heading spans them all
 const head = find(box, (x) => /pl-head/.test(x.className))[0];
 res.head = head.children.map((c) => (c.attrs.role || "-") + (c.attrs["aria-hidden"] ? ":hidden" : "")).join(" ");
 res.cols = [head.children.filter((c) => c.attrs.role === "columnheader").length, ...rowsOf(box).map((r) => r.children.filter((c) => c.attrs.role === "cell").length)];
@@ -363,6 +365,19 @@ res.noCI = [
 const wait = (st, ci) => { const wb = el0("div"); renderPipeline(wb, [{ rows: [{ slug: "w", branch: "w", state: "waiting", look, steps: st, ci }] }], () => {}); return find(wb, (x) => /\bpl-box\b/.test(x.className)).map((b) => cls(b).replace("pl-box b-", "") + ":" + b.textContent).join(" "); };
 res.wait = [wait(steps("done", "now")), wait(steps("done", "done", "now")), wait(steps("done", "done", "done", "now"), { pass: 1, fail: 0, pending: 1 }), wait(steps("done", "done", "done", "now"))];
 res.behind = statusNote({ state: "running", steps: [], merge: { conds: [{ name: "ci", ok: false, detail: "2 pending" }, { name: "merge_state", ok: false, detail: "merge_state is BEHIND" }] } });
+const past = (status, ...rows) => pastRequest({ status, rows: rows.map((r) => ({ state: r[0], merge: r[1] })) });
+res.past = [
+  "all landed:" + past("open", ["landed"], ["landed"]),
+  "open:" + past("open", ["done"]),
+  "done, merge to do:" + past("done", ["done", { ready: true }]),
+  "done, waiting:" + past("done", ["waiting"]),
+  "done, idle:" + past("done", ["idle"], ["landed"]),
+  "done, failed:" + past("dropped", ["failed"]),
+  "gone:" + past("gone", ["idle"]),
+];
+const lb = el0("div");
+renderPipeline(lb, [{ parent: "+tapi", rows: [{ slug: "z", branch: "z", state: "landed", look, origin: 5, steps: steps("done", "done", "done", "done", "done") }] }], () => {}, {}, [{ id: 5, text: "old", status: "done" }]);
+res.groups.push(...lb.children.filter((c) => /\bpl-group\b/.test(c.className)).map((g) => [g.className, rowsOf(g).length]));
 res.model = pipelineModel(groups).trees.map((t) => t.id + ":" + t.from + ":" + t.rows.length);
 console.log(JSON.stringify(res));
 `)
@@ -371,9 +386,10 @@ console.log(JSON.stringify(res));
 		Behind, Head                                                  string
 		ReqCut, ReqOne, ReqAll, NoCI, Wait                            []string
 		Cols                                                          []int
-		Order, Req, Tree, Boxes, Links, Badges, Status, Opened, Model []string
+		Order, Req, Boxes, Links, Badges, Status, Opened, Model []string
 		Label, Title, Compact                                         []string
-		Groups                                                        [][2]int
+		Groups                                                        [][2]any
+		Colspan, Past                                                 []string
 		More, All                                                     [2]any
 	}
 	if err := json.Unmarshal(out, &res); err != nil {
@@ -398,9 +414,14 @@ console.log(JSON.stringify(res));
 		"now pl-full:◉ r966,pl-full:+2,now pl-compact:◉ r966 +2", "", "", "now pl-full:◉ r970,pl-full:+r965,now pl-compact:◉ r970 +1", "", "now:◉ r971",
 	})
 	want("branch box title", res.Title, []string{"fix/f · pekoe · f", "fix/a · pekoe · a", "fix/b · pekoe · b", "fix/d · pekoe · d", "fix/c · pekoe · c", "hand/e · dotfiles · e"})
-	want("groups", res.Groups, [][2]int{{0, 1}, {1, 4}})
-	want("request column", res.Req, []string{"r962tapi · 1 branch", "r961tapi · 4 branches", "", "", "", "no request"})
-	want("tree", res.Tree, []string{"pl-flat", "pl-flat", "pl-corner", "pl-corner", "pl-corner", ""})
+	want("groups", res.Groups, [][2]any{{"pl-group", 1}, {"pl-group", 4}, {"pl-group", 1}, {"pl-group past", 1}})
+	want("request headings", res.Req, []string{
+		"pl-rid:r962 pl-rtext: pl-rmeta:tapi · 1 branch · done",
+		"pl-rid:r961 pl-rtext:CSV を直して <b>x</b>|CSV を直して <b>x</b> pl-rmeta:tapi · 4 branches · open",
+		"pl-rnone:no request pl-rtext: pl-rmeta:1 branch",
+	})
+	want("a heading is one cell over every column", res.Colspan, []string{"cell:7", "cell:7", "cell:7"})
+	want("faded: every branch landed, or closed with nothing left", res.Past, []string{"all landed:true", "open:false", "done, merge to do:false", "done, waiting:false", "done, idle:true", "done, failed:false", "gone:false"})
 	want("boxes", res.Boxes, []string{
 		"done:✓done fail:✗fail todo:○ todo:○ todo:○",
 		"done:✓done now:◉now todo:○ todo:○ todo:○",
@@ -424,11 +445,11 @@ console.log(JSON.stringify(res));
 	want("more", res.More, [2]any{8, "Show 3 more"})
 	want("toggled", res.Toggled, 1)
 	want("all", res.All, [2]any{11, "Show less"})
-	want("a request cut by Show more: shown of all", res.ReqCut, []string{"r1tapi · 8 of 11 branches"})
-	want("one row of a request shown", res.ReqOne, []string{"r2tapi · 7 branches", "r1tapi · 1 of 4 branches"})
-	want("expanded: all of them", res.ReqAll, []string{"r1tapi · 11 branches"})
-	want("header: the tree column hidden, not a columnheader", res.Head, "columnheader -:hidden columnheader columnheader columnheader columnheader columnheader columnheader columnheader")
-	want("header and body rows have as many columns", res.Cols, []int{8, 8, 8, 8, 8, 8, 8})
+	want("a request cut by Show more: shown of all", res.ReqCut, []string{"pl-rid:r1 pl-rtext: pl-rmeta:tapi · 8 of 11 branches"})
+	want("one row of a request shown", res.ReqOne, []string{"pl-rid:r2 pl-rtext: pl-rmeta:tapi · 7 branches", "pl-rid:r1 pl-rtext: pl-rmeta:tapi · 1 of 4 branches"})
+	want("expanded: all of them", res.ReqAll, []string{"pl-rid:r1 pl-rtext: pl-rmeta:tapi · 11 branches"})
+	want("header: one columnheader a column", res.Head, "columnheader columnheader columnheader columnheader columnheader columnheader columnheader")
+	want("header and body rows have as many columns", res.Cols, []int{7, 7, 7, 7, 7, 7, 7})
 	want("no CI checks is met (not required), never a wait", res.NoCI, []string{"merge waits on merge state blocked", "merge waits on review", "ready · your merge", "todo○n/a"})
 	want("waiting: the step it is on is you, never CI", res.Wait, []string{
 		"done:✓done you:◉you todo:○ todo:○ todo:○",
@@ -604,3 +625,65 @@ globalThis.document = {
 const el0 = (t) => new N(t);
 const find = (n, f) => [...(f(n) ? [n] : []), ...n.children.flatMap((c) => find(c, f))];
 `
+
+// The inbox card's merge gates (docs/gui-design.md「Inbox」): one bar a
+// condition (met ok, missing err) with the count in the label, over the
+// table of them one line each; the CI bar one segment a check (passed,
+// failed, pending in that order) with the counts beside it, and words
+// with no bar when there are no checks.
+func TestGUIMergeGates(t *testing.T) {
+	out := runWebModule(t, fakeDOM+`
+import { mergeGates, ciBar } from "gui/dash.js";
+const conds = [
+  { name: "pr", ok: true, detail: "PR #42 is OPEN" },
+  { name: "ci", ok: false, detail: "1 failed" },
+  { name: "review", ok: true, detail: "independent review passed at 3f2a9c1" },
+  { name: "merge_state", ok: true, detail: "CLEAN" },
+  { name: "conflicts", ok: true, detail: "no overlaps" },
+  { name: "settled", ok: false, detail: "agent is running" },
+];
+const mg = mergeGates({ conds });
+const bars = find(mg, (x) => x.className === "mg-bars")[0];
+const res = {
+  cap: mg.children[0].textContent,
+  bars: bars.children.map((b) => b.className + "|" + b.title),
+  label: bars.attrs["aria-label"] + "|" + bars.attrs.role,
+  table: find(mg, (x) => x.className === "gate").map((g) => g.children.map((c) => c.textContent).join(" ")),
+  none: String(mergeGates({ conds: [] })) + " " + String(mergeGates(null)),
+};
+const ci = ciBar({ pass: 3, fail: 1, pending: 2 });
+res.ci = [ci.children[0].textContent, ...find(ci, (x) => /\bci-seg\b/.test(x.className)).map((s) => s.className.replace("ci-seg ", ""))];
+res.ciLabel = find(ci, (x) => x.className === "ci-bars")[0].attrs["aria-label"];
+const no = ciBar({ pass: 0, fail: 0, pending: 0 });
+res.noCI = [no.textContent, find(no, (x) => x.className === "ci-bars").length];
+console.log(JSON.stringify(res));
+`)
+	var res struct {
+		Cap, Label, None, CILabel string
+		Bars, Table, CI           []string
+		NoCI                      []any
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		t.Fatalf("node: %v %s", err, out)
+	}
+	want := func(what string, got, want any) {
+		t.Helper()
+		if fmt.Sprint(got) != fmt.Sprint(want) {
+			t.Errorf("%s:\n got %v\nwant %v", what, got, want)
+		}
+	}
+	want("caption", res.Cap, "Merge gates · 4/6")
+	want("bars", res.Bars, []string{
+		"mg-bar ok|pr: PR #42 is OPEN", "mg-bar fail|ci: 1 failed", "mg-bar ok|review: independent review passed at 3f2a9c1",
+		"mg-bar ok|merge state: CLEAN", "mg-bar ok|conflicts: no overlaps", "mg-bar fail|settled: agent is running",
+	})
+	want("bars' label", res.Label, "Merge gates: 4 of 6 met, missing ci, settled|img")
+	want("table", res.Table, []string{
+		"✓ pr PR #42 is OPEN", "✗ ci 1 failed", "✓ review independent review passed at 3f2a9c1",
+		"✓ merge state CLEAN", "✓ conflicts no overlaps", "✗ settled agent is running",
+	})
+	want("no conditions, no gates", res.None, "null null")
+	want("ci", res.CI, []string{"CI3/6 passed · 1 failed · 2 pending", "pass", "pass", "pass", "fail", "pending", "pending"})
+	want("ci's label", res.CILabel, "CI: 3 passed, 1 failed, 2 pending")
+	want("no checks: words, no bar", res.NoCI, []any{"CIno checks", 0})
+}

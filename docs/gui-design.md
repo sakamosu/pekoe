@@ -230,21 +230,30 @@ GUI のフォーカスは 3 つの層に分け、それぞれ表し方を 1 つ�
 
 メインを 2 列に分け、左が本体、右が tapi パネル(chrome の地)。本体は上から 4 区画で、見出しは「太字の名前+件数+罫線」(絵文字なし)。
 
-1. **Inbox**: 人の対応待ち。先頭のカードが注意のフォーカス(グラデーションの枠)。見出し(primary、18px)・状態・出どころ、実行対象を bg に沈めた 1 行、レポートの要約とリンク、ゲート(1 件 1 行、「記号 名前 説明」)、ボタン(主ボタンは 1 つ)。事実が先・推奨を既定にしない・確認シートは今の受信箱の規則のまま(docs/web.md の「受信箱(Inbox)の扱い」)
+1. **Inbox**: 人の対応待ち。先頭のカードが注意のフォーカス(グラデーションの枠)。見出し(primary、18px)・状態・出どころ、実行対象を bg に沈めた 1 行、レポートの要約とリンク、pekoe が読んだ事実(下の「受信箱のカードの事実」)、ボタン(主ボタンは 1 つ)。事実が先・推奨を既定にしない・確認シートは今の受信箱の規則のまま(docs/web.md の「受信箱(Inbox)の扱い」)
 2. **Overview**: タイル 3 枚(いまの状態の件数、マージ数と日別の棒、今日のトークン)。枠は border、地は塗らない
-3. **Pipeline**: 依頼のツリーと工程の箱のレール(Request / Branch / impl / review / PR / CI / merge / Status)。下の「Pipeline」
+3. **Pipeline**: 依頼ごとの見出しの 1 行と、その下に束ねたブランチの行(Branch / impl / review / PR / CI / merge / Status)。下の「Pipeline」
 4. **Requests**: 開いている依頼を先頭に、閉じたものを直近 5 件。右上に台帳へのリンク
+
+#### 受信箱のカードの事実
+
+カードの中で、pekoe が読んだ事実をエージェントの文より上に置く。並びは上から マージの条件 → CI と残りの事実。マージの条件を持つカードはマージの項目に限らない(エージェントの問いでも、PR のあるセッションなら同じ部品で出す)。2026-11-25 の試作(`feat/web-artifacts-ui-prototype` の `prototypes/web-artifacts/`)から入れた。
+
+- **マージの条件**: `merge.check` の条件(pr・ci・review・merge state・conflicts・settled など。数は pekoed が返したまま)を、見出し `MERGE GATES · 5/6`(大文字のラベル。揃った数/全体)、条件 1 つに 1 本の棒、その下に 1 条件 1 行の表(「記号 名前 説明」。✓ ok / ✗ err、名前の `_` は空白に)の順で出す。棒は高さ 4px・角丸 2px・間 4px で幅を等分し(CSS grid。`style` は使わない)、揃った条件は ok、欠けている条件は err。棒だけで読ませない: 棒の並びは `role="img"` で `Merge gates: 4 of 6 met, missing ci, settled`、各棒の title は `<名前>: <説明>`、数は見出しにある
+- **CI**: PR の状態を読んだら、チェック 1 つに 1 区切りの棒(高さ 6px・間 1px・角丸 2px)。通った順・落ちた順・待っている順に並べ、通った ok・落ちた err・待っている border(ゲージの残りと同じ)。右に数(`3/6 passed · 1 failed · 2 pending`。通った数は ok、落ちた数は err)。チェックが 1 つも無ければ棒は出さず `no checks`。PR の行には CI の数を重ねて書かない(状態・承認・merge state・未解決の数だけ)
+- **残りの事実**は今までどおり 1 件 1 行(diff・PR・fork・test・forecast・report・git・link)を 2 列の格子に
 
 #### Pipeline
 
-左から右へ、Request の箱 → ツリーの線 → Branch の箱 → 5 工程の箱のレール → Status。表に `✓ done` と `○` を並べるだけでは流れに見えず、同じ依頼から出たブランチのまとまりも見えなかったので、ツリーと箱にした(2026-11-22 のハンドオフ)。
+依頼ごとに見出しの 1 行を置き、その依頼から出たブランチの行を左の罫線で束ねて下に並べる。行は左から Branch の箱 → 5 工程の箱のレール → Status。2026-11-22 のハンドオフでは Request の箱とツリーの線で組んでいたが、2026-11-25 の試作(`feat/web-artifacts-ui-prototype` の `prototypes/web-artifacts/`)を見比べて、依頼の文が読めて列の幅も食わない見出しの 1 行に替えた。
 
-- **ツリーは「ワークツリーを作った依頼」で組む。** ブランチは自分を作った依頼(`origin`。`pekoe new --request`)の下にだけぶら下がり、あとから `pekoe ledger link` で入った依頼(`later`)は線ではなく Branch の箱の札で見せる。r2 が入ってもブランチは r1 のグループに居続け、行を組み直さない。作った依頼が無いブランチ(手で作った、依頼なしの `pekoe new`)は Request の箱もツリーの線も付けず、Request の列に dim の `no request` と書いて依頼のグループの後ろに並べる。自分のブランチを持たない依頼は Pipeline に出さない(札だけ。依頼そのものは Requests で見る)
-- **行と列**: グループの中はブランチ 1 本に 1 行、高さ 60px 固定。列は Request 160px(`Show N more` で切られたときの `tapi · 12 of 15 branches` が省略されずに入る幅)・線 28px・Branch 288px・工程が「線 12px + 箱 84px」× 5・残りが Status。見出しは dim の 12px、工程の見出しは箱の真上に中央ぞろえ。ツリーの線の列は見出しも本体も `aria-hidden`(columnheader にしない)で、支援技術から見た列の数を見出しと本体でそろえる。グループの並びは、動いている行があるものを先に、新しい依頼が上。グループの中は状態の順(waiting → running → done・failed → その他 → landed。`/api/overview` と同じ。同じ状態の中は `/api/overview` の順)
-- **Request の箱**: 高さ 44px・surface・border・角丸 8px。依頼の ID(太字)と dim の 11px で `tapi · 4 branches`(依頼元とブランチの本数。1 本なら `1 branch`)。数は `Show N more` で隠れた行も含めた全体で、グループが境目で途中まで切られたときだけ `tapi · 2 of 4 branches`(見えている本数 of 全体。1 本だけ見えるなら `1 of 4 branches`)。グループの 1 行目と中心をそろえる
-- **ツリーの線**: 1.5px の dim。1 行目へは水平にまっすぐ、2 行目以降は Request と Branch の間の中ほど(左から 14px)の幹から角丸 12px で曲がって入る。**幹は依頼ごとに 1 本の要素で引き**(行ごとに継ぎ足すと角丸の分の隙間と行の境目の段差が出る)、各行が描くのは曲がり角だけ。幹は最後の枝の曲がり始めで終わる。CSP で `style` 属性を使えないので、位置は行の高さ 60px を前提に CSS で決めてある(`.pl-trunk`・`.pl-corner`・`.pl-flat`)
-- **Branch の箱**: 高さ 44px・surface・border・角丸 8px。1 行で `<リポジトリ名> · <ブランチ名>` と札(縮めない)。リポジトリ名は dim、区切りの `·` とブランチ名は text(リポジトリが違うと `main` が何本も並び、ブランチ名だけではどれか分からなかったので。区切りは Inbox の実行対象の行 `pekoe · feat-local-gui-stage0` と同じ `·`。ブランチ名にも `-` が入るので `-` にしない)。あふれたらブランチ名の末尾を省略し、リポジトリ名は省略しない(極端に長い名前で箱が壊れない上限として 12em まで、かつブランチ名に 4em を残す。それを超える名前だけ末尾を省略)。札の分を除いた幅が 4em を残せないほど狭いときは、リポジトリ名もその幅の 45% までに縮めて、両方の頭を残す。箱が 220px より狭いとき(コンテナクエリ。箱は 160px まで縮む)は、札が 2 つ以上なら先頭の札と残りの件数を 1 つの札にまとめ(`◉ r970 +1`。枠と色は先頭の札のまま、左右の余白 5px)、札の付いた行は名前の間を 3px に詰める。160px で札が 2 つ付いても `pe… · fe…` と両方の頭が読める。札を箱の外へ押し出さない。リポジトリが分からない行はブランチ名だけ。title は `<ブランチ名> · <リポジトリ名> · <slug>`(slug がブランチ名と同じなら省く)。押すとセッションのタブを開く。札は高さ 20px・角丸 10px・11px で、いまそのブランチが取り組んでいる依頼(open のもの)は `◉ r2`(◉ と枠が ok、文字は text)、済んだ依頼は `+r2`(枠 border、文字 dim)
-- **工程の箱**: 幅 84px・高さ 28px・surface・角丸 6px・12px、「記号 語」を中央に。済み `✓ done`(PR は `✓ #279`。✓ は secondary、枠は border)、進行中 `◉ now`(CI は `◉ 2/4` = 通った数/全体。◉ と枠が ok)、未着手 `○`(枠は border の破線)、失敗 `✗ fail`(✗ と枠が err)、人の番 `◉ you`(◉・語・枠が warn)。語は人の番だけ warn で、ほかは dim
+- **まとまりは「ワークツリーを作った依頼」で組む。** ブランチは自分を作った依頼(`origin`。`pekoe new --request`)の下にだけ並び、あとから `pekoe ledger link` で入った依頼(`later`)は Branch の箱の札で見せる。r2 が入ってもブランチは r1 のまとまりに居続け、行を組み直さない。作った依頼が無いブランチ(手で作った、依頼なしの `pekoe new`)は、依頼のまとまりの後ろに 1 つのまとまり(見出しは dim の `no request`)にして並べる。自分のブランチを持たない依頼は Pipeline に出さない(札だけ。依頼そのものは Requests で見る)
+- **依頼の見出し**: 1 行。左に依頼の ID(太字・text)、続けて依頼の文(dim。1 行で末尾を省略し、title に全文)、右に dim の 11px で `tapi · 2 branches · open`(依頼元・ブランチの本数・依頼の状態。1 本なら `1 branch`。状態は open だけ text、閉じたもの(done・dropped・chat・台帳から消えた gone)は dim)。本数は `Show N more` で隠れた行も含めた全体で、まとまりが境目で途中まで切られたときだけ `2 of 4 branches`。依頼の文と状態は `/api/overview` の `requests`(各行の `origin` の台帳の記録。docs/web.md の「Overview」)から取る。まとまりの `request` はセッションが今取り組んでいる依頼で、後から入った依頼に替わっていることがあるので使わない(`requests` が無い古い pekoed のときだけ代わりに使う)。見出しは表の 1 行(`role="row"`)で、セルは 1 つ(`aria-colspan` で全列)
+- **束ね方**: 依頼のまとまりの上に border の罫線(区切り)、見出しの下にブランチの行。行の左に border の 1px の縦の罫線を引き、行はそこから 12px 内側。列の見出し(Branch・工程・Status)は罫線の分(13px)だけ右へずらして行にそろえる
+- **行と列**: ブランチ 1 本に 1 行、高さ 36px、行の間 6px。列は Branch(160px〜288px)・工程が「線 12px + 箱 72px」× 5・残りが Status(150px 以上)。見出しは dim の 12px、工程の見出しは箱の真上に中央ぞろえ。まとまりの並びは、動いている行があるものを先に、新しい依頼が上。まとまりの中は状態の順(waiting → running → done・failed → その他 → landed。`/api/overview` と同じ。同じ状態の中は `/api/overview` の順)
+- **閉じた依頼は薄く出す**: ブランチがすべて landed の依頼と、閉じた(done・dropped・chat)依頼でまだ誰かの番のもの(動いているエージェント・failed・PR のマージの判断)が残っていない依頼は、見出しの ID・行の記号・語・枠をすべて dim / border に落とす(「過ぎたものは行ごと dim」)。閉じた依頼でも、マージ待ちや動いているブランチがあれば薄くしない(人の番を隠さない)
+- **Branch の箱**: 高さ 36px・surface・border・角丸 8px。1 行で `<リポジトリ名> · <ブランチ名>` と札(縮めない)。リポジトリ名は dim、区切りの `·` とブランチ名は text(リポジトリが違うと `main` が何本も並び、ブランチ名だけではどれか分からなかったので。区切りは Inbox の実行対象の行 `pekoe · feat-local-gui-stage0` と同じ `·`。ブランチ名にも `-` が入るので `-` にしない)。あふれたらブランチ名の末尾を省略し、リポジトリ名は省略しない(極端に長い名前で箱が壊れない上限として 12em まで、かつブランチ名に 4em を残す。それを超える名前だけ末尾を省略)。札の分を除いた幅が 4em を残せないほど狭いときは、リポジトリ名もその幅の 45% までに縮めて、両方の頭を残す。箱が 220px より狭いとき(コンテナクエリ。箱は 160px まで縮む)は、札が 2 つ以上なら先頭の札と残りの件数を 1 つの札にまとめ(`◉ r970 +1`。枠と色は先頭の札のまま、左右の余白 5px)、札の付いた行は名前の間を 3px に詰める。160px で札が 2 つ付いても `pe… · fe…` と両方の頭が読める。札を箱の外へ押し出さない。リポジトリが分からない行はブランチ名だけ。title は `<ブランチ名> · <リポジトリ名> · <slug>`(slug がブランチ名と同じなら省く)。押すとセッションのタブを開く。札は高さ 20px・角丸 10px・11px で、いまそのブランチが取り組んでいる依頼(open のもの)は `◉ r2`(◉ と枠が ok、文字は text)、済んだ依頼は `+r2`(枠 border、文字 dim)
+- **工程の箱**: 幅 72px・高さ 28px・surface・角丸 6px・12px、「記号 語」を中央に。済み `✓ done`(PR は `✓ #279`。✓ は secondary、枠は border)、進行中 `◉ now`(CI は `◉ 2/4` = 通った数/全体。◉ と枠が ok)、未着手 `○`(枠は border の破線)、失敗 `✗ fail`(✗ と枠が err)、人の番 `◉ you`(◉・語・枠が warn)。語は人の番だけ warn で、ほかは dim
 - **impl の進行中は「エージェントが動いている」か「差分がある」で決める**: PR・land・独立レビューのどれもまだのブランチは、エージェントが動いている(running・waiting・creating)間は `◉ now`。止まっている(idle・done)ときは worktree を見て、未コミットの変更(`git status --porcelain`)も基点より先のコミット(`rev-list --count HEAD --not origin/<base>`、origin に無ければローカルの `<base>`)も無ければ未着手 `○`(何もしていない main のチェックアウトはこれ)、どちらかがあれば `✓ done`(手が止まった実装。review は未着手のまま)。queued・failed・blocked は今までどおり。git は止まったセッションごとに数本(`status`・`rev-parse`・`rev-list` で 4〜5 本)走るので、答えをセッションの状態・diffstat が変わらない間 15 秒まで使い回す(`implStopped`)。git が答えられなければ `◉ now` のまま
 - **作業に戻ったブランチ(reopened)**: 工程はブランチの「今」を出す。レビュー・PR まで進んだブランチ(PR がある・land した・独立レビューを頼んだ)に、最後の報告(`pekoe report`、種類を問わない)より後から指示が入る(UserPromptSubmit。`pekoe send`・受信箱の答え・窓に直接打った文。pekoed が `prompt_at` に残し、そのとき impl を過ぎていたかを `prompt_past` に残す。始めの指示は数えない)と、こう動く(`webinbox.go` の `reopenOf`)
   - エージェントが動いている間(running・waiting・creating で、指示の後にまだ報告していない): impl が `◉ now`(waiting なら `◉ you`)に戻り、右の review・PR・CI・merge は未着手 `○`。PR の箱は番号を残して `○ #289`。CI の古い green は済みに見せない
@@ -261,13 +270,13 @@ GUI のフォーカスは 3 つの層に分け、それぞれ表し方を 1 つ�
 
 1. **済んだ工程の ✓ の色は secondary。** 工程が「済んだ」は完了の色。ok の ✓ は合否の「合」(PR の CI 全成功・承認済みのハンク)だけに使う。CI の箱の done も secondary
 2. **マージ待ち(人の番)は warn。** 確認待ちの ◉ warn に合わせる(語の `you` も warn)。エージェントが waiting のときは進行中の箱(impl に限らない。review や PR でも)も同じ `◉ you`。ただし CI の箱は GitHub 側で動いていて人の番ではないので `◉ now`(`◉ 2/4`)のまま。受信箱の `✓ merge ready` と TUI の `ready to merge` は「根拠が揃った」(完了)を言うので secondary のまま
-3. **Status の 2 行目の文言**: `merge waits on <理由> · <理由>`。理由は merge.check の揃っていない条件を短い語にしたもの: `CI`(実行中)・`CI 1 failed`・`PR status`(まだ読んでいない)・`review`・`re-review`(PR の HEAD が変わった)・`merge state behind` など(CI が済んでいないときの UNSTABLE・BLOCKED は CI と同じことを言うので出さない)・`conflicts`・`earlier sessions`(after)・`agent running` / `agent waiting`(settled)・`pekoe land`。詳しい理由は工程の箱の title(ホバー)と受信箱のゲートで読む
+3. **Status の 2 行目の文言**: `merge waits on <理由> · <理由>`。理由は merge.check の揃っていない条件を短い語にしたもの: `CI`(実行中)・`CI 1 failed`・`PR status`(まだ読んでいない)・`review`・`re-review`(PR の HEAD が変わった)・`merge state behind` など(CI が済んでいないときの UNSTABLE・BLOCKED は CI と同じことを言うので出さない)・`conflicts`・`earlier sessions`(after)・`agent running` / `agent waiting`(settled)・`pekoe land`。詳しい理由は工程の箱の title(ホバー)と受信箱のマージの条件で読む
 4. **CI の全体の数**は PR のチェックの `pass + fail + pending`(pekoed が GitHub から読んだもの)。まだ読んでいなければ `now`
 5. **失敗の行**: 失敗した箱だけ err。右の線と箱は未着手と同じ(破線・○)
 6. **進行中の語は `now` のまま。** 状態語の `run` はセッションの状態(Status)の語で、工程の箱は「いまここ」を言う別の語にしておく(同じ行に `◉ run` と `◉ run` が並ぶと、どちらの話か分からない)
-7. **狭い幅**: Branch の箱を 160px まで縮め、それでも入らなければ区画の中で横にスクロールする(最小 978px)
+7. **狭い幅**: Branch の箱を 160px まで縮め、それでも入らなければ区画の中で横にスクロールする(最小 743px)
 8. **札が多いとき**: 2 つまでは全部、3 つ以上は先頭の 1 つ(取り組んでいる依頼、無ければいちばん新しい依頼)と `+K`(残りの数)
-9. **依頼なしの行**は依頼のグループの後ろ
+9. **依頼なしの行**は依頼のまとまりの後ろに、`no request` の見出しの 1 つのまとまりで
 10. **作った依頼の記録**: pekoed はこれまで、`ledger.link` でセッションの `request` を上書きしていた。セッションに `origin`(作った依頼)と `later`(後から結んだ依頼)を足し、`/api/overview` の Flow に `parent`・`origin`・`later`・`ci` を足した(docs/web.md の「Overview」)。これを入れる前に作ったセッションは、`request` を作った依頼とみなす
 
 tapi パネル: ヘッダ(`tapi`・状態・`T Reset`)、送受信の一覧(古い順。差出人 → 宛先・種別・経過は吹き出しの外に dim で、本文は吹き出しの中に)、下端に送信欄。自分の発言の吹き出しだけ bubble_me、ほかは surface。

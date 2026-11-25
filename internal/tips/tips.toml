@@ -140,10 +140,17 @@ docs = ["docs/gui.md"]
 
 [[tip]]
 id = "gui-pipeline-tree"
-short = "pekoe gui の Pipeline は依頼ごとのツリーで見せる"
-detail = "ブランチは作った依頼の箱の下にぶら下がり、あとから入った依頼は札(◉ r2 が取り組み中、+r2 が済み)。工程の箱は ✓ 済み・◉ 緑が進行中・◉ 黄が人の番・✗ が失敗。待ちの理由は Status の 2 行目に出る。"
+short = "pekoe gui の Pipeline は依頼ごとにブランチを束ねて見せる"
+detail = "依頼の見出し(r14 と依頼の文)の下に、その依頼が作ったブランチの行が並ぶ。片付いた依頼は薄く出る。あとから入った依頼は札(◉ r2 が取り組み中、+r2 が済み)。待ちの理由は Status の 2 行目に出る。"
 keys = ["pekoe gui"]
 docs = ["docs/gui-design.md#pipeline"]
+
+[[tip]]
+id = "gui-merge-gates"
+short = "pekoe gui の受信箱はマージの条件を棒で見せる"
+detail = "PR のあるカードには MERGE GATES · 5/6 と条件 1 つに 1 本の棒(緑が揃った、赤が欠けている)、その下に条件ごとの理由が出る。CI はチェック 1 つに 1 区切りの棒で、通った・落ちた・待っている数を添える。"
+keys = ["pekoe gui"]
+docs = ["docs/gui-design.md#受信箱のカードの事実"]
 
 [[tip]]
 id = "local-gui-theme"

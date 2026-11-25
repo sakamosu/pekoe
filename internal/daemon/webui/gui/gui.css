@@ -325,10 +325,27 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .ic-state { font-size: 12px; color: var(--dim); }
 .ic-from { margin-left: auto; font-size: 12px; color: var(--dim); }
 .ic-line { font-size: 12px; color: var(--dim); }
+/* what pekoe read: the merge gates (one bar a condition over the table of
+   them), then the CI bar and the other facts */
+.facts { display: flex; flex-direction: column; gap: 14px; }
+.fact-cap { margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.mg-bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-bottom: 10px; }
+.mg-bar { height: 4px; border-radius: 2px; background: var(--err); }
+.mg-bar.ok { background: var(--ok); }
+.gates.mg-table { grid-template-columns: auto auto minmax(0, 1fr); gap: 4px 10px; }
+.gates.mg-table .gate { display: contents; }
 .gates { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 20px; font-size: 12px; }
 .gate { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .g-name { flex: none; font-weight: 500; }
 .g-detail { min-width: 0; color: var(--dim); overflow-wrap: anywhere; }
+/* CI: one segment a check, passed ok · failed err · pending border */
+.ci { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ci-top { display: flex; justify-content: space-between; gap: 8px; }
+.ci-n { color: var(--dim); white-space: nowrap; }
+.ci-bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 6px; border-radius: 2px; overflow: hidden; }
+.ci-seg { background: var(--border); }
+.ci-seg.pass { background: var(--ok); }
+.ci-seg.fail { background: var(--err); }
 .says { display: flex; flex-direction: column; gap: 4px; }
 .says-cap { font-size: 11px; color: var(--dim); }
 .says-q { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -393,34 +410,30 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .kv-k { color: var(--dim); white-space: nowrap; }
 .kv-v.zero { color: var(--dim); }
 
-/* Pipeline: Request box → tree → Branch box → five step boxes → Status.
-   Every row is 60px; the tree's pieces are placed for that height (the
-   trunk from the first row's middle to the last row's turn). Wider than
+/* Pipeline: each request a heading line (rN, its words, "tapi · 2
+   branches · open" on the right) over its branches, bound by one rule on
+   their left; a branch: Branch box → five step boxes → Status. Wider than
    the column: the Branch box shrinks to 160px, then the box scrolls. */
 .pipe-box { overflow-x: auto; }
 .pipe-box > .empty { padding: 12px 0; }
-.pipeline { --pl-cols: 160px 28px minmax(160px, 288px) repeat(5, 96px) minmax(150px, 1fr); min-width: 978px; font-size: 12px; }
-.pl-group { position: relative; }
-.pl-row { display: grid; grid-template-columns: var(--pl-cols); height: 60px; align-items: center; }
-.pl-head { height: auto; padding-bottom: 4px; color: var(--dim); }
+.pipeline { --pl-cols: minmax(160px, 288px) repeat(5, 84px) minmax(150px, 1fr); min-width: 743px; font-size: 12px; }
+.pl-group { padding: 10px 0; border-top: 1px solid var(--border); }
+.pl-rhead { margin-bottom: 8px; }
+.pl-rcell { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pl-rid { flex: none; font-weight: 600; color: var(--text); }
+.pl-rnone { flex: none; color: var(--dim); }
+.pl-rtext { flex: 1; min-width: 0; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-rmeta { flex: none; font-size: 11px; color: var(--dim); white-space: nowrap; }
+.pl-rst.open { color: var(--text); }
+.pl-rows { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 1px solid var(--border); }
+.pl-row { display: grid; grid-template-columns: var(--pl-cols); height: 36px; align-items: center; }
+.pl-head { height: auto; padding: 0 0 6px 13px; color: var(--dim); }
 .pl-head .pl-step { display: block; padding-left: 12px; text-align: center; }
 .pl-head .pl-status { padding-left: 16px; }
-.pl-req, .pl-bcell { min-width: 0; }
-.pl-rbox, .pl-branch {
-  box-sizing: border-box; height: 44px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+.pl-bcell { min-width: 0; }
+.pl-branch {
+  box-sizing: border-box; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
 }
-.pl-rbox { display: flex; flex-direction: column; justify-content: center; padding: 0 12px; min-width: 0; }
-.pl-rid { font-weight: 600; color: var(--text); }
-.pl-rsub, .pl-none { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pl-none { padding-left: 12px; }
-.pl-tree { position: relative; align-self: stretch; }
-.pl-flat { position: absolute; left: 0; right: 0; top: 29.25px; height: 1.5px; background: var(--dim); }
-.pl-corner {
-  position: absolute; left: 14px; right: 0; top: 18.75px; height: 12px; box-sizing: border-box;
-  border-left: 1.5px solid var(--dim); border-bottom: 1.5px solid var(--dim); border-bottom-left-radius: 12px;
-}
-/* one trunk per request: left = the Request column + half the tree's */
-.pl-trunk { position: absolute; left: 174px; top: 30px; bottom: 41.25px; border-left: 1.5px solid var(--dim); }
 .pl-branch {
   display: flex; align-items: center; gap: 6px; width: 100%; padding: 0 12px; color: var(--text); font: inherit; text-align: left;
 }
@@ -455,7 +468,7 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .pl-link.todo { border-top: 1.5px dashed var(--border); }
 .pl-box {
   flex: none; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 4px;
-  width: 84px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: nowrap;
+  width: 72px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); white-space: nowrap;
 }
 .pl-word { color: var(--dim); }
 /* the PR's number: a link to the PR, in the link's color */
@@ -476,9 +489,12 @@ body.pane-resizing { cursor: col-resize; user-select: none; }
 .st-note { margin-top: 2px; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pl-more { margin-top: 8px; padding: 4px 0; border: 0; background: none; color: var(--secondary); font: inherit; font-size: 12px; }
 .pl-more:hover { color: var(--text); }
-/* past rows (merged): everything dim, the boxes' frames border */
-.pl-row.past .pl-branch, .pl-row.past .pl-sym, .pl-row.past .pl-word, .pl-row.past .st-top .sym { color: var(--dim); }
-.pl-row.past .pl-box { border-color: var(--border); }
+/* past rows (merged) and past requests (every branch merged, or closed
+   with nothing left to do): everything dim, the boxes' frames border */
+.pl-row.past .pl-branch, .pl-row.past .pl-sym, .pl-row.past .pl-word, .pl-row.past .st-top .sym,
+.pl-group.past .pl-rid, .pl-group.past .pl-branch, .pl-group.past .pl-sym, .pl-group.past .pl-word, .pl-group.past .st-top,
+.pl-group.past .st-top .sym, .pl-group.past .pl-badge, .pl-group.past .pl-bsym { color: var(--dim); }
+.pl-row.past .pl-box, .pl-group.past .pl-box, .pl-group.past .pl-badge { border-color: var(--border); }
 
 /* tapi on the right */
 .tapi-panel {
