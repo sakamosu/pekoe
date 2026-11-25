@@ -124,6 +124,53 @@ func TestVoiceOnOffFile(t *testing.T) {
 	}
 }
 
+// A link whose file is not there yet (dotfiles linked before the file is
+// made) stays a link: on writes the file where the link points, through
+// relative links and links to links too. A loop of links is refused.
+func TestVoiceOnOffDanglingLink(t *testing.T) {
+	dir := t.TempDir()
+	for name, mk := range map[string]func(link, real string){
+		"absolute": func(link, real string) { os.Symlink(real, link) },
+		"relative": func(link, real string) {
+			rel, _ := filepath.Rel(filepath.Dir(link), real)
+			os.Symlink(rel, link)
+		},
+		"link to a link": func(link, real string) {
+			mid := link + ".mid"
+			os.Symlink(real, mid)
+			os.Symlink(mid, link)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := filepath.Join(dir, strings.ReplaceAll(name, " ", "-"))
+			os.MkdirAll(filepath.Join(d, "conf"), 0o700)
+			real := filepath.Join(d, "dotfiles", "pekoe", "config.toml")
+			link := filepath.Join(d, "conf", "config.toml")
+			mk(link, real)
+			var out bytes.Buffer
+			if err := voiceOnOff(link, true, "", &out); err != nil {
+				t.Fatal(err)
+			}
+			if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("the link was replaced by a file (%v)", err)
+			}
+			if b, err := os.ReadFile(real); err != nil || string(b) != "[voice]\nenable = true\n" {
+				t.Fatalf("target %q %v", b, err)
+			}
+		})
+	}
+
+	loop := filepath.Join(dir, "loop.toml")
+	os.Symlink(loop, loop)
+	var out bytes.Buffer
+	if err := voiceOnOff(loop, true, "", &out); err == nil || !strings.Contains(err.Error(), "too many links") {
+		t.Fatalf("loop: %v", err)
+	}
+	if fi, err := os.Lstat(loop); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the loop link was replaced (%v)", err)
+	}
+}
+
 // What does not read after the change is not kept: a config.toml that
 // does not read now, a [voice] the line edit cannot reach (an inline
 // table), and a file that does not read once written are left (or put

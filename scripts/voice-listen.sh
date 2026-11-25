@@ -5,7 +5,7 @@
 #   scripts/voice-listen.sh            # waits for Enter before each step
 #   SILENT=1 scripts/voice-listen.sh   # no sound: a fake backend returns silent WAVs
 #   AUTO=1 SILENT=1 scripts/voice-listen.sh   # no Enter, no second terminal (for CI-ish runs)
-#   LOG_OUT=/path/voice.log scripts/voice-listen.sh   # keep a copy of voice.log
+#   LOG_OUT=/path/voice.log scripts/voice-listen.sh   # keep a copy of voice.log (a relative path is from where you run it)
 #
 # Three sessions (feat/a, feat/b, feat/c) run scripts/screenshot/fake-agent.sh,
 # so no real agent runs. Their states are moved by hand with `pekoe event`
@@ -24,6 +24,14 @@ S=$(cd "$(dirname "$0")" && pwd)
 if [ -z "${VOICE_LISTEN_INNER:-}" ]; then
 	# an agent's window: its session must not leak into the sandbox's pekoe
 	unset PEKOE_SESSION
+	# LOG_OUT is read from here, not from the sandbox's repo the steps cd
+	# into (which goes away at the end): make it absolute, and say now when
+	# its directory is missing rather than after all the steps
+	if [ -n "${LOG_OUT:-}" ]; then
+		case "$LOG_OUT" in /*) ;; *) LOG_OUT=$PWD/$LOG_OUT ;; esac
+		[ -d "$(dirname "$LOG_OUT")" ] || { echo "voice-listen: LOG_OUT=$LOG_OUT: no such directory" >&2; exit 1; }
+		export LOG_OUT
+	fi
 	VOICE_LISTEN_INNER=1 exec "$S/sandbox.sh" bash "$S/voice-listen.sh" "$@"
 fi
 
