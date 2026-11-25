@@ -14,9 +14,10 @@ A terminal tool for running several coding agents in parallel, one per git workt
 
 - One task = one worktree = one agent. `pekoe new` creates the worktree, copies your config files, runs setup and assigns a port, then starts claude (or codex)
 - The TUI lists your sessions and jumps to the next one that is waiting, asking for permission or ready for review. tapi, the mascot on the bottom line, shows the overall state
+- Talk to tapi, the orchestrator: it starts sessions for your requests, waits for their reports, and brings you only what needs your decision (the inbox)
 - Review changes hunk by hunk and send all your comments back to the agent as one message (in Neovim or the built-in review)
 - Pick an element on a page with the Chrome extension and send it with an instruction. Screenshots of your dev server can be shown inside the TUI
-- Answer permission prompts or send a quick message from an iPhone over Tailscale (optional build)
+- Answer permission prompts or send messages from an iPhone over Tailscale (optional build), or from this Mac's browser with the local GUI
 
 <p align="center"><img src="docs/images/screenshot.png" alt="pekoe TUI: sessions, worktrees and changes on the left, the agent on the right" width="900"></p>
 
@@ -25,17 +26,12 @@ A terminal tool for running several coding agents in parallel, one per git workt
 
 ## Status and requirements
 
-- **Used by the author in daily development.** Configuration, API and commands may change between versions (changes are noted in the release notes)
-- **MIT licensed** (see [License](#license)). Downloading releases (with curl) and `pekoe update` need no GitHub account (see [From a release](#from-a-release-prebuilt-binaries))
-- **Developed and tested on macOS** (in Ghostty). Linux builds are published too, but parts of them are untested. Things that assume macOS:
-  - APFS clones (`cp -c`) for `[worktree] clone`. On other file systems it falls back to a plain copy
-  - `make install-launchd`, and `pekoe daemon restart` for a pekoed run by launchd (`launchctl`)
-  - The default path of headless Chrome for the in-TUI preview, `/Applications/Google Chrome.app` (override with `PEKOE_CHROME`)
-  - `b` in the TUI (open the port in Chrome) uses `open -a "Google Chrome"`
-  - `pekoe adopt` looks up a process's cwd with `lsof`
-- **Claude Code is the main target** (state comes from its hooks). codex, opencode and others work through `[agents.*]`, but their state is only inferred from the screen
-- **Requirements:** tmux 3.3+, git, and the agent you run: Claude Code (or codex, opencode …). On Linux, bubblewrap (`bwrap`) for pekoe's own sandbox and, for Claude Code's sandbox, bubblewrap and socat (see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). To build from source, Go 1.27.4+ (`make` uses only your local Go, via `GOTOOLCHAIN=local`). Optional: gh (issues, land, PR view, PR review), Neovim 0.10+ (review surface), Chrome (extension, in-TUI preview), Tailscale (Web UI)
-- **The terminal layer is tmux.** A custom mux on libghostty-vt (phase 5 in [docs/design.md](docs/design.md)) has not been started and may never be. Kitty graphics passthrough can't work with the tmux engine, which redraws the right pane as text (the in-TUI preview images are drawn by pekoe itself with Kitty graphics)
+- **The author uses it for daily development.** Settings, the API and commands can change between versions (changes go in the release notes)
+- **MIT licensed** ([License](#license)). Downloading a release (with curl) and `pekoe update` need no GitHub account
+- **Developed and tested on macOS** (in Ghostty). Linux builds are published, but parts are untested there. macOS is assumed by the APFS clone of `[worktree] clone` (a plain copy elsewhere), `make install-launchd` and `pekoe daemon restart` of a launchd pekoed, the default headless Chrome path of the in-TUI preview (`PEKOE_CHROME` changes it), `open -a "Google Chrome"` of `b`, and `lsof` in `pekoe adopt`
+- **Claude Code is the main target** (its state comes from hooks). codex, opencode and others work through `[agents.*]`, but their state is only guessed from the screen
+- **Requirements:** tmux 3.3+, git, and the agent you run. On Linux, pekoe's own sandbox needs bubblewrap (`bwrap`), and Claude Code's sandbox needs bubblewrap and socat. Installing from source needs Go 1.27.4+ (`make` uses only your local Go, `GOTOOLCHAIN=local`). Optional: gh (issues, land, PR view, PR review), Neovim 0.10+ (review), Chrome (extension, in-TUI preview), Tailscale (Web UI)
+- **The terminal layer is tmux.** A mux of its own on libghostty-vt (phase 5 in [docs/design.md](docs/design.md)) hasn't been started and may never be. The right pane is redrawn as text, so Kitty graphics can't pass through (pekoe draws the in-TUI preview images itself)
 
 ## Architecture
 
@@ -47,23 +43,27 @@ flowchart LR
     nvim["Neovim"]
     mcp["MCP (pekoe mcp)"]
     ext["Chrome extension"]
+    gui["Local GUI (pekoe gui)"]
     web["Web UI (iPhone etc.)"]
   end
   sock["unix socket<br/>JSON Lines"]
   http["HTTP 127.0.0.1<br/>+ token"]
-  tsnet["HTTPS on tailnet<br/>tsnet, -tags web builds only"]
+  guihttp["HTTP 127.0.0.1<br/>+ sign-in"]
+  tsnet["HTTPS (inside the tailnet)<br/>tsnet, -tags web builds only"]
   tui --> sock
   cli --> sock
   nvim --> sock
   mcp --> sock
   ext --> http
+  gui --> guihttp
   web --> tsnet
   sock --> pekoed
   http --> pekoed
+  guihttp --> pekoed
   tsnet --> pekoed
   pekoed["pekoed (daemon)"] --> engine["engine"]
-  engine --> tmux["tmux -L pekoe windows<br/>agent / review / dev / run, +tapi"]
-  tmux --> agent["claude / codex / ..."]
+  engine --> tmux["windows in tmux -L pekoe<br/>agent / review / dev / run, +tapi"]
+  tmux --> agent["claude / codex etc."]
   agent -- "hooks" --> event["pekoe event"]
   event -- "unix socket" --> pekoed
   pekoed --> db[("state.db")]
@@ -72,27 +72,34 @@ flowchart LR
   pekoed --> chrome["headless Chrome<br/>(preview)"]
 ```
 
-All the smarts live in pekoed; the TUI, CLI, Neovim, Chrome extension, MCP and Web UI are display layers over the same API. Stopping pekoed doesn't stop the agents: they keep running inside tmux, and the next pekoed picks them up again.
+All the logic lives in pekoed. The TUI, CLI, Neovim, the Chrome extension, MCP, the local GUI and the Web UI are display layers over the same API. Agents keep running in tmux when pekoed stops, and the next pekoed picks them up again.
 
 ## Documentation
 
-Design docs are in Japanese.
+Using pekoe, in detail:
+
+| | |
+| --- | --- |
+| [docs/install.en.md](docs/install.en.md) | Install and update in detail (Homebrew, checking and signing of releases, what `pekoe update` does, installing the skills) |
+| [docs/commands.en.md](docs/commands.en.md) | Every command in detail, with its limits |
+| [docs/tui.en.md](docs/tui.en.md) | The TUI in detail: keys, tapi chat and its dashboard, the tutorial, tips, review |
+| [docs/agent-permissions.en.md](docs/agent-permissions.en.md) | Letting agents use pekoe (the sandbox settings, combining them with yours, allow lists, the hooks sandbox, pekoed's git) |
+| [docs/config.en.md](docs/config.en.md) | Every setting (an annotated `config.toml`, the per-repository file, `dev` / `dev_stop`, pinning the model) |
+| [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
+
+Design (in Japanese):
 
 | | |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Design (state model, worktree flow, terminal layer, review, CLI and keys) |
 | [docs/api.md](docs/api.md) | pekoed's API (unix socket, HTTP, HTTPS, MCP) |
 | [docs/web.md](docs/web.md) | The iPhone Web UI: architecture, settings, threat model |
-| [docs/gui.md](docs/gui.md) | The local GUI in the Mac's own browser (`pekoe gui`): authentication, threat model, stages (stages 0 and 1 built, stage 2 in part) |
+| [docs/gui.md](docs/gui.md) / [docs/gui-design.md](docs/gui-design.md) | The local GUI (`pekoe gui`): authentication, threat model, stages / its design principles |
 | [docs/mascot.md](docs/mascot.md) | The mascot tapi: shape, states, faces |
-| [docs/tapi-chat.md](docs/tapi-chat.md) | tapi chat (the orchestrator agent you talk to with `t` in the TUI) |
-| [docs/orchestration.md](docs/orchestration.md) | Design: tapi as the orchestrator, so you don't manage sessions by hand (mostly implemented; the status is at its top) |
-| [docs/voice.md](docs/voice.md) | Design: pekoe voice (tapi speaks state changes aloud and reads replies; P1 built: narrate, the CLI pekoe voice and the TUI; P2's external VOICEVOX backend works, the backend contract is published: [Voice backends](#voice-backends-voicevox); P3 built: read, Claude Code's replies in the focused session, stopped by a prompt or an esc through pekoe) |
-| [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it; the options compared) |
-| [docs/ui-guidelines.md](docs/ui-guidelines.md) | TUI design principles (color tokens, layout, icons) |
-| [docs/gui-design.md](docs/gui-design.md) | Local GUI design principles: what it takes from the TUI's, what it changes, light theme tokens, decisions |
-| [docs/ambiguous-width.md](docs/ambiguous-width.md) | Ambiguous-width characters: why the state icons and tapi's eyes avoid them, and `[theme] ambiguous = "wide"` for terminals that count them two cells |
-| [nvim/README.md](nvim/README.md) / [extension/README.md](extension/README.md) | Neovim plugin / Chrome extension |
+| [docs/tapi-chat.md](docs/tapi-chat.md) / [docs/orchestration.md](docs/orchestration.md) | tapi chat / tapi as the orchestrator, so you don't manage sessions by hand |
+| [docs/voice.md](docs/voice.md) | pekoe voice (tapi speaks state changes aloud and reads replies; the backend contract) |
+| [docs/project-layer.md](docs/project-layer.md) | Design record: a project layer above sessions (decided not to build it) |
+| [docs/ui-guidelines.md](docs/ui-guidelines.md) / [docs/ambiguous-width.md](docs/ambiguous-width.md) | TUI design principles / ambiguous-width characters |
 
 For developers: [CONTRIBUTING.md](CONTRIBUTING.md) (tests, sandbox, cutting a release) and [docs/verification.md](docs/verification.md) (how the implementation maps to the design, guidelines and mock).
 
@@ -101,42 +108,41 @@ For developers: [CONTRIBUTING.md](CONTRIBUTING.md) (tests, sandbox, cutting a re
 See [Status and requirements](#status-and-requirements) for what you need. From source:
 
 ```sh
-make install            # ~/.local/bin/pekoe (+ pekoed); links nvim/ and extension/ into ~/.local/share/pekoe
-make install WEB=1      # also build in the iPhone Web UI (-tags web, links Tailscale's tsnet)
-pekoe hooks install     # add hooks to ~/.claude/settings.json (asks first, keeps a backup)
-pekoe skills install    # optional: link pekoe's skills from ~/.claude/skills (asks first)
+make install            # ~/.local/bin/pekoe (+ pekoed), links nvim/ and extension/ into ~/.local/share/pekoe
+make install WEB=1      # also the iPhone Web UI (-tags web, links Tailscale's tsnet)
+pekoe hooks install     # add hooks to ~/.claude/settings.json (asks before writing, keeps a backup)
+pekoe skills install    # optional: link pekoe's skills into ~/.claude/skills (asks before writing)
 make install-launchd    # optional: start pekoed at login
 ```
 
+The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`, and the project's own `.claude/` is left alone (check with `pekoe hooks status`). After reinstalling, `pekoe daemon restart` switches pekoed to the new binary (agents keep running).
+
 ### With Homebrew
 
-From v0.4.0 on, macOS and Linux (arm64 / amd64) can install the default build (no Web UI) from the tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap). tmux and git come along as dependencies:
+On macOS and Linux (arm64 / amd64), the tap [sakamosu/homebrew-tap](https://github.com/sakamosu/homebrew-tap) installs the default build (no Web UI). tmux and git come along as dependencies:
 
 ```sh
 brew install sakamosu/tap/pekoe
-pekoe hooks install     # add hooks to ~/.claude/settings.json (asks first, keeps a backup)
-brew upgrade pekoe      # update (pekoe update refuses a Homebrew install), then pekoe daemon restart
+pekoe hooks install
+brew upgrade pekoe      # to update (pekoe update refuses a Homebrew install), then pekoe daemon restart
 ```
 
-- It is a cask made from the release archive (`pekoe_<ver>_<os>_<arch>.tar.gz`). It is unpacked into `$(brew --prefix)/Caskroom/pekoe/<ver>/` with the archive's layout (`bin/`, `share/pekoe/`, `contrib/launchd/`), and `pekoe` / `pekoed` are linked into `$(brew --prefix)/bin`. pekoe follows that link, so the nvim plugin and the Chrome extension in `share/pekoe` are found as is
-- For the Web UI, install the `_web` archive from a release (below) or build with `make install WEB=1`
-- macOS marks what brew downloads as quarantined, and Gatekeeper checks a binary with that mark before it runs. The cask removes the mark after installing. From v0.5.0 the macOS binaries are signed and notarized (see below), so Gatekeeper would let them run anyway, but a bare binary can't carry its notarization ticket and Gatekeeper would check it online the first time; removing the mark skips that check. Releases up to v0.4.0 are only ad-hoc signed, and Gatekeeper refuses them while they carry the mark
-- To start pekoed at login, `brew info pekoe` shows the launchd commands. `brew services` doesn't work with a cask
+For the Web UI, use a release's `_web` archive or `make install WEB=1`. What the cask installs, the quarantine attribute and launchd are in [docs/install.en.md](docs/install.en.md#with-homebrew).
 
 ### From a release (prebuilt binaries)
 
-GitHub Releases have builds for darwin / linux × arm64 / amd64. `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build (no Web UI) and `pekoe_<ver>_<os>_<arch>_web.tar.gz` includes the Web UI (`-tags web`, [docs/web.md](docs/web.md)); both have the same layout. Download with `gh` (any logged-in account; for the Web UI build, add `_web` before `.tar.gz` in the archive names and at the end of the directory the `ln -sfn` line points to (`pekoe_${ver}_darwin_arm64_web`)), or with curl without a token:
+GitHub Releases have builds for darwin / linux × arm64 / amd64: `pekoe_<ver>_<os>_<arch>.tar.gz` is the default build, `…_web.tar.gz` the one with the Web UI. Download with `gh`, or with curl and no token:
 
 ```sh
-ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest version (or ver=<version>)
-gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # use your <os>_<arch>
+ver=$(gh release view -R sakamosu/pekoe --json tagName -q .tagName | sed 's/^v//')   # the latest (or ver=<version>)
+gh release download "v$ver" -R sakamosu/pekoe -p "pekoe_${ver}_darwin_arm64.tar.gz" -p checksums.txt   # darwin_arm64: your <os>_<arch>
 # without gh, with curl:
 #   ver=$(curl -fsSL https://api.github.com/repos/sakamosu/pekoe/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
 #   base="https://github.com/sakamosu/pekoe/releases/download/v$ver"
 #   curl -fL -O "$base/pekoe_${ver}_darwin_arm64.tar.gz" -O "$base/checksums.txt"
 shasum -a 256 --ignore-missing -c checksums.txt
 gh attestation verify "pekoe_${ver}_darwin_arm64.tar.gz" -R sakamosu/pekoe \
-  --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref "refs/tags/v$ver"   # built by release.yml from this tag? (v0.1.0 to v0.3.0 have no provenance)
+  --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref "refs/tags/v$ver"   # built by release.yml from this tag (v0.1.0–v0.3.0 have no provenance)
 mkdir -p ~/.local/opt ~/.local/bin
 tar -xzf "pekoe_${ver}_darwin_arm64.tar.gz" -C ~/.local/opt
 ln -sfn ~/.local/opt/"pekoe_${ver}_darwin_arm64" ~/.local/opt/pekoe
@@ -145,212 +151,172 @@ ln -sf ~/.local/opt/pekoe/bin/pekoed ~/.local/bin/pekoed
 pekoe version
 ```
 
-`checksums.txt` sits in the same release, so it only tells you the archive isn't corrupted. `gh attestation verify` checks that the archive was built by this repository's `release.yml` (build provenance signed by GitHub Actions with Sigstore). Provenance is attached only to releases that `release.yml` makes while the repository is public (on a private repository, attestations need GitHub Enterprise Cloud, so `release.yml` skips them). Provenance starts with the releases made after the repository went public (v0.4.0 on); v0.1.0 to v0.3.0 were made while it was private, so they have no provenance and `gh attestation verify` fails for them. `--signer-workflow` and `--source-ref` make sure it was `release.yml` building that very tag (not another workflow or branch of the repository). `release.yml` creates the release as a draft, attests the archives, and only then publishes it, so a published release (v0.4.0 on) always has its provenance.
-
-From v0.5.0 (among pre-releases, from v0.5.0-rc.1), `release.yml` signs the darwin binaries (`bin/pekoe` in every darwin archive, default and `_web`, arm64 and amd64) with a Developer ID Application certificate and has Apple notarize them. `codesign -dv ~/.local/opt/pekoe/bin/pekoe` shows `Authority=Developer ID Application: Yuki Sakamoto` and `TeamIdentifier=K9F9554C8G`, and `spctl -a -vvv -t install ~/.local/opt/pekoe/bin/pekoe` shows `source=Notarized Developer ID`. A bare binary can't have its notarization ticket stapled, so Gatekeeper checks it online the first time it runs a quarantined copy. v0.1.0 to v0.4.0 carry only the Go linker's ad-hoc signature: `codesign -dv` shows `Signature=adhoc`.
-
-An archive contains `bin/pekoe`, `bin/pekoed` (→ pekoe), `share/pekoe/nvim/`, `share/pekoe/extension/`, `contrib/launchd/`, plus `README.md`, `README.ja.md`, `LICENSE` and `THIRD_PARTY_LICENSES` (licenses of the dependencies, see [License](#license)). `bin/pekoe` looks for `../share/pekoe/nvim` relative to its real location, so with the symlinks above the nvim plugin is found as is. To start it with launchd, run `sed -e "s|PEKOE_BIN|$HOME/.local/bin/pekoe|" -e "s|HOME|$HOME|g" ~/.local/opt/pekoe/contrib/launchd/dev.pekoe.pekoed.plist > ~/Library/LaunchAgents/dev.pekoe.pekoed.plist` and then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.pekoe.pekoed.plist`.
-
-The default build contains no Tailscale code at all. After reinstalling, run `pekoe daemon restart` to switch pekoed to the new binary (agents keep running inside tmux; if launchd runs pekoed, it is restarted through launchd).
+For the Web UI build, add `_web` to the archive name and the unpacked directory name. `checksums.txt` only tells you the archive isn't broken; `gh attestation verify` (build provenance) tells you it's genuine. macOS binaries from v0.5.0 on are signed with a Developer ID and notarized. Provenance and signing in detail, what the archive holds, and starting it with launchd are in [docs/install.en.md](docs/install.en.md#from-a-release-prebuilt-binaries).
 
 ### Updating
 
 ```sh
-pekoe update --check    # only check whether there is a newer release (anyone can run it)
-pekoe update            # replace pekoe with the latest release
-pekoe update --version vX.Y.Z --force   # a specific version (--force to go back)
-pekoe update --allow-unverified         # go on even if the build provenance can't be verified (see below)
+pekoe update --check    # only check for a newer release (anyone can)
+pekoe update            # replace with the latest release
+pekoe update --version vX.Y.Z --force   # a given version (--force when it's older)
+pekoe update --allow-unverified         # go on even if the provenance can't be checked
 ```
 
-`pekoe update` takes the latest GitHub release (`releases/latest`, excluding drafts and prereleases) and picks the archive for the current OS, architecture and build (the `_web` archive if the current pekoe has the Web UI).
-
-- Nothing happens if the current version is the latest or newer. A `make install` version (`git describe`, e.g. `0.1.0-59-g3761d74`) counts as "59 commits after 0.1.0". Versions that can't be compared, such as `dev`, ask first
-- The archive is checked against the SHA-256 in `checksums.txt`, and nothing is replaced if it doesn't match. `checksums.txt` sits in the same release, so the build provenance (attestation) is what shows the archive is genuine: it is checked with `gh attestation verify --signer-workflow sakamosu/pekoe/.github/workflows/release.yml --source-ref refs/tags/<tag>`
-  - From v0.4.0 on (`release.yml` attests every release before publishing it), nothing is replaced if the release has no provenance, if it can't be looked up, or if `gh attestation verify` fails. The message says why. If you have checked the release yourself, `--allow-unverified` goes on with only the SHA-256 checked (after a warning)
-  - Without `gh` installed or logged in (`gh auth login`, or `GH_TOKEN` / `GITHUB_TOKEN`), the signature can't be verified: if GitHub keeps a provenance for the archive, it only warns and goes on
-  - v0.1.0 to v0.3.0 were made while the repository was private and have no provenance: it only warns, as before (a provenance that is there but fails verification stops it for any version)
-- Only the real file of the running pekoe (after following symlinks), the `pekoed` next to it, and `<prefix>/share/pekoe/nvim` and `extension` are replaced. Nothing else in `~/.local/share/pekoe` (such as `state.db`) is touched. Binaries are written next to the old ones and renamed; if something fails halfway, what was replaced is restored
-- With a `make install`, `nvim` / `extension` are links into the repository, so they are replaced by directories with the release's contents (the repository isn't written to; it asks first; `make install` again brings the links back)
-- If the current pekoe has the Web UI and the release has no `_web` archive, it refuses (install the default build with `--no-web`, or build from source with `make install WEB=1`)
-- It refuses locations it can't write to and installs made by a package manager such as Homebrew
-- At the end it prints the old and new versions and, if pekoed is running, asks whether to `pekoe daemon restart`. If the Chrome extension was replaced, reload it in `chrome://extensions`
-- It sends a GitHub token if it finds one: `$GITHUB_TOKEN` / `$GH_TOKEN`, or else `gh auth token`. No token is needed; one only raises the GitHub API rate limit (without a token, 60 requests per hour; if you hit it, wait a while or `gh auth login`). For a private copy of the repository, a token that can read it is required; without one GitHub answers HTTP 404 and `pekoe update` tells you to `gh auth login`
-- Replacing is for humans only. Inside an agent's session (`$PEKOE_SESSION` is set) or where `human-token` can't be read, it refuses with `only a person can do this`. `--check` works for anyone
-
-The hooks only call `pekoe event` on `SessionStart` `UserPromptSubmit` `Notification` `Stop` `PreToolUse` `PostToolUse` `SessionEnd`. The project's own `.claude/` is never touched. Check with `pekoe hooks status`; remove only pekoe's hooks with `pekoe hooks uninstall`.
+`pekoe update` picks the archive for the same OS, architecture and build (`_web` or not) as the running pekoe, checks its SHA-256 and build provenance, and replaces only pekoe, pekoed, the nvim plugin and the Chrome extension (`state.db` and the rest are left alone; a failure puts things back). From v0.4.0 on it stops if the provenance can't be checked. It refuses installs made by Homebrew and the like, and places it can't write to. Replacing is for humans only. At the end it offers to `pekoe daemon restart`. More in [docs/install.en.md](docs/install.en.md#updating).
 
 ## Quick start
 
 ```sh
 cd ~/src/app
-pekoe init                                            # draft ~/.config/pekoe/repos/<repo-id>.toml, then start the main session
+pekoe init                                            # draft ~/.config/pekoe/repos/<repo-id>.toml, start the main session
 pekoe new feat/csv --prompt "Add CSV export"          # worktree → copy → setup → port → start claude
-pekoe new feat/invoice --from gh#128                  # the issue body becomes the first prompt
+pekoe new feat/invoice --from gh#128                  # the issue body as the first prompt
 pekoe                                                 # TUI
 ```
 
-`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files (and `test` only when it can run: the command, such as `yarn`, has to be on pekoed's PATH, and for `npm` / `yarn` / `pnpm test` package.json has to have `scripts.test`; otherwise the line is drafted commented out with the reason), lets you pick by number which ignored files to copy, and then writes the file. Once written, it starts an agent in the repository's main checkout (the main session, as `pekoe open <repo> --new` does) so the repository shows up in the TUI; one already there is left alone, and `--no-open` skips it. If the agent cannot be started, init still succeeds and says to run `pekoe open <path> --new`. Agents you started by hand can be brought in with `pekoe adopt`, and existing worktrees with `pekoe open`.
+`pekoe init` guesses setup and copy from lockfiles, `.envrc` and git's ignored files (`test` is written only when it can run; otherwise it's commented out with the reason), lets you pick which ignored files to copy, and writes. Then it starts an agent in the repository's main checkout (the main session; `--no-open` skips it). Bring in an agent you started by hand with `pekoe adopt`, and an existing worktree with `pekoe open` ([more](docs/commands.en.md#what-pekoe-init-drafts)).
 
 ## Commands
 
+The everyday ones and the ones agents use. Each command in detail, with its limits, is in [docs/commands.en.md](docs/commands.en.md).
+
 | Command | What it does |
 | --- | --- |
-| `pekoe` | TUI (starts the daemon if needed) |
-| `pekoe init [<dir>] [--yes] [--overwrite] [--print] [--no-open]` | Detect the repository's settings and write a draft, then start the main session in the main checkout if there is none. `--print` only prints it; `--no-open` writes without starting the session |
-| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--model M] [--effort E] [--base REF] [--after SLUG]... [--hold] [--prompt TEXT] [--request ID]` | Create a worktree + session. Shows setup progress and returns once the agent has started. Without `--base`, pekoed first fetches the base (the repository's `[worktree] base`, else origin's default branch) from origin (60 s at most) and starts from `origin/<base>` when your local base is behind it, so a checkout you have not pulled does not start the session from old code; a local base with commits origin does not have (unpushed work) is used as it is, and one that has diverged from origin is used with a warning. No origin, or a fetch that fails: from the local base, with a warning for the failure. The `worktree` step says which (`from origin/main (fetched, local main 73 behind)`). An explicit `--base REF` (a branch, tag, commit or `origin/x`) is used as given, without a fetch. `--after` records which sessions this one comes after (repeatable; existing sessions only, not itself, no cycles, and not a session pekoe did not make, such as the repository's own checkout opened with `pekoe open`, which never lands). Alone it is only recorded and shown (`after feat-a` on the row in [1], each one's state in its footer, `after` in `pekoe --json ls`): the session starts right away. With `--hold` the session is `queued` until every `--after` session has landed (its PR merged), then starts from `origin/<base>` as it is then (if that fetch fails, from the local base, with a warning: it may lack what it waited for); if one of them is removed without landing it fails, and one that failed keeps it waiting. With `[orchestrator] max_running` set, a session beyond the cap is `queued` too and starts, oldest first, when one stops working. A queued session has no worktree or agent yet: `pekoe new` says why it waits and returns (`queue` in `pekoe --json ls`); `esc` in its progress view or `pekoe rm` cancels it. `--request` is how tapi chat ties a session to a request in its ledger (tapi and you only). `--model` / `--effort` override `[agents.*] model` / `effort` for this session (Claude Code only) |
-| `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start in an existing worktree. Choose whether to resume a past Claude Code session (`--resume` to resume, `--new` for a new one). A worktree that already has a session is refused (`already managed as <slug>`), also when named through a symlink (macOS `/tmp` → `/private/tmp`) |
+| `pekoe` | Open the TUI (starts the daemon if it isn't running) |
+| `pekoe init [<dir>] [--yes] [--overwrite] [--print] [--no-open]` | Detect the repository's settings and write a draft, then start the main session in the main checkout if there is none |
+| `pekoe new <branch> [--repo R] [--from gh#N] [--agent codex] [--model M] [--effort E] [--base REF] [--after SLUG]... [--hold] [--prompt TEXT] [--request ID]` | Create a worktree and a session. Without `--base`, it fetches the base from origin and starts from `origin/<base>` if yours is behind. `--after` records the sessions this one follows; with `--hold` it waits `queued` until they have landed. `--model` / `--effort` override for this session only |
+| `pekoe open [<worktree>] [--resume\|--new] [--agent NAME]` | Start an agent in an existing worktree (choose whether to resume an earlier Claude Code session) |
 | `pekoe adopt [<path>] [--yes]` | Stop an agent running outside pekoe and resume the same session inside pekoe |
-| `pekoe ls [--all\|--repo R]` | Sessions and their state. Inside a repository only that repository's, outside all of them |
-| `pekoe issues [--repo R] [--all\|--label L] [--refresh]` | Open GitHub issues (assigned to you by default), with the state and branch of their session if there is one |
-| `pekoe issues <N> [--repo R]` | An issue's body and comments |
-| `pekoe conflicts [--repo R]` | Conflict forecast: pairs of sessions touching the same files, and whether they conflict (`git merge-tree`) |
-| `pekoe send <slug> <text> [--no-enter]` | Type text into the pty (adds Enter by default; `-` reads stdin) |
-| `pekoe review [<slug> \| gh#N [--repo R]]` | Review surface. Without arguments, the next session waiting for review. `gh#N` for someone else's PR |
-| `pekoe land <slug>` | rebase → test → push → `gh pr create`. After the merge is detected (pekoed checks the PR about once a minute), teardown and remove the worktree. Only a session pekoe made (a worktree under `~/worktrees`) lands: anything else (the repository's own checkout opened with `pekoe open`), a session whose branch is its base, and a worktree with another branch checked out than the session's are refused, so nothing is pushed onto the base without a PR. If fetching origin fails while the session's earlier PR is already merged or closed, GitHub (which has origin's base) decides whether there is anything new: when `gh pr create` answers "No commits between", land keeps the earlier PR instead of failing. Agents can run it too (merging stays yours; answer `merge` in the inbox and pekoed merges it) |
-| `pekoe cleanup [--all\|--repo R] [--stale 72h]` / `pekoe cleanup --rm <slug>… \| --rm --landed [--force] [--yes]` | What could be cleaned up: landed sessions (only pekoe's record is left), sessions whose PR was merged on GitHub without `pekoe land` (the worktree is still there) and sessions stopped (done, idle, failed …) for longer than `[cleanup] stale_after` (72h), each with its uncommitted files and the commits on no remote. `--rm` removes the ones you name (`--landed`: every landed one) after asking, like `pekoe rm`; agents can list them, but remove only landed ones. Nothing is removed by itself. In the TUI: `:cleanup` |
-| `pekoe rm <slug> [--force] [--yes]` | teardown → remove the worktree (only a worktree pekoe made under `~/worktrees`; for others, such as the repository's own checkout, pekoe runs no teardown and only forgets the session). A session still being set up has its setup stopped first; a teardown after a merge still running is waited for. Agents can use it only on a landed session, to clear it from the list |
-| `pekoe repo forget <name\|repo-id\|path> [--config] [--yes]` | Make pekoe forget a repository you no longer use: it leaves the TUI's `w` repository picker, `repo.list` and the repositories tapi chat knows (from its next start). Refused, naming them, while sessions that have not landed (or a landed one whose worktree is still there) are left: `pekoe rm` them first. Landed sessions' records go with it. `~/.config/pekoe/repos/<repo-id>.toml` is a file you wrote, so by default it is refused and kept; `--config` deletes it too (kept, it would make pekoe know the repository again). Shows what goes and asks first (`--yes` skips the question). The repository directory, worktrees, branches and the `pekoe stats` history are not touched. `pekoe open` / `init` / `new` in the repository (or starting the TUI inside it) makes pekoe know it again (a TUI already open there does not). A person only |
-| `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]... [--verdict pending\|pass\|fail --reviewed-sha SHA]` | A session's agent leaves word of its work (`-` reads stdin). With `--status review`, `--verdict` and `--reviewed-sha` record an independent review's result for that commit (`pending` while it runs; only `pass` counts as merge evidence). pekoed tells which session reports from the calling process (`$PEKOE_SESSION` is only shown when it differs). Evidence paths and URLs are kept as text; pekoed never reads them |
-| `pekoe reports [<slug>] [--limit N]` | The reports, newest first (the agents' words fenced off). The latest is also `report` in `pekoe --json ls` |
-| `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | Block until something happens to sessions (`report`, `queued`, `started`, `done`, `waiting`, `idle`, `failed`, `pr`, `ci`, `landed`, `removed`, `inbox`). `ci` fires once per PR head and result when all its checks have finished (the summary says green or red, the failed checks and the head SHA); a check that registers late or a re-run that changes the result on the same head fires it again. `started` fires once when a new session's setup has passed and its agent has started (a failed setup gives `failed`); `queued` once when `pekoe new` put it in the queue instead (`max_running`, `--hold`), and `started` follows when it leaves the queue. `--mine`: only the sessions you made with `pekoe new` (from inside a pekoe window; an agent started outside pekoe waits with `--slug`). Pass the returned `cursor` to the next `--since` to miss nothing; `pekoe --json new` returns one too, from just before the session was made (after the old session's `removed` when it replaces a landed session of the same slug), so `pekoe wait --slug <slug> --on started,failed,removed --since <cursor>` misses nothing even when setup finishes at once (`removed` so that it also returns when the session is cancelled or removed while being made). After pekoed restarts it says `reset`: read `pekoe --json ls` again. A session that went done without a report says `(no report)` |
-| `pekoe ask-human <question> [--option O]... [--recommend N] [--decided N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context TEXT\|-] [--link URL]... [--wait [--timeout 30m]]` / `pekoe ask-human --wait <id>` | An agent asks a person to decide, approve or do something (the inbox). `--decided` records the option it already chose by itself (with `fyi`); `--wait <id>` waits for the answer to an earlier question. pekoed adds the facts it reads itself about the session (branch, HEAD, diff, PR, CI, conflicts). The answer comes back as the result if the agent waits (`--wait`, or `pekoe wait --on inbox`); otherwise it is typed into the agent's input box as `[pekoe inbox qN] 答え: …` once the agent is free (never while a permission dialog is up) |
-| `pekoe inbox [<id>] [--all] [--mine]` / `pekoe inbox answer <id> [<n>] [--note …] [--rev N]` / `pekoe inbox dismiss\|withdraw <id> [--note …]` | The inbox, and one item in full (the agent's words fenced off, after the facts). Only a person answers (`answer`) or closes one unanswered (`dismiss`); when none of the options fits, a note alone answers it (`pekoe inbox answer <id> --note …`, `]a` or the Web UI; the agent is told "none of the options" with the note), except on pekoed's own merge item, which takes a choice; the agent that asked can take its own question back (`withdraw`). In the TUI a new item shows a toast, and `]a` takes you to the answer dialog. A new question an agent waits on also comes up in front as that dialog by itself, once, when nothing else is open and you have stopped typing for 2 seconds: keys are ignored for its first second, "skip" is chosen first (`↵` alone or `esc` skips; the item stays in the inbox for `]a`), and `[orchestrator] inbox_popup = false` turns it off. The Web UI (iPhone) answers it too, from the Inbox tab. A question an agent waits on (not `fyi`, not your own) stays on the bottom line (`? feat-x asks · ]a`) and becomes a desktop notification after 2 minutes, like a session's wait (`[orchestrator] notify = "quiet"`: a message line only). pekoed itself adds one item when a landed PR has all its merge evidence (a passing independent review of the PR's head, CI green (not required where the repository has no CI), `CLEAN`, no conflict forecast, its `--after` sessions landed — one removed with `pekoe rm` after it landed counts as landed, one removed before it landed does not); a pass carries over when pekoe land's rebase gave the PR a new head with the same change, also when the rebase stopped only because both sides added lines at one place and both were kept; each time the check changes pekoed.log gets a `merge evidence <slug>: …` line, so why no item came stays readable after the merge. answer "merge", "wait" or "send back" (the note goes to the session); a note alone does not answer it. In the TUI (the popup and `]a`) "merge" takes `↵` twice: the first asks to confirm, only another `↵` (not one mashed right after) answers, and any other key cancels it. On "merge" pekoed reads the PR again, checks every condition once more and runs `gh pr merge --match-head-commit <the item's HEAD>` (the method is `[merge] method` in the repository's settings: merge, squash or rebase; merge by default); while GitHub is still computing whether the PR can merge (`UNKNOWN`, as right after another PR into the same base merged) and nothing else is off, it reads the PR again every 5 seconds for up to a minute, saying it waits; if anything is off it merges nothing and says why (in the TUI, the Web UI's Inbox tab and `pekoe inbox <id>`). pekoed never merges without your answer |
-| `pekoe ledger [<id>] [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger keep [<id>]` / `pekoe ledger reopen\|rm <id>` | The ledger of requests. pekoed records what you type into tapi chat as open (the same text again within a minute is folded into one entry); tapi ties sessions to it with `--request` and closes it with `done --evidence <PR>`, `drop --note <why>` or `close --as chat` (it was no request). Small talk, thanks and questions answered on the spot close themselves: when tapi's reply ends, pekoed closes that turn's input as `chat` if tapi tied no session to it, asked nobody for anything and started no wait (`chat (auto)` in the list). tapi keeps a request it does not hand off yet with `keep`, and `keep <id>` opens one that closed itself (for 24 hours after closing, the newest 10 of those are listed short by `pekoe ledger` and in the dashboard's Requests, apart from the open ones; `pekoe ledger <id>` shows one whole). `pekoe tapi reset` keeps the ledger. Only a person reopens (`reopen`) what tapi or a person closed, or deletes (`rm`) an entry |
-| `pekoe stats [--days N] [--repo R] [--json]` | PRs merged and tokens used, by local date and repository (default: the last 7 days). Merges are the ones pekoe saw land; tokens are summed from the agents' Claude Code transcripts (subagents and tapi chat included) by kind: input, output, cache write, cache read. Removed sessions stay in the numbers, and running sessions count up to now. Not the money: no price conversion. Agents can read it without the token (counts only) |
-| `pekoe dev <slug>` | Start / stop `dev` on the session's port. Stopping it (also rm, closing the dev window, and `pekoe daemon stop --kill-agents`) and the hook ending by itself run `[hooks] dev_stop` |
-| `pekoe dev --log [<slug>] [--lines N]` | The end of the dev hook's log (its output without escape sequences, plus when it started, how it ended, and `dev_stop`'s output), and whether it is running or how it ended. Without the token, only the caller's own session (no slug: its own) |
+| `pekoe ls [--all\|--repo R]` | List sessions and their state |
+| `pekoe issues [<N>] [--repo R] [--all\|--label L] [--refresh]` | Your open GitHub issues (yours by default) with their sessions' state. `<N>`: the body and comments |
+| `pekoe conflicts [--repo R]` | Conflict forecast: pairs of sessions changing the same files, and whether they conflict (`git merge-tree`) |
+| `pekoe send <slug> <text> [--no-enter]` | Type text into the pty (Enter by default; `-` reads stdin) |
+| `pekoe review [<slug> \| gh#N [--repo R]]` | Open the review (no argument: the next one waiting for review; `gh#N`: someone else's PR) |
+| `pekoe land <slug>` | rebase → test → push → `gh pr create`. Once the merge is seen, teardown and the worktree are removed. Agents can run it too (merging is a person's call) |
+| `pekoe cleanup [--all\|--repo R] [--stale 72h]` / `pekoe cleanup --rm <slug>… \| --rm --landed [--force] [--yes]` | What could be cleaned up (landed, merged, stopped for long), with the number of uncommitted files and unpushed commits; `--rm` removes. Nothing is removed on its own |
+| `pekoe rm <slug> [--force] [--yes]` | Run teardown, then remove the worktree (only those pekoe made under `~/worktrees`) |
+| `pekoe repo forget <name\|repo-id\|path> [--config] [--yes]` | Drop a repository you no longer use from what pekoe knows (`--config`: delete `repos/<repo-id>.toml` too) |
+| `pekoe report <summary> --status done\|blocked\|progress\|review [--evidence E]... [--verdict pending\|pass\|fail --reviewed-sha SHA]` | A session's agent records the result of its work, or an independent review's verdict |
+| `pekoe reports [<slug>] [--limit N]` | Reports, newest first |
+| `pekoe wait [--mine] [--slug S,…] [--on KINDS] [--since CURSOR] [--timeout 30m]` | Wait until something happens to sessions (a report, `started`, `done`, `waiting`, `failed`, `pr`, `ci`, `landed`, `inbox` …). Pass the returned `cursor` to the next `--since` and nothing is missed |
+| `pekoe ask-human <question> [--option O]... [--recommend N] [--decided N] [--kind decision\|approve\|login\|fyi] [--about SLUG] [--context TEXT\|-] [--link URL]... [--wait [--timeout 30m]]` / `pekoe ask-human --wait <id>` | An agent asks a person for a decision, an approval or a hand (the inbox). pekoed adds the session's facts (branch, diff, PR, CI …) |
+| `pekoe inbox [<id>] [--all] [--mine]` / `pekoe inbox answer <id> [<n>] [--note …] [--rev N]` / `pekoe inbox dismiss\|withdraw <id> [--note …]` | List, read and answer the inbox. Only a person answers. When a landed PR has all it needs to merge, pekoed adds a merge item, and answering `merge` has pekoed merge it (the conditions are in [docs/commands.en.md](docs/commands.en.md)) |
+| `pekoe ledger [<id>] [--all]` / `pekoe ledger done\|drop\|close\|link <id> …` / `pekoe ledger keep [<id>]` / `pekoe ledger reopen\|rm <id>` | The record of what you asked tapi chat for. tapi ties sessions to requests and closes them; chit-chat is closed as `chat` on its own |
+| `pekoe stats [--days N] [--repo R] [--json]` | PRs merged and tokens used, by date and repository (the last 7 days by default) |
+| `pekoe dev <slug>` / `pekoe dev --log [<slug>] [--lines N]` | Start or stop `dev` on the session's port / the end of the dev hook's log |
 | `pekoe undo <slug> [n]` | Undo the changes of the last (or n-th) prompt |
 | `pekoe answer <slug> allow\|deny\|always` | Answer a permission prompt |
-| `pekoe attach <slug> [agent\|review\|dev]` | Attach to the tmux window directly (for debugging) |
+| `pekoe attach <slug> [agent\|review\|dev]` | Attach to a tmux window directly (for debugging) |
 | `pekoe hooks install\|uninstall\|status [--yes]` | Add / remove / check the Claude Code hooks |
-| `pekoe skills install\|uninstall\|status [--yes]` | Link / unlink / check pekoe's Claude Code skills in `~/.claude/skills` ([Claude Code skills](#claude-code-skills)) |
-| `pekoe ext` | The port and token for the Chrome extension (the port pekoed actually listens on; if it could not listen, say because another pekoed holds the port, it refuses and says why, and `pekoe daemon status` shows `http off (…)`) |
-| `pekoe web` | Web UI status, URL and first-time login URL |
-| `pekoe gui [--no-open\|--status\|--revoke\|--stop]` | Open the local GUI (the Web UI in this Mac's own browser on `127.0.0.1`) with a one-time sign-in link; `--status` whether it listens and how many browsers are signed in, `--revoke` signs them all out, `--stop` stops listening |
-| `pekoe mcp` | MCP server (stdio) for agents |
-| `pekoe daemon start\|stop\|restart\|status` | Daemon control. `stop` waits until the process exits. `restart` waits for it to stop, starts it again and prints the versions before and after (use it after `make install`; if it isn't running, it just starts). Agents keep running inside tmux. An open TUI that loses pekoed (a restart or a stop) says so on the terminal and waits up to 20 s for pekoed to answer again, then opens anew; if it does not come back, the TUI ends with an error (exit code 1) that says so. It never starts pekoed itself at that point |
-| `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server (`$PEKOE_TMUX_SOCKET`). **On the default socket `pekoe` this stops every agent.** For cleaning up sandboxes |
-| `pekoe tapi [status\|reset [--yes]]` | tapi chat's state (with the ledger's and the inbox's open counts) / stop it and forget the conversation (same as `T` in the TUI; the ledger and the inbox stay) |
-| `pekoe tip [<id>] [--list] [--doc PATH]` | Introduce one pekoe feature (a tip not shown yet, see [Tips](#tips)). `<id>` for that tip, `--list` for all, `--doc` prints the doc a tip points to (bundled in the binary) |
-| `pekoe config edit\|check\|show\|path` | `config.toml`: `edit` opens it in `$EDITOR` (`vi` when unset) and checks it when the editor closes; with a problem it asks to edit again, save anyway or quit without saving (like visudo). A missing file is created. `check` lists syntax errors, unknown keys and values pekoe does not take (exit code 1 when there are any). `show` prints the settings in use with the defaults filled in (`[web] auth_key` hidden). `path` prints where the file is. They read and write the file themselves, never through pekoed (in the TUI: `^q ,`) |
-| `pekoe voice [on\|off\|mute [--for 30m]\|unmute\|stop\|backends\|log [-n 50]]` | tapi says state changes aloud (macOS only; [docs/voice.md](docs/voice.md)). With no subcommand: whether voice is on, the backend in use (and why not the configured one, or why nothing can speak — e.g. synthesis paused for a while after repeated failures, with the time left), the mute, the focused session, the sessions' own modes (`pekoe voice mode`), the queue and what is being said. `on` / `off` set `[voice] enable` in `config.toml` themselves, like `pekoe config edit` (only that one line changes; the `[voice]` table is added when missing; a change that would not read is not saved), never through pekoed, and are refused in an agent's window (`$PEKOE_SESSION`). `mute` (until `unmute`, or `--for`) stops what is said and empties the queue; `stop` stops the sentence being said. `backends` lists the bundled say and `[voice.backends]` with path, `version`, `check` and voices (none of them run while voice is off), and the `pekoe-voice-*` in pekoed's `PATH` as candidates with the line to add — never run. `log` is what was said or dropped, and why, newest first. A person only |
-| `pekoe voice mode <slug> read\|narrate\|mute\|auto` | How one session speaks, over `focus_mode` / `background_mode` (a global mute still wins); `auto` goes back to them. Kept across restarts until `pekoe rm`; `pekoe voice` lists the modes set. `+tapi` is tapi chat. A person only |
-| `pekoe voice test "<sentence>" [--voice tapi\|reader] [--lang ja\|en]` | Say a sentence as it is, even while muted (not while voice is off); waits until it is said and prints the backend and the delay, or why it was not said |
-| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]` | Replace pekoe with the latest GitHub release ([Updating](#updating)). `--check` only looks for a newer version. Humans only |
-| `pekoe version` | Version |
+| `pekoe skills install\|uninstall\|status [--yes]` | Link / unlink / check pekoe's Claude Code skills ([Claude Code skills](#claude-code-skills)) |
+| `pekoe ext` | Print the port and token to enter in the Chrome extension |
+| `pekoe web` | The Web UI's state, URL and first login URL |
+| `pekoe gui [--no-open\|--status\|--revoke\|--stop]` | Open the local GUI with a one-time sign-in link ([From this Mac's browser](#from-this-macs-browser-local-gui)) |
+| `pekoe mcp` | MCP server for agents (stdio) |
+| `pekoe daemon start\|stop\|restart\|status` | Control the daemon. Agents keep running in tmux, and open TUIs reconnect |
+| `pekoe daemon stop --kill-agents [--yes]` | Also stop the tmux server. **On the default socket this stops every agent** (for cleaning up an isolated setup) |
+| `pekoe tapi [status\|reset [--yes]]` | tapi chat's state / end it and forget its conversation (the ledger and the inbox stay) |
+| `pekoe tip [<id>] [--list] [--doc PATH]` | Show one pekoe feature ([Tips](#tips)) |
+| `pekoe config edit\|check\|show\|path` | Open `config.toml` in `$EDITOR` and check it when it closes / check it / print the settings in use with defaults / print where it is |
+| `pekoe voice [on\|off\|mute [--for 30m]\|unmute\|stop\|backends\|log [-n 50]]` | tapi speaks state changes aloud (macOS only; [docs/voice.md](docs/voice.md)). With no subcommand: its state |
+| `pekoe voice mode <slug> read\|narrate\|mute\|auto` | How one session speaks (`auto`: back to the default) |
+| `pekoe voice test "<sentence>" [--voice tapi\|reader] [--lang ja\|en]` | Say a sentence as it is, and print the backend and the wait |
+| `pekoe update [--check] [--version vX.Y.Z] [--no-web] [--force] [--allow-unverified] [--yes]` | Replace pekoe with the latest GitHub release ([Updating](#updating)) |
+| `pekoe version` | Print the version |
 
-- `R` can be a repo-id, a short name (the name in `~/worktrees/<name>`) or a path. Commands that take a slug also accept `<repo>/<slug>`
-- `--json` gives machine-readable output (`init` `new` `open` `ls` `issues` `conflicts` `cleanup` `report` `reports` `wait` `ask-human` `inbox` `ledger` `stats` `land` `dev` `skills` `ext` `web` `tapi` `tip` `config check` `config show` `config path` `daemon status` `update --check` `voice`). It can go before or after the subcommand
-- `--help` / `-h` only prints usage (exit code 0). Unknown flags or `--repo` without a value are errors (exit code 2). To pass a positional argument starting with `-`, put it after `--` (e.g. `pekoe send <slug> -- --verbose is not needed`)
-- `pekoe event <Hook>` is internal, called by the hooks. It always exits 0, even on failure
-- When a session goes (`pekoe rm`, or the cleanup after its PR is merged), pekoed closes its windows and then stops what they left running in the background (a busy loop or a server an agent started with `&`, now a child of launchd): SIGTERM, then SIGKILL after 2 seconds, with the count and the start of each command in pekoed's log. It finds them by the environment every process in a session's window inherits (`$TMUX` of pekoe's tmux server and `$PEKOE_SESSION=<slug>`), even through `setsid` and `nohup`. macOS hides the environment of a process running a system binary (`/bin/sh`, `/bin/zsh`, `/bin/sleep` …); such a process is stopped when it runs in the session's own worktree, started after the session, and the session (setsid) it belongs to has no living leader (the agent's shell is gone). pekoed and its hooks, the tmux server, live windows, other sessions, another pekoed's sessions, processes outside tmux (an nvim the TUI opened) and anything a person's shell or editor started while that shell or editor still runs (it holds the session) are left alone, and so is everything while a session is only stopped (`x`) or restarted. When a window started another tmux server (`tmux -L x new -d …`) and left it, only the panes that server opened as it started go; a pane opened there later (a person's `tmux -L x new`) stays, and so does the server while it has one. Not found: a process that cleared or changed those variables (`env -i`), on macOS a system binary that left the worktree or whose session's leader still runs, and anything started through another server (launchd, Docker, another tmux)
-- Of the commands that talk to pekoed, agents can use only `ls`, `new`, `send`, `land`, `rm` of a landed session, `dev` of their own session, `report`, `reports`, `wait`, `ask-human`, `inbox` (the list, and `withdraw` of their own question), `ledger` (tapi chat only; not `reopen` / `rm`), `stats`, `conflicts` and `cleanup` (the list; `--rm` only of landed sessions, as `rm`) (and `event`, for the hooks) without the token; `conflicts` is recomputed at most every 10 seconds (within that the last forecast comes back), `report` only for the caller's own session (refused from outside a pekoe window), `new` only in a repository pekoe already knows (one that has or had a session, or a `repos/<id>.toml`; starting the first session in a new repository is human-only) and only with an agent pekoe sandboxes (Claude Code with sandbox on) or the caller's own agent (a person starts codex and the like), `land` only in a repository with an origin (without one, land fast-forwards the base branch right away), and `rm` only on a landed session whose worktree is already gone, without `--force`. The others (`answer`, `dev` of another session, `init`, `open`, `review`, `rm` of any other session, `issues`, `daemon`, …) and `update` (except `--check`) are human-only: they only work from a terminal that can read `human-token` (agents are refused, see [Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). Anyone can `send`, but it is refused while the target shows a permission dialog (a human's `send` with Enter checks before typing and again right before Enter)
+- `R` takes a repo-id, a short name (the name in `~/worktrees/<name>`) or a path. Commands that take a slug also take `<repo>/<slug>`
+- `--json` gives machine-readable output (before or after the subcommand). `--help` / `-h` only prints usage. Put `--` before a positional argument that starts with `-`
+- `pekoe event <Hook>` is internal, called by the hooks
+- Without a token, agents can use only `ls`, `new`, `send`, `land`, `report`, `reports`, `wait`, `ask-human`, `inbox` (the list, and `withdraw` of their own questions), `ledger` (tapi chat only), `stats`, `conflicts`, `cleanup` (the list), `dev` of their own session and `rm` of a landed session, each with limits. Everything else is for humans ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions))
+- When a session goes away, pekoed also stops the processes its windows left in the background (how they're found, and what is left alone, in [docs/commands.en.md](docs/commands.en.md))
 
 ## TUI
 
-Numbered panels on the left ([1] Sessions, [2] Worktrees ⇄ Browser ⇄ Issues, [3] Changes ⇄ Picks), [4] Agent on the right (the agent's screen itself; it switches to the preview, dev, run and PR windows), and a powerline status with key hints on the bottom line. Below 100 columns the left column becomes a single tab. Sessions are grouped under a heading per repository (a name and a rule). Above them, under its own `orchestrator ━━━` heading, is always tapi (the [tapi row](#tapi-chat)). Click a row to select it.
+Numbered panels on the left ([1] Sessions, [2] Worktrees ⇄ Browser ⇄ Issues, [3] Changes ⇄ Picks), [4] Agent on the right (the agent's own screen; it also switches to the preview, dev, run and PR windows), and a powerline status with key hints on the bottom line. Below 100 columns the left column becomes one tab. Sessions are grouped by repository, with the tapi row ([tapi chat](#tapi-chat)) always on top.
 
-Session state is shown with icons and colors (tokens in [docs/ui-guidelines.md](docs/ui-guidelines.md)). The mascot tapi at the left of the bottom line shows the most urgent state of all sessions with its face, and the line next to it says who is doing what:
+tapi, the mascot at the left end of the bottom line, shows the highest-priority state across all sessions with its face, and says who is doing what next to it:
 
 | Face | State | Meaning |
 | --- | --- | --- |
-| `⨯ ⨯` | error | The agent exited abnormally or a command failed |
+| `⨯ ⨯` | error | The agent died, or a command failed |
 | `◕ ◕` | wait | Waiting for input or permission |
-| `◉ ◉` | work | Producing output or running a command |
+| `◉ ◉` | work | Printing output or running a command |
 | `^ ^` | done | The turn ended and you haven't looked yet |
-| `∙ ∙` | idle | Idle at the prompt |
+| `∙ ∙` | idle | Waiting at the prompt |
 | `- -` | sleep | Every session has been idle for 3 minutes or more |
 
-A toast appears when a session you aren't looking at goes to wait / error. tapi also reacts once to a PR being merged, CI failing and reviews (details in [docs/mascot.md](docs/mascot.md)).
+A toast appears when a session you aren't looking at goes wait or error. tapi also reacts once to a merged PR, a CI failure or a review ([docs/mascot.md](docs/mascot.md)).
 
 | Key | Action |
 | --- | --- |
-| `j` `k` / `↵` | Select a session or the tapi row (wraps at the ends; `g` goes to the tapi row at the top) / enter the right pane and type (every key except `^q` goes to the agent). `↵` on the tapi row opens tapi chat |
-| `^q` / `^q` `h` `l` | Leave input and go back to Sessions (change with `[keys] prefix`). Clicking a panel on the left also leaves / focus the left panels / the right pane |
-| `i` / `h` `Esc` | Start typing in the Agent panel / go back left |
-| `^q` `z` | Make the right pane (4) full width and hide the left / again to restore. Pressed while typing, you return to typing |
-| `^q` `<` `>` / `^q` `=` | Narrow / widen the left pane by 4 columns / reset to the default (40%). Width and zoom are kept in `~/.local/share/pekoe/layout.json`, so the TUI after a restart and agents started from the CLI get the same width. Has no effect below 100 columns (stacked layout) |
-| `^q` `,` | Edit `config.toml` (`pekoe config edit` in this terminal; the TUI comes back when the editor closes) |
-| `^q` `o` | tapi's dashboard in one move (even while typing into tapi chat or an agent, whichever session is selected: it selects the tapi row and focuses [4]; [tapi chat](#tapi-chat)) |
-| `^q` `m` | Mute voice / unmute it (`pekoe voice`; stops what is sounding and the queue). Works from any panel and while typing, and you keep typing. The bar shows `voice` while tapi speaks and `muted ^q m` while muted |
-| `n` | New worktree + session |
-| `t` / `T` | Open tapi chat and talk to it ([tapi chat](#tapi-chat)) / reset tapi chat (asks first) |
-| `w` | Choose a repository |
-| `]a` `[a` | Next waiting session (including PRs with activity, and tapi when it waits for permission or an answer; the longest waiting first) / back to where you were |
-| `]r` | Next session waiting for review |
-| `r` | Review surface (the right pane becomes nvim; the agent keeps running behind it) |
-| `p` | PR view (checks, reviews, threads; select with `space`, send to the agent with `s`) |
-| `v` | Preview window (screenshots of the dev server inside the TUI; `m` mobile width, `c` before/after) → dev window → agent |
-| `b` `l` `d` | Open the port in Chrome / land (confirmation with conflict forecast) / dev server |
-| `!` | Run a command once in that worktree (run window). A `! <cmd>` or code on the agent's screen becomes the initial value. You can answer prompts and passwords directly; when it ends, `↵` goes back to the agent and `y` tells the agent the result (exit code, or interrupted on Ctrl-C). `x` closes without asking |
+| `j` `k` / `↵` | Select a session or the tapi row / enter the right pane and type (every key but `^q` goes to the agent) |
+| `^q` / `^q` `h` `l` | Leave input and go back to Sessions (change with `[keys] prefix`) / focus the left panels / the right pane |
+| `i` / `h` `Esc` | Start typing in the Agent panel / back to the left |
+| `^q` `z` / `^q` `<` `>` `=` | Zoom the right pane (toggle) / narrow, widen or reset the left panels |
+| `^q` `,` / `^q` `o` / `^q` `m` | Edit `config.toml` / go to tapi's dashboard / mute voice (toggle). All work while typing too |
+| `n` | New worktree and session |
+| `t` / `T` | Open tapi chat and talk / reset tapi chat (asks first) |
+| `w` | Switch repository |
+| `]a` `[a` / `]r` | Next waiting session (PR news and tapi's prompts included) / back / next one waiting for review |
+| `r` / `p` | Open the review / the PR view (checks, reviews, threads; select with `space`, send to the agent with `s`) |
+| `v` | Cycle the preview window (dev server screenshots; `m` mobile width, `c` before/after) → dev window → agent |
+| `b` `l` `d` | Open the port in Chrome / land (asks first, with the conflict forecast) / dev server |
+| `!` | Run a command once in the worktree (the run window; `y` tells the agent the result) |
 | `u` `R` | Undo the last prompt / restart the agent (resume) |
-| `s` `i` `↵` | Send / ignore / show details of an error card (errors pekoed found in the dev server or browser). While a card is shown, typing is `a` |
-| `x` `D` | End the session (keep the worktree) / delete the worktree (asks first) |
-| `/` `?` `:` | Filter / key list (select and Enter to run) / command (`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `voice` `cleanup` `config` `ext` `tutorial` `q`) |
-| `:voice` | What voice said, newest 50 first (`pekoe voice log`): time, result (`spoken` `merged` `muted` …), kind and the sentence; the selected line adds the backend, latency and reason. Grows while open. `j` `k` move, `esc` `q` close. `:voice mute` / `:voice unmute` too |
-| `:cleanup` | The cleanup list (`pekoe cleanup`): landed, merged and long-stopped sessions with their warnings (uncommitted files, unpushed commits, an open PR). `space` marks one, `a` marks every landed one, `D` removes the marked ones (or the selected one) after a confirm that names each worktree it deletes and repeats the warnings |
-| `H` | Tutorial again (also `:tutorial`, see [Tutorial](#tutorial)) |
-| `.` | Next tip (only while a tip is shown in 4's empty view, see [Tips](#tips)) |
-| `1`–`4` `Tab` `[` `]` | Move between panels / switch subtabs. Below 100 columns the left tab follows: `2` shows Worktrees (or Issues), `3` Changes |
+| `s` `i` `↵` | Send / ignore / open an error card (dev server or browser errors) |
+| `x` `D` | End the session (the worktree stays) / delete the worktree (asks first) |
+| `/` `?` `:` | Filter / key list (Enter runs the selected one) / commands (`new` `send` `land` `rm` `dev` `undo` `restart` `review` `inbox` `voice` `cleanup` `config` `ext` `tutorial` `q`) |
+| `:voice` / `:cleanup` | What voice said / the cleanup list (select with `space`, delete with `D`) |
+| `H` / `.` | Replay the tutorial / next tip (while one shows in the empty view) |
+| `1`–`4` `Tab` `[` `]` | Move between panels / switch sub-tabs |
 | `q` | Quit |
 
-- When any session, or tapi chat, waits for a permission, the Permission modal comes up on top of whatever you are looking at, naming the repository and the session (or tapi chat): `y` allow, `n` deny, `A` always allow, `g` go to that session (or open tapi chat), `esc` later. Answering doesn't change what is selected or shown. Several waits come up one after another, the oldest first. It holds back while you type text (into [4], the `/` filter, the Issues search, a pick's instruction: your keys would answer it) and comes up as soon as you leave. A prompt dismissed with `esc` stays down until that session waits again or asks for another tool
-- In [2] Issues, `f` cycles assigned to me → all open → by label, and `n` creates a session from the issue
-- [2] Browser ties localhost tabs open in Chrome to sessions by port. `E` sends the console errors
-- When an element arrives from Chrome, a card appears in the Agent pane (`↵` send, `^s` another session, `^n` new session, `esc` discard). A pick with an instruction is sent right away to the session that owns the page's port (`[picks] auto_send`)
-- Sessions touching the same files get a warning icon and the count in the list (`! 2` with unicode icons)
-- Passed through to the agent: OSC 52 (clipboard), OSC 8 (links), OSC 9/99/777 (notifications), mouse (SGR), Kitty keyboard protocol (so Shift+Enter and friends arrive; disable with `PEKOE_KITTY=0`)
+- When anything asks for permission, a session or tapi chat, the Permission modal comes to the front (`y` allow, `n` deny, `A` always, `g` go to it, `esc` later). It never cuts in while you are typing
+- When a new inbox question an agent is waiting on arrives, the answer screen comes forward once your hands stop (`]a` answers it later too)
+- In [2] Issues, `n` starts a session from an issue. [2] Browser ties Chrome's localhost tabs to sessions. Elements picked in Chrome show up as a card in the Agent pane
+- Sessions changing the same files get a warning icon and the number of others in the list
 
-All keys are listed in [docs/design.md](docs/design.md#cli-コマンドとキーバインド).
+Each key in detail, and the terminal features passed through, are in [docs/tui.en.md](docs/tui.en.md); every key is in [docs/design.md](docs/design.md#cli-コマンドとキーバインド).
 
 ### tapi chat
 
-Press `t` in any panel and [4] switches to a conversation with the mascot tapi (tapi chat), ready for typing. tapi is the **orchestrator**: it doesn't write the changes you ask for itself, but creates sessions with `pekoe new` to do them, waits for their reports with `pekoe wait`, and gives you one report back. What it brings to you is only what needs your decision or approval (the inbox). One-off questions that belong to no session and research across repositories ("any dependabot alerts in my repositories?") it answers itself. You can talk to it while the main session is busy. Creating sessions in the TUI and typing into them directly, without tapi, works as before. If tapi's agent does not use `pekoe wait`, `[orchestrator] deliver = "idle"` has pekoed type what piled up (reports and the like) into tapi's input box as one line (`[pekoe] 3 件の変化(…)。詳しくは pekoe --json wait --mine --since …`); it is off by default.
+Press `t` from any panel and [4] switches to a conversation with the mascot tapi (tapi chat), ready for you to type. tapi is the **orchestrator**: it doesn't write the changes you ask for itself, but starts sessions with `pekoe new`, waits for their reports with `pekoe wait`, and sends you one summary. It brings you only what needs a decision or an approval (the inbox). One-off questions, and ones across repositories, it answers itself. You can still skip tapi, start sessions and type to them directly.
 
-- `^q` (the prefix) closes it. The conversation stays; `t` again continues it. `Esc` goes to the agent (Claude Code's interrupt). `^q` `z` / `^q` `<` `>` `=` work as they do for agents and return you to typing in tapi chat (opened while zoomed it is full width, and the pty is sized to the pane). When a click on the left panels only stopped the typing (tapi chat still shows), `^q` closes it too
-- `^q` `o` closes tapi chat and goes straight to the dashboard (whichever session was selected: it selects the tapi row and focuses [4]). From the dashboard, `t` takes you back to tapi chat, typing
-- The agent starts the first time you open it (not when pekoed starts). It runs in `~/.local/share/pekoe/tapi/`, where pekoed puts a `CLAUDE.md` describing its role and the commands it uses. The first time, Claude Code asks you to trust the folder
-- With Claude Code, the repositories pekoe knows and `~/worktrees` are passed with `--add-dir`, so reading across them doesn't ask for permission each time (added or removed repositories apply from the next start)
-- The first row of Sessions is tapi's: its state icon, `tapi`, how long it has been in that state, and the first line of its last reply (e.g. `◉ tapi  wait 2m  Start a session for #198?`). It is always there, under the `orchestrator` heading above the repository headings, and a `/` filter leaves it in place. Select it with `j` `k` (or `g`): `↵` opens tapi chat, `l` / `→` go into the dashboard in [4]. Session keys (`/` `x` `D` `r` `p` `d` `!` `v` …) do nothing on it; the bottom line shows `↵ open tapi` `l dashboard` `T reset tapi` instead
-- While the tapi row is selected, [4] is the **dashboard**: what pekoed holds, on one screen, without spending model tokens. From the top: an overview (first what is your turn — open questions and PRs ready to merge — then running, waiting, to merge, open PRs, open requests, then the numbers of `pekoe stats`: today's merges and tokens by kind — output and cache write plain, cache read and input (most of the sum) quiet — `📊 today  2 merged · out 85.0k · cache write 410.0k · cache read 9.80M · in 1.2k`, and the last 7 days' merges as a ▅▁ bar a day like the pipeline's, `📅 7 days  ▁▁ ▁▁ ▁▁ ▅▁ ▁▁ ▁▁ ▅▅  3 merged` (each day's count, `0 0 0 1 0 0 2`, with ascii); `stats unavailable` and why when they cannot be read. Stats read the transcripts, so they are read when the dashboard opens and every 30 seconds only), the inbox by kind (login, approve, decide, merge ready), the pipeline of every session (a colored bar of implement → review → PR → CI → merge (the order the work goes in: the independent review comes before the PR), `▅▅▅▅▅▅▅▅▁▁`, where it is now, `⏳ CI running` or `🔍 in review`, and why a merge condition is missing — `👀 needs re-review` when the PR's head changed what was reviewed, while a head that only rebased the reviewed change keeps the pass; grouped by who asked and which request, merged ones folded quietly at the end, a repository's own checkout left out), your open requests from the ledger (and under them, quietly, what pekoed closed itself as no request in the last 24 hours), the send log (newest first) and what the agents decided themselves (`fyi`). Go in with `4`; `j` `k` choose a row, `↵` answers an inbox item (the same modal as `]a`) or unfolds a row (the full text, each merge condition), `o` opens the item's link (on a pipeline row it lists the evidence of the session's reports — screenshots, videos, logs, the PR's URL; `j` `k` choose one and `↵` opens it: a PNG in place when the terminal draws Kitty graphics, other images, videos, PDFs and text in an app outside (on macOS Preview, QuickTime Player and TextEdit, named; on Linux `xdg-open`'s default), a URL in the browser. Any other file (a script …) is not opened, only shown where it is, and one that is gone says `missing`), `h` / `esc` go back. tapi chat still opens with `↵` on the row (or `t`). `^q` `o` gets you here from anywhere (typing into tapi chat too). The agents' words are drawn as plain text only. Section headings carry an emoji (only ones every terminal draws two cells wide; none with `icons = "ascii"` or `[mascot] glyphs = "ascii"`, where the bar becomes marks like `vv~..`)
-- tapi's face is in the title and changes while it thinks or waits for permission. If it starts waiting for permission or an answer while closed, it is treated like a session waiting for you: a toast, `tapi needs you · t` on the bottom line (blinking after 30 seconds), and a desktop notification after 2 minutes while the terminal is not focused. `[orchestrator] notify = "quiet"` brings back the old way (only `chat waits · t` on the bottom line, below a session's wait)
-- What you type into tapi is recorded in the ledger of requests (`pekoe ledger`); tapi ties the sessions it starts to it and closes it when done (small talk closes itself as "no request" when tapi's reply ends, and the same text sent twice in a row stays one entry)
-- tapi reads the repositories and `~/worktrees` but can't write them (not with Bash, Edit or Write; see "Letting agents use pekoe" below). Only its own directory is writable
-- `T` (or `pekoe tapi reset`) stops it and also deletes Claude Code's record of the conversation. The ledger and the inbox stay in pekoed, and the next tapi reads them and picks up where things are. The Web UI shows its state and last reply (Overview tab), but you can't talk to it from there yet
-- Change the agent with `[tapi] agent` ([Configuration](#configuration))
+- `^q` closes it. The conversation stays; `t` again picks up where you were. `Esc` goes to the agent (interrupts Claude Code)
+- The agent starts the first time you open it. Its working directory is `~/.local/share/pekoe/tapi/`, where pekoed puts a `CLAUDE.md` describing its role. It can read the repositories pekoe knows and `~/worktrees`, but not write to them
+- While the tapi row at the top of Sessions is selected, [4] is the **dashboard**: what needs you, the inbox, a pipeline per session (`impl → review → PR → CI → merge` and what's missing for the merge), requests, and today's and the last 7 days' numbers (`pekoe stats`), on one screen with no model tokens spent. `↵` answers the inbox, `o` opens a report's evidence (screenshots, logs, PRs). `^q` `o` gets you there from anywhere
+- When tapi waits for permission or an answer, you're told like a waiting session (toast → blinking bottom line → OS notification; `[orchestrator] notify = "quiet"` tones it down)
+- What you type to tapi is recorded as a request (`pekoe ledger`) and closed when done. `T` (or `pekoe tapi reset`) makes it forget the conversation; the ledger and the inbox stay
+- You can also talk to tapi from the Web UI's tapi tab (iPhone). Change its agent with `[tapi] agent`
+
+More in [docs/tui.en.md](docs/tui.en.md#tapi-chat), [docs/tapi-chat.md](docs/tapi-chat.md) and [docs/orchestration.md](docs/orchestration.md).
 
 ### Tutorial
 
-The first time the TUI starts, a short tour walks through the screen in two parts, tapi first: asking tapi (the tapi row, tapi chat, the dashboard, the inbox, and the pipeline up to a PR ready to merge, which you merge yourself), then driving sessions yourself (Sessions and their states, the agent, the new-session dialog, Changes and review, the PR view and land, the key list). One part at a time is put in focus with a card in which tapi explains it; the rest of the screen dims. `↵` / `→` / `l` / `space` next, `←` / `h` / `backspace` back, `esc` / `q` skip. The cards come in English and Japanese: Japanese when the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that is set starts with `ja`, English otherwise. `tab` switches between them during the tour (staying on the step), and the language you pick is used from then on. It runs on sample sessions inside the TUI only: nothing is created in pekoed, and no key reaches an agent while it runs. Your sessions come back when it ends, including what changed meanwhile. That it was seen (or skipped), and the language you picked if you did, is recorded in `~/.local/share/pekoe/tutorial.json`; `H` or `:tutorial` shows it again.
+The first time the TUI starts, a tour walks you through the screen. Part one is "ask tapi" (the tapi row, tapi chat, the dashboard, the inbox), part two "drive it yourself" (Sessions, the agent, new sessions, Changes and review, the PR view and land, the key list). `↵` / `→` goes on, `←` back, `esc` ends it. The cards are in English and Japanese (picked from your locale, `tab` switches), and the tour is a sample inside the TUI only: nothing is created in pekoed. Replay it with `H` or `:tutorial` ([docs/tui.en.md](docs/tui.en.md#tutorial)).
 
 ### Tips
 
-pekoe introduces its features one at a time ("this is handy when…"). They appear in two places:
-
-- 4's empty view (no session selected, or a worktree being created; not on the tapi row, which shows the dashboard). Under tapi's face and caption, it shows a `tip` heading, a one-line summary and a longer explanation. `.` shows the next tip. If there isn't enough height or width, the longer explanation goes first, and if it still doesn't fit nothing is shown
-- tapi chat's greeting in its first reply. Ask "give me a tip" for the next one, or "tell me more" and tapi reads the doc the tip points to and explains (tapi uses `pekoe tip` and `pekoe tip --doc`)
-
-Shown tips are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown (shared by the TUI and tapi chat). `[tips] enable = false` turns both off. List them with `pekoe tip --list`; the content is in `internal/tips/tips.toml`. Tip texts are in Japanese (the tutorial's cards in English or Japanese, everything else in the UI in English).
+pekoe introduces its features one at a time, as "handy ways to use it". They show in the empty view of [4] (`.` for the next) and in tapi chat's first greeting. Ask tapi for a tip and it gives you the next one; ask for more and it reads the docs the tip points to (`pekoe tip`, `pekoe tip --doc`). Tips shown are recorded in `~/.local/share/pekoe/tips.json`, and none repeats until all have been shown. `[tips] enable = false` turns them off; `pekoe tip --list` lists them. The tips' text is in Japanese only.
 
 ## Review
 
-- A session that becomes `done` enters the review queue, and the Stop hook runs `test` automatically. A test command that isn't there (the shell's exit 127, "command not found") shows `test could not run` with a warning mark instead of ✗: the test didn't run, it didn't fail. Remove (or comment out) `test` in `repos/<id>.toml` and the last result goes away at the next Stop
-- Approval is per hunk (identified by path + a hash of the change, so it survives shifted line numbers)
-- `S` (`:PekoeSend` in nvim) sends all unsent comments as one message and records a review point `refs/pekoe/<slug>/review-<n>`. The next review shows only the diff from there
-- Each hunk shows which prompt it came from (`← prompt #3: …`)
-- `?` asks the agent about a hunk's intent; the answer is cut out by the Stop hook and shown
-- `pekoe review gh#123` reviews someone else's PR in the same view. Comments go to a GitHub review through `gh api`
-- Put a read-only agent command in `[review] gatekeeper`, and a list of risky spots shows up in the Comments panel and in nvim's `:PekoeRisks` (quickfix)
+- A session that turns `done` goes into the review queue, and the Stop hook runs `test` (a test command that can't be found shows `test could not run`, not a failure)
+- Approval is per hunk (hunks are identified by path and a hash of the change, so approvals survive shifted line numbers)
+- `S` (`:PekoeSend` in nvim) sends your unsent comments as one message and records a review point `refs/pekoe/<slug>/review-<n>`. The next review shows only the diff since then
+- Each hunk shows the prompt it came from (`← prompt #3: …`). `?` asks the agent what a hunk is for
+- `pekoe review gh#123` reviews someone else's PR in the same view (comments go out as a GitHub review)
+- Put a read-only agent command in `[review] gatekeeper` and a list of risky spots appears in the Comments panel and in nvim's `:PekoeRisks`
 
 ## Integrations
 
 ### Neovim
 
-[nvim/README.md](nvim/README.md). Add `{ dir = "~/.local/share/pekoe/nvim" }` to lazy.nvim (the link `make install` creates; if you installed a release with the steps above, use `~/.local/opt/pekoe/share/pekoe/nvim`). The nvim that pekoe starts loads it automatically. Besides the review surface (`:PekoeReview` `:PekoeSend`): `<leader>bs` sends the selection, `<leader>bn` starts a new session from the selection, a floating window for permission prompts (it does not take the focus: `<leader>ba` enters it, and you answer from the agent's screen shown in it), and `:PekoeSessions` `:PekoeNew` `:PekoeAnswer` `:PekoeFollow` `:PekoeFixDiagnostics` `:PekoeRisks`.
+Add `{ dir = "~/.local/share/pekoe/nvim" }` to lazy.nvim (`~/.local/opt/pekoe/share/pekoe/nvim` if you installed a release). nvim started by pekoe loads it on its own. Besides the review (`:PekoeReview` `:PekoeSend`), there's `<leader>bs` to send the selection, `<leader>bn` to start a new session from it, a floating window for permission prompts (`<leader>ba`), and more. See [nvim/README.md](nvim/README.md).
 
 ### Chrome extension
 
-[extension/README.md](extension/README.md). `chrome://extensions` → Developer mode → Load unpacked → enter the port and token from `pekoe ext` in the options. Pick an element with ⌘⇧E (Ctrl+Shift+E elsewhere) and send it with an instruction and a cropped screenshot. Errors from localhost pages and the open tabs also reach pekoed.
+At `chrome://extensions`, turn on Developer mode and "Load unpacked", then enter the port and token from `pekoe ext` in the options. ⌘⇧E (Ctrl+Shift+E off macOS) picks an element and sends it with an instruction and a cropped screenshot. Errors on localhost pages and the open tabs also reach pekoed. See [extension/README.md](extension/README.md).
 
 ### MCP
 
@@ -358,114 +324,51 @@ Register with `claude mcp add pekoe -- pekoe mcp`. The tools are `open_in_editor
 
 ### Claude Code skills
 
-The four in [skills/](skills/). Each works both in tapi chat and for the agent in a main checkout ([docs/orchestration.md](docs/orchestration.md)). They are written in Japanese.
+The four in [skills/](skills/). Each works both in tapi chat and for the agent in the main checkout ([docs/orchestration.md](docs/orchestration.md)).
 
 | Skill | Used by | What it covers |
 | --- | --- | --- |
-| [pekoe](skills/pekoe/SKILL.md) | main, tapi | hand change requests to another worktree and agent with `pekoe new`, and send follow-up instructions from main with `pekoe send` (the hub's basics) |
-| [pekoe-orchestrate](skills/pekoe-orchestrate/SKILL.md) | tapi, a hub | how to split requests, a prompt template, waiting with `pekoe wait`, what to bring to a person, how to report to them |
+| [pekoe](skills/pekoe/SKILL.md) | main, tapi | hand change requests to another worktree and agent with `pekoe new`, and send follow-ups with `pekoe send` (the basics of a hub) |
+| [pekoe-orchestrate](skills/pekoe-orchestrate/SKILL.md) | tapi, a hub | how to split requests, a prompt template, waiting with `pekoe wait`, what to bring to a person, how to report |
 | [pekoe-work](skills/pekoe-work/SKILL.md) | a work session | plan → implement → test → independent review → `pekoe land` → `pekoe report` |
-| [pekoe-review](skills/pekoe-review/SKILL.md) | an independent reviewer | an agent that is not the author reads the diff and records pass / fail with the commit SHA (`pekoe report --status review`) |
+| [pekoe-review](skills/pekoe-review/SKILL.md) | an independent reviewer | an agent that didn't write the diff reads it and records a verdict with the SHA in `pekoe report --status review` |
 
-Install them with `pekoe skills install`. Their text is built into the binary: it is written to the data directory (`~/.local/share/pekoe/skills/`) and linked from `~/.claude/skills/<name>` (`$CLAUDE_CONFIG_DIR/skills/<name>` if set). It shows what it will do and asks first (`--yes` skips the question). Work sessions run in worktrees of any repository, so the skills belong in your own `~/.claude/skills`, where every session reads them.
-
-- The text is that of the installed pekoe, not of a repository checkout. A newer pekoe (`pekoe update`, `make install`) writes it out again when pekoed starts; `pekoe skills install` does it right away
-- A link you made by hand (`ln -s "$PWD/skills/pekoe" ~/.claude/skills/pekoe`) is replaced only after asking (only the link changes; what it pointed at is left alone). A link to the same place is left as it is. A directory or file that is not a link is skipped untouched, with a note to move it away and run again (not inside `~/.claude/skills`: Claude Code reads everything there as a skill)
-- `pekoe skills status` shows each one's state (installed, older text, a link to somewhere else, a directory in the way, not installed); `pekoe skills uninstall` removes pekoe's links and the written text (links made by hand stay)
-- To try changes to the skills themselves, link them by hand (`ln -s "$PWD/skills/<name>" ~/.claude/skills/<name>`); `pekoe skills install` asks before replacing such a link
-- Claude Code agents cannot rewrite the written text with the Edit tool (pekoe's sandbox settings deny it; below)
+`pekoe skills install` writes the skills' text, built into the binary, to the data directory and links `~/.claude/skills/<name>` to it (it asks before writing; after an update, pekoed writes them again when it starts). Links you made by hand, `status` and `uninstall` are in [docs/install.en.md](docs/install.en.md#installing-the-claude-code-skills).
 
 ### Letting agents use pekoe: permissions
 
-Agents run as the same user, so they can connect to pekoed's socket. pekoed runs outside the agents' sandbox, so without the `human-token` it allows only what agents need: `pekoe event` from the hooks, `pekoe ls`, `pekoe new`, `pekoe send`, `pekoe land`, `pekoe rm`, `pekoe wait`, `pekoe reports`, `pekoe inbox` (the list), `pekoe stats` (counts only), `pekoe conflicts` and `pekoe cleanup` (the list; it reads git status in the worktrees at most every 10 seconds each) for the hub (the skill; `send` only into an agent's input box and not while it shows a permission dialog; `land` only in a repository with an origin; `rm` only of a landed session, below), `pekoe ledger` for tapi chat (the list, closing, linking and keeping; only from tapi's window), `pekoe report` and `pekoe dev` for a working session (its own session only), `pekoe ask-human` for an agent asking a person (only a person answers; it can `withdraw` its own question), and the MCP server's `session_list` and `open_in_editor`. Everything else (answering permission prompts, raw keys, typing into tapi chat, drafting and writing settings, starting another session's `dev`, running commands in the run window or the review surface, looking at other sessions' screens, diffs or error excerpts, stopping the daemon, …) needs the token. `rm` without the token removes only a landed session: when pekoed saw its PR merged it already ran the teardown and removed the worktree, so what is left is pekoe's record of it and the code is on the base branch. `rm` of a session in any other state would delete a worktree and its uncommitted changes, so it stays human-only, and so do `rm --force` and a landed session whose worktree is still there (its removal failed). The token is in `~/.local/share/pekoe/human-token` (`$PEKOE_HOME/share/human-token` if `$PEKOE_HOME` is set; mode 0600), and the TUI, CLI and Neovim read it and send it. Neither the token nor its path is put in the environment of the agents' panes. Which method is which is listed under "人間だけの操作" (human-only operations) in [docs/api.md](docs/api.md).
+Agents run as your user, so they can connect to pekoed's socket. So for calls without the `human-token`, pekoed allows only what agents need (a hub's `ls`, `new`, `send`, `wait` …, a work session's `report`, `ask-human` and its own `dev`, `land`, `rm` of a landed session), and keeps answering permission prompts, answering the inbox, writing settings, stopping the daemon and the like for humans. The token is in `~/.local/share/pekoe/human-token` (0600); the TUI, CLI and Neovim read it and send it along. Agents never get it.
 
-But an agent running as the same user can read files. Two things keep the token from it:
+An agent running as your user can still read files, so these protect the token and other secrets:
 
-1. **Claude Code agents run in a Claude Code sandbox that pekoe configures (on by default).** Every time pekoe starts Claude Code (new sessions, `open`, restarts, resuming after a daemon restart, and tapi chat; any `[agents.*]` whose `command` starts with `claude`), it adds `--settings <data dir>/agent-settings/<slug>.json`. The paths in it are the real ones, following `$PEKOE_HOME`, `$XDG_DATA_HOME`, `$XDG_CONFIG_HOME` and `[web] state_dir`:
-   - `sandbox.enabled: true`, `allowUnsandboxedCommands: false` (no retry with `dangerouslyDisableSandbox`), `failIfUnavailable: true` (Claude Code doesn't start without a working sandbox), `filesystem.disabled: false`
-   - `filesystem.denyRead`: `human-token`, `http-token`, `state.db` (with `-wal` and `-shm`: it holds prompts, review comments, reports and the send log, which agents read only through pekoed's API), the tsnet state, the local GUI's sign-in pages (`~/.local/share/pekoe/gui/`), pekoe's config directory (`~/.config/pekoe`) and the profiles of the common browsers (Chrome, Edge, Brave, Arc, Firefox, Safari …: the local GUI's session token may be written there; on Linux only those present when the agent starts). Enforced at the OS level for Bash commands and their children
-   - `permissions.deny`: `Read(...)` and `Edit(...)` for the same paths (the Read and Edit tools run outside the sandbox), and `Edit(...)` for `agent-settings` itself and the written skills' text (`skills/`)
-   - `permissions.allow`: `Read(...)` for the directory of images sent to this session from the Web UI (`<data dir>/images/<slug>/`, tapi chat's `images/+tapi/`), so the agent opens the `[image] <path>` lines of a send without asking ([docs/web.md](docs/web.md), 「画像の扱い」)
-   - `filesystem.denyWrite` and `Edit(...)`: the repository's `.git/config`, `.git/config.worktree` and `.git/hooks`, and the same in the git directories of its submodules (`.git/modules/…`, those there when the agent starts) (agents can still commit, but can't change settings the git you run yourself follows)
-   - tapi chat only: `filesystem.denyWrite` and `Edit(...)` for each repository it reads through `--add-dir` and for `~/worktrees` (symlinks resolved too). The orchestrator hands work to sessions instead of doing it, so it can't write there with Bash, Edit or Write. Its own directory (`tapi/`) stays writable. `[agents.<tapi's agent>] sandbox = false` drops this as well
-   - `network.allowUnixSockets`: pekoed's socket (for `pekoe ls`, `new` and `send`). Hooks run outside the sandbox, so `pekoe event` isn't affected anyway
-   - `hooks.MessageDisplay`: only when, at the agent's start, `[voice] enable = true` and `focus_mode` or `background_mode` is `read`. `<pekoe's absolute path> event MessageDisplay` (2-second timeout) hands the reply's text to pekoed as it is shown ([docs/voice.md](docs/voice.md), 3.1). It runs alongside the hooks in `~/.claude/settings.json` (they are merged). An agent with `sandbox = false` still gets a file with this hook alone
+1. **Claude Code agents run in a Claude Code sandbox configured by pekoe (by default).** pekoe passes `--settings <data dir>/agent-settings/<slug>.json` at every start, so they can't read the token, `state.db`, pekoe's settings and the like, or write the repository's `.git/config` and `.git/hooks` (tapi chat can't write the repositories at all). Without a working sandbox Claude Code won't start. It applies to claude only; `[agents.claude] sandbox = false` turns it off. By default, writing outside the worktree and connecting to domains not allowed stop working, so loosen only what you need with `allowWrite` / `allowedDomains` in `~/.claude/settings.json`
+2. **Don't allow all of pekoe, as in `Bash(pekoe *)`.** If you allow-list it, keep to the commands hubs and work sessions use. Leave out `answer`, `init`, `rm`, `daemon` and `event`
+3. **Commands that come from a worktree run in pekoe's own sandbox.** `[hooks]` (test, setup, dev, teardown), `[review] gatekeeper` and land's test run in `sandbox-exec` on macOS and `bwrap` on Linux, which forbid reading the token and settings, and writing files that later run outside the sandbox (`[sandbox] enable = false` turns it off). Changes to the main `.git/hooks` and `.git/config` are reported to the inbox
+4. **pekoed's own git doesn't run what agents wrote into git's config** (fsmonitor, hooks, credential helpers and the like are overridden with your own settings or git's defaults)
 
-   **Claude Code only.** codex, opencode and other agents get nothing; if you use them, make the same paths unreadable with their own sandbox. `[agents.claude] sandbox = false` in `config.toml` turns it off (per agent definition, e.g. `[agents.claude-ask]`).
-
-   **How it combines with your own settings** (Claude Code's [sandbox](https://code.claude.com/docs/en/sandboxing) and [settings](https://code.claude.com/docs/en/settings) docs; this can change between versions):
-   - `--settings` ranks above `~/.claude/settings.json` and a repository's `.claude/settings.json` (only managed settings rank above it). `"enabled": false` in `~/.claude/settings.json` doesn't turn the sandbox off in pekoe's sessions
-   - Lists such as `denyRead`, `allowWrite`, `allowedDomains` and `permissions.deny` are merged: yours are added to pekoe's
-   - Because `allowUnsandboxedCommands: false` comes from `--settings`, the sandbox is "admin-required": settings that loosen it count only from `--settings`, `~/.claude/settings.json` and managed settings. `allowWrite`, `allowedDomains`, `excludedCommands` and the like in a repository's `.claude/settings.json` / `.claude/settings.local.json` are ignored (agents can write those files)
-   - `excludedCommands` in `~/.claude/settings.json` do apply, and the commands listed there run outside the sandbox, where they can read the token. Don't list commands that can read files (`gh`, `cat`, `python`, …), and don't reopen the paths above with `filesystem.allowRead`
-
-   **What stops working by default:** writing outside the working directory (the worktree), the temp directory and `--add-dir` directories (the Go build cache, npm / pnpm caches, …), and network access to domains you haven't allowed (none at first; auto mode refuses them, manual permission modes ask). `git commit` works (the worktree's shared `.git` is writable). To loosen it, put only `allowWrite` / `allowedDomains` and the like in `~/.claude/settings.json`. Without `"enabled"` they don't affect Claude Code outside pekoe (its sandbox stays off there). An example, with what developing pekoe itself needs (Go's caches and modules, `gh`; npm only if you use it):
-
-   ```json
-   {
-     "sandbox": {
-       "enableWeakerNetworkIsolation": true,
-       "filesystem": {
-         "allowWrite": ["~/Library/Caches/go-build", "~/go/pkg/mod", "~/.npm", "~/Library/pnpm/store"]
-       },
-       "network": {
-         "allowedDomains": ["proxy.golang.org", "sum.golang.org", "github.com", "api.github.com", "registry.npmjs.org"]
-       }
-     }
-   }
-   ```
-
-   Check the paths with `go env GOCACHE GOMODCACHE`, `npm config get cache` and `pnpm store path` (on Linux, `~/.cache/go-build` and so on). In the macOS sandbox `gh` fails to verify TLS (`x509: OSStatus -26276`); with `enableWeakerNetworkIsolation: true` and `api.github.com` allowed it works (tested). Don't put `gh` in `excludedCommands` to run it outside the sandbox (`gh api --input <file>` could send the token out). If you don't loosen it, a person handles issues in the TUI (the same goes for tapi chat's counts that use `gh`), and `pekoe land` becomes the agents' way to push: pekoed pushes and opens the PR, after running the tests in its own sandbox. If you do allow `github.com` / `api.github.com`, an agent can `git push` and `gh pr create` by itself anyway, which is why `land` is open to agents; what keeps you in control is that you merge.
-
-   With `--permission-mode bypassPermissions`, connections to domains you haven't allowed go through without asking (Claude Code's behavior), so the network restriction has practically no effect; the file restrictions (the token stays unreadable) remain. On Linux, Claude Code's sandbox needs bubblewrap and socat; without them `failIfUnavailable` keeps Claude Code from starting (the agent's window shows why).
-
-   After reinstalling, have an agent try `cat ~/.local/share/pekoe/human-token` and `pekoe answer no-such-session deny`, and check that the first fails with `Operation not permitted` and the second is refused with `only a person can do this` (not `no such session`).
-
-2. **Don't allow pekoe wholesale, as in `Bash(pekoe *)`.** The hub (the pekoe and pekoe-orchestrate skills) uses `ls`, `new`, `send`, `wait`, `reports`, `inbox`, `conflicts` and `cleanup` (the list; tapi also `ledger`), and a working session (the pekoe-work and pekoe-review skills) uses `report`, `ask-human` and `dev` (to look at its UI), so if you add pekoe to the allow list, limit it to those. `pekoe inbox answer` and `pekoe ledger reopen` / `rm` are a person's operations and are refused even if you allow them. Don't add `pekoe event` (for hooks), `answer`, `init`, `rm` or `daemon`. Without the token, `dev` only starts or stops the dev server of the calling session (its own window) and refuses another session's slug (what runs is the repository's `[hooks] dev`, in pekoe's own sandbox like `[hooks] test`). `land` works without the token, but leaving it off the allow list makes Claude Code ask you before each push. The same goes for `rm`: an agent can clear a landed session, and Claude Code asks you first
-
-   ```json
-   {
-     "permissions": {
-       "allow": [
-         "Bash(pekoe ls)", "Bash(pekoe --json ls)", "Bash(pekoe --json new *)", "Bash(pekoe send *)",
-         "Bash(pekoe report *)", "Bash(pekoe --json reports *)", "Bash(pekoe --json wait *)",
-         "Bash(pekoe --json ask-human *)", "Bash(pekoe --json inbox)", "Bash(pekoe --json inbox *)",
-         "Bash(pekoe --json ledger)", "Bash(pekoe ledger *)", "Bash(pekoe --json stats *)",
-         "Bash(pekoe --json conflicts)", "Bash(pekoe --json conflicts *)", "Bash(pekoe --json cleanup)", "Bash(pekoe dev *)"
-       ]
-     }
-   }
-   ```
-
-**Commands from a worktree run in pekoe's own sandbox.** pekoed runs commands that come from code an agent can change: `[hooks] test` after every Stop, the `[review] gatekeeper`, `setup` on `pekoe new`, `dev` and `dev_stop`, `teardown` on rm / land, and the tests of `land`. Anyone can report a Stop, so an agent could otherwise put `cat ~/.local/share/pekoe/human-token` in a Makefile and have pekoed run it outside the agent's sandbox. pekoed runs these in a sandbox: `sandbox-exec` (Seatbelt) on macOS, bubblewrap (`bwrap`, from your distribution's package) on Linux. Everything is allowed (builds, tests and dev servers work as before) except reading `human-token`, `http-token`, the tsnet state, `config.toml`, `state.db` and the common browsers' profiles (where the local GUI's session token may be written; on Linux only those present when the command starts); writing pekoe's data and config directories and files that run later outside it (shell startup files, `~/.gitconfig`, launch agents, the writable directories on `$PATH`, what the next Claude Code reads and runs: `~/.claude.json`, and `settings*.json`, `skills`, `hooks`, `plugins`, `agents`, `commands`, `rules`, `output-styles` and `CLAUDE.md` in `~/.claude` or `$CLAUDE_CONFIG_DIR`, …); connecting to tmux servers and to the review surface's nvim (pekoe starts it with `--listen` in its data directory); and, on macOS, opening apps or sending Apple events. Where no sandbox works, pekoe doesn't run them: the session shows `test not run: no sandbox`, the gatekeeper's reason shows up among the risks, and setup / dev / teardown / land fail saying why. `[sandbox] enable = false` in `config.toml` runs them without one. On Linux, bwrap can only cover paths that exist, so before running a command pekoed makes the missing ones that change nothing by being there empty (in `~/.claude` / `$CLAUDE_CONFIG_DIR`: the directories above as empty directories, an empty `CLAUDE.md`, `settings*.json` of `{}`; empty `~/.config/git`, `~/.config/nvim` and the like), and for the rest (shell startup files you don't have, `~/.claude.json` …) makes their nearest existing parent read-only, with what is in it now still writable: in practice, a command can't create new files or directories directly in your home (it can still write inside the existing ones). Not wrapped: the run window (`!`, a command you type yourself) and the agents (their own sandbox's job). The deny list is aimed at the secrets: a command can still write elsewhere in your home, so this doesn't replace reviewing what an agent changed. Two known gaps, left open so your tools keep working: such a command can write the repository's own `.git/hooks` and `.git/config` (husky, pre-commit and lefthook install themselves there from `npm install` or a setup step), which the git you run in the main checkout then follows outside any sandbox — pekoed watches them (and the directory `core.hooksPath` points at) around each of these commands and, when hooks or settings that name a command (`core.hooksPath`, `core.fsmonitor`, `alias.*`, `include.path`, …) changed, puts an item in your inbox saying what changed, in which session and during which hook (it changes nothing itself); and it can connect to other unix sockets such as Docker's or ssh-agent's. Details: [docs/api.md](docs/api.md) ("hooks の sandbox", "本体の .git の見張り").
-
-**pekoed's own git doesn't run what an agent wrote into git's config.** git runs commands named in its config (`core.fsmonitor` on every `git status`, hooks, credential helpers, filter and merge drivers picked by `.gitattributes`, `gpg.program`, `core.sshCommand`, …), and pekoed runs git in the worktrees all the time (diffstat, snapshots, review, undo, the conflict forecast, land, rm). An agent can rewrite its worktree's `.git` file to point at a git directory of its own, and an agent that can commit can usually write the repository's `.git` too. So pekoed (and the `gh` it runs) uses the git directory the repository has for each session's worktree, whatever its `.git` file says (if that file was changed, pekoe runs no git there and the session shows `.git changed: git stopped`); sets the settings that name a command from your own config (system / global) or git's defaults — no fsmonitor, no hooks at all (so `land`'s push runs no pre-push hook), only your credential helpers and signing programs, no `ext::` remotes, `--no-ext-diff --no-textconv`, the default upload-pack / receive-pack; and runs git in the same sandbox as the hooks, for what has no fixed name (filter and merge drivers, git-lfs settings, the hooks of a local-path remote). Where no sandbox works, git still runs (pekoe can't work without it) and those last ones are not contained. git you run yourself (your shell, the run window, git plugins in the review surface's nvim) reads the worktree as git normally does: check `.git` before using git in a worktree that shows the warning, and don't let agents write `<repo>/.git/config` or `.git/hooks` (pekoe passes `sandbox.filesystem.denyWrite` and `Edit(...)` denies for them to Claude Code agents; block them yourself for other agents). Commands pekoed runs from a worktree can still write them (above); look at the inbox item pekoed posts when they changed before using git in the main checkout. Details: [docs/api.md](docs/api.md) ("pekoed が動かす git").
-
-The Web UI and the Chrome extension are human entry points that don't go through the socket, so each works with its own authentication. Threat model: [docs/web.md](docs/web.md#脅威モデル).
+What the settings contain, how they combine with yours, examples of loosening them (Go, npm, `gh`), an allow list, and how to check it all are in [docs/agent-permissions.en.md](docs/agent-permissions.en.md). Which methods are for humans is in "人間だけの操作" in [docs/api.md](docs/api.md), with "hooks の sandbox" and "pekoed が動かす git". The Web UI, the local GUI and the Chrome extension are entrances for humans that don't go through the socket, each with its own authentication.
 
 ### From an iPhone (Web UI)
 
-Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens over HTTPS as a node of its own on your tailnet (`https://pekoe.<tailnet>.ts.net/`). All it can do is list sessions, allow / deny permission prompts (with confirmation; `always` isn't offered), `send` (with up to 4 photos or screenshots: pekoed checks they are images, saves them outside the worktree and adds a line with each one's path for the agent to open with Read; a send with images shows a confirmation sheet with the target, the whole text and the thumbnails), a keypad for an agent's questions (AskUserQuestion menus), show the agent's screen (in color), answer the inbox (pekoed's facts and links first, then the agent's words; the recommendation is labelled as the agent's and never preselected; a confirmation sheet before sending, and an item that changed since you looked is refused), an Overview tab (counts, tapi's state, and every session's flow `impl → review → PR → CI → merge` with what is still missing for the merge, read only), and talking to tapi (its screen, the keypad for its questions, and `send`, images too; sending to tapi needs `allow_devices` and by default shows a confirmation sheet with the target and the whole text first (`confirm_tapi_send = false` turns it off); tapi's own permission prompts are answered at the terminal, never from the web). No port is opened on localhost, and every connection is checked against `allow_users` with Tailscale's WhoIs.
+Only in `make install WEB=1` builds. pekoed embeds Tailscale's tsnet and listens over HTTPS as a node of its own on your tailnet (`https://pekoe.<tailnet>.ts.net/`). It has three tabs, Now (what needs you, how requests are going), Sessions and tapi, and all it can do is allow / deny permission prompts (`always` isn't offered), `send` (with up to 4 photos or screenshots), a keypad for an agent's questions, show an agent's screen, answer the inbox, show the pipeline, and talk to tapi (only with `allow_devices` set). It opens no port on localhost, and checks every connection against `allow_users` with Tailscale's WhoIs.
 
-1. Enable MagicDNS and HTTPS on your tailnet, write `[web]`, and restart pekoed
-2. Open the login URL shown by `pekoe web` to join the tailnet (or use `TS_AUTHKEY`)
+1. Turn on MagicDNS and HTTPS for your tailnet, write `[web]`, and restart pekoed
+2. Open the login URL from `pekoe web` to join the tailnet (`TS_AUTHKEY` works too)
 3. Open the URL from `pekoe web` in Safari on the iPhone and add it to the home screen
 
 The certificate's hostname appears in Certificate Transparency logs. Design and threat model: [docs/web.md](docs/web.md).
 
 ### From this Mac's browser (local GUI)
 
-`pekoe gui` serves the Web UI's API, with a desktop page of its own, to this Mac's own browser, on `127.0.0.1` only (any build; nothing listens until you run it). `[gui] enable = false` refuses the next `pekoe gui`; tabs already open keep working until `pekoe gui --stop` (`pekoe gui --status` shows them) (design: [docs/gui.md](docs/gui.md)). Differences from the Web UI: a send to tapi needs no `allow_devices` and no confirmation sheet (as in the TUI), and permission prompts can be answered `always` (as `A` in the TUI).
+`pekoe gui` serves the Web UI's API with a desktop layout to this Mac's own browser, on `127.0.0.1` only (any build; nothing listens until you run it). Unlike the Web UI, sending to tapi needs no `allow_devices` and no confirmation sheet, and a permission prompt can be answered `always`. Sign-in uses a one-time token (once, 60 seconds) that never goes on a command line or in a cookie. After a new tab or a restart of pekoed, when you haven't acted for `[gui] session_ttl`, or 24 hours after signing in, run `pekoe gui` again. `[gui] enable = false` refuses it.
 
-Signing in: pekoed writes a one-time token (valid once, for 60 s) into a page under `~/.local/share/pekoe/gui/` (0600, unreadable from the agents' and hooks' sandboxes) and the CLI opens that file, so the token is never on a command line. The page trades it for a session token kept in the tab's `sessionStorage` and sent as `Authorization: Bearer` (no cookie: a cookie for `127.0.0.1` would also reach an agent's dev server on another port). A new tab, or pekoed restarting, means `pekoe gui` again, as does `session_ttl` with no action of yours (allow, send…; the screen refreshing doesn't count) or 24 hours after signing in (`session_ttl` if longer). The port is a free one each time by default (`[gui] port`); if a fixed port can't be bound, `pekoe gui` refuses to open the browser.
-
-**Open it in a browser or profile no agent drives.** Whatever can drive that tab (Claude in Chrome, Playwright, Chrome DevTools) can answer permission prompts as you.
+**Open it in a browser (profile) no agent drives.** Whatever can drive that tab (Claude in Chrome, Playwright …) can answer permission prompts as you. Authentication and threat model: [docs/gui.md](docs/gui.md).
 
 ### Voice backends (VOICEVOX)
 
-`pekoe voice` ([docs/voice.md](docs/voice.md)) speaks with macOS's `say` out of the box. Any other speech engine plugs in as an external **backend**: an executable that turns one sentence into a WAV file. pekoe runs only the backends written with an absolute path in `[voice.backends]`, and never searches `PATH` for them.
+`pekoe voice` speaks with macOS's `say` out of the box. Other speech synthesis plugs in as an external **backend** (an executable that turns one sentence into a WAV file). pekoe runs only backends written with an absolute path in `[voice.backends]`, and never looks in `PATH`.
 
-Example: [pekoe-voice-voicevox](https://github.com/sakamosu/pekoe-voice-voicevox) (Japanese only; not public yet, so the link and the steps below work once it is published) speaks in a [VOICEVOX](https://voicevox.hiroshiba.jp/) voice through a local VOICEVOX engine (the VOICEVOX app, or its Docker image, listening on `127.0.0.1:50021`). Build it and put it where agents can't write (pekoe warns about a path under your home):
+Example: [pekoe-voice-voicevox](https://github.com/sakamosu/pekoe-voice-voicevox) (Japanese only; not public yet, so the link and the steps below work once it is) speaks with [VOICEVOX](https://voicevox.hiroshiba.jp/) voices through a local VOICEVOX engine (`127.0.0.1:50021`). Build it and put it where agents can't write:
 
 ```sh
 git clone https://github.com/sakamosu/pekoe-voice-voicevox.git
@@ -474,36 +377,28 @@ go build -o pekoe-voice-voicevox .
 install -m 755 pekoe-voice-voicevox /opt/homebrew/bin/
 ```
 
-Then in `config.toml` (keep `enable = true`: with voice off, no backend runs):
-
 ```toml
 [voice]
-enable = true
+enable = true               # while off, no backend runs
 backend = "voicevox"
-fallback = "say"            # used while the VOICEVOX engine isn't running
+fallback = "say"            # while the VOICEVOX engine isn't running
 
 [voice.backends]
-voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # the absolute path you installed it to
+voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"   # the absolute path where you put it
 ```
 
-`pekoe voice backends` shows whether it is used, and `pekoe voice test "テストだよ"` says a sentence with it. Its voice, speed and reading dictionary are set in its own config file (its README). pekoe keeps the WAV of each fixed sentence (`voice/cache/`); before using it, pekoe asks the backend `cache-key` for a fingerprint of those settings, so a changed voice is heard from the next sentence on, not the old WAV.
+`pekoe voice backends` shows whether it works, `pekoe voice test "テストだよ"` plays a sentence. Each VOICEVOX character has its own terms of use: credit the character as its terms say when you publish audio made with it.
 
-Each VOICEVOX voice has its own terms of use: if you publish audio made with it (a demo video, a stream), credit it the way that character's terms say.
-
-**Writing a backend of your own**: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1): the subcommands `version`, `check`, `voices` and `synth` (and the optional `cache-key`: one line that changes whenever your settings change the sound; a backend without it exits 2 and keeps working), what goes in and out, the time limits and the environment it runs in. To check a backend against it, run in a clone of this repository:
-
-```sh
-PEKOE_VOICE_CONTRACT=/absolute/path/to/your-backend go test ./internal/voice/backend -run TestContractExternal -v
-```
-
-The bundled `say` passes the same test.
+To write a backend: the contract (v1) is [section 10 of docs/voice.md](docs/voice.md#10-speech-backend-の約束事-v1). In a clone of this repository, `PEKOE_VOICE_CONTRACT=/absolute/path/your-backend go test ./internal/voice/backend -run TestContractExternal -v` checks a backend against it (the bundled `say` passes the same test).
 
 ## Configuration
 
-`~/.config/pekoe/repos/<repo-id>.toml` (the repo-id is the normalized origin URL, so the same settings apply after a fresh clone; `pekoe init` can draft it):
+There are two files. Every setting, with notes, is in [docs/config.en.md](docs/config.en.md).
+
+`~/.config/pekoe/repos/<repo-id>.toml` (per repository; the repo-id is the normalized origin URL, so a fresh clone gets the same settings; `pekoe init` drafts it):
 
 ```toml
-agent = "claude"                  # default agent
+agent = "claude"                  # the default agent
 
 [worktree]
 copy  = [".env*", ".envrc"]
@@ -513,7 +408,7 @@ base  = "main"                    # default: origin's HEAD or main
 [hooks]
 setup    = ["mise install", "pnpm install --offline", "createdb app_{{slug}}"]
 dev      = "pnpm dev --port {{port}}"
-dev_stop = "docker compose down"  # when pekoe stops dev (pekoe dev, rm, closing the dev window, --kill-agents) or it ends by itself
+dev_stop = "docker compose down"  # when dev is stopped, and when dev ends on its own
 test     = "pnpm test"
 teardown = ["dropdb app_{{slug}}"]
 
@@ -525,106 +420,32 @@ DATABASE_URL = "postgres:///app_{{slug}}"
 gatekeeper = "claude -p 'list risky spots as path:line: text'"   # gets the diff on stdin
 
 [merge]
-method = "merge"                  # how pekoed merges when you answer "merge" in the inbox: merge | squash | rebase
+method = "merge"                  # how pekoed merges when you answer merge in the inbox: merge | squash | rebase
 ```
 
-Variables are `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`. setup runs in order and stops at the first failure, shown in red in the left pane. When a value is put into a `[hooks]` command, values containing characters the shell treats specially (spaces, `$`, `` ` ``, `;` and so on) are single-quoted and passed as one word (ordinary values like `feat/x` are left as they are). pekoe adds the quotes when needed, so **do not put `{{…}}` inside quotes of your own** (`createdb app_{{branch}}`, not `createdb "app_{{branch}}"`: inside double quotes the single quotes do nothing). `pekoe new` refuses branch names with characters the shell treats specially (`$` `(` `)` `;` `|` `{` `}`, spaces and so on). Values in `[env]` are never quoted.
+The variables are `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}`. pekoe quotes them when needed, so **don't put quotes around `{{…}}` yourself**. setup runs in order and stops at the first failure.
 
-The files in `[worktree] copy` / `clone` come from the main checkout. A pattern that matches nothing there, or a file there that is empty (0 bytes), is a warning: under the env step of `pekoe new` and the New session dialog, in `warnings` of `pekoe --json ls`, and as "N warnings at creation" in the agent panel's title. The session is created all the same.
-
-`dev` runs in a tmux window of its own, in pekoed's sandbox. Its output also goes to a file (`dev_log` in `pekoe --json ls`; `pekoe dev --log` prints its end), without escape sequences; output printed while pekoed is down is only in the window. `dev` in `pekoe --json ls` is true while the hook's process runs: when it ends by itself it turns false, and `dev_exit` says how (`status`, `signal`, `at`; `stopped` when pekoe stopped it; `dev_stop` with the result of `[hooks] dev_stop`). `dev_stop` is for what `dev` started outside its own process (`docker compose up -d` in a Makefile): pekoed runs it as it runs `dev` (same worktree, environment and sandbox) when it stops a running hook (`pekoe dev`, closing the dev window, `x`, rm, the teardown after a merge, `pekoe daemon stop --kill-agents`) and when the hook ends by itself (with any exit status: a `make dev` that failed halfway may have started containers; so `dev` should stay in the foreground, not start things and exit). rm, the teardown after a merge and `--kill-agents` run it again for a session whose dev hook ran and whose last `dev_stop` did not succeed (failed, or never ran: a hook that ended while an older pekoed ran, the worktree gone); a session that never started `dev` runs none. When a session goes with its `dev_stop` still not succeeded, pekoe keeps its port from new sessions for 7 days (what `dev` left may hold ports derived from it, such as a Postgres on port + 20000); `pekoe rm` says so, and the hold ends by itself after the 7 days (clean up what was left, e.g. `docker compose -p <project> down`, before then). A repository with no `dev_stop` holds no port. A plain `pekoe daemon stop` leaves the dev servers running, so it runs no `dev_stop`. `teardown` stays for the worktree (rm and after a merge). When `pekoe dev` finds no `[hooks] dev`, the error says what the file holds: missing, unparsable, no `[hooks]` table, or the keys `[hooks]` has.
-
-`~/.config/pekoe/config.toml` (global; `pekoe config edit` or `^q ,` in the TUI opens it, `pekoe config show` prints every setting with the value in use):
+`~/.config/pekoe/config.toml` (global; open it with `pekoe config edit` or `^q ,` in the TUI, and see the values in use with defaults with `pekoe config show`). The ones you'll most likely change:
 
 ```toml
-animate = true              # animate state icons
-[http]
-port = 47777                # for the Chrome extension (127.0.0.1)
-[ports]
-base = 3001                 # first port of the port ledger
 [keys]
-prefix = "ctrl+q"           # key to leave input: ctrl+ a letter (not i / m), ctrl+@ \ ] ^ _, F1-F20 or alt+ a key; C-a / Ctrl+A / ^a also read as ctrl+a
-[review]
-surface = "nvim"            # nvim | tui
-[picks]
-auto_send = true            # send picks with an instruction right away to the session that owns the page's port
-[web]                       # Web UI (make install WEB=1 builds only, docs/web.md)
-enable        = true
-allow_users   = ["you@github"]      # Tailscale login names
-allow_devices = ["iphone-15"]       # optional: only these devices
-hostname      = "pekoe"             # machine name on the tailnet
-confirm_tapi_send = true            # confirmation sheet before a send to tapi; false sends at once (no restart needed)
-[gui]                       # local GUI on 127.0.0.1 (pekoe gui, docs/gui.md)
-enable      = true          # false refuses pekoe gui; nothing listens before the first pekoe gui either way
-port        = 0             # 0: a free port each time it starts listening; read when it starts (pekoe gui --stop, then pekoe gui)
-session_ttl = "12h"         # a browser's sign-in lapses after this long with no action (the screen refreshing doesn't count)
-browser     = ""            # macOS app to open it with (open -a), e.g. "Safari"; empty: the default browser
+prefix = "ctrl+q"           # the key that leaves input
 [theme]
-mode  = "auto"              # truecolor | ansi | none | auto
 icons = "nerd"              # nerd | unicode | ascii
-ambiguous = "auto"          # how the terminal counts ambiguous-width glyphs (● · ─): auto (measured when the TUI opens) | narrow (one cell) | wide (two cells: frames + - |, symbols ... -> <-, ascii icons and tapi; read when the TUI opens; docs/ambiguous-width.md)
-[theme.colors]              # override by role (tokens in docs/ui-guidelines.md)
-primary = "#ff87da"
-[mascot]                    # the mascot tapi (docs/mascot.md)
-shape   = "auto"            # auto | round (sextant blocks) | block (quadrant blocks)
-glyphs  = "auto"            # auto (ascii when [theme] ambiguous is wide) | unicode | ascii (narrow, a former value, is no longer needed: it reads as auto)
-palette = "dark"            # dark (milky pearl, for dark backgrounds) | light (caramel pearl, for light backgrounds)
-splash  = true              # splash screen at startup
-sleep_after = "3m"          # tapi falls asleep when every session is idle and no key was pressed for this long (at least 10s)
-[mascot.colors]             # override hi / bd / sh / eye
-bd = "#e4c49a"
 [agents.claude]
-sandbox = true              # pass pekoe's sandbox settings (--settings) to Claude Code; false to not
-model   = "claude-opus-5-5" # passed as --model on every start (new, resume, R, tapi); unset follows ~/.claude/settings.json
+model   = "claude-opus-5-5" # passed as --model at every start (set it; see below)
 effort  = "medium"          # passed as --effort: low | medium | high | xhigh | max
-[agents.codex]              # agents other than Claude Code (get no sandbox settings)
-command = "codex"
-allow   = "y"
-deny    = "n"
-[tapi]                      # tapi chat (t in the TUI)
-agent = "claude"            # a name from [agents.*]; agents other than claude get no --add-dir (cwd only)
-[orchestrator]              # tapi as the orchestrator (docs/orchestration.md)
-notify = "escalate"         # tapi waiting and the inbox's questions escalate like a session's wait (toast → blink → desktop notification) | "quiet": bottom line / message line only
-inbox_popup = true          # a new question an agent waits on comes up in front as the answer dialog (once; skip with esc / ↵ and it stays in the inbox for ]a). Not with notify = "quiet"
-deliver = "off"             # "idle": when tapi is free, pekoed types one line into its input box with its sessions' reports, failed, waiting and ci and the inbox's answers to it (for an agent without pekoe wait). Not while you type into tapi chat or a permission dialog is up, and not what tapi's pekoe wait takes (or took); at most once per 30 s
-max_running = 0             # at most this many sessions at work at once (creating, running, waiting); more pekoe new are queued and start oldest first. 0: no cap
-[notify]                    # when the TUI tells you something waits (a session's wait; tapi's and the inbox's too unless notify = "quiet")
-toast_for   = "5s"          # how long a toast shows (PR reactions too; at least 1s)
-blink_after = "30s"         # the bottom line's speech blinks after a wait this long (at least 1s)
-os_after    = "2m"          # a desktop notification after a wait this long, while the terminal is not focused (at least 10s)
-[pr]                        # pekoed's polling of the sessions' PRs
-poll_every  = "1m"          # ask GitHub about each open PR at most this often (at least 30s)
-[cleanup]                   # pekoe cleanup / :cleanup
-stale_after = "72h"         # list a stopped session (done, idle, failed …) as stale after this long without a change (a Go duration)
-[tips]                      # tips (4's empty view and tapi chat's greeting)
-enable = true               # false hides both
-[sandbox]                   # commands from worktrees ([hooks], gatekeeper) and pekoed's git run in a sandbox
-enable = true               # false runs them without one (where none works, they are not run; git runs anyway)
-[voice]                     # tapi says state changes aloud (macOS only; docs/voice.md)
-enable = false              # off by default: while off nothing is said, no backend runs and nothing plays
-lang = "auto"               # auto (LC_ALL, LC_MESSAGES, LANG) | ja | en
-backend = "say"             # "say" (bundled, macOS's say) or a name in [voice.backends]; PATH is never searched
-fallback = "say"            # used when backend cannot be; "" for none
-focus_mode = "read"         # the session shown in the TUI: read | narrate | mute (read also reads Claude Code's replies aloud)
-background_mode = "narrate" # the other sessions: read | narrate | mute
-[voice.read]                # how much of a reply read says (code, tables, URLs and paths are skipped)
-max_sentences = 5           # of one message (1-50)
-max_turn_sentences = 10     # of one turn (1-100; 800 characters at most whatever this says)
-[voice.phrases]             # override what tapi says: wait done error ask idle_all and wait_many … ({name} / {names})
-wait = "{name} needs you"
-[voice.backends]            # external backends: name = absolute (or ~/) path; only these are run
-voicevox = "/opt/homebrew/bin/pekoe-voice-voicevox"
-[voice.say]                 # the bundled say's voices; "" is Kyoko (or the first ja_JP voice) / the system's voice
-ja = "Kyoko"
+[orchestrator]
+max_running = 0             # how many sessions work at once (0: no limit)
+[voice]
+enable = false              # tapi speaks state changes aloud (macOS only)
 ```
 
-The durations (`[notify]`, `[mascot] sleep_after`, `[pr] poll_every`, `[cleanup] stale_after`, `[gui] session_ttl`) are Go durations (`30s`, `2m`, `1h30m`); an empty or unreadable value is the default, one below the minimum is the minimum.
+The sections are `[http]` (the Chrome extension's port), `[ports]`, `[keys]`, `[review]`, `[picks]`, `[web]`, `[gui]`, `[theme]`, `[mascot]`, `[agents.*]`, `[tapi]`, `[orchestrator]`, `[notify]`, `[pr]`, `[cleanup]`, `[tips]`, `[sandbox]`, `[voice]`, and the top-level `animate`.
 
-Saved changes apply without a restart: pekoed reads `config.toml` again within a second of a change, and the TUI follows. `[voice]` is taken up as a whole: a change stops what is being said and starts voice again from the states as they are. `[http] port`, `[web]` and `[sandbox]` are the exception: they keep the value pekoed started with until `pekoe daemon restart` (the TUI's message line and `pekoe daemon status` name them). A file that doesn't read leaves the settings as they were, and the TUI says why. `pekoe config check` lists unknown keys and values pekoe doesn't take ([Commands](#commands)).
-
-`[agents.<name>]` takes `command` `resume` `prompt` (`arg` | `paste`) `allow` `always` `deny` `hooks` `sandbox` `model` `effort`. `sandbox` (default `true`) applies only when `command` starts with `claude` ([Letting agents use pekoe: permissions](#letting-agents-use-pekoe-permissions)). `arg` puts the initial prompt on the command line after `--` (`claude -- '<prompt>'`), so a prompt starting with `-` is never read as an option; use `paste` for an agent that doesn't accept `--`. Answers to Claude Code's permission menu send `1` (allow) / `2` (always allow) / `Esc` (deny) by default; if its behavior changes, fix them in `[agents.claude]`.
-
-`model` and `effort` pin the model of a Claude Code agent (`command` starting with `claude`; ignored for others): pekoe adds `--model <model> --effort <effort>` every time it starts one (new sessions, `open`, resume, restarts with R, resuming after a daemon restart, and tapi chat). **Set them.** Unset, Claude Code uses its own default, the `"model"` in `~/.claude/settings.json`, and `/model` in any Claude Code session rewrites that file: switching one session to a bigger model would make every session pekoe starts afterwards use it too. With `model` set, `/model` in a session changes only that session until it is restarted (R or resume passes the configured model again). pekoe never writes `~/.claude/settings.json`. Unset stays unset on purpose: pekoe has no model of its own to fall back to (which models an account can use, and what they cost, is the user's call, and a model name built into pekoe would go stale), so it leaves Claude Code's default alone rather than guess. Put the model in `model`, not in `command` (`command = "claude --model …"` with `model` set passes `--model` twice). `pekoe new --model M --effort E` overrides both for one session (kept across resume and restart). A repository picks its agent with `agent` in its `repos/<name>.toml`, so a repository that should run another model gets an agent of its own (`[agents.claude-big] command = "claude"`, `model = "…"`, then `agent = "claude-big"`), and tapi follows `[tapi] agent`. `pekoe --json ls` shows the model each session last answered with (`last_model`, from the conversation's last assistant message) next to the override (`model` / `effort`).
+- Saved changes take effect without a restart, except `[http] port`, `[web]` and `[sandbox]`, which need `pekoe daemon restart`. `pekoe config check` shows mistakes
+- `[agents.<name>]` takes `command` `resume` `prompt` `allow` `always` `deny` `hooks` `sandbox` `model` `effort`. Define an agent under another name (`[agents.claude-big]`) and pick it with a repository's `agent`
+- **Set `model`.** Without it, Claude Code's default (`"model"` in `~/.claude/settings.json`) applies, but `/model` in any session rewrites that file, so switching one session spreads to every session started after it. `pekoe new --model` overrides it for one session
 
 ## Where data lives (your repositories stay clean)
 
