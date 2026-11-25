@@ -703,13 +703,20 @@ func (d *Daemon) tapiSpawn(w, h int) error {
 	}
 	w, h = d.spawnSize(w, h)
 	full := cmd + `; printf '\n[pekoe] tapi exited (%s)\n' "$?"`
-	if d.tapiStarted() {
+	killed := d.tapiStarted()
+	if killed {
 		d.tapiNoteKilled() // Spawn kills the window it replaces
 	}
 	d.mu.Lock()
 	d.tapi.hooked, d.tapi.addDirs = false, addDirs // before the new window's first hook
 	d.mu.Unlock()
-	if err := d.Eng.Spawn(engine.Spawn{Slug: TapiSlug, Window: engine.WinAgent, Dir: dir, Env: env, Command: full, Width: w, Height: h}); err != nil {
+	err = d.Eng.Spawn(engine.Spawn{Slug: TapiSlug, Window: engine.WinAgent, Dir: dir, Env: env, Command: full, Width: w, Height: h})
+	if killed {
+		// no Stop comes of the killed conversation: its read ends here
+		// (a prompt typed ahead in it would leave read stopping)
+		d.voiceInterrupted(TapiSlug)
+	}
+	if err != nil {
 		return err
 	}
 	d.tapiUpdate(func(t *tapiState) {
@@ -783,7 +790,11 @@ func (d *Daemon) hTapiReset(struct{}) (any, error) {
 		// until Claude Code has exited: on its way out it still writes the
 		// transcript (a background task's result, even its last message),
 		// which would bring the record back after RemoveAll
-		if err := d.Eng.KillWait(TapiSlug, engine.WinAgent, tapiResetGrace); err != nil {
+		err := d.Eng.KillWait(TapiSlug, engine.WinAgent, tapiResetGrace)
+		// no Stop comes of the killed conversation: its read ends here
+		// (a prompt typed ahead in it would leave read stopping)
+		d.voiceInterrupted(TapiSlug)
+		if err != nil {
 			return nil, err
 		}
 	}

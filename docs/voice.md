@@ -149,7 +149,7 @@ flowchart LR
 
 - セッション: `Daemon.update` が `sessionChanges(&before, c)` を呼ぶ所で、同じく `evMu` の下で `d.voice.Session(&before, c)` を呼ぶ。変化の順に届き、取りこぼさない。voice 側は受け取ったら自分の goroutine に渡してすぐ返す(`update` を待たせない)
 - `session.removed`: そのセッションの項目をキューから消す
-- tapi chat: `tapi.updated` を出す場所で `Tapi` の state の前後を渡す。tapi は slug `+tapi`(`TapiSlug`)のセッションとして扱う
+- tapi chat: `tapi.updated` を出す場所で `Tapi` の state の前後を渡す。tapi は slug `+tapi`(`TapiSlug`)のセッションとして扱う。`tapi.updated` を出す場所は複数あり、互いの順序は無い(view はロックを放した後で作る)ので、最後に受け取ったものより `state_since` が古い view は捨てる(`state_since` は state が変わったときだけ進む)
 - 受信箱: `inbox.updated` で、エージェントが待っている問い(`inboxHoldsUp` と同じ条件: open・`fyi` でない・`from` が `human` でない)が増えたら渡す(5.1 の ask。17 の D3)
 - pekoed の起動時・voice を有効にしたときの状態は基準にするだけで、喋らない(PR の反応と同じ。docs/mascot.md「PR と CI への反応」)
 
@@ -274,6 +274,7 @@ P3 で作った(実装は `internal/voice/read.go`・`shape.go` と `internal/da
 - 新しいターン(`turn_id` が変わった)が来たら、前のターンの残りを捨てる。先打ちの文で始まるターンには `UserPromptSubmit` が来ない(3.2)ので、「新しいターン = `UserPromptSubmit`」と仮定しない。止めたターンでなければ、新しい `turn_id` のバッチは普通に読む
 - フォーカスが別のセッションに移ったら、read を止めて捨てる(narrate は残す)
 - **Esc での中断**: hook では分からない(`final` も `Stop` も来ない。3.2)。そこで、pekoe を通した中断で止める: ローカル GUI の Interrupt(`session.interrupt` / `tapi.interrupt`)と、pekoe を通して送った Escape(TUI で [4] に打っている間の `esc` など、`session.keys` / `tapi.keys` の `keys` の配列に `Escape` があるもの。`hex` の `1b` はマウスなどの列の頭にも付くので見ない)。そのとき、そのセッションの read を止めて捨て、最後に受け取った `turn_id` を「止めた」として覚える(Escape が届く前に送られたバッチが後から届いても読まない)。`pekoe send` の文は中断ではなく、動いている間なら先打ちになるので、上の `UserPromptSubmit` で止まる
+- **tapi の reset・restart**: 窓ごと会話を止めるので、その会話からは `Stop` が来ない。そこで中断と同じく、tapi の read を止めて捨て、「止めている」も終える(残すと、新しい会話の最初の返事を `Stop` まで読まない)
 - 人がエージェントのペインに直接 Esc を押したとき(`tmux -L pekoe attach` などで TUI を通さずにつないでいる)は、pekoe には分からず、止められない。読むのは 6.2 の上限までなので害は限られ、止めたければ `pekoe voice stop`・`^q m`。P3 の実装では何もしない(17 の残る論点 (a))
 
 ### 6.4 読まなかった理由のログ

@@ -863,3 +863,34 @@ func TestVoiceModeGoesWithRm(t *testing.T) {
 		t.Fatalf("new %s: %s", nw.Slug, w.d.voice.modeFor(nw.Slug))
 	}
 }
+
+// tapi.updated comes from many places with no order among them, and a view
+// is made after the lock is let go: one made before a change can come
+// after it. A view older than the last taken (StateSince only moves on)
+// is dropped: tapi, idle now, is not said to need you.
+func TestVoiceTapiStaleView(t *testing.T) {
+	w := newVoiceWorld(t)
+	w.config(voiceOn)
+	emit := func(st state.State, since time.Time) {
+		v := w.d.tapiView()
+		v.State, v.StateSince = st, since
+		w.d.emit("tapi.updated", v)
+		w.settle()
+	}
+	t0 := time.Now()
+	emit(state.Running, t0)
+	emit(state.Idle, t0.Add(2*time.Second))
+	emit(state.Waiting, t0.Add(time.Second)) // made before the idle, sent after it
+	w.advance(time.Second)
+	time.Sleep(100 * time.Millisecond)
+	w.settle()
+	if w.syn.Pending() != 0 {
+		t.Fatalf("said of a stale view: %q", w.syn.Next(t).Text)
+	}
+	// a newer wait is said
+	emit(state.Waiting, t0.Add(3*time.Second))
+	w.advance(300 * time.Millisecond)
+	if c := w.syn.Next(t); c.Text != "tapi needs you" {
+		t.Fatalf("synth %q", c.Text)
+	}
+}

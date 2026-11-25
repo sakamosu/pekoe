@@ -391,3 +391,32 @@ func TestVoiceReadUnreadLogged(t *testing.T) {
 		t.Errorf("a line for a turn that was read:\n%s", buf.String())
 	}
 }
+
+// Resetting or restarting tapi kills its conversation: no Stop comes of
+// it, so a prompt typed ahead in it must not leave read stopping, and
+// what was queued of it is not read on. The new conversation's first
+// reply is read (6.3).
+func TestVoiceReadTapiKilled(t *testing.T) {
+	for _, how := range []string{"tapi.reset", "tapi.restart"} {
+		t.Run(how, func(t *testing.T) {
+			w := newVoiceWorld(t)
+			showBusy(w.d.Eng.(*fakeEngine), true)
+			call[Tapi](t, w.d, "tapi.open", nil)
+			w.config(voiceOn)
+			w.focus(TapiSlug)
+			w.hook("UserPromptSubmit", TapiSlug, map[string]any{"prompt": "hi"})
+			w.hook("UserPromptSubmit", TapiSlug, map[string]any{"prompt": "and this"}) // typed ahead
+			w.display(TapiSlug, "t1", "m1", 0, false, "Old.\n")
+
+			call[Tapi](t, w.d, how, nil)
+			w.settle()
+			wantRead(t, "the killed conversation", w.read())
+			if how == "tapi.reset" {
+				call[Tapi](t, w.d, "tapi.open", nil)
+			}
+			w.hook("UserPromptSubmit", TapiSlug, map[string]any{"prompt": "new"})
+			w.message(TapiSlug, "n1", "m1", "Fresh.")
+			wantRead(t, "the new conversation", w.read(), "Fresh.")
+		})
+	}
+}
