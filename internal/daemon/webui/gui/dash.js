@@ -47,11 +47,70 @@ function gate(role, icon, name, ...detail) {
 
 const TEST_ROLE = { pass: ["ok", "✓"], fail: ["err", "✗"], error: ["warn", "!"], blocked: ["warn", "!"], running: ["dim", "◌"] };
 
-function gates(it) {
+const condName = (n) => String(n || "").replace(/_/g, " ");
+
+// mergeGates: merge.check's conditions as one bar each (met ok, missing
+// err) over the table of them, one line a condition (docs/gui-design.md
+// 「Inbox」). The bars say the count in their label; the lines say why.
+export function mergeGates(m) {
+  const conds = (m && m.conds) || [];
+  if (!conds.length) return null;
+  const met = conds.filter((c) => c.ok).length;
+  const box = el("div", "mg");
+  box.append(el("div", "fact-cap", "Merge gates · " + met + "/" + conds.length));
+  const bars = el("div", "mg-bars");
+  bars.setAttribute("role", "img");
+  bars.setAttribute("aria-label", "Merge gates: " + met + " of " + conds.length + " met" + (met < conds.length ? ", missing " + conds.filter((c) => !c.ok).map((c) => condName(c.name)).join(", ") : ""));
+  for (const c of conds) {
+    const b = el("span", "mg-bar " + (c.ok ? "ok" : "fail"));
+    b.title = condName(c.name) + ": " + (c.detail || (c.ok ? "met" : "missing"));
+    bars.append(b);
+  }
+  box.append(bars);
+  const table = el("div", "gates mg-table");
+  for (const c of conds) table.append(gate(c.ok ? "ok" : "err", c.ok ? "✓" : "✗", condName(c.name), txt(c.detail || "")));
+  box.append(table);
+  return box;
+}
+
+// ciBar: the PR's checks as pekoed read them, one segment a check
+// (passed ok, failed err, pending border), with the counts beside it.
+// No checks at all is said in words (no bar).
+export function ciBar(ps) {
+  const pass = ps.pass || 0, fail = ps.fail || 0, pending = ps.pending || 0;
+  const n = pass + fail + pending;
+  const box = el("div", "ci");
+  const top = el("div", "ci-top");
+  top.append(el("span", "g-name", "CI"));
+  const cnt = el("span", "ci-n");
+  if (!n) cnt.append(txt("no checks"));
+  else {
+    cnt.append(colored("ok", String(pass)), txt("/" + n + " passed"));
+    if (fail) cnt.append(txt(" · "), colored("err", fail + " failed"));
+    if (pending) cnt.append(txt(" · " + pending + " pending"));
+  }
+  top.append(cnt);
+  box.append(top);
+  if (n) {
+    const bars = el("div", "ci-bars");
+    bars.setAttribute("role", "img");
+    bars.setAttribute("aria-label", "CI: " + pass + " passed, " + fail + " failed, " + pending + " pending");
+    for (let i = 0; i < n; i++) bars.append(el("span", "ci-seg " + (i < pass ? "pass" : i < pass + fail ? "fail" : "pending")));
+    box.append(bars);
+  }
+  return box;
+}
+
+// facts: what pekoe read about the item's session: the merge gates (bars
+// and their table), then the CI bar and the rest, one line each
+function facts(it) {
+  const out = el("div", "facts");
   const box = el("div", "gates");
   const f = it.facts;
   if (f && !f.gone) {
-    for (const c of (f.merge && f.merge.conds) || []) box.append(gate(c.ok ? "ok" : "err", c.ok ? "✓" : "✗", c.name, txt(c.detail)));
+    const mg = f.merge && mergeGates(f.merge);
+    if (mg) out.append(mg);
+    if (f.pr && f.pr_status) box.append(ciBar(f.pr_status));
     const d = f.diffstat || { added: 0, deleted: 0, files: 0 };
     const dd = diffBits(d);
     box.append(gate("", "", "diff", ...(dd ? [dd, txt(" · " + d.files + (d.files === 1 ? " file" : " files"))] : [txt("no changes")])));
@@ -59,7 +118,7 @@ function gates(it) {
       const ps = f.pr_status;
       const n = [];
       if (ps) {
-        n.push(ps.state || "?", "CI " + ps.pass + " pass " + ps.fail + " fail " + ps.pending + " pending");
+        n.push(ps.state || "?");
         if (ps.review_decision) n.push(ps.review_decision);
         if (ps.merge_state) n.push(ps.merge_state);
         if (ps.unresolved) n.push(ps.unresolved + " unresolved");
@@ -77,7 +136,8 @@ function gates(it) {
     if (f.git_blocked) box.append(gate("warn", "!", "git", txt(".git changed: git stopped")));
   }
   for (const l of it.links || []) box.append(gate("", "", "link", link(l)));
-  return box.childNodes.length ? box : null;
+  if (box.childNodes.length) out.append(box);
+  return out.childNodes.length ? out : null;
 }
 
 // targetLine: what the answer acts on, sunk into bg, monospace, no color
@@ -122,7 +182,7 @@ export function inboxCard(it, d, focus, on) {
     w.append(colored("warn", "⚠"), txt(" Changed while you looked: check the facts again"));
     card.append(w);
   }
-  const g = gates(it);
+  const g = facts(it);
   if (g) card.append(g);
 
   if (!pekoed || it.context) {
@@ -390,8 +450,8 @@ export function renderTiles(box, c, stats = {}) {
   box.append(tt);
 }
 
-// ---- Pipeline: a tree of requests and branches, each branch on a rail
-// of five step boxes (docs/gui-design.md の「Pipeline」) ----
+// ---- Pipeline: each request a heading line over its branches, each
+// branch on a rail of five step boxes (docs/gui-design.md の「Pipeline」) ----
 
 export const STEPS = ["impl", "review", "pr", "ci", "merge"];
 // the rows shown before "Show N more"
@@ -430,14 +490,19 @@ const rank = (f) => RANK[f.state] ?? 3;
 
 const FROM = { "+tapi": "tapi", human: "you", unknown: "unknown", "": "direct" };
 
-// pipelineModel: the overview's groups as the Pipeline's tree. A branch
-// hangs under the request that made it (origin) and stays there when a
-// later request comes in (that one is a badge); a branch no request made
-// is a row of its own, after the requests. Requests with rows still
-// moving first, newest on top; inside one, the overview's order of states.
-export function pipelineModel(groups) {
+// pipelineModel: the overview's groups as the Pipeline's requests. A
+// branch is under the request that made it (origin) and stays there when
+// a later request comes in (that one is a badge); the branches no request
+// made are one group after the requests (id 0). Requests with rows still
+// moving first, newest on top; inside one, the overview's order of
+// states. requests: /api/overview's requests ({id, text, status} of each
+// origin); a group's own request fills in for an older pekoed.
+export function pipelineModel(groups, requests) {
   const byOrigin = new Map();
   const solo = [];
+  const info = new Map();
+  for (const g of groups || []) if (g.request && g.request.id) info.set(g.request.id, g.request);
+  for (const r of requests || []) if (r && r.id) info.set(r.id, r);
   for (const g of groups || []) {
     for (const f of g.rows || []) {
       const parent = f.parent ?? g.parent ?? "";
@@ -447,7 +512,10 @@ export function pipelineModel(groups) {
         continue;
       }
       let t = byOrigin.get(f.origin);
-      if (!t) byOrigin.set(f.origin, (t = { id: f.origin, from: FROM[parent] ?? parent, rows: [] }));
+      if (!t) {
+        const r = info.get(f.origin) || {};
+        byOrigin.set(f.origin, (t = { id: f.origin, from: FROM[parent] ?? parent, text: r.text || "", status: r.status || "", rows: [] }));
+      }
       t.rows.push(row);
     }
   }
@@ -456,7 +524,18 @@ export function pipelineModel(groups) {
   // rows of one request come from different overview groups when a later
   // request moved some of them: order them again as the overview does
   for (const t of trees) t.rows.sort((a, b) => rank(a) - rank(b));
+  for (const t of trees) t.past = pastRequest(t);
   return { trees, solo };
+}
+
+// pastRequest: a request drawn faded: every branch landed, or the request
+// is closed (done, dropped) and none of its branches has anything left
+// for anyone (no agent at work, no merge or failure to look at)
+const LIVE = new Set(["running", "creating", "queued", "waiting", "failed"]);
+export function pastRequest(t) {
+  if (t.rows.every((f) => f.state === "landed")) return true;
+  if (!t.status || t.status === "open" || t.status === "gone") return false;
+  return !t.rows.some((f) => f.state !== "landed" && (LIVE.has(f.state) || f.merge));
 }
 
 // badges: the requests that came in after the branch was made, as
@@ -559,28 +638,12 @@ function statusCell(f) {
   return cell;
 }
 
-// branchRow: one branch: the tree's piece (the corner into the box, or
-// the straight line for a request's first branch), the branch box with
-// its badges, the rail, the status. first: the request's first row.
-// shown: how many of the request's rows are on screen (fewer than all
-// when "Show N more" cuts it).
-function branchRow(f, tree, first, open, shown) {
+// branchRow: one branch: the branch box with its badges, the rail, the
+// status.
+function branchRow(f, open) {
   const past = f.state === "landed";
   const row = el("div", "pl-row" + (past ? " past" : ""));
   row.setAttribute("role", "row");
-  const rq = el("div", "pl-req");
-  rq.setAttribute("role", "cell");
-  if (tree && first) {
-    const box = el("div", "pl-rbox");
-    const n = tree.rows.length;
-    const count = shown < n ? shown + " of " + n : String(n);
-    box.append(el("span", "pl-rid", requestId(tree.id)), el("span", "pl-rsub", tree.from + " · " + count + (n === 1 ? " branch" : " branches")));
-    box.title = requestId(tree.id) + " · from " + tree.from;
-    rq.append(box);
-  } else if (!tree) rq.append(el("span", "pl-none", "no request"));
-  const tr = el("div", "pl-tree");
-  tr.setAttribute("aria-hidden", "true");
-  if (tree) tr.append(el("span", first ? "pl-flat" : "pl-corner"));
   const bc = el("div", "pl-bcell");
   bc.setAttribute("role", "cell");
   const b = el("button", "pl-branch");
@@ -606,48 +669,81 @@ function branchRow(f, tree, first, open, shown) {
   if (two) b.append(badge(bs[0][0] + " +" + (f.later.length - 1), bs[0][1], " pl-compact"));
   b.addEventListener("click", () => open(f.slug));
   bc.append(b);
-  row.append(rq, tr, bc, ...STEPS.map((n) => stepCell(f, n)), statusCell(f));
+  row.append(bc, ...STEPS.map((n) => stepCell(f, n)), statusCell(f));
   return row;
 }
 
-// renderPipeline fills box with the tree; open(slug) opens a session's
-// tab. more: {expanded, toggle()}: past PIPE_ROWS rows, a "Show N more"
-// button (toggle) unless expanded. Returns how many rows are still moving
-// (not landed).
-export function renderPipeline(box, groups, open, more = {}) {
+// the Pipeline's columns: Branch, the five steps, Status
+const PIPE_COLS = 2 + STEPS.length;
+
+// requestHead: a request's heading line over its branches: "r14", its
+// words (cut to one line, all of them in the title), and on the right
+// where it came from, how many branches and its status ("tapi · 2
+// branches · open"). shown: how many of its rows are on screen (fewer
+// than all when "Show N more" cuts it). t null: the branches no request
+// made.
+function requestHead(t, rows, shown) {
+  const row = el("div", "pl-rhead");
+  row.setAttribute("role", "row");
+  const cell = el("div", "pl-rcell");
+  cell.setAttribute("role", "cell");
+  cell.setAttribute("aria-colspan", String(PIPE_COLS));
+  const n = rows.length;
+  const count = (shown < n ? shown + " of " + n : String(n)) + (n === 1 ? " branch" : " branches");
+  const meta = el("span", "pl-rmeta");
+  if (t) {
+    cell.append(el("span", "pl-rid", requestId(t.id)));
+    const words = el("span", "pl-rtext", t.text);
+    if (t.text) words.title = t.text;
+    cell.append(words);
+    meta.append(txt(t.from + " · " + count));
+    if (t.status) meta.append(txt(" · "), el("span", "pl-rst" + (t.status === "open" ? " open" : ""), t.status));
+  } else {
+    cell.append(el("span", "pl-rnone", "no request"), el("span", "pl-rtext"));
+    meta.append(txt(count));
+  }
+  cell.append(meta);
+  row.append(cell);
+  return row;
+}
+
+// renderPipeline fills box with the requests and their branches; open(slug)
+// opens a session's tab. more: {expanded, toggle()}: past PIPE_ROWS rows, a
+// "Show N more" button (toggle) unless expanded. requests: /api/overview's
+// requests (the origins' words and status). Returns how many rows are still
+// moving (not landed).
+export function renderPipeline(box, groups, open, more = {}, requests = []) {
   box.replaceChildren();
-  const { trees, solo } = pipelineModel(groups);
+  const { trees, solo } = pipelineModel(groups, requests);
   const all = [...trees.flatMap((t) => t.rows), ...solo];
   const moving = all.filter((f) => f.state !== "landed").length;
   if (!all.length) return 0;
   const head = el("div", "pl-row pl-head");
   head.setAttribute("role", "row");
-  for (const [cls, word] of [["pl-req", "Request"], ["pl-tree", ""], ["pl-bcell", "Branch"], ...STEPS.map((n) => ["pl-step", STEP_NAMES[n] || n]), ["pl-status", "Status"]]) {
+  for (const [cls, word] of [["pl-bcell", "Branch"], ...STEPS.map((n) => ["pl-step", STEP_NAMES[n] || n]), ["pl-status", "Status"]]) {
     const h = el("div", cls, word);
-    // the tree's column is drawing only, hidden in the body rows too: the
-    // header has as many columns as they do
-    if (cls === "pl-tree") h.setAttribute("aria-hidden", "true");
-    else h.setAttribute("role", "columnheader");
+    h.setAttribute("role", "columnheader");
     head.append(h);
   }
   box.append(head);
   let left = more.expanded ? Infinity : PIPE_ROWS;
+  const group = (t, rows) => {
+    const shown = rows.slice(0, left);
+    left -= shown.length;
+    const g = el("div", "pl-group" + (t && t.past ? " past" : ""));
+    g.setAttribute("role", "rowgroup");
+    g.append(requestHead(t, rows, shown.length));
+    // the branches, bound by one rule on their left
+    const body = el("div", "pl-rows");
+    for (const f of shown) body.append(branchRow(f, open));
+    g.append(body);
+    box.append(g);
+  };
   for (const t of trees) {
     if (left <= 0) break;
-    const rows = t.rows.slice(0, left);
-    left -= rows.length;
-    const g = el("div", "pl-group");
-    g.setAttribute("role", "rowgroup");
-    // the trunk: one line for the whole request, from the middle of the
-    // first row down to where the last branch turns off it
-    if (rows.length > 1) g.append(el("span", "pl-trunk"));
-    rows.forEach((f, i) => g.append(branchRow(f, t, i === 0, open, rows.length)));
-    box.append(g);
+    group(t, t.rows);
   }
-  for (const f of solo) {
-    if (left-- <= 0) break;
-    box.append(branchRow(f, null, false, open));
-  }
+  if (solo.length && left > 0) group(null, solo);
   const hidden = all.length - Math.min(all.length, more.expanded ? Infinity : PIPE_ROWS);
   if (hidden > 0 || (more.expanded && all.length > PIPE_ROWS)) {
     const b = el("button", "pl-more", more.expanded ? "Show less" : "Show " + hidden + " more");

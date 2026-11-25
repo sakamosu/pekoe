@@ -221,7 +221,35 @@ func (d *Daemon) webOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, groups := d.overviewOf(res.([]*state.Session))
-	writeJSON(w, map[string]any{"counts": c, "groups": groups, "at": time.Now()})
+	writeJSON(w, map[string]any{"counts": c, "groups": groups, "requests": d.originRequests(groups), "at": time.Now()})
+}
+
+// originRequests: the ledger entry of every row's origin (the request
+// that made the branch), oldest first. The GUI's Pipeline heads each
+// request's branches with its words and status; a group's request is the
+// one its sessions work on now, which a later request may have replaced.
+// An entry no longer in the ledger is "gone".
+func (d *Daemon) originRequests(groups []webFlowGroup) []webRequest {
+	seen := map[int64]bool{}
+	var ids []int64
+	for _, g := range groups {
+		for _, f := range g.Rows {
+			if f.Origin > 0 && !seen[f.Origin] {
+				seen[f.Origin] = true
+				ids = append(ids, f.Origin)
+			}
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	out := make([]webRequest, 0, len(ids))
+	for _, id := range ids {
+		r := webRequest{ID: id, Status: "gone"}
+		if e, err := d.DB.LedgerGet(id); err == nil {
+			r.Text, r.Status = cutRunes(e.Text, webRequestLen), e.Status
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // overviewOf counts list and groups its flows by requester and request

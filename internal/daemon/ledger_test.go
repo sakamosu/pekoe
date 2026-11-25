@@ -196,11 +196,22 @@ func TestLinkKeepsOrigin(t *testing.T) {
 	if mf := d.webFlowOf(&m, nil); m.Origin != 0 || mf.Origin != 0 || fmt.Sprint(mf.Later) != "[{2 true}]" {
 		t.Fatalf("main: %+v %+v", m, mf)
 	}
+	// GET /api/overview's requests: the origin's words and status, though
+	// no group carries request 1 any more (its session works on 2)
+	if rs := d.originRequests([]webFlowGroup{{Rows: []webFlow{f, mf(t, d)}}}); len(rs) != 1 || rs[0].ID != 1 || rs[0].Text != "CSV を直して" || rs[0].Status != state.LedgerOpen {
+		t.Fatalf("origin requests: %+v", rs)
+	}
 	callAs[state.LedgerEntry](t, d, tapi, "ledger.close", map[string]any{"id": 2, "as": "done", "evidence": []string{"https://x/pull/5"}})
 	got = call[state.Session](t, d, "session.get", map[string]any{"slug": s.Slug})
 	if f := d.webFlowOf(&got, nil); fmt.Sprint(f.Later) != "[{2 false}]" {
 		t.Fatalf("done: %+v", f.Later)
 	}
+}
+
+// mf: main's flow (no origin of its own)
+func mf(t *testing.T, d *Daemon) webFlow {
+	m := call[state.Session](t, d, "session.get", map[string]any{"slug": "main"})
+	return d.webFlowOf(&m, nil)
 }
 
 // A session from before Origin was recorded takes the request it had as

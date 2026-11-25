@@ -242,7 +242,7 @@ async function refreshDashboard() {
     overview = o;
     if (view !== "dashboard") return;
     const has = (slug) => sessions.some((x) => x.slug === slug);
-    const sig = JSON.stringify([o.counts, o.groups, pipeAll, stats.st, stats.err, ledger, ledgerErr, ledgerAll, (ledger && [...ledger.open, ...ledger.closed].flatMap((e) => e.sessions || []).map(has)) || []]);
+    const sig = JSON.stringify([o.counts, o.groups, o.requests, pipeAll, stats.st, stats.err, ledger, ledgerErr, ledgerAll, (ledger && [...ledger.open, ...ledger.closed].flatMap((e) => e.sessions || []).map(has)) || []]);
     if (sig !== dashSig) {
       dashSig = sig;
       renderTiles($("o-tiles"), o.counts || {}, stats);
@@ -254,7 +254,7 @@ async function refreshDashboard() {
           dashSig = "";
           refreshDashboard();
         },
-      });
+      }, o.requests || []);
       $("o-empty").hidden = !!groups.length;
       $("o-flow").hidden = !groups.length;
       $("p-count").textContent = moving + " moving";
