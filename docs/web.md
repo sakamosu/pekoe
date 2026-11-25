@@ -152,10 +152,11 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 
 - **上端のバー**(高さ 52px): 左に画面名(Now は `pekoe`)、右に鮮度(`◉ live · 18:47`。最後に読めたのが 10 秒より前なら warn の `stale`)。Inbox・Flow・セッションを開いた画面は左に `‹`。tapi では顔・`tapi`・状態と鮮度(`◦ idle · updated 2s ago`)・`Chat` / `Screen` の切り替え(枠の中のセグメント)
 - **タブバー**(高さ 56px、下にホームインジケーターの分): Now / Sessions / tapi。Sessions のラベルには確認待ち(done)の件数を secondary で添える。セッションを開いた画面・tapi でも出し、キーボードが出ている間だけ隠す
-- **Now**(`#/`): 上から 4 区画
-  - NEEDS YOU: 対応が要るものをカードで(pekoed のマージが通らなかったもの・許可や質問で待っているセッション・受信箱の未回答)。`Open q<id>` は Inbox の該当カードへ。0 でない件数は 1 行のカード(`✓ 7 sessions to review ›` は Sessions の To review へ)、0 の件数は dim の 1 行(`0 questions · 0 ready to merge · 0 running · 0 waiting`)
+- **Now**(`#/`): 上端に数の帯、その下に 4 区画
+  - 数の帯: 件数を 1 行の帯に並べる(surface の地、升の間に border の縦線。`webui/marks.js` の `countBand`)。升は左から `◉ waiting`(warn)・`? inbox`(secondary。受信箱の未回答 = questions + ready)・`● running`(ok)・`✓ to review`(secondary)で、`◌ queued`(dim)は 0 でないときだけ running の右に足す。升ごとに大きい数字と、その下に記号と語。0 の升は数字も記号も dim(記号の色は 0 でないときだけ)。押すとその一覧へ: waiting・running・queued は Sessions の Active、inbox は Inbox、to review は Sessions の To review
+  - NEEDS YOU: 対応が要るものをカードで(pekoed のマージが通らなかったもの・許可や質問で待っているセッション・受信箱の未回答)。`Open q<id>` は Inbox の該当カードへ。pekoed のマージの項目(`ready to merge`)のカードだけ、実行対象の行の下にマージの条件と CI の棒を出す(下の「受信箱(Inbox)の扱い」と同じもの)。login・decision のカードには出さない(CI の実行中・レビュー前の赤が、問いと関係が薄いのに目立つため。試作で確かめた)
   - TAPI: 会話一覧の 1 行(顔・状態・時刻・直近の発言を dim で 2 行まで)。タップで tapi タブ
-  - REQUESTS: 右に台帳の open の件数。依頼ごとのカード(ブランチと状態・経過、依頼の ID と本文、5 工程の細いバーと語)。直近 2 件、残りは `N more requests`。下の `Every session's flow ›` で今までの工程表(Flow)
+  - REQUESTS: 右に台帳の open の件数。依頼ごとのカード(ブランチと状態・経過、依頼の ID と本文、5 工程)。5 工程は点を線でつなぎ、点の下に工程の語(`impl`・`review`・`PR`・`CI`・`merge`)を置く(`marks.js` の `stepper`)。点は済み `✓`(secondary)・進行中 `◉`(ok の枠)・人の番 `◉`(warn の枠と語。セッションが許可・質問で待っている間の CI 以外の進行中の工程と、根拠が揃って人の `merge` を待つマージの工程)・失敗 `✗`(err)・まだ(点線の空の丸、語は dim)。点に入る線は、その工程に着いていれば実線(dim)、まだなら点線(border)。工程の `detail` は点の title。直近 2 件、残りは `N more requests`。下の `Every session's flow ›` で今までの工程表(Flow)
   - MERGED BY PEKOED: 通ったマージを 1 行に(`↣ #259 · #258`)。タップで Inbox のマージの履歴へ
 - **Sessions**(`#/sessions`、`#/sessions/review|active|landed`): 上にフィルタのチップ(`All` / `To review` / `Active` / `Landed`、横スクロール)、一覧は ACTIVE(稼働中・許可待ちなど)→ TO REVIEW → IDLE → LANDED。LANDED は直近 2 件、残りは `Show N more landed`、行全体を dim。行は高さ 52px 以上で、左に状態の記号、中央に 2 行(ブランチ名 / リポジトリ名。リポジトリ本体のチェックアウトで動くセッションはリポジトリ名 / `main`)、右に状態語と経過。2 行目に diff の増減・テスト・PR を続ける
 - **tapi**(`#/tapi`): 下の「tapi chat の扱い」。吹き出しは tapi が左(surface、左下だけ角が小さい)、自分が右(`bubble_me`、右下だけ角が小さい)、幅は 78% まで、時刻は吹き出しの外の下(自分の発言は `✓ 18:45`)。会話が短いときは下に寄せる。入力欄はタブバーの上に固定(左に添付の `+`、丸い入力欄 `Ask tapi`、select の地の送信ボタン)
@@ -167,7 +168,7 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 同じページのまま、幅が `--wide-min`(既定 700px)以上なら配置だけを替える。端末の種類(User-Agent)では分けない(iPad の Safari は Mac を名乗る)。iPad を縦にしたり Split View で狭くしたりすれば、幅に従って上の iPhone の配置に戻る。部品は iPhone と同じもので、並べ方だけが違う。境目の幅・レールの幅(`--rail-w`、76px)・一覧の幅(`--list-w`、390px)は app.css の `:root` の 3 つの変数で変える(app.js は `--wide-min` を読んで media query にする)。
 
 - **レール**(左端、幅 `--rail-w`、chrome の地): タブバーを縦にしたもの。`Now` と `Sessions`(確認待ちの件数を secondary で添える)の 2 つで、高さ 60px。選択中は primary の文字と左辺 2px の線。tapi の項目は置かない(チャットは Sessions に常に出ている)。下端のタブバーは出さない
-- **Now**(`#/`): 3 列の格子(列の間と外側は 20px、画面全体で 1 つのスクロール)。左が NEEDS YOU、中央が REQUESTS、右が TAPI(直近の発言を 3 行まで)と MERGED BY PEKOED。iPhone と違うのは 2 つだけ: 0 の件数は 2×2 の小さいタイル(枠線だけ、地は塗らない、文字は dim)、通ったマージは 1 件 1 行(`↣`・PR 番号・ブランチ名(dim、あふれたら省略)・経過、タップで Inbox のマージの履歴へ)
+- **Now**(`#/`): 3 列の格子(列の間と外側は 20px、画面全体で 1 つのスクロール)。左が NEEDS YOU、中央が REQUESTS、右が TAPI(直近の発言を 3 行まで)と MERGED BY PEKOED。数の帯は 3 列の上にまたがって 1 本。iPhone と違うのは 1 つだけ: 通ったマージは 1 件 1 行(`↣`・PR 番号・ブランチ名(dim、あふれたら省略)・経過、タップで Inbox のマージの履歴へ)
 - **Sessions + チャット**(`#/sessions…`・`#/tapi`・`#/s/<slug>`): レールの右を 2 列に分ける。左は Sessions の一覧(幅 `--list-w`。境目の近くでは、右に半分以上が残るようにレールの右の 45% まで縮む)で、先頭に tapi の行を固定する(顔・`tapi`・状態・時刻・直近の発言 1 行)。選んだ行は raised の地と左辺 2px の primary の線。右は選んだ相手の画面で、`#/sessions` では tapi のチャット。セッションの行を選ぶと、右がそのセッションの画面(上の「セッションを開いた画面」をそのまま)に替わる。フィルタのチップは一覧を絞るだけで、右の選択は変えない(選んでいたセッションが絞り込みで一覧から消えても、右はそのまま)。上端のバーも 2 つに分かれ、左半分が `Sessions` と鮮度、右半分が tapi の顔・状態・`Chat` / `Screen`(セッションのときはその slug)。Now の TAPI の行・`N sessions to review`・依頼のカードはここへ移る
 - 入力欄の高さの扱い(`fitViewport` / `shortBelow` / `healViewport`、`kb` / `cut`)は iPhone と同じ。キーボードが出ている間もレールは隠さず、右の列の入力欄がキーボードのすぐ上に来る。ホームインジケーターの分は、キーボードが出ているときと下が切られているときを除いて、ページの下に空ける
 
@@ -176,6 +177,7 @@ send はテキストを送るもので、キーは送らない。改行とタブ
 docs/orchestration.md の「受信箱で人を誘導する」への対策を、TUI のモーダルと同じ並びで Web にも当てる。
 
 - 1 件のカードは上から、pekoed が読んだ事実(`facts`: セッション・状態・ブランチ・HEAD・差分・PR と CI・レビューの判定・`merge_state`・テスト・衝突予報・最新の報告・マージしてよいかの条件)とリンク → エージェントの文(`from`、名乗りが違えば警告、問い・背景・選択肢)の順に出す
+- 事実の先頭(`pekoe read` の下)に棒を 2 本まで: マージの条件(`merge.conds`。pr・ci・review・merge state・conflicts・settled)を 1 条件 1 本で、揃ったものは ok・欠けたものは err、右に `4/6 gates`。CI(`pr_status`)は 1 チェック 1 区切りの棒で、通ったもの ok・落ちたもの err・実行中は border の順、右に `CI 3/6 · 1 failed · 2 running`。条件の無い項目・数えたチェックが 0 の項目は、その棒を出さない。棒は要約で、条件の 1 行ずつの事実(記号と pekoed の説明)はその下に今までどおり全部出す(畳まない)。棒の幅は CSS の flex の等分で決め、スクリプトから幅や色を書かない(`marks.js` の `gateBars`・`ciBar`)
 - 推奨は選択肢の横に `recommended (agent)` と書くだけで、選んだ状態にしない。選択肢を選ぶか、メモを書くまで `answer…` を押せない。選択肢があっても、どれも選ばずメモだけで答えられる(選択肢のどれでもない。もう一度タップすると選択が外れる)。pekoed の根拠の項目(merge / wait / send back)だけは選ばないと押せない(pekoed もメモだけの答えを断る)
 - `answer…` で確認シートを開き、宛先(問いを出したエージェント)・問い・選んだもの(メモだけなら `none of the options (the note alone)`)・メモを並べてから送る
 - 送るのは、カードを描いたときの `rev`。pekoed は `inbox.answer` の中で事実を読み直して比べるので、見た後に HEAD が動いた・CI が落ちた・別の端末で答えた項目は 409 になり、ページは選択を外して「changed while you looked」と出す。3 秒ごとの更新で `rev` が上がったときも、選択を外して同じ表示にする

@@ -133,6 +133,11 @@ const (
 	stepTodo = "todo" // not reached yet
 )
 
+// mergeWaitsDetail is the merge step's detail while its evidence is in and
+// it waits for a person's "merge". The phone's Now marks that step as the
+// person's turn by these words (webui/marks.js stepLook, TestWebMarks).
+const mergeWaitsDetail = "evidence ready: waiting for a person to merge"
+
 type webStep struct {
 	Name   string `json:"name"` // impl | pr | ci | review | merge
 	Status string `json:"status"`
@@ -476,7 +481,7 @@ func (d *Daemon) webFlowOf(s *state.Session, mc *state.MergeCheck) webFlow {
 	case run != nil && run.State == state.MergeFailed && (f.Merge == nil || f.Merge.Inbox == 0):
 		step("merge", stepFail, run.Detail)
 	case f.Merge != nil && f.Merge.Ready:
-		step("merge", stepNow, "evidence ready: waiting for a person to merge")
+		step("merge", stepNow, mergeWaitsDetail)
 	default:
 		step("merge", stepTodo, "")
 	}
