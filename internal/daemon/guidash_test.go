@@ -382,15 +382,15 @@ res.model = pipelineModel(groups).trees.map((t) => t.id + ":" + t.from + ":" + t
 console.log(JSON.stringify(res));
 `)
 	var res struct {
-		Moving, Cross, Toggled                                        int
-		Behind, Head                                                  string
-		ReqCut, ReqOne, ReqAll, NoCI, Wait                            []string
-		Cols                                                          []int
+		Moving, Cross, Toggled                                  int
+		Behind, Head                                            string
+		ReqCut, ReqOne, ReqAll, NoCI, Wait                      []string
+		Cols                                                    []int
 		Order, Req, Boxes, Links, Badges, Status, Opened, Model []string
-		Label, Title, Compact                                         []string
-		Groups                                                        [][2]any
-		Colspan, Past                                                 []string
-		More, All                                                     [2]any
+		Label, Title, Compact                                   []string
+		Groups                                                  [][2]any
+		Colspan, Past                                           []string
+		More, All                                               [2]any
 	}
 	if err := json.Unmarshal(out, &res); err != nil {
 		t.Fatalf("node: %v %s", err, out)
