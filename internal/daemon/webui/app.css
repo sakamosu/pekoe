@@ -126,7 +126,7 @@ main { padding: 0 16px calc(var(--tab-h) + 20px); }
 a.card:active, .more-row:active { background: var(--select); }
 .card .body { padding: 0; }
 .nhead { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.nhead .nt, .count .nt, .merged .nt {
+.nhead .nt, .merged .nt {
   flex: 1; min-width: 0; font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -141,9 +141,25 @@ a.card:active, .more-row:active { background: var(--select); }
   margin-top: 6px; font-size: 13px; color: var(--dim); overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.count, .merged { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; }
+.merged { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 12px; }
 .chev { flex: none; color: var(--dim); font-size: 18px; }
-.zeros { margin: 4px 2px 0; font-size: 13px; color: var(--dim); }
+/* ---- Now · the counts: one band on top, a cell a count, each a link to
+   its list. A 0 is dim; a mark has its role only when its count is not 0 ---- */
+#n-band { margin-top: 12px; }
+.band {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  border-radius: 12px; background: var(--surface); overflow: hidden;
+}
+.bc {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 60px; padding: 8px 2px; color: var(--text); text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.bc + .bc { border-left: 1px solid var(--border); }
+.bc:active { background: var(--select); }
+.bc .bn { font-size: 20px; font-weight: 600; line-height: 1.1; }
+.bc.zero .bn { color: var(--dim); }
+.bc .bw { max-width: 100%; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the phone's bar and the wide list share the bar's halves */
 .bar-l, .bar-r { display: contents; }
 .merged-list { display: none; }
@@ -177,13 +193,51 @@ a.card:active, .more-row:active { background: var(--select); }
 /* ---- Now · requests: five steps as a bar, and in words ---- */
 .req .rs { flex: none; font-size: 12px; color: var(--dim); }
 .req .rq { margin-top: 2px; font-size: 13px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.steps-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-top: 10px; }
-.steps-bar .sg { height: 4px; border-radius: 2px; background: var(--border); }
-.steps-bar .st-done { background: var(--ok); }
-.steps-bar .st-now { background: var(--warn); }
-.steps-bar .st-fail { background: var(--err); }
-.steps-words { margin-top: 6px; font-size: 12px; color: var(--dim); }
-.steps-words .sep { padding: 0 .35em; }
+/* the five steps: a dot each, joined by a line, the name under the dot.
+   done ✓ · under way ◉ ok · the person's turn ◉ warn · failed ✗ · not
+   reached: an empty dashed dot. The line into a step is solid once the
+   step is reached, dashed before (marks.js stepper) */
+.stepper { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 12px 0 0; padding: 0; list-style: none; }
+.sp { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.sp + .sp::before {
+  content: ""; position: absolute; top: 10px; left: -50%; right: 50%;
+  border-top: 1px solid var(--dim);
+}
+.sp.st-todo::before { border-top-style: dashed; border-top-color: var(--border); }
+.sp .dot {
+  position: relative; z-index: 1; display: grid; place-items: center;
+  width: 21px; height: 21px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 11px; line-height: 1;
+}
+.sp .sn { max-width: 100%; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-done .dot { color: var(--secondary); }
+.st-now .dot { color: var(--ok); border-color: var(--ok); }
+.st-you .dot { color: var(--warn); border-color: var(--warn); }
+.st-fail .dot { color: var(--err); border-color: var(--err); }
+.st-todo .dot { border-style: dashed; }
+.st-todo .sn { color: var(--dim); }
+.st-you .sn { color: var(--warn); }
+.st-fail .sn { color: var(--err); }
+
+/* ---- the merge conditions and the CI as bars (Now's merge card, the
+   inbox): a bar a condition / a check, equal parts of the row's width,
+   the counts on the right (marks.js gateBars, ciBar) ---- */
+.meters { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; margin-top: 10px; }
+.meter { display: contents; } /* its bars and counts are the grid's: the bars of both rows end together */
+.meter .bars { display: flex; gap: 3px; min-width: 0; }
+.meter.ci .bars { gap: 1px; }
+/* mseg, not bar: .bar is the top bar (sticky, padded) */
+.mseg { flex: 1 1 0; min-width: 1px; height: 4px; border-radius: 2px; }
+.meter.ci .mseg { border-radius: 0; }
+.meter.ci .mseg:first-child { border-radius: 2px 0 0 2px; }
+.meter.ci .mseg:last-child { border-radius: 0 2px 2px 0; }
+.meter.ci .mseg:only-child { border-radius: 2px; }
+.mseg.b-ok { background: var(--ok); }
+.mseg.b-err { background: var(--err); }
+.mseg.b-pend { background: var(--border); }
+.meter .mn { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.facts .meters { margin: 6px 0 8px; }
 
 /* ---- Sessions: chips, then a heading per state ---- */
 .chips {
@@ -690,27 +744,21 @@ body.wide .sheet-back { justify-content: center; }
 body.wide .sheet { max-width: 640px; }
 
 /* ---- Now: three columns, 20px between and around, one scroll ----
-   left: NEEDS YOU (and the zeros as tiles) · middle: REQUESTS · right:
-   TAPI, MERGED BY PEKOED under it */
+   the counts' band across the top · left: NEEDS YOU · middle: REQUESTS ·
+   right: TAPI, MERGED BY PEKOED under it */
 body.wide #now {
   display: grid; column-gap: 20px; padding: 0 20px 20px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: auto 1fr auto;
-  grid-template-areas: "needs reqs tapi" "needs reqs merged" "who who who";
+  grid-template-rows: auto auto 1fr auto;
+  grid-template-areas: "band band band" "needs reqs tapi" "needs reqs merged" "who who who";
   align-items: start;
 }
+body.wide #n-band { grid-area: band; }
 body.wide #n-needs { grid-area: needs; }
 body.wide #n-reqs { grid-area: reqs; }
 body.wide #n-tapi-sect { grid-area: tapi; }
 body.wide #n-merged { grid-area: merged; }
 body.wide #who { grid-area: who; }
-/* the zeros: small tiles, two by two, framed only (no ground), dim */
-body.wide .zeros { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
-body.wide .zeros .z {
-  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-body.wide .zeros .zs { display: none; }
 /* tapi's last words: up to three lines */
 body.wide #n-tapi .cl { -webkit-line-clamp: 3; }
 /* merged: one a row: ↣ · #PR · the branch (dim, cut) · how long ago */

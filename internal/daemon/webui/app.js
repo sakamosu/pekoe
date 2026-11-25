@@ -9,7 +9,8 @@ import { requestId, questionId, ago, hm, short, look, details, line1, cutNote, q
 import { termLines, screenRows } from "./lib/term.js";
 import { IMG_MAX, prepareImage, thumbs, sendBody, imagesNote } from "./lib/images.js";
 import { draftOf, inboxCard, mergeRow, mergePRURL } from "./lib/inbox.js";
-import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing, STEP_LOOK, STEP_NAMES } from "./lib/overview.js";
+import { renderCounts, renderTapi, tapiLine, parentLabel, stepCell, missing } from "./lib/overview.js";
+import { countBand, stepper, mergeMeters } from "./marks.js";
 import { SPIN, bubbleLine, markRewound, chatView, comesBack } from "./lib/chat.js";
 import { answerSheet, inboxSheet, showSendSheet } from "./lib/sheets.js";
 
@@ -327,6 +328,10 @@ function needCard(nd) {
       if (f.pr) target.append(sep(), prLink(f.pr_url, "#" + f.pr));
       body.append(target);
     }
+    // the bars only on pekoed's merge: on a login or a decision, a red
+    // condition (CI running, not reviewed yet) says little about the question
+    const mm = isMerge && mergeMeters(f);
+    if (mm) body.append(mm);
     body.append(el("div", "why", it.question));
   }
   const row = el("div", "row");
@@ -339,41 +344,16 @@ function needCard(nd) {
   return card;
 }
 
-// countCard: a number that is not 0, one line, to where it is
-function countCard(role, icon, words, hash) {
-  const a = el("a", "card count");
-  a.href = hash;
-  a.append(colored(role, icon, "si"), el("span", "nt", words), el("span", "chev", "›"));
-  return a;
-}
-
+// renderNeeds: the counts as one band on top (marks.js countBand), then a
+// card for each thing that waits on the person
 function renderNeeds(n) {
+  $("n-band").replaceChildren(countBand(n.counts || {}));
   const box = $("n-cards");
   box.replaceChildren();
   for (const nd of n.needs || []) {
     const c = needCard(nd);
     if (c) box.append(c);
   }
-  const c = n.counts || {};
-  const plural = (k, one, many) => k + " " + (k === 1 ? one : many);
-  if (c.review) box.append(countCard("secondary", "✓", plural(c.review, "session to review", "sessions to review"), "#/sessions/review"));
-  if (c.running) box.append(countCard("ok", "●", c.running + " running", "#/sessions/active"));
-  if (c.queued) box.append(countCard("dim", "◌", c.queued + " queued", "#/sessions/active"));
-  const zeros = [
-    [c.questions, "questions"],
-    [c.ready, "ready to merge"],
-    [c.running, "running"],
-    [c.waiting, "waiting"],
-    [c.review, "to review"],
-  ].filter(([k]) => !k).map(([, w]) => "0 " + w);
-  // one line on a phone (" · " between); tiles on a wide screen (app.css)
-  const zb = $("n-zeros");
-  zb.replaceChildren();
-  zeros.forEach((w, i) => {
-    if (i) zb.append(el("span", "zs", " · "));
-    zb.append(el("span", "z", w));
-  });
-  zb.hidden = !zeros.length;
 }
 
 // faceEl: tapi's face (▐ eyes ▌ in the mascot's colors, theme.css)
@@ -415,7 +395,7 @@ function renderNowTapi() {
 const REQS_SHOWN = 2;
 
 // requestCard: a request and the session working on it, its five steps
-// as a bar and in words
+// as dots on a line (marks.js stepper)
 function requestCard(rq) {
   const a = el("a", "card req");
   a.href = "#/s/" + encodeURIComponent(rq.slug);
@@ -426,19 +406,7 @@ function requestCard(rq) {
   l1.append(el("span", "nt", rq.branch || rq.slug), st);
   const l2 = el("div", "rq");
   l2.append(txt(requestId(rq.id) + " "), txt(rq.text || ""));
-  const bar = el("div", "steps-bar");
-  bar.setAttribute("aria-hidden", "true");
-  const words = el("div", "steps-words");
-  (rq.steps || []).forEach((p, i) => {
-    const known = STEP_LOOK[p.status] ? p.status : "todo";
-    bar.append(el("span", "sg st-" + known));
-    if (i) words.append(el("span", "sep", "·"));
-    const [icon, role] = STEP_LOOK[known];
-    const w = colored(known === "todo" ? "dim" : role, (known === "todo" ? "" : icon + " ") + (STEP_NAMES[p.name] || p.name));
-    if (p.detail) w.title = p.detail;
-    words.append(w);
-  });
-  a.append(l1, l2, bar, words);
+  a.append(l1, l2, stepper(rq.steps, rq.state === "waiting"));
   return a;
 }
 
@@ -1009,6 +977,11 @@ function card(it) {
     },
     answer: openInboxSheet,
   });
+  // the merge conditions and the CI as bars, under "pekoe read" (the
+  // lines of the facts stay as they are, under the bars)
+  const mm = mergeMeters(it.facts);
+  const sub = mm && c.querySelector(".facts > .sub");
+  if (sub) sub.after(mm);
   c.dataset.q = String(it.id);
   return c;
 }

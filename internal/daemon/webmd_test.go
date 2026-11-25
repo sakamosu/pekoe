@@ -14,7 +14,8 @@ import (
 
 // runWebModule runs prog as an ES module in node, with the page's files
 // (webui/, as embedded) written to a temp dir: prog imports them by name,
-// e.g. import { mdSpans } from "lib/md.js" (or "gui/views/sessions.js").
+// e.g. import { mdSpans } from "lib/md.js" (or "gui/views/sessions.js", or
+// the phone page's "marks.js").
 // Skipped without node.
 func runWebModule(t *testing.T, prog string) []byte {
 	t.Helper()
@@ -41,7 +42,7 @@ func runWebModule(t *testing.T, prog string) []byte {
 		t.Fatal(err)
 	}
 	base := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(dir, "webui")) + "/"}).String()
-	prog = regexp.MustCompile(`from "((?:lib|gui|gui/views)/[a-z]+\.js)"`).ReplaceAllStringFunc(prog, func(m string) string {
+	prog = regexp.MustCompile(`from "((?:(?:lib|gui|gui/views)/)?[a-z]+\.js)"`).ReplaceAllStringFunc(prog, func(m string) string {
 		return `from "` + base + strings.TrimSuffix(strings.TrimPrefix(m, `from "`), `"`) + `"`
 	})
 	out, err := exec.Command(node, "--input-type=module", "-e", prog).CombinedOutput()

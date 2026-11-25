@@ -788,3 +788,10 @@ short = "iPad の横向きでは Web UI が 2 画面になる"
 detail = "幅が 700px 以上だと、左端のレール(Now / Sessions)と、Now の 3 列のダッシュボード、Sessions の一覧の横の tapi chat に並び替わる。同じ URL のまま、縦にすれば iPhone の配置に戻る。"
 keys = ["pekoe web"]
 docs = ["docs/web.md"]
+
+[[tip]]
+id = "web-now-flow"
+short = "Web UI の Now で依頼の止まった工程が分かる"
+detail = "上端の数の帯(waiting・inbox・running・to review)は押すとその一覧へ。依頼の 5 工程は点と線で、人の番は warn の ◉。pekoed のマージのカードと Inbox では、マージの 6 条件と CI のチェックを棒で出す。"
+keys = ["pekoe web"]
+docs = ["docs/web.md"]
