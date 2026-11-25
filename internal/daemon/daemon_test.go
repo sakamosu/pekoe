@@ -169,14 +169,16 @@ func (f *fakeEngine) KillLeftovers(s engine.LeftoverScope) ([]engine.Leftover, e
 	return nil, f.rec("leftovers:" + s.Slug + ":" + s.Dir)
 }
 
-// Panes gives each window the pid a test set in panes (none: no panes).
+// Panes gives each window the pid a test set in panes (none: no panes),
+// dead as dead says. The server is the test process's parent: the tests
+// make the test process (os.Getpid) a window's root.
 func (f *fakeEngine) Panes() ([]engine.Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var ps []engine.Pane
 	for k, pid := range f.panes {
 		if slug, w, ok := strings.Cut(k, "~"); ok {
-			ps = append(ps, engine.Pane{Slug: slug, Window: w, PID: pid})
+			ps = append(ps, engine.Pane{Slug: slug, Window: w, PID: pid, Dead: f.dead[k], Server: os.Getppid()})
 		}
 	}
 	return ps, nil

@@ -482,7 +482,7 @@ func (t *Tmux) KillWait(slug, window string, grace time.Duration) error {
 	if ps, err := t.Panes(); err == nil {
 		for _, p := range ps {
 			if p.Slug == slug && p.Window == window {
-				pid = p.PID
+				pid = groupToWait(p)
 			}
 		}
 	}
@@ -493,6 +493,22 @@ func (t *Tmux) KillWait(slug, window string, grace time.Duration) error {
 		waitGroupGone(pid, grace)
 	}
 	return nil
+}
+
+// groupToWait is the process group KillWait waits for (and kills after the
+// grace) when it closes p's window: the pane's own, decided before the
+// window is closed, while the server still holds the pane's process and
+// its pid cannot be reused (0: none). A dead pane's pid is no longer the
+// pane's (Pane.Live), and its group may be anyone's: nothing is waited
+// for. Neither is a group the pane's process does not lead.
+func groupToWait(p Pane) int {
+	if !p.Live() {
+		return 0
+	}
+	if g, err := syscall.Getpgid(p.PID); err != nil || g != p.PID {
+		return 0
+	}
+	return p.PID
 }
 
 // waitGroupGone waits until process group pgid (a pane's: tmux makes the
@@ -541,28 +557,44 @@ func (t *Tmux) Sessions() (map[string][]string, error) {
 
 // Panes lists the root process of every pekoe window.
 func (t *Tmux) Panes() ([]Pane, error) {
-	out, err := t.run("list-panes", "-s", "-t", "="+t.Session, "-F", "#{window_name}\t#{pane_pid}")
+	out, err := t.run("list-panes", "-s", "-t", "="+t.Session, "-F", "#{window_name}\t#{pane_pid}\t#{pane_dead}\t#{pid}")
 	if err != nil {
 		return nil, err
 	}
 	return parsePanes(out), nil
 }
 
-// parsePanes reads list-panes' "name<TAB>pid" lines; windows that are not
-// pekoe's (no "~", the keeper) and bad pids are left out.
+// parsePanes reads list-panes' "name<TAB>pid<TAB>dead<TAB>server pid"
+// lines; windows that are not pekoe's (no "~", the keeper) are left out,
+// and so are running panes with a bad pid. A dead pane stays: tmux 3.5
+// still reports the pid its process had, tmux 3.8 reports none (PID 0).
+// A missing or bad server pid is 0 (Pane.Live: not live).
 func parsePanes(out string) []Pane {
 	var ps []Pane
 	for _, l := range strings.Split(out, "\n") {
-		name, pid, ok := strings.Cut(l, "\t")
+		f := strings.Split(l, "\t")
+		if len(f) < 2 {
+			continue
+		}
+		slug, w, ok := strings.Cut(f[0], "~")
 		if !ok {
 			continue
 		}
-		slug, w, ok := strings.Cut(name, "~")
-		n, err := strconv.Atoi(strings.TrimSpace(pid))
-		if !ok || err != nil || n <= 1 {
+		p := Pane{Slug: slug, Window: w}
+		if len(f) > 2 {
+			p.Dead = strings.TrimSpace(f[2]) == "1"
+		}
+		if len(f) > 3 {
+			p.Server, _ = strconv.Atoi(strings.TrimSpace(f[3]))
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(f[1]))
+		switch {
+		case err == nil && n > 1:
+			p.PID = n
+		case !p.Dead:
 			continue
 		}
-		ps = append(ps, Pane{Slug: slug, Window: w, PID: n})
+		ps = append(ps, p)
 	}
 	return ps
 }

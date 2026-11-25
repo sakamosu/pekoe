@@ -82,7 +82,7 @@
 報告・送信の記録・`wait` の `mine`・受信箱は「誰が」呼んだかを使う。`$PEKOE_SESSION` や cwd はエージェントが偽れるので、pekoed はソケットの相手のプロセスから決める(`internal/daemon/caller.go`)。
 
 1. 接続を受けたら相手の pid を取る(macOS は `getsockopt(SOL_LOCAL, LOCAL_PEERPID)`、Linux は `SO_PEERCRED`。`peer_*.go`)
-2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元
+2. その接続で呼び出し元が要る最初のリクエストのときに、親プロセスを辿る(64 段まで)。pekoe の窓の根のプロセス(tmux の `#{pane_pid}`。`Engine.Panes`)に当たれば、その窓の slug(tapi chat は `+tapi`)が呼び出し元。根に数えるのは、動いているペイン(`#{pane_dead}` が 0)の pid で、そのプロセスの親が tmux サーバー(`#{pid}`)のものだけ。tmux は remain-on-exit で終わった窓を残し、そのペインは終わったプロセスの pid を返し続ける(tmux 3.5。3.8 は空を返す)。OS がその pid を別のプロセスに配り直すと、それが窓の根に見えてしまうため(token なしで tapi や別のセッションに化けられる)
 3. token つきのリクエストは、セッションのエージェントの窓(`<slug>~agent`。tapi chat の `+tapi~agent` を含む)に当たればその slug、それ以外(窓に当たらない、同じセッションでも run 窓・review 窓・dev 窓)は `human`。token なしで窓に当たらなければ `unknown`
 
 sandbox なし(`[agents.<name>] sandbox = false`)のエージェントや tapi は `human-token` を読めるので、`pekoe` CLI は token を付けて送る。それでもエージェントの窓から来たものはそのエージェントのしたこととして記録する(`session.new` の `parent`、送信の記録の `from`、`wait` の `mine` と受信箱の答えの宛先、`send.log` の絞り込みの相手)。人のセッションと tapi が任せたセッションを取り違えないため。変わるのは記録と所有の判定だけで、token で human-only のメソッドを呼べること(認可)は変わらない(token を読める以上そこは守れない)。人が TUI の `!` で打つ run 窓と review の nvim は人の操作なので `human` のまま。TUI や素の端末は pekoe の窓の外なので `human`。dev 窓は hooks の sandbox で動き token を読めない
@@ -364,7 +364,7 @@ queued のセッションでは、エージェントの起動(`session.restart` 
 | `tapi.get` | — | `Tapi`(下記) |
 | `tapi.open` | `{width?, height?}` | `Tapi`。tapi chat のエージェントを、窓が無ければ起動する(pekoed の起動時には起動しない)。窓が残っていれば(pekoed を再起動しても tmux サーバーは残る)そのまま |
 | `tapi.restart` | `{width?, height?}` | `Tapi`。窓を作り直す(エージェントが終了した後の ↵。Claude Code は `--continue` で同じ会話を続ける) |
-| `tapi.reset` | — | `Tapi`。窓を閉じ、Claude Code の会話の記録(`~/.claude/projects/<tapi の cwd>/`)を消す。次の `tapi.open` は新しい会話 |
+| `tapi.reset` | — | `Tapi`。窓を閉じ、Claude Code の会話の記録(`~/.claude/projects/<tapi の cwd>/`)を消す。次の `tapi.open` は新しい会話。窓を閉じたら、ペインのプロセスグループが終わるまで待ってから消す(3 秒で終わらなければ SIGKILL)。待つ・殺すのは、閉じる前に確かめたペイン自身のグループ(ペインが動いていて、その pid の親が tmux サーバーで、pid がグループのリーダー)だけ。終わった(dead の)ペインの pid は別のプロセスに配り直されうるので、待たず殺さない |
 | `tapi.screen` | — | `session.screen` と同じ形(起動前はエラー) |
 | `tapi.transcript` | `{after?: cursor, before?: cursor}` | `ChatPage`(docs/web.md の「吹き出し(chat)と画面(screen)」)。tapi の hook が渡した transcript(tapi の Claude Code のプロジェクトディレクトリの中だけ)を、人・tapi のテキスト・ツールの名前と主な引数・ターンの所要時間に絞って、カーソルの後ろから返す。`before`(前の答えの `before`)を渡すと、代わりにその前のページ(6 MB・400 件まで、新しい方から)を返し、`cursor` は空。先頭まで読めば `before` は無い。会話が変わった・transcript が短くなったときは `the conversation changed` のエラー。tool_result・thinking・システムの注入は返さない。人間だけ |
 | `tapi.send` | `{text, submit?}` | `session.send` と同じ(送信の排他も。`tapi.interrupt`・pekoed の配送・受信箱の答えを打つ経路と同じ排他の中で打つので、ほかの文や Escape が貼り付けと Enter の間に入らない) |

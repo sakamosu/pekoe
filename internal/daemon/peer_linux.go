@@ -2,11 +2,7 @@ package daemon
 
 import (
 	"errors"
-	"fmt"
 	"net"
-	"os"
-	"strconv"
-	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -33,23 +29,4 @@ func sockPeerPID(c net.Conn) (int, error) {
 		return 0, serr
 	}
 	return int(cred.Pid), nil
-}
-
-// parentPID is pid's parent process (/proc/<pid>/stat: the field after the
-// command, which is in parentheses and may itself hold ") ").
-func parentPID(pid int) (int, error) {
-	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-	if err != nil {
-		return 0, err
-	}
-	s := string(b)
-	i := strings.LastIndexByte(s, ')')
-	if i < 0 {
-		return 0, errors.New("bad /proc stat")
-	}
-	f := strings.Fields(s[i+1:])
-	if len(f) < 2 {
-		return 0, errors.New("bad /proc stat")
-	}
-	return strconv.Atoi(f[1])
 }

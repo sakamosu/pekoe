@@ -262,3 +262,59 @@ func TestTmuxKillWait(t *testing.T) {
 		t.Fatalf("took %v", time.Since(at))
 	}
 }
+
+// A dead pane (remain-on-exit) still reports its old pid (tmux 3.5; tmux
+// 3.8 reports none): Panes lists it dead, it is not live, and KillWait
+// closes its window without waiting for (or killing) the group of whatever
+// now has that pid. A running pane is the server's child and leads its
+// group.
+func TestTmuxPanesDead(t *testing.T) {
+	testenv.NeedTmux(t)
+	t.Setenv("TMUX_TMPDIR", testenv.ShortDir(t, "bt"))
+	tm := &Tmux{Socket: "pekoe-test-panesdead", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-n", "_keeper", "sleep 60"); err != nil {
+		t.Fatal(err)
+	}
+	tm.recordPid()
+	t.Cleanup(func() { tm.KillServer() })
+	if _, err := tm.run("set-option", "-g", "remain-on-exit", "on"); err != nil {
+		t.Fatal(err)
+	}
+	for name, cmd := range map[string]string{"live": "sleep 60", "gone": "exit 0"} {
+		if _, err := tm.run("new-window", "-d", "-t", "=t:", "-n", winName(name, WinAgent), cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// "exit 0" ends on its own: wait (bounded) until tmux has seen it die
+	var live, gone Pane
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		ps, err := tm.Panes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		live, gone = Pane{}, Pane{}
+		for _, p := range ps {
+			switch p.Slug {
+			case "live":
+				live = p
+			case "gone":
+				gone = p
+			}
+		}
+		if gone.Dead || time.Now().After(end) {
+			break
+		}
+	}
+	if live.Dead || !live.Live() || groupToWait(live) != live.PID || live.Server != tm.serverPid() {
+		t.Fatalf("running pane: %+v (server %d)", live, tm.serverPid())
+	}
+	if !gone.Dead || gone.Live() || groupToWait(gone) != 0 {
+		t.Fatalf("dead pane: %+v", gone)
+	}
+	if err := tm.KillWait("gone", WinAgent, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if wins, _ := tm.Sessions(); len(wins["gone"]) != 0 {
+		t.Fatalf("dead window still open: %v", wins)
+	}
+}

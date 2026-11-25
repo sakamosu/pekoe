@@ -96,7 +96,10 @@ type Engine interface {
 	Close()
 	// Panes lists the process id at the root of every pekoe window (tmux's
 	// #{pane_pid}): pekoed walks a socket peer's parents up to one of them
-	// to tell which session called (internal/daemon/caller.go).
+	// to tell which session called (internal/daemon/caller.go). A dead
+	// pane (remain-on-exit) still reports the pid its process had, which
+	// the system may since have given to another process: Pane.Live tells
+	// whether the pid is still the pane's.
 	Panes() ([]Pane, error)
 	// KillServer stops the terminal server itself, ending every agent.
 	// Only `pekoe daemon stop --kill-agents` uses it; a plain stop keeps the
@@ -109,6 +112,25 @@ type Pane struct {
 	Slug   string
 	Window string
 	PID    int
+	// Dead: the pane's process has exited (tmux's #{pane_dead}); PID is
+	// then only the pid it had (tmux 3.5), or 0 (tmux 3.8 reports none).
+	Dead bool
+	// Server is the pid of the terminal server that started the pane's
+	// process, its parent while it runs (0: not known).
+	Server int
+}
+
+// Live tells whether PID is still the pane's own process: the pane is not
+// dead and the process with that pid is a child of the pane's server. A
+// dead pane keeps the pid its process had, and the system may give that
+// pid to any process (one that connects to pekoed, or a group that would
+// be killed in its place); a reused pid is not the server's child.
+func (p Pane) Live() bool {
+	if p.Dead || p.PID <= 1 || p.Server <= 1 {
+		return false
+	}
+	pp, err := ParentPID(p.PID)
+	return err == nil && pp == p.Server
 }
 
 // SignalName turns tmux's pane_dead_signal ("int" in tmux 3.5, a number in

@@ -168,17 +168,24 @@ func (d *Daemon) windowOf(pid int) engine.Pane {
 	if err != nil || len(panes) == 0 {
 		return engine.Pane{}
 	}
+	// a dead pane's pid is only the one its process had, and the system
+	// may since have given it to any process: never a root
 	roots := make(map[int]engine.Pane, len(panes))
 	for _, p := range panes {
-		roots[p.PID] = p
+		if !p.Dead {
+			roots[p.PID] = p
+		}
 	}
 	for i := 0; i < maxAncestors && pid > 1; i++ {
-		if w, ok := roots[pid]; ok {
-			return w
-		}
-		pp, err := parentPID(pid)
+		pp, err := engine.ParentPID(pid)
 		if err != nil || pp == pid {
 			return engine.Pane{}
+		}
+		// a pane's root process is its server's child; a process that
+		// got the pid after the pane's process ended (before tmux shows
+		// the pane dead) is not
+		if w, ok := roots[pid]; ok && w.Server > 1 && pp == w.Server {
+			return w
 		}
 		pid = pp
 	}
