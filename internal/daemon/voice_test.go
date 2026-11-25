@@ -57,6 +57,8 @@ func (f *fakeVoiceEngine) Failover() bool {
 	return f.failoverOK
 }
 
+func (f *fakeVoiceEngine) CacheKeyTime() time.Duration { return 0 }
+
 func (f *fakeVoiceEngine) FallbackFor(error) (string, string, func(context.Context, string, string, string) (string, error)) {
 	if f.fb == nil {
 		return "", "", nil

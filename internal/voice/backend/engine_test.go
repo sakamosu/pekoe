@@ -704,3 +704,53 @@ func TestSynthCacheKeyNotAskedOfSay(t *testing.T) {
 		t.Fatalf("say was asked cache-key: %q", marked(w.self))
 	}
 }
+
+// The caller's time running out in cache-key is the backend's failure (a
+// time-out), not a bare context error: the queue counts it and tries the
+// fallback with the same sentence (10.5).
+func TestSynthCacheKeyCallerTimeout(t *testing.T) {
+	w := newPathWorld(t)
+	fake := fakeBackend(t, t.TempDir(), "fake-ckey")
+	o := w.opts("vv", "say", map[string]string{"vv": fake})
+	o.Timeouts.CacheKey = 5 * time.Second
+	e := New(o)
+	if err := e.Select(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fake+".ckey", []byte("hang"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := e.Synth(ctx, "みんな手が空いたよ", "tapi", "ja")
+	var be *Error
+	if !errors.As(err, &be) || be.Backend != "vv" || !be.Timeout {
+		t.Fatalf("err = %#v (%v), want vv's time-out", err, err)
+	}
+	if failed, name, s := e.FallbackFor(err); failed != "vv" || name != "say" || s == nil {
+		t.Fatalf("FallbackFor = %q %q %v", failed, name, s != nil)
+	}
+}
+
+// CacheKeyTime: the cache-key's time-out when an external backend may
+// synthesize (configured or fallback), none for the bundled say alone.
+func TestCacheKeyTime(t *testing.T) {
+	w := newPathWorld(t)
+	o := w.opts("say", "", nil)
+	o.Timeouts.CacheKey = 700 * time.Millisecond
+	for _, c := range []struct {
+		backend, fallback string
+		want              time.Duration
+	}{
+		{"say", "", 0},
+		{"say", "say", 0},
+		{"vv", "say", 700 * time.Millisecond},
+		{"vv", "", 700 * time.Millisecond},
+		{"say", "vv", 700 * time.Millisecond},
+	} {
+		o.Backend, o.Fallback = c.backend, c.fallback
+		if got := New(o).CacheKeyTime(); got != c.want {
+			t.Errorf("%s/%s: %s, want %s", c.backend, c.fallback, got, c.want)
+		}
+	}
+}

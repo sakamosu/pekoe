@@ -150,3 +150,24 @@ empty = ""
 		t.Errorf("backend named in [voice.backends] reported as missing:\n%s", ps)
 	}
 }
+
+// Blanks around [voice] backend are dropped as check drops them: what
+// check passes is the name used, like fallback.
+func TestVoiceBackendTrimmed(t *testing.T) {
+	bin := exe(t, t.TempDir(), "pekoe-voice-vv", true)
+	src := "[voice]\nbackend = \" vv \"\nfallback = \" say \"\n[voice.backends]\nvv = \"" + bin + "\"\n"
+	if ps := problems(Check([]byte(src))); ps != "" {
+		t.Fatalf("check: %s", ps)
+	}
+	g, err := ParseGlobal([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, f := g.Voice.BackendName(), g.Voice.FallbackName(); b != "vv" || f != "say" {
+		t.Fatalf("backend %q, fallback %q", b, f)
+	}
+	g, _ = ParseGlobal([]byte("[voice]\nbackend = \"  \"\n"))
+	if b := g.Voice.BackendName(); b != "say" {
+		t.Fatalf("blank backend %q", b)
+	}
+}

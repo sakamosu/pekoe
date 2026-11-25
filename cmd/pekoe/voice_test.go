@@ -412,6 +412,29 @@ func TestVoiceTest(t *testing.T) {
 		t.Fatalf("spoken: %v %s", err, out.String())
 	}
 
+	// the player failed after the sound started: a failed line comes after
+	// the spoken one, and "said" is not printed
+	out.Reset()
+	t0 := time.Now()
+	spoken := voice.LogEntry{Time: t0, Kind: voice.KindTest, Text: "テスト", Result: voice.ResultSpoken, LatencyMS: 640, Backend: "say"}
+	f = &fakeVoice{status: daemon.VoiceStatus{Speaking: &voice.Speaking{Kind: voice.KindTest, Text: "テスト"}}, log: func(call int) []voice.LogEntry {
+		if call < 5 {
+			return []voice.LogEntry{spoken}
+		}
+		return []voice.LogEntry{{Time: t0.Add(5 * time.Millisecond), Kind: voice.KindTest, Text: "テスト", Result: voice.ResultFailed, Reason: "play failed: afplay: exit status 1", Backend: "say"}, spoken}
+	}}
+	if err := voiceTest(f, "テスト", "", "", 5*time.Second, &out); err == nil || !strings.Contains(err.Error(), "play failed: afplay") || strings.Contains(out.String(), "said") {
+		t.Fatalf("play failed: %v %s", err, out.String())
+	}
+	// the sound ended and no failed line came: said
+	f = &fakeVoice{status: daemon.VoiceStatus{}, log: func(int) []voice.LogEntry { return []voice.LogEntry{spoken} }}
+	if err := voiceTest(f, "テスト", "", "", 5*time.Second, &out); err != nil || !strings.Contains(out.String(), "said (say, 640ms") {
+		t.Fatalf("ended: %v %s", err, out.String())
+	}
+	if n := strings.Count(strings.Join(f.calls, " "), "voice.log"); n != 2 {
+		t.Fatalf("voice.log looked at %d times, want 2 (one more after the end): %v", n, f.calls)
+	}
+
 	out.Reset()
 	f = &fakeVoice{log: func(int) []voice.LogEntry { return nil }}
 	if err := voiceTest(f, "テスト", "", "", 300*time.Millisecond, &out); err != nil || !strings.Contains(out.String(), "pekoe voice log") {

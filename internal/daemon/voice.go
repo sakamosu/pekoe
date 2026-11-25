@@ -64,6 +64,9 @@ type voiceEngine interface {
 	// FallbackFor offers the fallback for one more try of a failed synth
 	// (backend.Engine.FallbackFor); synth nil is nothing to try.
 	FallbackFor(err error) (failed, name string, synth func(ctx context.Context, text, voice, lang string) (string, error))
+	// CacheKeyTime is added to a synth's time: an external backend runs
+	// cache-key first within it (backend.Engine.CacheKeyTime).
+	CacheKeyTime() time.Duration
 	Release(path string)
 	Status() backend.Status
 	List(ctx context.Context, pathEnv string) ([]backend.Info, []backend.Candidate)
@@ -282,6 +285,8 @@ func (h *voiceHub) start(v config.Voice, key string) {
 			}
 			return failed, name, voice.SynthFunc(f)
 		},
+		SynthExtra:   eng.CacheKeyTime,
+		Logf:         log.Printf,
 		Release:      eng.Release,
 		Backend:      func() string { return eng.Status().Using },
 		MaxSentences: v.MaxSentences(),
@@ -949,7 +954,7 @@ func (h *voiceHub) warmLoop(stop <-chan struct{}, eng voiceEngine) {
 		h.mu.Lock()
 		lang := h.phrases.Lang()
 		h.mu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), voice.SynthTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), voice.SynthTimeout+eng.CacheKeyTime())
 		go func() {
 			select {
 			case <-stop:

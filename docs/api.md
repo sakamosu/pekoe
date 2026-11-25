@@ -861,7 +861,7 @@ docs/voice.md の pekoe voice。`voice.*` はすべて人間だけ(エージェ�
   "enabled": true,                 // [voice] enable
   "supported": true,               // macOS だけ true
   "backend": "say", "using": "say",  // 設定の名前 / 今使っているもの(fallback 中は fallback の名前、使えなければ "")
-  "error": "",                     // 何も喋れない理由: どの backend も使えない、または合成に続けて失敗して止めている(Q11)
+  "error": "",                     // 何も喋れない理由: どの backend も使えない、または合成に続けて失敗して止めている(Q11)。どれでもなければ最後の再生の失敗(`play failed: …`。次に鳴らせたら消える)
   "paused_until": "2026-11-23T15:31:00+09:00", // Q11 で合成を止めている間だけ: いつまで
   "backend_error": "",             // 設定の backend を使っていない理由(fallback 中など)
   "muted_until": "forever",        // "" はミュートなし、"forever" は unmute まで、それ以外は RFC3339

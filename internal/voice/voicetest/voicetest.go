@@ -172,10 +172,17 @@ type PlayCall struct {
 	ctx     context.Context
 	finish  chan struct{}
 	stopped chan struct{}
+	err     error // what Play returns once finished
 }
 
 // Finish ends the sound.
 func (c *PlayCall) Finish() { close(c.finish) }
+
+// Fail ends the call with err, as a player that could not sound.
+func (c *PlayCall) Fail(err error) {
+	c.err = err
+	close(c.finish)
+}
 
 // WaitStopped waits until the caller stops the sound; the test fails if it
 // does not within Wait.
@@ -200,7 +207,7 @@ func (p *Player) Play(ctx context.Context, wav string) error {
 	p.calls <- c
 	select {
 	case <-c.finish:
-		return nil
+		return c.err
 	case <-ctx.Done():
 		close(c.stopped)
 		return ctx.Err()

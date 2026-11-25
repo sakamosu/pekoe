@@ -92,6 +92,14 @@ type Config struct {
 	// the failure was the fallback's own) drops the utterance as before.
 	// Called without the lock; it must return quickly (no exec).
 	Fallback func(err error) (failed, name string, s Synth)
+	// SynthExtra is how much longer than SynthTimeout a synth call may
+	// take, asked as it starts; nil is none. An external backend runs its
+	// cache-key before synth within the same call (10.3), so the daemon
+	// gives its time here.
+	SynthExtra func() time.Duration
+	// Logf is told what went wrong that only pekoed.log shows (a player
+	// that failed); nil is nothing. Called without the lock.
+	Logf func(format string, args ...any)
 	// Release is told when the queue is done with a wav Synth returned
 	// (played, or dropped unplayed), on its own goroutine; nil is nothing.
 	Release func(wav string)
@@ -133,8 +141,10 @@ type utt struct {
 	wav      string
 	gen      uint64 // the synth or play call that belongs to it
 	cancel   context.CancelFunc
-	timedOut bool // the synth call hit SynthTimeout
-	stopping bool // the player was told to stop
+	timedOut bool          // the synth call hit its time-out
+	limit    time.Duration // that time-out
+	playedAt time.Time     // when it started to sound (Q7's record)
+	stopping bool          // the player was told to stop
 	// retry is why the backend in use failed, while (and after) the
 	// fallback via synthesizes the utterance once more (10.5)
 	retry, via string
@@ -166,6 +176,7 @@ type Queue struct {
 	failingOver bool // Failover runs (without the lock); no synth starts
 	pausedUntil time.Time
 	errText     string
+	playErr     string // the last play failed: why (cleared by one that works)
 
 	timer    Timer
 	timerGen uint64
@@ -349,6 +360,9 @@ func (q *Queue) Status() Status {
 
 func (q *Queue) statusLocked() Status {
 	st := Status{Queue: len(q.pending), Error: q.errText, PausedUntil: q.pausedUntil, Synthesizing: q.inflight}
+	if st.Error == "" {
+		st.Error = q.playErr
+	}
 	if q.next != nil {
 		st.Queue += len(q.next.items)
 	}
@@ -694,7 +708,13 @@ func (q *Queue) synthLocked(u *utt, s Synth) {
 	ctx, cancel := context.WithCancel(context.Background())
 	u.gen, u.cancel, u.state, u.timedOut = gen, cancel, uttSynth, false
 	q.inflight++
-	timeout := q.cfg.Clock.AfterFunc(SynthTimeout, func() {
+	u.limit = SynthTimeout
+	if q.cfg.SynthExtra != nil {
+		if d := q.cfg.SynthExtra(); d > 0 {
+			u.limit += d
+		}
+	}
+	timeout := q.cfg.Clock.AfterFunc(u.limit, func() {
 		q.mu.Lock()
 		if u.gen == gen && u.state == uttSynth {
 			u.timedOut = true
@@ -748,7 +768,7 @@ func (q *Queue) synthDone(u *utt, gen uint64, wav string, err error) {
 	}
 	reason := firstLine(err)
 	if u.timedOut {
-		reason = fmt.Sprintf("synth timed out after %s", SynthTimeout)
+		reason = fmt.Sprintf("synth timed out after %s", u.limit)
 	}
 	if u.cancel != nil {
 		u.cancel()
@@ -833,6 +853,7 @@ func (q *Queue) releaseLocked(wav string) {
 func (q *Queue) playLocked(u *utt, now time.Time) {
 	q.next = nil
 	q.playing = u
+	u.playedAt = now
 	for i, x := range u.items {
 		r := ResultSpoken
 		if i > 0 {
@@ -847,14 +868,22 @@ func (q *Queue) playLocked(u *utt, now time.Time) {
 	gen := q.gen
 	ctx, cancel := context.WithCancel(context.Background())
 	u.gen, u.cancel = gen, cancel
-	wav := u.wav
+	wav, text := u.wav, u.text
 	go func() {
-		_ = q.cfg.Player.Play(ctx, wav)
-		q.playDone(u, gen)
+		err := q.cfg.Player.Play(ctx, wav)
+		if ctx.Err() != nil {
+			err = nil // stopped on purpose: not a failure
+		}
+		if err != nil && q.cfg.Logf != nil {
+			q.cfg.Logf("voice: playing %q failed: %v", text, err)
+		}
+		q.playDone(u, gen, err)
 	}()
 }
 
-func (q *Queue) playDone(u *utt, gen uint64) {
+// playDone ends u's play; err is the player's failure (nil when it played
+// or was stopped).
+func (q *Queue) playDone(u *utt, gen uint64, err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.playing != u || u.gen != gen {
@@ -862,6 +891,22 @@ func (q *Queue) playDone(u *utt, gen uint64) {
 	}
 	if u.cancel != nil {
 		u.cancel()
+	}
+	if err != nil {
+		// logged spoken as it started: say it did not sound after all, and
+		// let the same news be said again (Q7)
+		reason := "play failed: " + firstLine(err)
+		now := q.cfg.Clock.Now()
+		for _, x := range u.items {
+			q.logAsLocked(x, u.text, ResultFailed, reason, u.via, now)
+			k := x.Slug + "|" + string(x.Kind)
+			if t, ok := q.spoken[k]; ok && t.Equal(u.playedAt) {
+				delete(q.spoken, k)
+			}
+		}
+		q.playErr = reason
+	} else if !u.stopping {
+		q.playErr = ""
 	}
 	q.playing = nil
 	q.releaseLocked(u.wav)
