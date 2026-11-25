@@ -137,3 +137,30 @@ func TestHookWithTokenFromAgentWindow(t *testing.T) {
 		t.Fatalf("report with the token from main's window: %+v", r)
 	}
 }
+
+// A dead pane keeps the pid its process had, and the system may give that
+// pid to any process: a process under it is not the window's.
+func TestWindowOfSkipsDeadPane(t *testing.T) {
+	d, fe, _ := setup(t)
+	fe.panes[TapiSlug+"~agent"] = os.Getpid()
+	fe.dead[TapiSlug+"~agent"] = true
+	if w := d.windowOf(childOfTest(t)); w.Slug != "" {
+		t.Fatalf("dead pane's old pid identified the caller: %+v", w)
+	}
+	delete(fe.dead, TapiSlug+"~agent")
+	if w := d.windowOf(childOfTest(t)); w.Slug != TapiSlug {
+		t.Fatalf("live pane: %+v", w)
+	}
+}
+
+// A process that got a pane's pid but is not the server's child (the
+// pane's process ended and tmux does not show it dead yet, or the server
+// was started anew) is not the pane's root.
+func TestWindowOfNeedsServersChild(t *testing.T) {
+	d, fe, _ := setup(t)
+	pid := childOfTest(t) // a child of the test process, not of the "server" (its parent)
+	fe.panes["feat-x~agent"] = pid
+	if w := d.windowOf(pid); w.Slug != "" {
+		t.Fatalf("reused pid identified the caller: %+v", w)
+	}
+}

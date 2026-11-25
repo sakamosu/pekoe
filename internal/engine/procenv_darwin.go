@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -89,4 +90,16 @@ func procSid(pid int) int {
 		return 0
 	}
 	return s
+}
+
+// ParentPID is pid's parent process.
+func ParentPID(pid int) (int, error) {
+	k, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil {
+		return 0, err
+	}
+	if k.Proc.P_pid != int32(pid) {
+		return 0, errors.New("no such process")
+	}
+	return int(k.Eproc.Ppid), nil
 }
