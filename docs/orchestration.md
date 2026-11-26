@@ -87,7 +87,7 @@ hooks(`session.event`)の振り分けも同じ識別に寄せられるが、hook
 
 実装(追記: 終わった窓の pid): tmux は remain-on-exit で終わった窓を残し、そのペインは終わったプロセスの pid を `#{pane_pid}` に返し続ける(tmux 3.5。3.8 は空を返すので、この穴は無い)。macOS の pid は連番で一周するので、fork を繰り返して同じ pid を引いたプロセスは、そのまま窓の根に見えてしまう(sandbox の中からでも、token なしで tapi や別のセッションに化けられる)。そこで根に数えるのは、動いているペイン(`#{pane_dead}` が 0)の pid で、そのプロセスの親が tmux サーバー(`#{pid}`)のものだけにした。ペインのプロセスは tmux サーバーが fork した子で、終わっても tmux が回収するまで pid は再利用されない。回収した後に同じ pid を引いたプロセスの親は tmux サーバーではない。`tapi.reset` が窓を閉じた後にプロセスグループを待つ・SIGKILL する処理(`KillWait`)も同じ確かめを閉じる前にし、ペイン自身が率いるグループのときだけ待つ。
 
-実装(追記): ユーザーは委任を優先して `[agents.claude] sandbox = false` で使うので、エージェントも tapi も `human-token` を読み、`pekoe` CLI は token を付けて送る。token を窓より優先すると、tapi が `pekoe new` したセッションの `parent` が `human` になり、人が作ったものと区別がつかず、`wait --mine` も人のセッションで起きてしまう。そこで記録と所有の判定(`Caller.ID()`: `parent`・送信の記録・`wait` の `mine`・`send.log` の絞り込み・受信箱の `from` と `--mine`)は、token つきでもエージェントの窓(`<slug>~agent`、`+tapi~agent`)から来ればその slug にした。同じセッションの run 窓(TUI の `!`)と review 窓(nvim)は人の操作なので `human` のまま。認可(token で human-only のメソッドを許すこと)は変えない。sandbox なしで token が読める以上、そこは守れないことを前提にする。
+実装(追記): `[agents.claude] sandbox = false` で使う場合(委任を優先して sandbox を切るなど)、エージェントも tapi も `human-token` を読めるので、`pekoe` CLI は token を付けて送る。token を窓より優先すると、tapi が `pekoe new` したセッションの `parent` が `human` になり、人が作ったものと区別がつかず、`wait --mine` も人のセッションで起きてしまう。そこで記録と所有の判定(`Caller.ID()`: `parent`・送信の記録・`wait` の `mine`・`send.log` の絞り込み・受信箱の `from` と `--mine`)は、token つきでもエージェントの窓(`<slug>~agent`、`+tapi~agent`)から来ればその slug にした。同じセッションの run 窓(TUI の `!`)と review 窓(nvim)は人の操作なので `human` のまま。認可(token で human-only のメソッドを許すこと)は変えない。sandbox なしで token が読める以上、そこは守れないことを前提にする。
 
 ## 新しく足す仕組み
 
