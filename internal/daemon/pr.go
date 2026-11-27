@@ -255,6 +255,7 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 			v.Checks = append(v.Checks, ck)
 		}
 	}
+	v.Checks = latestChecks(v.Checks)
 	for _, r := range g.Reviews.Nodes {
 		v.Reviews = append(v.Reviews, PRReview{Author: login(r.Author), State: r.State, Body: r.Body, At: r.SubmittedAt, URL: r.URL})
 	}
@@ -269,6 +270,39 @@ func parsePRView(b []byte, now time.Time) (*PRView, error) {
 		v.Comments = append(v.Comments, c.conv())
 	}
 	return v, nil
+}
+
+// latestChecks keeps one check per name and workflow (a status context
+// has no workflow: per context), the one started last; at the same time
+// the finished one. The rollup of a head can hold the same check more than
+// once: a workflow run for both push and pull_request (each its own run of
+// the same workflow), a re-run in another check suite. Counting them all
+// keeps an old failure red after the newer run passed (issue #337).
+// Like `gh pr checks`, which drops duplicates the same way. The kept check
+// takes the place of the first of its name, so the rollup's order stays.
+func latestChecks(checks []PRCheck) []PRCheck {
+	key := func(c PRCheck) string { return c.Workflow + "\x00" + c.Name }
+	newer := func(a, b PRCheck) bool {
+		if !a.StartedAt.Equal(b.StartedAt) {
+			return a.StartedAt.After(b.StartedAt)
+		}
+		return a.Conclusion != "" && b.Conclusion == ""
+	}
+	at := map[string]int{}
+	out := checks[:0:0]
+	for _, c := range checks {
+		k := key(c)
+		i, ok := at[k]
+		if !ok {
+			at[k] = len(out)
+			out = append(out, c)
+			continue
+		}
+		if newer(c, out[i]) {
+			out[i] = c
+		}
+	}
+	return out
 }
 
 // checkBucket sorts a check into pass | fail | pending | skip (like `gh pr checks`).
