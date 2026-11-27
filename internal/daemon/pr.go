@@ -615,6 +615,17 @@ func (d *Daemon) applyPRStatus(slug string, pr int, next *state.PRStatus, seen b
 			next.AttentionAt = time.Now()
 		}
 	}
+	if next.Fail == 0 {
+		// no check fails any more (a re-run or a new push went green, or is
+		// running again): the failure is not there to look at. The others
+		// stay until seen: what they point at (a change request, a comment,
+		// mergeable) is still news after it changes. A later failure is news
+		// again (prAttention: Fail from 0).
+		next.Attention = slices.DeleteFunc(next.Attention, func(a string) bool { return a == "ci_failed" })
+		if len(next.Attention) == 0 {
+			next.Attention, next.AttentionAt = nil, time.Time{}
+		}
+	}
 	if next.State != "OPEN" { // merged / closed: nothing left to act on
 		next.Attention, next.AttentionAt = nil, time.Time{}
 	}
