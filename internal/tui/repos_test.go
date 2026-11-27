@@ -817,3 +817,49 @@ func TestWatchedRepoTag(t *testing.T) {
 		}
 	}
 }
+
+// pekoed's repos.updated (repos/*.toml changed) reloads repo.list, so
+// [watch] enable written while the TUI is open puts the watch mark on the
+// heading in [1], and turning it off takes the mark away (issue #336).
+func TestReposUpdatedReloadsWatchMark(t *testing.T) {
+	f, cl := startFakePekoed(t)
+	t.Setenv("PEKOE_COLOR", "none")
+	m := newModel(cl, "")
+	m.tapi.splash = false
+	m.width, m.height = 180, 40
+	watch := false
+	f.reply = func(method string) any {
+		if method != "repo.list" {
+			return nil
+		}
+		f.mu.Lock()
+		on := watch
+		f.mu.Unlock()
+		web := appB
+		web.Watch = on
+		return []daemon.KnownRepo{appA, web}
+	}
+	runCmd(m, m.loadRepos())
+	web := sess("web-1", appB, state.Running, time.Now())
+	m.sessions = []*state.Session{sess("api-1", appA, state.Running, time.Now()), web}
+	tag := theme.Prefix(m.ic.Watch) + "watch"
+	heading := func() string { return ansi.Strip(m.repoHeading(web, sessionsWidth(m)-4)) }
+	if h := heading(); strings.Contains(h, tag) {
+		t.Fatalf("watch mark before [watch] enable: %q", h)
+	}
+	set := func(on bool) {
+		f.mu.Lock()
+		watch = on
+		f.mu.Unlock()
+		_, cmd := m.Update(evMsg(client.Event{Event: "repos.updated", Data: json.RawMessage(`{}`)}))
+		runCmd(m, cmd)
+	}
+	set(true)
+	if h := heading(); !strings.Contains(h, tag) {
+		t.Fatalf("no watch mark after [watch] enable = true: %q", h)
+	}
+	set(false)
+	if h := heading(); strings.Contains(h, tag) {
+		t.Fatalf("watch mark stays after [watch] enable = false: %q", h)
+	}
+}

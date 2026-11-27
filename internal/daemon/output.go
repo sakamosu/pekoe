@@ -216,6 +216,9 @@ func (d *Daemon) tickLoop() {
 		}
 		n++
 		d.reloadConfig() // config.toml changed: take it up (config.go)
+		if n%3 == 2 {
+			d.checkRepoConfigs() // repos/*.toml changed: repos.updated (repoconf.go)
+		}
 		if n%5 == 1 {
 			d.kickQueue() // max_running changed, or a kick was missed (queue.go)
 		}
