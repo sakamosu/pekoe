@@ -323,3 +323,38 @@ func TestChromeExitShowsLastStderrLine(t *testing.T) {
 		t.Fatalf("want Chrome's last line, got %v", err)
 	}
 }
+
+// When preview.updated says a capture is done, the disk already matches it:
+// the shot that fell off (older than Before) is gone at that moment, not a
+// little later (a client reading the files right away must not see it).
+func TestPreviewDropsOldShotBeforePublishing(t *testing.T) {
+	d, _, s := previewSetup(t, true)
+	var mu sync.Mutex
+	var bad []string
+	seen := map[string]bool{}
+	d.testHook = func(ev string, data any) {
+		p, ok := data.(*Preview)
+		if ev != "preview.updated" || !ok || p.Busy || p.After == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		seen[p.After.File] = true
+		for f := range seen {
+			if f == p.After.File || (p.Before != nil && f == p.Before.File) {
+				continue
+			}
+			if fileExists(f) {
+				bad = append(bad, fmt.Sprintf("n=%d: %s still on disk", p.N, f))
+			}
+		}
+	}
+	for i := 0; i < 4; i++ {
+		call[Preview](t, d, "preview.capture", map[string]any{"slug": s.Slug})
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 4 || len(bad) > 0 {
+		t.Fatalf("shots %d, published before the drop: %v", len(seen), bad)
+	}
+}
