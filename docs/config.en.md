@@ -144,8 +144,10 @@ For a repository whose `repos/<repo-id>.toml` has `[watch] enable = true`, pekoe
 
 - **What fires**: the label is on the issue, and the person who put it on has write or admin on the repository (checked through the issue's events and the collaborator permission). When that cannot be checked (a bot put it on, GitHub does not answer), nothing starts
 - **No duplicates**: an issue that already has a session (started with `--from gh#N`, or with the number in its branch; landed ones too) gets none. A label that started (or was turned down for) a session starts nothing again, even after `pekoe rm` of that session; to have it done again, take the label off and put it back
-- **Caps**: at most `max_per_poll` sessions a poll, and none while `max_running` of the sessions watch mode started are working (or queued). `[orchestrator] max_running` queues them as any other
+- **When it fails**: when the permission cannot be read or the session cannot be made (a port, the worktree, the agent's settings …), the next poll tries again; after 3 failures for the same label it gives up (pekoed's log says why). Fix it and take the label off and put it back to have it tried again
+- **Caps**: at most `max_per_poll` sessions a poll (failed tries count), and none while `max_running` of the sessions watch mode started are working (or queued). `[orchestrator] max_running` queues them as any other
 - **Telling them apart**: the sessions it starts have `parent` `pekoed` (`pekoe --json ls`; "from issue watch" on the dashboard), so tapi's `pekoe wait --mine` does not get them. A watched repository shows `watch` on its heading in the TUI's [1] and in `w`
+- **Limits**: an issue looked at before GitHub's events show the label stays unfired until something else happens to it (put the label back on to have it looked at again). Only the newest 100 issues per label are seen. The records of the issues looked at (`watch:*` in the state DB) are never removed
 - pekoed writes nothing to GitHub (no comments, labels or assignees). Without `gh` logged in it does nothing (pekoed's log says why)
 
 `pekoe config check` checks `repos/*.toml` along with `config.toml` (unknown keys, `[watch]`, `[merge] method`). The design is in [orchestration.md, 「issue 監視モード」](orchestration.md#issue-監視モード) (Japanese).

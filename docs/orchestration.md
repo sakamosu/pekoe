@@ -560,10 +560,18 @@ tapi chat の許可待ちへの allow / deny は Web UI に出さない(tapi は
 - **きっかけはラベルだけ**: ラベルは triage 以上の人にしか付けられない。さらに、そのラベルを付けた人(issue の events で、そのラベルの最後の `labeled` の actor。後に `unlabeled` があれば付いていない扱い)が、リポジトリに write か admin の権限を持つかを `GET repos/{owner}/{repo}/collaborators/{login}/permission` で確かめる。triage・read・none は発火しない。bot(`name[bot]`)は権限を聞けないので発火しない。events に `labeled` が見つからない・権限の問い合わせが失敗したときも発火しない側に倒す(問い合わせの失敗だけは記録せず、次の回にもう一度聞く)。Actions などの bot にラベルを付けさせる運用では動かないが、それは意図した割り切り
 - **issue の本文は信頼できないデータ**: セッションは `hNew` に `from: "gh#N"` を渡して作る(`pekoe new --from gh#N` と同じ道。別の作り方を増やさない)。プロンプトは `issueText` の雛形(題と本文を閉じられない区切りに入れ、従わない指示の例を添える)の後ろに、監視モードが作ったこと・いつもの手順(実装 → テスト → 独立レビュー → pekoe land → pekoe report)・GitHub に書き込まないことを書いた 1 段落を足す。その段落に入るのは issue の番号と設定のラベル名だけ。ブランチ名は `SuggestBranch` の接頭辞(bug のラベルなら `fix/`)に `issue-<N>` と題の英数字(Kebab)を足したもの(`feat/issue-12-login-fails`)。題の記号は落ちるので、ブランチ名にシェルの文字は入らない。番号が入るので、`Session` の結び付け(issues.list)もブランチからも見つかる
 - **同じ issue に 2 本目を作らない**: 動いている・landed のセッション(`--from gh#N` で作ったもの、ブランチ名が番号を含むもの。人や tapi が作ったものも)がある issue には作らない。作った・見送ったことは、そのきっかけの `labeled` の event の id と一緒に state DB(`watch:<repo-id>:<N>`)に残し、同じ event では二度と作らない。だから **セッションを rm した後も作り直さない**(rm は「この件はやめた」の意思表示として扱う)。もう一度やらせたいときは、ラベルを外して付け直す(新しい event になる)か、`pekoe new --from gh#N` で手で作る。issue の `updatedAt` が前に見たときと同じなら events を読まずに飛ばす
-- **上限**: `max_per_poll`(既定 1)は 1 回のポーリングで作る数、`max_running`(既定 2)は監視モードが作ったそのリポジトリのセッションのうち、作業中(creating・running・waiting で止めていないもの)と queued の数の上限。上限に当たった issue は記録せず、次の回に回す。番号の小さい(古い)issue から順に作る。セッションは `hNew` を通るので、`[orchestrator] max_running` があればそちらの待ち行列(queued)にも乗る
+- **失敗したときの再試行**: 権限の問い合わせが失敗した(GitHub が答えない・404)ときと、`hNew` が失敗した(ポートが取れない・worktree が作れない・リポジトリの `agent` が無いなど)ときは、その event を `retry`(何回目か)として残し、次の回にもう一度試す。同じ event で `watchMaxTries`(3 回)失敗したら打ち切り(権限なら `labeler`、作成なら `failed`)、以後その event では試さない。打ち切ったものをもう一度やらせるには、原因を直してからラベルを外して付け直す(新しい event)か、`pekoe new --from gh#N` で手で作る。古い issue が失敗し続けて 1 回の問い合わせの枠(10 件)を食い続けないよう、再試行中の issue は新しい issue の後ろに回す。`hNew` を呼んだ数は成否によらず `max_per_poll` に数えるので、失敗が続いても 1 回に試すのは `max_per_poll` 件まで
+- **上限**: `max_per_poll`(既定 1)は 1 回のポーリングで作る数(試す数)、`max_running`(既定 2)は監視モードが作ったそのリポジトリのセッションのうち、作業中(creating・running・waiting で止めていないもの)と queued の数の上限。上限に当たった issue は記録せず、次の回に回す。番号の小さい(古い)issue から順に作る。セッションは `hNew` を通るので、`[orchestrator] max_running` があればそちらの待ち行列(queued)にも乗る
 - **自動で作ったものの区別**: `parent` を `pekoed`(pekoed 自身を表す予約の名前。この名前のセッションは作れない)にする。人が作ったもの(`human`)・tapi(`+tapi`)・セッションが作ったもの(その slug)と区別でき、ダッシュボードの工程表では「from issue watch」の組にまとまる。tapi の `pekoe wait --mine` は parent が `+tapi` のものだけなので、監視モードのセッションの報告は tapi には届かない(tapi が拾いたいときは `--mine` を付けずに待つか、`pekoe --json ls` で parent を見る)。`[orchestrator] deliver` も tapi の子だけなので配らない。人には今までどおりダッシュボードと受信箱(根拠が揃えばマージの判断)で見える
 - **GitHub には書かない**: issue へのコメント・ラベルの付け外し・assign はしない(読むだけ)。案としては、作ったときに issue へ「pekoe が作業を始めた」とコメントする、`agent-ready` を外して `agent-working` を付ける、などがあるが、書き込みの権限と取り消しの扱いを決めてから
 - **見え方**: 監視オンのリポジトリは、TUI の [1] のリポジトリの見出しと `w` のリポジトリ選びに `<アイコン> watch` を dim で出す(状態ではなくリポジトリのモードなので、注意を引く色にしない。アイコンは状態語 watch と必ずペア。[ui-guidelines.md](ui-guidelines.md) の語彙表)。GUI はリポジトリの一覧が新しいセッションのシートの選択肢だけなので、そこに `↻ watch` を添える。`repo.list` の `watch`・`watch_labels` で分かる
+
+### 制限事項
+
+- events に `labeled` がまだ出ていない(GitHub の events の反映の遅れ)ときは `no-event` として、その時の `updatedAt` と一緒に残す。issue にほかの動き(コメント・編集・ラベル)があるまで、その issue は見直さないので発火しない(安全側の遅れ。気づいたらラベルを付け直す)
+- 記録(state DB の `watch:<repo-id>:<N>`)は消さない。issue の数だけ増える(1 件は数十バイト)。`pekoe repo forget` でも残る
+- `gh issue list` は 1 ラベルにつき新しい順に 100 件までなので、それより古い issue は見えない
+- 確かめてから `hNew` を呼ぶまでの間に、人が同じ issue のセッションを `pekoe new --from gh#N` で作ると 2 本になりうる(小さな窓)
 
 ### やらないこと(今回)
 

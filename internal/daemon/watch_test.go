@@ -16,17 +16,18 @@ import (
 
 // fakeWatch answers watch mode's GitHub reads from memory.
 type fakeWatch struct {
-	mu      sync.Mutex
-	issues  map[string][]ghIssue // label -> open issues
-	events  map[int][]labelEvent // issue -> events
-	perms   map[string]string    // login -> permission
-	permErr error                // every permission call fails
-	listErr error                // every list fails
-	calls   map[string]int       // "list" "events" "perm"
+	mu       sync.Mutex
+	issues   map[string][]ghIssue // label -> open issues
+	events   map[int][]labelEvent // issue -> events
+	perms    map[string]string    // login -> permission
+	permErr  error                // every permission call fails
+	permErrs map[string]error     // login -> its permission call fails
+	listErr  error                // every list fails
+	calls    map[string]int       // "list" "events" "perm"
 }
 
 func newFakeWatch() *fakeWatch {
-	return &fakeWatch{issues: map[string][]ghIssue{}, events: map[int][]labelEvent{}, perms: map[string]string{}, calls: map[string]int{}}
+	return &fakeWatch{issues: map[string][]ghIssue{}, events: map[int][]labelEvent{}, perms: map[string]string{}, permErrs: map[string]error{}, calls: map[string]int{}}
 }
 
 func (f *fakeWatch) openIssues(_ context.Context, repo, label string) ([]ghIssue, error) {
@@ -52,6 +53,9 @@ func (f *fakeWatch) permission(_ context.Context, repo, login string) (string, e
 	f.calls["perm"]++
 	if f.permErr != nil {
 		return "", f.permErr
+	}
+	if err := f.permErrs[login]; err != nil {
+		return "", err
 	}
 	if p, ok := f.perms[login]; ok {
 		return p, nil
@@ -264,8 +268,11 @@ func TestWatchChecksLabeler(t *testing.T) {
 	fw.label(6, "Admin", "agent-ready", "ada")
 	fw.perms["ada"] = "admin"
 	fw.permErr = errors.New("HTTP 502")
-	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[6] != "labeler unknown" || d.watchRecordOf(r.ID, 6) != nil {
+	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[6] != "retry" {
 		t.Fatalf("unanswered: %+v", res)
+	}
+	if rec := d.watchRecordOf(r.ID, 6); rec == nil || rec.Outcome != "retry" || rec.Tries != 1 {
+		t.Fatalf("unanswered record: %+v", rec)
 	}
 	fw.permErr = nil
 	if res := d.watchRound(r); len(res.Started) != 1 {
@@ -301,7 +308,7 @@ func TestWatchCaps(t *testing.T) {
 	if n := d.watchRunning(r.ID); n != 3 {
 		t.Fatalf("running %d", n)
 	}
-	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[24] != "cap" && res.Skipped[25] != "cap" {
+	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[24] != "cap" || res.Skipped[25] != "cap" {
 		t.Fatalf("at the cap: %+v", res)
 	}
 	// one stops working: the next starts
@@ -442,5 +449,98 @@ esac
 		if !strings.Contains(string(b), want) {
 			t.Errorf("no %q in\n%s", want, b)
 		}
+	}
+}
+
+// session.new failing is tried again in the next rounds, watchMaxTries in
+// all, then given up until the label is put on again; a failing issue uses
+// a try of max_per_poll, so a round tries no more than that.
+func TestWatchRetriesFailedStart(t *testing.T) {
+	d, _, fw, r0 := watchSetup(t, "agent = \"nope\"\n"+watchOn)
+	r := watchedOf(t, d)
+	fw.perms["alice"] = "write"
+	fw.label(30, "Fails", "agent-ready", "alice")
+	fw.label(31, "Behind it", "agent-ready", "alice")
+	// unknown agent: fails, kept for a retry; #31 waits (max_per_poll 1)
+	res := d.watchRound(r)
+	if len(res.Started) != 0 || res.Skipped[30] != "retry" || res.Skipped[31] != "cap" {
+		t.Fatalf("first: %+v", res)
+	}
+	if rec := d.watchRecordOf(r.ID, 30); rec == nil || rec.Tries != 1 || !strings.Contains(rec.Note, "unknown agent") {
+		t.Fatalf("record: %+v", rec)
+	}
+	// the retry goes after the fresh #31, which now gets the try
+	if res := d.watchRound(r); res.Skipped[31] != "retry" || res.Skipped[30] != "cap" {
+		t.Fatalf("second: %+v", res)
+	}
+	// fixed: both start (a transient failure is not final)
+	os.WriteFile(paths.RepoConfig(r0.ID), []byte(watchOn+"max_per_poll = 2\n"), 0o600)
+	r = watchedOf(t, d)
+	if res := d.watchRound(r); len(res.Started) != 2 {
+		t.Fatalf("after the fix: %+v", res)
+	}
+
+	// failing in every round: given up after watchMaxTries
+	os.WriteFile(paths.RepoConfig(r0.ID), []byte("agent = \"nope\"\n"+watchOn+"max_running = 5\n"), 0o600)
+	r = watchedOf(t, d)
+	fw.label(32, "Always fails", "agent-ready", "alice")
+	for i := 1; i <= watchMaxTries; i++ {
+		res := d.watchRound(r)
+		want := "retry"
+		if i == watchMaxTries {
+			want = "failed"
+		}
+		if res.Skipped[32] != want {
+			t.Fatalf("round %d: %+v", i, res)
+		}
+	}
+	os.WriteFile(paths.RepoConfig(r0.ID), []byte(watchOn+"max_running = 5\n"), 0o600)
+	r = watchedOf(t, d)
+	fw.touch(32)
+	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[32] != "done" {
+		t.Fatalf("given up: %+v", res)
+	}
+	// the label put on again: a new event, tried afresh
+	fw.unlabel(32, "agent-ready", "alice")
+	fw.label(32, "Always fails", "agent-ready", "alice")
+	if res := d.watchRound(r); len(res.Started) != 1 {
+		t.Fatalf("relabeled: %+v", res)
+	}
+}
+
+// Issues whose labeler's permission keeps failing do not take every check
+// of a round from the issues behind them, and are given up after
+// watchMaxTries.
+func TestWatchNoStarvation(t *testing.T) {
+	d, _, fw, _ := watchSetup(t, watchOn)
+	r := watchedOf(t, d)
+	fw.permErrs["bob"] = errors.New("HTTP 404")
+	for n := 1; n <= watchChecksMax; n++ {
+		fw.label(n, "Bob's", "agent-ready", "bob")
+	}
+	fw.perms["alice"] = "write"
+	newest := watchChecksMax + 1
+	fw.label(newest, "Alice's", "agent-ready", "alice")
+	// the first round's checks all go to the older issues
+	if res := d.watchRound(r); len(res.Started) != 0 || res.Skipped[newest] != "later" || res.Skipped[1] != "retry" {
+		t.Fatalf("first: %+v", res)
+	}
+	// the retries come after it now: it starts, and takes the round's try
+	if res := d.watchRound(r); len(res.Started) != 1 || res.Skipped[1] != "cap" {
+		t.Fatalf("second: %+v", res)
+	}
+	if res := d.watchRound(r); res.Skipped[1] != "retry" {
+		t.Fatalf("third: %+v", res)
+	}
+	// third try: given up, and no more questions after that
+	if res := d.watchRound(r); res.Skipped[1] != "labeler" || res.Skipped[watchChecksMax] != "labeler" {
+		t.Fatalf("fourth: %+v", res)
+	}
+	perms := fw.count("perm")
+	if res := d.watchRound(r); res.Skipped[1] != "seen" || fw.count("perm") != perms {
+		t.Fatalf("after giving up: %+v (perm %d → %d)", res, perms, fw.count("perm"))
+	}
+	if rec := d.watchRecordOf(r.ID, 1); rec == nil || rec.Tries != watchMaxTries || !strings.Contains(rec.Note, errCheckLabeler) {
+		t.Fatalf("record: %+v", rec)
 	}
 }

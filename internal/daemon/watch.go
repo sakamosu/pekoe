@@ -18,7 +18,9 @@ package daemon
 // made again, and an issue some session already works on (any session,
 // landed ones too, as Session of issues.list finds them) is left alone.
 // Taking the label off and putting it on again is a new event, and fires
-// again. Caps: max_per_poll sessions a round, and none while max_running
+// again. A permission that cannot be read and a session.new that fails
+// are tried again in the next rounds, watchMaxTries in all, then given up
+// for that event. Caps: max_per_poll tries a round, and none while max_running
 // of the sessions watch mode made for the repository are working.
 
 import (
@@ -66,10 +68,14 @@ type labelEvent struct {
 type watchRecord struct {
 	Event   int64     `json:"event"`   // the labeled event acted on (0: none found)
 	Updated time.Time `json:"updated"` // the issue's updatedAt when it was looked at
-	Outcome string    `json:"outcome"` // started | session | labeler | no-event | failed
+	Outcome string    `json:"outcome"` // started | session | labeler | no-event | failed | retry
 	Slug    string    `json:"slug,omitempty"`
-	Note    string    `json:"note,omitempty"`
-	At      time.Time `json:"at"`
+	// Tries: how many rounds the event failed in so far (outcome retry:
+	// the permission could not be read, or session.new failed); at
+	// watchMaxTries it is given up (labeler / failed)
+	Tries int       `json:"tries,omitempty"`
+	Note  string    `json:"note,omitempty"`
+	At    time.Time `json:"at"`
 }
 
 const watchKVPrefix = "watch:"
@@ -189,6 +195,12 @@ func (d *Daemon) watchSessionFor(repoID string, n int) string {
 // each): a backlog of labeled issues is worked through a few at a time.
 const watchChecksMax = 10
 
+// watchMaxTries is how many rounds a labeled event is tried in when the
+// labeler's permission cannot be read or session.new fails (a port, a
+// worktree, an agent not configured): then it is given up until the label
+// is put on again.
+const watchMaxTries = 3
+
 // WatchResult is what one round did (tests, the log).
 type WatchResult struct {
 	Started []string // slugs
@@ -226,22 +238,33 @@ func (d *Daemon) watchRound(r watchedRepo) WatchResult {
 			byNum[is.Number] = is
 		}
 	}
-	nums := make([]int, 0, len(byNum))
+	// the oldest issue first, but the ones being retried after the fresh
+	// ones: an issue that keeps failing cannot take every check of a round
+	// (watchChecksMax) from the issues behind it
+	var fresh, retry []int
+	recs := map[int]*watchRecord{}
 	for n := range byNum {
-		nums = append(nums, n)
+		recs[n] = d.watchRecordOf(r.ID, n)
+		if rec := recs[n]; rec != nil && rec.Outcome == "retry" {
+			retry = append(retry, n)
+		} else {
+			fresh = append(fresh, n)
+		}
 	}
-	sort.Ints(nums) // the oldest issue first
+	sort.Ints(fresh)
+	sort.Ints(retry)
 	perPoll, capRunning := r.Watch.PerPoll(), r.Watch.Running()
 	running := d.watchRunning(r.ID)
-	checks := 0
-	for _, n := range nums {
-		is := byNum[n]
-		rec := d.watchRecordOf(r.ID, n)
-		if rec != nil && rec.Updated.Equal(is.UpdatedAt) {
+	checks, attempts := 0, 0
+	for _, n := range append(fresh, retry...) {
+		is, rec := byNum[n], recs[n]
+		if rec != nil && rec.Outcome != "retry" && rec.Updated.Equal(is.UpdatedAt) {
 			res.Skipped[n] = "seen"
 			continue // nothing happened to it since: no event can be new
 		}
-		if len(res.Started) >= perPoll || running >= capRunning {
+		// attempts, not only the sessions started: failing ones cannot
+		// make a round try more than max_per_poll
+		if attempts >= perPoll || running >= capRunning {
 			res.Skipped[n] = "cap"
 			continue // the next round (nothing recorded)
 		}
@@ -263,11 +286,26 @@ func (d *Daemon) watchRound(r watchedRepo) WatchResult {
 			res.Skipped[n] = "no-event"
 			continue
 		}
+		tries := 0
 		if rec != nil && rec.Event == ev.ID {
-			rec.Updated = is.UpdatedAt
-			d.setWatchRecord(r.ID, n, *rec)
-			res.Skipped[n] = "done"
-			continue // acted on already (a comment since, a session removed)
+			if rec.Outcome != "retry" {
+				rec.Updated = is.UpdatedAt
+				d.setWatchRecord(r.ID, n, *rec)
+				res.Skipped[n] = "done"
+				continue // acted on already (a comment since, a session removed)
+			}
+			tries = rec.Tries
+		}
+		// a try that fails: kept for the next round, given up at watchMaxTries
+		fail := func(final, why string) {
+			tries++
+			out := watchRecord{Event: ev.ID, Updated: is.UpdatedAt, Outcome: "retry", Tries: tries, Note: lineCut(why, 200)}
+			if tries >= watchMaxTries {
+				out.Outcome = final
+				log.Printf("watch %s #%d: given up after %d tries: %s", r.ID, n, tries, why)
+			}
+			d.setWatchRecord(r.ID, n, out)
+			res.Skipped[n] = out.Outcome
 		}
 		if slug := d.watchSessionFor(r.ID, n); slug != "" {
 			d.setWatchRecord(r.ID, n, watchRecord{Event: ev.ID, Updated: is.UpdatedAt, Outcome: "session", Slug: slug})
@@ -276,19 +314,19 @@ func (d *Daemon) watchRound(r watchedRepo) WatchResult {
 		}
 		if why := d.watchLabeler(ctx, gh, repo, ev.Actor); why != "" {
 			if why == errCheckLabeler {
-				res.Skipped[n] = "labeler unknown"
-				continue // not recorded: asked again next round
+				fail("labeler", errCheckLabeler+" "+ev.Actor)
+				continue
 			}
 			log.Printf("watch %s #%d: not started: %s", r.ID, n, why)
 			d.setWatchRecord(r.ID, n, watchRecord{Event: ev.ID, Updated: is.UpdatedAt, Outcome: "labeler", Note: why})
 			res.Skipped[n] = "labeler"
 			continue
 		}
+		attempts++
 		slug, err := d.watchStart(r, is, ev)
 		if err != nil {
-			log.Printf("watch %s #%d: %v", r.ID, n, err)
-			d.setWatchRecord(r.ID, n, watchRecord{Event: ev.ID, Updated: is.UpdatedAt, Outcome: "failed", Note: lineCut(err.Error(), 200)})
-			res.Skipped[n] = "failed"
+			log.Printf("watch %s #%d: try %d: %v", r.ID, n, tries+1, err)
+			fail("failed", err.Error())
 			continue
 		}
 		log.Printf("watch %s #%d: started %s (label %s by %s)", r.ID, n, slug, ev.Label, ev.Actor)

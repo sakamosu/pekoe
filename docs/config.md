@@ -144,8 +144,10 @@ ja = "Kyoko"
 
 - **発火の条件**: ラベルが付いていて、そのラベルを付けた人がリポジトリに write か admin の権限を持つこと(issue の events と collaborators の permission で確かめます)。確かめられないとき(bot が付けた・GitHub が答えない)は作りません
 - **重複しない**: その issue のセッション(`--from gh#N` で作ったもの・ブランチ名が番号を含むもの。landed も)があれば作りません。一度作った(見送った)ラベルからは、セッションを `pekoe rm` した後も作り直しません。もう一度やらせたいときは、ラベルを外して付け直してください
-- **上限**: 1 回に `max_per_poll` 本まで、監視モードが作ったセッションが `max_running` 本作業中(か queued)の間は作りません。`[orchestrator] max_running` があれば、その待ち行列にも乗ります
+- **失敗したとき**: 権限の問い合わせやセッションの作成(ポート・worktree・エージェントの設定など)が失敗したら、次のポーリングでもう一度試し、同じラベルで 3 回失敗したら打ち切ります(pekoed のログに理由が出ます)。直してからラベルを外して付け直すと、もう一度試します
+- **上限**: 1 回に `max_per_poll` 本まで(失敗した分も数えます)、監視モードが作ったセッションが `max_running` 本作業中(か queued)の間は作りません。`[orchestrator] max_running` があれば、その待ち行列にも乗ります
 - **見分け方**: 作ったセッションの `parent` は `pekoed` です(`pekoe --json ls`。ダッシュボードでは「from issue watch」)。tapi の `pekoe wait --mine` には入りません。監視オンのリポジトリは、TUI の [1] の見出しと `w` に `watch` の印が出ます
+- **制限**: GitHub の events にラベルの記録がまだ出ていないうちに見ると、その issue に次の動きがあるまで発火しません(付け直せば見直します)。ラベルごとに新しい順に 100 件より古い issue は見えません。見た issue の記録(state DB の `watch:*`)は消えません
 - pekoed は GitHub に書き込みません(コメント・ラベル・assign はしません)。`gh` がログインしていないと何もしません(pekoed のログに理由が出ます)
 
 `pekoe config check` は `config.toml` と一緒に `repos/*.toml` も確かめます(知らないキー、`[watch]` の値、`[merge] method`)。設計は [orchestration.md の「issue 監視モード」](orchestration.md#issue-監視モード) にあります。
