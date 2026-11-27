@@ -654,6 +654,9 @@ func (m *model) onEvent(ev client.Event) tea.Cmd {
 			return nil
 		}
 		return m.reloadConfig(r)
+	case "repos.updated":
+		// repos/*.toml changed ([watch] enable: the [1] heading's watch mark)
+		return m.loadRepos()
 	case "session.created", "session.updated", "session.waiting", "session.done":
 		var s state.Session
 		if json.Unmarshal(ev.Data, &s) != nil {

@@ -242,6 +242,9 @@ type Daemon struct {
 	watchGH     watchGitHub          // nil: gh (tests swap it)
 	watching    atomic.Bool          // watchTick is running
 	watchPolled map[string]time.Time // repo-id -> last round (under mu)
+	// repoConf is repos/*.toml as checkRepoConfigs saw it last
+	// (repoconf.go; tickLoop's goroutine only)
+	repoConf string
 
 	// the inbox (inbox.go)
 	inboxMu      sync.Mutex           // reads and writes of an item, one at a time
@@ -308,6 +311,7 @@ func New() (*Daemon, error) {
 		stop:        make(chan struct{}),
 		prFetched:   map[string]time.Time{},
 		watchPolled: map[string]time.Time{},
+		repoConf:    repoConfFingerprint(),
 		catch:       errcatch.NewStore(),
 		devScan:     map[string]*errcatch.Scanner{},
 		tapi:        newTapiState(),

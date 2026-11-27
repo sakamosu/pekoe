@@ -848,6 +848,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `term.passthrough` | `{slug, seq}`(OSC 52 / OSC 9 / 777 など、外側の端末にそのまま流すシーケンス) |
 | `voice.updated` | `VoiceStatus`(鳴り始め・鳴り終わり・ミュート・backend の切り替え・エラー。変わったときだけ。token つきの購読にだけ届く) |
 | `voice.logged` | `voice.log` の 1 件(ログに書くたび。token つきの購読にだけ届く) |
+| `repos.updated` | `{}`(`~/.config/pekoe/repos/*.toml` が増えた・消えた・書き換わった。pekoed は 3 秒ごとに名前・大きさ・更新時刻だけを見る。TUI は `repo.list` を取り直し、[1] の見出しの watch の印を合わせる。token つきの購読にだけ届く) |
 | `config.reloaded` | `{error?, restart?: [name]}`(config.toml が変わって読み直した。`error` があれば読めず、前の設定のまま。ファイルの中身は載せない。token つきの購読にだけ届く) |
 
 ### 音声(voice)
