@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"pekoe/internal/config"
 	"pekoe/internal/gitx"
 	"pekoe/internal/paths"
 	"pekoe/internal/state"
@@ -25,6 +26,10 @@ type KnownRepo struct {
 	Sessions int    `json:"sessions"`      // sessions that are not landed
 	Config   bool   `json:"config"`        // has a per-repo config file
 	Cwd      bool   `json:"cwd,omitempty"` // repo.list: the cwd passed is inside it
+	// Watch: its config has [watch] enable = true (issue watch mode,
+	// watch.go); WatchLabels are the labels it reacts to
+	Watch       bool     `json:"watch,omitempty"`
+	WatchLabels []string `json:"watch_labels,omitempty"`
 }
 
 const repoKVPrefix = "repo:"
@@ -110,6 +115,9 @@ func (d *Daemon) knownRepos() []KnownRepo {
 				by[id] = r
 			}
 			r.Config = true
+			if cfg, _, err := config.LoadRepo(id); err == nil && cfg.Watch.Enable {
+				r.Watch, r.WatchLabels = true, cfg.Watch.LabelList()
+			}
 		}
 	}
 	// a repo-id alone says nothing about where the repository lives

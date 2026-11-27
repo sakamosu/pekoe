@@ -802,3 +802,10 @@ short = "Web UI の Now で依頼の止まった工程が分かる"
 detail = "上端の数の帯(waiting・inbox・running・to review)は押すとその一覧へ。依頼の 5 工程は点と線で、人の番は warn の ◉。pekoed のマージのカードと Inbox では、マージの 6 条件と CI のチェックを棒で出す。"
 keys = ["pekoe web"]
 docs = ["docs/web.md"]
+
+[[tip]]
+id = "issue-watch"
+short = "ラベル付きの issue から自動でセッション(issue 監視)"
+detail = "repos/<repo-id>.toml の [watch] enable = true で、pekoed が数分ごとに open issue を見て、書き込み権限のある人が labels(既定 agent-ready)を付けた issue から --from gh#N と同じセッションを作る。"
+keys = ["pekoe config check"]
+docs = ["docs/config.md#issue-監視モード", "docs/orchestration.md#issue-監視モード"]

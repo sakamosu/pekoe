@@ -778,3 +778,42 @@ func TestRepoReloadsWithoutCwd(t *testing.T) {
 		t.Fatalf("forgotten home still listed: %+v", h)
 	}
 }
+
+// A repository in issue watch mode carries "<icon> watch" in dim on its
+// heading in [1] and in the w picker; the others do not.
+func TestWatchedRepoTag(t *testing.T) {
+	for _, icons := range []string{"nerd", "unicode", "ascii"} {
+		for _, width := range []int{180, 90} {
+			m := repoModel(t, "truecolor", width)
+			m.ic = theme.Icons(icons)
+			m.repos[1].Watch, m.repos[1].WatchLabels = true, []string{"agent-ready"}
+			tag := theme.Prefix(m.ic.Watch) + "watch"
+			label := fmt.Sprintf("%s/%d", icons, width)
+			out := checkSize(t, m, label)
+			lines, lw := strings.Split(out, "\n"), sessionsWidth(m)
+			hA, hB := lineIndex(lines, " api ─", lw), lineIndex(lines, " web "+tag+" ─", lw)
+			if hA < 0 || hB < 0 || strings.Contains(lines[hA], "watch") {
+				t.Fatalf("%s: headings api %d, web %d (%q):\n%s", label, hA, hB, tag, out)
+			}
+			var web *state.Session
+			for _, s := range m.sessions {
+				if s.Slug == "web-1" {
+					web = s
+				}
+			}
+			cw := sessionsWidth(m) - 4
+			if h := m.repoHeading(web, cw); ansi.StringWidth(h) != cw || !strings.Contains(h, m.th.FG(theme.Dim, tag)) {
+				t.Fatalf("%s: heading %q (%d of %d)", label, ansi.Strip(h), ansi.StringWidth(h), cw)
+			}
+			// too narrow for the tag: the name stays
+			if h := ansi.Strip(m.repoHeading(web, 14)); strings.Contains(h, "watch") || !strings.Contains(h, "web") {
+				t.Fatalf("%s: narrow heading %q", label, h)
+			}
+			p := &repoPicker{m: m}
+			view := ansi.Strip(strings.Join(p.view(), "\n"))
+			if strings.Count(view, tag) != 1 {
+				t.Fatalf("%s: picker:\n%s", label, view)
+			}
+		}
+	}
+}

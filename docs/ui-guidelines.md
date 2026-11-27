@@ -253,6 +253,7 @@ Nerd Font のアイコンと置字グラフィック（powerline、ブロック�
 | Browser パネル / ブラウザ由来 | nf-fa-chrome | F268 | ◉ | なし | タイトル色（カード内は secondary） |
 | Picks パネル / 要素ピック | nf-fa-crosshairs | F05B | ⌖ | なし | タイトル色 |
 | Issues パネル / GitHub issue | nf-fa-dot\_circle\_o | F192 | ◉ | なし | タイトル色 |
+| issue 監視モードのリポジトリ | nf-fa-eye | F06E | ↻ | @ | dim(状態語 watch と並べる。リポジトリのモードで、注意を引く状態ではない) |
 | Comments パネル / コメント行 | nf-fa-comment\_o | F0E5 | ✎ | # | secondary |
 | vim | nf-dev-vim | E7C5 | V | なし | タイトル色 |
 | run | nf-fa-circle（静止）/ Braille スピナー（動作中） | F111 / 2800–28FF | ◉ | \* | ok |

@@ -329,16 +329,36 @@ func (m *model) repoHeading(s *state.Session, cw int) string {
 	if cur := m.curRepo(); cur != nil && repoKeyOf(s) != "" && (cur.ID == s.RepoID || cur.Dir == s.RepoDir) {
 		mark, role = th.FG(theme.Text, fit(m.ic.Current, 1)), theme.Text
 	}
-	name := shortRepoName(s.Repo, s.RepoDir)
+	name, tag := shortRepoName(s.Repo, s.RepoDir), ""
 	if r := m.sessionRepo(s); r != nil {
-		name = m.repoName(r)
+		name, tag = m.repoName(r), m.watchTag(r)
+	}
+	if tag != "" && cw-4-w(tag)-1 < 8 {
+		tag = "" // too narrow: the name first
+	}
+	room := cw - 4
+	if tag != "" {
+		room -= w(tag) + 1
 	}
 	// a long name gives way, keeping the marker and at least one rule cell
-	if w(name) > cw-4 {
-		name = fit(name, max(cw-4, 1))
+	if w(name) > room {
+		name = fit(name, max(room, 1))
 	}
 	head := mark + " " + th.FG(role, name) + " "
+	if tag != "" {
+		head += th.FG(theme.Dim, tag) + " "
+	}
 	return head + th.FG(theme.Border, strings.Repeat(tx("─"), max(cw-w(head), 0)))
+}
+
+// watchTag is "<icon> watch" for a repository in issue watch mode
+// ([watch] enable in its config), "" otherwise: the icon with its word,
+// dim (a mode of the repository, not a state that asks for attention).
+func (m *model) watchTag(r *daemon.KnownRepo) string {
+	if r == nil || !r.Watch {
+		return ""
+	}
+	return theme.Prefix(m.ic.Watch) + "watch"
 }
 
 // selRow is the index of the selected row (-1 when none is).
@@ -464,6 +484,9 @@ func (p *repoPicker) view() []string {
 		nameRole := theme.Text
 		if r.Dir == "" {
 			where, nameRole = tx("path unknown · run pekoe in it once"), theme.Dim
+		}
+		if tag := m.watchTag(&r); tag != "" {
+			where = tag + tx(" · ") + where
 		}
 		nameW := clampi(cw/3, 8, 24)
 		countW := 12

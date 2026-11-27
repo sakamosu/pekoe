@@ -212,43 +212,106 @@ func problemCount(n int) string {
 	return fmt.Sprintf("%d problem%s", n, plural(n))
 }
 
-// checkConfig lists what is wrong in config.toml; problems make it fail.
+// checkConfig lists what is wrong in config.toml and in each repository's
+// repos/<repo-id>.toml; problems make it fail.
 func checkConfig(path string, out io.Writer) error {
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		if jsonOut {
-			printJSON(map[string]any{"path": path, "exists": false, "problems": []config.Problem{}})
-			return nil
-		}
-		fmt.Fprintln(out, "no config.toml: every setting is at its default ("+path+")")
-		return nil
+	type problem struct {
+		Key   string `json:"key,omitempty"`
+		Msg   string `json:"message"`
+		Fatal bool   `json:"fatal,omitempty"`
 	}
+	list := func(ps []config.Problem) []problem {
+		l := []problem{}
+		for _, p := range ps {
+			l = append(l, problem{p.Key, p.Msg, p.Fatal})
+		}
+		return l
+	}
+	exists := true
+	var ps []config.Problem
+	switch b, err := os.ReadFile(path); {
+	case errors.Is(err, fs.ErrNotExist):
+		exists = false
+	case err != nil:
+		return err
+	default:
+		ps = config.Check(b)
+	}
+	repos, err := checkRepoConfigs(paths.ReposConfigDir())
 	if err != nil {
 		return err
 	}
-	ps := config.Check(b)
-	if jsonOut {
-		type problem struct {
-			Key   string `json:"key,omitempty"`
-			Msg   string `json:"message"`
-			Fatal bool   `json:"fatal,omitempty"`
-		}
-		list := []problem{}
-		for _, p := range ps {
-			list = append(list, problem{p.Key, p.Msg, p.Fatal})
-		}
-		printJSON(map[string]any{"path": path, "exists": true, "problems": list})
-	} else if len(ps) == 0 {
-		fmt.Fprintln(out, "ok:", path)
-		return nil
-	} else {
-		fmt.Fprintf(out, "%s has %s:\n", path, problemCount(len(ps)))
-		printProblems(out, ps)
+	total := len(ps)
+	for _, r := range repos {
+		total += len(r.problems)
 	}
-	if len(ps) > 0 {
-		return fmt.Errorf("%s in %s", problemCount(len(ps)), path)
+	if jsonOut {
+		type repoOut struct {
+			Path     string    `json:"path"`
+			Problems []problem `json:"problems"`
+		}
+		ro := []repoOut{}
+		for _, r := range repos {
+			ro = append(ro, repoOut{r.path, list(r.problems)})
+		}
+		printJSON(map[string]any{"path": path, "exists": exists, "problems": list(ps), "repos": ro})
+	} else {
+		switch {
+		case !exists:
+			fmt.Fprintln(out, "no config.toml: every setting is at its default ("+path+")")
+		case len(ps) == 0:
+			fmt.Fprintln(out, "ok:", path)
+		default:
+			fmt.Fprintf(out, "%s has %s:\n", path, problemCount(len(ps)))
+			printProblems(out, ps)
+		}
+		for _, r := range repos {
+			if len(r.problems) == 0 {
+				fmt.Fprintln(out, "ok:", r.path)
+				continue
+			}
+			fmt.Fprintf(out, "%s has %s:\n", r.path, problemCount(len(r.problems)))
+			printProblems(out, r.problems)
+		}
+	}
+	if total > 0 {
+		if len(repos) == 0 {
+			return fmt.Errorf("%s in %s", problemCount(total), path)
+		}
+		return fmt.Errorf("%s in the config files", problemCount(total))
 	}
 	return nil
+}
+
+type repoCheck struct {
+	path     string
+	problems []config.Problem
+}
+
+// checkRepoConfigs checks every repos/*.toml in dir (none when dir is
+// missing), in name order.
+func checkRepoConfigs(dir string) ([]repoCheck, error) {
+	es, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []repoCheck
+	for _, e := range es {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".toml") {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(p)
+		if err != nil {
+			out = append(out, repoCheck{p, []config.Problem{{Msg: "cannot be read: " + err.Error(), Fatal: true}}})
+			continue
+		}
+		out = append(out, repoCheck{p, config.CheckRepo(b)})
+	}
+	return out, nil
 }
 
 // showConfig prints the settings in use: config.toml with the defaults

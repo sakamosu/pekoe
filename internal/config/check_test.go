@@ -390,3 +390,37 @@ func TestDeliver(t *testing.T) {
 		t.Errorf("deliver needs a restart: %v", r)
 	}
 }
+
+// [watch] of a repository: the values in use and what CheckRepo says.
+func TestWatchSettings(t *testing.T) {
+	var w Watch
+	if w.Interval() != DefaultWatchEvery || w.PerPoll() != 1 || w.Running() != 2 || strings.Join(w.LabelList(), ",") != "agent-ready" {
+		t.Fatalf("defaults: %v %d %d %v", w.Interval(), w.PerPoll(), w.Running(), w.LabelList())
+	}
+	w = Watch{Labels: []string{" ai ", "", "ai", "agent-ready"}, Every: "30s", MaxPerPoll: 3, MaxRunning: -1}
+	if w.Interval() != MinWatchEvery || w.PerPoll() != 3 || w.Running() != 2 || strings.Join(w.LabelList(), ",") != "ai,agent-ready" {
+		t.Fatalf("set: %v %d %d %v", w.Interval(), w.PerPoll(), w.Running(), w.LabelList())
+	}
+
+	if ps := CheckRepo([]byte("agent = \"claude\"\n[watch]\nenable = true\nlabels = [\"agent-ready\", \"ai\"]\nevery = \"10m\"\nmax_per_poll = 2\nmax_running = 4\n")); len(ps) != 0 {
+		t.Fatalf("good: %v", ps)
+	}
+	ps := CheckRepo([]byte("[watch]\nenable = true\nlabels = [\"a,b\", \"\", \"x\", \"x\"]\nevery = \"soon\"\nmax_per_poll = 0\nmax_running = 0\nlabel = \"y\"\n[merge]\nmethod = \"fast\"\n"))
+	var got []string
+	for _, p := range ps {
+		got = append(got, p.String())
+	}
+	all := strings.Join(got, "\n")
+	for _, want := range []string{"watch.label: unknown key", `watch.labels: "a,b" has a comma`, "watch.labels: an empty label", `watch.labels: "x" is listed twice`,
+		`watch.every: "soon" is not a positive Go duration`, "watch.max_per_poll: 0 is below 1", "watch.max_running: 0 is below 1", `merge.method: "fast"`} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no %q in\n%s", want, all)
+		}
+	}
+	if ps := CheckRepo([]byte("[watch\n")); len(ps) != 1 || !ps[0].Fatal {
+		t.Fatalf("syntax: %v", ps)
+	}
+	if ps := CheckRepo([]byte("[watch]\nlabels = [\"\"]\n")); len(ps) != 2 {
+		t.Fatalf("no label left: %v", ps)
+	}
+}
