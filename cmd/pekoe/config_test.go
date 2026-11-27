@@ -215,3 +215,26 @@ func TestConfigCheck(t *testing.T) {
 		t.Fatalf("good: %v %s", err, out.String())
 	}
 }
+
+// pekoe config check reads each repos/<repo-id>.toml too ([watch] …).
+func TestConfigCheckRepos(t *testing.T) {
+	t.Setenv("PEKOE_HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.toml")
+	dir := paths.ReposConfigDir()
+	os.MkdirAll(dir, 0o700)
+	good := filepath.Join(dir, "github.com_me_app.toml")
+	os.WriteFile(good, []byte("[watch]\nenable = true\nlabels = [\"agent-ready\"]\nevery = \"10m\"\n"), 0o600)
+	var out bytes.Buffer
+	if err := checkConfig(path, &out); err != nil || !strings.Contains(out.String(), "ok: "+good) {
+		t.Fatalf("good repo: %v %s", err, out.String())
+	}
+	bad := filepath.Join(dir, "github.com_me_web.toml")
+	os.WriteFile(bad, []byte("[watch]\nenable = true\nevery = \"10s\"\nmax_per_poll = 0\nlabel = \"x\"\n"), 0o600)
+	out.Reset()
+	err := checkConfig(path, &out)
+	s := out.String()
+	if err == nil || !strings.Contains(s, bad+" has 3 problems") || !strings.Contains(s, "watch.every: 10s is below the minimum 1m") ||
+		!strings.Contains(s, "watch.max_per_poll") || !strings.Contains(s, "watch.label: unknown key") {
+		t.Fatalf("bad repo: %v %s", err, s)
+	}
+}

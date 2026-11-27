@@ -30,6 +30,8 @@ type guiRepo struct {
 	Name     string `json:"name"`
 	Dir      string `json:"dir"`
 	Sessions int    `json:"sessions"`
+	// Watch: issue watch mode is on ([watch] enable; watch.go)
+	Watch bool `json:"watch,omitempty"`
 }
 
 // guiRepos is GET /api/repos: repo.list, as the TUI's w lists them (the
@@ -42,7 +44,7 @@ func (d *Daemon) guiRepos(w http.ResponseWriter, r *http.Request) {
 	}
 	out := []guiRepo{}
 	for _, k := range ks {
-		out = append(out, guiRepo{ID: k.ID, Name: k.Name, Dir: k.Dir, Sessions: k.Sessions})
+		out = append(out, guiRepo{ID: k.ID, Name: k.Name, Dir: k.Dir, Sessions: k.Sessions, Watch: k.Watch})
 	}
 	writeJSON(w, map[string]any{"repos": out})
 }

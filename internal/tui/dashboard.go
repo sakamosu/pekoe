@@ -1291,6 +1291,8 @@ func (m *model) dashGroupHead(g dashGroup, room int) string {
 		who = "from tapi"
 	case "human":
 		who = "from you"
+	case "pekoed":
+		who = "from issue watch" // [watch] of the repository (daemon/watch.go)
 	case "", "unknown":
 		who = "other"
 	}

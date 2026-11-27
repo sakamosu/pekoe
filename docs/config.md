@@ -28,6 +28,13 @@ gatekeeper = "claude -p '危ない箇所を path:line: text で挙げて'"   # d
 
 [merge]
 method = "merge"                  # 受信箱で merge と答えたときの pekoed のマージの方法: merge | squash | rebase
+
+[watch]                           # issue 監視モード(下の「issue 監視モード」)。既定はオフ
+enable       = true
+labels       = ["agent-ready"]    # 反応するラベル(どれか 1 つ。既定 agent-ready)
+every        = "5m"               # ポーリングの間合い(既定 5m、下限 1m)
+max_per_poll = 1                  # 1 回のポーリングで作るセッションの数(既定 1)
+max_running  = 2                  # 監視モードが作って作業中・queued のセッションの上限(既定 2)
 ```
 
 変数は `{{slug}}` `{{branch}}` `{{port}}` `{{path}}` `{{repo}}` です。setup は順に実行し、失敗したらそこで止めて、左ペインに赤で表示します。`[hooks]` のコマンドに値を埋め込むとき、シェルが特別に扱う文字(空白・`$`・`` ` ``・`;` など)を含む値は、単引用符で囲んで 1 語として渡します(`feat/x` のような普通の値は、そのままです)。必要なときは pekoe が囲むので、**`{{…}}` を自分で引用符で囲まないでください**(`createdb "app_{{branch}}"` ではなく、`createdb app_{{branch}}` と書きます。二重引用符の中では、単引用符が効きません)。ブランチ名に、シェルが特別に扱う文字(`$` `(` `)` `;` `|` `{` `}` 空白など)が含まれていると、`pekoe new` が拒否します。`[env]` の値には、引用符を付けません。
@@ -130,3 +137,17 @@ ja = "Kyoko"
 `[agents.<name>]` には、`command` `resume` `prompt`(`arg` | `paste`)`allow` `always` `deny` `hooks` `sandbox` `model` `effort` を書けます。`sandbox`(既定は `true`)は、`command` が `claude` で始まるものにだけ効きます([エージェントに pekoe を使わせるときの権限](agent-permissions.md))。`arg` は、最初のプロンプトを `--` の後ろに置いて渡します(`claude -- '<プロンプト>'`)。そのため、`-` で始まるプロンプトがオプションとして解釈されることはありません。`--` を受け付けないエージェントには、`paste` を使ってください。Claude Code の許可メニューへの回答としては、既定で `1`(許可)/ `2`(常に許可)/ `Esc`(拒否)を送ります。Claude Code の挙動が変わった場合は、`[agents.claude]` で直せます。
 
 `model` と `effort` は、Claude Code のエージェント(`command` が `claude` で始まるもの。ほかのエージェントでは無視されます)のモデルを固定します。pekoe は、起動のたび(新規・`open`・resume・R での再起動・デーモン再起動後の再開・tapi chat)に `--model <model> --effort <effort>` を付けます。**設定しておいてください。** 設定がないと、Claude Code 自身の既定(`~/.claude/settings.json` の `"model"`)に従いますが、このファイルは、どの Claude Code のセッションで `/model` を実行しても書き換わります。つまり、1 つのセッションを大きいモデルに切り替えただけで、その後に pekoe が起動するセッションが、すべてそのモデルになってしまいます。`model` を設定しておけば、セッションの中の `/model` は、そのセッションだけを(再起動するまで)切り替えます(R や resume では、設定したモデルをもう一度渡します)。pekoe が `~/.claude/settings.json` を書き換えることはありません。設定がないときに pekoe が既定のモデルを決めないのは、意図的なものです。どのモデルが使えて、どれだけ費用がかかるかは使う人が決めることですし、pekoe に組み込んだモデル名は、いずれ古くなります。そのため、推測で渡すよりも、Claude Code の既定に任せています。モデルは、`command` ではなく `model` に書いてください(`command = "claude --model …"` と `model` の両方を書くと、`--model` が 2 回渡ります)。`pekoe new --model M --effort E` で、1 つのセッションだけ上書きできます(resume や再起動の後も保たれます)。リポジトリは `repos/<name>.toml` の `agent` でエージェントを選ぶので、別のモデルで動かしたいリポジトリには、別名のエージェントを定義して(`[agents.claude-big] command = "claude"`・`model = "…"`。リポジトリ側は `agent = "claude-big"`)、それを指定します。tapi は、`[tapi] agent` のエージェントに従います。`pekoe --json ls` には、各セッションが最後に応答したモデル(`last_model`。会話記録の最後の assistant のメッセージから取ります)と、上書きした値(`model` / `effort`)が表示されます。
+
+## issue 監視モード
+
+`repos/<repo-id>.toml` に `[watch] enable = true` を書いたリポジトリでは、pekoed が `every` ごとに GitHub の open issue を見て、`labels` のどれかが付いた issue から、`pekoe new --from gh#N` と同じセッション(issue の題と本文を信頼できないデータとして区切ったプロンプト)を自動で作り、作業を始めさせます。見るのは pekoed 自身で、エージェントは使わないので、見ているだけではトークンを使いません。既定はオフで、書いたリポジトリだけを見ます。pekoed がそのリポジトリの場所を知っている(そこで TUI を開いた・セッションを作ったことがある。`w` に出る)必要があります。
+
+- **発火の条件**: ラベルが付いていて、そのラベルを付けた人がリポジトリに write か admin の権限を持つこと(issue の events と collaborators の permission で確かめます)。確かめられないとき(bot が付けた・GitHub が答えない)は作りません
+- **重複しない**: その issue のセッション(`--from gh#N` で作ったもの・ブランチ名が番号を含むもの。landed も)があれば作りません。一度作った(見送った)ラベルからは、セッションを `pekoe rm` した後も作り直しません。もう一度やらせたいときは、ラベルを外して付け直してください
+- **失敗したとき**: 権限の問い合わせやセッションの作成(ポート・worktree・エージェントの設定など)が失敗したら、次のポーリングでもう一度試し、同じラベルで 3 回失敗したら打ち切ります(pekoed のログに理由が出ます)。直してからラベルを外して付け直すと、もう一度試します
+- **上限**: 1 回に `max_per_poll` 本まで(失敗した分も数えます)、監視モードが作ったセッションが `max_running` 本作業中(か queued)の間は作りません。`[orchestrator] max_running` があれば、その待ち行列にも乗ります
+- **見分け方**: 作ったセッションの `parent` は `pekoed` です(`pekoe --json ls`。ダッシュボードでは「from issue watch」)。tapi の `pekoe wait --mine` には入りません。監視オンのリポジトリは、TUI の [1] の見出しと `w` に `watch` の印が出ます
+- **制限**: GitHub の events にラベルの記録がまだ出ていないうちに見ると、その issue に次の動きがあるまで発火しません(付け直せば見直します)。ラベルごとに新しい順に 100 件より古い issue は見えません。見た issue の記録(state DB の `watch:*`)は消えません
+- pekoed は GitHub に書き込みません(コメント・ラベル・assign はしません)。`gh` がログインしていないと何もしません(pekoed のログに理由が出ます)
+
+`pekoe config check` は `config.toml` と一緒に `repos/*.toml` も確かめます(知らないキー、`[watch]` の値、`[merge] method`)。設計は [orchestration.md の「issue 監視モード」](orchestration.md#issue-監視モード) にあります。

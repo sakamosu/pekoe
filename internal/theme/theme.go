@@ -187,6 +187,7 @@ type IconSet struct {
 	Spinner                                                             []string
 
 	Issues string // Issues panel / a GitHub issue
+	Watch  string // a repository in issue watch mode ([watch] enable)
 }
 
 var braille = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -225,14 +226,14 @@ func Icons(name string) IconSet {
 	case "ascii":
 		return IconSet{Name: "ascii", Comments: "#", Run: "*", Wait: "!", Idle: "o", Creating: ".", Done: "v", Fail: "x",
 			Current: "*", Warning: "!", Check: "v", Here: ">", Unsent: "*", Sent: "v", Sep: "|",
-			Pending: "~", ChangesReq: "!", Merged: "m", Closed: "-", Spinner: []string{"-", "\\", "|", "/"}}
+			Pending: "~", ChangesReq: "!", Merged: "m", Closed: "-", Spinner: []string{"-", "\\", "|", "/"}, Watch: "@"}
 	case "unicode":
 		// No East Asian Ambiguous glyph, nor one a measured font draws
 		// wider than a cell (docs/ambiguous-width.md「段階 2 で決めたこと」).
 		return IconSet{Name: "unicode", Sessions: "◊", Worktrees: "⎇", Changes: "≣", Agent: ">", Diff: "∆", Browser: "◉", Picks: "⌖",
 			Comments: "✎", Vim: "V", Run: "◉", Wait: "◉", Idle: "◦", Creating: "◌", Done: "✓", Fail: "✗", Current: "*", Warning: "!",
 			Check: "✓", Here: "▸", Unsent: "◉", Sent: "✓", Sep: "│", Spinner: braille,
-			PR: "⇄", Pending: "◔", ChangesReq: "!", Merged: "↣", Closed: "-", Issues: "◉"}
+			PR: "⇄", Pending: "◔", ChangesReq: "!", Merged: "↣", Closed: "-", Issues: "◉", Watch: "↻"}
 	}
 	return IconSet{Name: "nerd",
 		Sessions: "\U000F06A9", Worktrees: "", Changes: "", Agent: "", Diff: "",
@@ -240,7 +241,7 @@ func Icons(name string) IconSet {
 		Run: "", Wait: "", Idle: "", Creating: "◌", Done: "", Fail: "",
 		Current: "", Warning: "", Check: "✓", Here: "▸", Unsent: "◉", Sent: "✓",
 		PR: "\ue726", Pending: "\uf017", ChangesReq: "\uf06a", Merged: "\ue727", Closed: "\uf05e",
-		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192"}
+		CapL: "", CapR: "", Sep: "│", Spinner: braille, Issues: "\uf192", Watch: "\uf06e"}
 }
 
 // TestRunningMark leads the "test" badge while a session's tests run, where

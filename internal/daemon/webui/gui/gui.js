@@ -1066,7 +1066,8 @@ async function openNew() {
     newErr("cannot list the repositories: " + e.message);
   }
   sel.replaceChildren(...repos.map((r) => {
-    const o = el("option", null, r.name + " · " + r.dir);
+    // a repository in issue watch mode says so, as the TUI's ↻ watch
+    const o = el("option", null, r.name + (r.watch ? " · ↻ watch" : "") + " · " + r.dir);
     o.value = r.repo_id;
     return o;
   }));

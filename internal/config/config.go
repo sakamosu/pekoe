@@ -51,7 +51,69 @@ type Repo struct {
 	Env      map[string]string `toml:"env"`
 	Review   Review            `toml:"review"`
 	Merge    Merge             `toml:"merge"`
+	Watch    Watch             `toml:"watch"`
 	Agent    string            `toml:"agent"`
+}
+
+// Watch is [watch] of a repository: issue watch mode (daemon/watch.go,
+// docs/orchestration.md「issue 監視モード」). While enable is true pekoed
+// lists the repository's open issues with one of Labels every Every and
+// starts a session (as pekoe new --from gh#N) for each new one, at most
+// MaxPerPoll a round and while fewer than MaxRunning of the sessions it
+// started this way are working. Off by default.
+type Watch struct {
+	Enable     bool     `toml:"enable"`
+	Labels     []string `toml:"labels"`       // default DefaultWatchLabels
+	Every      string   `toml:"every"`        // a Go duration, DefaultWatchEvery, at least MinWatchEvery
+	MaxPerPoll int      `toml:"max_per_poll"` // default DefaultWatchPerPoll
+	MaxRunning int      `toml:"max_running"`  // default DefaultWatchRunning
+}
+
+// The defaults of [watch].
+const (
+	DefaultWatchEvery   = 5 * time.Minute
+	MinWatchEvery       = time.Minute
+	DefaultWatchPerPoll = 1
+	DefaultWatchRunning = 2
+)
+
+// DefaultWatchLabels are the labels watched when labels is unset or empty.
+var DefaultWatchLabels = []string{"agent-ready"}
+
+// LabelList is labels as used: trimmed, empty ones and repeats dropped,
+// DefaultWatchLabels when none is left.
+func (w Watch) LabelList() []string {
+	var out []string
+	for _, l := range w.Labels {
+		if l = strings.TrimSpace(l); l != "" && !slices.Contains(out, l) {
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return slices.Clone(DefaultWatchLabels)
+	}
+	return out
+}
+
+// Interval is every as a duration.
+func (w Watch) Interval() time.Duration {
+	return durSetting(w.Every, DefaultWatchEvery, MinWatchEvery)
+}
+
+// PerPoll is max_per_poll as used: the default when unset or below 1.
+func (w Watch) PerPoll() int {
+	if w.MaxPerPoll >= 1 {
+		return w.MaxPerPoll
+	}
+	return DefaultWatchPerPoll
+}
+
+// Running is max_running as used: the default when unset or below 1.
+func (w Watch) Running() int {
+	if w.MaxRunning >= 1 {
+		return w.MaxRunning
+	}
+	return DefaultWatchRunning
 }
 
 // Merge is [merge] of a repository: how pekoed merges a PR when a person

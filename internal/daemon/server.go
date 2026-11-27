@@ -238,6 +238,11 @@ type Daemon struct {
 
 	issueCache map[string]issueCacheEntry // issues.list / issues.view answers (issues.go)
 
+	// issue watch mode (watch.go)
+	watchGH     watchGitHub          // nil: gh (tests swap it)
+	watching    atomic.Bool          // watchTick is running
+	watchPolled map[string]time.Time // repo-id -> last round (under mu)
+
 	// the inbox (inbox.go)
 	inboxMu      sync.Mutex           // reads and writes of an item, one at a time
 	ledgerMu     sync.Mutex           // changes of a ledger entry, one at a time (ledger.go)
@@ -290,24 +295,25 @@ func New() (*Daemon, error) {
 	}
 	d := &Daemon{
 		DB: db, Global: g, started: g, cfgRaw: raw, lock: lock, authKey: takeAuthKeyEnv(), humanToken: humanToken,
-		sbx:       sandbox.New(sandbox.DefaultPolicy(g.Web.StateDir), g.Sandbox.On()),
-		Eng:       newTmux(),
-		sessions:  map[string]*state.Session{},
-		conns:     map[*conn]bool{},
-		cancels:   map[string]*creation{},
-		queueKick: make(chan struct{}, 1),
-		asks:      map[string]string{},
-		errors:    map[int][]ConsoleError{},
-		out:       map[string]*outState{},
-		progress:  map[string][]Step{},
-		stop:      make(chan struct{}),
-		prFetched: map[string]time.Time{},
-		catch:     errcatch.NewStore(),
-		devScan:   map[string]*errcatch.Scanner{},
-		tapi:      newTapiState(),
-		peerPID:   peerPID,
-		changes:   newChangeLog(),
-		typedAt:   map[string]time.Time{},
+		sbx:         sandbox.New(sandbox.DefaultPolicy(g.Web.StateDir), g.Sandbox.On()),
+		Eng:         newTmux(),
+		sessions:    map[string]*state.Session{},
+		conns:       map[*conn]bool{},
+		cancels:     map[string]*creation{},
+		queueKick:   make(chan struct{}, 1),
+		asks:        map[string]string{},
+		errors:      map[int][]ConsoleError{},
+		out:         map[string]*outState{},
+		progress:    map[string][]Step{},
+		stop:        make(chan struct{}),
+		prFetched:   map[string]time.Time{},
+		watchPolled: map[string]time.Time{},
+		catch:       errcatch.NewStore(),
+		devScan:     map[string]*errcatch.Scanner{},
+		tapi:        newTapiState(),
+		peerPID:     peerPID,
+		changes:     newChangeLog(),
+		typedAt:     map[string]time.Time{},
 	}
 	d.voice = newVoiceHub(d)
 	d.registerHandlers()

@@ -286,3 +286,66 @@ func fmtDur(d time.Duration) string {
 	}
 	return s
 }
+
+// CheckRepo reads a repository's config (repos/<repo-id>.toml) and lists
+// what is wrong with it, as Check does for config.toml: a syntax error is
+// fatal (pekoe reads nothing from the file), the rest are warnings.
+func CheckRepo(b []byte) []Problem {
+	r := &Repo{}
+	md, err := toml.Decode(string(b), r)
+	if err != nil {
+		msg := "cannot be read: " + err.Error()
+		var pe toml.ParseError
+		if errors.As(err, &pe) {
+			msg = fmt.Sprintf("syntax error: line %d: %s", pe.Position.Line, pe.Message)
+		}
+		return []Problem{{Msg: msg, Fatal: true}}
+	}
+	var out []Problem
+	add := func(key, format string, a ...any) {
+		out = append(out, Problem{Key: key, Msg: fmt.Sprintf(format, a...)})
+	}
+	for _, k := range md.Undecoded() {
+		add(k.String(), "unknown key (ignored)")
+	}
+	if _, err := r.Merge.MergeMethod(); err != nil {
+		add("merge.method", "%q is not one of %s (merge is used)", r.Merge.Method, strings.Join(MergeMethods, " | "))
+	}
+	checkWatch(add, r.Watch, md)
+	return out
+}
+
+// checkWatch: [watch] of a repository (issue watch mode).
+func checkWatch(add func(string, string, ...any), w Watch, md toml.MetaData) {
+	seen := map[string]bool{}
+	for _, l := range w.Labels {
+		t := strings.TrimSpace(l)
+		switch {
+		case t == "":
+			add("watch.labels", "an empty label (ignored)")
+		case seen[t]:
+			add("watch.labels", "%q is listed twice", t)
+		case strings.Contains(t, ","):
+			// gh issue list --label reads a comma as two labels
+			add("watch.labels", "%q has a comma: gh would read it as two labels", t)
+		}
+		seen[t] = true
+	}
+	if md.IsDefined("watch", "labels") && len(w.Labels) > 0 && len(seen) == 1 && seen[""] {
+		add("watch.labels", "no label left: %s is watched", strings.Join(DefaultWatchLabels, ", "))
+	}
+	if s := strings.TrimSpace(w.Every); s != "" {
+		switch d, err := time.ParseDuration(s); {
+		case err != nil || d <= 0:
+			add("watch.every", "%q is not a positive Go duration like 5m or 10m (%s is used)", w.Every, fmtDur(DefaultWatchEvery))
+		case d < MinWatchEvery:
+			add("watch.every", "%s is below the minimum %s (%s is used): each round asks GitHub once per label", s, fmtDur(MinWatchEvery), fmtDur(MinWatchEvery))
+		}
+	}
+	if md.IsDefined("watch", "max_per_poll") && w.MaxPerPoll < 1 {
+		add("watch.max_per_poll", "%d is below 1 (%d is used)", w.MaxPerPoll, DefaultWatchPerPoll)
+	}
+	if md.IsDefined("watch", "max_running") && w.MaxRunning < 1 {
+		add("watch.max_running", "%d is below 1 (%d is used)", w.MaxRunning, DefaultWatchRunning)
+	}
+}
