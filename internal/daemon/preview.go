@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image/png"
+	"io/fs"
 	"log"
 	"net"
 	"os"
@@ -337,7 +338,7 @@ func (d *Daemon) captureOnce(s *state.Session, sl *previewSlot, pv *previewer) *
 	}
 	n := cur.N + 1
 	out := filepath.Join(dir, fmt.Sprintf("shot-%d.png", n))
-	_ = os.Remove(out)
+	removeShot(s.Slug, out)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	err := pv.cap.Capture(ctx, CaptureReq{URL: cur.URL(), Out: out, Width: cur.Width, Height: cur.Height, Mobile: cur.Mobile})
 	cancel()
@@ -346,24 +347,30 @@ func (d *Daemon) captureOnce(s *state.Session, sl *previewSlot, pv *previewer) *
 		shot, err = readShot(out)
 	}
 	if err != nil {
-		_ = os.Remove(out)
+		removeShot(s.Slug, out)
 		return d.previewEdit(sl, func(x *Preview) { x.Busy, x.Error = false, err.Error() })
 	}
 	shot.Path, shot.Mobile, shot.At = cur.Path, cur.Mobile, time.Now()
-	var drop string
+	// Drop the oldest shot before publishing the new pair: once the preview
+	// reads "done" (Busy false, N bumped), its old file is already gone.
+	// sl.mu is held, so no other capture moved Before since cur was taken.
+	if cur.Before != nil && cur.Before.File != shot.File {
+		removeShot(s.Slug, cur.Before.File)
+	}
 	res := d.previewEdit(sl, func(x *Preview) {
-		if x.Before != nil {
-			drop = x.Before.File
-		}
 		x.Before, x.After = x.After, shot
 		x.N = n
 		x.Busy, x.Error = false, ""
 	})
-	if drop != "" && drop != shot.File {
-		_ = os.Remove(drop)
-	}
 	d.savePreview(s, res)
 	return res
+}
+
+// removeShot deletes a screenshot file; a missing file is fine.
+func removeShot(slug, file string) {
+	if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Printf("preview %s: %v", slug, err)
+	}
 }
 
 func readShot(file string) (*Shot, error) {
