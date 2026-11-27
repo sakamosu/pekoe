@@ -219,7 +219,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
     "ci_head": "3f2a…",            // CI の決着を知らせた HEAD(wait の `ci`。同じ HEAD・同じ結果では 1 回だけ出すための記録。下の「待ち合わせ」)
     "ci_result": "red 1/4 3c9a…",  // そのとき知らせた結果(green|red、pass/fail の数、どのチェックが通り・落ちたかのハッシュ)
     "last_comment": "…", "last_thread": "…",
-    "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable
+    "attention": ["ci_failed"],    // 前回 PR ビューを開いてから起きたこと: ci_failed | changes_requested | new_comment | mergeable(ci_failed は fail が 0 になれば消える)
     "attention_at": "…", "at": "…"
   },
   "land_held": "PR #42 merged while the session is still at work (agent is running): window and worktree kept; …", // PR はマージされたが、エージェントがまだ作業中(running・waiting・コミットしていない変更・マージされた PR に入っていないコミット)なので後片付けを待っている理由(下の「PR の状態のポーリング」)。landed になれば消える

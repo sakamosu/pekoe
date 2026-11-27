@@ -288,6 +288,80 @@ func TestPRStatusAttention(t *testing.T) {
 	}
 }
 
+// A red CI that turns green (a re-run on the same head, a new push) takes
+// ci_failed off the attention without the PR view being opened: the
+// failure is gone, nothing is left to look at. The other attention stays
+// until seen, and wait's ci still tells red, then green, once each. A red
+// after the green is news again (attention and wait's pr).
+func TestPRStatusCIFailedClearsOnGreen(t *testing.T) {
+	d, _, repo := setup(t)
+	ghd := fakeGH(t, "OPEN")
+	slug := prSession(t, d, repo)
+	get := func() *state.PRStatus {
+		return call[state.Session](t, d, "session.get", map[string]any{"slug": slug}).PRStatus
+	}
+	changes := func(kind string) []string {
+		d.changes.mu.Lock()
+		defer d.changes.mu.Unlock()
+		var out []string
+		for _, c := range d.changes.ring {
+			if c.Kind == kind {
+				out = append(out, c.Summary)
+			}
+		}
+		return out
+	}
+	step := func(what string, f prFixture, attention string) *state.PRStatus {
+		t.Helper()
+		f.write(t, ghd)
+		poll(d)
+		st := get()
+		if got := strings.Join(st.Attention, ","); got != attention {
+			t.Fatalf("%s: attention %q, want %q (%+v)", what, got, attention, st)
+		}
+		return st
+	}
+	const head1, head2 = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	red := []map[string]any{actionsCheck("test", "COMPLETED", "FAILURE", 1, 2), actionsCheck("lint", "COMPLETED", "SUCCESS", 1, 3)}
+	rerun := []map[string]any{actionsCheck("test", "IN_PROGRESS", "", 1, 4), actionsCheck("lint", "COMPLETED", "SUCCESS", 1, 3)}
+	green := []map[string]any{actionsCheck("test", "COMPLETED", "SUCCESS", 1, 4), actionsCheck("lint", "COMPLETED", "SUCCESS", 1, 3)}
+	th := []map[string]any{thread("a.txt", 2, false, "2026-11-08T11:00:00Z", "why?")}
+
+	// the same head: red, re-run, green (PR #333: ci_failed stayed with fail 0)
+	step("red", prFixture{Head: head1, Checks: red, Threads: th}, "ci_failed,new_comment")
+	step("re-running", prFixture{Head: head1, Checks: rerun, Threads: th}, "new_comment")
+	st := step("green", prFixture{Head: head1, Checks: green, Threads: th, Merge: "CLEAN"}, "new_comment,mergeable")
+	if st.AttentionAt.IsZero() {
+		t.Fatalf("attention left keeps its time: %+v", st)
+	}
+	if st.Fail != 0 || st.Pass != 2 {
+		t.Fatalf("green counts: %+v", st)
+	}
+	if got := changes(kindCI); len(got) != 2 || !strings.Contains(got[0], "ci red") || !strings.Contains(got[1], "ci green") {
+		t.Fatalf("wait's ci: red then green, once each: %q", got)
+	}
+
+	// a failure after the green is news again
+	step("red again", prFixture{Head: head1, Checks: red, Threads: th, Merge: "UNSTABLE"}, "new_comment,mergeable,ci_failed")
+	if got := changes(kindPR); strings.Count(strings.Join(got, "\n"), "ci_failed") != 2 {
+		t.Fatalf("wait's pr: ci_failed told for each failure: %q", got)
+	}
+
+	// a new push that goes green clears it as well; ci_failed alone leaves
+	// nothing, and the attention queue lets the session go
+	call[state.Session](t, d, "pr.seen", map[string]any{"slug": slug})
+	step("red, seen", prFixture{Head: head1, Checks: red}, "")
+	step("a new push running", prFixture{Head: head2, Checks: rerun}, "")
+	step("red on the new head", prFixture{Head: head2, Checks: red}, "ci_failed")
+	st = step("new head green", prFixture{Head: head2, Checks: green}, "")
+	if !st.AttentionAt.IsZero() {
+		t.Fatalf("no attention, no time: %+v", st)
+	}
+	if s := call[*state.Session](t, d, "attention.next", map[string]any{"from": "elsewhere"}); s != nil {
+		t.Fatalf("a green PR leaves the attention queue: %+v", s)
+	}
+}
+
 // Merges are noticed for every session, but only landing ones are torn down.
 func TestPRMergeDetectedWithoutTeardown(t *testing.T) {
 	d, _, repo := setup(t)

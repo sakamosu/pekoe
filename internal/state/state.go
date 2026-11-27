@@ -72,7 +72,7 @@ type Stat struct {
 // PRStatus is the summary of a session's GitHub PR that the daemon polls
 // (pr.view has the full picture). Attention lists what changed since the
 // user last opened the PR view: ci_failed | changes_requested |
-// new_comment | mergeable. CIHead is the head whose settled CI wait's ci
+// new_comment | mergeable (ci_failed also goes once no check fails). CIHead is the head whose settled CI wait's ci
 // told about, CIResult what it told (ciResult: green / red and which
 // checks passed and failed): told again when the head moves or the
 // head's settled result differs from the one told (a check added late,
