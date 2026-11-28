@@ -53,6 +53,10 @@ case "$1 $2" in
         if [ -f ` + filepath.Join(dir, "state-") + `"$3" ]; then echo "{\"state\":\"$(cat ` + filepath.Join(dir, "state-") + `"$3")\"}"; else echo '{"state":"` + prState + `"}'; fi ;;
       *) echo '{"number":42}' ;;
     esac ;;
+  "pr list")
+    # pr-list.json: the merged PRs of the --head branch (mergedPRHead)
+    if [ -f ` + filepath.Join(dir, "pr-list.json") + ` ]; then cat ` + filepath.Join(dir, "pr-list.json") + `; else echo '[]'; fi ;;
+  "pr edit") ;;
   "api --method") cat > ` + filepath.Join(dir, "review.json") + `; echo '{}' ;;
   "issue list"|"issue view")
     if [ -f ` + filepath.Join(dir, "auth-fail") + ` ]; then

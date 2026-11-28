@@ -50,10 +50,18 @@ func (m *model) afterTag(s *state.Session, room int) string {
 }
 
 // afterFooter is the footer's part for the selected session: each
-// dependency with its state (merged, gone).
+// dependency with its state (merged, gone), and a base pekoed moved off a
+// merged branch (baseMovedFooter).
 func (m *model) afterFooter(s *state.Session) string {
-	if s == nil || len(s.After) == 0 {
+	if s == nil {
 		return ""
+	}
+	bm := m.baseMovedFooter(s)
+	if len(s.After) == 0 {
+		return bm
+	}
+	if bm != "" {
+		bm = "    " + bm
 	}
 	parts := make([]string, 0, len(s.After))
 	for _, slug := range s.After {
@@ -77,5 +85,16 @@ func (m *model) afterFooter(s *state.Session) string {
 	if s.Hold {
 		lead = "after (hold) "
 	}
-	return m.th.FG(theme.Dim, lead) + strings.Join(parts, m.th.FG(theme.Dim, tx(" · ")))
+	return m.th.FG(theme.Dim, lead) + strings.Join(parts, m.th.FG(theme.Dim, tx(" · "))) + bm
+}
+
+// baseMovedFooter says the session's base was moved: it was stacked on a
+// branch whose PR got merged, and goes on (and lands) from that branch's
+// base. "" when it was never moved.
+func (m *model) baseMovedFooter(s *state.Session) string {
+	if s.BaseFrom == "" || s.BaseFrom == s.Base {
+		return ""
+	}
+	return m.th.FG(theme.Dim, "base ") + m.th.FG(theme.Text, s.Base) +
+		m.th.FG(theme.Dim, " (was "+clip(s.BaseFrom, 24)+", merged)")
 }

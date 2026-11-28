@@ -698,12 +698,36 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		return nil, fmt.Errorf("land in a repository without origin fast-forwards %s and removes the worktree with nobody merging: %w", base, ErrHumanOnly)
 	}
 	steps := []string{}
-	onto := base
-	fetched := false
+	moved := s.BaseFrom != "" // moved before (moveStackedBases): its drop point stands
 	if hasOrigin {
 		// base "origin/main" (session.new takes it) names origin's main:
 		// fetch, rebase onto and open the PR against main, as fetchBase does
 		base = originBranch(base)
+		// stacked on a branch whose PR was merged: go on from that
+		// branch's base (basemerged.go), not the branch origin may no
+		// longer have
+		if mv, ok := d.resolveMergedBase(s, base); ok {
+			if err := gitx.CheckRefArg("base", mv.To); err != nil {
+				return nil, err
+			}
+			if !d.moveBase(p.Slug, own, mv) {
+				return nil, gone()
+			}
+			if s.BaseFrom == "" {
+				s.BaseFrom = s.Base
+			}
+			if mv.Tip != "" {
+				s.BaseFromSHA = mv.Tip
+			}
+			s.Base, base, moved = mv.To, mv.To, true
+			steps = append(steps, fmt.Sprintf("base %s was merged (%s): landing onto %s instead", mv.From, mv.Why, mv.To))
+		} else if moved {
+			steps = append(steps, fmt.Sprintf("base %s was merged earlier: landing onto %s instead", originBranch(s.BaseFrom), base))
+		}
+	}
+	onto := base
+	fetched := false
+	if hasOrigin {
 		if _, err := gitx.Run(s.Path, "fetch", "--end-of-options", "origin", base); err == nil {
 			onto = "origin/" + base
 			fetched = true
@@ -711,11 +735,25 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			steps = append(steps, fmt.Sprintf("fetch origin %s failed (%v): rebasing onto %s as it is here", base, err, onto))
 		}
 	}
-	if _, err := gitx.Run(s.Path, "rebase", "--end-of-options", onto); err != nil {
+	rebase := []string{"rebase", "--end-of-options", onto}
+	drop := ""
+	if moved {
+		// the commits up to the merged base's last one went in with its
+		// PR: replay only what came after (git drops the ones onto has)
+		drop = dropPoint(s)
+		if drop != "" {
+			rebase = []string{"rebase", "--onto", onto, "--end-of-options", drop}
+		}
+	}
+	if _, err := gitx.Run(s.Path, rebase...); err != nil {
 		_, _ = gitx.Run(s.Path, "rebase", "--abort")
 		return nil, fmt.Errorf("rebase onto %s failed (aborted): %v", onto, err)
 	}
-	steps = append(steps, "rebased onto "+onto)
+	if drop != "" {
+		steps = append(steps, fmt.Sprintf("rebased onto %s (commits up to %.9s, %s's, left out)", onto, drop, s.BaseFrom))
+	} else {
+		steps = append(steps, "rebased onto "+onto)
+	}
 	cfg := d.repoConfig(s)
 	if cfg.Hooks.Test != "" {
 		cmd := d.vars(s).ExpandShell(cfg.Hooks.Test)
@@ -776,6 +814,15 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 		if st == "" && s.PRStatus != nil {
 			st = s.PRStatus.State
 		}
+		if st == "OPEN" && moved {
+			// opened into the base that was merged: GitHub moves it only
+			// when it deletes that branch
+			if _, err := ghOutput(d.ghRepo(s), "pr", "edit", strconv.Itoa(pr), "--repo", d.ghRepo(s), "--base", base); err != nil {
+				steps = append(steps, fmt.Sprintf("PR #%d: could not move it into %s (%v)", pr, base, err))
+			} else {
+				steps = append(steps, fmt.Sprintf("PR #%d now goes into %s", pr, base))
+			}
+		}
 		if st != "" && st != "OPEN" {
 			// only with commits that are not in the base yet: with none (a
 			// person merged the agent's own PR, land is for the teardown)
@@ -823,7 +870,11 @@ func (d *Daemon) land(p slugP, agent bool) (any, error) {
 			steps = append(steps, fmt.Sprintf("no commits beyond origin's %s: PR #%d kept", base, pr))
 		} else {
 			if err != nil && !strings.Contains(string(out), "already exists") {
-				return nil, fmt.Errorf("gh pr create: %s", strings.TrimSpace(string(out)))
+				msg := strings.TrimSpace(string(out))
+				if h := d.prCreateHint(s, base, onto, msg); h != "" {
+					return nil, fmt.Errorf("gh pr create --base %s: %s\n%s", base, msg, h)
+				}
+				return nil, fmt.Errorf("gh pr create: %s", msg)
 			}
 			pr = prNumber(string(out))
 			if pr == 0 {
@@ -1080,6 +1131,7 @@ func (d *Daemon) finishLandOf(slug string, merged bool, want *state.Session) err
 	})
 	if landed != nil && ours {
 		d.recordSession(landed, &mergedAt, false) // stats.go
+		d.moveStackedBases(landed)                // basemerged.go
 	}
 	return nil
 }

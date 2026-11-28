@@ -399,7 +399,7 @@ func (n *newModal) view() []string {
 	}
 	s := n.sess()
 	if s != nil {
-		lines = append(lines, col("", "branch", s.Branch), col("", "base", s.Base+" "+th.FG(theme.Dim, s.RepoDir)))
+		lines = append(lines, col("", "branch", s.Branch), col("", "base", s.Base+baseWas(s)+" "+th.FG(theme.Dim, s.RepoDir)))
 	}
 	lines = append(lines, "", "\x00rule")
 	steps := m.progress[n.slug]
@@ -923,4 +923,13 @@ func atoi(s string) int {
 	n := 0
 	fmt.Sscanf(s, "%d", &n)
 	return n
+}
+
+// baseWas is " (was <branch>, merged)" for a session whose base pekoed
+// moved off a merged branch, else "".
+func baseWas(s *state.Session) string {
+	if s.BaseFrom == "" || s.BaseFrom == s.Base {
+		return ""
+	}
+	return " (was " + s.BaseFrom + ", merged)"
 }
