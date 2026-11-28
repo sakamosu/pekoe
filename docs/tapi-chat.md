@@ -59,7 +59,7 @@ tapi の Claude Code も通常のセッションと同じ `pekoe event` の hook
 
 esc で中断したターンには Stop が来ない。GUI の Interrupt(`tapi.interrupt`)のときは、pekoed が Escape の後に画面を見て、ターンが消えたら idle にする(docs/gui.md の「Interrupt」)。
 
-変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(`session.output` と同じく 30ms で間引く)。
+変化は `tapi.updated` イベント(data は下の `Tapi`)で流す。画面更新の合図は `tapi.output`(30ms で間引く)。
 
 ## 稼働ディレクトリ
 

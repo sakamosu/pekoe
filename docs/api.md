@@ -831,7 +831,7 @@ dev 窓の出力(Node / TypeScript / Next.js / Vite / Go の panic / Python の 
 | `session.progress` | `{slug, steps: [{name, label, status: "pending"\|"running"\|"ok"\|"fail", detail, progress?: 0-100, elapsed_ms}]}` |
 | `session.waiting` | `Session`(running → waiting に変わった瞬間) |
 | `session.done` | `Session` |
-| `session.output` | `{slug, window}`(画面更新の合図。30ms で間引く) |
+| `session.output` | `{slug}`(画面更新の合図。30ms で間引く。人が `session.keys` で打った直後の 1 秒は 5ms) |
 | `report.posted` | `Report`(token なしの購読にも届く) |
 | `inbox.updated` | `InboxItem`(作られた・事実が変わった・答えた・取り下げた・届けた。人の答えを含むので token つきの購読にだけ届く) |
 | `ledger.updated` | `LedgerEntry`(記録した・まとめた・閉じた(自動も)・結んだ・開き直した。token つきの購読にだけ届く) |
