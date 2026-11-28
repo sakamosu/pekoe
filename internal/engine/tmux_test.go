@@ -318,3 +318,73 @@ func TestTmuxPanesDead(t *testing.T) {
 		t.Fatalf("dead window still open: %v", wins)
 	}
 }
+
+// Capture without a server (pekoed's tmux not up yet, or gone): the same
+// "no <window> window for <slug>" as when exists() was asked first. Needs
+// only the tmux binary: the client fails to connect, nothing is bound.
+func TestCaptureNoServer(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	t.Setenv("TMUX_TMPDIR", testenv.ShortDir(t, "bt"))
+	tm := &Tmux{Socket: "pekoe-test-noserver", Session: "t"}
+	for _, slug := range []string{"s", "v1.2"} {
+		sc, err := tm.Capture(slug, "agent")
+		if sc != nil || err == nil || err.Error() != "no agent window for "+slug {
+			t.Fatalf("%s: got %v, %v", slug, sc, err)
+		}
+	}
+}
+
+// Against a real private tmux server: Capture of a window that is there
+// reads it in one tmux call; of one that is not (never made, killed, a
+// slug with '.' looked up by id, another window of a session that has
+// one) it says "no <window> window for <slug>", as before.
+func TestCaptureMissingWindow(t *testing.T) {
+	testenv.NeedTmux(t)
+	d := testenv.ShortDir(t, "bt") // a unix socket path must be short
+	t.Setenv("TMUX_TMPDIR", d)
+	tm := &Tmux{Socket: "pekoe-test-capture", Session: "t", PidFile: t.TempDir() + "/tmux.pid"}
+	if _, err := tm.run("new-session", "-d", "-s", "t", "-x", "80", "-y", "10", "-n", "_keeper", "sleep 60"); err != nil {
+		t.Fatal(err)
+	}
+	tm.recordPid()
+	pid := tm.recordedPid()
+	t.Cleanup(func() { tm.KillServer(); killTmuxPid(pid, tm.Socket) })
+	for _, name := range []string{winName("s", "agent"), winName("v1.2", "agent")} {
+		if _, err := tm.run("new-window", "-d", "-t", "=t:", "-n", name, "printf hello; sleep 60"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, slug := range []string{"s", "v1.2"} {
+		var sc *Screen
+		var err error
+		for i := 0; i < 40; i++ {
+			if sc, err = tm.Capture(slug, "agent"); err == nil && strings.Contains(strings.Join(sc.Lines, "\n"), "hello") {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err != nil || sc == nil || !strings.Contains(strings.Join(sc.Lines, "\n"), "hello") || sc.Width == 0 {
+			t.Fatalf("%s: capture %+v, %v", slug, sc, err)
+		}
+	}
+	missing := func(slug, window string) {
+		t.Helper()
+		sc, err := tm.Capture(slug, window)
+		if sc != nil || err == nil || err.Error() != "no "+window+" window for "+slug {
+			t.Fatalf("%s %s: got %v, %v", slug, window, sc, err)
+		}
+	}
+	missing("nope", "agent")
+	missing("s", "dev") // the session is there, this window is not
+	missing("w.2", "agent")
+	if err := tm.Kill("s", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	missing("s", "agent")
+	if err := tm.Kill("v1.2", "agent"); err != nil {
+		t.Fatal(err)
+	}
+	missing("v1.2", "agent")
+}

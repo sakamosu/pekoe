@@ -417,10 +417,22 @@ func (t *Tmux) SendHex(slug, window string, hex []string) error {
 	return err
 }
 
+// Capture reads a window's screen with one tmux call. A missing window
+// (or session, or server) is told by that call failing, not by a
+// list-windows first (a second tmux process on every screen fetch, as the
+// TUI does on each keystroke's echo): only when it fails does exists()
+// decide which error it is, so the caller still gets "no <window> window
+// for <slug>" for a window that is not there, and tmux's own error for
+// any other failure, as before.
 func (t *Tmux) Capture(slug, window string) (*Screen, error) {
-	if !t.exists(slug, window) {
+	sc, err := t.capture(slug, window)
+	if err != nil && !t.exists(slug, window) {
 		return nil, fmt.Errorf("no %s window for %s", window, slug)
 	}
+	return sc, err
+}
+
+func (t *Tmux) capture(slug, window string) (*Screen, error) {
 	tg := t.target(slug, window)
 	// カーソル情報と画面の中身は 1 回の呼び出し(";" 区切りのコマンド列)で取る。
 	// 別プロセスで順に取ると、その間に pane が書き換わり(Backspace 長押しなど)

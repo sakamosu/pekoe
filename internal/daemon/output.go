@@ -95,16 +95,42 @@ var (
 	yesNoRe = regexp.MustCompile(`(?i)(\[y/n\]|\(y/n\)|\[Y/n\]|\[y/N\]|do you want to (proceed|allow|run)|allow this)`)
 )
 
+// session.output is sent at most every outputGap per session: a TUI
+// fetches the screen on each one. Right after a person typed into the
+// session (typedOutputFor), the gap is typedOutputGap, and output that finds
+// none pending goes out at once, so a typed character's echo does not wait
+// for the next 30 ms flush.
+const (
+	outputGap      = 30 * time.Millisecond
+	typedOutputGap = 5 * time.Millisecond
+	typedOutputFor = time.Second
+)
+
+// outputGapLocked is slug's gap between session.output events now (d.mu
+// held).
+func (d *Daemon) outputGapLocked(slug string, now time.Time) time.Duration {
+	if now.Sub(d.typedAt[slug]) < typedOutputFor {
+		return typedOutputGap
+	}
+	return outputGap
+}
+
 func (d *Daemon) outputLoop() {
 	ch := d.Eng.Output()
-	flush := time.NewTicker(30 * time.Millisecond)
+	flush := time.NewTicker(outputGap)
 	defer flush.Stop()
+	var soon <-chan time.Time // the typed session's pending output, typedOutputGap on
 	for {
 		select {
 		case <-d.stop:
 			return
 		case o := <-ch:
-			d.onOutput(o)
+			if d.onOutput(o) && soon == nil {
+				soon = time.After(typedOutputGap)
+			}
+		case <-soon:
+			soon = nil
+			d.flushOutputEvents()
 		case <-flush.C:
 			d.flushOutputEvents()
 			d.flushDev(time.Now())
@@ -112,7 +138,10 @@ func (d *Daemon) outputLoop() {
 	}
 }
 
-func (d *Daemon) onOutput(o engine.Output) {
+// onOutput takes in a chunk of a window's output. It reports whether the
+// chunk left a session.output pending that should go out typedOutputGap
+// from now rather than at the next flush (the session was typed into).
+func (d *Daemon) onOutput(o engine.Output) (soon bool) {
 	if o.Slug == TapiSlug {
 		d.tapiOutput(o)
 		return
@@ -132,6 +161,12 @@ func (d *Daemon) onOutput(o engine.Output) {
 		st.lastOut = now
 	}
 	st.pending = true
+	typed := d.outputGapLocked(o.Slug, now) == typedOutputGap
+	emitNow := typed && now.Sub(st.lastEmit) >= typedOutputGap
+	if emitNow {
+		st.pending, st.lastEmit = false, now
+	}
+	soon = typed && !emitNow
 	// per window: another window's output in between must not be glued
 	// to the first half of a sequence
 	data, carry := splitCarry(append(st.osc[o.Window], o.Data...))
@@ -146,6 +181,9 @@ func (d *Daemon) onOutput(o engine.Output) {
 	agent := d.cfg().Agents[s.Agent]
 	hooks := agent.Hooks
 	d.mu.Unlock()
+	if emitNow {
+		d.emit("session.output", map[string]any{"slug": o.Slug})
+	}
 
 	if o.Window == engine.WinDev {
 		d.feedDev(o.Slug, o.Data, now)
@@ -177,6 +215,7 @@ func (d *Daemon) onOutput(o engine.Output) {
 			d.setState(o.Slug, state.Running, "")
 		}
 	}
+	return
 }
 
 func (d *Daemon) flushOutputEvents() {
@@ -184,7 +223,7 @@ func (d *Daemon) flushOutputEvents() {
 	d.mu.Lock()
 	var slugs []string
 	for slug, st := range d.out {
-		if st.pending && now.Sub(st.lastEmit) >= 30*time.Millisecond {
+		if st.pending && now.Sub(st.lastEmit) >= d.outputGapLocked(slug, now) {
 			st.pending = false
 			st.lastEmit = now
 			slugs = append(slugs, slug)
