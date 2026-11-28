@@ -64,7 +64,9 @@ func kittyFilter(_ tea.Model, msg tea.Msg) tea.Msg {
 }
 
 // decodeCSILegacy parses the legacy-form keys the protocol still sends with
-// modifiers: ESC [ 1 ; mods[:event] A|B|C|D|H|F and ESC [ n ; mods[:event] ~.
+// modifiers: ESC [ 1 ; mods[:event] A|B|C|D|H|F|P|Q|S and
+// ESC [ n ; mods[:event] ~ (F3 is 13 ~: ESC [ 1;m R would read as a cursor
+// position report).
 // Bubble Tea knows these for mods 2–8 only, so with Num Lock (or Caps Lock)
 // on — ↑ is ESC [ 1;129 A — they arrive here as unknown CSI sequences.
 func decodeCSILegacy(b []byte) (tea.Msg, bool) {
@@ -110,7 +112,7 @@ func decodeCSILegacy(b []byte) (tea.Msg, bool) {
 	return kittyKeyMsg{name: prefix + k.name}, true
 }
 
-var csiLegacyRe = regexp.MustCompile(`^\x1b\[(\d+);(\d+)(?::(\d+))?([ABCDHF~])$`)
+var csiLegacyRe = regexp.MustCompile(`^\x1b\[(\d+);(\d+)(?::(\d+))?([ABCDHFPQS~])$`)
 
 type legacyKey struct {
 	typ  tea.KeyType
@@ -124,13 +126,25 @@ var legacyFinal = map[byte]legacyKey{
 	'D': {tea.KeyLeft, "Left"},
 	'H': {tea.KeyHome, "Home"},
 	'F': {tea.KeyEnd, "End"},
+	'P': {tea.KeyF1, "F1"},
+	'Q': {tea.KeyF2, "F2"},
+	'S': {tea.KeyF4, "F4"},
 }
 
 var legacyTilde = map[int]legacyKey{
-	2: {tea.KeyInsert, "IC"},
-	3: {tea.KeyDelete, "DC"},
-	5: {tea.KeyPgUp, "PPage"},
-	6: {tea.KeyPgDown, "NPage"},
+	2:  {tea.KeyInsert, "IC"},
+	3:  {tea.KeyDelete, "DC"},
+	5:  {tea.KeyPgUp, "PPage"},
+	6:  {tea.KeyPgDown, "NPage"},
+	13: {tea.KeyF3, "F3"},
+	15: {tea.KeyF5, "F5"},
+	17: {tea.KeyF6, "F6"},
+	18: {tea.KeyF7, "F7"},
+	19: {tea.KeyF8, "F8"},
+	20: {tea.KeyF9, "F9"},
+	21: {tea.KeyF10, "F10"},
+	23: {tea.KeyF11, "F11"},
+	24: {tea.KeyF12, "F12"},
 }
 
 // decodeCSIu parses ESC [ code[:alt] [; mods[:event]] [; text] u.
