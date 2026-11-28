@@ -111,7 +111,7 @@ func RunReview(cl *client.Client, slug string) error {
 	rm := newReviewModel(cl, slug, th, theme.Icons(theme.IconsFromEnv()), w, h, os.Getenv("PEKOE_SQUARE") != "")
 	rm.standalone = true
 	p := tea.NewProgram(&standaloneReview{rm}, tea.WithAltScreen())
-	go pump(cl, p)
+	go pump(cl, p, nil)
 	_, err = p.Run()
 	return err
 }

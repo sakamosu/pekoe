@@ -73,6 +73,7 @@ const (
 
 type model struct {
 	ime    *imeCursor // IME 用に本物のカーソルを置く位置(View が更新)
+	shown  *shownSlug // the session shown, for pump (shown.go)
 	lost   bool       // the connection to pekoed ended: Run returns ErrDisconnected
 	cl     *client.Client
 	cwd    string
@@ -233,6 +234,7 @@ func newModel(cl *client.Client, cwd string) *model {
 		graphics:   graphicsCapable(),
 		sentImages: map[int64]bool{},
 		ime:        &imeCursor{},
+		shown:      &shownSlug{},
 	}
 	m.width, m.height = TermSize()
 	m.newTapi()
@@ -256,7 +258,7 @@ func Run(cl *client.Client, cwd string) error {
 		opts = append(opts, tea.WithFilter(kittyFilter))
 	}
 	p := tea.NewProgram(m, opts...)
-	go pump(cl, p)
+	go pump(cl, p, m.shown)
 	_, err := p.Run()
 	if err == nil {
 		err = m.exitErr()
@@ -281,8 +283,11 @@ func (m *model) exitErr() error {
 	return nil
 }
 
-func pump(cl *client.Client, p *tea.Program) {
+func pump(cl *client.Client, p *tea.Program, shown *shownSlug) {
 	for ev := range cl.Events {
+		if shown.dropHidden(ev) {
+			continue // another session's output: nothing to draw (shown.go)
+		}
 		p.Send(evMsg(ev))
 	}
 	p.Send(disconnectedMsg{})
@@ -536,6 +541,8 @@ const (
 // ---- update ----
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// before the Cmds run: pump lets the new session's output through
+	defer m.noteShown()
 	if m.tour != nil { // the tutorial owns the screen and the keys (tour.go)
 		cmd := m.tourUpdate(msg)
 		if m.tour != nil {
