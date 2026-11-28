@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,16 @@ const (
 
 type kittyKeyMsg struct{ name string }
 
+// onAltScreen makes seq land on the alternate screen. The protocol keeps a
+// mode stack per screen (kitty, Ghostty, Alacritty), and the TUI pushes on
+// the alternate one; its pop at exit comes after Bubble Tea has left it (and
+// tea.Exec leaves it before the editor runs), so sent bare it would pop the
+// main screen's stack and leave ours on the alternate screen for the next
+// full-screen program (pekoe run with PEKOE_KITTY=0, less …). Entering and
+// leaving restores the main screen and its cursor; terminals with one stack
+// for both see the same push/pop as before.
+func onAltScreen(seq string) string { return "\x1b[?1049h" + seq + "\x1b[?1049l" }
+
 func kittyEnabled() bool { return os.Getenv("PEKOE_KITTY") != "0" }
 
 // kittyFilter is a tea.WithFilter hook.
@@ -42,10 +53,84 @@ func kittyFilter(_ tea.Model, msg tea.Msg) tea.Msg {
 	if t.Name() != "unknownCSISequenceMsg" || t.Kind() != reflect.Slice {
 		return msg
 	}
-	if out, ok := decodeCSIu(reflect.ValueOf(msg).Bytes()); ok {
+	b := reflect.ValueOf(msg).Bytes()
+	if out, ok := decodeCSILegacy(b); ok {
+		return out
+	}
+	if out, ok := decodeCSIu(b); ok {
 		return out
 	}
 	return msg
+}
+
+// decodeCSILegacy parses the legacy-form keys the protocol still sends with
+// modifiers: ESC [ 1 ; mods[:event] A|B|C|D|H|F and ESC [ n ; mods[:event] ~.
+// Bubble Tea knows these for mods 2–8 only, so with Num Lock (or Caps Lock)
+// on — ↑ is ESC [ 1;129 A — they arrive here as unknown CSI sequences.
+func decodeCSILegacy(b []byte) (tea.Msg, bool) {
+	m := csiLegacyRe.FindSubmatch(b)
+	if m == nil {
+		return nil, false
+	}
+	if string(m[3]) == "3" {
+		return nil, true // key release: ignore
+	}
+	n, err1 := strconv.Atoi(string(m[1]))
+	mods, err2 := strconv.Atoi(string(m[2]))
+	if err1 != nil || err2 != nil || mods < 1 {
+		return nil, false
+	}
+	var k legacyKey
+	var ok bool
+	if final := m[4][0]; final == '~' {
+		k, ok = legacyTilde[n]
+	} else if n == 1 {
+		k, ok = legacyFinal[final]
+	}
+	if !ok {
+		return nil, false
+	}
+	mods = (mods - 1) &^ (64 | 128) // caps lock, num lock
+	if mods == 0 {
+		return tea.KeyMsg{Type: k.typ}, true
+	}
+	prefix := ""
+	if mods&4 != 0 {
+		prefix += "C-"
+	}
+	if mods&2 != 0 {
+		prefix += "M-"
+	}
+	if mods&1 != 0 {
+		prefix += "S-"
+	}
+	if prefix == "" {
+		return nil, false // only super/hyper/meta: no tmux name for them
+	}
+	return kittyKeyMsg{name: prefix + k.name}, true
+}
+
+var csiLegacyRe = regexp.MustCompile(`^\x1b\[(\d+);(\d+)(?::(\d+))?([ABCDHF~])$`)
+
+type legacyKey struct {
+	typ  tea.KeyType
+	name string // tmux key name
+}
+
+var legacyFinal = map[byte]legacyKey{
+	'A': {tea.KeyUp, "Up"},
+	'B': {tea.KeyDown, "Down"},
+	'C': {tea.KeyRight, "Right"},
+	'D': {tea.KeyLeft, "Left"},
+	'H': {tea.KeyHome, "Home"},
+	'F': {tea.KeyEnd, "End"},
+}
+
+var legacyTilde = map[int]legacyKey{
+	2: {tea.KeyInsert, "IC"},
+	3: {tea.KeyDelete, "DC"},
+	5: {tea.KeyPgUp, "PPage"},
+	6: {tea.KeyPgDown, "NPage"},
 }
 
 // decodeCSIu parses ESC [ code[:alt] [; mods[:event]] [; text] u.
