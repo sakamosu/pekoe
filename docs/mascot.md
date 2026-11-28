@@ -266,7 +266,7 @@ tapi chat(`docs/tapi-chat.md`、TUI の `t`)で話しかけたときの tapi の
 
 | 条件 | 判定 | 代替 |
 | --- | --- | --- |
-| 六分ブロックの内蔵描画 | `TERM_PROGRAM=ghostty` / kitty / WezTerm / foot なら有効。それ以外は設定 `mascot.shape` に従う | `block`（四分ブロックの長方形） |
+| 六分ブロックの内蔵描画 | `shape = "auto"` は、六分ブロックを端末が自前で描くと確かめた端末で round: Ghostty / kitty / WezTerm / foot（`TERM_PROGRAM`・`TERM`・`GHOSTTY_RESOURCES_DIR`・`KITTY_WINDOW_ID`・`WEZTERM_PANE`）、VTE 0.60 以降（GNOME Terminal・Ptyxis など。`VTE_VERSION` ≥ 6000）、Konsole 22.04 以降（`KONSOLE_VERSION` ≥ 220400）、Alacritty（`TERM=alacritty*` か `ALACRITTY_WINDOW_ID`。0.13.2 から）。`VTE_VERSION`・`KONSOLE_VERSION`・`ALACRITTY_WINDOW_ID` は `TERM_PROGRAM` が空か `tmux` のときだけ見る（別の端末が名乗っているなら、親から受け継いだだけかもしれない）。xterm などそれ以外は block。根拠は [ambiguous-width.md](ambiguous-width.md)「5. 端末」 | `block`（四分ブロックの長方形）。判定で拾えない端末（SSH 越しで環境変数が届かない、自前で描くのに名乗らない）は `[mascot] shape = "round"`、六分ブロックの描画を切った・古い版で継ぎ目が出るなら `"block"` で手で選ぶ |
 | 端末が曖昧幅を2セルと数える（輪郭の `█ ▌ ▀ ▄` が曖昧幅） | `[theme] ambiguous`（[ambiguous-width.md](ambiguous-width.md)「段階 4 で決めたこと」）。既定の auto は TUI を開くときに `●` を出力して CPR（`ESC[6n`）でカーソル位置を測り、2桁進んだら wide。`wide` と書けば測らずに wide | wide では `glyphs = "auto"` のとき、目を `o o` / `0 0` / `x x` / `^ ^` / `- -`、1セルを `*` / `?` / `x` / `.` にする ASCII セット（TUI のほかの字も wide の表になる） |
 | tmux 越し | 上と同じ測定で決まる。tmux は六分ブロックを素通しするが、`◕` の幅は tmux 側の設定に依存 | 同上 |
 | 曖昧幅を全角で作ったフォント（例: Moralerspace JPDOC） | 判定できない（端末は1セルとして扱うので CPR では測れず、絵だけが右へはみ出す） | 要らない。既定の目と1セルに曖昧幅の字が無い（上の「状態と表情」）。輪郭のブロック要素・六分ブロックと ci_failed の `╥`（罫線）は端末が自前で描く。以前の `mascot.glyphs = "narrow"`（`●` を `🞄` に替えていた）は読むだけで何もせず、`auto` と同じになる |
