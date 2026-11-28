@@ -180,15 +180,46 @@ func TestRowMoodKeepsDoneUntilSeen(t *testing.T) {
 }
 
 func TestDetectShape(t *testing.T) {
-	for _, k := range []string{"TERM_PROGRAM", "TERM", "GHOSTTY_RESOURCES_DIR", "KITTY_WINDOW_ID", "WEZTERM_PANE"} {
-		t.Setenv(k, "")
-	}
-	if DetectShape("auto") != "block" {
-		t.Fatal("unknown terminal → block")
-	}
-	t.Setenv("TERM_PROGRAM", "ghostty")
-	if DetectShape("auto") != "round" || DetectShape("block") != "block" {
-		t.Fatal("ghostty → round, config wins")
+	keys := []string{"TERM_PROGRAM", "TERM", "GHOSTTY_RESOURCES_DIR", "KITTY_WINDOW_ID", "WEZTERM_PANE",
+		"VTE_VERSION", "KONSOLE_VERSION", "ALACRITTY_WINDOW_ID"}
+	for _, c := range []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"unknown terminal", nil, "block"},
+		{"xterm", map[string]string{"TERM": "xterm-256color", "XTERM_VERSION": "XTerm(390)"}, "block"},
+		{"ghostty", map[string]string{"TERM_PROGRAM": "ghostty"}, "round"},
+		{"foot", map[string]string{"TERM": "foot"}, "round"},
+		{"GNOME Terminal (VTE 0.76)", map[string]string{"TERM": "xterm-256color", "VTE_VERSION": "7600"}, "round"},
+		{"VTE 0.60", map[string]string{"VTE_VERSION": "6000"}, "round"},
+		{"VTE 0.58", map[string]string{"VTE_VERSION": "5802"}, "block"},
+		{"VTE_VERSION garbage", map[string]string{"VTE_VERSION": "x"}, "block"},
+		{"Konsole 24.08", map[string]string{"TERM": "xterm-256color", "KONSOLE_VERSION": "240802"}, "round"},
+		{"Konsole 22.04", map[string]string{"KONSOLE_VERSION": "220400"}, "round"},
+		{"Konsole 21.12", map[string]string{"KONSOLE_VERSION": "211203"}, "block"},
+		{"Alacritty", map[string]string{"TERM": "alacritty", "ALACRITTY_WINDOW_ID": "1"}, "round"},
+		{"Alacritty without its terminfo", map[string]string{"TERM": "xterm-256color", "ALACRITTY_WINDOW_ID": "94371"}, "round"},
+		{"Alacritty over ssh", map[string]string{"TERM": "alacritty"}, "round"},
+		{"VTE inside tmux", map[string]string{"TERM": "tmux-256color", "TERM_PROGRAM": "tmux", "VTE_VERSION": "7600"}, "round"},
+		{"Konsole inside tmux", map[string]string{"TERM_PROGRAM": "tmux", "KONSOLE_VERSION": "240802"}, "round"},
+		{"inherited VTE_VERSION in VS Code", map[string]string{"TERM_PROGRAM": "vscode", "VTE_VERSION": "7600"}, "block"},
+		{"inherited ALACRITTY_WINDOW_ID in Apple Terminal", map[string]string{"TERM_PROGRAM": "Apple_Terminal", "ALACRITTY_WINDOW_ID": "1"}, "block"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			for _, k := range keys {
+				t.Setenv(k, "")
+			}
+			for k, v := range c.env {
+				t.Setenv(k, v)
+			}
+			if got := DetectShape("auto"); got != c.want {
+				t.Fatalf("DetectShape(auto) = %s, want %s", got, c.want)
+			}
+			if DetectShape("block") != "block" || DetectShape("round") != "round" {
+				t.Fatal("config wins over detection")
+			}
+		})
 	}
 }
 

@@ -776,6 +776,13 @@ keys = ["[mascot]"]
 docs = ["docs/mascot.md#実装仕様", "docs/config.md"]
 
 [[tip]]
+id = "mascot-shape"
+short = "tapi が四角いなら [mascot] shape = \"round\""
+detail = "既定の auto は、六分ブロックを自前で描く端末(Ghostty・kitty・WezTerm・foot・Alacritty・VTE・Konsole)だけ丸く描く。SSH 越しなどで四角いなら round、継ぎ目や豆腐が出るなら block。"
+keys = ["[mascot]"]
+docs = ["docs/mascot.md#実装仕様", "docs/config.md"]
+
+[[tip]]
 id = "theme-ambiguous"
 short = "枠や記号がずれたら [theme] ambiguous = \"wide\""
 detail = "端末が ● ─ などの曖昧幅を 2 セルで数える設定(iTerm2 など)向け。既定の auto は TUI を開くときに測る。wide では枠線を + - |、記号を ... -> にし、アイコンと tapi は ascii。開き直すと効く。"
