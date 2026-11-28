@@ -52,7 +52,7 @@ func TestConfigCmdRun(t *testing.T) {
 		t.Fatal("exit 3 reported as success")
 	}
 	got := out.String()
-	if !strings.HasPrefix(got, kittyPop+"ran") || !strings.HasSuffix(got, kittyPush) || !strings.Contains(got, "press Enter") {
+	if !strings.HasPrefix(got, onAltScreen(kittyPop)+"ran") || !strings.HasSuffix(got, onAltScreen(kittyPush)) || !strings.Contains(got, "press Enter") {
 		t.Errorf("out = %q", got)
 	}
 	m := tapiModel(t, "none", config.Mascot{})

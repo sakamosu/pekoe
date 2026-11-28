@@ -27,7 +27,8 @@ const configKey = ","
 type configEditedMsg struct{ err error }
 
 // configCmd is `pekoe config edit` as a tea.ExecCommand: the Kitty keyboard
-// mode is popped for the editor and pushed again after, and a failure
+// mode is popped for the editor and pushed again after (on the alternate
+// screen, where the TUI pushed it), and a failure
 // waits for Enter so its message can be read before the TUI repaints.
 type configCmd struct {
 	cmd *exec.Cmd
@@ -41,7 +42,7 @@ func (c *configCmd) SetStderr(w io.Writer) { c.cmd.Stderr = w }
 func (c *configCmd) Run() error {
 	kitty := kittyEnabled()
 	if kitty {
-		io.WriteString(c.out, kittyPop)
+		io.WriteString(c.out, onAltScreen(kittyPop)) // tea.Exec has left the alternate screen
 	}
 	err := c.cmd.Run()
 	if err != nil {
@@ -51,7 +52,7 @@ func (c *configCmd) Run() error {
 		}
 	}
 	if kitty {
-		io.WriteString(c.out, kittyPush)
+		io.WriteString(c.out, onAltScreen(kittyPush))
 	}
 	return err
 }

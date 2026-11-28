@@ -268,7 +268,7 @@ func Run(cl *client.Client, cwd string) error {
 		_ = cl.Call("preview.watch", map[string]any{"slug": m.pv.watching, "on": false}, nil)
 	}
 	if kittyEnabled() {
-		os.Stdout.WriteString(kittyPop)
+		os.Stdout.WriteString(onAltScreen(kittyPop)) // Bubble Tea has left the alternate screen
 	}
 	return err
 }
