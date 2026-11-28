@@ -236,6 +236,7 @@ TUI がユーザーの打鍵として送るペースト(token あり・`submit` 
   "request": 4,                    // 結んだ依頼の id(pekoe new --request、ledger.link)。無ければ省略
   "origin": 4,                     // セッションを作った依頼の id(pekoe new --request)。後の ledger.link では変わらない。無ければ省略(手で作った・これを記録する前に作ったセッション。後者は request を作った依頼とみなし、最初の ledger.link のときに origin に移す)
   "later": [7],                    // 作った後に ledger.link で結んだ依頼の id(結んだ順。origin は入れない)。無ければ省略
+  "base_from": "feat/api", "base_from_sha": "9c1e…", // base を付け替えたときだけ: 積んでいたブランチ(PR がマージされた)と、その最後のコミット。base はそのブランチの base(ふつうは main)になり、land の rebase はこのコミットまでを落とす
   "after": ["feat-api"],           // このセッションが後に来るセッションの slug(session.new の after)。hold が無ければ記録と表示だけで、起動は止めない
   "hold": true,                    // session.new の hold(pekoe new --hold): after がすべて landed になるまで起動しない。無ければ省略
   "holding": ["feat-api"],         // queued の間、after のうちまだ landed でないもの。起動したら消える

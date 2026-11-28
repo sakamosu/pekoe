@@ -154,6 +154,13 @@ type Session struct {
 	SeenLines       int       `json:"seen_lines,omitempty"` // absolute line offset when the user left
 	Env             []string  `json:"env,omitempty"`
 	Overlaps        []Overlap `json:"overlaps,omitempty"` // conflict forecast (daemon/conflicts.go)
+	// BaseFrom is the base the session had before pekoed moved it (empty:
+	// never moved): a session stacked on another's branch whose PR got
+	// merged goes on from that branch's own base (daemon/basemerged.go).
+	// BaseFromSHA is the moved-from branch's last commit pekoed knew: land
+	// drops the commits up to it, which went in with that branch's PR.
+	BaseFrom    string `json:"base_from,omitempty"`
+	BaseFromSHA string `json:"base_from_sha,omitempty"`
 	// Parent is who created the session with session.new: "+tapi", a
 	// session's slug, "human" or "unknown" (daemon/caller.go). wait's mine
 	// and, later, the inbox's answers go to it. Empty: not made by session.new.

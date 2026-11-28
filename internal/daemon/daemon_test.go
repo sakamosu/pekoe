@@ -208,6 +208,11 @@ func setup(t *testing.T) (*Daemon, *fakeEngine, string) {
 	repo := filepath.Join(t.TempDir(), "app")
 	os.MkdirAll(repo, 0o755)
 	run(t, repo, "git", "init", "-q", "-b", "main")
+	// no automatic maintenance: since git 2.48 a commit starts it detached,
+	// and its objects/maintenance.lock coming and going races a test that
+	// copies .git (cp: cannot stat …/maintenance.lock)
+	run(t, repo, "git", "config", "maintenance.auto", "false")
+	run(t, repo, "git", "config", "gc.auto", "0")
 	os.WriteFile(filepath.Join(repo, "a.txt"), []byte("1\n2\n3\n"), 0o644)
 	run(t, repo, "git", "add", ".")
 	run(t, repo, "git", "commit", "-qm", "init")

@@ -45,3 +45,30 @@ func TestSessionAfterShown(t *testing.T) {
 		t.Fatalf("footer: %q", f)
 	}
 }
+
+// A session whose base pekoed moved off a merged branch says so in the
+// footer when selected, with or without --after.
+func TestSessionBaseMovedShown(t *testing.T) {
+	t.Setenv("PEKOE_ICONS", "unicode")
+	m := tapiModel(t, "none", config.Mascot{Glyphs: "ascii"})
+	m.width, m.height = 120, 24
+	now := time.Now()
+	m.sessions = []*state.Session{
+		{Slug: "feat-p", Branch: "feat/p", RepoID: "r", State: state.Landed, StateSince: now},
+		{Slug: "feat-c", Branch: "feat/c", RepoID: "r", State: state.Idle, StateSince: now, Base: "main", BaseFrom: "feat/p"},
+		{Slug: "feat-d", Branch: "feat/d", RepoID: "r", State: state.Idle, StateSince: now, Base: "main", BaseFrom: "feat/p", After: []string{"feat-p"}},
+		{Slug: "feat-e", Branch: "feat/e", RepoID: "r", State: state.Idle, StateSince: now, Base: "main"},
+	}
+	cw := m.leftWidth() - 4
+	for i, want := range []string{"base main (was feat/p, merged)", "after feat-p landed    base main (was feat/p, merged)", ""} {
+		m.sel = i + 1
+		if cur := m.current(); cur == nil || cur != m.sessions[i+1] {
+			t.Fatalf("sel %d is %v, not %s", m.sel, cur, m.sessions[i+1].Slug)
+		}
+		_, footer := m.sessionRows(cw)
+		f := ansi.Strip(footer)
+		if want == "" && strings.Contains(f, "was") || want != "" && !strings.Contains(f, want) {
+			t.Fatalf("footer of %s: %q, want %q", m.sessions[i+1].Slug, f, want)
+		}
+	}
+}
