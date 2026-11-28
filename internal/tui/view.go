@@ -18,18 +18,28 @@ import (
 )
 
 func (m *model) View() string {
+	out, paint := m.screenFrame()
+	if paint {
+		return m.paintBg(out)
+	}
+	return out
+}
+
+// screenFrame is the screen before paintBg, and whether it gets painted: every
+// line of a painted frame is fit to m.width.
+func (m *model) screenFrame() (string, bool) {
 	if m.width == 0 {
 		m.ime.set(0, 0, false)
-		return ""
+		return "", false
 	}
 	if m.tapi.splash {
 		m.ime.set(0, 0, false)
-		return m.paintBg(m.splashView())
+		return m.splashView(), true
 	}
 	if m.review != nil {
 		out := strings.Split(m.review.view(), "\n")
 		m.ime.set(extractCursor(out))
-		return strings.Join(out, "\n")
+		return strings.Join(out, "\n"), false
 	}
 	var body []string
 	if narrow(m.width) {
@@ -64,15 +74,36 @@ func (m *model) View() string {
 		body[i] = fit(body[i], m.width)
 	}
 	m.ime.set(extractCursor(body))
-	return m.paintBg(strings.Join(body, "\n"))
+	return strings.Join(body, "\n"), true
 }
 
-// paintBg: explicit background so the cold low-chroma bg holds in every terminal theme.
+// paintBg: explicit background so the cold low-chroma bg holds in every
+// terminal theme. Each line gets the background in front, again after
+// every reset in it, and a reset at its end: what lipgloss's Render with
+// that background gave for the whole frame, without its measuring every
+// line's width to pad the short ones (screenFrame fits every line to
+// m.width already; this was a third of the View's time). Tabs and carriage
+// returns, which Render rewrites first, still go through Render.
 func (m *model) paintBg(out string) string {
-	if m.th.Mode == theme.Truecolor {
-		out = lipgloss.NewStyle().Background(m.th.Color(theme.Bg)).Render(strings.ReplaceAll(out, "\x1b[0m", "\x1b[0m"+bgSeq(m.th, theme.Bg)))
+	if m.th.Mode != theme.Truecolor {
+		return out
 	}
-	return out
+	bg := bgSeq(m.th, theme.Bg)
+	if bg == "" || strings.ContainsAny(out, "\t\r") {
+		return lipgloss.NewStyle().Background(m.th.Color(theme.Bg)).Render(strings.ReplaceAll(out, "\x1b[0m", "\x1b[0m"+bg))
+	}
+	const reset = "\x1b[0m"
+	var b strings.Builder
+	b.Grow(len(out) + (strings.Count(out, "\n")+1)*(len(bg)+len(reset)) + strings.Count(out, reset)*len(bg))
+	for i, l := range strings.Split(out, "\n") {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(bg)
+		b.WriteString(strings.ReplaceAll(l, reset, reset+bg))
+		b.WriteString(reset)
+	}
+	return b.String()
 }
 
 func (m *model) agentContentWidth() int {
